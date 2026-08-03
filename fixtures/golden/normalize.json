@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "protocolVersion": "1.0-draft",
+    "provider": {
+      "id": "org.openpacker.reference",
+      "implementation": "openpackerd",
+      "version": "0.1.0"
+    }
+  },
+  "results": [
+    {
+      "canonical": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "ecosystem": "npm",
+      "original": "@OpenPacker/Demo-Tool@1.0.0",
+      "parsed": {
+        "ecosystem": "npm",
+        "name": "demo-tool",
+        "namespace": "openpacker",
+        "original": "@OpenPacker/Demo-Tool@1.0.0",
+        "version": "1.0.0"
+      },
+      "reversibility": "exact",
+      "semanticLoss": [],
+      "type": "native-coordinate",
+      "warnings": []
+    },
+    {
+      "canonical": ">=1.0.0 <2.0.0",
+      "ecosystem": "npm",
+      "original": "^1.0.0",
+      "parsed": {
+        "ast": {
+          "items": [
+            { "operator": ">=", "type": "comparison", "version": "1.0.0" },
+            { "operator": "<", "type": "comparison", "version": "2.0.0" }
+          ],
+          "type": "and"
+        },
+        "normalized": ">=1.0.0 <2.0.0",
+        "original": "^1.0.0",
+        "reversible": false,
+        "scheme": "npm",
+        "semanticLoss": [
+          {
+            "blocksProfile": ["prex-calculus-subset-v1"],
+            "code": "NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE",
+            "originalMeaning": "Native prerelease or disjunction semantics have no exact VERS encoding",
+            "severity": "warning",
+            "sourceEcosystem": "npm",
+            "sourcePath": "/range"
+          }
+        ]
+      },
+      "reversibility": "lossy",
+      "semanticLoss": [
+        {
+          "blocksProfile": ["prex-calculus-subset-v1"],
+          "code": "NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE",
+          "originalMeaning": "Native prerelease or disjunction semantics have no exact VERS encoding",
+          "severity": "warning",
+          "sourceEcosystem": "npm",
+          "sourcePath": "/range"
+        }
+      ],
+      "type": "native-range",
+      "warnings": []
+    },
+    {
+      "canonical": ">=1.0.0 <2.0.0",
+      "ecosystem": "cargo",
+      "original": "^1.0",
+      "parsed": {
+        "ast": {
+          "items": [
+            { "operator": ">=", "type": "comparison", "version": "1.0.0" },
+            { "operator": "<", "type": "comparison", "version": "2.0.0" }
+          ],
+          "type": "and"
+        },
+        "normalized": ">=1.0.0 <2.0.0",
+        "original": "^1.0",
+        "reversible": false,
+        "scheme": "cargo",
+        "semanticLoss": [
+          {
+            "blocksProfile": ["prex-calculus-subset-v1"],
+            "code": "NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE",
+            "originalMeaning": "Native prerelease or disjunction semantics have no exact VERS encoding",
+            "severity": "warning",
+            "sourceEcosystem": "cargo",
+            "sourcePath": "/range"
+          }
+        ]
+      },
+      "reversibility": "lossy",
+      "semanticLoss": [
+        {
+          "blocksProfile": ["prex-calculus-subset-v1"],
+          "code": "NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE",
+          "originalMeaning": "Native prerelease or disjunction semantics have no exact VERS encoding",
+          "severity": "warning",
+          "sourceEcosystem": "cargo",
+          "sourcePath": "/range"
+        }
+      ],
+      "type": "native-range",
+      "warnings": []
+    },
+    {
+      "canonical": "vers:nuget/>=1.0.0|<2.0.0",
+      "ecosystem": "nuget",
+      "original": "[1.0,2.0)",
+      "parsed": {
+        "ast": {
+          "items": [
+            { "operator": ">=", "type": "comparison", "version": "1.0.0" },
+            { "operator": "<", "type": "comparison", "version": "2.0.0" }
+          ],
+          "type": "and"
+        },
+        "normalized": ">=1.0.0 <2.0.0",
+        "original": "[1.0,2.0)",
+        "reversible": true,
+        "scheme": "nuget",
+        "semanticLoss": [],
+        "vers": "vers:nuget/>=1.0.0|<2.0.0"
+      },
+      "reversibility": "exact",
+      "semanticLoss": [],
+      "type": "native-range",
+      "warnings": []
+    }
+  ]
+}

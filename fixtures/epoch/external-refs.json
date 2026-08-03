@@ -1,0 +1,15 @@
+{
+  "description": "Epoch-owned references are attached outside canonical OpenPacker objects.",
+  "openPackerDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "externalRefs": [
+    { "type": "epoch-event", "locator": "urn:epoch:event:fixture-resolution" },
+    { "type": "epoch-repository", "locator": "urn:epoch:repository:fixture" },
+    { "type": "did", "locator": "did:example:epoch-fixture" },
+    {
+      "type": "at-uri",
+      "locator": "at://did:example:epoch-fixture/dev.epoch.release/fixture"
+    },
+    { "type": "record-cid", "locator": "bafybeigdyrfixtureonly" },
+    { "type": "delivery", "locator": "https://delivery.invalid/fixture" }
+  ]
+}

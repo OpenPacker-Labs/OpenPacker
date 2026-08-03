@@ -1,0 +1,83 @@
+name: Optional live compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      zot_image:
+        description: Zot image pinned as ghcr.io/project-zot/...@sha256:...
+        required: true
+        type: string
+      oras_image:
+        description: ORAS CLI image pinned by sha256 digest
+        required: true
+        type: string
+      oras_version:
+        description: Exact ORAS version exposed by oras version
+        required: true
+        type: string
+      ocm_image:
+        description: OCM CLI image pinned by sha256 digest
+        required: true
+        type: string
+      ocm_version:
+        description: Exact OCM version exposed by ocm version
+        required: true
+        type: string
+      ocm_validate_args:
+        description: JSON argv containing a {descriptor} placeholder
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  registry-providers:
+    runs-on: ubuntu-latest
+    environment: live-compat
+    env:
+      OPENPACKER_LIVE_TESTS: '1'
+      OPENPACKER_ZOT_IMAGE: ${{ inputs.zot_image }}
+      OPENPACKER_ORAS_IMAGE: ${{ inputs.oras_image }}
+      OPENPACKER_ORAS_VERSION: ${{ inputs.oras_version }}
+      OPENPACKER_OCM_IMAGE: ${{ inputs.ocm_image }}
+      OPENPACKER_OCM_VERSION: ${{ inputs.ocm_version }}
+      OPENPACKER_OCM_VALIDATE_ARGS: ${{ inputs.ocm_validate_args }}
+      OPENPACKER_LIVE_REGISTRY: http://127.0.0.1:5000
+      OPENPACKER_LIVE_REPOSITORY: openpacker/live
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build -- --filter='!@openpacker/embedded'
+      - name: Start the digest-pinned Zot registry
+        run: |
+          docker pull "$OPENPACKER_ZOT_IMAGE"
+          docker run --detach --name openpacker-zot --publish 5000:5000 "$OPENPACKER_ZOT_IMAGE"
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:5000/v2/ && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Create digest-pinned ORAS and OCM wrappers
+        run: |
+          docker pull "$OPENPACKER_ORAS_IMAGE"
+          docker pull "$OPENPACKER_OCM_IMAGE"
+          mkdir -p "$RUNNER_TEMP/openpacker-live-bin"
+          cat > "$RUNNER_TEMP/openpacker-live-bin/oras" <<'EOF'
+          #!/usr/bin/env bash
+          exec docker run --rm --network host -v "$PWD:$PWD" -v /tmp:/tmp -w "$PWD" "$OPENPACKER_ORAS_IMAGE" "$@"
+          EOF
+          cat > "$RUNNER_TEMP/openpacker-live-bin/ocm" <<'EOF'
+          #!/usr/bin/env bash
+          exec docker run --rm --network host -v "$PWD:$PWD" -v /tmp:/tmp -w "$PWD" "$OPENPACKER_OCM_IMAGE" "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/openpacker-live-bin/oras" "$RUNNER_TEMP/openpacker-live-bin/ocm"
+      - name: Run pinned OCI, ORAS, and OCM interoperability
+        run: npm run test:live
+        env:
+          OPENPACKER_ORAS: ${{ runner.temp }}/openpacker-live-bin/oras
+          OPENPACKER_OCM: ${{ runner.temp }}/openpacker-live-bin/ocm

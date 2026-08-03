@@ -1,0 +1,421 @@
+[
+  {
+    "component": {
+      "componentReferences": [],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:cargo/openpacker-native-helper@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-1e3f8461ad59393a03f54871103b820c205c4eda73ae228c8cf1b2640ba11dfa",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  },
+  {
+    "component": {
+      "componentReferences": [
+        {
+          "componentName": "openpacker.dev/purl/sha256-1e3f8461ad59393a03f54871103b820c205c4eda73ae228c8cf1b2640ba11dfa",
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "jsonNormalisation/v1",
+            "value": "434fd6527181a83dc9708ad5156e5a7de7ad949ef559167b2a0a1b2b6d629c0b"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.requirementIds",
+              "signing": true,
+              "value": [
+                "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0"
+              ]
+            }
+          ],
+          "name": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+          "version": "1.0.0"
+        }
+      ],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-e53d4de78592e42d291665dc3cd0ad57c4f9c4d17eeb4d3996598c11f448a7d9",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [
+        {
+          "access": {
+            "localReference": "sha256:cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4",
+            "mediaType": "application/vnd.crates.io.crate+gzip",
+            "size": 3095,
+            "type": "localBlob"
+          },
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "genericBlobDigest/v1",
+            "value": "cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.descriptorId",
+              "signing": true,
+              "value": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
+            }
+          ],
+          "name": "cargo-zstd-wasm-1.0.0.native-bytes",
+          "relation": "local",
+          "type": "application/vnd.openpacker.cargo.package.v1",
+          "version": "1.0.0"
+        }
+      ],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  },
+  {
+    "component": {
+      "componentReferences": [
+        {
+          "componentName": "openpacker.dev/purl/sha256-a758c580e208309f4d875a30991670b8bc6d7bf389f8cea2765e4ad5b27b3357",
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "jsonNormalisation/v1",
+            "value": "689280ea925e24327a3a5182c1ee76154dd57fbd46300a37b50087675be3f720"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.requirementIds",
+              "signing": true,
+              "value": [
+                "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2"
+              ]
+            }
+          ],
+          "name": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+          "version": "1.0.0"
+        },
+        {
+          "componentName": "openpacker.dev/purl/sha256-e53d4de78592e42d291665dc3cd0ad57c4f9c4d17eeb4d3996598c11f448a7d9",
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "jsonNormalisation/v1",
+            "value": "6f4441e5b2d010627970dc339fedc18ba5f9276ac3b9fdc1b0cbe45554a9cd00"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.requirementIds",
+              "signing": true,
+              "value": [
+                "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+                "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1"
+              ]
+            }
+          ],
+          "name": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+          "version": "1.0.0"
+        }
+      ],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-442fccf58dd775852ef9e199c076fa94c975a92874bd57b41813dec99141a71d",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [
+        {
+          "access": {
+            "localReference": "sha256:947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b",
+            "mediaType": "application/vnd.npm.package+gzip",
+            "size": 3095,
+            "type": "localBlob"
+          },
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "genericBlobDigest/v1",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.descriptorId",
+              "signing": true,
+              "value": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+            }
+          ],
+          "name": "npm-demo-1.0.0.native-bytes",
+          "relation": "local",
+          "type": "application/vnd.openpacker.npm.package.v1",
+          "version": "1.0.0"
+        },
+        {
+          "access": {
+            "localReference": "sha256:50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447",
+            "mediaType": "application/gzip",
+            "size": 135,
+            "type": "localBlob"
+          },
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "genericBlobDigest/v1",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.descriptorId",
+              "signing": true,
+              "value": "fixture-tool"
+            }
+          ],
+          "name": "openpacker-demo.tar.gz",
+          "relation": "local",
+          "type": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "version": "1.0.0"
+        }
+      ],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  },
+  {
+    "component": {
+      "componentReferences": [],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:npm/openpacker-native-helper@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-a758c580e208309f4d875a30991670b8bc6d7bf389f8cea2765e4ad5b27b3357",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  },
+  {
+    "component": {
+      "componentReferences": [],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:nuget/openpacker.native.helper@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-c1631c88a7a2acf7e31ab03a3192e6c9085b971023199c8b718f4fef4241f621",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  },
+  {
+    "component": {
+      "componentReferences": [
+        {
+          "componentName": "openpacker.dev/purl/sha256-c1631c88a7a2acf7e31ab03a3192e6c9085b971023199c8b718f4fef4241f621",
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "jsonNormalisation/v1",
+            "value": "e3442e3aae770b5912cf0988c387973dee57e5a2d755c9f952ff7722f44d39e5"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.requirementIds",
+              "signing": true,
+              "value": [
+                "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0"
+              ]
+            }
+          ],
+          "name": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+          "version": "1.0.0"
+        }
+      ],
+      "labels": [
+        {
+          "name": "org.openpacker.prex.exactPurl",
+          "signing": true,
+          "value": "pkg:nuget/openpacker.zstd.tool@1.0.0"
+        },
+        {
+          "name": "org.openpacker.prex.solutionDigest",
+          "signing": true,
+          "value": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+        },
+        {
+          "name": "org.openpacker.prex.receiptDigest",
+          "signing": true,
+          "value": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+        }
+      ],
+      "name": "openpacker.dev/purl/sha256-568591f799a3bd6733b7cff038d3c1b0892c12008c865df0a9cfd86c379e3b06",
+      "provider": { "name": "org.openpacker.reference" },
+      "repositoryContexts": [],
+      "resources": [
+        {
+          "access": {
+            "localReference": "sha256:3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee",
+            "mediaType": "application/vnd.nuget.package+zip",
+            "size": 791,
+            "type": "localBlob"
+          },
+          "digest": {
+            "hashAlgorithm": "SHA-256",
+            "normalisationAlgorithm": "genericBlobDigest/v1",
+            "value": "3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee"
+          },
+          "labels": [
+            {
+              "name": "org.openpacker.prex.descriptorId",
+              "signing": true,
+              "value": "pkg:nuget/OpenPacker.Zstd.Tool@1.0.0"
+            }
+          ],
+          "name": "nuget-zstd-tool-1.0.0.native-bytes",
+          "relation": "local",
+          "type": "application/vnd.openpacker.nuget.package.v1",
+          "version": "1.0.0"
+        }
+      ],
+      "sources": [
+        {
+          "access": {
+            "ref": "https://openpacker.dev/fixtures/overlay",
+            "type": "external"
+          },
+          "labels": [],
+          "name": "source-1",
+          "type": "overlay",
+          "version": "1.0.0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "meta": { "schemaVersion": "v2" }
+  }
+]

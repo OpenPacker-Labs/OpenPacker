@@ -1,0 +1,69 @@
+{
+  "manifests": [
+    {
+      "annotations": {
+        "org.opencontainers.image.ref.name": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
+      },
+      "artifactType": "application/vnd.openpacker.cargo.package.v1",
+      "digest": "sha256:151341353584496fff164736f4cb1ef3c4db629a5d975bfd939c3edf24ed7d01",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 768
+    },
+    {
+      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
+      "digest": "sha256:15f0a5daedcc71943f32e510962198eba940a864df6ab712f4a8593ca2844a9b",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 653
+    },
+    {
+      "artifactType": "application/vnd.cyclonedx+json",
+      "digest": "sha256:5bb97ed76171bab57386395b84c42792d732da0c32e53afdcb36050632907b12",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 635
+    },
+    {
+      "artifactType": "application/vnd.openpacker.overlay.v1+json",
+      "digest": "sha256:69f57778ccaaa679a6487a4885569f0f7ce414f917d081f0770c421e58cde954",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 648
+    },
+    {
+      "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+      "digest": "sha256:d191982c73cddf1f9bb86de91e25ee8f21820dba9956063ba66188503c286aac",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 651
+    },
+    {
+      "artifactType": "application/vnd.in-toto+json",
+      "digest": "sha256:d774ad46b66ad1dd2c795d30c38e92ce2f06384ab366c517a784331e963f1c45",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 633
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.ref.name": "pkg:nuget/openpacker.zstd.tool@1.0.0"
+      },
+      "artifactType": "application/vnd.openpacker.nuget.package.v1",
+      "digest": "sha256:f15d7c17d4364ca0d75943583fc2cbcde8c5bd46e5d06c032102985e3cc4b9ba",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 764
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.ref.name": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+      },
+      "artifactType": "application/vnd.openpacker.npm.package.v1",
+      "digest": "sha256:f1798febc240c09525d396898c0d5d77c94829a3738e6d2bcaf700813928d2c6",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 750
+    },
+    {
+      "artifactType": "application/vnd.openpacker.chunk-index.v1+json",
+      "digest": "sha256:f45d29fd38b9d99acdfa699e7b84ea58cd351422aecd5e08b169f66be6adc965",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 651
+    }
+  ],
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "schemaVersion": 2
+}

@@ -1,0 +1,96 @@
+{
+  "event": {
+    "action": "yanked",
+    "actor": { "type": "key", "value": "fixture:publisher-key" },
+    "authority": "publisher",
+    "effectiveAt": "2026-08-02T01:00:00Z",
+    "eventId": "fixture-yank-demo-tool-1.0.0",
+    "eventVersion": "1",
+    "evidenceRefs": [],
+    "externalRefs": [],
+    "issuedAt": "2026-08-02T01:00:00Z",
+    "reason": "Deterministic lifecycle reselection fixture",
+    "reasonCode": "FIXTURE_YANK",
+    "replacementRefs": [],
+    "sourceSnapshot": {
+      "algorithm": "sha256",
+      "value": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "subject": {
+      "aliases": [],
+      "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+      "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "externalRefs": [],
+      "name": "demo-tool",
+      "namespace": "@openpacker",
+      "nativeCoordinates": [
+        {
+          "coordinate": "@openpacker/demo-tool",
+          "ecosystem": "npm",
+          "version": "1.0.0"
+        }
+      ],
+      "publisherRefs": [],
+      "purlType": "npm",
+      "qualifiers": {},
+      "sourceRefs": [],
+      "version": "1.0.0"
+    }
+  },
+  "reduction": {
+    "history": [
+      {
+        "accepted": true,
+        "event": {
+          "action": "yanked",
+          "actor": { "type": "key", "value": "fixture:publisher-key" },
+          "authority": "publisher",
+          "effectiveAt": "2026-08-02T01:00:00Z",
+          "eventId": "fixture-yank-demo-tool-1.0.0",
+          "eventVersion": "1",
+          "evidenceRefs": [],
+          "externalRefs": [],
+          "issuedAt": "2026-08-02T01:00:00Z",
+          "reason": "Deterministic lifecycle reselection fixture",
+          "reasonCode": "FIXTURE_YANK",
+          "replacementRefs": [],
+          "sourceSnapshot": {
+            "algorithm": "sha256",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "subject": {
+            "aliases": [],
+            "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+            "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+            "externalRefs": [],
+            "name": "demo-tool",
+            "namespace": "@openpacker",
+            "nativeCoordinates": [
+              {
+                "coordinate": "@openpacker/demo-tool",
+                "ecosystem": "npm",
+                "version": "1.0.0"
+              }
+            ],
+            "publisherRefs": [],
+            "purlType": "npm",
+            "qualifiers": {},
+            "sourceRefs": [],
+            "version": "1.0.0"
+          }
+        },
+        "scope": "exact-version"
+      }
+    ],
+    "root": {
+      "algorithm": "sha256",
+      "value": "1581c415d988fa1f6f1dec6b47e6d66868ab6de32252dfbaf3f9545a4f778fcd"
+    },
+    "state": {
+      "derivationEventIds": ["fixture-yank-demo-tool-1.0.0"],
+      "eligible": false,
+      "status": "yanked",
+      "warnings": []
+    }
+  }
+}

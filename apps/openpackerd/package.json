@@ -1,0 +1,49 @@
+{
+  "name": "@openpacker/openpackerd",
+  "version": "0.1.0",
+  "description": "Fastify reference service for PREX",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "openpackerd": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-cargo": "0.1.0",
+    "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/adapter-npm": "0.1.0",
+    "@openpacker/adapter-nuget": "0.1.0",
+    "@openpacker/artifact-model": "0.1.0",
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/embedded": "0.1.0",
+    "@openpacker/events": "0.1.0",
+    "@openpacker/receipts": "0.1.0",
+    "@openpacker/trust": "0.1.0",
+    "fastify": "5.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
+  }
+}

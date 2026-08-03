@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "org.openpacker.documentation-smoke.v1",
+  "command": "node docs/operations/documentation-smoke.mjs",
+  "formatCommand": "npm exec prettier -- --check README.md CONTRIBUTING.md SECURITY.md docs spec/prex/v1",
+  "executableEvidence": {
+    "schemas": "node packages/contracts/scripts/check-schemas.mjs",
+    "generated": "node packages/contracts/scripts/generate.mjs --check",
+    "examples": "npm run typecheck --workspace @openpacker/example-basic-client --workspace @openpacker/example-embedded-resolver --workspace @openpacker/example-epoch-consumer",
+    "protocol": "npm run test:conformance",
+    "sdk": "npm test --workspace @openpacker/sdk",
+    "cli": "npm test --workspace @openpacker/cli",
+    "mise": "node --test integrations/mise/test/contract.test.mjs",
+    "operations": "npm run test:integration",
+    "security": "npm run test:security",
+    "documentation": "npm run test:docs",
+    "goldens": "npm run golden:check",
+    "demo": "npm run test:e2e",
+    "benchmarks": "npm run benchmark"
+  }
+}

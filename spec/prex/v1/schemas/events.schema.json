@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json",
+  "title": "PREX lifecycle and OpenPacker CloudEvents data contracts",
+  "$defs": {
+    "LifecycleEvent": {
+      "type": "object",
+      "required": [
+        "eventVersion",
+        "eventId",
+        "subject",
+        "action",
+        "effectiveAt",
+        "issuedAt",
+        "actor",
+        "authority",
+        "reasonCode",
+        "replacementRefs",
+        "sourceSnapshot",
+        "evidenceRefs",
+        "externalRefs"
+      ],
+      "properties": {
+        "eventVersion": { "const": "1" },
+        "eventId": { "type": "string", "maxLength": 255 },
+        "subject": {
+          "oneOf": [
+            { "$ref": "model.schema.json#/$defs/PackageIdentity" },
+            { "$ref": "common.schema.json#/$defs/Digest" }
+          ]
+        },
+        "action": {
+          "enum": [
+            "published",
+            "yanked",
+            "deprecated",
+            "quarantined",
+            "revoked",
+            "delisted",
+            "restored",
+            "promoted",
+            "removed-from-channel",
+            "ownership-transferred"
+          ]
+        },
+        "effectiveAt": { "type": "string", "format": "date-time" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "actor": { "$ref": "common.schema.json#/$defs/IdentityRef" },
+        "authority": {
+          "enum": [
+            "publisher",
+            "registry",
+            "organization",
+            "user",
+            "test-fixture"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,127}$"
+        },
+        "reason": { "type": "string", "maxLength": 8192 },
+        "replacementRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "sourceSnapshot": { "$ref": "common.schema.json#/$defs/Digest" },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "CloudEventCommon": {
+      "type": "object",
+      "required": [
+        "specversion",
+        "id",
+        "source",
+        "subject",
+        "time",
+        "datacontenttype",
+        "datadigest",
+        "correlationid",
+        "externalrefs"
+      ],
+      "properties": {
+        "specversion": { "const": "1.0" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "source": {
+          "type": "string",
+          "format": "uri-reference",
+          "maxLength": 8192
+        },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "time": { "type": "string", "format": "date-time" },
+        "datacontenttype": { "const": "application/json" },
+        "datadigest": { "$ref": "common.schema.json#/$defs/DigestString" },
+        "correlationid": { "type": "string", "maxLength": 255 },
+        "causationid": { "type": "string", "maxLength": 255 },
+        "externalrefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      }
+    },
+    "CatalogSnapshotCreatedData": {
+      "type": "object",
+      "required": ["schemaVersion", "snapshot"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "snapshot": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+      },
+      "additionalProperties": false
+    },
+    "CatalogPackageObservedData": {
+      "type": "object",
+      "required": ["schemaVersion", "package"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "package": { "$ref": "model.schema.json#/$defs/PackageInstance" }
+      },
+      "additionalProperties": false
+    },
+    "LifecycleChangedData": {
+      "type": "object",
+      "required": ["schemaVersion", "lifecycleEvent"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "lifecycleEvent": { "$ref": "#/$defs/LifecycleEvent" }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionCompletedData": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "solutionDigest",
+        "requestDigest",
+        "universeDigest"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "solutionDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionUnsatisfiableData": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "requestDigest",
+        "universeDigest",
+        "explanationDigest"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "explanationDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+      },
+      "additionalProperties": false
+    },
+    "ReceiptCreatedData": {
+      "type": "object",
+      "required": ["schemaVersion", "receiptDigest"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "receiptDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+      },
+      "additionalProperties": false
+    },
+    "ArtifactPackedData": {
+      "type": "object",
+      "required": ["schemaVersion", "descriptor"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "descriptor": { "$ref": "model.schema.json#/$defs/ArtifactDescriptor" }
+      },
+      "additionalProperties": false
+    },
+    "ArtifactVerifiedData": {
+      "type": "object",
+      "required": ["schemaVersion", "descriptor"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "descriptor": { "$ref": "model.schema.json#/$defs/ArtifactDescriptor" }
+      },
+      "additionalProperties": false
+    },
+    "PolicyEvaluatedData": {
+      "type": "object",
+      "required": ["schemaVersion", "subjectDigest", "decision"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "subjectDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "decision": { "enum": ["allow", "deny", "indeterminate"] },
+        "policyDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+      },
+      "additionalProperties": false
+    },
+    "CatalogSnapshotCreatedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.catalog.snapshot.created" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.catalog.snapshot.created"
+            },
+            "data": { "$ref": "#/$defs/CatalogSnapshotCreatedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "CatalogPackageObservedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.catalog.package.observed" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.catalog.package.observed"
+            },
+            "data": { "$ref": "#/$defs/CatalogPackageObservedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "LifecycleChangedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.lifecycle.changed" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.lifecycle.changed"
+            },
+            "data": { "$ref": "#/$defs/LifecycleChangedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "ResolutionCompletedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.resolution.completed" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.resolution.completed"
+            },
+            "data": { "$ref": "#/$defs/ResolutionCompletedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "ResolutionUnsatisfiableEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.resolution.unsatisfiable" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.resolution.unsatisfiable"
+            },
+            "data": { "$ref": "#/$defs/ResolutionUnsatisfiableData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "ReceiptCreatedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.receipt.created" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.receipt.created"
+            },
+            "data": { "$ref": "#/$defs/ReceiptCreatedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "ArtifactPackedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.artifact.packed" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.packed"
+            },
+            "data": { "$ref": "#/$defs/ArtifactPackedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "ArtifactVerifiedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.artifact.verified" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.verified"
+            },
+            "data": { "$ref": "#/$defs/ArtifactVerifiedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "PolicyEvaluatedEvent": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/CloudEventCommon" },
+        {
+          "type": "object",
+          "required": ["type", "dataschema", "data"],
+          "properties": {
+            "type": { "const": "org.openpacker.policy.evaluated" },
+            "dataschema": {
+              "const": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.policy.evaluated"
+            },
+            "data": { "$ref": "#/$defs/PolicyEvaluatedData" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "EventType": {
+      "enum": [
+        "org.openpacker.catalog.snapshot.created",
+        "org.openpacker.catalog.package.observed",
+        "org.openpacker.lifecycle.changed",
+        "org.openpacker.resolution.completed",
+        "org.openpacker.resolution.unsatisfiable",
+        "org.openpacker.receipt.created",
+        "org.openpacker.artifact.packed",
+        "org.openpacker.artifact.verified",
+        "org.openpacker.policy.evaluated"
+      ]
+    },
+    "EventData": {
+      "oneOf": [
+        { "$ref": "#/$defs/CatalogSnapshotCreatedData" },
+        { "$ref": "#/$defs/CatalogPackageObservedData" },
+        { "$ref": "#/$defs/LifecycleChangedData" },
+        { "$ref": "#/$defs/ResolutionCompletedData" },
+        { "$ref": "#/$defs/ResolutionUnsatisfiableData" },
+        { "$ref": "#/$defs/ReceiptCreatedData" },
+        { "$ref": "#/$defs/ArtifactPackedData" },
+        { "$ref": "#/$defs/ArtifactVerifiedData" },
+        { "$ref": "#/$defs/PolicyEvaluatedData" }
+      ]
+    },
+    "OpenPackerCloudEvent": {
+      "oneOf": [
+        { "$ref": "#/$defs/CatalogSnapshotCreatedEvent" },
+        { "$ref": "#/$defs/CatalogPackageObservedEvent" },
+        { "$ref": "#/$defs/LifecycleChangedEvent" },
+        { "$ref": "#/$defs/ResolutionCompletedEvent" },
+        { "$ref": "#/$defs/ResolutionUnsatisfiableEvent" },
+        { "$ref": "#/$defs/ReceiptCreatedEvent" },
+        { "$ref": "#/$defs/ArtifactPackedEvent" },
+        { "$ref": "#/$defs/ArtifactVerifiedEvent" },
+        { "$ref": "#/$defs/PolicyEvaluatedEvent" }
+      ]
+    }
+  }
+}

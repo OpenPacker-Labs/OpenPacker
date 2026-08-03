@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1",
+  "mustReject": [
+    { "id": "parent-traversal", "path": "../../outside" },
+    { "id": "posix-absolute", "path": "/etc/passwd" },
+    { "id": "windows-drive", "path": "C:\\Windows\\system32\\config" },
+    { "id": "windows-unc", "path": "\\\\server\\share\\payload" },
+    { "id": "symlink", "entryType": "symlink", "path": "bin/tool", "target": "../../outside" },
+    { "id": "hardlink", "entryType": "hardlink", "path": "bin/tool", "target": "../../outside" },
+    { "id": "special-device", "entryType": "device", "path": "dev/exploit" },
+    { "id": "fifo", "entryType": "fifo", "path": "run/exploit" },
+    { "id": "unsafe-permission", "entryType": "file", "path": "bin/tool", "mode": "04755" },
+    { "id": "case-collision", "paths": ["bin/tool", "BIN/TOOL"] },
+    { "id": "duplicate", "paths": ["bin/tool", "bin/tool"] }
+  ],
+  "bombPolicy": {
+    "maximumFiles": 10000,
+    "maximumExpandedBytes": 1073741824,
+    "maximumCompressedBytes": 536870912,
+    "maximumCompressionRatio": 100,
+    "maximumPathBytes": 4096,
+    "maximumDepth": 128
+  }
+}

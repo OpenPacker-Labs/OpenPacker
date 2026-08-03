@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {
+      "versionKey": {
+        "system": "NPM",
+        "name": "@openpacker/demo-tool",
+        "version": "1.0.0"
+      },
+      "relation": "SELF"
+    },
+    {
+      "versionKey": { "system": "NPM", "name": "alpha", "version": "1.0.0" },
+      "relation": "DIRECT"
+    }
+  ],
+  "edges": [{ "fromNode": 0, "toNode": 1, "requirement": "^1.0.0" }]
+}

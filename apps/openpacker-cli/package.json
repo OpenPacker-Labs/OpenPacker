@@ -1,0 +1,43 @@
+{
+  "name": "@openpacker/cli",
+  "version": "0.1.0",
+  "description": "OpenPacker command-line client",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "openpacker": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/artifact-model": "0.1.0",
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/openpackerd": "0.1.0",
+    "@openpacker/materializer": "0.1.0",
+    "@openpacker/sdk": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
+  }
+}

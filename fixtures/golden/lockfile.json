@@ -1,0 +1,246 @@
+{
+  "artifactDescriptors": [
+    {
+      "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+      "descriptorId": "fixture-tool",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+      },
+      "extensions": {
+        "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+      },
+      "externalRefs": [],
+      "fileName": "openpacker-demo.tar.gz",
+      "locations": [
+        {
+          "priority": 0,
+          "rangeSupported": false,
+          "transport": "file",
+          "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+        }
+      ],
+      "mediaType": "application/gzip",
+      "nativeRole": "tool-payload",
+      "referrers": [],
+      "size": 135
+    },
+    {
+      "artifactType": "application/vnd.openpacker.npm.package.v1",
+      "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+      },
+      "externalRefs": [],
+      "fileName": "npm-demo-1.0.0.native-bytes",
+      "locations": [],
+      "mediaType": "application/vnd.npm.package+gzip",
+      "nativeRole": "native-package",
+      "referrers": [],
+      "size": 3095
+    },
+    {
+      "artifactType": "application/vnd.openpacker.cargo.package.v1",
+      "descriptorId": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4"
+      },
+      "externalRefs": [],
+      "fileName": "cargo-zstd-wasm-1.0.0.native-bytes",
+      "locations": [],
+      "mediaType": "application/vnd.crates.io.crate+gzip",
+      "nativeRole": "native-package",
+      "referrers": [],
+      "size": 3095
+    },
+    {
+      "artifactType": "application/vnd.openpacker.nuget.package.v1",
+      "descriptorId": "pkg:nuget/OpenPacker.Zstd.Tool@1.0.0",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee"
+      },
+      "externalRefs": [],
+      "fileName": "nuget-zstd-tool-1.0.0.native-bytes",
+      "locations": [],
+      "mediaType": "application/vnd.nuget.package+zip",
+      "nativeRole": "native-package",
+      "referrers": [],
+      "size": 791
+    }
+  ],
+  "dependencyEdges": [
+    {
+      "fromNodeId": "root",
+      "requirementId": "root-capability",
+      "toNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "witnessType": "capability"
+    },
+    {
+      "fromNodeId": "root",
+      "requirementId": "root-nuget",
+      "toNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+      "witnessType": "package"
+    },
+    {
+      "fromNodeId": "root",
+      "requirementId": "root-tool",
+      "toNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "witnessType": "package"
+    },
+    {
+      "fromNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "requirementId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+      "toNodeId": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+      "witnessType": "package"
+    },
+    {
+      "fromNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+      "requirementId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+      "toNodeId": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+      "witnessType": "package"
+    },
+    {
+      "fromNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "requirementId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+      "toNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "witnessType": "package"
+    },
+    {
+      "fromNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "requirementId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+      "toNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "witnessType": "capability"
+    },
+    {
+      "fromNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "requirementId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+      "toNodeId": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+      "witnessType": "package"
+    }
+  ],
+  "externalRefs": [],
+  "lifecycleRoot": {
+    "algorithm": "sha256",
+    "value": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "objectiveOrdering": [
+    "satisfy-hard-constraints",
+    "minimize-package-count",
+    "exclude-lifecycle-denied",
+    "prefer-stable",
+    "prefer-highest-native-version",
+    "canonical-lexical-tie-break"
+  ],
+  "ocmReferences": [],
+  "policyDigest": {
+    "algorithm": "sha256",
+    "value": "088b8de1f381ea7aa9d3867f43771d73b3ac972e100ce6fb6b10ee65e3e6ccaf"
+  },
+  "protocolVersion": "1.0-draft",
+  "receiptDigest": {
+    "algorithm": "sha256",
+    "value": "3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+  },
+  "rootRequirements": [
+    {
+      "authority": "test-fixture",
+      "expression": {
+        "purl": "pkg:npm/%40openpacker/demo-tool",
+        "type": "package",
+        "vers": "vers:npm/>=0.0.0|<2.0.0"
+      },
+      "id": "root-tool",
+      "kind": "runtime",
+      "optional": false,
+      "semanticLoss": [],
+      "source": {
+        "type": "overlay",
+        "uri": "https://openpacker.dev/fixtures/overlay"
+      }
+    },
+    {
+      "authority": "publisher",
+      "expression": {
+        "name": "compression/zstd",
+        "type": "capability",
+        "vers": "vers:generic/>=1"
+      },
+      "id": "root-capability",
+      "kind": "runtime",
+      "optional": false,
+      "semanticLoss": [],
+      "source": {
+        "type": "overlay",
+        "uri": "https://openpacker.dev/fixtures/overlay"
+      }
+    },
+    {
+      "authority": "test-fixture",
+      "expression": {
+        "purl": "pkg:nuget/openpacker.zstd.tool",
+        "type": "package",
+        "vers": "vers:nuget/>=1.0.0"
+      },
+      "id": "root-nuget",
+      "kind": "tool",
+      "optional": false,
+      "semanticLoss": [],
+      "source": {
+        "type": "overlay",
+        "uri": "https://openpacker.dev/fixtures/overlay"
+      }
+    }
+  ],
+  "schemaVersion": "1",
+  "selectedExactPurls": [
+    "pkg:cargo/openpacker-native-helper@1.0.0",
+    "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+    "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "pkg:npm/openpacker-native-helper@1.0.0",
+    "pkg:nuget/openpacker.native.helper@1.0.0",
+    "pkg:nuget/openpacker.zstd.tool@1.0.0"
+  ],
+  "semanticsProfile": "prex-calculus-subset-v1",
+  "solutionDigest": {
+    "algorithm": "sha256",
+    "value": "eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+  },
+  "sourceSnapshotDigests": [
+    {
+      "algorithm": "sha256",
+      "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+    }
+  ],
+  "target": {
+    "abi": {},
+    "architecture": "arm64",
+    "capabilities": [],
+    "libc": "glibc",
+    "os": "linux",
+    "runtimes": { "node": "24" },
+    "variables": {}
+  }
+}

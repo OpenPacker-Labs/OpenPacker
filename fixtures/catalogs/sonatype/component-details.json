@@ -1,0 +1,10 @@
+{
+  "components": [
+    {
+      "purl": "pkg:nuget/demo.tool@1.0.0",
+      "componentIdentifier": "fixture:demo.tool:1.0.0",
+      "policyEvaluation": { "action": "none" },
+      "securityData": { "status": "fixture-only" }
+    }
+  ]
+}

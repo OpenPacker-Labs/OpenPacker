@@ -1,0 +1,793 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json",
+  "title": "PREX resolution universe, solution, proof, explanation, and receipt",
+  "$defs": {
+    "OpenPackerOverlay": {
+      "type": "object",
+      "required": [
+        "overlayVersion",
+        "subject",
+        "requirements",
+        "capabilities",
+        "conflicts",
+        "cardinalityConstraints",
+        "artifactAnnotations",
+        "sourceRefs",
+        "authority",
+        "evidenceRefs",
+        "externalRefs"
+      ],
+      "properties": {
+        "overlayVersion": { "const": "1" },
+        "subject": { "$ref": "model.schema.json#/$defs/PackageIdentity" },
+        "appliesToMetadataDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "requirements": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/Requirement" }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/Capability" }
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/Conflict" }
+        },
+        "cardinalityConstraints": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/CardinalityConstraint" }
+        },
+        "artifactAnnotations": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "required": ["descriptorId", "annotations"],
+            "properties": {
+              "descriptorId": { "type": "string", "maxLength": 255 },
+              "annotations": {
+                "type": "object",
+                "maxProperties": 64,
+                "additionalProperties": { "type": "string", "maxLength": 4096 }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "sourceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SourceRef" }
+        },
+        "authority": {
+          "enum": [
+            "publisher",
+            "registry",
+            "organization",
+            "user",
+            "test-fixture"
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionUniverse": {
+      "type": "object",
+      "required": [
+        "universeVersion",
+        "packages",
+        "overlays",
+        "sourceSnapshots",
+        "lifecycleRoot",
+        "targetVocabularyVersion",
+        "canonicalDigest"
+      ],
+      "properties": {
+        "universeVersion": { "const": "1" },
+        "packages": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": { "$ref": "model.schema.json#/$defs/PackageInstance" }
+        },
+        "overlays": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/OpenPackerOverlay" }
+        },
+        "sourceSnapshots": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+        },
+        "lifecycleRoot": { "$ref": "common.schema.json#/$defs/Digest" },
+        "targetVocabularyVersion": { "type": "string", "maxLength": 64 },
+        "canonicalDigest": {
+          "$comment": "universe-v1 projection: omit /canonicalDigest and canonicalize declared set paths before hashing",
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "PolicyInput": {
+      "type": "object",
+      "required": [
+        "allowYanked",
+        "allowQuarantined",
+        "semanticLossMaximum",
+        "requiredEvidence"
+      ],
+      "properties": {
+        "allowYanked": { "type": "boolean" },
+        "allowQuarantined": { "type": "boolean" },
+        "semanticLossMaximum": { "enum": ["info", "warning", "error"] },
+        "requiredEvidence": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "acceptedOverlayAuthorities": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "publisher",
+              "registry",
+              "organization",
+              "user",
+              "test-fixture"
+            ]
+          }
+        },
+        "allowDeprecated": { "type": "boolean" },
+        "allowDelisted": { "type": "boolean" },
+        "allowRevoked": { "type": "boolean" },
+        "requireFreshTufMetadata": { "type": "boolean" },
+        "acceptedSignerIdentityPatterns": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "sigstore": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "issuerPatterns": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+            },
+            "identityPatterns": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+            },
+            "requireTransparencyEvidence": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "slsa": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "predicateTypes": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "format": "uri", "maxLength": 8192 }
+            },
+            "builderIds": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": { "type": "string", "maxLength": 2048 }
+            },
+            "buildTypes": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": { "type": "string", "maxLength": 2048 }
+            }
+          },
+          "additionalProperties": false
+        },
+        "licenses": {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "maxItems": 1024,
+              "uniqueItems": true,
+              "items": { "type": "string", "maxLength": 255 }
+            },
+            "denied": {
+              "type": "array",
+              "maxItems": 1024,
+              "uniqueItems": true,
+              "items": { "type": "string", "maxLength": 255 }
+            },
+            "allowUnknown": { "type": "boolean" },
+            "allowMissing": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "allowedProviderIds": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "allowedArtifactSourceSchemes": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9+.-]*$",
+            "maxLength": 64
+          }
+        },
+        "allowedTargets": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "model.schema.json#/$defs/TargetPredicate" }
+        },
+        "maximumArtifactSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maximumExpandedMaterializationSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "deniedSemanticLossCodes": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,127}$" }
+        },
+        "requiredSourceSnapshotDigests": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/Digest" }
+        },
+        "permitForensicDigestMaterialization": { "type": "boolean" },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "SemanticsInput": {
+      "type": "object",
+      "required": ["profile", "nativeCompatibility"],
+      "properties": {
+        "profile": {
+          "enum": [
+            "native-capture-v1",
+            "native-validated-v1",
+            "prex-calculus-subset-v1"
+          ]
+        },
+        "nativeCompatibility": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 64 }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "SolveRequest": {
+      "type": "object",
+      "required": [
+        "requirements",
+        "target",
+        "environment",
+        "policy",
+        "semantics",
+        "objectives",
+        "mode",
+        "evaluationTime"
+      ],
+      "properties": {
+        "requirements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/Requirement" }
+        },
+        "target": { "$ref": "model.schema.json#/$defs/TargetContext" },
+        "environment": {
+          "type": "object",
+          "required": ["installed", "locked"],
+          "properties": {
+            "installed": {
+              "type": "array",
+              "maxItems": 100000,
+              "items": { "type": "string", "maxLength": 255 }
+            },
+            "locked": {
+              "type": "array",
+              "maxItems": 100000,
+              "items": { "type": "string", "maxLength": 255 }
+            }
+          },
+          "additionalProperties": false
+        },
+        "policy": { "$ref": "#/$defs/PolicyInput" },
+        "semantics": { "$ref": "#/$defs/SemanticsInput" },
+        "objectives": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "satisfy-hard-constraints",
+              "preserve-locks",
+              "minimize-changes",
+              "minimize-package-count",
+              "exclude-lifecycle-denied",
+              "prefer-stable",
+              "prefer-highest-native-version",
+              "canonical-lexical-tie-break"
+            ]
+          }
+        },
+        "mode": { "enum": ["closure", "direct", "validate-native"] },
+        "evaluationTime": { "type": "string", "format": "date-time" },
+        "providerPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerIds": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "maxLength": 255 }
+            }
+          }
+        },
+        "timeoutMilliseconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300000
+        },
+        "resourceLimits": {
+          "$ref": "operations.schema.json#/$defs/ResourceLimits"
+        },
+        "context": { "$ref": "operations.schema.json#/$defs/RequestContext" },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "DependencyEdge": {
+      "type": "object",
+      "required": ["requirementId", "fromNodeId", "toNodeId", "witnessType"],
+      "properties": {
+        "requirementId": { "type": "string", "maxLength": 255 },
+        "fromNodeId": { "type": "string", "maxLength": 255 },
+        "toNodeId": { "type": "string", "maxLength": 255 },
+        "witnessType": {
+          "enum": ["package", "capability", "replacement", "optional"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionSolution": {
+      "type": "object",
+      "required": [
+        "selectedNodeIds",
+        "selectedCapabilityProviders",
+        "satisfiedRequirementIds",
+        "dependencyEdges",
+        "excludedCandidates",
+        "objectiveTuple",
+        "semanticLoss",
+        "sourceSnapshotDigests",
+        "solutionDigest"
+      ],
+      "properties": {
+        "selectedNodeIds": {
+          "type": "array",
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "selectedCapabilityProviders": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "required": ["capability", "providerNodeId"],
+            "properties": {
+              "capability": { "type": "string", "maxLength": 255 },
+              "providerNodeId": { "type": "string", "maxLength": 255 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "satisfiedRequirementIds": {
+          "type": "array",
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "dependencyEdges": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "$ref": "#/$defs/DependencyEdge" }
+        },
+        "excludedCandidates": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "required": ["nodeId", "reasonRefs"],
+            "properties": {
+              "nodeId": { "type": "string", "maxLength": 255 },
+              "reasonRefs": {
+                "type": "array",
+                "maxItems": 128,
+                "items": { "type": "string", "maxLength": 255 }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "objectiveTuple": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": ["string", "integer", "boolean"] }
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        },
+        "sourceSnapshotDigests": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "common.schema.json#/$defs/Digest" }
+        },
+        "solutionDigest": {
+          "$comment": "solution-v1 projection: omit /solutionDigest before hashing",
+          "$ref": "common.schema.json#/$defs/Digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionProof": {
+      "type": "object",
+      "required": [
+        "proofVersion",
+        "universeDigest",
+        "requestDigest",
+        "selectedAssignments",
+        "requirementWitnesses",
+        "conflictChecks",
+        "cardinalityChecks",
+        "targetChecks",
+        "objectiveEvidence"
+      ],
+      "properties": {
+        "proofVersion": { "const": "1" },
+        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "selectedAssignments": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "required": ["nodeId", "selected", "nodeDigest"],
+            "properties": {
+              "nodeId": { "type": "string", "maxLength": 255 },
+              "selected": { "type": "boolean" },
+              "nodeDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "requirementWitnesses": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "type": "object",
+            "required": ["requirementId", "status", "witnessNodeIds"],
+            "properties": {
+              "requirementId": { "type": "string", "maxLength": 255 },
+              "status": {
+                "enum": ["satisfied", "optional-omitted", "inactive"]
+              },
+              "witnessNodeIds": {
+                "type": "array",
+                "maxItems": 10000,
+                "items": { "type": "string", "maxLength": 255 }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "conflictChecks": { "$ref": "#/$defs/ProofChecks" },
+        "cardinalityChecks": { "$ref": "#/$defs/ProofChecks" },
+        "targetChecks": { "$ref": "#/$defs/ProofChecks" },
+        "objectiveEvidence": { "$ref": "#/$defs/ProofChecks" }
+      },
+      "additionalProperties": false
+    },
+    "ProofChecks": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "type": "object",
+        "required": ["id", "valid", "evidence"],
+        "properties": {
+          "id": { "type": "string", "maxLength": 255 },
+          "valid": { "type": "boolean" },
+          "evidence": { "$ref": "common.schema.json#/$defs/CanonicalJsonValue" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ExplanationGraph": {
+      "type": "object",
+      "required": ["nodes", "edges", "roots", "unsatCore"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "label", "data"],
+            "properties": {
+              "id": { "type": "string", "maxLength": 255 },
+              "kind": {
+                "enum": [
+                  "candidate",
+                  "requirement",
+                  "capability",
+                  "conflict",
+                  "cardinality",
+                  "target",
+                  "predicate",
+                  "lifecycle",
+                  "policy",
+                  "objective",
+                  "semantic-loss",
+                  "proof"
+                ]
+              },
+              "label": { "type": "string", "maxLength": 4096 },
+              "data": {
+                "type": "object",
+                "maxProperties": 128,
+                "additionalProperties": {
+                  "$ref": "common.schema.json#/$defs/CanonicalJsonValue"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "kind"],
+            "properties": {
+              "from": { "type": "string", "maxLength": 255 },
+              "to": { "type": "string", "maxLength": 255 },
+              "kind": {
+                "enum": [
+                  "requires",
+                  "satisfied-by",
+                  "rejected-by",
+                  "conflicts-with",
+                  "conditioned-by",
+                  "preferred-over",
+                  "derived-from",
+                  "checked-by"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "roots": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "unsatCore": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "renderHints": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": "string", "maxLength": 4096 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionReceipt": {
+      "type": "object",
+      "required": [
+        "receiptVersion",
+        "protocolVersion",
+        "requestDigest",
+        "normalizedRequest",
+        "universeDigest",
+        "sourceSnapshots",
+        "targetDigest",
+        "policyDigest",
+        "lifecycleRoot",
+        "semanticsProfile",
+        "objectiveOrdering",
+        "solutionDigest",
+        "proofDigest",
+        "explanationDigest",
+        "artifactSetDigest",
+        "resolver",
+        "evaluationTime",
+        "evidenceRefs",
+        "externalRefs"
+      ],
+      "properties": {
+        "receiptVersion": { "const": "1" },
+        "protocolVersion": { "const": "1.0-draft" },
+        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "normalizedRequest": { "$ref": "#/$defs/SolveRequest" },
+        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "sourceSnapshots": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+        },
+        "targetDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "policyDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "lifecycleRoot": { "$ref": "common.schema.json#/$defs/Digest" },
+        "semanticsProfile": {
+          "enum": [
+            "native-capture-v1",
+            "native-validated-v1",
+            "prex-calculus-subset-v1"
+          ]
+        },
+        "objectiveOrdering": {
+          "$ref": "#/$defs/SolveRequest/properties/objectives"
+        },
+        "solutionDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "proofDigest": {
+          "$comment": "proof-v1 projection: canonicalize the complete ResolutionProof",
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "explanationDigest": {
+          "$comment": "explanation-v1 projection: canonicalize the complete ExplanationGraph",
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "artifactSetDigest": {
+          "$comment": "artifact-set-v1 projection excludes ArtifactDescriptor.locations",
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "resolver": {
+          "type": "object",
+          "required": [
+            "providerId",
+            "implementation",
+            "version",
+            "buildDigest"
+          ],
+          "properties": {
+            "providerId": { "type": "string", "maxLength": 255 },
+            "implementation": { "type": "string", "maxLength": 255 },
+            "version": { "type": "string", "maxLength": 128 },
+            "buildDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+          },
+          "additionalProperties": false
+        },
+        "evaluationTime": { "type": "string", "format": "date-time" },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "SignedReceipt": {
+      "type": "object",
+      "required": ["receipt", "receiptDigest", "signatures"],
+      "properties": {
+        "receipt": { "$ref": "#/$defs/ResolutionReceipt" },
+        "receiptDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["algorithm", "keyId", "signature"],
+            "properties": {
+              "algorithm": { "const": "ed25519" },
+              "keyId": { "type": "string", "maxLength": 1024 },
+              "signature": {
+                "type": "string",
+                "contentEncoding": "base64",
+                "maxLength": 256
+              },
+              "identity": { "$ref": "common.schema.json#/$defs/IdentityRef" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SolveResponse": {
+      "type": "object",
+      "required": [
+        "meta",
+        "normalizedRequest",
+        "requestDigest",
+        "universeDigest",
+        "selected",
+        "solution",
+        "proof",
+        "explanation",
+        "unsignedReceipt"
+      ],
+      "properties": {
+        "meta": { "$ref": "common.schema.json#/$defs/ProtocolMeta" },
+        "normalizedRequest": { "$ref": "#/$defs/SolveRequest" },
+        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "selected": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": { "$ref": "model.schema.json#/$defs/PackageInstance" }
+        },
+        "solution": { "$ref": "#/$defs/ResolutionSolution" },
+        "proof": { "$ref": "#/$defs/ResolutionProof" },
+        "explanation": { "$ref": "#/$defs/ExplanationGraph" },
+        "unsignedReceipt": { "$ref": "#/$defs/ResolutionReceipt" },
+        "signedReceipt": { "$ref": "#/$defs/SignedReceipt" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

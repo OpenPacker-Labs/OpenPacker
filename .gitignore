@@ -1,0 +1,8 @@
+node_modules/
+target/
+dist/
+coverage/
+.turbo/
+.demo-output/
+*.tgz
+.serena/

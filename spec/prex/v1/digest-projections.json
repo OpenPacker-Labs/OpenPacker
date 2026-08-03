@@ -1,0 +1,109 @@
+{
+  "projectionVersion": "1",
+  "projections": [
+    {
+      "id": "request-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/context"],
+      "orderedSetPaths": [
+        "/environment/installed",
+        "/environment/locked",
+        "/policy/requiredEvidence",
+        "/requirements"
+      ]
+    },
+    {
+      "id": "universe-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/canonicalDigest"],
+      "orderedSetPaths": ["/overlays", "/packages", "/sourceSnapshots"]
+    },
+    {
+      "id": "package-node-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [
+        "/identity/exactPurl",
+        "/identity/qualifiers",
+        "/nativeSemantics/version"
+      ],
+      "excludePaths": [],
+      "orderedSetPaths": []
+    },
+    {
+      "id": "metadata-record-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": []
+    },
+    {
+      "id": "solution-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/solutionDigest"],
+      "orderedSetPaths": [
+        "/dependencyEdges",
+        "/excludedCandidates",
+        "/satisfiedRequirementIds",
+        "/selectedCapabilityProviders",
+        "/selectedNodeIds",
+        "/semanticLoss",
+        "/sourceSnapshotDigests"
+      ]
+    },
+    {
+      "id": "proof-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": [
+        "/cardinalityChecks",
+        "/conflictChecks",
+        "/objectiveEvidence",
+        "/requirementWitnesses",
+        "/selectedAssignments",
+        "/targetChecks"
+      ]
+    },
+    {
+      "id": "explanation-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/renderHints"],
+      "orderedSetPaths": ["/edges", "/nodes", "/roots", "/unsatCore"]
+    },
+    {
+      "id": "artifact-set-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/items/*/locations"],
+      "orderedSetPaths": ["/items"]
+    },
+    {
+      "id": "receipt-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/evidenceRefs", "/externalRefs", "/sourceSnapshots"]
+    },
+    {
+      "id": "event-data-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": []
+    }
+  ]
+}

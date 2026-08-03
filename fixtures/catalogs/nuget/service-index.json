@@ -1,0 +1,13 @@
+{
+  "version": "3.0.0",
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/registration/",
+      "@type": "RegistrationsBaseUrl/3.6.0"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/flat/",
+      "@type": "PackageBaseAddress/3.0.0"
+    }
+  ]
+}

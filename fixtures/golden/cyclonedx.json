@@ -1,0 +1,50 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "@openpacker/demo-tool",
+      "purl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "openpacker-native-helper",
+      "purl": "pkg:npm/openpacker-native-helper@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "openpacker-zstd-wasm",
+      "purl": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "openpacker-native-helper",
+      "purl": "pkg:cargo/openpacker-native-helper@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "openpacker.zstd.tool",
+      "purl": "pkg:nuget/openpacker.zstd.tool@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "licenses": [{ "expression": "MIT" }],
+      "name": "openpacker.native.helper",
+      "purl": "pkg:nuget/openpacker.native.helper@1.0.0",
+      "type": "library",
+      "version": "1.0.0"
+    }
+  ],
+  "dependencies": [],
+  "specVersion": "1.6",
+  "version": 1
+}

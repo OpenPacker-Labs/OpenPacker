@@ -1,0 +1,982 @@
+{
+  "consumer": {
+    "name": "Epoch PREX Consumer"
+  },
+  "interactions": [
+    {
+      "description": "PREX capability discovery",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "the PREX reference provider is ready"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/.well-known/prex"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "meta": {
+              "protocolVersion": "1.0-draft",
+              "provider": {
+                "id": "org.openpacker.reference",
+                "implementation": "openpackerd",
+                "version": "0.1.0"
+              }
+            },
+            "protocolVersions": ["1.0-draft"]
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "a PREX solve request",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a deterministic PREX solve is available"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "environment": {
+              "installed": [],
+              "locked": []
+            },
+            "evaluationTime": "2026-08-02T00:00:00Z",
+            "mode": "closure",
+            "objectives": [
+              "satisfy-hard-constraints",
+              "preserve-locks",
+              "minimize-changes",
+              "minimize-package-count",
+              "exclude-lifecycle-denied",
+              "prefer-stable",
+              "prefer-highest-native-version",
+              "canonical-lexical-tie-break"
+            ],
+            "policy": {
+              "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+              "allowQuarantined": false,
+              "allowYanked": false,
+              "requiredEvidence": ["receipt-signature"],
+              "semanticLossMaximum": "warning"
+            },
+            "requirements": [
+              {
+                "authority": "test-fixture",
+                "expression": {
+                  "purl": "pkg:npm/%40openpacker/demo-tool",
+                  "type": "package",
+                  "vers": "vers:npm/>=1.0.0|<2.0.0"
+                },
+                "id": "root-tool",
+                "kind": "runtime",
+                "optional": false,
+                "semanticLoss": [],
+                "source": {
+                  "type": "overlay",
+                  "uri": "https://openpacker.dev/fixtures/root"
+                }
+              }
+            ],
+            "semantics": {
+              "nativeCompatibility": ["npm", "cargo", "nuget"],
+              "profile": "prex-calculus-subset-v1"
+            },
+            "target": {
+              "architecture": "arm64",
+              "capabilities": [
+                {
+                  "name": "cpu:arm64"
+                },
+                {
+                  "name": "runtime:node",
+                  "version": "24"
+                }
+              ],
+              "libc": "glibc",
+              "os": "linux",
+              "runtimes": {
+                "node": "24"
+              }
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/v1/solve"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "meta": {
+              "protocolVersion": "1.0-draft",
+              "provider": {
+                "id": "org.openpacker.reference",
+                "implementation": "openpackerd",
+                "version": "0.1.0"
+              }
+            },
+            "signedReceipt": {
+              "receipt": {
+                "artifactSetDigest": {
+                  "algorithm": "sha256",
+                  "value": "9999999999999999999999999999999999999999999999999999999999999999"
+                },
+                "evaluationTime": "2026-08-02T00:00:00Z",
+                "evidenceRefs": [],
+                "explanationDigest": {
+                  "algorithm": "sha256",
+                  "value": "8888888888888888888888888888888888888888888888888888888888888888"
+                },
+                "externalRefs": [],
+                "lifecycleRoot": {
+                  "algorithm": "sha256",
+                  "value": "5555555555555555555555555555555555555555555555555555555555555555"
+                },
+                "normalizedRequest": {
+                  "environment": {
+                    "installed": [],
+                    "locked": []
+                  },
+                  "evaluationTime": "2026-08-02T00:00:00Z",
+                  "mode": "closure",
+                  "objectives": [
+                    "satisfy-hard-constraints",
+                    "preserve-locks",
+                    "minimize-changes",
+                    "minimize-package-count",
+                    "exclude-lifecycle-denied",
+                    "prefer-stable",
+                    "prefer-highest-native-version",
+                    "canonical-lexical-tie-break"
+                  ],
+                  "policy": {
+                    "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+                    "allowQuarantined": false,
+                    "allowYanked": false,
+                    "requiredEvidence": ["receipt-signature"],
+                    "semanticLossMaximum": "warning"
+                  },
+                  "requirements": [
+                    {
+                      "authority": "test-fixture",
+                      "expression": {
+                        "purl": "pkg:npm/%40openpacker/demo-tool",
+                        "type": "package",
+                        "vers": "vers:npm/>=1.0.0|<2.0.0"
+                      },
+                      "id": "root-tool",
+                      "kind": "runtime",
+                      "optional": false,
+                      "semanticLoss": [],
+                      "source": {
+                        "type": "overlay",
+                        "uri": "https://openpacker.dev/fixtures/root"
+                      }
+                    }
+                  ],
+                  "semantics": {
+                    "nativeCompatibility": ["npm", "cargo", "nuget"],
+                    "profile": "prex-calculus-subset-v1"
+                  },
+                  "target": {
+                    "architecture": "arm64",
+                    "capabilities": [
+                      {
+                        "name": "cpu:arm64"
+                      },
+                      {
+                        "name": "runtime:node",
+                        "version": "24"
+                      }
+                    ],
+                    "libc": "glibc",
+                    "os": "linux",
+                    "runtimes": {
+                      "node": "24"
+                    }
+                  }
+                },
+                "objectiveOrdering": [
+                  "satisfy-hard-constraints",
+                  "preserve-locks",
+                  "minimize-changes",
+                  "minimize-package-count",
+                  "exclude-lifecycle-denied",
+                  "prefer-stable",
+                  "prefer-highest-native-version",
+                  "canonical-lexical-tie-break"
+                ],
+                "policyDigest": {
+                  "algorithm": "sha256",
+                  "value": "1e209758e6a7c0ce3621b0cc1afdd5430b4c65464509a0f8754873f875e91bad"
+                },
+                "proofDigest": {
+                  "algorithm": "sha256",
+                  "value": "7777777777777777777777777777777777777777777777777777777777777777"
+                },
+                "protocolVersion": "1.0-draft",
+                "receiptVersion": "1",
+                "requestDigest": {
+                  "algorithm": "sha256",
+                  "value": "3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                "resolver": {
+                  "buildDigest": {
+                    "algorithm": "sha256",
+                    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  "implementation": "openpacker-resolver",
+                  "providerId": "org.openpacker.fixture",
+                  "version": "0.1.0"
+                },
+                "semanticsProfile": "prex-calculus-subset-v1",
+                "solutionDigest": {
+                  "algorithm": "sha256",
+                  "value": "6666666666666666666666666666666666666666666666666666666666666666"
+                },
+                "sourceSnapshots": [
+                  {
+                    "endpointIdentity": "urn:openpacker:fixture",
+                    "evaluationTime": "2026-08-02T00:00:00Z",
+                    "evidenceRefs": [],
+                    "providerId": "org.openpacker.fixture",
+                    "providerType": "fixture",
+                    "recordsDigest": {
+                      "algorithm": "sha256",
+                      "value": "2222222222222222222222222222222222222222222222222222222222222222"
+                    },
+                    "retrievedAt": "2026-08-02T00:00:00Z",
+                    "rootDigest": {
+                      "algorithm": "sha256",
+                      "value": "1111111111111111111111111111111111111111111111111111111111111111"
+                    },
+                    "snapshotId": "epoch-pact-fixture"
+                  }
+                ],
+                "targetDigest": {
+                  "algorithm": "sha256",
+                  "value": "75254041fa6bb97a465cd29fa724803f7d0d68c848d8e1a40a6eb1029af8b0e6"
+                },
+                "universeDigest": {
+                  "algorithm": "sha256",
+                  "value": "4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              },
+              "receiptDigest": {
+                "algorithm": "sha256",
+                "value": "a4724e0e132182679a559f9cf196762da523ea2c50ef61f3942c453cbbc0f735"
+              },
+              "signatures": [
+                {
+                  "algorithm": "ed25519",
+                  "keyId": "root",
+                  "signature": "JIDAFu8LUbR5w757FTBH2crlDkDJ5uhfO-SBuoWM1VpjF9ImFj2t2sfZigJeVgMQEmxDRodcp9y8BHjJXnpFDQ"
+                }
+              ]
+            },
+            "solution": {
+              "solutionDigest": {
+                "algorithm": "sha256",
+                "value": "6666666666666666666666666666666666666666666666666666666666666666"
+              }
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "a signed receipt verification request",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "receipt signature verification is configured"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "checks": ["prex-receipt-signature"],
+            "evaluationTime": "2026-08-02T00:00:00Z",
+            "subject": {
+              "receipt": {
+                "artifactSetDigest": {
+                  "algorithm": "sha256",
+                  "value": "9999999999999999999999999999999999999999999999999999999999999999"
+                },
+                "evaluationTime": "2026-08-02T00:00:00Z",
+                "evidenceRefs": [],
+                "explanationDigest": {
+                  "algorithm": "sha256",
+                  "value": "8888888888888888888888888888888888888888888888888888888888888888"
+                },
+                "externalRefs": [],
+                "lifecycleRoot": {
+                  "algorithm": "sha256",
+                  "value": "5555555555555555555555555555555555555555555555555555555555555555"
+                },
+                "normalizedRequest": {
+                  "environment": {
+                    "installed": [],
+                    "locked": []
+                  },
+                  "evaluationTime": "2026-08-02T00:00:00Z",
+                  "mode": "closure",
+                  "objectives": [
+                    "satisfy-hard-constraints",
+                    "preserve-locks",
+                    "minimize-changes",
+                    "minimize-package-count",
+                    "exclude-lifecycle-denied",
+                    "prefer-stable",
+                    "prefer-highest-native-version",
+                    "canonical-lexical-tie-break"
+                  ],
+                  "policy": {
+                    "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+                    "allowQuarantined": false,
+                    "allowYanked": false,
+                    "requiredEvidence": ["receipt-signature"],
+                    "semanticLossMaximum": "warning"
+                  },
+                  "requirements": [
+                    {
+                      "authority": "test-fixture",
+                      "expression": {
+                        "purl": "pkg:npm/%40openpacker/demo-tool",
+                        "type": "package",
+                        "vers": "vers:npm/>=1.0.0|<2.0.0"
+                      },
+                      "id": "root-tool",
+                      "kind": "runtime",
+                      "optional": false,
+                      "semanticLoss": [],
+                      "source": {
+                        "type": "overlay",
+                        "uri": "https://openpacker.dev/fixtures/root"
+                      }
+                    }
+                  ],
+                  "semantics": {
+                    "nativeCompatibility": ["npm", "cargo", "nuget"],
+                    "profile": "prex-calculus-subset-v1"
+                  },
+                  "target": {
+                    "architecture": "arm64",
+                    "capabilities": [
+                      {
+                        "name": "cpu:arm64"
+                      },
+                      {
+                        "name": "runtime:node",
+                        "version": "24"
+                      }
+                    ],
+                    "libc": "glibc",
+                    "os": "linux",
+                    "runtimes": {
+                      "node": "24"
+                    }
+                  }
+                },
+                "objectiveOrdering": [
+                  "satisfy-hard-constraints",
+                  "preserve-locks",
+                  "minimize-changes",
+                  "minimize-package-count",
+                  "exclude-lifecycle-denied",
+                  "prefer-stable",
+                  "prefer-highest-native-version",
+                  "canonical-lexical-tie-break"
+                ],
+                "policyDigest": {
+                  "algorithm": "sha256",
+                  "value": "1e209758e6a7c0ce3621b0cc1afdd5430b4c65464509a0f8754873f875e91bad"
+                },
+                "proofDigest": {
+                  "algorithm": "sha256",
+                  "value": "7777777777777777777777777777777777777777777777777777777777777777"
+                },
+                "protocolVersion": "1.0-draft",
+                "receiptVersion": "1",
+                "requestDigest": {
+                  "algorithm": "sha256",
+                  "value": "3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                "resolver": {
+                  "buildDigest": {
+                    "algorithm": "sha256",
+                    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  "implementation": "openpacker-resolver",
+                  "providerId": "org.openpacker.fixture",
+                  "version": "0.1.0"
+                },
+                "semanticsProfile": "prex-calculus-subset-v1",
+                "solutionDigest": {
+                  "algorithm": "sha256",
+                  "value": "6666666666666666666666666666666666666666666666666666666666666666"
+                },
+                "sourceSnapshots": [
+                  {
+                    "endpointIdentity": "urn:openpacker:fixture",
+                    "evaluationTime": "2026-08-02T00:00:00Z",
+                    "evidenceRefs": [],
+                    "providerId": "org.openpacker.fixture",
+                    "providerType": "fixture",
+                    "recordsDigest": {
+                      "algorithm": "sha256",
+                      "value": "2222222222222222222222222222222222222222222222222222222222222222"
+                    },
+                    "retrievedAt": "2026-08-02T00:00:00Z",
+                    "rootDigest": {
+                      "algorithm": "sha256",
+                      "value": "1111111111111111111111111111111111111111111111111111111111111111"
+                    },
+                    "snapshotId": "epoch-pact-fixture"
+                  }
+                ],
+                "targetDigest": {
+                  "algorithm": "sha256",
+                  "value": "75254041fa6bb97a465cd29fa724803f7d0d68c848d8e1a40a6eb1029af8b0e6"
+                },
+                "universeDigest": {
+                  "algorithm": "sha256",
+                  "value": "4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              },
+              "receiptDigest": {
+                "algorithm": "sha256",
+                "value": "a4724e0e132182679a559f9cf196762da523ea2c50ef61f3942c453cbbc0f735"
+              },
+              "signatures": [
+                {
+                  "algorithm": "ed25519",
+                  "keyId": "root",
+                  "signature": "JIDAFu8LUbR5w757FTBH2crlDkDJ5uhfO-SBuoWM1VpjF9ImFj2t2sfZigJeVgMQEmxDRodcp9y8BHjJXnpFDQ"
+                }
+              ]
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/v1/verify"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "decision": "allow",
+            "evidence": [
+              {
+                "status": "valid",
+                "type": "prex-receipt-signature"
+              }
+            ],
+            "meta": {
+              "protocolVersion": "1.0-draft",
+              "provider": {
+                "id": "org.openpacker.reference",
+                "implementation": "openpackerd",
+                "version": "0.1.0"
+              }
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "an immutable signed receipt request",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a signed receipt exists"
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "expression": "receiptPath",
+            "type": "ProviderState"
+          }
+        },
+        "matchingRules": {
+          "path": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "method": "GET",
+        "path": "/v1/receipts/sha256/a4724e0e132182679a559f9cf196762da523ea2c50ef61f3942c453cbbc0f735"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "receipt": {
+              "artifactSetDigest": {
+                "algorithm": "sha256",
+                "value": "9999999999999999999999999999999999999999999999999999999999999999"
+              },
+              "evaluationTime": "2026-08-02T00:00:00Z",
+              "evidenceRefs": [],
+              "explanationDigest": {
+                "algorithm": "sha256",
+                "value": "8888888888888888888888888888888888888888888888888888888888888888"
+              },
+              "externalRefs": [],
+              "lifecycleRoot": {
+                "algorithm": "sha256",
+                "value": "5555555555555555555555555555555555555555555555555555555555555555"
+              },
+              "normalizedRequest": {
+                "environment": {
+                  "installed": [],
+                  "locked": []
+                },
+                "evaluationTime": "2026-08-02T00:00:00Z",
+                "mode": "closure",
+                "objectives": [
+                  "satisfy-hard-constraints",
+                  "preserve-locks",
+                  "minimize-changes",
+                  "minimize-package-count",
+                  "exclude-lifecycle-denied",
+                  "prefer-stable",
+                  "prefer-highest-native-version",
+                  "canonical-lexical-tie-break"
+                ],
+                "policy": {
+                  "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+                  "allowQuarantined": false,
+                  "allowYanked": false,
+                  "requiredEvidence": ["receipt-signature"],
+                  "semanticLossMaximum": "warning"
+                },
+                "requirements": [
+                  {
+                    "authority": "test-fixture",
+                    "expression": {
+                      "purl": "pkg:npm/%40openpacker/demo-tool",
+                      "type": "package",
+                      "vers": "vers:npm/>=1.0.0|<2.0.0"
+                    },
+                    "id": "root-tool",
+                    "kind": "runtime",
+                    "optional": false,
+                    "semanticLoss": [],
+                    "source": {
+                      "type": "overlay",
+                      "uri": "https://openpacker.dev/fixtures/root"
+                    }
+                  }
+                ],
+                "semantics": {
+                  "nativeCompatibility": ["npm", "cargo", "nuget"],
+                  "profile": "prex-calculus-subset-v1"
+                },
+                "target": {
+                  "architecture": "arm64",
+                  "capabilities": [
+                    {
+                      "name": "cpu:arm64"
+                    },
+                    {
+                      "name": "runtime:node",
+                      "version": "24"
+                    }
+                  ],
+                  "libc": "glibc",
+                  "os": "linux",
+                  "runtimes": {
+                    "node": "24"
+                  }
+                }
+              },
+              "objectiveOrdering": [
+                "satisfy-hard-constraints",
+                "preserve-locks",
+                "minimize-changes",
+                "minimize-package-count",
+                "exclude-lifecycle-denied",
+                "prefer-stable",
+                "prefer-highest-native-version",
+                "canonical-lexical-tie-break"
+              ],
+              "policyDigest": {
+                "algorithm": "sha256",
+                "value": "1e209758e6a7c0ce3621b0cc1afdd5430b4c65464509a0f8754873f875e91bad"
+              },
+              "proofDigest": {
+                "algorithm": "sha256",
+                "value": "7777777777777777777777777777777777777777777777777777777777777777"
+              },
+              "protocolVersion": "1.0-draft",
+              "receiptVersion": "1",
+              "requestDigest": {
+                "algorithm": "sha256",
+                "value": "3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              "resolver": {
+                "buildDigest": {
+                  "algorithm": "sha256",
+                  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "implementation": "openpacker-resolver",
+                "providerId": "org.openpacker.fixture",
+                "version": "0.1.0"
+              },
+              "semanticsProfile": "prex-calculus-subset-v1",
+              "solutionDigest": {
+                "algorithm": "sha256",
+                "value": "6666666666666666666666666666666666666666666666666666666666666666"
+              },
+              "sourceSnapshots": [
+                {
+                  "endpointIdentity": "urn:openpacker:fixture",
+                  "evaluationTime": "2026-08-02T00:00:00Z",
+                  "evidenceRefs": [],
+                  "providerId": "org.openpacker.fixture",
+                  "providerType": "fixture",
+                  "recordsDigest": {
+                    "algorithm": "sha256",
+                    "value": "2222222222222222222222222222222222222222222222222222222222222222"
+                  },
+                  "retrievedAt": "2026-08-02T00:00:00Z",
+                  "rootDigest": {
+                    "algorithm": "sha256",
+                    "value": "1111111111111111111111111111111111111111111111111111111111111111"
+                  },
+                  "snapshotId": "epoch-pact-fixture"
+                }
+              ],
+              "targetDigest": {
+                "algorithm": "sha256",
+                "value": "75254041fa6bb97a465cd29fa724803f7d0d68c848d8e1a40a6eb1029af8b0e6"
+              },
+              "universeDigest": {
+                "algorithm": "sha256",
+                "value": "4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            },
+            "receiptDigest": {
+              "algorithm": "sha256",
+              "value": "a4724e0e132182679a559f9cf196762da523ea2c50ef61f3942c453cbbc0f735"
+            },
+            "signatures": [
+              {
+                "algorithm": "ed25519",
+                "keyId": "root",
+                "signature": "JIDAFu8LUbR5w757FTBH2crlDkDJ5uhfO-SBuoWM1VpjF9ImFj2t2sfZigJeVgMQEmxDRodcp9y8BHjJXnpFDQ"
+              }
+            ]
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/json"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "an unknown route RFC 9457 error",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "the PREX reference provider is ready"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/not-a-route"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "code": "PACKAGE_NOT_FOUND",
+            "retryable": false,
+            "status": 404,
+            "title": "Route not found",
+            "type": "https://openpacker.dev/problems/package-not-found"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": ["application/json"],
+          "content-type": ["application/problem+json"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/problem\\+json(?:; charset=utf-8)?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "the OpenPacker NDJSON event feed",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a canonical OpenPacker event exists"
+        }
+      ],
+      "request": {
+        "headers": {
+          "accept": ["application/x-ndjson"]
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {
+          "cursor": ["0"],
+          "limit": ["1000"]
+        }
+      },
+      "response": {
+        "body": {
+          "content": "eyJjb3JyZWxhdGlvbmlkIjoiZXBvY2gtcGFjdCIsImRhdGEiOnsicmVjZWlwdERpZ2VzdCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6ImE0NzI0ZTBlMTMyMTgyNjc5YTU1OWY5Y2YxOTY3NjJkYTUyM2VhMmM1MGVmNjFmMzk0MmM0NTNjYmJjMGY3MzUifSwic2NoZW1hVmVyc2lvbiI6IjEifSwiZGF0YWNvbnRlbnR0eXBlIjoiYXBwbGljYXRpb24vanNvbiIsImRhdGFkaWdlc3QiOiJzaGEyNTY6YmE2MmM1OWIwMGM4Yjk2NDcyYzJjMjE4MmIyZTc3MjE2NWUxNDc0OTM5OWJjYzMwNGIyZWE5MDNmODRhM2Y0YSIsImRhdGFzY2hlbWEiOiJodHRwczovL29wZW5wYWNrZXIuZGV2L3NwZWMvcHJleC92MS9ldmVudHMvZGF0YS5zY2hlbWEuanNvbiMvJGRlZnMvb3JnLm9wZW5wYWNrZXIucmVjZWlwdC5jcmVhdGVkIiwiZXh0ZXJuYWxyZWZzIjpbXSwiaWQiOiJzaGEyNTY6YjIxYTEyZTYyYTlkZDg4YjQ4MzllYzc5ZGNiZmRiNGYyYTRjYTdjOWMwY2FiNzczZDhiYTU1ZjYwZjZkNjE2MyIsInNvdXJjZSI6InVybjpvcGVucGFja2VyOnBhY3QtcHJvdmlkZXIiLCJzcGVjdmVyc2lvbiI6IjEuMCIsInN1YmplY3QiOiJzaGEyNTY6YTQ3MjRlMGUxMzIxODI2NzlhNTU5ZjljZjE5Njc2MmRhNTIzZWEyYzUwZWY2MWYzOTQyYzQ1M2NiYmMwZjczNSIsInRpbWUiOiIyMDI2LTA4LTAyVDAwOjAwOjAwLjAwMFoiLCJ0eXBlIjoib3JnLm9wZW5wYWNrZXIucmVjZWlwdC5jcmVhdGVkIn0K",
+          "contentType": "*/*",
+          "encoded": "base64"
+        },
+        "headers": {
+          "Content-Type": ["application/x-ndjson"],
+          "x-openpacker-next-cursor": ["1"]
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "contentType",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "header": {
+            "content-type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^application\\/x-ndjson(?:; charset=utf-8)?$"
+                }
+              ]
+            },
+            "x-openpacker-next-cursor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(?:0|[1-9][0-9]*)$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "17.0.1"
+    },
+    "pactRust": {
+      "ffi": "0.5.4",
+      "models": "1.3.11"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "OpenPacker PREX Provider"
+  }
+}

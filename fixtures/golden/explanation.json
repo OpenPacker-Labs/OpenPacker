@@ -1,0 +1,373 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "from": "requirement:root-tool",
+        "kind": "satisfied-by",
+        "to": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f"
+      },
+      {
+        "from": "requirement:root-capability",
+        "kind": "satisfied-by",
+        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+      },
+      {
+        "from": "requirement:root-nuget",
+        "kind": "satisfied-by",
+        "to": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0"
+      },
+      {
+        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+        "kind": "satisfied-by",
+        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+      },
+      {
+        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+        "kind": "satisfied-by",
+        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+      },
+      {
+        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+        "kind": "satisfied-by",
+        "to": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5"
+      },
+      {
+        "from": "requirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+        "kind": "satisfied-by",
+        "to": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f"
+      },
+      {
+        "from": "requirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+        "kind": "satisfied-by",
+        "to": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b"
+      },
+      {
+        "from": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:satisfy-hard-constraints",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:minimize-package-count",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:exclude-lifecycle-denied",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:prefer-stable",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:prefer-highest-native-version",
+        "kind": "checked-by",
+        "to": "proof-check"
+      },
+      {
+        "from": "objective:canonical-lexical-tie-break",
+        "kind": "checked-by",
+        "to": "proof-check"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+        "kind": "candidate",
+        "label": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": ["objective-not-selected"],
+          "selected": false
+        },
+        "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+        "kind": "candidate",
+        "label": "pkg:npm/%40openpacker/demo-tool@0.9.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": ["objective-not-selected"],
+          "selected": false
+        },
+        "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+        "kind": "candidate",
+        "label": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+        "kind": "candidate",
+        "label": "pkg:npm/openpacker-native-helper@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+        "kind": "candidate",
+        "label": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+        "kind": "candidate",
+        "label": "pkg:cargo/openpacker-native-helper@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+        "kind": "candidate",
+        "label": "pkg:nuget/openpacker.zstd.tool@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": [],
+          "selected": true
+        },
+        "id": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+        "kind": "candidate",
+        "label": "pkg:nuget/openpacker.native.helper@1.0.0"
+      },
+      {
+        "data": {
+          "lifecycle": "published",
+          "rejectionReasons": ["objective-not-selected"],
+          "selected": false
+        },
+        "id": "sha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc",
+        "kind": "candidate",
+        "label": "pkg:npm/conflicting-demo@1.0.0"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:root-tool",
+        "kind": "requirement",
+        "label": "root-tool"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:root-capability",
+        "kind": "requirement",
+        "label": "root-capability"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:root-nuget",
+        "kind": "requirement",
+        "label": "root-nuget"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+        "kind": "requirement",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+        "kind": "requirement",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+        "kind": "requirement",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2"
+      },
+      {
+        "data": { "status": "optional-omitted" },
+        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3",
+        "kind": "requirement",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+        "kind": "requirement",
+        "label": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0"
+      },
+      {
+        "data": { "status": "satisfied" },
+        "id": "requirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+        "kind": "requirement",
+        "label": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0"
+      },
+      {
+        "data": { "evidence": { "value": 0 }, "valid": true },
+        "id": "objective:satisfy-hard-constraints",
+        "kind": "objective",
+        "label": "satisfy-hard-constraints"
+      },
+      {
+        "data": { "evidence": { "value": 6 }, "valid": true },
+        "id": "objective:minimize-package-count",
+        "kind": "objective",
+        "label": "minimize-package-count"
+      },
+      {
+        "data": { "evidence": { "value": 0 }, "valid": true },
+        "id": "objective:exclude-lifecycle-denied",
+        "kind": "objective",
+        "label": "exclude-lifecycle-denied"
+      },
+      {
+        "data": { "evidence": { "value": 0 }, "valid": true },
+        "id": "objective:prefer-stable",
+        "kind": "objective",
+        "label": "prefer-stable"
+      },
+      {
+        "data": {
+          "evidence": {
+            "value": "1.0.0\u001f1.0.0\u001f1.0.0\u001f1.0.0\u001f1.0.0\u001f1.0.0"
+          },
+          "valid": true
+        },
+        "id": "objective:prefer-highest-native-version",
+        "kind": "objective",
+        "label": "prefer-highest-native-version"
+      },
+      {
+        "data": {
+          "evidence": {
+            "value": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5\u001fsha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d\u001fsha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0\u001fsha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f\u001fsha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b\u001fsha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f"
+          },
+          "valid": true
+        },
+        "id": "objective:canonical-lexical-tie-break",
+        "kind": "objective",
+        "label": "canonical-lexical-tie-break"
+      },
+      {
+        "data": {
+          "evidence": {
+            "scope": "solution",
+            "selectedNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f"
+          },
+          "valid": true
+        },
+        "id": "conflict:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0",
+        "kind": "conflict",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0"
+      },
+      {
+        "data": {
+          "evidence": {
+            "actual": 1,
+            "maximum": 1,
+            "minimum": 1,
+            "scope": "solution"
+          },
+          "valid": true
+        },
+        "id": "cardinality:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0",
+        "kind": "cardinality",
+        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0"
+      },
+      {
+        "data": {
+          "evidence": {
+            "source": {
+              "type": "overlay",
+              "uri": "https://openpacker.dev/fixtures/overlay"
+            }
+          },
+          "valid": true
+        },
+        "id": "target:target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd",
+        "kind": "target",
+        "label": "target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd"
+      },
+      {
+        "data": {
+          "evidence": {
+            "source": {
+              "type": "overlay",
+              "uri": "https://openpacker.dev/fixtures/overlay"
+            }
+          },
+          "valid": false
+        },
+        "id": "target:target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd",
+        "kind": "target",
+        "label": "target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd"
+      },
+      {
+        "data": { "valid": true },
+        "id": "proof-check",
+        "kind": "proof",
+        "label": "independent proof check"
+      }
+    ],
+    "roots": [
+      "requirement:root-tool",
+      "requirement:root-capability",
+      "requirement:root-nuget"
+    ],
+    "unsatCore": []
+  },
+  "meta": {
+    "protocolVersion": "1.0-draft",
+    "provider": {
+      "id": "org.openpacker.reference",
+      "implementation": "openpackerd",
+      "version": "0.1.0"
+    }
+  },
+  "text": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f: pkg:npm/%40openpacker/demo-tool@1.0.0\nsha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0: pkg:npm/%40openpacker/demo-tool@0.9.0\nsha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e: pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1\nsha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5: pkg:npm/openpacker-native-helper@1.0.0\nsha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d: pkg:cargo/openpacker-zstd-wasm@1.0.0\nsha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f: pkg:cargo/openpacker-native-helper@1.0.0\nsha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0: pkg:nuget/openpacker.zstd.tool@1.0.0\nsha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b: pkg:nuget/openpacker.native.helper@1.0.0\nsha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc: pkg:npm/conflicting-demo@1.0.0\nrequirement:root-tool: root-tool\nrequirement:root-capability: root-capability\nrequirement:root-nuget: root-nuget\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3\nrequirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0: sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0\nrequirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0: sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0\nobjective:satisfy-hard-constraints: satisfy-hard-constraints\nobjective:minimize-package-count: minimize-package-count\nobjective:exclude-lifecycle-denied: exclude-lifecycle-denied\nobjective:prefer-stable: prefer-stable\nobjective:prefer-highest-native-version: prefer-highest-native-version\nobjective:canonical-lexical-tie-break: canonical-lexical-tie-break\nconflict:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0\ncardinality:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0\ntarget:target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd: target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd\ntarget:target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd: target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd\nproof-check: independent proof check"
+}

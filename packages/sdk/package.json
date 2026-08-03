@@ -1,0 +1,42 @@
+{
+  "name": "@openpacker/sdk",
+  "version": "0.1.0",
+  "description": "Standard-fetch client for PREX and OpenPacker",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "browser": "./dist/esm/browser.js",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./browser": {
+      "types": "./dist/esm/browser.d.ts",
+      "import": "./dist/esm/browser.js",
+      "default": "./dist/esm/browser.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/contracts": "0.1.0"
+  }
+}

@@ -1,0 +1,774 @@
+#!/usr/bin/env node
+import { readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  streamFromBytes,
+  type ArtifactSource,
+} from '@openpacker/artifact-model';
+import { materialize, type ArchiveFormat } from '@openpacker/materializer';
+import {
+  canonicalBytes,
+  canonicalDigest,
+  compareCanonicalStrings,
+  formatDigest,
+  parseDigest,
+} from '@openpacker/canonical';
+import { validateContract } from '@openpacker/conformance';
+import type {
+  ExternalRef,
+  ArtifactDescriptor,
+  JsonValue,
+  OpenPackerLockfile,
+  SignedReceipt,
+  SolveResponse,
+  VerifyRequest,
+} from '@openpacker/contracts';
+import {
+  OpenPackerClient,
+  PrexClientError,
+  type RawResponse,
+  type RequestOptions,
+} from '@openpacker/sdk';
+
+export const EXIT_CODES = {
+  success: 0,
+  usage: 2,
+  invalidInput: 3,
+  notFound: 4,
+  unsatisfiable: 5,
+  policyDenied: 6,
+  verificationFailed: 7,
+  unavailable: 8,
+  internal: 9,
+} as const;
+
+export interface CliIo {
+  stdout: Pick<NodeJS.WriteStream, 'write'>;
+  stderr: Pick<NodeJS.WriteStream, 'write'>;
+  stdin: NodeJS.ReadableStream;
+}
+
+interface ParsedArguments {
+  command: string;
+  subcommand?: string;
+  positionals: string[];
+  options: Map<string, string | true>;
+}
+
+const COMMANDS = new Set([
+  'normalize',
+  'identify',
+  'enumerate',
+  'inspect',
+  'solve',
+  'explain',
+  'materialize',
+  'verify',
+  'pack',
+  'publish',
+  'receipt',
+  'catalog',
+  'lifecycle',
+  'export',
+  'serve',
+  'demo',
+]);
+const BOOLEAN_OPTIONS = new Set(['json', 'offline', 'help']);
+const LOCKFILE_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json';
+
+export async function runCli(
+  argv = process.argv.slice(2),
+  io: CliIo = process,
+): Promise<number> {
+  try {
+    const args = parseArguments(argv);
+    if (args.options.has('help')) {
+      io.stdout.write(help());
+      return EXIT_CODES.success;
+    }
+    if (!COMMANDS.has(args.command))
+      throw new UsageError(`Unknown command: ${args.command || '(missing)'}`);
+    if (args.command === 'serve') return await serve(args, io);
+    if (args.command === 'demo') return await demo(args, io);
+    const baseUrl =
+      option(args, 'base-url') ??
+      process.env.OPENPACKER_URL ??
+      'http://127.0.0.1:7337';
+    if (args.options.has('offline') && !isLoopback(baseUrl))
+      throw new UsageError(
+        '--offline permits only a loopback OpenPacker service URL',
+      );
+    if (args.command === 'publish' && args.options.has('offline'))
+      throw new UsageError('publish cannot run with --offline');
+    const headers: Record<string, string> = {};
+    if (args.options.has('offline')) headers['x-openpacker-offline'] = 'true';
+    const tokenFile = option(args, 'auth-token-file');
+    if (tokenFile) {
+      const token = (await readFile(tokenFile, 'utf8')).trim();
+      if (!token || /[\r\n]/u.test(token))
+        throw new InputError(
+          'Authentication token file must contain one non-empty line',
+        );
+      headers.authorization = `Bearer ${token}`;
+    }
+    const client = new OpenPackerClient({
+      baseUrl,
+      ...(Object.keys(headers).length === 0 ? {} : { headers }),
+      timeoutMilliseconds: numberOption(args, 'timeout', 30_000),
+    });
+    const requestOptions: RequestOptions = {
+      ...(option(args, 'idempotency-key') === undefined
+        ? {}
+        : { idempotencyKey: option(args, 'idempotency-key')! }),
+    };
+    const result = await execute(args, client, requestOptions, io);
+    if (result !== undefined)
+      await output(args, io, result.data, result.rawBytes);
+    return EXIT_CODES.success;
+  } catch (error) {
+    const code = exitCode(error);
+    const message =
+      error instanceof Error ? error.message : 'Unknown OpenPacker CLI error';
+    const json = argv.includes('--json');
+    io.stderr.write(
+      json
+        ? `${JSON.stringify({ error: { message, exitCode: code, ...(error instanceof PrexClientError && error.problem ? { problem: error.problem } : {}) } })}\n`
+        : `openpacker: ${message}\n`,
+    );
+    return code;
+  }
+}
+
+async function execute(
+  args: ParsedArguments,
+  client: OpenPackerClient,
+  requestOptions: RequestOptions,
+  io: CliIo,
+): Promise<RawResponse<unknown> | undefined> {
+  if (args.command === 'receipt' && args.subcommand === 'inspect') {
+    const digest = parseDigest(requiredPositional(args, 0, 'receipt digest'));
+    return client.receipt(digest.algorithm, digest.value, requestOptions);
+  }
+  if (args.command === 'export') {
+    const input = await inputObject(args, io);
+    const exported =
+      args.subcommand === 'lock'
+        ? await exportLock(input)
+        : args.subcommand === 'sbom'
+          ? exportSbom(input)
+          : undefined;
+    if (!exported) throw new UsageError('export requires `lock` or `sbom`');
+    const bytes = canonicalBytes(exported);
+    const destination = option(args, 'output');
+    if (destination) await writeFile(destination, bytes);
+    return {
+      data: exported,
+      rawBytes: bytes,
+      response: new Response(Uint8Array.from(bytes).buffer),
+    };
+  }
+  const input = await commandInput(args, io);
+  switch (`${args.command}${args.subcommand ? ` ${args.subcommand}` : ''}`) {
+    case 'normalize':
+      return client.normalize(input as never, requestOptions);
+    case 'identify':
+      return client.identify(input as never, requestOptions);
+    case 'enumerate':
+      return client.enumerate(input as never, requestOptions);
+    case 'inspect':
+      return client.inspect(input as never, requestOptions);
+    case 'solve':
+      return client.solve(input as never, requestOptions);
+    case 'explain':
+      return client.explain(input as never, requestOptions);
+    case 'materialize': {
+      const response = await client.materialize(input as never, requestOptions);
+      const destination = option(args, 'install-prefix');
+      if (!destination) return response;
+      const installation = await materialize({
+        source: locationSource(
+          response.data.descriptor,
+          args.options.has('offline'),
+        ),
+        descriptor: response.data.descriptor,
+        destination,
+        format: archiveFormat(response.data.descriptor),
+        managedDestination: true,
+      });
+      const data = { ...response.data, installation } as unknown as JsonValue;
+      return {
+        data,
+        rawBytes: canonicalBytes(data),
+        response: response.response,
+      };
+    }
+    case 'verify':
+      return client.verify(input as never, requestOptions);
+    case 'pack':
+      return client.pack(input as never, requestOptions);
+    case 'publish':
+      return client.publish(input as never, requestOptions);
+    case 'receipt verify':
+      return client.verify(
+        receiptVerifyInput(input, option(args, 'evaluation-time')),
+        requestOptions,
+      );
+    case 'catalog import':
+      return client.catalogImport(input as never, requestOptions);
+    case 'catalog snapshot':
+      return client.catalogSnapshot(input as never, requestOptions);
+    case 'lifecycle apply':
+      return client.lifecycleApply(input as never, requestOptions);
+    default:
+      throw new UsageError(
+        `Unsupported command: ${args.command}${args.subcommand ? ` ${args.subcommand}` : ''}`,
+      );
+  }
+}
+
+async function commandInput(
+  args: ParsedArguments,
+  io: CliIo,
+): Promise<JsonValue> {
+  let value: JsonValue;
+  if (
+    option(args, 'input') !== undefined ||
+    args.positionals.length === 0 ||
+    ['solve', 'verify', 'pack', 'publish'].includes(args.command) ||
+    args.subcommand !== undefined
+  ) {
+    value = await inputObject(args, io);
+  } else {
+    const positional = requiredPositional(args, 0, 'package value');
+    if (args.command === 'normalize')
+      value = {
+        items: [{ type: inferNormalizeType(positional), value: positional }],
+      };
+    else if (args.command === 'identify')
+      value = {
+        query: positional.startsWith('pkg:')
+          ? { purl: positional }
+          : { alias: positional },
+      };
+    else if (args.command === 'enumerate')
+      value = {
+        canonicalPurl: positional,
+        target: {},
+        lifecyclePolicy: { includeYanked: false, includeDelisted: false },
+        page: { size: numberOption(args, 'page-size', 100) },
+      };
+    else if (args.command === 'inspect')
+      value = { exact: { exactPurl: positional } };
+    else if (args.command === 'explain')
+      value = { solutionDigest: parseDigest(positional), format: 'both' };
+    else if (args.command === 'materialize')
+      value = {
+        subject: positional.startsWith('sha256:')
+          ? { type: 'digest', digest: parseDigest(positional) }
+          : { type: 'purl', exactPurl: positional },
+      };
+    else throw new UsageError(`${args.command} requires --input <file|->`);
+  }
+  return applyOverrides(value, args, await optionalPolicy(args));
+}
+
+async function inputObject(
+  args: ParsedArguments,
+  io: CliIo,
+): Promise<JsonValue> {
+  const source = option(args, 'input');
+  if (source === undefined)
+    throw new UsageError('This command requires --input <file|->');
+  const text =
+    source === '-' ? await readStdin(io.stdin) : await readFile(source, 'utf8');
+  const value = JSON.parse(text) as unknown;
+  if (typeof value !== 'object' || value === null)
+    throw new InputError('Input must be a JSON object');
+  return value as JsonValue;
+}
+
+function applyOverrides(
+  input: JsonValue,
+  args: ParsedArguments,
+  policy: JsonValue | undefined,
+): JsonValue {
+  if (!isObject(input))
+    throw new InputError('Command input must be a JSON object');
+  const result: Record<string, JsonValue> = { ...input };
+  const target = option(args, 'target');
+  if (target) result.target = parseTarget(target);
+  if (policy !== undefined) result.policy = policy;
+  const evaluationTime = option(args, 'evaluation-time');
+  if (evaluationTime) result.evaluationTime = evaluationTime;
+  return result;
+}
+
+async function optionalPolicy(
+  args: ParsedArguments,
+): Promise<JsonValue | undefined> {
+  const path = option(args, 'policy-file');
+  return path
+    ? (JSON.parse(await readFile(path, 'utf8')) as JsonValue)
+    : undefined;
+}
+
+function receiptVerifyInput(
+  input: JsonValue,
+  evaluationTime?: string,
+): VerifyRequest {
+  const signed =
+    isObject(input) && 'receipt' in input
+      ? (input as unknown as SignedReceipt)
+      : isObject(input) && isObject(input.signedReceipt)
+        ? (input.signedReceipt as unknown as SignedReceipt)
+        : undefined;
+  if (!signed)
+    throw new InputError('receipt verify requires a SignedReceipt input');
+  return {
+    subject: signed,
+    checks: ['receipt-signature', 'receipt-bindings'],
+    evaluationTime: evaluationTime ?? signed.receipt.evaluationTime,
+  };
+}
+
+async function exportLock(input: JsonValue): Promise<JsonValue> {
+  const solve = input as unknown as SolveResponse;
+  if (
+    !solve.normalizedRequest ||
+    !solve.solution ||
+    !solve.unsignedReceipt ||
+    !solve.selected
+  )
+    throw new InputError('export lock requires a SolveResponse');
+  const receiptDigest =
+    solve.signedReceipt?.receiptDigest ??
+    (await canonicalDigest(solve.unsignedReceipt as unknown as JsonValue));
+  const artifacts = solve.selected.flatMap((item) => item.artifacts);
+  const externalRefs = uniqueExternalRefs([
+    ...solve.unsignedReceipt.externalRefs,
+    ...solve.selected.flatMap((item) => [
+      ...item.identity.externalRefs,
+      ...item.artifacts.flatMap((artifact) => artifact.externalRefs),
+    ]),
+  ]).filter((reference) => !reference.type.startsWith('ocm'));
+  const lock: OpenPackerLockfile = {
+    schemaVersion: '1',
+    protocolVersion: '1.0-draft',
+    rootRequirements: solve.normalizedRequest.requirements,
+    target: solve.normalizedRequest.target,
+    semanticsProfile: solve.normalizedRequest.semantics.profile,
+    objectiveOrdering: solve.normalizedRequest.objectives,
+    selectedExactPurls: solve.selected
+      .map((item) => item.identity.exactPurl)
+      .filter((value): value is string => value !== undefined)
+      .sort(),
+    dependencyEdges: solve.solution.dependencyEdges,
+    artifactDescriptors: artifacts,
+    ocmReferences: artifacts.flatMap((artifact) =>
+      artifact.externalRefs.filter((reference) =>
+        reference.type.startsWith('ocm'),
+      ),
+    ),
+    sourceSnapshotDigests: solve.solution.sourceSnapshotDigests,
+    lifecycleRoot: solve.unsignedReceipt.lifecycleRoot,
+    policyDigest: solve.unsignedReceipt.policyDigest,
+    solutionDigest: solve.solution.solutionDigest,
+    receiptDigest,
+    externalRefs,
+  };
+  const validation = validateContract(
+    LOCKFILE_SCHEMA,
+    lock as unknown as JsonValue,
+  );
+  if (!validation.valid)
+    throw new InputError(
+      `export lock produced an invalid lockfile: ${validation.errors.map((error) => `${error.instancePath || '/'} ${error.message ?? 'invalid value'}`).join('; ')}`,
+    );
+  return lock as unknown as JsonValue;
+}
+
+function exportSbom(input: JsonValue): JsonValue {
+  const solve = input as unknown as SolveResponse;
+  if (!solve.selected || !solve.solution)
+    throw new InputError('export sbom requires a SolveResponse');
+  const componentRefs = new Map(
+    solve.selected.map((item) => [
+      item.nodeId,
+      `urn:openpacker:component:${item.nodeId}`,
+    ]),
+  );
+  if (componentRefs.size !== solve.selected.length)
+    throw new InputError('export sbom requires unique selected node IDs');
+  const dependencyRefs = new Map<string, string[]>();
+  for (const item of solve.selected) {
+    const dependsOn = solve.solution.dependencyEdges
+      .filter((edge) => edge.fromNodeId === item.nodeId)
+      .map((edge) => {
+        const reference = componentRefs.get(edge.toNodeId);
+        if (!reference)
+          throw new InputError(
+            `export sbom dependency target is not selected: ${edge.toNodeId}`,
+          );
+        return reference;
+      })
+      .sort();
+    dependencyRefs.set(item.nodeId, [...new Set(dependsOn)]);
+  }
+  const solutionDigest = formatDigest(solve.solution.solutionDigest);
+  return {
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    serialNumber: deterministicUuid(solve.solution.solutionDigest.value),
+    version: 1,
+    metadata: {
+      component: {
+        'bom-ref': `urn:openpacker:solution:${solutionDigest}`,
+        type: 'application',
+        name: 'openpacker-solution',
+        version: solutionDigest,
+      },
+    },
+    components: solve.selected.map((item) => ({
+      'bom-ref': componentRefs.get(item.nodeId)!,
+      type: 'library',
+      name: item.identity.name,
+      version: item.normalizedVersion,
+      ...(item.identity.exactPurl === undefined
+        ? {}
+        : { purl: item.identity.exactPurl }),
+      hashes: item.artifacts.map((artifact) => ({
+        alg: 'SHA-256',
+        content: artifact.digest.value,
+      })),
+    })),
+    dependencies: solve.selected.map((item) => ({
+      ref: componentRefs.get(item.nodeId)!,
+      dependsOn: dependencyRefs.get(item.nodeId)!,
+    })),
+  };
+}
+
+function uniqueExternalRefs(references: readonly ExternalRef[]): ExternalRef[] {
+  return [
+    ...new Map(
+      references.map((reference) => [
+        `${reference.type}\u0000${reference.locator}`,
+        reference,
+      ]),
+    ).values(),
+  ].sort(
+    (left, right) =>
+      compareCanonicalStrings(left.type, right.type) ||
+      compareCanonicalStrings(left.locator, right.locator),
+  );
+}
+
+function deterministicUuid(digest: string): string {
+  if (!/^[0-9a-f]{64}$/u.test(digest))
+    throw new InputError('export sbom requires a sha256 solution digest');
+  const hex = digest.slice(0, 32).split('');
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `urn:uuid:${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20).join('')}`;
+}
+
+async function output(
+  args: ParsedArguments,
+  io: CliIo,
+  value: unknown,
+  rawBytes: Uint8Array,
+): Promise<void> {
+  const destination = option(args, 'output');
+  if (destination) await writeFile(destination, rawBytes);
+  if (args.options.has('json'))
+    io.stdout.write(`${new TextDecoder().decode(rawBytes)}\n`);
+  else io.stdout.write(`${JSON.stringify(redact(value), null, 2)}\n`);
+}
+
+async function serve(args: ParsedArguments, io: CliIo): Promise<number> {
+  const modulePath =
+    option(args, 'operations-module') ??
+    process.env.OPENPACKER_OPERATIONS_MODULE;
+  const { createStandaloneReferenceOperations, startOpenPackerDaemon } =
+    await import('@openpacker/openpackerd');
+  const operations = modulePath
+    ? await loadOperations(modulePath)
+    : await createStandaloneReferenceOperations(
+        option(args, 'universe') ?? process.env.OPENPACKER_UNIVERSE,
+      );
+  const server = await startOpenPackerDaemon({
+    operations,
+    databasePath: option(args, 'database') ?? '.openpacker/openpackerd.sqlite',
+    host: option(args, 'host') ?? '127.0.0.1',
+    port: numberOption(args, 'port', 7337),
+    logger: !args.options.has('json'),
+  });
+  io.stdout.write(
+    args.options.has('json')
+      ? `${JSON.stringify({ address: server.address })}\n`
+      : `openpackerd listening at ${server.address}\n`,
+  );
+  await new Promise<void>((resolve) => {
+    for (const signal of ['SIGINT', 'SIGTERM'] as const)
+      process.once(signal, () => void server.close().then(resolve));
+  });
+  return EXIT_CODES.success;
+}
+
+async function loadOperations(
+  modulePath: string,
+): Promise<import('@openpacker/openpackerd').PrexOperations> {
+  const loaded = (await import(pathToFileURL(modulePath).href)) as {
+    default?: import('@openpacker/openpackerd').PrexOperations;
+    operations?: import('@openpacker/openpackerd').PrexOperations;
+  };
+  const operations = loaded.operations ?? loaded.default;
+  if (!operations)
+    throw new InputError(
+      'Operations module must export `operations` or default PrexOperations',
+    );
+  return operations;
+}
+
+async function demo(args: ParsedArguments, io: CliIo): Promise<number> {
+  const modulePath =
+    option(args, 'workflow-module') ?? process.env.OPENPACKER_DEMO_MODULE;
+  if (!modulePath)
+    throw new UsageError(
+      'demo requires OPENPACKER_DEMO_MODULE or --workflow-module; no fake demo path is available',
+    );
+  const loaded = (await import(pathToFileURL(modulePath).href)) as {
+    runOpenPackerDemo?: (input: {
+      output: string;
+      evaluationTime: string;
+      offline: boolean;
+    }) => Promise<JsonValue>;
+  };
+  if (!loaded.runOpenPackerDemo)
+    throw new InputError('Demo module must export runOpenPackerDemo');
+  const result = await loaded.runOpenPackerDemo({
+    output: option(args, 'output') ?? '.demo-output',
+    evaluationTime: option(args, 'evaluation-time') ?? '2026-08-02T00:00:00Z',
+    offline: args.options.has('offline'),
+  });
+  const bytes = canonicalBytes(result);
+  io.stdout.write(
+    args.options.has('json')
+      ? `${new TextDecoder().decode(bytes)}\n`
+      : `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return EXIT_CODES.success;
+}
+
+function parseArguments(argv: string[]): ParsedArguments {
+  const options = new Map<string, string | true>();
+  const words: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]!;
+    if (!token.startsWith('--')) {
+      words.push(token);
+      continue;
+    }
+    const equal = token.indexOf('=');
+    const key = token.slice(2, equal < 0 ? undefined : equal);
+    if (!key) throw new UsageError('Empty option name');
+    if (equal >= 0) options.set(key, token.slice(equal + 1));
+    else if (BOOLEAN_OPTIONS.has(key)) options.set(key, true);
+    else {
+      const value = argv[++index];
+      if (!value || value.startsWith('--'))
+        throw new UsageError(`--${key} requires a value`);
+      options.set(key, value);
+    }
+  }
+  const command = words.shift() ?? '';
+  const nested = ['receipt', 'catalog', 'lifecycle', 'export'].includes(command)
+    ? words.shift()
+    : undefined;
+  return {
+    command,
+    ...(nested === undefined ? {} : { subcommand: nested }),
+    positionals: words,
+    options,
+  };
+}
+
+function option(args: ParsedArguments, key: string): string | undefined {
+  const value = args.options.get(key);
+  return typeof value === 'string' ? value : undefined;
+}
+function numberOption(
+  args: ParsedArguments,
+  key: string,
+  fallback: number,
+): number {
+  const raw = option(args, key);
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new UsageError(`--${key} must be a positive integer`);
+  return value;
+}
+function requiredPositional(
+  args: ParsedArguments,
+  index: number,
+  description: string,
+): string {
+  const value = args.positionals[index];
+  if (!value) throw new UsageError(`Missing ${description}`);
+  return value;
+}
+function inferNormalizeType(value: string): string {
+  return value.startsWith('pkg:')
+    ? 'purl'
+    : value.startsWith('vers:')
+      ? 'vers'
+      : value.startsWith('sha256:')
+        ? 'digest'
+        : 'native-coordinate';
+}
+
+function parseTarget(value: string): JsonValue {
+  if (value.startsWith('{')) return JSON.parse(value) as JsonValue;
+  const [os, architecture, ...extra] = value.split('/');
+  if (!os || !architecture || extra.length)
+    throw new UsageError('--target must be JSON or os/architecture');
+  return { os, architecture };
+}
+
+function locationSource(
+  descriptor: ArtifactDescriptor,
+  offline: boolean,
+): ArtifactSource {
+  const location = [...descriptor.locations]
+    .sort((left, right) => left.priority - right.priority)
+    .find(
+      ({ transport }) =>
+        transport === 'file' || (!offline && transport === 'https'),
+    );
+  if (!location)
+    throw new InputError('No artifact location is permitted by offline policy');
+  return {
+    stat: async () => ({ descriptor, rangeSupported: location.rangeSupported }),
+    open: async (_descriptor, _range, signal) => {
+      signal?.throwIfAborted();
+      if (location.transport === 'file')
+        return streamFromBytes(await readFile(fileURLToPath(location.uri)));
+      const response = await fetch(location.uri, {
+        redirect: 'error',
+        ...(signal === undefined ? {} : { signal }),
+      });
+      if (!response.ok || !response.body)
+        throw new InputError(
+          `Artifact download failed with HTTP ${response.status}`,
+        );
+      return response.body;
+    },
+    listReferrers: async () => [],
+  };
+}
+
+function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {
+  const name = descriptor.fileName?.toLowerCase() ?? '';
+  if (name.endsWith('.zip') || name.endsWith('.nupkg')) return 'zip';
+  if (
+    name.endsWith('.tar.gz') ||
+    name.endsWith('.tgz') ||
+    name.endsWith('.crate') ||
+    descriptor.mediaType.includes('gzip')
+  )
+    return 'tar+gzip';
+  if (name.endsWith('.tar') || descriptor.mediaType.includes('tar'))
+    return 'tar';
+  throw new InputError(
+    'Artifact archive format requires a recognized media type or file name',
+  );
+}
+
+function isLoopback(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+function isObject(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function redact(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redact);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      /authorization|password|secret|token|credential/iu.test(key)
+        ? '[REDACTED]'
+        : redact(entry),
+    ]),
+  );
+}
+
+async function readStdin(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function exitCode(error: unknown): number {
+  if (error instanceof UsageError) return EXIT_CODES.usage;
+  if (
+    error instanceof InputError ||
+    error instanceof SyntaxError ||
+    error instanceof TypeError ||
+    error instanceof RangeError
+  )
+    return EXIT_CODES.invalidInput;
+  if (error instanceof PrexClientError) {
+    const code = error.problem?.code;
+    if (
+      [
+        'PACKAGE_NOT_FOUND',
+        'VERSION_NOT_FOUND',
+        'SNAPSHOT_NOT_FOUND',
+        'ARTIFACT_NOT_FOUND',
+      ].includes(code ?? '')
+    )
+      return EXIT_CODES.notFound;
+    if (code === 'UNSATISFIABLE') return EXIT_CODES.unsatisfiable;
+    if (
+      ['POLICY_DENIED', 'LIFECYCLE_DENIED', 'SEMANTIC_LOSS_REJECTED'].includes(
+        code ?? '',
+      )
+    )
+      return EXIT_CODES.policyDenied;
+    if (
+      [
+        'DIGEST_MISMATCH',
+        'SIZE_MISMATCH',
+        'INVALID_SIGNATURE',
+        'PROVENANCE_MISMATCH',
+        'STALE_METADATA',
+      ].includes(code ?? '')
+    )
+      return EXIT_CODES.verificationFailed;
+    if (error.problem?.retryable || error.status >= 500)
+      return EXIT_CODES.unavailable;
+  }
+  return EXIT_CODES.internal;
+}
+
+class UsageError extends Error {
+  override name = 'UsageError';
+}
+class InputError extends Error {
+  override name = 'InputError';
+}
+
+function help(): string {
+  return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve explain materialize verify pack publish\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href)
+  process.exitCode = await runCli();

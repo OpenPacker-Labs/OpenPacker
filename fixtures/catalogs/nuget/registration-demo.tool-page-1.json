@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "catalogEntry": {
+        "id": "Demo.Tool",
+        "version": "1.0.0-beta.1",
+        "listed": true,
+        "dependencyGroups": []
+      }
+    },
+    {
+      "catalogEntry": {
+        "id": "Demo.Tool",
+        "version": "1.0.0",
+        "listed": true,
+        "dependencyGroups": [
+          {
+            "targetFramework": "net8.0",
+            "dependencies": [{ "id": "Child", "range": "[2.0,3.0)" }]
+          }
+        ],
+        "packageHash": "xwo0H3VmFzNs5RpYY2bh45sxmOIVtNOEZ+FnXApGZbloanO1+9R64GB7TJ20IEEp4MbrvS2zO1wpwf06Pk3cnQ==",
+        "packageHashAlgorithm": "SHA512",
+        "packageSize": 33
+      }
+    }
+  ]
+}

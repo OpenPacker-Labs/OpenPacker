@@ -1,0 +1,37 @@
+{
+  "name": "@openpacker/example-epoch-consumer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Neutral downstream consumer contract for Epoch",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "node --test test/sdk-browser.playwright.mjs",
+    "test:pact:consumer": "vitest run test/pact.consumer.test.ts",
+    "test:pact:provider": "node dist/src/pact-provider.js",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/embedded": "0.1.0",
+    "@openpacker/events": "0.1.0",
+    "@openpacker/receipts": "0.1.0",
+    "@openpacker/sdk": "0.1.0",
+    "@openpacker/trust": "0.1.0"
+  },
+  "devDependencies": {
+    "@openpacker/openpackerd": "0.1.0",
+    "@pact-foundation/pact": "17.0.1",
+    "@types/node": "24.2.1",
+    "playwright": "1.62.1"
+  }
+}

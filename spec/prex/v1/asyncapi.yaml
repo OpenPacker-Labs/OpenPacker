@@ -1,0 +1,170 @@
+{
+  'asyncapi': '3.0.0',
+  'info':
+    {
+      'title': 'OpenPacker PREX events',
+      'version': '1.0-draft',
+      'description':
+        'CloudEvents 1.0-compatible event contract; transports are optional
+        bindings.',
+    },
+  'defaultContentType': 'application/json',
+  'servers':
+    {
+      'reference':
+        {
+          'host': '127.0.0.1:7777',
+          'protocol': 'http',
+          'description': 'Reference SSE/NDJSON feed',
+        },
+    },
+  'channels':
+    {
+      'events':
+        {
+          'address': '/v1/events',
+          'messages':
+            {
+              'catalogSnapshotCreated':
+                { '$ref': '#/components/messages/catalogSnapshotCreated' },
+              'catalogPackageObserved':
+                { '$ref': '#/components/messages/catalogPackageObserved' },
+              'lifecycleChanged':
+                { '$ref': '#/components/messages/lifecycleChanged' },
+              'resolutionCompleted':
+                { '$ref': '#/components/messages/resolutionCompleted' },
+              'resolutionUnsatisfiable':
+                { '$ref': '#/components/messages/resolutionUnsatisfiable' },
+              'receiptCreated':
+                { '$ref': '#/components/messages/receiptCreated' },
+              'artifactPacked':
+                { '$ref': '#/components/messages/artifactPacked' },
+              'artifactVerified':
+                { '$ref': '#/components/messages/artifactVerified' },
+              'policyEvaluated':
+                { '$ref': '#/components/messages/policyEvaluated' },
+            },
+          'bindings':
+            {
+              'http':
+                {
+                  'method': 'GET',
+                  'query':
+                    {
+                      'type': 'object',
+                      'properties':
+                        { 'cursor': { 'type': 'string', 'maxLength': 4096 } },
+                      'additionalProperties': false,
+                    },
+                },
+            },
+        },
+    },
+  'operations':
+    {
+      'consumeEvents':
+        {
+          'action': 'receive',
+          'channel': { '$ref': '#/channels/events' },
+          'messages':
+            [
+              { '$ref': '#/channels/events/messages/catalogSnapshotCreated' },
+              { '$ref': '#/channels/events/messages/catalogPackageObserved' },
+              { '$ref': '#/channels/events/messages/lifecycleChanged' },
+              { '$ref': '#/channels/events/messages/resolutionCompleted' },
+              { '$ref': '#/channels/events/messages/resolutionUnsatisfiable' },
+              { '$ref': '#/channels/events/messages/receiptCreated' },
+              { '$ref': '#/channels/events/messages/artifactPacked' },
+              { '$ref': '#/channels/events/messages/artifactVerified' },
+              { '$ref': '#/channels/events/messages/policyEvaluated' },
+            ],
+        },
+    },
+  'components':
+    {
+      'messages':
+        {
+          'catalogSnapshotCreated':
+            {
+              'name': 'org.openpacker.catalog.snapshot.created',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/CatalogSnapshotCreatedEvent',
+                },
+            },
+          'catalogPackageObserved':
+            {
+              'name': 'org.openpacker.catalog.package.observed',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/CatalogPackageObservedEvent',
+                },
+            },
+          'lifecycleChanged':
+            {
+              'name': 'org.openpacker.lifecycle.changed',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/LifecycleChangedEvent',
+                },
+            },
+          'resolutionCompleted':
+            {
+              'name': 'org.openpacker.resolution.completed',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/ResolutionCompletedEvent',
+                },
+            },
+          'resolutionUnsatisfiable':
+            {
+              'name': 'org.openpacker.resolution.unsatisfiable',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/ResolutionUnsatisfiableEvent',
+                },
+            },
+          'receiptCreated':
+            {
+              'name': 'org.openpacker.receipt.created',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/ReceiptCreatedEvent',
+                },
+            },
+          'artifactPacked':
+            {
+              'name': 'org.openpacker.artifact.packed',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/ArtifactPackedEvent',
+                },
+            },
+          'artifactVerified':
+            {
+              'name': 'org.openpacker.artifact.verified',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/ArtifactVerifiedEvent',
+                },
+            },
+          'policyEvaluated':
+            {
+              'name': 'org.openpacker.policy.evaluated',
+              'contentType': 'application/json',
+              'payload':
+                {
+                  '$ref': './schemas/events.schema.json#/$defs/PolicyEvaluatedEvent',
+                },
+            },
+        },
+    },
+}

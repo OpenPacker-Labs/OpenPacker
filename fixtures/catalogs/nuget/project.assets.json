@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "Demo.Tool/1.0.0": {
+        "type": "package",
+        "dependencies": { "Child": "[2.0,3.0)" }
+      }
+    }
+  },
+  "libraries": {
+    "Demo.Tool/1.0.0": {
+      "type": "package",
+      "path": "demo.tool/1.0.0",
+      "sha512": "sha512-native-fixture"
+    }
+  }
+}

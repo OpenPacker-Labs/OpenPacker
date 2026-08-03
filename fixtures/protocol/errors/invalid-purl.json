@@ -1,0 +1,16 @@
+{
+  "type": "https://openpacker.dev/problems/invalid-purl",
+  "title": "Invalid Package URL",
+  "status": 400,
+  "detail": "The supplied Package URL is not syntactically valid.",
+  "code": "INVALID_PURL",
+  "retryable": false,
+  "correlationId": "fixture-correlation",
+  "violations": [
+    {
+      "path": "/items/0/value",
+      "code": "INVALID_PURL",
+      "message": "Expected a pkg: URL"
+    }
+  ]
+}

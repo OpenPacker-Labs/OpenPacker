@@ -1,0 +1,28 @@
+{
+  "vectors": [
+    {
+      "name": "empty-object",
+      "value": {},
+      "canonical": "{}",
+      "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "recursive-key-order",
+      "value": { "z": 1, "a": { "y": true, "x": [3, 2, 1] } },
+      "canonical": "{\"a\":{\"x\":[3,2,1],\"y\":true},\"z\":1}",
+      "digest": "sha256:2eab7c267bdeef58cc000f16c4e559d7efee3b1476066a1fcc031e2c77a09621"
+    },
+    {
+      "name": "primitive-array",
+      "value": [null, true, false, "PREX", 42],
+      "canonical": "[null,true,false,\"PREX\",42]",
+      "digest": "sha256:f00c2f40e709b5d96e6a540e30378267eb611ada4334b022f0d6c53682f97463"
+    },
+    {
+      "name": "utf16-key-order",
+      "value": { "": 1, "😀": 2 },
+      "canonical": "{\"😀\":2,\"\":1}",
+      "digest": "sha256:28c95d1bbb2209223307e62f489020e8f9e0cfa16adf2daf6d88127a1e8dd22a"
+    }
+  ]
+}

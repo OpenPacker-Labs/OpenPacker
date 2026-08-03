@@ -1,0 +1,52 @@
+{
+  "name": "openpacker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenPacker reference implementation of Package Resolution Exchange (PREX)",
+  "license": "MIT",
+  "packageManager": "npm@11.17.0",
+  "engines": {
+    "node": "^20.20.0 || >=22.13.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "examples/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test && node scripts/run-gate.mjs unit",
+    "test:conformance": "node scripts/run-gate.mjs conformance",
+    "test:security": "node scripts/run-gate.mjs security",
+    "test:integration": "node scripts/run-gate.mjs integration",
+    "test:e2e": "node scripts/run-gate.mjs e2e",
+    "test:compat": "node scripts/run-gate.mjs compat",
+    "test:browser": "node scripts/run-gate.mjs browser",
+    "test:live": "npm run test:live --workspace @openpacker/oci",
+    "test:fuzz": "node scripts/fuzz-smoke.mjs",
+    "test:docs": "node docs/operations/documentation-smoke.mjs",
+    "benchmark": "node benchmarks/run.mjs",
+    "coverage": "node scripts/coverage.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "check:contracts": "turbo run check:contracts",
+    "check:generated": "turbo run check:generated && node --test tests/golden/freshness.test.mjs",
+    "golden:generate": "node scripts/generate-goldens.mjs",
+    "golden:check": "node scripts/generate-goldens.mjs --check",
+    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features",
+    "release:sbom:rust": "node scripts/generate-rust-sbom.mjs",
+    "demo": "node scripts/demo.mjs",
+    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run test:docs && npm run check:licenses && npm run lint && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run test:integration && npm run test:e2e && npm run test:compat && npm run test:browser && npm run check:rust && npm run demo && npm run benchmark && npm run golden:check && npm run test:fuzz"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "fast-check": "4.9.0",
+    "prettier": "3.6.2",
+    "turbo": "2.5.6",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  }
+}

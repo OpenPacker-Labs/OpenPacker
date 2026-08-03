@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1",
+  "artifacts": [
+    {
+      "file": "cargo-zstd-wasm-1.0.0.native-bytes",
+      "exactPurl": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+      "digest": "sha256:cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4",
+      "mediaType": "application/vnd.crates.io.crate+gzip"
+    },
+    {
+      "file": "npm-demo-1.0.0.native-bytes",
+      "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "digest": "sha256:947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b",
+      "mediaType": "application/vnd.npm.package+gzip"
+    },
+    {
+      "file": "nuget-zstd-tool-1.0.0.native-bytes",
+      "exactPurl": "pkg:nuget/OpenPacker.Zstd.Tool@1.0.0",
+      "digest": "sha256:3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee",
+      "mediaType": "application/vnd.nuget.package+zip"
+    }
+  ]
+}
