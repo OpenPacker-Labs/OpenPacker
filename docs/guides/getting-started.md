@@ -17,14 +17,14 @@ pip, Cargo, or NuGet install semantics. See
 
 ## Prerequisites
 
-| Tool                | Notes                                                   |
-| ------------------- | ------------------------------------------------------- |
-| Node.js             | `^22.13.0 \|\| >=24` (demos target Node 24) |
-| npm                 | 11.x with the committed lockfile (`npm ci`)             |
-| Rust                | Stable toolchain (2024 edition workspace)               |
-| wasm-bindgen-cli    | Pinned `0.2.126` for WASM builds                        |
-| mise                | `2026.7.13` only for the full `npm run demo` mise path  |
-| Playwright Chromium | Only for browser gates and full demo                    |
+| Tool                | Notes                                                  |
+| ------------------- | ------------------------------------------------------ |
+| Node.js             | `^22.13.0 \|\| >=24` (demos target Node 24)            |
+| npm                 | 11.x with the committed lockfile (`npm ci`)            |
+| Rust                | Stable toolchain (2024 edition workspace)              |
+| wasm-bindgen-cli    | Pinned `0.2.126` for WASM builds                       |
+| mise                | `2026.7.13` only for the full `npm run demo` mise path |
+| Playwright Chromium | Only for browser gates and full demo                   |
 
 ```sh
 npm ci

@@ -36,66 +36,67 @@ describe('PREX protocol vectors', () => {
     'matches every positive and negative schema expectation',
     { timeout: 60_000 },
     async () => {
-    const index = JSON.parse(
-      await readFile(
-        path.join(fixtureRoot, 'conformance-vectors.json'),
-        'utf8',
-      ),
-    ) as VectorIndex;
-    const vectors: ConformanceVector[] = await Promise.all(
-      index.vectors.map(async (vector) => {
-        let value = vector.file
-          ? (JSON.parse(
-              await readFile(path.join(fixtureRoot, vector.file), 'utf8'),
-            ) as JsonValue)
-          : (vector.inline as JsonValue);
-        if (vector.pointer) value = atPointer(value, vector.pointer);
-        value = structuredClone(value);
-        for (const mutation of vector.mutations ?? []) mutate(value, mutation);
-        return {
-          name: vector.name,
-          schema: vector.schema,
-          valid: vector.valid,
-          levels: vector.levels,
-          value,
-        };
-      }),
-    );
-    const results = runConformanceVectors(vectors);
-    const failures = results.filter(
-      (result) => result.actualValid !== result.valid,
-    );
-    expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
-    for (const result of results.filter((item) => item.valid)) {
-      const canonical = canonicalize(result.value);
-      expect(canonicalize(parseCanonicalJson(canonical))).toBe(canonical);
-    }
-    for (const schema of Object.keys(schemaCatalog)) {
-      const matching = results.filter(
-        (result) => result.schema.split('#', 1)[0] === schema,
+      const index = JSON.parse(
+        await readFile(
+          path.join(fixtureRoot, 'conformance-vectors.json'),
+          'utf8',
+        ),
+      ) as VectorIndex;
+      const vectors: ConformanceVector[] = await Promise.all(
+        index.vectors.map(async (vector) => {
+          let value = vector.file
+            ? (JSON.parse(
+                await readFile(path.join(fixtureRoot, vector.file), 'utf8'),
+              ) as JsonValue)
+            : (vector.inline as JsonValue);
+          if (vector.pointer) value = atPointer(value, vector.pointer);
+          value = structuredClone(value);
+          for (const mutation of vector.mutations ?? [])
+            mutate(value, mutation);
+          return {
+            name: vector.name,
+            schema: vector.schema,
+            valid: vector.valid,
+            levels: vector.levels,
+            value,
+          };
+        }),
       );
-      expect(
-        matching.some((result) => result.valid),
-        schema,
-      ).toBe(true);
-      expect(
-        matching.some((result) => !result.valid),
-        schema,
-      ).toBe(true);
-    }
-    for (const level of PREX_CONFORMANCE_LEVELS) {
-      const matching = results.filter((result) =>
-        result.levels.includes(level),
+      const results = runConformanceVectors(vectors);
+      const failures = results.filter(
+        (result) => result.actualValid !== result.valid,
       );
-      expect(
-        matching.some((result) => result.valid),
-        `${level} positive`,
-      ).toBe(true);
-      expect(
-        matching.some((result) => !result.valid),
-        `${level} negative`,
-      ).toBe(true);
-    }
+      expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
+      for (const result of results.filter((item) => item.valid)) {
+        const canonical = canonicalize(result.value);
+        expect(canonicalize(parseCanonicalJson(canonical))).toBe(canonical);
+      }
+      for (const schema of Object.keys(schemaCatalog)) {
+        const matching = results.filter(
+          (result) => result.schema.split('#', 1)[0] === schema,
+        );
+        expect(
+          matching.some((result) => result.valid),
+          schema,
+        ).toBe(true);
+        expect(
+          matching.some((result) => !result.valid),
+          schema,
+        ).toBe(true);
+      }
+      for (const level of PREX_CONFORMANCE_LEVELS) {
+        const matching = results.filter((result) =>
+          result.levels.includes(level),
+        );
+        expect(
+          matching.some((result) => result.valid),
+          `${level} positive`,
+        ).toBe(true);
+        expect(
+          matching.some((result) => !result.valid),
+          `${level} negative`,
+        ).toBe(true);
+      }
     },
   );
 });
