@@ -91,6 +91,7 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm ci --ignore-scripts
