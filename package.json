@@ -40,7 +40,8 @@
     "release:sbom:rust": "node scripts/generate-rust-sbom.mjs",
     "demo": "node scripts/demo.mjs",
     "demo:lock-import": "node scripts/demo-lock-import.mjs",
-    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run test:docs && npm run check:licenses && npm run lint && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run test:integration && npm run test:e2e && npm run test:compat && npm run test:browser && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz"
+    "skills:mirror-check": "node scripts/check-skill-mirrors.mjs",
+    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run test:docs && npm run check:licenses && npm run skills:mirror-check && npm run lint && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run test:integration && npm run test:e2e && npm run test:compat && npm run test:browser && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

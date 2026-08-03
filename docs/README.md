@@ -58,6 +58,18 @@ API detail.
 | [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates      |
 | [ADRs](adr/README.md)                                              | Stable architecture decisions |
 
+## Agent SDLC
+
+| Path                                                  | Role                                 |
+| ----------------------------------------------------- | ------------------------------------ |
+| [AGENTS.md](../AGENTS.md)                             | Skill install map + OpenPacker gates |
+| `.agents/skills/sdlc` / `.claude/skills/sdlc`         | Full-loop coordinator skill          |
+| `.agents/skills/gh-stack` / `.claude/skills/gh-stack` | Stacked PR CLI skill                 |
+| [docs/plans/](plans/README.md)                        | Durable sdlc state + dispatch log    |
+
+Invoke with `/sdlc` or `/sdlc --finish`. Mirrors must stay identical:
+`npm run skills:mirror-check`.
+
 ## Documentation quality gate
 
 `npm run test:docs` runs

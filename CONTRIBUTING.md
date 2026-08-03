@@ -10,6 +10,11 @@ are in [`docs/product/compliance.md`](docs/product/compliance.md). Runnable
 samples are under [`examples/`](examples/README.md). Documentation changes must
 pass `npm run test:docs`.
 
+Agent coordination uses the repo-local **sdlc** skill (mirrored in
+`.agents/skills/sdlc` and `.claude/skills/sdlc`) plus **gh-stack**. See
+[`AGENTS.md`](AGENTS.md). After editing a skill tree, run
+`npm run skills:mirror-check` and keep both mirrors byte-identical.
+
 ## Development
 
 Use Node `^20.20.0 || >=22.13.0`, npm workspaces with the committed lockfile,
