@@ -190,8 +190,12 @@ if (
   !skip.has('prettier') &&
   files.some((f) => /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f))
 ) {
-  const pretty = files.filter((f) =>
-    /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f),
+  const pretty = files.filter(
+    (f) =>
+      /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f) &&
+      !f.startsWith('.agents/skills/') &&
+      !f.startsWith('.claude/skills/') &&
+      !f.startsWith('.claude/agents/'),
   );
   if (pretty.length)
     checks.push({
@@ -238,8 +242,19 @@ if (touch.rust && !skip.has('rust')) {
   });
 }
 
+const maxPackages = Number(
+  process.env.OPENPACKER_AGENT_CHECK_MAX_PACKAGES ?? '12',
+);
+let packageRuns = 0;
 for (const ws of workspaces) {
   if (skip.has('packages')) break;
+  if (packageRuns >= maxPackages) {
+    console.log(
+      `agent:check: package gate cap ${maxPackages} reached (set OPENPACKER_AGENT_CHECK_MAX_PACKAGES to raise)`,
+    );
+    break;
+  }
+  packageRuns += 1;
   const name = pkgName(ws);
   if (!name) continue;
   const pkgJson = join(root, ws, 'package.json');
