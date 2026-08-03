@@ -1,40 +1,41 @@
 # SDLC state — control-plane-completion
 
-- **Phase:** finish / closeout
+- **Phase:** closed
 - **Started:** 2026-08-03
-- **Branch:** `feat/control-plane-completion`
-- **Trunk:** `origin/main` (remote placeholder `7dab380`; local baseline
-  reconnected during finish)
-- **Session scope:** PREX control-plane productization, lock import, three
-  ecosystems, docs, sdlc skill install
+- **Closed:** 2026-08-03
+- **Branch:** `feat/control-plane-completion` (deleted after squash-merge)
+- **Trunk:** `origin/main` @ `d39d5da`
+- **PR:** https://github.com/Tyler-R-Kendrick/OpenPacker/pull/1 — **MERGED**
+
+## Session deliverables (in merge)
+
+- PREX control-plane productization + lock import (6 ecosystems)
+- Docs: use cases, compliance, reference map, getting started, examples
+- Agent **sdlc** + **gh-stack** skills (`.agents` / `.claude` mirrors)
+- Local **git hooks** + **`npm run agent:check`** (prefer over remote CI for
+  agent loops)
 
 ## Decisions
 
 - Product: control plane, not native PM supersession (ADR 0020)
 - Lock import: `native-capture-v1` only (ADR 0021)
-- Ecosystems: pypi, golang, maven + npm/cargo/nuget lock formats
-- Agent tooling: sdlc + gh-stack from hobo-devx with OpenPacker gate binding
+- Finish gate: local hooks/`agent:check` (operator: do not block on GitHub
+  Actions)
 
-## Session commits (pre-finish)
+## Merge
 
-| SHA     | Subject                                                     |
-| ------- | ----------------------------------------------------------- |
-| a26ac6c | baseline OpenPacker PREX reference implementation           |
-| ce0134c | control-plane productization, lock import, three ecosystems |
-| e228a9d | docs: use cases, compliance, reference map, examples        |
-| db4e889 | install sdlc and gh-stack skills                            |
-| 5720e33 | clarify implementer gate wording                            |
+| Field     | Value                                                       |
+| --------- | ----------------------------------------------------------- |
+| PR        | [#1](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/1) |
+| Merge SHA | `d39d5daab048047733ed26cdf1ade9e48023a87e`                  |
+| Method    | squash-merge                                                |
+| CI        | not used as finish gate                                     |
 
-## PR / merge
+## Local gates used at finish
 
-| Field     | Value            |
-| --------- | ---------------- |
-| PR        | (pending finish) |
-| Merge SHA | (pending)        |
-| Outcome   | in progress      |
-
-## Notes
-
-Remote `origin/main` was an initial LICENSE/README only; local history was a
-root baseline. Finish reconnects via merge/rebase onto `origin/main` before open
-PR + squash-merge.
+- `npm run agent:check:staged` / pre-commit hooks
+- `npm run skills:mirror-check`
+- `npm run test:docs`
+- `npm run test --workspace @openpacker/lock-import`
+- `npm run test --workspace @openpacker/conformance`
+- `npm run demo:lock-import`
