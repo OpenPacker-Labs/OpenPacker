@@ -41,7 +41,19 @@ repository inspection) are documented as limitations, not fixed.
 ## Verification
 
 `npm run verify` (all 22 steps) green locally after the changes, including demo,
-golden regeneration, benchmarks, and fuzz replay.
+golden regeneration, benchmarks, and fuzz replay. Independent reviewer pass:
+12/12 checklist items, no blocking findings.
+
+## CI policy (user directive, 2026-08-03)
+
+GitHub Actions runner minutes are forbidden. All workflows disabled in repo
+settings and converted to `workflow_dispatch`-only triggers; in-flight runs for
+PR #5 were cancelled. Enforcement moved entirely to git hooks
+(`.githooks/pre-commit`, `.githooks/pre-push`), `npm run agent:check`, and local
+`npm run verify` before merge (see AGENTS.md). Dependabot security updates
+disabled; the GitHub-managed "Dependency Graph" auto-submission workflow is not
+API-disableable on this plan — turn off in Settings → Advanced Security if it
+remains enabled.
 
 ## Residuals (documented limitations, not defects)
 

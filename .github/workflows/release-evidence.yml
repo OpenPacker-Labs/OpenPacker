@@ -1,8 +1,8 @@
 name: Release evidence
 
+# Runner minutes are forbidden; manual dispatch only (see ci.yml note).
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
