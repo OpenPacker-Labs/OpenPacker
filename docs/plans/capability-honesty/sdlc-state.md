@@ -31,7 +31,7 @@ repository inspection) are documented as limitations, not fixed.
    wears cosign's real media type); goldens regenerated.
 7. Gates: opm added to security+integration gates; fail-closed negative tests
    (digest/size mismatch, tampered catalog, offline refusal, CLI exit codes);
-   boundary test executes all 12 archive-exploit vectors; fake `lint` alias
+   boundary test executes all 11 archive-exploit vectors; fake `lint` alias
    removed from 37 manifests + verify + turbo; docs-smoke evidence manifest is
    load-bearing (v2 schema: executedBySmoke / coveredByVerify).
 8. Docs honesty: opm scope (local/catalog sources only, no transitive
