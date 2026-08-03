@@ -5,4 +5,5 @@ coverage/
 .turbo/
 .demo-output/
 *.tgz
+!fixtures/**/*.tgz
 .serena/
