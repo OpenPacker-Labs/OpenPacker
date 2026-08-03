@@ -17,7 +17,14 @@ import type {
 } from './types.js';
 import { OpmError } from './types.js';
 import { discoverNpmBins, removeBinShims, writeBinShims } from './bins.js';
-import { projectPaths, storeKeyFromDigest } from './paths.js';
+import {
+  assertSafeSegment,
+  assertStoreKey,
+  projectPaths,
+  resolveContained,
+  storeKeyFromDigest,
+  storePathForDigest,
+} from './paths.js';
 
 export async function emptyProjectState(): Promise<ProjectState> {
   return { schemaVersion: 1, packages: {} };
@@ -102,7 +109,9 @@ export async function materializeLockPackage(input: {
   force?: boolean;
 }): Promise<{ storePath: string; bins: BinDeclaration[] }> {
   const paths = projectPaths(input.root);
-  const storePath = join(paths.store, input.pkg.storeKey);
+  // Always derive store path from verified digest shape; never trust lock storeKey alone.
+  assertStoreKey(input.pkg.storeKey, input.pkg.digest);
+  const storePath = storePathForDigest(input.root, input.pkg.digest);
   const already = await pathExists(storePath);
   if (already && !input.force) {
     const bins =
@@ -175,6 +184,7 @@ export async function installFromLock(input: {
     Object.keys(input.lock.packages).sort((a, b) => a.localeCompare(b));
 
   for (const alias of aliases) {
+    const safeAlias = assertSafeSegment(alias, 'package alias');
     const pkg = input.lock.packages[alias];
     if (!pkg) {
       throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
@@ -202,8 +212,8 @@ export async function installFromLock(input: {
 
     // link record
     await writeFile(
-      join(paths.links, alias),
-      `${JSON.stringify({ alias, purl: pkg.purl, storePath, digest: pkg.digest }, null, 2)}\n`,
+      resolveContained(paths.links, safeAlias),
+      `${JSON.stringify({ alias: safeAlias, purl: pkg.purl, storePath, digest: pkg.digest }, null, 2)}\n`,
       'utf8',
     );
 
@@ -234,17 +244,19 @@ export async function uninstallPackages(input: {
   };
 
   for (const alias of input.aliases) {
-    const record = state.packages[alias];
+    const safeAlias = assertSafeSegment(alias, 'package alias');
+    const record = state.packages[alias] ?? state.packages[safeAlias];
     if (!record) continue;
     await removeBinShims(
       paths.bin,
       record.bins.map((b) => b.name),
     );
-    await rm(join(paths.links, alias), { force: true });
+    await rm(resolveContained(paths.links, safeAlias), { force: true });
     if (input.removeStore) {
       await rm(record.storePath, { recursive: true, force: true });
     }
     delete state.packages[alias];
+    delete state.packages[safeAlias];
   }
   await writeProjectState(paths.projectState, state);
   return state;

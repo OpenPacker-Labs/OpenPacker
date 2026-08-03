@@ -29,6 +29,7 @@ import {
   writeProjectState,
 } from './install.js';
 import {
+  assertSafeSegment,
   CATALOG_NAME,
   LOCK_NAME,
   MANIFEST_NAME,
@@ -161,15 +162,16 @@ export async function addPackage(input: {
     );
   }
 
+  const alias = assertSafeSegment(parsed.alias, 'package alias');
   const requirement: PackageRequirement = {
-    alias: parsed.alias,
+    alias,
     purl: stripPurlVersion(parsed.purl),
   };
   if (parsed.version !== undefined) requirement.version = parsed.version;
   if (parsed.source !== undefined) requirement.source = parsed.source;
   else if (input.source !== undefined) requirement.source = input.source;
 
-  manifest.packages[parsed.alias] = requirement;
+  manifest.packages[alias] = requirement;
   await writeManifestFile(paths.manifest, manifest);
 
   const offline = input.offline ?? manifest.options.offline;
@@ -187,10 +189,10 @@ export async function addPackage(input: {
     root: input.root,
     lock,
     offline,
-    only: [parsed.alias],
+    only: [alias],
   });
 
-  return { manifest, lock, state, alias: parsed.alias };
+  return { manifest, lock, state, alias };
 }
 
 export async function removePackage(input: {

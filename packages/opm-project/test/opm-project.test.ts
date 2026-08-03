@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addPackage,
+  assertSafeSegment,
+  assertStoreKey,
   initProject,
   installProject,
   listInstalled,
@@ -12,9 +14,12 @@ import {
   parsePackageSpec,
   removePackage,
   serializeManifest,
+  storeKeyFromDigest,
   syncProject,
   uninstallProject,
+  writeBinShims,
   whyPackage,
+  OpmError,
 } from '../src/index.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -79,6 +84,33 @@ describe('parsePackageSpec', () => {
 
   it('requires ecosystem for bare names', () => {
     expect(() => parsePackageSpec('lodash')).toThrow(/ecosystem/);
+  });
+});
+
+describe('path containment', () => {
+  it('rejects unsafe aliases and store keys', () => {
+    expect(() => assertSafeSegment('../evil', 'package alias')).toThrow(
+      /Invalid package alias/,
+    );
+    expect(() => assertSafeSegment('a/b', 'bin name')).toThrow(/Invalid bin/);
+    const digest = `sha256:${'a'.repeat(64)}`;
+    expect(storeKeyFromDigest(digest)).toBe(`sha256-${'a'.repeat(64)}`);
+    expect(() => assertStoreKey('../escape', digest)).toThrow(/storeKey/);
+    expect(() => assertStoreKey(`sha256-${'b'.repeat(64)}`, digest)).toThrow(
+      /does not match/,
+    );
+  });
+
+  it('rejects bin names that escape bin dir', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-bin-'));
+    temps.push(dir);
+    await expect(
+      writeBinShims({
+        binDir: join(dir, 'bin'),
+        storeRoot: join(dir, 'store'),
+        bins: [{ name: '../evil', path: 'package/bin/x.js' }],
+      }),
+    ).rejects.toBeInstanceOf(OpmError);
   });
 });
 

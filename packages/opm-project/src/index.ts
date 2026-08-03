@@ -24,11 +24,15 @@ export {
 } from './lock.js';
 
 export {
+  assertDigest,
+  assertSafeSegment,
+  assertStoreKey,
   CATALOG_NAME,
   LOCK_NAME,
   MANIFEST_NAME,
   OPM_DIR,
   projectPaths,
+  resolveContained,
   storeKeyFromDigest,
   storePathForDigest,
 } from './paths.js';

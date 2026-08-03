@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
+import { assertSafeSegment, resolveContained } from './paths.js';
 
 export async function discoverNpmBins(
   extractRoot: string,
@@ -66,13 +67,19 @@ export async function writeBinShims(input: {
     target: string;
   }[] = [];
   const storeRoot = resolve(input.storeRoot);
+  const binDir = resolve(input.binDir);
   for (const bin of input.bins) {
-    const target = resolve(storeRoot, ...bin.path.split('/'));
-    if (target !== storeRoot && !target.startsWith(storeRoot + sep)) {
+    const name = assertSafeSegment(bin.name, 'bin name');
+    const segments = bin.path.split(/[/\\]/).filter(Boolean);
+    if (
+      segments.length === 0 ||
+      segments.some((part) => part === '..' || part === '.')
+    ) {
       throw new OpmError('UNSAFE_BIN', `Bin path escapes store: ${bin.path}`);
     }
-    const shimPath = join(input.binDir, bin.name);
-    const relTarget = relative(input.binDir, target);
+    const target = resolveContained(storeRoot, ...segments);
+    const shimPath = resolveContained(binDir, name);
+    const relTarget = relative(binDir, target);
     const script = `#!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -95,7 +102,7 @@ child.on('error', (error) => {
     await writeFile(shimPath, script, { mode: 0o755 });
     await chmod(shimPath, 0o755);
     written.push({
-      name: bin.name,
+      name,
       path: bin.path,
       shim: shimPath,
       target,
@@ -109,7 +116,8 @@ export async function removeBinShims(
   names: readonly string[],
 ): Promise<void> {
   for (const name of names) {
-    await rm(join(binDir, name), { force: true });
+    const safe = assertSafeSegment(name, 'bin name');
+    await rm(resolveContained(binDir, safe), { force: true });
   }
 }
 

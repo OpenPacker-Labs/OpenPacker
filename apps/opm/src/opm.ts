@@ -217,6 +217,9 @@ function handleError(error: unknown, io: CliIo): number {
         return EXIT_CODES.unsatisfiable;
       case 'DIGEST_MISMATCH':
       case 'SIZE_MISMATCH':
+      case 'UNSAFE_PATH':
+      case 'UNSAFE_BIN':
+      case 'INVALID_DIGEST':
         return EXIT_CODES.verificationFailed;
       case 'OFFLINE':
       case 'FETCH_FAILED':

@@ -1,4 +1,5 @@
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
+import { OpmError } from './types.js';
 
 export const MANIFEST_NAME = 'opm.toml';
 export const LOCK_NAME = 'opm.lock.json';
@@ -8,6 +9,11 @@ export const BIN_DIR = 'bin';
 export const LINKS_DIR = 'links';
 export const PROJECT_STATE = 'project.json';
 export const CATALOG_NAME = 'catalog.json';
+
+/** Single path segment safe for aliases, bin names, link files. */
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const STORE_KEY = /^sha256-[0-9a-f]{64}$/;
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 export interface ProjectPaths {
   root: string;
@@ -37,15 +43,66 @@ export function projectPaths(root: string): ProjectPaths {
   };
 }
 
+export function assertSafeSegment(value: string, kind: string): string {
+  if (!SAFE_SEGMENT.test(value) || value === '.' || value === '..') {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid ${kind} "${value}" (must match ${SAFE_SEGMENT})`,
+    );
+  }
+  return value;
+}
+
+export function assertDigest(digest: string): string {
+  if (!DIGEST.test(digest)) {
+    throw new OpmError(
+      'INVALID_DIGEST',
+      `Invalid digest "${digest}" (expected sha256:<64 hex>)`,
+    );
+  }
+  return digest;
+}
+
 export function storeKeyFromDigest(digest: string): string {
-  const value = digest.startsWith('sha256:')
-    ? digest.slice('sha256:'.length)
-    : digest;
+  const normalized = assertDigest(digest);
+  const value = normalized.slice('sha256:'.length);
   return `sha256-${value}`;
 }
 
+export function assertStoreKey(storeKey: string, digest?: string): string {
+  if (!STORE_KEY.test(storeKey)) {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid storeKey "${storeKey}" (expected sha256-<64 hex>)`,
+    );
+  }
+  if (digest !== undefined) {
+    const expected = storeKeyFromDigest(digest);
+    if (storeKey !== expected) {
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `storeKey "${storeKey}" does not match digest ${digest}`,
+      );
+    }
+  }
+  return storeKey;
+}
+
+/** Resolve a path under root; reject escapes. */
+export function resolveContained(root: string, ...parts: string[]): string {
+  const base = resolve(root);
+  const target = resolve(base, ...parts);
+  if (target !== base && !target.startsWith(base + sep)) {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Path escapes containment root: ${parts.join('/')}`,
+    );
+  }
+  return target;
+}
+
 export function storePathForDigest(root: string, digest: string): string {
-  return join(projectPaths(root).store, storeKeyFromDigest(digest));
+  return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
 }
 
 export function findProjectRoot(
