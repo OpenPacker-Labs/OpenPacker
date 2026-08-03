@@ -3,7 +3,8 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 
 use crate::semantics::{
-    PlatformView, request_platforms, requirement_is_active, requirement_platforms,
+    PlatformView, RequirementPlatforms, request_platforms, requirement_is_active,
+    requirement_platforms,
 };
 use crate::{
     Digest, PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
@@ -275,6 +276,8 @@ pub(crate) fn independent_valid_selection(
             valid = false;
         }
     }
+    let platforms = RequirementPlatforms::new(&input.request);
+    let host_platforms = platforms.host_default();
     for requirement in &input.request.requirements {
         if !requirement.optional
             && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
@@ -282,7 +285,7 @@ pub(crate) fn independent_valid_selection(
                 &requirement.expression,
                 input,
                 &selected_ids,
-                requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                platforms.select(&input.request, Some(requirement.kind.as_str())),
             )
             .is_none()
         {
@@ -302,7 +305,7 @@ pub(crate) fn independent_valid_selection(
                     &requirement.expression,
                     input,
                     &selected_ids,
-                    requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                    platforms.select(&input.request, Some(requirement.kind.as_str())),
                 )
                 .is_none()
             {
@@ -311,13 +314,8 @@ pub(crate) fn independent_valid_selection(
             }
         }
         for conflict in &package.conflicts {
-            if expression_witness(
-                &conflict.expression,
-                input,
-                &selected_ids,
-                request_platforms(&input.request),
-            )
-            .is_some()
+            if expression_witness(&conflict.expression, input, &selected_ids, host_platforms)
+                .is_some()
             {
                 diagnostics.push(format!("conflict {} is violated", conflict.id));
                 valid = false;
@@ -331,7 +329,7 @@ pub(crate) fn independent_valid_selection(
                         &constraint.selector,
                         input,
                         &BTreeSet::from([(*node_id).clone()]),
-                        request_platforms(&input.request),
+                        host_platforms,
                     )
                     .is_some()
                 })

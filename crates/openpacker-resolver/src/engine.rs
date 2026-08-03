@@ -6,7 +6,7 @@ use std::{
 use serde_json::{Value, json};
 
 use crate::semantics::{
-    PlatformView, request_platforms, requirement_is_active, requirement_platforms,
+    PlatformView, RequirementPlatforms, request_platforms, requirement_is_active,
 };
 use crate::{
     CapabilityProvider, DependencyEdge, Digest, ExcludedCandidate, ExplanationEdge,
@@ -526,6 +526,8 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
     {
         return false;
     }
+    let platforms = RequirementPlatforms::new(&input.request);
+    let host_platforms = platforms.host_default();
     if input.request.requirements.iter().any(|requirement| {
         !requirement.optional
             && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
@@ -533,7 +535,7 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
                 &requirement.expression,
                 input,
                 &selected,
-                requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                platforms.select(&input.request, Some(requirement.kind.as_str())),
             )
             .is_none()
     }) {
@@ -548,20 +550,14 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
                     &requirement.expression,
                     input,
                     &selected,
-                    requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                    platforms.select(&input.request, Some(requirement.kind.as_str())),
                 )
                 .is_none()
         }) {
             return false;
         }
         if package.conflicts.iter().any(|conflict| {
-            expression_witness(
-                &conflict.expression,
-                input,
-                &selected,
-                request_platforms(&input.request),
-            )
-            .is_some()
+            expression_witness(&conflict.expression, input, &selected, host_platforms).is_some()
         }) {
             return false;
         }
@@ -573,7 +569,7 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
                         &constraint.selector,
                         input,
                         &BTreeSet::from([**candidate]),
-                        request_platforms(&input.request),
+                        host_platforms,
                     )
                     .is_some()
                 })
@@ -635,6 +631,7 @@ pub(crate) fn build_output(
         .collect();
     let request_digest = digest_json(&input.request)?;
     let universe_digest = digest_json(&input.universe)?;
+    let witness_platforms = RequirementPlatforms::new(&input.request);
     let mut witnesses = Vec::new();
     let mut satisfied = Vec::new();
     let mut edges = Vec::new();
@@ -647,7 +644,7 @@ pub(crate) fn build_output(
             &requirement.expression,
             input,
             &selected_set,
-            requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+            witness_platforms.select(&input.request, Some(requirement.kind.as_str())),
         );
         let status = if resolved.is_none() && requirement.optional {
             "optional-omitted"
@@ -1153,6 +1150,7 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
             }
         }
     }
+    let platforms = RequirementPlatforms::new(&input.request);
     for requirement in input.request.requirements.iter().chain(
         selected
             .iter()
@@ -1162,7 +1160,7 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
         collect_expression_target_checks(
             &requirement.id,
             &requirement.expression,
-            requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+            platforms.select(&input.request, Some(requirement.kind.as_str())),
             &mut checks,
             &mut sequence,
         );

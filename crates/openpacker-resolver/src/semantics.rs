@@ -57,13 +57,17 @@ impl<'a> PlatformView<'a> {
     }
 
     fn resolve(&self, path: &'a str) -> (&'a TargetContext, &'a str) {
-        for (prefix, context) in [
-            ("build.", self.build),
-            ("host.", self.host),
-            ("target.", self.target),
-        ] {
-            if let Some(rest) = path.strip_prefix(prefix) {
-                return (context, rest);
+        // No unprefixed target path begins with 'b', 'h', or 't', so this one
+        // byte check skips prefix matching for every ordinary lookup.
+        if matches!(path.as_bytes().first(), Some(b'b' | b'h' | b't')) {
+            for (prefix, context) in [
+                ("build.", self.build),
+                ("host.", self.host),
+                ("target.", self.target),
+            ] {
+                if let Some(rest) = path.strip_prefix(prefix) {
+                    return (context, rest);
+                }
             }
         }
         (self.default, path)
@@ -103,15 +107,41 @@ pub fn requirement_platforms<'a>(
     request: &'a crate::SolveRequest,
     kind: Option<&str>,
 ) -> PlatformView<'a> {
-    let platforms = request_platforms(request);
-    let build_consumed = request.requirement_kind_policy.as_ref().map_or_else(
-        || kind.is_some_and(|kind| crate::DEFAULT_BUILD_PLATFORM_KINDS.contains(&kind)),
-        |policy| policy.is_build_platform(kind),
-    );
-    if build_consumed {
-        platforms.defaulting_to_build()
-    } else {
-        platforms
+    RequirementPlatforms::new(request).select(request, kind)
+}
+
+/// Platform views for a whole solve, computed once. The hot paths iterate
+/// thousands of requirements, so rebuilding the view per requirement is
+/// measurable; selecting between two precomputed views is not.
+#[derive(Clone, Copy)]
+pub struct RequirementPlatforms<'a> {
+    host_default: PlatformView<'a>,
+    build_default: PlatformView<'a>,
+}
+
+impl<'a> RequirementPlatforms<'a> {
+    pub fn new(request: &'a crate::SolveRequest) -> Self {
+        let host_default = request_platforms(request);
+        Self {
+            host_default,
+            build_default: host_default.defaulting_to_build(),
+        }
+    }
+
+    pub fn select(&self, request: &crate::SolveRequest, kind: Option<&str>) -> PlatformView<'a> {
+        let build_consumed = request.requirement_kind_policy.as_ref().map_or_else(
+            || kind.is_some_and(|kind| crate::DEFAULT_BUILD_PLATFORM_KINDS.contains(&kind)),
+            |policy| policy.is_build_platform(kind),
+        );
+        if build_consumed {
+            self.build_default
+        } else {
+            self.host_default
+        }
+    }
+
+    pub fn host_default(&self) -> PlatformView<'a> {
+        self.host_default
     }
 }
 
