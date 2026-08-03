@@ -85,7 +85,10 @@ export function createOpenPackerDaemon(
 ): FastifyInstance {
   const store = options.store ?? new SqliteStateStore(options.databasePath);
   const meta = options.meta ?? DEFAULT_META;
-  const capabilities = options.capabilities ?? defaultCapabilities(meta);
+  const capabilities =
+    options.capabilities ??
+    options.operations.capabilities?.(meta) ??
+    defaultCapabilities(meta);
   const clock = options.clock ?? { now: () => new Date().toISOString() };
   const contractValidator = createPrexValidator();
   const maximumTimeout = positiveInteger(

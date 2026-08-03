@@ -63,6 +63,13 @@ Service and embedded modes must emit identical digests for identical inputs
 
 Optional enrichment providers: deps.dev, Sonatype (not identity authorities).
 
+Coverage caveats: the PyPI lock import consumes a JSON projection of `uv.lock`
+(the native TOML must be converted first), and the Maven provider's `inspect`
+reads OpenPacker-authored `*.catalog.json` sidecars — it does not parse POMs and
+cannot inspect packages on a stock Maven repository. The automated gates
+exercise npm, Cargo, and NuGet providers end-to-end; PyPI, Go, and Maven are
+covered by codec/lock-parser tests only.
+
 ## Demonstration matrix
 
 | Demo                  | Command                                      | Proves                                                                                               |

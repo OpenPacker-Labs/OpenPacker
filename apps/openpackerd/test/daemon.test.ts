@@ -146,6 +146,14 @@ describe('openpackerd', () => {
       'native-validated-v1',
       'prex-calculus-subset-v1',
     ]);
+    expect(capabilities.json().evidenceTypes).toEqual([
+      'policy',
+      'receipt-signature',
+      'slsa',
+    ]);
+    expect(
+      capabilities.json().authenticationSchemes.map(({ type }) => type),
+    ).toEqual(['none']);
     const normalized = await app.inject({
       method: 'POST',
       url: '/v1/normalize',
@@ -329,9 +337,12 @@ describe('openpackerd', () => {
     const operations = new Proxy(
       {},
       {
-        get: () => () => {
-          throw new Error('operation must not run');
-        },
+        get: (_target, property) =>
+          property === 'capabilities'
+            ? undefined
+            : () => {
+                throw new Error('operation must not run');
+              },
       },
     ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
@@ -351,6 +362,7 @@ describe('openpackerd', () => {
       {},
       {
         get: (_target, property) => {
+          if (property === 'capabilities') return undefined;
           if (property === 'catalogSnapshot')
             return async (input: { providerId?: string }) => {
               calls += 1;
@@ -401,15 +413,17 @@ describe('openpackerd', () => {
       {},
       {
         get: (_target, property) =>
-          property === 'catalogSnapshot'
-            ? async (_input: unknown, context: { correlationId: string }) => {
-                correlationId = context.correlationId;
-                await new Promise((resolve) => setTimeout(resolve, 50));
-                return { snapshots: [] };
-              }
-            : async () => {
-                throw new Error('operation must not run');
-              },
+          property === 'capabilities'
+            ? undefined
+            : property === 'catalogSnapshot'
+              ? async (_input: unknown, context: { correlationId: string }) => {
+                  correlationId = context.correlationId;
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                  return { snapshots: [] };
+                }
+              : async () => {
+                  throw new Error('operation must not run');
+                },
       },
     ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({
@@ -424,6 +438,42 @@ describe('openpackerd', () => {
     expect(response.statusCode).toBe(408);
     expect(response.json().code).toBe('CANCELLED');
     expect(response.headers['x-correlation-id']).toBe(correlationId);
+    await app.close();
+  });
+
+  it('advertises no evidence types when no verifier is configured', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/capabilities',
+    });
+    expect(capabilities.statusCode).toBe(200);
+    expect(capabilities.json().evidenceTypes).toEqual([]);
+    expect(
+      capabilities.json().authenticationSchemes.map(({ type }) => type),
+    ).toEqual(['none']);
     await app.close();
   });
 });

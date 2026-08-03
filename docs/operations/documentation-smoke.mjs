@@ -196,25 +196,75 @@ for (const command of [
   if (!cli.includes(`'${command}'`))
     throw new Error(`Documented CLI command is missing: ${command}`);
 
-const executableChecks = [
-  [process.execPath, ['packages/contracts/scripts/check-schemas.mjs']],
-  [process.execPath, ['packages/contracts/scripts/generate.mjs', '--check']],
-  [process.execPath, ['--test', 'integrations/mise/test/contract.test.mjs']],
-  [
-    process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    [
-      'run',
-      'typecheck',
-      '--workspace',
-      '@openpacker/example-basic-client',
-      '--workspace',
-      '@openpacker/example-embedded-resolver',
-      '--workspace',
-      '@openpacker/example-epoch-consumer',
-    ],
-  ],
-];
-for (const [command, args] of executableChecks) {
+const evidenceManifestPath = 'docs/operations/documentation-smoke.json';
+const evidenceManifest = JSON.parse(
+  await readFile(join(root, evidenceManifestPath), 'utf8'),
+);
+if (
+  typeof evidenceManifest.executedBySmoke !== 'object' ||
+  typeof evidenceManifest.coveredByVerify !== 'object'
+)
+  throw new Error(
+    `${evidenceManifestPath} must declare executedBySmoke and coveredByVerify`,
+  );
+
+async function workspaceHasTestScript(name) {
+  for (const group of ['apps', 'packages', 'examples', 'integrations']) {
+    const entries = await readdir(join(root, group), {
+      withFileTypes: true,
+    }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifest = await readFile(
+        join(root, group, entry.name, 'package.json'),
+        'utf8',
+      ).catch(() => undefined);
+      if (manifest === undefined) continue;
+      const parsed = JSON.parse(manifest);
+      if (parsed.name === name) return typeof parsed.scripts?.test === 'string';
+    }
+  }
+  return false;
+}
+
+// Every advertised-but-not-executed evidence command must be a real script
+// that the aggregate verify gate actually runs — the manifest cannot drift
+// into decoration.
+for (const [id, command] of Object.entries(evidenceManifest.coveredByVerify)) {
+  const runMatch = command.match(/^npm run ([^ ]+)$/u);
+  const workspaceMatch = command.match(/^npm test --workspace (\S+)$/u);
+  if (runMatch) {
+    if (typeof packageJson.scripts?.[runMatch[1]] !== 'string')
+      throw new Error(`Evidence ${id} names a missing script: ${command}`);
+    if (!packageJson.scripts.verify.includes(`npm run ${runMatch[1]}`))
+      throw new Error(`verify does not run documented evidence ${id}`);
+  } else if (workspaceMatch) {
+    if (!packageJson.scripts.verify.includes('npm test'))
+      throw new Error(`verify does not run workspace tests for ${id}`);
+    if (!(await workspaceHasTestScript(workspaceMatch[1])))
+      throw new Error(
+        `Evidence ${id} names a workspace without a test script: ${command}`,
+      );
+  } else {
+    throw new Error(`Unrecognized evidence command for ${id}: ${command}`);
+  }
+}
+
+const executableChecks = Object.entries(evidenceManifest.executedBySmoke).map(
+  ([id, command]) => {
+    const [binary, ...args] = command.split(' ');
+    return [
+      id,
+      binary === 'node'
+        ? process.execPath
+        : process.platform === 'win32'
+          ? `${binary}.cmd`
+          : binary,
+      args,
+    ];
+  },
+);
+for (const [id, command, args] of executableChecks) {
   const result = spawnSync(command, args, {
     cwd: root,
     encoding: 'utf8',
@@ -222,13 +272,11 @@ for (const [command, args] of executableChecks) {
   });
   if (result.status !== 0)
     throw new Error(
-      `Documented check failed: ${command} ${args.join(' ')}\n${result.stderr || result.stdout}`,
+      `Documented check ${id} failed: ${command} ${args.join(' ')}\n${result.stderr || result.stdout}`,
     );
 }
 
 console.log(
-  `documentation smoke: ${files.length} files, local links, inventory, primary sources, and ${executableChecks.length} executable checks passed`,
+  `documentation smoke: ${files.length} files, local links, inventory, primary sources, ${executableChecks.length} executed checks, and ${Object.keys(evidenceManifest.coveredByVerify).length} verify-covered evidence commands passed`,
 );
-console.log(
-  relative(root, join(root, 'docs/operations/documentation-smoke.json')),
-);
+console.log(relative(root, join(root, evidenceManifestPath)));

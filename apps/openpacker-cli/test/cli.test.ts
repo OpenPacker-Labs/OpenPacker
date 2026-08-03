@@ -185,7 +185,7 @@ describe('openpacker CLI', () => {
       let requested = '';
       vi.stubGlobal('fetch', async (url: string | URL | Request) => {
         requested = new URL(url.toString()).pathname;
-        return Response.json({ digest });
+        return Response.json({ digest, decision: 'allow' });
       });
       const output = io();
       if (item.input !== undefined)
@@ -195,6 +195,40 @@ describe('openpacker CLI', () => {
       );
       expect(requested).toBe(item.path);
       expect(output.out).toContain(digest);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('maps verify decisions to fail-closed exit codes', async () => {
+    const cases: Array<{ body: unknown; exit: number }> = [
+      { body: { decision: 'allow', evidence: [] }, exit: EXIT_CODES.success },
+      {
+        body: {
+          decision: 'deny',
+          evidence: [{ status: 'invalid' }],
+        },
+        exit: EXIT_CODES.verificationFailed,
+      },
+      {
+        body: {
+          decision: 'deny',
+          evidence: [{ status: 'policy-denied' }],
+        },
+        exit: EXIT_CODES.policyDenied,
+      },
+      {
+        body: { decision: 'indeterminate', evidence: [] },
+        exit: EXIT_CODES.unavailable,
+      },
+      { body: { evidence: [] }, exit: EXIT_CODES.internal },
+    ];
+    for (const item of cases) {
+      vi.stubGlobal('fetch', async () => Response.json(item.body));
+      const output = io();
+      output.stdin = Readable.from(['{}']);
+      expect(await runCli(['verify', '--input', '-', '--json'], output)).toBe(
+        item.exit,
+      );
       vi.unstubAllGlobals();
     }
   });

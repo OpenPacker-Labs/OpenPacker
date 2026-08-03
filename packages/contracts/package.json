@@ -26,7 +26,6 @@
     "check:contracts": "node scripts/check-schemas.mjs",
     "build": "npm run generate && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:conformance": "vitest run",
     "test:security": "vitest run",

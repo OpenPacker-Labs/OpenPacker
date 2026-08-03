@@ -312,7 +312,7 @@ test('verifies an offline Sigstore bundle including identity and transparency ev
     }),
   );
   const bundle: OfflineSigstoreBundle = {
-    mediaType: 'application/vnd.dev.sigstore.bundle.v0.3+json',
+    mediaType: 'application/vnd.openpacker.offline-sigstore-fixture.v1+json',
     messageSignature: {
       messageDigest: artifactDigest,
       signature: await (

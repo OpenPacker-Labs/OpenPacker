@@ -109,6 +109,11 @@ layout = "opm"
 Bare names are **fail-closed**: `opm add lodash` errors unless you pass
 `--ecosystem`.
 
+A spec names the package; it does not fetch it from a public registry. Every add
+resolves through a [resolution source](#resolution-sources) — an explicit
+`--source` (local file or URL you supply) or a catalog entry. Without one,
+`opm add` fails with `UNRESOLVABLE`.
+
 ---
 
 ## Commands
@@ -138,14 +143,21 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 
 ---
 
-## Offline / catalogs
+## Resolution sources
 
-When offline (or for air-gapped demos), packages resolve from:
+These are the **only** ways `opm` resolves a package — online or offline. `opm`
+never contacts npm, crates.io, PyPI, NuGet, Maven, or the Go proxy;
+registry-backed resolution is a control-plane (`openpacker`) concern. In order:
 
-1. `source = "file:…"` on the package in `opm.toml`
+1. `source = "file:…"` (or an explicit `https:` URL) on the package in
+   `opm.toml`
 2. `.opm/catalog.json` in the project
 3. `OPM_CATALOG` env path
 4. Walk-up `fixtures/opm/catalog.json` (repo demos)
+
+Locks record **direct requirements only** — `opm` performs no transitive
+dependency resolution or version-range solving; a `^`/`~` range is a hint, not a
+constraint the resolver satisfies.
 
 Catalog entry shape (see `fixtures/opm/catalog.json`):
 

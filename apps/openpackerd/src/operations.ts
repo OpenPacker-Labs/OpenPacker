@@ -85,6 +85,7 @@ export interface OperationContext {
 }
 
 export interface PrexOperations {
+  capabilities?(meta: ProtocolMeta): Capabilities;
   normalize(
     input: NormalizeRequest,
     context: OperationContext,
@@ -192,6 +193,9 @@ export function createReferenceOperations(
   const instances = () => options.universe.packages;
 
   return {
+    capabilities: (meta) =>
+      defaultCapabilities(meta, capabilityFeatures(options)),
+
     async normalize(input) {
       return {
         meta: options.meta,
@@ -972,7 +976,41 @@ function operationError(
   return new OperationError(code, message, status);
 }
 
-export function defaultCapabilities(meta: ProtocolMeta): Capabilities {
+export interface CapabilityFeatures {
+  receiptVerification?: boolean;
+  artifactVerification?: boolean;
+  configuredChecks?: Iterable<string>;
+}
+
+const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
+  'tuf-metadata': 'tuf',
+  'sigstore-bundle': 'sigstore',
+  'slsa-subject': 'slsa',
+  'cyclonedx-sbom': 'cyclonedx',
+  'lifecycle-eligibility': 'lifecycle',
+  'receipt-bindings': 'receipt-signature',
+  'artifact-size': 'artifact-digest',
+};
+
+export function capabilityFeatures(
+  options: ReferenceOperationsOptions,
+): CapabilityFeatures {
+  return {
+    receiptVerification: (options.receiptVerifiers?.size ?? 0) > 0,
+    artifactVerification: options.artifactSource !== undefined,
+    configuredChecks: [...(options.verificationChecks?.keys() ?? [])],
+  };
+}
+
+export function defaultCapabilities(
+  meta: ProtocolMeta,
+  features: CapabilityFeatures = {},
+): Capabilities {
+  const evidenceTypes = new Set<string>();
+  if (features.receiptVerification) evidenceTypes.add('receipt-signature');
+  if (features.artifactVerification) evidenceTypes.add('artifact-digest');
+  for (const check of features.configuredChecks ?? [])
+    evidenceTypes.add(EVIDENCE_TYPE_BY_CHECK[check] ?? check);
   return {
     meta,
     protocolVersions: ['1.0-draft'],
@@ -1018,14 +1056,7 @@ export function defaultCapabilities(meta: ProtocolMeta): Capabilities {
       'capabilities',
       'variables',
     ],
-    evidenceTypes: [
-      'tuf',
-      'sigstore',
-      'slsa',
-      'cyclonedx',
-      'receipt-signature',
-      'artifact-digest',
-    ],
+    evidenceTypes: [...evidenceTypes].sort(),
     artifactTransports: ['file', 'cas', 'oci', 'https'],
     contentEncodings: ['identity'],
     eventBindings: ['ndjson'],
@@ -1039,8 +1070,10 @@ export function defaultCapabilities(meta: ProtocolMeta): Capabilities {
     pagination: { supported: true, maximumPageSize: 1_000 },
     streaming: { supported: true, bindings: ['ndjson'] },
     authenticationSchemes: [
-      { type: 'none', description: 'Reference fixture configuration' },
-      { type: 'bearer', description: 'Configured credential resolver' },
+      {
+        type: 'none',
+        description: 'The reference daemon performs no request authentication',
+      },
     ],
     extensionSchemaRefs: [],
   };

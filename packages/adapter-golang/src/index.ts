@@ -36,6 +36,7 @@ import {
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
+  type ProviderWarning,
   type TranslatedMetadata,
   type TranslationProvenance,
 } from '@openpacker/adapter-core';
@@ -858,6 +859,7 @@ export class GolangProxyProvider implements CatalogProvider {
     string,
     ProviderRecord<GolangModuleVersionMetadata>
   >();
+  readonly #modWarnings = new Map<string, readonly ProviderWarning[]>();
 
   constructor(
     private readonly transport: HttpTransport,
@@ -877,14 +879,17 @@ export class GolangProxyProvider implements CatalogProvider {
     if (purl === undefined) {
       this.#listRecords.clear();
       this.#infoRecords.clear();
+      this.#modWarnings.clear();
       return;
     }
     const parsed = parsePurl(this.codec.canonicalizePurl(purl));
     const base = formatPurl({ ...parsed, version: undefined });
     this.#listRecords.delete(base);
     for (const key of [...this.#infoRecords.keys()]) {
-      if (key === base || key.startsWith(`${base}@`))
+      if (key === base || key.startsWith(`${base}@`)) {
         this.#infoRecords.delete(key);
+        this.#modWarnings.delete(key);
+      }
     }
   }
 
@@ -952,7 +957,11 @@ export class GolangProxyProvider implements CatalogProvider {
         `@v/${parsed.version}.zip`,
       );
     }
-    return { package: translated.instance, record, warnings: [] };
+    return {
+      package: translated.instance,
+      record,
+      warnings: this.#modWarnings.get(canonical) ?? [],
+    };
   }
 
   async fetchArtifactRecord(
@@ -1195,24 +1204,39 @@ export class GolangProxyProvider implements CatalogProvider {
     let requires: GolangRequire[] = [];
     let go: string | undefined;
     let modText: string | undefined;
-    try {
-      const modResponse = await this.transport.request({
-        url: modUrl,
-        signal,
-        maximumBytes: 2 * 1024 * 1024,
-        headers: { accept: 'text/plain' },
-      });
-      if (modResponse.status >= 200 && modResponse.status < 300) {
-        modText = text(modResponse);
-        const mod = parseGoMod(modText);
-        requires = mod.requires;
-        go = mod.go;
+    const warnings: ProviderWarning[] = [];
+    const modResponse = await this.transport.request({
+      url: modUrl,
+      signal,
+      maximumBytes: 2 * 1024 * 1024,
+      headers: { accept: 'text/plain' },
+    });
+    if (modResponse.status >= 200 && modResponse.status < 300) {
+      modText = text(modResponse);
+      let mod;
+      try {
+        mod = parseGoMod(modText);
+      } catch (error) {
+        if (error instanceof ProviderError && error.code === 'INVALID_LOCKFILE')
+          throw new ProviderError('INVALID_PROVIDER_METADATA', error.message);
+        throw error;
       }
-    } catch (error) {
-      if (error instanceof ProviderError && error.code === 'INVALID_LOCKFILE')
-        throw new ProviderError('INVALID_PROVIDER_METADATA', error.message);
-      // Missing .mod is allowed; dependencies remain empty.
+      requires = mod.requires;
+      go = mod.go;
+    } else if (modResponse.status === 404 || modResponse.status === 410) {
+      warnings.push({
+        code: 'GOLANG_MOD_NOT_AVAILABLE',
+        message:
+          'Go module proxy has no .mod for this version; dependencies are unknown, not empty',
+      });
+    } else {
+      throw new ProviderError(
+        'UPSTREAM_UNAVAILABLE',
+        `Go module proxy .mod returned ${modResponse.status}`,
+        modResponse.status,
+      );
     }
+    this.#modWarnings.set(canonical, warnings);
 
     const metadata: GolangModuleVersionMetadata = {
       path,

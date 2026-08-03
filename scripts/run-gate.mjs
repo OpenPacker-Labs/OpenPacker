@@ -34,7 +34,9 @@ const vitestTargets = {
     'packages/trust',
     'packages/policy',
     'packages/receipts',
+    'packages/opm-project',
     'apps/openpackerd',
+    'apps/opm',
   ],
   integration: [
     'packages/adapter-core',
@@ -49,8 +51,10 @@ const vitestTargets = {
     'packages/ocm',
     'packages/materializer',
     'packages/trust',
+    'packages/opm-project',
     'apps/openpackerd',
     'apps/openpacker-cli',
+    'apps/opm',
   ],
   compat: [
     'packages/sdk',

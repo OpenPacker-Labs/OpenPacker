@@ -3,7 +3,7 @@ import type { Digest, JsonValue } from '@openpacker/contracts';
 import { Ed25519Verifier } from './signatures.js';
 
 export interface OfflineSigstoreBundle {
-  mediaType: 'application/vnd.dev.sigstore.bundle.v0.3+json';
+  mediaType: 'application/vnd.openpacker.offline-sigstore-fixture.v1+json';
   messageSignature: { messageDigest: Digest; signature: string };
   verificationMaterial: {
     certificate: {
@@ -113,7 +113,10 @@ export async function verifyOfflineSigstoreBundle(
   policy: SigstoreIdentityPolicy,
   evaluationTime: string,
 ): Promise<void> {
-  if (bundle.mediaType !== 'application/vnd.dev.sigstore.bundle.v0.3+json')
+  if (
+    bundle.mediaType !==
+    'application/vnd.openpacker.offline-sigstore-fixture.v1+json'
+  )
     throw new Error('Unsupported Sigstore bundle format');
   const artifactDigest = await sha256(artifact);
   if (

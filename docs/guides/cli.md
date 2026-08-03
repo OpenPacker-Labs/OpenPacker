@@ -143,6 +143,13 @@ OpenPacker solution + portable lock digest **without re-solving**.
 This records profile **`native-capture-v1`**. It does **not** claim OpenPacker
 independently solved the graph.
 
+Digest honesty: only sha256-based native digests (npm integrity, Cargo.lock
+checksums) become artifact descriptors. NuGet `sha512-…`, Go `h1:` hashes, and
+digest-less Gradle locks are recorded as `NATIVE_DIGEST_NOT_REPRESENTED`
+semantic loss — the import never fabricates a digest for them. Lifecycle status
+is captured as `unknown`; a lockfile cannot tell you whether a package was later
+yanked or revoked.
+
 ### Cargo.lock
 
 ```sh
@@ -389,6 +396,12 @@ install check, digests). Failures are non-zero.
 | 7    | Verification failed       |
 | 8    | Service unavailable       |
 | 9    | Internal error            |
+
+`verify` and `receipt verify` exit `0` only when the service decision is
+`allow`. A `deny` decision exits `7` (`6` when the denial includes
+`policy-denied` evidence), and `indeterminate` — evidence missing or no verifier
+configured — exits `8`. Never gate a deploy on `openpacker verify && …` without
+checking the exit code documentation above.
 
 ---
 

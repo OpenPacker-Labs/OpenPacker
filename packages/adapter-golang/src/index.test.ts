@@ -262,3 +262,55 @@ it('reads deterministic proxy.golang.org-style fixtures offline', async () => {
   expect(snapshot.revision).toMatch(/^sha256:/);
   expect(snapshot.providerId).toBe('golang-proxy');
 });
+
+it('warns when the .mod file is missing instead of claiming zero dependencies', async () => {
+  const modulePath = 'github.com/openpacker/demo-zstd';
+  const encoded = encodeGoModulePath(modulePath);
+  const provider = new GolangProxyProvider(
+    new FixtureHttpTransport(
+      new Map([
+        [
+          `https://fixtures.test/${encoded}/@v/v1.0.0.info`,
+          { status: 200, headers: {}, body: infoBytes },
+        ],
+        [
+          `https://fixtures.test/${encoded}/@v/v1.0.0.mod`,
+          { status: 404, headers: {}, body: new Uint8Array() },
+        ],
+      ]),
+    ),
+    { now: () => '2026-08-02T00:00:00Z' },
+    'https://fixtures.test',
+  );
+  const inspection = await provider.inspect(
+    'pkg:golang/github.com/openpacker/demo-zstd@v1.0.0',
+  );
+  expect(inspection.package.requirements).toEqual([]);
+  expect(inspection.warnings).toEqual([
+    expect.objectContaining({ code: 'GOLANG_MOD_NOT_AVAILABLE' }),
+  ]);
+});
+
+it('fails closed when the .mod fetch is unavailable', async () => {
+  const modulePath = 'github.com/openpacker/demo-zstd';
+  const encoded = encodeGoModulePath(modulePath);
+  const provider = new GolangProxyProvider(
+    new FixtureHttpTransport(
+      new Map([
+        [
+          `https://fixtures.test/${encoded}/@v/v1.0.0.info`,
+          { status: 200, headers: {}, body: infoBytes },
+        ],
+        [
+          `https://fixtures.test/${encoded}/@v/v1.0.0.mod`,
+          { status: 503, headers: {}, body: new Uint8Array() },
+        ],
+      ]),
+    ),
+    { now: () => '2026-08-02T00:00:00Z' },
+    'https://fixtures.test',
+  );
+  await expect(
+    provider.inspect('pkg:golang/github.com/openpacker/demo-zstd@v1.0.0'),
+  ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
+});
