@@ -328,7 +328,33 @@
           "maxItems": 10000,
           "items": { "$ref": "model.schema.json#/$defs/Requirement" }
         },
-        "target": { "$ref": "model.schema.json#/$defs/TargetContext" },
+        "target": {
+          "$comment": "The host platform: where selected packages will run. When platforms is present, platforms.host MUST equal this value.",
+          "$ref": "model.schema.json#/$defs/TargetContext"
+        },
+        "platforms": {
+          "$comment": "Build/host/target separation for cross compilation. Absent members default to the host platform, so omitting this field reproduces single-platform behavior exactly.",
+          "$ref": "model.schema.json#/$defs/PlatformContexts"
+        },
+        "requirementKindPolicy": {
+          "$comment": "Which requirement kinds resolve against the build platform, and which are inactive. Absent means every requirement resolves against the host platform.",
+          "type": "object",
+          "properties": {
+            "buildPlatformKinds": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": { "$ref": "model.schema.json#/$defs/RequirementKind" }
+            },
+            "inactiveKinds": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": { "$ref": "model.schema.json#/$defs/RequirementKind" }
+            }
+          },
+          "additionalProperties": false
+        },
         "environment": {
           "type": "object",
           "required": ["installed", "locked"],
@@ -402,6 +428,13 @@
         "toNodeId": { "type": "string", "maxLength": 255 },
         "witnessType": {
           "enum": ["package", "capability", "replacement", "optional"]
+        },
+        "toOutputs": {
+          "$comment": "Outputs of the target node this edge needs. Absent means the target's default output.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "model.schema.json#/$defs/OutputName" }
         }
       },
       "additionalProperties": false

@@ -5,12 +5,15 @@ use std::{
 
 use serde_json::{Value, json};
 
+use crate::semantics::{
+    PlatformView, request_platforms, requirement_is_active, requirement_platforms,
+};
 use crate::{
     CapabilityProvider, DependencyEdge, Digest, ExcludedCandidate, ExplanationEdge,
     ExplanationGraph, ExplanationNode, PackageInstance, ProofCheck, RequirementExpression,
     RequirementWitness, ResolutionProof, ResolutionSolution, ResolutionUniverse, ResolverError,
     SelectedAssignment, SolveInput, SolveOutput, SolveRequest, TargetPredicate, canonical_json,
-    check, digest_json, evaluate_target_predicate, parse_json_as, version_satisfies,
+    check, digest_json, parse_json_as, version_satisfies,
 };
 
 pub const MAX_COMPANION_NODES: usize = 22;
@@ -19,6 +22,20 @@ pub const MAX_REQUIREMENTS: usize = 1_000_000;
 pub const MAX_ALTERNATIVES: usize = 10_000;
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 pub const MAX_PREDICATE_DEPTH: usize = 64;
+
+const SUPPORTED_REQUIREMENT_KINDS: [&str; 11] = [
+    "runtime",
+    "build",
+    "development",
+    "peer",
+    "optional",
+    "feature",
+    "tool",
+    "platform",
+    "replacement",
+    "conflict",
+    "unknown-native",
+];
 
 const SUPPORTED_OBJECTIVES: [&str; 8] = [
     "satisfy-hard-constraints",
@@ -187,6 +204,31 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             )));
         }
         validate_expression(&requirement.expression, 1)?;
+    }
+    if let Some(platforms) = &input.request.platforms {
+        if platforms
+            .host
+            .as_ref()
+            .is_some_and(|host| *host != input.request.target)
+        {
+            return Err(ResolverError::InvalidInput(
+                "platforms.host must equal the request target".into(),
+            ));
+        }
+        if let Some(policy) = &input.request.requirement_kind_policy {
+            for kinds in [&policy.build_platform_kinds, &policy.inactive_kinds]
+                .into_iter()
+                .flatten()
+            {
+                for kind in kinds {
+                    if !SUPPORTED_REQUIREMENT_KINDS.contains(&kind.as_str()) {
+                        return Err(ResolverError::InvalidInput(format!(
+                            "unsupported requirement kind: {kind}"
+                        )));
+                    }
+                }
+            }
+        }
     }
     if input.request.semantics.profile == "prex-calculus-subset-v1"
         && objectives_require_optimization(&input.request)
@@ -436,7 +478,14 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
     }
     if input.request.requirements.iter().any(|requirement| {
         !requirement.optional
-            && expression_witness(&requirement.expression, input, &selected).is_none()
+            && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+            && expression_witness(
+                &requirement.expression,
+                input,
+                &selected,
+                requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+            )
+            .is_none()
     }) {
         return false;
     }
@@ -444,23 +493,39 @@ pub(crate) fn selection_valid(input: &SolveInput, selected: &[usize]) -> bool {
         let package = &input.universe.packages[*index];
         if package.requirements.iter().any(|requirement| {
             !requirement.optional
-                && expression_witness(&requirement.expression, input, &selected).is_none()
+                && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+                && expression_witness(
+                    &requirement.expression,
+                    input,
+                    &selected,
+                    requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                )
+                .is_none()
         }) {
             return false;
         }
-        if package
-            .conflicts
-            .iter()
-            .any(|conflict| expression_witness(&conflict.expression, input, &selected).is_some())
-        {
+        if package.conflicts.iter().any(|conflict| {
+            expression_witness(
+                &conflict.expression,
+                input,
+                &selected,
+                request_platforms(&input.request),
+            )
+            .is_some()
+        }) {
             return false;
         }
         for constraint in &package.cardinality_constraints {
             let count = selected
                 .iter()
                 .filter(|candidate| {
-                    expression_witness(&constraint.selector, input, &BTreeSet::from([**candidate]))
-                        .is_some()
+                    expression_witness(
+                        &constraint.selector,
+                        input,
+                        &BTreeSet::from([**candidate]),
+                        request_platforms(&input.request),
+                    )
+                    .is_some()
                 })
                 .count();
             if count < constraint.minimum || count > constraint.maximum {
@@ -528,7 +593,12 @@ pub(crate) fn build_output(
             .iter()
             .flat_map(|package| package.requirements.iter()),
     ) {
-        let resolved = expression_witness(&requirement.expression, input, &selected_set);
+        let resolved = expression_witness(
+            &requirement.expression,
+            input,
+            &selected_set,
+            requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+        );
         let status = if resolved.is_none() && requirement.optional {
             "optional-omitted"
         } else {
@@ -572,7 +642,10 @@ pub(crate) fn build_output(
                         .target_predicate
                         .as_ref()
                         .is_none_or(|predicate| {
-                            evaluate_target_predicate_fixed(predicate, &input.request.target)
+                            evaluate_target_predicate_fixed(
+                                predicate,
+                                request_platforms(&input.request),
+                            )
                         })
                 })
                 .map(|capability| CapabilityProvider {
@@ -660,6 +733,7 @@ pub(crate) fn build_output(
                                 &constraint.selector,
                                 input,
                                 &BTreeSet::from([**candidate]),
+                                request_platforms(&input.request),
                             )
                             .is_some()
                         })
@@ -819,6 +893,7 @@ fn expression_witness(
     expression: &RequirementExpression,
     input: &SolveInput,
     selected: &BTreeSet<usize>,
+    platforms: PlatformView<'_>,
 ) -> Option<Vec<String>> {
     match expression {
         RequirementExpression::Package {
@@ -854,7 +929,10 @@ fn expression_witness(
                             .target_predicate
                             .as_ref()
                             .is_none_or(|predicate| {
-                                evaluate_target_predicate_fixed(predicate, &input.request.target)
+                                evaluate_target_predicate_fixed(
+                                    predicate,
+                                    request_platforms(&input.request),
+                                )
                             })
                         && attributes
                             .iter()
@@ -871,7 +949,7 @@ fn expression_witness(
         RequirementExpression::AllOf { expressions } => {
             let mut witnesses = Vec::new();
             for expression in expressions {
-                witnesses.extend(expression_witness(expression, input, selected)?);
+                witnesses.extend(expression_witness(expression, input, selected, platforms)?);
             }
             witnesses.sort();
             witnesses.dedup();
@@ -879,10 +957,10 @@ fn expression_witness(
         }
         RequirementExpression::AnyOf { expressions } => expressions
             .iter()
-            .filter_map(|expression| expression_witness(expression, input, selected))
+            .filter_map(|expression| expression_witness(expression, input, selected, platforms))
             .min(),
         RequirementExpression::Not { expression } => {
-            expression_witness(expression, input, selected)
+            expression_witness(expression, input, selected, platforms)
                 .is_none()
                 .then(Vec::new)
         }
@@ -891,11 +969,11 @@ fn expression_witness(
             then,
             otherwise,
         } => {
-            if evaluate_target_predicate_fixed(when, &input.request.target) {
-                expression_witness(then, input, selected)
+            if evaluate_target_predicate_fixed(when, platforms) {
+                expression_witness(then, input, selected, platforms)
             } else {
                 otherwise.as_ref().map_or(Some(Vec::new()), |expression| {
-                    expression_witness(expression, input, selected)
+                    expression_witness(expression, input, selected, platforms)
                 })
             }
         }
@@ -904,30 +982,22 @@ fn expression_witness(
 
 fn evaluate_target_predicate_fixed(
     predicate: &crate::TargetPredicate,
-    target: &crate::TargetContext,
+    platforms: PlatformView<'_>,
 ) -> bool {
     use crate::TargetPredicate::*;
     match predicate {
-        Equals { path, value } => {
-            crate::semantics::target_scalar(target, path).as_ref() == Some(value)
-        }
-        NotEquals { path, value } => {
-            crate::semantics::target_scalar(target, path).as_ref() != Some(value)
-        }
-        In { path, values } => {
-            crate::semantics::target_scalar(target, path).is_some_and(|v| values.contains(&v))
-        }
-        NotIn { path, values } => {
-            crate::semantics::target_scalar(target, path).is_none_or(|v| !values.contains(&v))
-        }
+        Equals { path, value } => platforms.scalar(path).as_ref() == Some(value),
+        NotEquals { path, value } => platforms.scalar(path).as_ref() != Some(value),
+        In { path, values } => platforms.scalar(path).is_some_and(|v| values.contains(&v)),
+        NotIn { path, values } => platforms.scalar(path).is_none_or(|v| !values.contains(&v)),
         AllOf { predicates } => predicates
             .iter()
-            .all(|p| evaluate_target_predicate_fixed(p, target)),
+            .all(|p| evaluate_target_predicate_fixed(p, platforms)),
         AnyOf { predicates } => predicates
             .iter()
-            .any(|p| evaluate_target_predicate_fixed(p, target)),
-        Not { predicate } => !evaluate_target_predicate_fixed(predicate, target),
-        _ => evaluate_target_predicate(predicate, target),
+            .any(|p| evaluate_target_predicate_fixed(p, platforms)),
+        Not { predicate } => !evaluate_target_predicate_fixed(predicate, platforms),
+        _ => crate::semantics::evaluate_target_predicate_in(predicate, platforms),
     }
 }
 
@@ -1024,7 +1094,10 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
             if let Some(predicate) = &capability.target_predicate {
                 checks.push(ProofCheck {
                     id: format!("target:{}:capability:{}", package.node_id, capability.name),
-                    valid: evaluate_target_predicate_fixed(predicate, &input.request.target),
+                    valid: evaluate_target_predicate_fixed(
+                        predicate,
+                        request_platforms(&input.request),
+                    ),
                     evidence: BTreeMap::from([("source".into(), capability.source.clone())]),
                 });
             }
@@ -1039,7 +1112,7 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
         collect_expression_target_checks(
             &requirement.id,
             &requirement.expression,
-            &input.request.target,
+            requirement_platforms(&input.request, Some(requirement.kind.as_str())),
             &mut checks,
             &mut sequence,
         );
@@ -1051,7 +1124,7 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
 fn collect_expression_target_checks(
     requirement_id: &str,
     expression: &RequirementExpression,
-    target: &crate::TargetContext,
+    platforms: PlatformView<'_>,
     checks: &mut Vec<ProofCheck>,
     sequence: &mut usize,
 ) {
@@ -1069,11 +1142,11 @@ fn collect_expression_target_checks(
                 evidence: BTreeMap::from([
                     (
                         "predicateResult".into(),
-                        json!(evaluate_target_predicate_fixed(when, target)),
+                        json!(evaluate_target_predicate_fixed(when, platforms)),
                     ),
                     (
                         "branch".into(),
-                        json!(if evaluate_target_predicate_fixed(when, target) {
+                        json!(if evaluate_target_predicate_fixed(when, platforms) {
                             "then"
                         } else {
                             "else"
@@ -1081,12 +1154,12 @@ fn collect_expression_target_checks(
                     ),
                 ]),
             });
-            collect_expression_target_checks(requirement_id, then, target, checks, sequence);
+            collect_expression_target_checks(requirement_id, then, platforms, checks, sequence);
             if let Some(otherwise) = otherwise {
                 collect_expression_target_checks(
                     requirement_id,
                     otherwise,
-                    target,
+                    platforms,
                     checks,
                     sequence,
                 );
@@ -1098,15 +1171,19 @@ fn collect_expression_target_checks(
                 collect_expression_target_checks(
                     requirement_id,
                     expression,
-                    target,
+                    platforms,
                     checks,
                     sequence,
                 );
             }
         }
-        RequirementExpression::Not { expression } => {
-            collect_expression_target_checks(requirement_id, expression, target, checks, sequence)
-        }
+        RequirementExpression::Not { expression } => collect_expression_target_checks(
+            requirement_id,
+            expression,
+            platforms,
+            checks,
+            sequence,
+        ),
         _ => {}
     }
 }

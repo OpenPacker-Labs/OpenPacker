@@ -27,6 +27,7 @@ Accepted decisions:
 23. [Build recipes are captured claims](0023-build-recipes-are-captured-claims.md)
 24. [Canonical tree manifests instead of NAR](0024-canonical-tree-manifests.md)
 25. [Runtime references and substitute descriptors](0025-runtime-references-and-substitutes.md)
+26. [Package outputs and build/host/target platforms](0026-outputs-and-platform-triples.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

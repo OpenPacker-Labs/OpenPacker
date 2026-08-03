@@ -210,6 +210,7 @@ export type DependencyEdge = {
   fromNodeId: string;
   toNodeId: string;
   witnessType: 'package' | 'capability' | 'replacement' | 'optional';
+  toOutputs?: Array<OutputName>;
 };
 export type Digest = { algorithm: 'sha256'; value: string };
 export type DigestProjection = {
@@ -557,6 +558,7 @@ export type MaterializeRequest = {
         descriptorDigest?: Digest;
       };
   forensic?: boolean;
+  outputs?: Array<OutputName>;
   target?: TargetContext;
   policy?: PolicyInput;
   resourceLimits?: ResourceLimits;
@@ -720,6 +722,7 @@ export type PackageInstance = {
   conflicts: Array<Conflict>;
   cardinalityConstraints: Array<CardinalityConstraint>;
   artifacts: Array<ArtifactDescriptor>;
+  outputs?: Array<PackageOutput>;
   lifecycle: LifecycleState;
   sourceSnapshots: Array<Digest>;
   metadataDigest: Digest;
@@ -727,6 +730,13 @@ export type PackageInstance = {
   nativeSemantics: { version: string; data: CanonicalJsonValue };
   semanticLoss: Array<SemanticLoss>;
   extensions?: Extensions;
+};
+export type PackageOutput = {
+  name: OutputName;
+  default?: boolean;
+  description?: string;
+  artifactDescriptorIds?: Array<string>;
+  recipeOutputId?: Digest;
 };
 export type PlatformContexts = {
   build?: TargetContext;
@@ -853,18 +863,7 @@ export type Requirement = {
   id: string;
   dependerNodeId?: string;
   expression: RequirementExpression;
-  kind:
-    | 'runtime'
-    | 'build'
-    | 'development'
-    | 'peer'
-    | 'optional'
-    | 'feature'
-    | 'tool'
-    | 'platform'
-    | 'replacement'
-    | 'conflict'
-    | 'unknown-native';
+  kind: RequirementKind;
   optional: boolean;
   source: SourceRef;
   authority: string;
@@ -878,6 +877,7 @@ export type RequirementExpression =
       purl: string;
       vers?: string;
       qualifiers?: { [key: string]: string };
+      outputs?: Array<OutputName>;
     }
   | {
       type: 'capability';
@@ -893,6 +893,18 @@ export type RequirementExpression =
       then: RequirementExpression;
       else?: RequirementExpression;
     };
+export type RequirementKind =
+  | 'runtime'
+  | 'build'
+  | 'development'
+  | 'peer'
+  | 'optional'
+  | 'feature'
+  | 'tool'
+  | 'platform'
+  | 'replacement'
+  | 'conflict'
+  | 'unknown-native';
 export type ResolutionCompletedData = {
   schemaVersion: '1';
   solutionDigest: Digest;
@@ -1052,6 +1064,11 @@ export type SignedReceipt = {
 export type SolveRequest = {
   requirements: Array<Requirement>;
   target: TargetContext;
+  platforms?: PlatformContexts;
+  requirementKindPolicy?: {
+    buildPlatformKinds?: Array<RequirementKind>;
+    inactiveKinds?: Array<RequirementKind>;
+  };
   environment: { installed: Array<string>; locked: Array<string> };
   policy: PolicyInput;
   semantics: SemanticsInput;
@@ -3116,7 +3133,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               path: {
                 type: 'string',
                 pattern:
-                  '^(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$',
+                  '^(?:build\\.|host\\.|target\\.)?(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$',
               },
               value: {
                 type: ['string', 'boolean', 'integer'],
@@ -3237,6 +3254,17 @@ export const schemaCatalog: Record<string, JsonValue> = {
                   type: 'string',
                 },
               },
+              outputs: {
+                $comment:
+                  'Outputs required from the matched package. Absent means the default output.',
+                type: 'array',
+                minItems: 1,
+                maxItems: 64,
+                uniqueItems: true,
+                items: {
+                  $ref: '#/$defs/OutputName',
+                },
+              },
             },
             additionalProperties: false,
           },
@@ -3341,19 +3369,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             $ref: '#/$defs/RequirementExpression',
           },
           kind: {
-            enum: [
-              'runtime',
-              'build',
-              'development',
-              'peer',
-              'optional',
-              'feature',
-              'tool',
-              'platform',
-              'replacement',
-              'conflict',
-              'unknown-native',
-            ],
+            $ref: '#/$defs/RequirementKind',
           },
           optional: {
             type: 'boolean',
@@ -3637,6 +3653,52 @@ export const schemaCatalog: Record<string, JsonValue> = {
       OutputName: {
         type: 'string',
         pattern: '^[a-z0-9][a-z0-9._-]{0,63}$',
+      },
+      RequirementKind: {
+        enum: [
+          'runtime',
+          'build',
+          'development',
+          'peer',
+          'optional',
+          'feature',
+          'tool',
+          'platform',
+          'replacement',
+          'conflict',
+          'unknown-native',
+        ],
+      },
+      PackageOutput: {
+        $comment:
+          'A separately installable part of one package. Outputs refine materialization and closure membership; the node remains the atomic unit of selection.',
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: {
+            $ref: '#/$defs/OutputName',
+          },
+          default: {
+            type: 'boolean',
+          },
+          description: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          artifactDescriptorIds: {
+            type: 'array',
+            maxItems: 1024,
+            uniqueItems: true,
+            items: {
+              type: 'string',
+              maxLength: 255,
+            },
+          },
+          recipeOutputId: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
       },
       ArtifactReference: {
         $comment:
@@ -4284,6 +4346,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
             maxItems: 1024,
             items: {
               $ref: '#/$defs/ArtifactDescriptor',
+            },
+          },
+          outputs: {
+            $comment:
+              'Absent means one implicit default output covering every artifact.',
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/PackageOutput',
             },
           },
           lifecycle: {
@@ -5157,6 +5228,17 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           forensic: {
             type: 'boolean',
+          },
+          outputs: {
+            $comment:
+              'Restrict materialization to these package outputs. Absent means the default output.',
+            type: 'array',
+            minItems: 1,
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
           },
           target: {
             $ref: 'model.schema.json#/$defs/TargetContext',
@@ -6224,7 +6306,38 @@ export const schemaCatalog: Record<string, JsonValue> = {
             },
           },
           target: {
+            $comment:
+              'The host platform: where selected packages will run. When platforms is present, platforms.host MUST equal this value.',
             $ref: 'model.schema.json#/$defs/TargetContext',
+          },
+          platforms: {
+            $comment:
+              'Build/host/target separation for cross compilation. Absent members default to the host platform, so omitting this field reproduces single-platform behavior exactly.',
+            $ref: 'model.schema.json#/$defs/PlatformContexts',
+          },
+          requirementKindPolicy: {
+            $comment:
+              'Which requirement kinds resolve against the build platform, and which are inactive. Absent means every requirement resolves against the host platform.',
+            type: 'object',
+            properties: {
+              buildPlatformKinds: {
+                type: 'array',
+                maxItems: 16,
+                uniqueItems: true,
+                items: {
+                  $ref: 'model.schema.json#/$defs/RequirementKind',
+                },
+              },
+              inactiveKinds: {
+                type: 'array',
+                maxItems: 16,
+                uniqueItems: true,
+                items: {
+                  $ref: 'model.schema.json#/$defs/RequirementKind',
+                },
+              },
+            },
+            additionalProperties: false,
           },
           environment: {
             type: 'object',
@@ -6330,6 +6443,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           witnessType: {
             enum: ['package', 'capability', 'replacement', 'optional'],
+          },
+          toOutputs: {
+            $comment:
+              "Outputs of the target node this edge needs. Absent means the target's default output.",
+            type: 'array',
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
           },
         },
         additionalProperties: false,

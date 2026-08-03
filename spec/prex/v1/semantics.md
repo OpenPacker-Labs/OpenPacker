@@ -64,6 +64,45 @@ content offered by different mirrors has one substitute digest.
 | `CONTENT_ADDRESS_UNSUPPORTED`  | error    | A native content address uses an algorithm PREX cannot represent   |
 | `PLATFORM_ATTRIBUTION_ASSUMED` | warning  | An input's build/host/target role was inferred, not captured       |
 
+## Platforms and requirement kinds
+
+`SolveRequest.target` is the **host** platform: where selected packages run.
+`SolveRequest.platforms` optionally supplies `build`, `host`, and `target`
+contexts; when present, `platforms.host` MUST equal `target`, and absent members
+resolve to the host. A request without `platforms` therefore behaves exactly as
+a single-platform request, because all three platforms are the same context.
+
+`TargetPredicate.path` accepts an optional `build.`, `host.`, or `target.`
+prefix. An unprefixed path resolves against the platform its enclosing
+requirement is consumed on: requirements whose `kind` is `build` or `tool`
+resolve against the build platform, and every other kind resolves against the
+host. `requirementKindPolicy.buildPlatformKinds` replaces that set, and
+`requirementKindPolicy.inactiveKinds` marks kinds that do not participate in the
+solve at all. Conflicts, cardinality selectors, and capability target predicates
+are host-platform facts.
+
+Implementations MUST resolve predicates through one platform view shared by
+search, proof construction, and the independent checker. A capture that inferred
+rather than observed an input's platform role MUST record
+`PLATFORM_ATTRIBUTION_ASSUMED`; staging distinctions finer than one
+build/host/target split remain in `nativeSemantics` with
+`CROSS_STAGE_APPROXIMATED`.
+
+## Package outputs
+
+`PackageInstance.outputs` declares the separately installable parts of one
+package. An absent `outputs` array means a single implicit default output
+covering every artifact. `RequirementExpression.package.outputs` selects the
+parts a requirement needs, `DependencyEdge.toOutputs` records which parts an
+edge required, and `MaterializeRequest.outputs` restricts extraction.
+
+Outputs refine materialization and closure membership; they are **not** solve
+variables. The node remains the atomic unit of selection, so proof and witness
+semantics are unchanged. An ecosystem whose native semantics genuinely resolve
+per output either mints one instance per output — distinguished by the reserved
+`output` qualifier, which the existing exact qualifier match already selects —
+or records `OUTPUT_GRANULARITY_COLLAPSED`.
+
 ## Hypergraph compilation
 
 An exact `PackageInstance` is a vertex. Each capability offer is a

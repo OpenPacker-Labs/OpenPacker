@@ -291,6 +291,10 @@ pub struct ResolutionUniverse {
 pub struct SolveRequest {
     pub requirements: Vec<Requirement>,
     pub target: TargetContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platforms: Option<PlatformContexts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirement_kind_policy: Option<RequirementKindPolicy>,
     pub environment: Environment,
     pub policy: PolicyInput,
     pub semantics: SemanticsInput,
@@ -303,6 +307,51 @@ pub struct SolveRequest {
     pub timeout_milliseconds: Option<u64>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
+}
+
+/// Build, host, and target platforms for a cross-compiling solve. Absent
+/// members fall back to the host platform, which itself defaults to
+/// `SolveRequest.target`.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlatformContexts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<TargetContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<TargetContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetContext>,
+}
+
+/// Which requirement kinds are consumed on the build platform, and which are
+/// inactive for this solve.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequirementKindPolicy {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_platform_kinds: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inactive_kinds: Option<Vec<String>>,
+}
+
+/// Requirement kinds consumed while building rather than while running.
+pub const DEFAULT_BUILD_PLATFORM_KINDS: [&str; 2] = ["build", "tool"];
+
+impl RequirementKindPolicy {
+    pub fn is_build_platform(&self, kind: Option<&str>) -> bool {
+        let Some(kind) = kind else { return false };
+        self.build_platform_kinds.as_ref().map_or_else(
+            || DEFAULT_BUILD_PLATFORM_KINDS.contains(&kind),
+            |kinds| kinds.iter().any(|item| item == kind),
+        )
+    }
+
+    pub fn is_inactive(&self, kind: Option<&str>) -> bool {
+        let Some(kind) = kind else { return false };
+        self.inactive_kinds
+            .as_ref()
+            .is_some_and(|kinds| kinds.iter().any(|item| item == kind))
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

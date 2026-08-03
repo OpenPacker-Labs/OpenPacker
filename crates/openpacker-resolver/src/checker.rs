@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
+use crate::semantics::{
+    PlatformView, request_platforms, requirement_is_active, requirement_platforms,
+};
 use crate::{
     Digest, PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
     SolveOutput, TargetPredicate, brute_force_oracle, digest_json,
@@ -134,7 +137,12 @@ pub fn check(input: &SolveInput, output: &SolveOutput) -> Result<ProofCheckResul
             .find(|requirement| requirement.id == witness.requirement_id);
         match requirement {
             Some(requirement) => {
-                let actual = expression_witness(&requirement.expression, input, &selected_ids);
+                let actual = expression_witness(
+                    &requirement.expression,
+                    input,
+                    &selected_ids,
+                    requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                );
                 let expected_status = if actual.is_none() && requirement.optional {
                     "optional-omitted"
                 } else if actual.is_some() {
@@ -269,7 +277,14 @@ pub(crate) fn independent_valid_selection(
     }
     for requirement in &input.request.requirements {
         if !requirement.optional
-            && expression_witness(&requirement.expression, input, &selected_ids).is_none()
+            && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+            && expression_witness(
+                &requirement.expression,
+                input,
+                &selected_ids,
+                requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+            )
+            .is_none()
         {
             diagnostics.push(format!(
                 "root requirement {} is unsatisfied",
@@ -282,14 +297,28 @@ pub(crate) fn independent_valid_selection(
         let package = &input.universe.packages[*index];
         for requirement in &package.requirements {
             if !requirement.optional
-                && expression_witness(&requirement.expression, input, &selected_ids).is_none()
+                && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+                && expression_witness(
+                    &requirement.expression,
+                    input,
+                    &selected_ids,
+                    requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                )
+                .is_none()
             {
                 diagnostics.push(format!("requirement {} is unsatisfied", requirement.id));
                 valid = false;
             }
         }
         for conflict in &package.conflicts {
-            if expression_witness(&conflict.expression, input, &selected_ids).is_some() {
+            if expression_witness(
+                &conflict.expression,
+                input,
+                &selected_ids,
+                request_platforms(&input.request),
+            )
+            .is_some()
+            {
                 diagnostics.push(format!("conflict {} is violated", conflict.id));
                 valid = false;
             }
@@ -302,6 +331,7 @@ pub(crate) fn independent_valid_selection(
                         &constraint.selector,
                         input,
                         &BTreeSet::from([(*node_id).clone()]),
+                        request_platforms(&input.request),
                     )
                     .is_some()
                 })
@@ -322,6 +352,7 @@ fn expression_witness(
     expression: &RequirementExpression,
     input: &SolveInput,
     selected: &BTreeSet<String>,
+    platforms: PlatformView<'_>,
 ) -> Option<Vec<String>> {
     match expression {
         RequirementExpression::Package {
@@ -363,7 +394,7 @@ fn expression_witness(
                             .target_predicate
                             .as_ref()
                             .is_none_or(|predicate| {
-                                predicate_holds(predicate, &input.request.target)
+                                predicate_holds(predicate, request_platforms(&input.request))
                             })
                         && attributes
                             .iter()
@@ -380,7 +411,7 @@ fn expression_witness(
         RequirementExpression::AllOf { expressions } => {
             let mut nodes = Vec::new();
             for expression in expressions {
-                nodes.extend(expression_witness(expression, input, selected)?);
+                nodes.extend(expression_witness(expression, input, selected, platforms)?);
             }
             nodes.sort();
             nodes.dedup();
@@ -388,10 +419,10 @@ fn expression_witness(
         }
         RequirementExpression::AnyOf { expressions } => expressions
             .iter()
-            .filter_map(|expression| expression_witness(expression, input, selected))
+            .filter_map(|expression| expression_witness(expression, input, selected, platforms))
             .min(),
         RequirementExpression::Not { expression } => {
-            expression_witness(expression, input, selected)
+            expression_witness(expression, input, selected, platforms)
                 .is_none()
                 .then(Vec::new)
         }
@@ -400,33 +431,32 @@ fn expression_witness(
             then,
             otherwise,
         } => {
-            if predicate_holds(when, &input.request.target) {
-                expression_witness(then, input, selected)
+            if predicate_holds(when, platforms) {
+                expression_witness(then, input, selected, platforms)
             } else {
                 otherwise.as_ref().map_or(Some(Vec::new()), |expression| {
-                    expression_witness(expression, input, selected)
+                    expression_witness(expression, input, selected, platforms)
                 })
             }
         }
     }
 }
 
-fn predicate_holds(predicate: &TargetPredicate, target: &crate::TargetContext) -> bool {
+fn predicate_holds(predicate: &TargetPredicate, platforms: PlatformView<'_>) -> bool {
     use TargetPredicate::*;
     match predicate {
         True => true,
         False => false,
-        Equals { path, value } => {
-            crate::semantics::target_scalar(target, path).as_ref() == Some(value)
-        }
-        NotEquals { path, value } => {
-            crate::semantics::target_scalar(target, path).as_ref() != Some(value)
-        }
-        In { path, values } => crate::semantics::target_scalar(target, path)
+        Equals { path, value } => platforms.scalar(path).as_ref() == Some(value),
+        NotEquals { path, value } => platforms.scalar(path).as_ref() != Some(value),
+        In { path, values } => platforms
+            .scalar(path)
             .is_some_and(|value| values.contains(&value)),
-        NotIn { path, values } => crate::semantics::target_scalar(target, path)
+        NotIn { path, values } => platforms
+            .scalar(path)
             .is_none_or(|value| !values.contains(&value)),
-        VersionSatisfies { path, constraint } => crate::semantics::target_scalar(target, path)
+        VersionSatisfies { path, constraint } => platforms
+            .scalar(path)
             .and_then(|value| value.as_str().map(str::to_owned))
             .is_some_and(|version| {
                 constraint
@@ -434,24 +464,26 @@ fn predicate_holds(predicate: &TargetPredicate, target: &crate::TargetContext) -
                     .as_deref()
                     .is_some_and(|vers| version_satisfies(&version, vers))
             }),
-        CapabilityPresent { name, constraint } => target.capabilities.iter().any(|capability| {
-            capability.name == *name
-                && constraint.as_ref().is_none_or(|constraint| {
-                    capability.version.as_deref().is_some_and(|version| {
-                        constraint
-                            .vers
-                            .as_deref()
-                            .is_some_and(|vers| version_satisfies(version, vers))
+        CapabilityPresent { name, constraint } => {
+            platforms.host().capabilities.iter().any(|capability| {
+                capability.name == *name
+                    && constraint.as_ref().is_none_or(|constraint| {
+                        capability.version.as_deref().is_some_and(|version| {
+                            constraint
+                                .vers
+                                .as_deref()
+                                .is_some_and(|vers| version_satisfies(version, vers))
+                        })
                     })
-                })
-        }),
+            })
+        }
         AllOf { predicates } => predicates
             .iter()
-            .all(|predicate| predicate_holds(predicate, target)),
+            .all(|predicate| predicate_holds(predicate, platforms)),
         AnyOf { predicates } => predicates
             .iter()
-            .any(|predicate| predicate_holds(predicate, target)),
-        Not { predicate } => !predicate_holds(predicate, target),
+            .any(|predicate| predicate_holds(predicate, platforms)),
+        Not { predicate } => !predicate_holds(predicate, platforms),
     }
 }
 

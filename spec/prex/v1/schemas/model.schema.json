@@ -216,7 +216,7 @@
             "type": { "enum": ["equals", "notEquals"] },
             "path": {
               "type": "string",
-              "pattern": "^(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$"
+              "pattern": "^(?:build\\.|host\\.|target\\.)?(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$"
             },
             "value": { "type": ["string", "boolean", "integer"] }
           },
@@ -295,6 +295,14 @@
               "type": "object",
               "maxProperties": 64,
               "additionalProperties": { "type": "string" }
+            },
+            "outputs": {
+              "$comment": "Outputs required from the matched package. Absent means the default output.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/OutputName" }
             }
           },
           "additionalProperties": false
@@ -370,21 +378,7 @@
         },
         "dependerNodeId": { "type": "string", "maxLength": 255 },
         "expression": { "$ref": "#/$defs/RequirementExpression" },
-        "kind": {
-          "enum": [
-            "runtime",
-            "build",
-            "development",
-            "peer",
-            "optional",
-            "feature",
-            "tool",
-            "platform",
-            "replacement",
-            "conflict",
-            "unknown-native"
-          ]
-        },
+        "kind": { "$ref": "#/$defs/RequirementKind" },
         "optional": { "type": "boolean" },
         "source": { "$ref": "common.schema.json#/$defs/SourceRef" },
         "authority": { "type": "string", "maxLength": 128 },
@@ -549,6 +543,39 @@
     "OutputName": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "RequirementKind": {
+      "enum": [
+        "runtime",
+        "build",
+        "development",
+        "peer",
+        "optional",
+        "feature",
+        "tool",
+        "platform",
+        "replacement",
+        "conflict",
+        "unknown-native"
+      ]
+    },
+    "PackageOutput": {
+      "$comment": "A separately installable part of one package. Outputs refine materialization and closure membership; the node remains the atomic unit of selection.",
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/OutputName" },
+        "default": { "type": "boolean" },
+        "description": { "type": "string", "maxLength": 1024 },
+        "artifactDescriptorIds": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "recipeOutputId": { "$ref": "common.schema.json#/$defs/Digest" }
+      },
+      "additionalProperties": false
     },
     "ArtifactReference": {
       "$comment": "A reference from one realised artifact to another. At least one selector is required; multiple selectors must agree.",
@@ -960,6 +987,12 @@
           "type": "array",
           "maxItems": 1024,
           "items": { "$ref": "#/$defs/ArtifactDescriptor" }
+        },
+        "outputs": {
+          "$comment": "Absent means one implicit default output covering every artifact.",
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/PackageOutput" }
         },
         "lifecycle": { "$ref": "#/$defs/LifecycleState" },
         "sourceSnapshots": {

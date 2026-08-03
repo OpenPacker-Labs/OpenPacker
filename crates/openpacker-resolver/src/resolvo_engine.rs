@@ -12,7 +12,10 @@ use resolvo::{
     utils::{Pool, VersionSet},
 };
 
-use crate::{RequirementExpression, ResolverError, SolveInput, evaluate_target_predicate};
+use crate::semantics::{
+    PlatformView, evaluate_target_predicate_in, requirement_is_active, requirement_platforms,
+};
+use crate::{RequirementExpression, ResolverError, SolveInput};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct NodeSet(BTreeSet<usize>);
@@ -61,8 +64,13 @@ impl<'a> PrexProvider<'a> {
         for (index, package) in input.universe.packages.iter().enumerate() {
             let mut requirements = Vec::new();
             for requirement in &package.requirements {
-                if !requirement.optional {
-                    requirements.extend(provider.compile_expression(&requirement.expression)?);
+                if !requirement.optional
+                    && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+                {
+                    requirements.extend(provider.compile_expression(
+                        &requirement.expression,
+                        requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+                    )?);
                 }
             }
             provider.dependencies[index] = requirements;
@@ -73,6 +81,7 @@ impl<'a> PrexProvider<'a> {
     fn compile_expression(
         &self,
         expression: &RequirementExpression,
+        platforms: PlatformView<'_>,
     ) -> Result<Vec<ConditionalRequirement>, ResolverError> {
         match expression {
             RequirementExpression::Package { .. } => Ok(vec![self.version_set(expression)?.into()]),
@@ -80,7 +89,7 @@ impl<'a> PrexProvider<'a> {
                 expressions
                     .iter()
                     .try_fold(Vec::new(), |mut all, expression| {
-                        all.extend(self.compile_expression(expression)?);
+                        all.extend(self.compile_expression(expression, platforms)?);
                         Ok(all)
                     })
             }
@@ -109,11 +118,11 @@ impl<'a> PrexProvider<'a> {
                 then,
                 otherwise,
             } => {
-                if evaluate_target_predicate(when, &self.input.request.target) {
-                    self.compile_expression(then)
+                if evaluate_target_predicate_in(when, platforms) {
+                    self.compile_expression(then, platforms)
                 } else {
                     otherwise.as_ref().map_or(Ok(Vec::new()), |expression| {
-                        self.compile_expression(expression)
+                        self.compile_expression(expression, platforms)
                     })
                 }
             }
@@ -294,8 +303,13 @@ pub(crate) fn resolve(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {
     let provider = PrexProvider::new(input)?;
     let mut requirements = Vec::new();
     for requirement in &input.request.requirements {
-        if !requirement.optional {
-            requirements.extend(provider.compile_expression(&requirement.expression)?);
+        if !requirement.optional
+            && requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+        {
+            requirements.extend(provider.compile_expression(
+                &requirement.expression,
+                requirement_platforms(&input.request, Some(requirement.kind.as_str())),
+            )?);
         }
     }
     let problem = Problem::new().requirements(requirements);

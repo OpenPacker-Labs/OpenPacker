@@ -663,6 +663,211 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
       "valid": false,
       "levels": ["PREX-S"]
+    },
+    {
+      "name": "solve-request-cross-platform",
+      "file": "realisation/solve-cross-platform.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-platform-member",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/platforms/deploy",
+          "value": {
+            "os": "linux"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-empty-platforms",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/platforms",
+          "value": {}
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-requirement-kind-policy-kind",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/requirementKindPolicy/inactiveKinds",
+          "value": ["deploy"]
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "build-prefixed-target-predicate",
+      "inline": {
+        "type": "equals",
+        "path": "build.architecture",
+        "value": "x86_64"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "host-prefixed-runtime-predicate",
+      "inline": {
+        "type": "equals",
+        "path": "host.runtimes.node",
+        "value": "24"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-platform-prefix",
+      "inline": {
+        "type": "equals",
+        "path": "deploy.os",
+        "value": "linux"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-double-platform-prefix",
+      "inline": {
+        "type": "equals",
+        "path": "build.host.os",
+        "value": "linux"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "package-with-outputs",
+      "file": "realisation/package-with-outputs.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "reject-duplicate-output-name",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "out"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": true,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-invalid-output-name",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "Dev Files"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "requirement-expression-with-outputs",
+      "inline": {
+        "type": "package",
+        "purl": "pkg:generic/libgreet",
+        "vers": "vers:generic/1.0.0",
+        "outputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/RequirementExpression",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-requirement-expression-empty-outputs",
+      "inline": {
+        "type": "package",
+        "purl": "pkg:generic/libgreet",
+        "outputs": []
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/RequirementExpression",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "materialize-request-with-outputs",
+      "inline": {
+        "subject": {
+          "type": "purl",
+          "exactPurl": "pkg:generic/libgreet@1.0.0"
+        },
+        "outputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-materialize-request-duplicate-outputs",
+      "inline": {
+        "subject": {
+          "type": "purl",
+          "exactPurl": "pkg:generic/libgreet@1.0.0"
+        },
+        "outputs": ["dev", "dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "dependency-edge-with-outputs",
+      "inline": {
+        "requirementId": "libgreet-dev",
+        "fromNodeId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "toNodeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "witnessType": "package",
+        "toOutputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/DependencyEdge",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-dependency-edge-invalid-output",
+      "inline": {
+        "requirementId": "libgreet-dev",
+        "fromNodeId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "toNodeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "witnessType": "package",
+        "toOutputs": ["DEV"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/DependencyEdge",
+      "valid": false,
+      "levels": ["PREX-S"]
     }
   ]
 }

@@ -1,0 +1,170 @@
+{
+  "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "identity": {
+    "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+    "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "purlType": "npm",
+    "namespace": "@openpacker",
+    "name": "demo-tool",
+    "version": "1.0.0",
+    "qualifiers": {},
+    "nativeCoordinates": [
+      {
+        "ecosystem": "npm",
+        "coordinate": "@openpacker/demo-tool",
+        "version": "1.0.0"
+      }
+    ],
+    "aliases": [],
+    "sourceRefs": [
+      {
+        "type": "metadata",
+        "uri": "https://fixtures.openpacker.dev/catalog"
+      }
+    ],
+    "publisherRefs": [],
+    "externalRefs": []
+  },
+  "nativeVersion": "1.0.0",
+  "normalizedVersion": "1.0.0",
+  "versionSortKey": "1.0.0",
+  "requirements": [],
+  "capabilities": [],
+  "conflicts": [],
+  "cardinalityConstraints": [],
+  "artifacts": [
+    {
+      "descriptorId": "libgreet-out",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "4cba440e079f40f50a56731293f73f3a754321e1133ed48470d13d13af633b6c"
+      },
+      "size": 40960,
+      "mediaType": "application/vnd.openpacker.package.tar+zstd",
+      "artifactType": "realisation-output",
+      "nativeRole": "package-archive",
+      "treeDigest": {
+        "algorithm": "sha256",
+        "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+      },
+      "treeManifestRef": {
+        "type": "tree-manifest",
+        "locator": "urn:openpacker:tree-manifest:sha256:3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+        },
+        "mediaType": "application/vnd.openpacker.tree-manifest.v1+json"
+      },
+      "producedBy": {
+        "recipeDigest": {
+          "algorithm": "sha256",
+          "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+        },
+        "outputName": "out"
+      },
+      "runtimeReferences": [
+        {
+          "artifactDigest": {
+            "algorithm": "sha256",
+            "value": "b91ca16db25e983db0558e49cb29b97a3c70a14523e8adebba83734814135673"
+          },
+          "outputName": "out"
+        }
+      ],
+      "locations": [
+        {
+          "transport": "https",
+          "uri": "https://fixtures.openpacker.invalid/libgreet-1.0-out.tar.zst",
+          "priority": 0,
+          "rangeSupported": true
+        }
+      ],
+      "referrers": [],
+      "externalRefs": []
+    },
+    {
+      "descriptorId": "libgreet-dev",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "size": 40960,
+      "mediaType": "application/vnd.openpacker.package.tar+zstd",
+      "artifactType": "realisation-output",
+      "nativeRole": "package-archive",
+      "treeDigest": {
+        "algorithm": "sha256",
+        "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+      },
+      "treeManifestRef": {
+        "type": "tree-manifest",
+        "locator": "urn:openpacker:tree-manifest:sha256:3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+        },
+        "mediaType": "application/vnd.openpacker.tree-manifest.v1+json"
+      },
+      "producedBy": {
+        "recipeDigest": {
+          "algorithm": "sha256",
+          "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+        },
+        "outputName": "dev"
+      },
+      "runtimeReferences": [
+        {
+          "artifactDigest": {
+            "algorithm": "sha256",
+            "value": "b91ca16db25e983db0558e49cb29b97a3c70a14523e8adebba83734814135673"
+          },
+          "outputName": "out"
+        }
+      ],
+      "locations": [
+        {
+          "transport": "https",
+          "uri": "https://fixtures.openpacker.invalid/libgreet-1.0-out.tar.zst",
+          "priority": 0,
+          "rangeSupported": true
+        }
+      ],
+      "referrers": [],
+      "externalRefs": []
+    }
+  ],
+  "lifecycle": {
+    "status": "published",
+    "eligible": true,
+    "warnings": []
+  },
+  "sourceSnapshots": [
+    {
+      "algorithm": "sha256",
+      "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "metadataDigest": {
+    "algorithm": "sha256",
+    "value": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "nativeSemantics": {
+    "version": "npm-v1",
+    "data": {}
+  },
+  "semanticLoss": [],
+  "outputs": [
+    {
+      "name": "out",
+      "default": true,
+      "description": "runtime files",
+      "artifactDescriptorIds": ["libgreet-out"]
+    },
+    {
+      "name": "dev",
+      "description": "headers and link-time files",
+      "artifactDescriptorIds": ["libgreet-dev"]
+    }
+  ]
+}

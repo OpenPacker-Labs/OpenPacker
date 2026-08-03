@@ -76,6 +76,8 @@ fn package(seed: char, name: &str, version: &str) -> PackageInstance {
 fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> SolveInput {
     SolveInput {
         request: SolveRequest {
+            platforms: None,
+            requirement_kind_policy: None,
             requirements,
             target: TargetContext {
                 os: Some("linux".into()),
