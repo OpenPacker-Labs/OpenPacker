@@ -762,7 +762,7 @@ async function sigstoreFixture(bytes, keys, evaluationTime) {
     }),
   );
   const bundle = {
-    mediaType: 'application/vnd.dev.sigstore.bundle.v0.3+json',
+    mediaType: 'application/vnd.openpacker.offline-sigstore-fixture.v1+json',
     messageSignature: {
       messageDigest: digest,
       signature: await leafSigner.sign(text.encode(`sha256:${digest.value}`)),
@@ -1416,7 +1416,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
       [slsa, 'application/vnd.in-toto+json', 'application/json'],
       [
         sigstore,
-        'application/vnd.dev.sigstore.bundle.v0.3+json',
+        'application/vnd.openpacker.offline-sigstore-fixture.v1+json',
         'application/json',
       ],
     ])

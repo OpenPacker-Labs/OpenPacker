@@ -127,7 +127,7 @@ export async function runCli(
     const result = await execute(args, client, requestOptions, io);
     if (result !== undefined)
       await output(args, io, result.data, result.rawBytes);
-    return EXIT_CODES.success;
+    return verifyDecisionExitCode(args, result?.data) ?? EXIT_CODES.success;
   } catch (error) {
     const code = exitCode(error);
     const message =
@@ -813,6 +813,27 @@ function exitCode(error: unknown): number {
     if (error.problem?.retryable || error.status >= 500)
       return EXIT_CODES.unavailable;
   }
+  return EXIT_CODES.internal;
+}
+
+function verifyDecisionExitCode(
+  args: ParsedArguments,
+  data: unknown,
+): number | undefined {
+  const isVerify =
+    args.command === 'verify' ||
+    (args.command === 'receipt' && args.subcommand === 'verify');
+  if (!isVerify || data === undefined) return undefined;
+  const { decision, evidence } = data as {
+    decision?: string;
+    evidence?: { status?: string }[];
+  };
+  if (decision === 'allow') return undefined;
+  if (decision === 'indeterminate') return EXIT_CODES.unavailable;
+  if (decision === 'deny')
+    return evidence?.some(({ status }) => status === 'policy-denied')
+      ? EXIT_CODES.policyDenied
+      : EXIT_CODES.verificationFailed;
   return EXIT_CODES.internal;
 }
 

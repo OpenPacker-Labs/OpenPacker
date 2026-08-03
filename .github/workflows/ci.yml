@@ -1,8 +1,12 @@
 name: CI
 
+# GitHub Actions runner minutes are forbidden for this repository. Quality
+# gates are enforced locally: .githooks/pre-commit (agent:check --staged),
+# .githooks/pre-push (agent:check --base=origin/main), and `npm run verify`
+# before merge. This workflow is manual-dispatch only and disabled in repo
+# settings; do not restore automatic triggers.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

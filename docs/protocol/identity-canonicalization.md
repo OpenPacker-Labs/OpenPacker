@@ -8,12 +8,12 @@ locations, and external references are mutable locators and never immutable
 identity. Native coordinates remain attached so normalization does not erase
 ecosystem meaning.
 
-OpenPacker's codecs cover `npm`, `cargo`, and `nuget`. The shared parser
-normalizes PURL type and qualifier keys, rejects malformed percent encoding and
-duplicate qualifiers, sorts qualifiers, and percent-encodes components. Each
-codec then applies ecosystem case and coordinate rules. Consumers should send
-coordinates to `normalize` rather than constructing PURLs by string
-concatenation.
+OpenPacker's codecs cover `npm`, `cargo`, `nuget`, `pypi`, `golang`, and
+`maven`. The shared parser normalizes PURL type and qualifier keys, rejects
+malformed percent encoding and duplicate qualifiers, sorts qualifiers, and
+percent-encodes components. Each codec then applies ecosystem case and
+coordinate rules. Consumers should send coordinates to `normalize` rather than
+constructing PURLs by string concatenation.
 
 Primary specifications:
 

@@ -89,10 +89,6 @@ export interface LockImportResult {
 }
 
 const DEFAULT_EVALUATION_TIME = '2026-08-02T00:00:00Z';
-const ZERO_DIGEST: Digest = {
-  algorithm: 'sha256',
-  value: '0'.repeat(64),
-};
 
 const defaultCodecs = (): Map<Ecosystem, EcosystemCodec> =>
   new Map<Ecosystem, EcosystemCodec>([
@@ -556,21 +552,38 @@ async function minimalInstanceFromLockEntry(
       }),
     ),
   );
-  const artifacts =
+  const parsedDigest =
     entry.artifactDigest === undefined
+      ? undefined
+      : parseLooseDigest(entry.artifactDigest);
+  const semanticLoss: SemanticLoss[] = [];
+  if (entry.artifactDigest !== undefined && parsedDigest === undefined)
+    semanticLoss.push({
+      code: 'NATIVE_DIGEST_NOT_REPRESENTED',
+      severity: 'warning',
+      sourceEcosystem: ecosystem,
+      sourcePath: '/',
+      originalMeaning: `The native lock pins this artifact with a non-sha256 digest (${entry.artifactDigest.slice(0, 32)}…) that its native tool can verify`,
+      representedMeaning:
+        'No artifact descriptor is captured; OpenPacker holds no sha256 audit digest for this package',
+      blocksProfile: [],
+    });
+  const artifacts =
+    parsedDigest === undefined
       ? []
       : [
           {
             descriptorId: `${nodeId}:lock-archive`,
             mediaType: 'application/octet-stream',
             artifactType: 'application/vnd.openpacker.lock-import.v1',
-            digest: parseLooseDigest(entry.artifactDigest),
+            digest: parsedDigest,
             size: 0,
             nativeRole: 'package-archive' as const,
             extensions: {
               'org.openpacker.lock-import': {
                 exactPurl,
                 nativeArchive: true,
+                sizeUnknown: true,
               },
             },
             locations:
@@ -628,9 +641,15 @@ async function minimalInstanceFromLockEntry(
     cardinalityConstraints: [],
     artifacts,
     lifecycle: {
-      status: 'published',
+      status: 'unknown',
       eligible: true,
-      warnings: [],
+      warnings: [
+        {
+          code: 'LIFECYCLE_NOT_CAPTURED',
+          message:
+            'Native lockfiles carry no lifecycle status; registry lifecycle (yank, quarantine, revocation) was not consulted during import',
+        },
+      ],
     },
     sourceSnapshots: [sourceDigest],
     metadataDigest,
@@ -642,7 +661,7 @@ async function minimalInstanceFromLockEntry(
         native: entry.native,
       }) as JsonValue,
     },
-    semanticLoss: [],
+    semanticLoss,
   };
 }
 
@@ -650,7 +669,7 @@ function stripUndefined(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
-function parseLooseDigest(value: string): Digest {
+function parseLooseDigest(value: string): Digest | undefined {
   if (value.startsWith('sha256:')) {
     const hex = value.slice('sha256:'.length).toLowerCase();
     if (/^[0-9a-f]{64}$/.test(hex)) return { algorithm: 'sha256', value: hex };
@@ -669,11 +688,9 @@ function parseLooseDigest(value: string): Digest {
       // fall through
     }
   }
-  // Fallback: placeholder digest. Lock-import artifacts are capture hints only.
-  return {
-    algorithm: 'sha256',
-    value: '0'.repeat(64),
-  };
+  // Non-sha256 native digests (sha512, Go h1:, none) are not representable;
+  // callers record a NATIVE_DIGEST_NOT_REPRESENTED loss instead of fabricating.
+  return undefined;
 }
 
 async function buildMinimalUniverse(
@@ -703,7 +720,7 @@ async function buildMinimalUniverse(
     packages: sorted,
     overlays: [],
     sourceSnapshots: [snapshot],
-    lifecycleRoot: ZERO_DIGEST,
+    lifecycleRoot: await canonicalDigest([]),
     targetVocabularyVersion: '1',
   };
   return {

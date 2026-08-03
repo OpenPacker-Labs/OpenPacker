@@ -57,8 +57,15 @@ ADRs + `spec/prex/v1` when draft/Linear are not in use.
 | commit-msg | `.githooks/commit-msg` | Conventional-commit advisory     |
 
 `core.hooksPath` → `.githooks` via `scripts/install-hooks.mjs`. Opt out:
-`OPENPACKER_SKIP_HOOKS=1`. **Prefer hooks/`agent:check` over remote CI** for
-agent loops; use `npm run verify` only for broad pre-merge validation.
+`OPENPACKER_SKIP_HOOKS=1`.
+
+**GitHub Actions runner minutes are forbidden in this repository.** All
+workflows are disabled and dispatch-only; never re-enable automatic triggers or
+start workflow runs. Enforcement is local and fail-closed: the git hooks above
+on every commit/push, `npm run agent:check` for impact-scoped loops, and a green
+`npm run verify` before any merge. A PR is mergeable when the local verify
+aggregate passes and an independent review passes — not when CI is green,
+because CI never runs.
 
 Live registry tests are opt-in and never substitute for offline failure.
 

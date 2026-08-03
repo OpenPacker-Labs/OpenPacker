@@ -18,7 +18,6 @@
     "build": "turbo run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && node scripts/run-gate.mjs unit",
     "test:conformance": "node scripts/run-gate.mjs conformance",
@@ -45,7 +44,7 @@
     "agent:check": "node scripts/agent-check.mjs",
     "agent:check:staged": "node scripts/agent-check.mjs --staged",
     "hooks:install": "node scripts/install-hooks.mjs",
-    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run test:docs && npm run check:licenses && npm run skills:mirror-check && npm run lint && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run test:integration && npm run test:e2e && npm run test:compat && npm run test:browser && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz"
+    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run test:docs && npm run check:licenses && npm run skills:mirror-check && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run test:integration && npm run test:e2e && npm run test:compat && npm run test:browser && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

@@ -66,7 +66,7 @@
       "kind": "event"
     },
     {
-      "digest": "sha256:b0de82b37d3a2aa0c17e7eb3a14e8aeacac4a3caae1bb3971239317e95e9e009",
+      "digest": "sha256:fc949549d6dd4a902e57b4bae6e64e356c5934b03bd29bc03116e1381350d753",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
@@ -81,7 +81,7 @@
       "kind": "tuf"
     },
     {
-      "digest": "sha256:68c640ae6d624e3dec93d7458e017340144bb1e32d1e30a9ab66f65a53f6c7af",
+      "digest": "sha256:e484277a3961b2c5b1c19512946c0c6b7100fe2d299a5d629fe81bbe3b405c89",
       "file": "fixtures/golden/sigstore.json",
       "kind": "sigstore"
     },

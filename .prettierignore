@@ -4,6 +4,7 @@ dist
 coverage
 .turbo
 .demo-output
+.opm
 package-lock.json
 Cargo.lock
 fixtures/artifacts

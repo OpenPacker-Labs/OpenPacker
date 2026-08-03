@@ -18,6 +18,13 @@ multi-ecosystem package identity, locks, proofs, and digests.
 This is the product surface for **add / remove / sync / install / uninstall**
 and **running** installed package binaries.
 
+> **Scope:** `opm` installs from explicit local/URL sources and project catalogs
+> (`catalog.json`) — it does not contact npm, crates.io, PyPI, or any other
+> public registry, and it locks direct requirements without transitive
+> dependency resolution. See
+> [docs/guides/opm.md](docs/guides/opm.md#resolution-sources) for what resolves
+> and how.
+
 ```sh
 npm ci
 npm run build
@@ -91,20 +98,20 @@ Recipes: **[docs/guides/cli.md](docs/guides/cli.md)** · samples:
 
 ```sh
 npm run demo:lock-import   # offline native lock import
-npm run demo               # full offline production-path demo
+npm run demo               # offline demo of the production path, fixtures only
 ```
 
 ---
 
 ## What to use when
 
-| You need                                                 | Use                                                    |
-| -------------------------------------------------------- | ------------------------------------------------------ |
-| Manage packages in a project (add/install/run)           | **`opm` / `opmx`**                                     |
-| Pin `package-lock.json` / `Cargo.lock` for audit digests | `openpacker import-lock`                               |
-| Canonical package URLs across ecosystems                 | `openpacker normalize`                                 |
-| Deterministic cross-ecosystem solve + proof              | `openpacker solve` / `npm run demo`                    |
-| Tool binary install via mise                             | [docs/integrations/mise.md](docs/integrations/mise.md) |
+| You need                                              | Use                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------ |
+| Manage packages in a project (add/install/run)        | **`opm` / `opmx`**                                     |
+| Capture `package-lock.json` / `Cargo.lock` selections | `openpacker import-lock`                               |
+| Canonical package URLs across ecosystems              | `openpacker normalize`                                 |
+| Deterministic cross-ecosystem solve + proof           | `openpacker solve` / `npm run demo`                    |
+| Tool binary install via mise                          | [docs/integrations/mise.md](docs/integrations/mise.md) |
 
 ---
 

@@ -103,4 +103,50 @@ describe('lock-import planning', () => {
       maven.lockedExactPurls.some((purl) => purl.startsWith('pkg:maven/')),
     ).toBe(true);
   });
+
+  it('never fabricates artifact digests for non-sha256 native locks', async () => {
+    const nuget = await planLockCapture(nugetAssets, {
+      format: 'nuget-assets',
+    });
+    const golang = await planLockCapture(goSum);
+    for (const plan of [nuget, golang]) {
+      for (const item of plan.packages) {
+        for (const artifact of item.artifacts) {
+          expect(artifact.digest.value).not.toBe('0'.repeat(64));
+        }
+      }
+    }
+    const withNativeDigest = [...nuget.packages, ...golang.packages].filter(
+      (item) =>
+        item.semanticLoss.some(
+          (loss) => loss.code === 'NATIVE_DIGEST_NOT_REPRESENTED',
+        ),
+    );
+    expect(withNativeDigest.length).toBeGreaterThan(0);
+    for (const item of withNativeDigest) expect(item.artifacts).toEqual([]);
+  });
+
+  it('captures real sha256 digests from npm integrity fields', async () => {
+    const plan = await planLockCapture(npmLock, { format: 'package-lock' });
+    const withArtifacts = plan.packages.filter(
+      (item) => item.artifacts.length > 0,
+    );
+    expect(withArtifacts.length).toBeGreaterThan(0);
+    for (const item of withArtifacts) {
+      expect(item.artifacts[0]?.digest.value).toMatch(/^[0-9a-f]{64}$/);
+      expect(item.artifacts[0]?.digest.value).not.toBe('0'.repeat(64));
+    }
+  });
+
+  it('records lifecycle as unknown instead of claiming published eligibility', async () => {
+    const plan = await planLockCapture(npmLock, { format: 'package-lock' });
+    for (const item of plan.packages) {
+      expect(item.lifecycle.status).toBe('unknown');
+      expect(
+        item.lifecycle.warnings.some(
+          ({ code }) => code === 'LIFECYCLE_NOT_CAPTURED',
+        ),
+      ).toBe(true);
+    }
+  });
 });

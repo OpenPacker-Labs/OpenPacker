@@ -15,7 +15,11 @@ preserves that result without claiming validation, while validated mode checks
 the representable PREX constraints. Verification checks are selected by
 `VerifyRequest.checks`; receipt and artifact checks are built in, while TUF,
 Sigstore, SLSA, CycloneDX, lifecycle, policy, OCI, and OCM checks require their
-configured verifier. Missing evidence remains `not-provided`.
+configured verifier. Missing evidence remains `not-provided`. The
+`GET /v1/capabilities` response derives `evidenceTypes` from the verifiers,
+receipt keys, and artifact source actually configured — an unconfigured
+standalone daemon advertises an empty evidence list and `none` authentication,
+because it performs no request authentication.
 
 The CLI `serve` command requires an operations module exporting `operations` or
 a default `PrexOperations`. Supported runtime options are `--operations-module`,
@@ -130,6 +134,9 @@ service URLs and rejects publish.
 | 7    | Digest, size, signature, provenance, or freshness verification failure |
 | 8    | Retryable/unavailable service                                          |
 | 9    | Internal/unclassified failure                                          |
+
+`verify` maps the service decision to these codes: `allow` → `0`, `deny` → `7`
+(`6` when the denial includes `policy-denied` evidence), `indeterminate` → `8`.
 
 Human output recursively redacts keys that look like authorization, password,
 secret, token, or credential data. JSON errors contain the stable exit code and

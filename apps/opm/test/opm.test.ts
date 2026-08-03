@@ -85,6 +85,45 @@ describe('opm + opmx CLI', () => {
     expect(await runOpm(['remove', 'demo-tool'], cap.io, root)).toBe(0);
 
     cap = capture();
-    expect(await runOpmx(['demo-tool'], cap.io, root)).not.toBe(0);
+    expect(await runOpmx(['demo-tool'], cap.io, root)).toBe(4);
+    expect(cap.err).toMatch(/No packages installed/);
+  });
+
+  it('exits 8 on an offline add with a network source', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-cli-offline-'));
+    temps.push(root);
+    let cap = capture();
+    expect(await runOpm(['init', '--name', 'cli-demo'], cap.io, root)).toBe(0);
+    cap = capture();
+    expect(
+      await runOpm(
+        [
+          'add',
+          'pkg:npm/@openpacker/demo-tool@1.1.0',
+          '--source',
+          'https://registry.example.invalid/demo.tgz',
+          '--offline',
+        ],
+        cap.io,
+        root,
+      ),
+    ).toBe(8);
+    expect(cap.err).toMatch(/offline/i);
+  });
+
+  it('exits 5 when nothing can resolve a spec', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-cli-unres-'));
+    temps.push(root);
+    let cap = capture();
+    expect(await runOpm(['init', '--name', 'cli-demo'], cap.io, root)).toBe(0);
+    cap = capture();
+    expect(
+      await runOpm(
+        ['add', 'pkg:npm/@openpacker/not-in-any-catalog@9.9.9', '--offline'],
+        cap.io,
+        root,
+      ),
+    ).toBe(5);
+    expect(cap.err).toMatch(/Cannot resolve/);
   });
 });
