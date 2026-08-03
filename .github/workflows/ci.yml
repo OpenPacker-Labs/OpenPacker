@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20.20.0, 22.13.0, 24]
+        node: [22.13.0, 24]
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-node@v6.4.0
@@ -31,7 +31,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm ci --ignore-scripts
-      - run: npm run build
+      - run: npx turbo run build
       - run: npm run test:compat
 
   rust:
@@ -118,7 +118,7 @@ jobs:
       - run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm ci --ignore-scripts
       - run: npm exec playwright install --with-deps chromium
-      - run: npm run build --workspace @openpacker/embedded
+      - run: npx turbo run build --filter=@openpacker/embedded...
       - run: npm run test:browser
 
   dependency-audit:

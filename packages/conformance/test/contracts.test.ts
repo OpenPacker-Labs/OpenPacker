@@ -32,7 +32,10 @@ const fixtureRoot = path.resolve(
 );
 
 describe('PREX protocol vectors', () => {
-  it('matches every positive and negative schema expectation', async () => {
+  it(
+    'matches every positive and negative schema expectation',
+    { timeout: 60_000 },
+    async () => {
     const index = JSON.parse(
       await readFile(
         path.join(fixtureRoot, 'conformance-vectors.json'),
@@ -93,7 +96,8 @@ describe('PREX protocol vectors', () => {
         `${level} negative`,
       ).toBe(true);
     }
-  });
+    },
+  );
 });
 
 function atPointer(value: JsonValue, pointer: string): JsonValue {

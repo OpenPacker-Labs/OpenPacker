@@ -6,7 +6,7 @@
   "license": "MIT",
   "packageManager": "npm@11.17.0",
   "engines": {
-    "node": "^20.20.0 || >=22.13.0"
+    "node": "^22.13.0 || >=24"
   },
   "workspaces": [
     "apps/*",
@@ -47,8 +47,8 @@
     "@playwright/test": "1.62.1",
     "fast-check": "4.9.0",
     "prettier": "3.6.2",
-    "turbo": "2.5.6",
+    "turbo": "2.10.8",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   }
 }
