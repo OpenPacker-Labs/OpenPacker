@@ -12,3 +12,8 @@
 OpenPacker can run directly on the host; Docker is not required for the
 mandatory offline demo. The optional compose environment is for live registry
 interoperability, not core resolution.
+
+For product workflows and compliance, see the [documentation map](../README.md),
+[getting started](../guides/getting-started.md),
+[use cases](../product/use-cases.md), and
+[API/CLI compliance](../product/compliance.md).

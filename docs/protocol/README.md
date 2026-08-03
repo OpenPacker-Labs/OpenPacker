@@ -16,6 +16,12 @@ checked-in schemas and implementations fit together.
 | [Conformance](conformance.md)                                         | Capability-scoped claims and executable evidence                                         |
 | [Events](events.md)                                                   | CloudEvents data contracts, NDJSON replay, checkpoints, and deduplication                |
 
+Implementer checklists that span API and CLI surfaces (including OpenPacker
+extensions such as lock import) live in [Compliance](../product/compliance.md).
+Runnable reference demos and samples are listed in
+[Reference implementation](../product/reference-implementation.md) and
+[Examples](../../examples/README.md).
+
 Externally visible objects are defined once in the JSON Schemas under
 [`spec/prex/v1/schemas`](../../spec/prex/v1/schemas). Generated TypeScript
 declarations and schema copies are outputs, not alternative specifications.

@@ -4,6 +4,12 @@ OpenPacker is the reference implementation of PREX. Keep PREX contracts
 vendor-neutral, preserve native package bytes, and keep Epoch or other
 downstream architecture outside production packages.
 
+Human documentation starts at [`docs/README.md`](docs/README.md). Product
+workflows live under [`docs/product/`](docs/product/); API/CLI compliance rules
+are in [`docs/product/compliance.md`](docs/product/compliance.md). Runnable
+samples are under [`examples/`](examples/README.md). Documentation changes must
+pass `npm run test:docs`.
+
 ## Development
 
 Use Node `^20.20.0 || >=22.13.0`, npm workspaces with the committed lockfile,

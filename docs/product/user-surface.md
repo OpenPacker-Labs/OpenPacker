@@ -71,14 +71,19 @@ protocol objects. Exit codes and redaction follow
 
 ## API shape
 
-| Kind                       | Path / entry                                                                                                 | Notes                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| PREX                       | `POST /v1/normalize`, `/identify`, `/enumerate`, `/inspect`, `/solve`, `/materialize`, `/verify`, `/explain` | Conformance operations; see OpenAPI                                |
-| Receipt and snapshot fetch | `GET /v1/receipts/{algorithm}/{digest}`, `GET /v1/snapshots/{algorithm}/{digest}`                            | Exact stored canonical bytes                                       |
-| Events                     | `GET /v1/events`                                                                                             | NDJSON CloudEvents replay                                          |
-| OpenPacker extension       | `POST /v1/openpacker/catalog/*`, pack/publish/lifecycle                                                      | Outside PREX conformance namespace                                 |
-| Recommended extension      | `import-lock` as OpenPacker extension op (CLI and SDK)                                                       | Offline lock capture; not a substitute for `POST /v1/solve` claims |
-| SDK / embedded             | `@openpacker/sdk`, `@openpacker/embedded`                                                                    | Same normalized request and universe objects as HTTP               |
+| Kind                       | Path / entry                                                                                                 | Notes                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| PREX                       | `POST /v1/normalize`, `/identify`, `/enumerate`, `/inspect`, `/solve`, `/materialize`, `/verify`, `/explain` | Conformance operations; see OpenAPI                             |
+| Receipt and snapshot fetch | `GET /v1/receipts/{algorithm}/{digest}`, `GET /v1/snapshots/{algorithm}/{digest}`                            | Exact stored canonical bytes                                    |
+| Events                     | `GET /v1/events`                                                                                             | NDJSON CloudEvents replay                                       |
+| OpenPacker extension       | `POST /v1/openpacker/catalog/*`, `/lock/import`, pack/publish/lifecycle                                      | Outside PREX conformance namespace                              |
+| Lock import                | `POST /v1/openpacker/lock/import` · CLI `import-lock` · SDK `lockImport`                                     | Capture-only; never a substitute for independent `solve` claims |
+| SDK / embedded             | `@openpacker/sdk`, `@openpacker/embedded`                                                                    | Same normalized request and universe objects as HTTP            |
+
+Compliance obligations for implementers of alternate clients or servers:
+[Compliance (API/CLI)](compliance.md). Worked workflows:
+[Use cases](use-cases.md). Runnable samples:
+[Examples](../../examples/README.md).
 
 `resolve` is a client alias only: it must call the same solve contracts and
 digests as `solve`. Embedded callers pass immutable universes; they never expect

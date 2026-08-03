@@ -21,12 +21,15 @@ const files = [
   'README.md',
   'CONTRIBUTING.md',
   'SECURITY.md',
+  'examples/README.md',
   ...(await markdownFiles('docs')),
   ...(await markdownFiles('spec/prex/v1')),
 ].sort();
 
 const requiredDocuments = [
   'docs/architecture.md',
+  'docs/README.md',
+  'docs/guides/getting-started.md',
   'docs/integrations/artifact-extension-authoring.md',
   'docs/integrations/ecosystem-codec-authoring.md',
   'docs/integrations/epoch.md',
@@ -40,7 +43,10 @@ const requiredDocuments = [
   'docs/operations/runtime-clients.md',
   'docs/operations/storage-deployment.md',
   'docs/operations/trust-lifecycle-policy.md',
+  'docs/product/compliance.md',
   'docs/product/leverage-guide.md',
+  'docs/product/reference-implementation.md',
+  'docs/product/use-cases.md',
   'docs/product/user-surface.md',
   'docs/protocol/capabilities-errors-media.md',
   'docs/protocol/events.md',
@@ -52,6 +58,7 @@ const requiredDocuments = [
   'docs/research/formal-foundations.md',
   'docs/security/threat-model.md',
   'docs/security/tuf-sigstore-slsa-sbom.md',
+  'examples/README.md',
   'spec/prex/v1/canonicalization.md',
   'spec/prex/v1/conformance.md',
   'spec/prex/v1/errors.md',
@@ -75,14 +82,17 @@ const requiredTerms = [
   '/v1/materialize',
   '/v1/verify',
   '/v1/explain',
+  '/v1/openpacker/lock/import',
   'PREX-N',
   'PREX-C',
   'INVALID_PURL',
   'INTERNAL_ERROR',
   'application/vnd.openpacker.prex.receipt.v1+json',
   'prex-calculus-subset-v1',
+  'native-capture-v1',
   'solutionDigest',
   'receiptDigest',
+  'import-lock',
 ];
 
 let corpus = '';

@@ -14,8 +14,14 @@ Product framing for how integrations fit the control plane:
 
 | Guide                                                              | Subject                                                                   |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [Documentation map](../README.md)                                  | Index of guides, protocol, and examples                                   |
+| [Getting started](../guides/getting-started.md)                    | Install, demos, first CLI/SDK calls                                       |
+| [Use cases](../product/use-cases.md)                               | UC-1…UC-8 with working entry points                                       |
+| [Compliance](../product/compliance.md)                             | PREX/OpenPacker API and CLI compliance checklist                          |
+| [Reference implementation](../product/reference-implementation.md) | What this repo ships and how demos prove it                               |
 | [Leverage guide](../product/leverage-guide.md)                     | Reuse versus build; Nexus/mise/Epoch boundaries; codec and provider seams |
 | [User surface](../product/user-surface.md)                         | Recommended CLI/API including import-lock, resolve, export, and catalog   |
+| [Examples](../../examples/README.md)                               | Compile-checked samples                                                   |
 | [Control plane ADR](../adr/0020-control-plane-not-supersession.md) | Package control plane, not native PM supersession                         |
 | [Native lock import ADR](../adr/0021-native-lock-import.md)        | Offline-first native-capture-v1 lock import                               |
 

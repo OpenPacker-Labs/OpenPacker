@@ -34,23 +34,33 @@ idempotency key.
 
 Methods cover discovery, capabilities, health, readiness, normalize, identify,
 enumerate, inspect, solve, materialize, verify, explain, receipt/snapshot
-retrieval, events, and all five OpenPacker extension routes. Each successful
-call returns parsed `data`, exact `rawBytes`, and the original `Response`.
-`PrexClientError` preserves status, parsed RFC 9457 problem when available, raw
-bytes, and response. The package publishes ESM/CommonJS and a browser-safe
-entry; the executable SDK usage is
-[`packages/sdk/test/sdk.test.ts`](../../packages/sdk/test/sdk.test.ts).
+retrieval, events, catalog import/snapshot, **lock import**, lifecycle, pack,
+and publish. Each successful call returns parsed `data`, exact `rawBytes`, and
+the original `Response`. `PrexClientError` preserves status, parsed RFC 9457
+problem when available, raw bytes, and response. The package publishes
+ESM/CommonJS and a browser-safe entry; the executable SDK usage is
+[`packages/sdk/test/sdk.test.ts`](../../packages/sdk/test/sdk.test.ts) and
+[`examples/basic-client`](../../examples/basic-client).
 
 ```ts
-import { createOpenPackerClient } from '@openpacker/sdk';
+import { readFile } from 'node:fs/promises';
+import { OpenPackerClient } from '@openpacker/sdk';
 
-const client = createOpenPackerClient({ baseUrl: 'http://127.0.0.1:7337' });
+const client = new OpenPackerClient({ baseUrl: 'http://127.0.0.1:7337' });
 const { data, rawBytes } = await client.normalize({
   items: [{ type: 'purl', value: 'pkg:npm/%40openpacker/demo-tool@1.0.0' }],
 });
 if (data.results[0]?.canonical !== 'pkg:npm/%40openpacker/demo-tool@1.0.0')
   throw new Error('unexpected normalized identity');
 console.log(rawBytes.byteLength);
+
+// Extension: native lock capture (not a PREX core level)
+const cargoLockText = await readFile('fixtures/locks/cargo/Cargo.lock', 'utf8');
+const imported = await client.lockImport({
+  lockfile: cargoLockText,
+  format: 'cargo-lock',
+});
+console.log(imported.data.solveResponse.normalizedRequest.semantics.profile);
 ```
 
 Use `rawBytes` when persisting receipts or other canonical response bodies.
@@ -95,13 +105,14 @@ The CLI accepts JSON from `--input <file|->`, emits canonical JSON with
 `--base-url`, and secret `--auth-token-file`. `--offline` permits only loopback
 service URLs and rejects publish.
 
-| Group                     | Commands                                                                                     |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| PREX                      | `normalize`, `identify`, `enumerate`, `inspect`, `solve`, `explain`, `materialize`, `verify` |
-| Artifact                  | `pack`, `publish`                                                                            |
-| Receipt/catalog/lifecycle | `receipt inspect`, `receipt verify`, `catalog import`, `catalog snapshot`, `lifecycle apply` |
-| Export                    | `export lock`, `export sbom`                                                                 |
-| Runtime                   | `serve`, `demo`                                                                              |
+| Group                     | Commands                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| PREX                      | `normalize`, `identify`, `enumerate`, `inspect`, `solve`, `resolve`, `explain`, `materialize`, `verify` |
+| Lock import               | `import-lock` (OpenPacker extension; `native-capture-v1`)                                               |
+| Artifact                  | `pack`, `publish`                                                                                       |
+| Receipt/catalog/lifecycle | `receipt inspect`, `receipt verify`, `catalog import`, `catalog snapshot`, `lifecycle apply`            |
+| Export                    | `export lock`, `export sbom`                                                                            |
+| Runtime                   | `serve`, `demo`                                                                                         |
 
 | Exit | Meaning                                                                |
 | ---- | ---------------------------------------------------------------------- |
@@ -128,11 +139,17 @@ JSON on stdout:
 openpacker solve --input fixtures/protocol/solve/request.json --output .demo-output/solve-response.json --offline --json
 openpacker receipt verify --input .demo-output/receipt.json --offline --json
 openpacker export lock --input .demo-output/solve-response.json --output openpacker.lock.json --json
+openpacker import-lock --input fixtures/locks/cargo/Cargo.lock --format cargo-lock --json
 ```
 
 `--offline` constrains the client to a loopback service; it does not make a
 remote daemon offline. The daemon itself must be configured with captured
 snapshots and immutable artifact sources.
+
+CLI/API compliance obligations for third-party tools are listed in
+[Compliance](../product/compliance.md). End-to-end workflows are in
+[Use cases](../product/use-cases.md) and
+[Getting started](../guides/getting-started.md).
 
 ## Executable entry points
 

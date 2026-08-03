@@ -56,4 +56,7 @@ Treat the following as companions, not forks of OpenPacker:
 
 New ecosystems should land as codec plus optional provider and lock-format
 handler, not as bespoke control-plane branches. Product surface recommendations
-are listed in [User surface](user-surface.md).
+are listed in [User surface](user-surface.md). Concrete workflows are in
+[Use cases](use-cases.md); third-party API/CLI obligations are in
+[Compliance](compliance.md); repository layout and demos are in
+[Reference implementation](reference-implementation.md).
