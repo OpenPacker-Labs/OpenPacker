@@ -39,14 +39,29 @@ for (const [path, entry] of Object.entries(lock.packages ?? {})) {
   npmPackages.push({ name: manifest.name, version: manifest.version, license });
 }
 
-const cargo = spawnSync(
-  'cargo',
-  ['metadata', '--locked', '--offline', '--format-version', '1'],
-  { cwd: root, encoding: 'utf8' },
-);
+function cargoMetadata(offline) {
+  return spawnSync(
+    'cargo',
+    [
+      'metadata',
+      '--locked',
+      ...(offline ? ['--offline'] : []),
+      '--format-version',
+      '1',
+    ],
+    { cwd: root, encoding: 'utf8' },
+  );
+}
+
+// Prefer offline when the registry is already warm (local / post-fetch CI).
+let cargo = cargoMetadata(true);
 if (cargo.error) throw cargo.error;
-if (cargo.status !== 0)
-  throw new Error(cargo.stderr || 'cargo metadata failed');
+if (cargo.status !== 0) {
+  cargo = cargoMetadata(false);
+  if (cargo.error) throw cargo.error;
+  if (cargo.status !== 0)
+    throw new Error(cargo.stderr || 'cargo metadata failed');
+}
 const workspace = JSON.parse(cargo.stdout);
 const workspaceIds = new Set(workspace.workspace_members);
 const cargoPackages = workspace.packages

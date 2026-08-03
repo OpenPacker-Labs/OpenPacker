@@ -132,6 +132,8 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@1.88.0
       - run: npm ci --ignore-scripts
+      # Populate crates.io cache so offline cargo metadata succeeds.
+      - run: cargo fetch --locked
       - run: node scripts/check-licenses.mjs
       - run: npm audit --audit-level=high
       - run: cargo install --locked cargo-audit --version 0.22.2
