@@ -396,7 +396,9 @@ pub struct PolicyInput {
     pub required_evidence: Vec<String>,
     #[serde(default)]
     pub accepted_overlay_authorities: Vec<String>,
-    #[serde(default)]
+    /// Skipped when empty so that adding amendment support does not alter the
+    /// request digest of any existing solve.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepted_amendment_authorities: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
