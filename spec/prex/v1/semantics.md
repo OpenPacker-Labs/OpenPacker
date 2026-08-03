@@ -103,6 +103,21 @@ per output either mints one instance per output — distinguished by the reserve
 `output` qualifier, which the existing exact qualifier match already selects —
 or records `OUTPUT_GRANULARITY_COLLAPSED`.
 
+### Structural invariants outside JSON Schema
+
+JSON Schema 2020-12 cannot express uniqueness by property, so the following
+rules are normative and MUST be enforced by validators alongside schema
+validation, exactly as duplicate object members are rejected before schema
+handling:
+
+- Output names MUST be unique within a package, and at most one output may be
+  `default`. A duplicate name makes an output selector ambiguous.
+- Tree manifest entry paths MUST be unique within a manifest. Two entries for
+  one path do not identify a tree.
+- `EnvironmentState.currentGenerationDigest` MUST appear in
+  `retainedGenerationDigests`, or the pointer names a record that may already
+  have been collected.
+
 ## Environments and generations
 
 An `EnvironmentManifest` declares what an environment should contain. An

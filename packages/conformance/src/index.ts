@@ -40,6 +40,9 @@ export function validateContract(
   const canonicalErrors = validateCanonicalValue(value);
   if (canonicalErrors.length > 0)
     return { valid: false, errors: canonicalErrors };
+  const structuralErrors = validateStructuralInvariants(value);
+  if (structuralErrors.length > 0)
+    return { valid: false, errors: structuralErrors };
   const validate: ValidateFunction | undefined = ajv.getSchema(schemaReference);
   if (!validate)
     throw new Error(`Unknown PREX schema reference: ${schemaReference}`);
@@ -109,6 +112,106 @@ export function validateCanonicalValue(value: unknown): ErrorObject[] {
       ),
     ];
   }
+}
+
+/**
+ * Structural invariants that JSON Schema 2020-12 cannot express, checked the
+ * same way duplicate object members are: outside the schema, before it is
+ * trusted. Each rule is stated normatively in spec/prex/v1/semantics.md.
+ *
+ * Rules are matched by shape rather than by schema pointer so that a construct
+ * validates identically wherever it is embedded.
+ */
+export function validateStructuralInvariants(value: unknown): ErrorObject[] {
+  const errors: ErrorObject[] = [];
+  const visit = (node: unknown, path: string): void => {
+    if (typeof node !== 'object' || node === null) return;
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => visit(item, `${path}/${index}`));
+      return;
+    }
+    const record = node as Record<string, unknown>;
+
+    // A package's output names identify its parts; duplicates make an output
+    // selector ambiguous.
+    if (Array.isArray(record.outputs)) {
+      const names = record.outputs
+        .filter(
+          (item): item is { name: string } =>
+            typeof item === 'object' &&
+            item !== null &&
+            typeof (item as { name?: unknown }).name === 'string',
+        )
+        .map((item) => item.name);
+      if (new Set(names).size !== names.length)
+        errors.push(
+          prexError(
+            'uniqueOutputNames',
+            `Duplicate output name at ${path}/outputs`,
+          ),
+        );
+      const defaults = record.outputs.filter(
+        (item) =>
+          typeof item === 'object' &&
+          item !== null &&
+          (item as { default?: unknown }).default === true,
+      );
+      if (defaults.length > 1)
+        errors.push(
+          prexError(
+            'singleDefaultOutput',
+            `More than one default output at ${path}/outputs`,
+          ),
+        );
+    }
+
+    // A tree manifest with two entries for one path does not identify a tree.
+    if (record.manifestVersion === '1' && Array.isArray(record.entries)) {
+      const paths = record.entries
+        .filter(
+          (item): item is { path: string } =>
+            typeof item === 'object' &&
+            item !== null &&
+            typeof (item as { path?: unknown }).path === 'string',
+        )
+        .map((item) => item.path);
+      if (new Set(paths).size !== paths.length)
+        errors.push(
+          prexError(
+            'uniqueTreePaths',
+            `Duplicate tree manifest path at ${path}/entries`,
+          ),
+        );
+    }
+
+    // The current generation must be retained, or the pointer names a record
+    // that may already have been collected.
+    if (
+      typeof record.currentGenerationDigest === 'object' &&
+      record.currentGenerationDigest !== null &&
+      Array.isArray(record.retainedGenerationDigests)
+    ) {
+      const current = (record.currentGenerationDigest as { value?: unknown })
+        .value;
+      const retained = record.retainedGenerationDigests.map((item) =>
+        typeof item === 'object' && item !== null
+          ? (item as { value?: unknown }).value
+          : undefined,
+      );
+      if (!retained.includes(current))
+        errors.push(
+          prexError(
+            'currentGenerationRetained',
+            `currentGenerationDigest is not retained at ${path}`,
+          ),
+        );
+    }
+
+    for (const [key, nested] of Object.entries(record))
+      visit(nested, `${path}/${key}`);
+  };
+  visit(value, '');
+  return errors;
 }
 
 function prexError(keyword: string, message: string): ErrorObject {

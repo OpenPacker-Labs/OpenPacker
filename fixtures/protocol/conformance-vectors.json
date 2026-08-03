@@ -777,7 +777,7 @@
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
-      "valid": true,
+      "valid": false,
       "levels": ["PREX-D"]
     },
     {
@@ -1167,6 +1167,51 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
       "valid": false,
       "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-two-default-outputs",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/default",
+          "value": true
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-duplicate-tree-manifest-path",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/3/path",
+          "value": "bin/greet"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-state-current-not-retained",
+      "file": "environment/state.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/currentGenerationDigest",
+          "value": {
+            "algorithm": "sha256",
+            "value": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": false,
+      "levels": ["PREX-M"]
     }
   ]
 }
