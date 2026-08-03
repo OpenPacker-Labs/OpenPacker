@@ -31,7 +31,7 @@ claimed it in Linear — you have **zero Linear access** and must not attempt an
 Commit often. Do **not** accumulate the whole issue as one final commit.
 
 1. After each red→green unit (or coherent micro-step), stage deliberately and commit.
-2. `narrow OpenPacker gates (workspace test/typecheck; contracts if touched)` must be green before **every** commit.
+2. Narrow OpenPacker gates (workspace test/typecheck; contracts if touched) must be green before **every** commit.
 3. Conventional, scoped commit messages describing the step.
 4. Multiple commits per issue/layer are expected and preferred.
 5. Leave the branch pushable at any time so the coordinator can recover if you die mid-task.
