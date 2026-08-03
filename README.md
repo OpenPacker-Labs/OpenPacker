@@ -1,156 +1,122 @@
 # OpenPacker
 
-**Package control plane CLI and reference service** for multi-ecosystem
-resolution: pin locks, look up packages, solve graphs, prove digests.
+**Open Package Manager (`opm` / `opmx`)** plus a **PREX control plane** for
+multi-ecosystem package identity, locks, proofs, and digests.
 
-OpenPacker is **not** `npm install`. It does not replace Cargo, pip, NuGet, or
-Go. It normalizes package identity, captures or solves dependency selections,
-and writes portable digests you can audit in CI.
-
-|                               |                                              |
-| ----------------------------- | -------------------------------------------- |
-| **CLI cookbook (start here)** | **[docs/guides/cli.md](docs/guides/cli.md)** |
-| **CLI sample inputs**         | [examples/cli/](examples/cli/)               |
-| **Protocol**                  | [spec/prex/v1/](spec/prex/v1/)               |
-| **License**                   | [MIT](LICENSE)                               |
+|                                  |                                                |
+| -------------------------------- | ---------------------------------------------- |
+| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**   |
+| **Example project**              | [examples/opm-project/](examples/opm-project/) |
+| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)       |
+| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                 |
+| **License**                      | [MIT](LICENSE)                                 |
 
 ---
 
-## Using the CLI (what you actually type)
+## Package manager: `opm` and `opmx`
 
-### 1. Build and start the local service
+This is the product surface for **add / remove / sync / install / uninstall**
+and **running** installed package binaries.
 
 ```sh
 npm ci
 npm run build
+npm link -w @openpacker/opm   # puts opm, opmx, opkg, opkgm on PATH
 
+mkdir my-app && cd my-app
+opm init
+opm add pkg:npm/@openpacker/demo-tool@1.1.0 \
+  --source /path/to/demo-tool-1.1.0.tgz \
+  --offline
+opm list
+opmx demo-tool --version
+```
+
+### Offline demo in this repo
+
+```sh
+npm ci && npm run build
+cd examples/opm-project
+node ../../apps/opm/dist/opm.js sync --offline
+node ../../apps/opm/dist/opm.js list
+node ../../apps/opm/dist/opmx.js demo-tool --version
+# → 1.1.0
+```
+
+| Command                 | Purpose                                    |
+| ----------------------- | ------------------------------------------ |
+| `opm init`              | Create `opm.toml` + `.opm/`                |
+| `opm add <spec>`        | Add package to manifest, lock, and install |
+| `opm remove <alias>`    | Remove from manifest, lock, and install    |
+| `opm install`           | Materialize everything in `opm.lock.json`  |
+| `opm uninstall [alias]` | Remove install links/bins                  |
+| `opm sync`              | Resolve manifest → lock → install          |
+| `opm list` / `opm why`  | Inspect the project graph                  |
+| `opmx <bin\|pkg>`       | Execute an installed binary                |
+
+Project layout:
+
+```text
+opm.toml          # requirements
+opm.lock.json     # exact pins + digests
+.opm/store/       # content-addressed packages
+.opm/bin/         # executable shims
+```
+
+Full manual: **[docs/guides/opm.md](docs/guides/opm.md)** · ADR:
+[0022](docs/adr/0022-opm-package-manager-surface.md)
+
+Aliases: **`opkg`**, **`opkgm`** → `opm`.
+
+---
+
+## Advanced: PREX control plane (`openpacker`)
+
+For protocol operations (normalize, solve, import-lock, prove digests) use the
+**`openpacker`** CLI — not the daily package manager.
+
+```sh
 npx openpacker serve \
   --universe fixtures/epoch/universe.json \
-  --host 127.0.0.1 \
-  --port 7337
-```
+  --host 127.0.0.1 --port 7337
 
-In another terminal:
-
-```sh
 export OPENPACKER_URL=http://127.0.0.1:7337
-```
-
-### 2. Normalize / look up packages
-
-```sh
-# Canonicalize a messy PURL
 npx openpacker normalize 'pkg:NPM/%40OpenPacker/Demo-Tool@v1.0.0' --json
-
-# Find the package for a base PURL
-npx openpacker identify 'pkg:npm/%40openpacker/demo-tool' --json
-
-# List versions in the loaded catalog
-npx openpacker enumerate 'pkg:npm/%40openpacker/demo-tool' --json
-
-# Inspect one exact version
-npx openpacker inspect 'pkg:npm/%40openpacker/demo-tool@1.1.0' --json
+npx openpacker import-lock --input fixtures/locks/cargo/Cargo.lock \
+  --format cargo-lock --json --output cargo.openpacker.json
 ```
 
-### 3. Pin a native lockfile (most common workflow)
-
-Import what npm/Cargo/NuGet/uv/Go/Gradle already locked. OpenPacker records the
-selection as **`native-capture-v1`** (it does **not** pretend it re-solved the
-graph).
+Recipes: **[docs/guides/cli.md](docs/guides/cli.md)** · samples:
+[examples/cli/](examples/cli/)
 
 ```sh
-# Cargo
-npx openpacker import-lock \
-  --input fixtures/locks/cargo/Cargo.lock \
-  --format cargo-lock \
-  --json \
-  --output cargo.openpacker.json
-
-# npm package-lock v3
-npx openpacker import-lock \
-  --input fixtures/locks/npm/package-lock.json \
-  --format package-lock \
-  --json \
-  --output npm.openpacker.json
-
-# Show the pins
-jq '.lockfile.selectedExactPurls' cargo.openpacker.json
-jq '.lockfile.semanticsProfile' cargo.openpacker.json   # → native-capture-v1
-jq '.lockfile.solutionDigest' cargo.openpacker.json
+npm run demo:lock-import   # offline native lock import
+npm run demo               # full offline production-path demo
 ```
-
-Same idea for NuGet, PyPI (`uv-lock`), Go (`go-sum`), and Gradle
-(`gradle-lockfile`) — full list in [docs/guides/cli.md](docs/guides/cli.md).
-
-### 4. Offline lock import without a daemon
-
-```sh
-npm run demo:lock-import
-# → .demo-output/lock-import/*.openpacker.lock.json for all six formats
-```
-
-### 5. Full offline production-path demo
-
-```sh
-npm run demo
-# solve + proof + OCI + trust + materialize + mise evidence under .demo-output/
-```
-
-### 6. Copy-paste sample inputs
-
-```sh
-npx openpacker normalize --input examples/cli/normalize.json --json
-npx openpacker identify --input examples/cli/identify.json --json
-npx openpacker enumerate --input examples/cli/enumerate.json --json
-npx openpacker inspect --input examples/cli/inspect.json --json
-```
-
-More recipes (export lock, SBOM, verify, materialize, solve, mise):  
-→ **[docs/guides/cli.md](docs/guides/cli.md)**
 
 ---
 
-## What OpenPacker is for
+## What to use when
 
-| You need                                                     | Use                                                                   |
-| ------------------------------------------------------------ | --------------------------------------------------------------------- |
-| Pin `package-lock.json` / `Cargo.lock` / … for audit digests | `openpacker import-lock`                                              |
-| Canonical package URLs across ecosystems                     | `openpacker normalize`                                                |
-| Deterministic cross-ecosystem solve + proof                  | `openpacker solve` / `npm run demo`                                   |
-| Tool binary install into a prefix                            | mise backend → [docs/integrations/mise.md](docs/integrations/mise.md) |
-| Actually install npm/Cargo packages into a project           | **still** `npm` / `cargo` / …                                         |
+| You need                                                 | Use                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------ |
+| Manage packages in a project (add/install/run)           | **`opm` / `opmx`**                                     |
+| Pin `package-lock.json` / `Cargo.lock` for audit digests | `openpacker import-lock`                               |
+| Canonical package URLs across ecosystems                 | `openpacker normalize`                                 |
+| Deterministic cross-ecosystem solve + proof              | `openpacker solve` / `npm run demo`                    |
+| Tool binary install via mise                             | [docs/integrations/mise.md](docs/integrations/mise.md) |
 
 ---
 
-## Prerequisites
-
-- Node `^22.13.0 || >=24`, npm 11
-- Stable Rust (resolver/WASM)
-- Optional: wasm-bindgen-cli `0.2.126`, Playwright, mise `2026.7.13` for full
-  demos
+## Development
 
 ```sh
 npm ci
-rustup target add wasm32-unknown-unknown
-cargo install --locked wasm-bindgen-cli --version 0.2.126
+npm run build
+npm test --workspace @openpacker/opm-project
+npm test --workspace @openpacker/opm
+npm run agent:check   # local hooks / gates (see CONTRIBUTING)
 ```
 
----
-
-## Development gates
-
-```sh
-npm run agent:check:staged   # pre-commit (local hooks)
-npm run verify               # full offline aggregate when you need it
-```
-
-Agent tooling: [AGENTS.md](AGENTS.md). Doc map:
-[docs/README.md](docs/README.md).
-
----
-
-## Protocol boundary (short)
-
-PREX is the vendor-neutral protocol under `spec/prex/v1`. OpenPacker is this
-reference CLI/daemon/SDK. Digests identify bytes; names do not. Native archives
-are not rewritten. Capture is not an independent solve.
+Architecture and ADRs: [docs/](docs/) · Contributing:
+[CONTRIBUTING.md](CONTRIBUTING.md)

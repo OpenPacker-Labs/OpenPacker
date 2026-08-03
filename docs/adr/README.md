@@ -23,6 +23,7 @@ Accepted decisions:
 19. [Cross-runtime property and fuzz authority](0019-cross-runtime-property-fuzzing.md)
 20. [Control plane, not supersession](0020-control-plane-not-supersession.md)
 21. [Native lock import](0021-native-lock-import.md)
+22. [opm package manager surface](0022-opm-package-manager-surface.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.
