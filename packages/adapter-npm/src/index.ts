@@ -512,7 +512,9 @@ export class NpmCodec
             path,
             dev: entry.dev ?? false,
             optional: entry.optional ?? false,
-            integrity: entry.integrity,
+            ...(entry.integrity === undefined
+              ? {}
+              : { integrity: entry.integrity }),
           },
         };
       })

@@ -1,5 +1,9 @@
 # Recommended user surface
 
+**Want shell recipes, not a table of verbs?** Use the
+**[CLI cookbook](../guides/cli.md)** and
+**[examples/cli](../../examples/cli/)**.
+
 OpenPacker is a package control plane. The recommended CLI and API surface
 mirrors PREX operations, adds a small set of OpenPacker extension commands for
 catalog and lock workflows, and keeps native install/build/runtime outside the

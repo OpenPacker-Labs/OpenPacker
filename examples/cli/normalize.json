@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "type": "purl",
+      "value": "pkg:NPM/%40OpenPacker/Demo-Tool@v1.0.0"
+    },
+    {
+      "type": "native-coordinate",
+      "ecosystem": "npm",
+      "value": "@openpacker/demo-tool@1.0.0"
+    },
+    {
+      "type": "purl",
+      "value": "pkg:cargo/demo-zstd@1.0.0"
+    }
+  ]
+}

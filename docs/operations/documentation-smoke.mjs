@@ -22,6 +22,7 @@ const files = [
   'CONTRIBUTING.md',
   'SECURITY.md',
   'examples/README.md',
+  'examples/cli/README.md',
   ...(await markdownFiles('docs')),
   ...(await markdownFiles('spec/prex/v1')),
 ].sort();
@@ -29,7 +30,9 @@ const files = [
 const requiredDocuments = [
   'docs/architecture.md',
   'docs/README.md',
+  'docs/guides/cli.md',
   'docs/guides/getting-started.md',
+  'examples/cli/README.md',
   'docs/integrations/artifact-extension-authoring.md',
   'docs/integrations/ecosystem-codec-authoring.md',
   'docs/integrations/epoch.md',
@@ -93,6 +96,9 @@ const requiredTerms = [
   'solutionDigest',
   'receiptDigest',
   'import-lock',
+  'openpacker import-lock',
+  'openpacker normalize',
+  'openpacker enumerate',
 ];
 
 let corpus = '';

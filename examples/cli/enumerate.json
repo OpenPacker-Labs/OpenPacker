@@ -1,0 +1,11 @@
+{
+  "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+  "target": {},
+  "lifecyclePolicy": {
+    "includeYanked": false,
+    "includeDelisted": false
+  },
+  "page": {
+    "size": 100
+  }
+}

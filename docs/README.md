@@ -6,15 +6,17 @@ API detail.
 
 ## Start here
 
-| Document                                                        | Audience                                    | Purpose                                        |
-| --------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
-| [Getting started](guides/getting-started.md)                    | New operators and integrators               | Install, demos, first CLI/SDK calls            |
-| [Use cases](product/use-cases.md)                               | Product and architecture                    | Concrete workflows OpenPacker is built for     |
-| [User surface](product/user-surface.md)                         | CLI/API users                               | Recommended commands and HTTP paths            |
-| [Compliance (API/CLI)](product/compliance.md)                   | Implementers of alternative clients/servers | What it means to comply with PREX/OpenPacker   |
-| [Reference implementation](product/reference-implementation.md) | Engineers reading this repo                 | What ships, where it lives, how demos prove it |
-| [Leverage guide](product/leverage-guide.md)                     | Platform owners                             | Reuse vs build; Nexus/mise/Epoch boundaries    |
-| [Architecture](architecture.md)                                 | System designers                            | Layers, determinism, trust composition         |
+| Document                                                        | Audience                              | Purpose                                    |
+| --------------------------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| **[CLI cookbook](guides/cli.md)**                               | **Anyone running `openpacker`**       | **Copy-paste package management commands** |
+| [CLI sample inputs](../examples/cli/)                           | Shell users                           | Ready JSON for normalize / identify / …    |
+| [Getting started](guides/getting-started.md)                    | New operators                         | Install + demos                            |
+| [Use cases](product/use-cases.md)                               | Product / architecture                | Workflows UC-1…UC-8                        |
+| [User surface](product/user-surface.md)                         | API integrators                       | Command/HTTP catalogue                     |
+| [Compliance (API/CLI)](product/compliance.md)                   | Implementers of other clients/servers | PREX compliance checklist                  |
+| [Reference implementation](product/reference-implementation.md) | Repo engineers                        | Layout + demo matrix                       |
+| [Leverage guide](product/leverage-guide.md)                     | Platform owners                       | Reuse vs build                             |
+| [Architecture](architecture.md)                                 | System designers                      | Layers, determinism, trust                 |
 
 ## Normative PREX
 
@@ -31,13 +33,14 @@ API detail.
 
 ## Using the reference implementation
 
-| Document                                         | Subject                                       |
-| ------------------------------------------------ | --------------------------------------------- |
-| [Runtime clients](operations/runtime-clients.md) | Daemon, SDK, embedded API, CLI                |
-| [Examples](../examples/README.md)                | Compile-checked and offline-runnable examples |
-| [mise integration](integrations/mise.md)         | Tool install via PREX materialize             |
-| [Epoch consumption](integrations/epoch.md)       | Downstream consumer boundary                  |
-| [OCI / ORAS / OCM](integrations/oci-oras-ocm.md) | Artifact transport and composition            |
+| Document                                         | Subject                              |
+| ------------------------------------------------ | ------------------------------------ |
+| **[CLI cookbook](guides/cli.md)**                | **Shell package management recipes** |
+| [Runtime clients](operations/runtime-clients.md) | Daemon, SDK, embedded API details    |
+| [Examples](../examples/README.md)                | CLI inputs + library samples         |
+| [mise integration](integrations/mise.md)         | Tool install via PREX materialize    |
+| [Epoch consumption](integrations/epoch.md)       | Downstream consumer boundary         |
+| [OCI / ORAS / OCM](integrations/oci-oras-ocm.md) | Artifact transport and composition   |
 
 ## Extending OpenPacker
 

@@ -1,13 +1,16 @@
 # OpenPacker examples
 
-These packages are **compile-checked, tested** usage samples for the reference
-implementation. They are part of the npm workspace and run offline.
+**Package management CLI (start here):**  
+**[docs/guides/cli.md](../docs/guides/cli.md)** · **[cli/](cli/)** sample inputs
+
+Library packages below are compile-checked and tested offline.
 
 ## Catalogue
 
 | Package                                 | Path                                       | Demonstrates                                                                                     | Run                                                              |
 | --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `@openpacker/example-basic-client`      | [`basic-client/`](basic-client/)           | Discover capabilities, then call `normalize` via `@openpacker/sdk`; retain `rawBytes`            | `npm run test --workspace @openpacker/example-basic-client`      |
+| _(CLI inputs)_                          | [`cli/`](cli/)                             | Copy-paste `openpacker` commands + JSON                                                          | see `cli/README.md`                                              |
+| `@openpacker/example-basic-client`      | [`basic-client/`](basic-client/)           | SDK discover → normalize; keep `rawBytes`                                                        | `npm run test --workspace @openpacker/example-basic-client`      |
 | `@openpacker/example-embedded-resolver` | [`embedded-resolver/`](embedded-resolver/) | Pure in-process solve, independent proof check, bounded oracle                                   | `npm run test --workspace @openpacker/example-embedded-resolver` |
 | `@openpacker/example-lock-import`       | [`lock-import/`](lock-import/)             | Offline native lock → `native-capture-v1` solve plan + lockfile digests                          | `npm run test --workspace @openpacker/example-lock-import`       |
 | `@openpacker/example-epoch-consumer`    | [`epoch-consumer/`](epoch-consumer/)       | Downstream consumer boundary: receipts, events, pacts; no Epoch production dep inside OpenPacker | `npm run test --workspace @openpacker/example-epoch-consumer`    |

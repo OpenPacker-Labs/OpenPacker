@@ -1,0 +1,5 @@
+{
+  "query": {
+    "purl": "pkg:npm/%40openpacker/demo-tool"
+  }
+}

@@ -1,8 +1,10 @@
 # Getting started with OpenPacker
 
-This guide walks from a clean checkout to working PREX calls against the
-reference implementation. All mandatory steps are **offline** after one-time
-toolchain install.
+**Day-to-day package CLI recipes:** **[cli.md](cli.md)** (start there if you
+want commands, not setup theory).
+
+This page is install + first run. All mandatory steps are **offline** after
+one-time toolchain install.
 
 ## What you get
 
