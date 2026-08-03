@@ -1,0 +1,15 @@
+# Deterministic OpenPacker fixture; no Cargo command is run to capture it.
+version = 4
+
+[[package]]
+name = "demo-zstd"
+version = "1.0.0"
+source = "registry+https://fixtures.openpacker.invalid/cargo-index"
+checksum = "b78d68511330331a886251deef48b6085bc6f7383d7ed050095bd7928fc4f8ca"
+dependencies = ["cfg-if 1.0.0"]
+
+[[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://fixtures.openpacker.invalid/cargo-index"
+checksum = "4444444444444444444444444444444444444444444444444444444444444444"

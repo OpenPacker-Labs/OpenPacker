@@ -1,0 +1,8 @@
+[plugin]
+name = "openpacker"
+version = "0.1.0"
+description = "Verified PREX tool materialization through openpackerd"
+min_mise_version = "2026.7.13"
+
+[backend]
+aliases = ["openpacker", "prex"]

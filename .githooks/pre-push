@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+# OpenPacker agent/git pre-push: validate branch vs base (default origin/main).
+cd "$(git rev-parse --show-toplevel)"
+if [ -n "${OPENPACKER_SKIP_HOOKS:-}" ]; then
+  echo "pre-push: skipped (OPENPACKER_SKIP_HOOKS)"
+  exit 0
+fi
+BASE="${OPENPACKER_AGENT_CHECK_BASE:-origin/main}"
+if git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+  node scripts/agent-check.mjs --base="$BASE"
+else
+  node scripts/agent-check.mjs
+fi

@@ -1,0 +1,35 @@
+{
+  "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+  "messageSignature": {
+    "messageDigest": {
+      "algorithm": "sha256",
+      "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+    },
+    "signature": "la3EmXWw4ouCG4E4XwwZqfW2DAI68V_IpucDnVMknPQP65cGNJ3VPA3yJUKVACs8oXAa3QrdAaAbwieHHJTbDQ"
+  },
+  "verificationMaterial": {
+    "certificate": {
+      "identity": "release@example.test",
+      "issuer": "https://issuer.example",
+      "notAfter": "2027-01-01T00:00:00Z",
+      "notBefore": "2025-01-01T00:00:00Z",
+      "publicKey": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+      "signature": "XMEc6pNKSXDaJsbS3cyZrW6gVrcCgGUNi9WUPhRxzjkbKm4yCpRt8AbRPqkON1blywIAV50CJlwD3qVxJbeiDQ"
+    },
+    "tlogEntry": {
+      "bodyDigest": {
+        "algorithm": "sha256",
+        "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+      },
+      "checkpointSignature": "gf-bZ-t1B3Sy_KpVAUcL8w-ZzTtpukacX7mLUUeG7GwgReRX3xirDjDbl0kKvNZOelK1U8NXxhkMGHte3c8HCg",
+      "inclusionProof": {
+        "hashes": [],
+        "logIndex": 0,
+        "rootHash": "3fc76c360104bf71db38b6d4afaaecb13461e18f51fabb1b464ad588df67d5f8",
+        "treeSize": 1
+      },
+      "integratedTime": "2026-08-02T00:00:00Z",
+      "logId": "fixture-log"
+    }
+  }
+}

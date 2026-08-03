@@ -1,0 +1,44 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json"],
+  "globalPassThroughEnv": ["CARGO_HOME", "RUSTUP_HOME"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": ["dist/**"]
+    },
+    "@openpacker/embedded#build": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": ["dist/**"]
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"]
+    },
+    "check:contracts": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "check:generated": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test:conformance": { "dependsOn": ["build"], "outputs": [] },
+    "test:security": { "dependsOn": ["build"], "outputs": [] },
+    "test:integration": { "dependsOn": ["build"], "outputs": [] },
+    "test:e2e": { "dependsOn": ["build"], "outputs": [] },
+    "test:compat": { "dependsOn": ["build"], "outputs": [] },
+    "test:browser": { "dependsOn": ["build"], "outputs": [] }
+  }
+}

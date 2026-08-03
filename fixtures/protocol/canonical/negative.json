@@ -1,0 +1,17 @@
+{
+  "vectors": [
+    {
+      "name": "duplicate-member",
+      "json": "{\"a\":1,\"a\":2}",
+      "error": "Duplicate object member"
+    },
+    { "name": "floating-point", "json": "1.5", "error": "safe integers" },
+    { "name": "negative-zero", "json": "-0", "error": "negative zero" },
+    {
+      "name": "unsafe-integer",
+      "json": "9007199254740992",
+      "error": "safe integers"
+    },
+    { "name": "lone-surrogate", "json": "\"\\ud800\"", "error": "surrogate" }
+  ]
+}

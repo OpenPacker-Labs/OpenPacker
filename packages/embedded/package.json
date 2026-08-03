@@ -1,0 +1,54 @@
+{
+  "name": "@openpacker/embedded",
+  "version": "0.1.0",
+  "description": "Browser-safe embedded PREX resolver and proof checker",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./wasm-node": {
+      "types": "./dist/cjs/openpacker_wasm.d.ts",
+      "import": "./dist/cjs/openpacker_wasm.js",
+      "require": "./dist/cjs/openpacker_wasm.js"
+    },
+    "./wasm-web": {
+      "types": "./dist/esm/openpacker_wasm.d.ts",
+      "import": "./dist/esm/openpacker_wasm.js"
+    },
+    "./native": {
+      "types": "./dist/esm/native.d.ts",
+      "import": "./dist/esm/native.js",
+      "require": "./dist/cjs/native.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs && npm run build:native && npm run build:wasm",
+    "build:native": "node scripts/build-native.mjs",
+    "build:wasm": "cargo build -p openpacker-wasm --target wasm32-unknown-unknown --release && wasm-bindgen ../../target/wasm32-unknown-unknown/release/openpacker_wasm.wasm --target web --out-dir dist/esm --out-name openpacker_wasm && wasm-bindgen ../../target/wasm32-unknown-unknown/release/openpacker_wasm.wasm --target nodejs --out-dir dist/cjs --out-name openpacker_wasm",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:conformance": "vitest run",
+    "test:security": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/contracts": "0.1.0"
+  }
+}

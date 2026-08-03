@@ -1,0 +1,107 @@
+{
+  "root": {
+    "signatures": [
+      {
+        "keyid": "root",
+        "sig": "vIAtZQmdGc_qo85v7B1-LF7PQEIcil0vehIn83ptyeBdztS5Q4heBxWpNFv2CqPYD6GVR8KaAhK7DvmKB8OaCw"
+      }
+    ],
+    "signed": {
+      "_type": "root",
+      "consistent_snapshot": true,
+      "expires": "2028-01-01T00:00:00Z",
+      "keys": {
+        "root": {
+          "keytype": "ed25519",
+          "keyval": { "public": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" },
+          "scheme": "ed25519"
+        }
+      },
+      "roles": {
+        "root": { "keyids": ["root"], "threshold": 1 },
+        "snapshot": { "keyids": ["root"], "threshold": 1 },
+        "targets": { "keyids": ["root"], "threshold": 1 },
+        "timestamp": { "keyids": ["root"], "threshold": 1 }
+      },
+      "spec_version": "1.0.31",
+      "version": 1
+    }
+  },
+  "snapshot": {
+    "signatures": [
+      {
+        "keyid": "root",
+        "sig": "tB2B7zGHR_uQaXFe4STum3Xbm3OXvq_teizJ8mFNiGLxA1ZJDexB3OTjHSBFBMlNPuCERW5_oJygsho5e5RvCQ"
+      }
+    ],
+    "signed": {
+      "_type": "snapshot",
+      "expires": "2027-01-01T00:00:00Z",
+      "meta": {
+        "targets.json": {
+          "hashes": {
+            "sha256": "2f40abbe93a5b85f7781cc773cc094f5bbb9f5f1d5137704a604eec8bc211f3f"
+          },
+          "length": 371,
+          "version": 1
+        }
+      },
+      "spec_version": "1.0.31",
+      "version": 1
+    }
+  },
+  "targets": {
+    "signatures": [
+      {
+        "keyid": "root",
+        "sig": "HyFzY92Ie7rKTJrCI3_yOiRBL_gOoqwQhNNcFC8KaUf3CDOCRH7q_jkydsCZ5WMdRcQK0CVOHCerbXHCNpCACA"
+      }
+    ],
+    "signed": {
+      "_type": "targets",
+      "expires": "2027-01-01T00:00:00Z",
+      "spec_version": "1.0.31",
+      "targets": {
+        "tools/openpacker-demo.tar.gz": {
+          "hashes": {
+            "sha256": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "length": 135
+        }
+      },
+      "version": 1
+    }
+  },
+  "timestamp": {
+    "signatures": [
+      {
+        "keyid": "root",
+        "sig": "gnnbUtitYWxxmELAmNFzwwo9buCZmXeAZ3pw_ftugPMq-7PGWxZipox4EZVmFQHmEQM8Am-L_5b1I-0aB0J0BA"
+      }
+    ],
+    "signed": {
+      "_type": "timestamp",
+      "expires": "2027-01-01T00:00:00Z",
+      "meta": {
+        "snapshot.json": {
+          "hashes": {
+            "sha256": "ba77355eb08c20c19b10726bfbbc23b54c85bd5de8190c655b91853c2824b700"
+          },
+          "length": 365,
+          "version": 1
+        }
+      },
+      "spec_version": "1.0.31",
+      "version": 1
+    }
+  },
+  "verified": {
+    "role": "targets",
+    "target": {
+      "hashes": {
+        "sha256": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+      },
+      "length": 135
+    }
+  }
+}

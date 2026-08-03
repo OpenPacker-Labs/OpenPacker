@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Demo.Tool": {
+        "type": "Direct",
+        "requested": "[1.0,2.0)",
+        "resolved": "1.0.0",
+        "contentHash": "sha512-native-fixture",
+        "dependencies": { "Child": "[2.0,3.0)" }
+      }
+    }
+  }
+}

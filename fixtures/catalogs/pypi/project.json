@@ -1,0 +1,92 @@
+{
+  "info": {
+    "name": "Demo_Tool",
+    "version": "1.0.0",
+    "summary": "OpenPacker PyPI fixture package",
+    "requires_python": ">=3.9",
+    "requires_dist": [
+      "alpha>=1.0",
+      "beta[security]>=2.0; python_version >= \"3.10\"",
+      "gamma~=1.2.3"
+    ],
+    "yanked": false,
+    "yanked_reason": null
+  },
+  "releases": {
+    "1.0.0b1": [
+      {
+        "filename": "demo_tool-1.0.0b1-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0b1-py3-none-any.whl",
+        "size": 12,
+        "digests": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "yanked": false
+      }
+    ],
+    "1.0.0": [
+      {
+        "filename": "demo_tool-1.0.0-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0-py3-none-any.whl",
+        "size": 31,
+        "digests": {
+          "sha256": "d93c74da6add765cc6a03769e21752daf17bdd291376b82347e3c71a7e0f5318"
+        },
+        "yanked": false
+      },
+      {
+        "filename": "demo_tool-1.0.0.tar.gz",
+        "packagetype": "sdist",
+        "python_version": "source",
+        "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0.tar.gz",
+        "size": 31,
+        "digests": {
+          "sha256": "437087440e1c80b5dbea070ab18f4746ad804e8d0740560c932a01ea37ceb0e8"
+        },
+        "yanked": false
+      }
+    ],
+    "1.1.0": [
+      {
+        "filename": "demo_tool-1.1.0-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.1.0-py3-none-any.whl",
+        "size": 10,
+        "digests": {
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "yanked": true,
+        "yanked_reason": "fixture yank"
+      }
+    ]
+  },
+  "urls": [
+    {
+      "filename": "demo_tool-1.0.0-py3-none-any.whl",
+      "packagetype": "bdist_wheel",
+      "python_version": "py3",
+      "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0-py3-none-any.whl",
+      "size": 31,
+      "digests": {
+        "sha256": "d93c74da6add765cc6a03769e21752daf17bdd291376b82347e3c71a7e0f5318"
+      },
+      "yanked": false
+    },
+    {
+      "filename": "demo_tool-1.0.0.tar.gz",
+      "packagetype": "sdist",
+      "python_version": "source",
+      "url": "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0.tar.gz",
+      "size": 31,
+      "digests": {
+        "sha256": "437087440e1c80b5dbea070ab18f4746ad804e8d0740560c932a01ea37ceb0e8"
+      },
+      "yanked": false
+    }
+  ]
+}

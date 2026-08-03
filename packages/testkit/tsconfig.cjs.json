@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "verbatimModuleSyntax": false,
+    "outDir": "dist/cjs",
+    "baseUrl": ".",
+    "paths": {
+      "@openpacker/adapter-core": ["../adapter-core/dist/index.d.ts"],
+      "@openpacker/trust": ["../trust/dist/index.d.ts"]
+    }
+  }
+}

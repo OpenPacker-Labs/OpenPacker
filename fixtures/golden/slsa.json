@@ -1,0 +1,23 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://openpacker.dev/fixtures/build",
+      "externalParameters": {},
+      "internalParameters": {},
+      "resolvedDependencies": []
+    },
+    "runDetails": {
+      "builder": { "id": "https://openpacker.dev/fixtures/builder" }
+    }
+  },
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [
+    {
+      "digest": {
+        "sha256": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+      },
+      "name": "npm-demo-1.0.0.native-bytes"
+    }
+  ]
+}

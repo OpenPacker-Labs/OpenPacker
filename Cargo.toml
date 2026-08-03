@@ -1,0 +1,18 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/Tyler-R-Kendrick/OpenPacker"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+thiserror = "2.0"
+wasm-bindgen = "0.2"
+getrandom = { version = "0.3", features = ["wasm_js"] }

@@ -1,0 +1,105 @@
+{
+  "problem": {
+    "code": "UNSATISFIABLE",
+    "message": "UNSATISFIABLE: {\"code\":\"UNSATISFIABLE\",\"message\":\"no assignment satisfies all hard requirements\",\"universeDigest\":{\"algorithm\":\"sha256\",\"value\":\"a644073e78d95997af293dfacc31494381b60edd30ce86dd185529efcca71267\"},\"unsatCore\":[\"root-capability\",\"root-conflict\",\"root-nuget\",\"root-tool\"]}"
+  },
+  "request": {
+    "environment": { "installed": [], "locked": [] },
+    "evaluationTime": "2026-08-02T00:00:00Z",
+    "mode": "closure",
+    "objectives": [
+      "satisfy-hard-constraints",
+      "minimize-package-count",
+      "exclude-lifecycle-denied",
+      "prefer-stable",
+      "prefer-highest-native-version",
+      "canonical-lexical-tie-break"
+    ],
+    "policy": {
+      "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+      "allowQuarantined": false,
+      "allowYanked": false,
+      "requiredEvidence": [],
+      "semanticLossMaximum": "warning"
+    },
+    "requirements": [
+      {
+        "authority": "test-fixture",
+        "expression": {
+          "purl": "pkg:npm/%40openpacker/demo-tool",
+          "type": "package",
+          "vers": "vers:npm/>=0.0.0|<2.0.0"
+        },
+        "id": "root-tool",
+        "kind": "runtime",
+        "optional": false,
+        "semanticLoss": [],
+        "source": {
+          "type": "overlay",
+          "uri": "https://openpacker.dev/fixtures/overlay"
+        }
+      },
+      {
+        "authority": "publisher",
+        "expression": {
+          "name": "compression/zstd",
+          "type": "capability",
+          "vers": "vers:generic/>=1"
+        },
+        "id": "root-capability",
+        "kind": "runtime",
+        "optional": false,
+        "semanticLoss": [],
+        "source": {
+          "type": "overlay",
+          "uri": "https://openpacker.dev/fixtures/overlay"
+        }
+      },
+      {
+        "authority": "test-fixture",
+        "expression": {
+          "purl": "pkg:nuget/openpacker.zstd.tool",
+          "type": "package",
+          "vers": "vers:nuget/>=1.0.0"
+        },
+        "id": "root-nuget",
+        "kind": "tool",
+        "optional": false,
+        "semanticLoss": [],
+        "source": {
+          "type": "overlay",
+          "uri": "https://openpacker.dev/fixtures/overlay"
+        }
+      },
+      {
+        "authority": "test-fixture",
+        "expression": {
+          "purl": "pkg:npm/conflicting-demo",
+          "type": "package",
+          "vers": "vers:npm/>=1.0.0"
+        },
+        "id": "root-conflict",
+        "kind": "runtime",
+        "optional": false,
+        "semanticLoss": [],
+        "source": {
+          "type": "overlay",
+          "uri": "https://openpacker.dev/fixtures/overlay"
+        }
+      }
+    ],
+    "semantics": {
+      "nativeCompatibility": ["npm", "cargo", "nuget"],
+      "profile": "prex-calculus-subset-v1"
+    },
+    "target": {
+      "abi": {},
+      "architecture": "arm64",
+      "capabilities": [],
+      "libc": "glibc",
+      "os": "linux",
+      "runtimes": { "node": "24" },
+      "variables": {}
+    }
+  }
+}

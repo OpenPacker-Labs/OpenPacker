@@ -1,0 +1,14 @@
+node_modules
+target
+dist
+coverage
+.turbo
+.demo-output
+package-lock.json
+Cargo.lock
+fixtures/artifacts
+
+# Repo-local agent skills (mirrors must stay byte-identical; format deliberately)
+.agents/skills/**
+.claude/skills/**
+.claude/agents/**

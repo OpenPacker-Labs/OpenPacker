@@ -1,0 +1,52 @@
+{
+  "overlayVersion": "1",
+  "subject": {
+    "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+    "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "purlType": "npm",
+    "namespace": "@openpacker",
+    "name": "demo-tool",
+    "version": "1.0.0",
+    "qualifiers": {},
+    "nativeCoordinates": [
+      {
+        "ecosystem": "npm",
+        "coordinate": "@openpacker/demo-tool",
+        "version": "1.0.0"
+      }
+    ],
+    "aliases": [],
+    "sourceRefs": [
+      { "type": "registry", "uri": "https://registry.npmjs.org/" }
+    ],
+    "publisherRefs": [],
+    "externalRefs": []
+  },
+  "requirements": [
+    {
+      "id": "overlay-zstd",
+      "expression": { "type": "capability", "name": "compression/zstd" },
+      "kind": "runtime",
+      "optional": false,
+      "source": {
+        "type": "overlay",
+        "uri": "https://openpacker.dev/fixtures/overlay/cross-ecosystem.json"
+      },
+      "authority": "publisher",
+      "semanticLoss": []
+    }
+  ],
+  "capabilities": [],
+  "conflicts": [],
+  "cardinalityConstraints": [],
+  "artifactAnnotations": [],
+  "sourceRefs": [
+    {
+      "type": "overlay",
+      "uri": "https://openpacker.dev/fixtures/overlay/cross-ecosystem.json"
+    }
+  ],
+  "authority": "publisher",
+  "evidenceRefs": [],
+  "externalRefs": []
+}

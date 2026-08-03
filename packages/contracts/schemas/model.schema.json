@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json",
+  "title": "PREX package, requirement, target, artifact, and lifecycle model",
+  "$defs": {
+    "PackageIdentity": {
+      "type": "object",
+      "required": [
+        "canonicalPurl",
+        "purlType",
+        "name",
+        "qualifiers",
+        "nativeCoordinates",
+        "aliases",
+        "sourceRefs",
+        "publisherRefs",
+        "externalRefs"
+      ],
+      "properties": {
+        "canonicalPurl": {
+          "type": "string",
+          "pattern": "^pkg:[a-z0-9.+-]+/",
+          "maxLength": 8192
+        },
+        "exactPurl": {
+          "type": "string",
+          "pattern": "^pkg:[a-z0-9.+-]+/.*@",
+          "maxLength": 8192
+        },
+        "purlType": {
+          "type": "string",
+          "pattern": "^[a-z0-9.+-]+$",
+          "maxLength": 64
+        },
+        "namespace": { "type": "string", "maxLength": 1024 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "version": { "type": "string", "maxLength": 1024 },
+        "qualifiers": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": "string", "maxLength": 4096 }
+        },
+        "subpath": { "type": "string", "maxLength": 4096 },
+        "nativeCoordinates": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["ecosystem", "coordinate"],
+            "properties": {
+              "ecosystem": { "type": "string", "maxLength": 64 },
+              "coordinate": { "type": "string", "maxLength": 4096 },
+              "version": { "type": "string", "maxLength": 1024 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "type": "string", "maxLength": 4096 }
+        },
+        "sourceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SourceRef" }
+        },
+        "publisherRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "common.schema.json#/$defs/IdentityRef" }
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "VersionConstraint": {
+      "type": "object",
+      "required": [
+        "scheme",
+        "original",
+        "normalized",
+        "ast",
+        "reversible",
+        "semanticLoss"
+      ],
+      "properties": {
+        "vers": {
+          "type": "string",
+          "pattern": "^vers:[a-z0-9.+-]+/",
+          "maxLength": 8192
+        },
+        "scheme": {
+          "type": "string",
+          "pattern": "^[a-z0-9.+-]+$",
+          "maxLength": 64
+        },
+        "original": { "type": "string", "maxLength": 8192 },
+        "normalized": { "type": "string", "maxLength": 8192 },
+        "ast": { "$ref": "#/$defs/VersionConstraintAst" },
+        "reversible": { "type": "boolean" },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "VersionConstraintAst": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "operator", "version"],
+          "properties": {
+            "type": { "const": "comparison" },
+            "operator": { "enum": ["=", "!=", ">", ">=", "<", "<="] },
+            "version": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "items"],
+          "properties": {
+            "type": { "enum": ["and", "or"] },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "items": { "$ref": "#/$defs/VersionConstraintAst" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "item"],
+          "properties": {
+            "type": { "const": "not" },
+            "item": { "$ref": "#/$defs/VersionConstraintAst" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "const": "any" } },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TargetContext": {
+      "type": "object",
+      "properties": {
+        "os": { "type": "string", "maxLength": 128 },
+        "architecture": { "type": "string", "maxLength": 128 },
+        "libc": { "type": "string", "maxLength": 128 },
+        "kernel": { "type": "string", "maxLength": 128 },
+        "runtimes": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": "string", "maxLength": 128 }
+        },
+        "abi": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": "string", "maxLength": 128 }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 255 },
+              "version": { "type": "string", "maxLength": 128 },
+              "attributes": {
+                "type": "object",
+                "maxProperties": 64,
+                "additionalProperties": {
+                  "type": ["string", "boolean", "integer"]
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "variables": {
+          "type": "object",
+          "maxProperties": 128,
+          "additionalProperties": { "type": ["string", "boolean", "integer"] }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "TargetPredicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "enum": ["true", "false"] } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "path", "value"],
+          "properties": {
+            "type": { "enum": ["equals", "notEquals"] },
+            "path": {
+              "type": "string",
+              "pattern": "^(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$"
+            },
+            "value": { "type": ["string", "boolean", "integer"] }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "path", "values"],
+          "properties": {
+            "type": { "enum": ["in", "notIn"] },
+            "path": { "type": "string", "maxLength": 255 },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 128,
+              "items": { "type": ["string", "boolean", "integer"] }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "path", "constraint"],
+          "properties": {
+            "type": { "const": "versionSatisfies" },
+            "path": { "type": "string", "maxLength": 255 },
+            "constraint": { "$ref": "#/$defs/VersionConstraint" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name"],
+          "properties": {
+            "type": { "const": "capabilityPresent" },
+            "name": { "type": "string", "maxLength": 255 },
+            "constraint": { "$ref": "#/$defs/VersionConstraint" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "predicates"],
+          "properties": {
+            "type": { "enum": ["allOf", "anyOf"] },
+            "predicates": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": { "$ref": "#/$defs/TargetPredicate" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "predicate"],
+          "properties": {
+            "type": { "const": "not" },
+            "predicate": { "$ref": "#/$defs/TargetPredicate" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RequirementExpression": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "purl"],
+          "properties": {
+            "type": { "const": "package" },
+            "purl": { "type": "string", "pattern": "^pkg:" },
+            "vers": { "type": "string", "pattern": "^vers:" },
+            "qualifiers": {
+              "type": "object",
+              "maxProperties": 64,
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "name"],
+          "properties": {
+            "type": { "const": "capability" },
+            "name": { "type": "string", "maxLength": 255 },
+            "vers": { "type": "string", "pattern": "^vers:" },
+            "attributes": {
+              "type": "object",
+              "maxProperties": 64,
+              "additionalProperties": {
+                "type": ["string", "boolean", "integer"]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "expressions"],
+          "properties": {
+            "type": { "enum": ["allOf", "anyOf"] },
+            "expressions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": { "$ref": "#/$defs/RequirementExpression" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "expression"],
+          "properties": {
+            "type": { "const": "not" },
+            "expression": { "$ref": "#/$defs/RequirementExpression" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "when", "then"],
+          "properties": {
+            "type": { "const": "conditional" },
+            "when": { "$ref": "#/$defs/TargetPredicate" },
+            "then": { "$ref": "#/$defs/RequirementExpression" },
+            "else": { "$ref": "#/$defs/RequirementExpression" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Requirement": {
+      "type": "object",
+      "required": [
+        "id",
+        "expression",
+        "kind",
+        "optional",
+        "source",
+        "authority",
+        "semanticLoss"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+        },
+        "dependerNodeId": { "type": "string", "maxLength": 255 },
+        "expression": { "$ref": "#/$defs/RequirementExpression" },
+        "kind": {
+          "enum": [
+            "runtime",
+            "build",
+            "development",
+            "peer",
+            "optional",
+            "feature",
+            "tool",
+            "platform",
+            "replacement",
+            "conflict",
+            "unknown-native"
+          ]
+        },
+        "optional": { "type": "boolean" },
+        "source": { "$ref": "common.schema.json#/$defs/SourceRef" },
+        "authority": { "type": "string", "maxLength": 128 },
+        "raw": { "$ref": "common.schema.json#/$defs/CanonicalJsonValue" },
+        "nativeSemantics": {
+          "type": "object",
+          "required": ["version", "data"],
+          "properties": {
+            "version": { "type": "string", "maxLength": 64 },
+            "data": { "$ref": "common.schema.json#/$defs/CanonicalJsonValue" }
+          },
+          "additionalProperties": false
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Capability": {
+      "type": "object",
+      "required": ["name", "providerNodeId", "source"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 255 },
+        "version": { "type": "string", "maxLength": 128 },
+        "attributes": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": ["string", "boolean", "integer"] }
+        },
+        "providerNodeId": { "type": "string", "maxLength": 255 },
+        "targetPredicate": { "$ref": "#/$defs/TargetPredicate" },
+        "source": { "$ref": "common.schema.json#/$defs/SourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "Conflict": {
+      "type": "object",
+      "required": ["id", "expression", "scope", "source"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 255 },
+        "expression": { "$ref": "#/$defs/RequirementExpression" },
+        "scope": { "enum": ["solution", "package", "target"] },
+        "source": { "$ref": "common.schema.json#/$defs/SourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "CardinalityConstraint": {
+      "type": "object",
+      "required": ["id", "selector", "minimum", "maximum", "scope", "source"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 255 },
+        "selector": { "$ref": "#/$defs/RequirementExpression" },
+        "minimum": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "maximum": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "scope": { "enum": ["solution", "package", "target"] },
+        "source": { "$ref": "common.schema.json#/$defs/SourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "ArtifactLocation": {
+      "type": "object",
+      "required": ["transport", "uri", "priority", "rangeSupported"],
+      "properties": {
+        "transport": { "enum": ["https", "oci", "file", "cas", "provider"] },
+        "uri": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "priority": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "rangeSupported": { "type": "boolean" },
+        "credentialRef": { "type": "string", "maxLength": 1024 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "annotations": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "type": "string" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "ArtifactDescriptor": {
+      "type": "object",
+      "required": [
+        "descriptorId",
+        "digest",
+        "size",
+        "mediaType",
+        "artifactType",
+        "nativeRole",
+        "locations",
+        "referrers",
+        "externalRefs"
+      ],
+      "properties": {
+        "descriptorId": { "type": "string", "maxLength": 255 },
+        "digest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mediaType": { "type": "string", "maxLength": 255 },
+        "artifactType": { "type": "string", "maxLength": 255 },
+        "fileName": { "type": "string", "maxLength": 1024 },
+        "targetPredicate": { "$ref": "#/$defs/TargetPredicate" },
+        "nativeRole": { "type": "string", "maxLength": 128 },
+        "locations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/ArtifactLocation" }
+        },
+        "oci": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/CanonicalJsonValue"
+          }
+        },
+        "ocm": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/CanonicalJsonValue"
+          }
+        },
+        "chunkIndexRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "referrers": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "LifecycleState": {
+      "type": "object",
+      "required": ["status", "eligible", "warnings"],
+      "properties": {
+        "status": {
+          "enum": [
+            "published",
+            "yanked",
+            "deprecated",
+            "quarantined",
+            "revoked",
+            "delisted",
+            "restored",
+            "promoted",
+            "removed-from-channel",
+            "ownership-transferred",
+            "unknown"
+          ]
+        },
+        "eligible": { "type": "boolean" },
+        "warnings": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/Warning" }
+        },
+        "derivationEventIds": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "type": "string", "maxLength": 255 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceSnapshot": {
+      "type": "object",
+      "required": [
+        "snapshotId",
+        "providerId",
+        "providerType",
+        "endpointIdentity",
+        "retrievedAt",
+        "evaluationTime",
+        "rootDigest",
+        "recordsDigest",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "snapshotId": { "type": "string", "maxLength": 255 },
+        "providerId": { "type": "string", "maxLength": 255 },
+        "providerType": { "type": "string", "maxLength": 128 },
+        "endpointIdentity": { "type": "string", "maxLength": 4096 },
+        "retrievedAt": { "type": "string", "format": "date-time" },
+        "evaluationTime": { "type": "string", "format": "date-time" },
+        "revision": { "type": "string", "maxLength": 1024 },
+        "etag": { "type": "string", "maxLength": 1024 },
+        "rootDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "recordsDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "authenticationScopeRef": { "type": "string", "maxLength": 1024 },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "PackageInstance": {
+      "type": "object",
+      "required": [
+        "nodeId",
+        "identity",
+        "nativeVersion",
+        "normalizedVersion",
+        "versionSortKey",
+        "requirements",
+        "capabilities",
+        "conflicts",
+        "cardinalityConstraints",
+        "artifacts",
+        "lifecycle",
+        "sourceSnapshots",
+        "metadataDigest",
+        "nativeSemantics",
+        "semanticLoss"
+      ],
+      "properties": {
+        "nodeId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "identity": { "$ref": "#/$defs/PackageIdentity" },
+        "nativeVersion": { "type": "string", "maxLength": 1024 },
+        "normalizedVersion": { "type": "string", "maxLength": 1024 },
+        "versionSortKey": { "type": "string", "maxLength": 4096 },
+        "requirements": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/Requirement" }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/Capability" }
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/Conflict" }
+        },
+        "cardinalityConstraints": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/CardinalityConstraint" }
+        },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/ArtifactDescriptor" }
+        },
+        "lifecycle": { "$ref": "#/$defs/LifecycleState" },
+        "sourceSnapshots": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/Digest" }
+        },
+        "metadataDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "rawMetadataRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "nativeSemantics": {
+          "type": "object",
+          "required": ["version", "data"],
+          "properties": {
+            "version": { "type": "string", "maxLength": 64 },
+            "data": { "$ref": "common.schema.json#/$defs/CanonicalJsonValue" }
+          },
+          "additionalProperties": false
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

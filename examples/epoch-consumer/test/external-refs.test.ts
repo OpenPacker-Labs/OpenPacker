@@ -1,0 +1,57 @@
+import { readFile } from 'node:fs/promises';
+import { canonicalBytes } from '@openpacker/canonical';
+import type {
+  ExternalRef,
+  JsonValue,
+  SignedReceipt,
+} from '@openpacker/contracts';
+import { canonicalEventBytes, createCloudEvent } from '@openpacker/events';
+import { describe, expect, it } from 'vitest';
+import { createEpochOwnedEnvelope } from '../src/index.js';
+
+const root = new URL('../../../', import.meta.url);
+
+describe('generic consumer-owned external references', () => {
+  it('round-trips unknown references without changing canonical PREX bytes', async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        new URL('fixtures/epoch/external-refs.json', root),
+        'utf8',
+      ),
+    ) as {
+      openPackerDigest: string;
+      externalRefs: ExternalRef[];
+    };
+    const signed = JSON.parse(
+      await readFile(
+        new URL('fixtures/epoch/signed-receipt.json', root),
+        'utf8',
+      ),
+    ) as SignedReceipt;
+    const receiptBytes = canonicalBytes(signed.receipt as unknown as JsonValue);
+    const event = await createCloudEvent({
+      type: 'org.openpacker.receipt.created',
+      source: 'urn:openpacker:external-ref-test',
+      subject: fixture.openPackerDigest,
+      correlationId: 'external-ref-round-trip',
+      clock: { now: () => '2026-08-02T00:00:00.000Z' },
+      data: { schemaVersion: '1', receiptDigest: signed.receiptDigest },
+    });
+    const eventBytes = canonicalEventBytes(event);
+
+    const envelope = createEpochOwnedEnvelope(
+      fixture.openPackerDigest,
+      fixture.externalRefs,
+    );
+    const roundTrip = JSON.parse(JSON.stringify(envelope)) as typeof envelope;
+
+    expect(roundTrip.externalRefs).toEqual(fixture.externalRefs);
+    expect(roundTrip.openPackerDigest).toBe(fixture.openPackerDigest);
+    expect(canonicalBytes(signed.receipt as unknown as JsonValue)).toEqual(
+      receiptBytes,
+    );
+    expect(canonicalEventBytes(event)).toEqual(eventBytes);
+    expect(signed.receipt.externalRefs).toEqual([]);
+    expect(event.externalrefs).toEqual([]);
+  });
+});

@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "protocolVersion": "1.0-draft",
+    "provider": {
+      "id": "org.openpacker.reference",
+      "implementation": "openpackerd",
+      "version": "0.1.0"
+    }
+  },
+  "versions": [
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "exactPurl": "pkg:npm/%40openpacker/demo-tool@0.9.0",
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "7014a2b5ebe61f302a5a3404ab1385ae393d1be087cc0d0dc153ad2f02b2fee5"
+      },
+      "normalizedVersion": "0.9.0",
+      "originalVersion": "0.9.0",
+      "sortKey": "0.9.0",
+      "sourceSnapshot": {
+        "algorithm": "sha256",
+        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      },
+      "warnings": []
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1",
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "c062690d87d9d5ae1f1ca1163e95945ad2e1eaf3434e485396bd2a1c7199b10a"
+      },
+      "normalizedVersion": "1.0.0-beta.1",
+      "originalVersion": "1.0.0-beta.1",
+      "sortKey": "1.0.0-beta.1",
+      "sourceSnapshot": {
+        "algorithm": "sha256",
+        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      },
+      "warnings": []
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "1274bc84cf3cb4fb304e21248cde3978c4bb394d9f0df3760717b6c5f9be1b7c"
+      },
+      "normalizedVersion": "1.0.0",
+      "originalVersion": "1.0.0",
+      "sortKey": "1.0.0",
+      "sourceSnapshot": {
+        "algorithm": "sha256",
+        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      },
+      "warnings": []
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "org.openpacker.benchmark-baseline.v1",
+  "runtime": "Node >=20.20.0",
+  "iterations": 10000,
+  "thresholdsMilliseconds": {
+    "canonical-json": 2500,
+    "npm-purl": 3000,
+    "npm-vers-membership": 5000,
+    "vers-parse": 5000,
+    "catalog-snapshot-100-records-20": 5000,
+    "native-load": 5000,
+    "solver-cold-wasm": 5000,
+    "solver-cold-native": 5000,
+    "solver-warm-proof-explanation-200": 10000,
+    "solver-warm-native-proof-explanation-200": 10000,
+    "solver-medium-100-warm-20": 10000,
+    "solver-large-1000-warm-1": 20000,
+    "proof-check-1000": 10000,
+    "native-proof-check-1000": 10000,
+    "explanation-canonical-1000": 5000,
+    "oracle-100": 10000,
+    "oci-stream-8mib": 5000,
+    "chunking-8mib": 10000,
+    "digest-8mib": 5000,
+    "wasm-artifact-verify-1000": 5000,
+    "native-artifact-verify-1000": 5000,
+    "wasm-load": 5000
+  },
+  "thresholdsBytes": {
+    "oci-stream-heap-growth": 134217728
+  }
+}

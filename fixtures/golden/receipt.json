@@ -1,0 +1,219 @@
+{
+  "receipt": {
+    "artifactSetDigest": {
+      "algorithm": "sha256",
+      "value": "57925a8ec641df59065563af08b267aa599681fc0874fb7d7fabe619fd5ffd7d"
+    },
+    "evaluationTime": "2026-08-02T00:00:00Z",
+    "evidenceRefs": [],
+    "explanationDigest": {
+      "algorithm": "sha256",
+      "value": "9a3485f0f1c15bbbc0deccf960808b6b3d41e229c78f8cb46807979e38d8ca31"
+    },
+    "externalRefs": [],
+    "lifecycleRoot": {
+      "algorithm": "sha256",
+      "value": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "normalizedRequest": {
+      "environment": { "installed": [], "locked": [] },
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "mode": "closure",
+      "objectives": [
+        "satisfy-hard-constraints",
+        "minimize-package-count",
+        "exclude-lifecycle-denied",
+        "prefer-stable",
+        "prefer-highest-native-version",
+        "canonical-lexical-tie-break"
+      ],
+      "policy": {
+        "acceptedOverlayAuthorities": ["publisher", "test-fixture"],
+        "allowQuarantined": false,
+        "allowYanked": false,
+        "requiredEvidence": [],
+        "semanticLossMaximum": "warning"
+      },
+      "requirements": [
+        {
+          "authority": "test-fixture",
+          "expression": {
+            "purl": "pkg:npm/%40openpacker/demo-tool",
+            "qualifiers": {},
+            "type": "package",
+            "vers": "vers:npm/>=0.0.0|<2.0.0"
+          },
+          "id": "root-tool",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "publisher",
+          "expression": {
+            "attributes": {},
+            "name": "compression/zstd",
+            "type": "capability",
+            "vers": "vers:generic/>=1"
+          },
+          "id": "root-capability",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "test-fixture",
+          "expression": {
+            "purl": "pkg:nuget/openpacker.zstd.tool",
+            "qualifiers": {},
+            "type": "package",
+            "vers": "vers:nuget/>=1.0.0"
+          },
+          "id": "root-nuget",
+          "kind": "tool",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semantics": {
+        "nativeCompatibility": ["npm", "cargo", "nuget"],
+        "profile": "prex-calculus-subset-v1"
+      },
+      "target": {
+        "abi": {},
+        "architecture": "arm64",
+        "capabilities": [],
+        "libc": "glibc",
+        "os": "linux",
+        "runtimes": { "node": "24" },
+        "variables": {}
+      }
+    },
+    "objectiveOrdering": [
+      "satisfy-hard-constraints",
+      "minimize-package-count",
+      "exclude-lifecycle-denied",
+      "prefer-stable",
+      "prefer-highest-native-version",
+      "canonical-lexical-tie-break"
+    ],
+    "policyDigest": {
+      "algorithm": "sha256",
+      "value": "088b8de1f381ea7aa9d3867f43771d73b3ac972e100ce6fb6b10ee65e3e6ccaf"
+    },
+    "proofDigest": {
+      "algorithm": "sha256",
+      "value": "1eece66b1c19d02517a2f3801ef486d2f369acd4263aed92c2248a90f0097a3b"
+    },
+    "protocolVersion": "1.0-draft",
+    "receiptVersion": "1",
+    "requestDigest": {
+      "algorithm": "sha256",
+      "value": "6b1b7cbe20a965ee7e1418addd4a8675da4541d02671551b0b120f198cec57a3"
+    },
+    "resolver": {
+      "buildDigest": {
+        "algorithm": "sha256",
+        "value": "4e1b1d5721729b043f036ae008b26850cda8e567d1fddc2a54a7345a46bd665e"
+      },
+      "implementation": "openpacker-resolver",
+      "providerId": "org.openpacker.reference",
+      "version": "0.1.0"
+    },
+    "semanticsProfile": "prex-calculus-subset-v1",
+    "solutionDigest": {
+      "algorithm": "sha256",
+      "value": "eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+    },
+    "sourceSnapshots": [
+      {
+        "endpointIdentity": "https://fixtures.test",
+        "etag": "\"fixture-1\"",
+        "evaluationTime": "2026-08-02T00:00:00Z",
+        "evidenceRefs": [],
+        "providerId": "npm-registry",
+        "providerType": "npm-registry",
+        "recordsDigest": {
+          "algorithm": "sha256",
+          "value": "f1a00330d04d815541763738f1a1f0a7aabfc88b1bef0bd9d79af8884055a288"
+        },
+        "retrievedAt": "2026-08-02T00:00:00Z",
+        "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
+        "rootDigest": {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        },
+        "snapshotId": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      },
+      {
+        "endpointIdentity": "https://fixtures.test",
+        "etag": "\"cargo-1\"",
+        "evaluationTime": "2026-08-02T00:00:00Z",
+        "evidenceRefs": [],
+        "providerId": "cargo-sparse",
+        "providerType": "cargo-sparse",
+        "recordsDigest": {
+          "algorithm": "sha256",
+          "value": "a4934e746a11575192c2f92067adc1ac24e9fa14ba6783e828dfa945c185c1bc"
+        },
+        "retrievedAt": "2026-08-02T00:00:00Z",
+        "revision": "sha256:d6d1f967ff31dc6de43ac7ae630659e20b153939a051e36036f7178b20614823",
+        "rootDigest": {
+          "algorithm": "sha256",
+          "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+        },
+        "snapshotId": "sha256:51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+      },
+      {
+        "endpointIdentity": "https://fixtures.openpacker.invalid/nuget/service-index.json",
+        "etag": "\"nuget-1\"",
+        "evaluationTime": "2026-08-02T00:00:00Z",
+        "evidenceRefs": [],
+        "providerId": "nuget-v3",
+        "providerType": "nuget-v3",
+        "recordsDigest": {
+          "algorithm": "sha256",
+          "value": "c7f9a9aadf4cc0783fffa5722d93a83b656914659762a385d6bf0584ee434f9d"
+        },
+        "retrievedAt": "2026-08-02T00:00:00Z",
+        "revision": "sha256:3c984429023afb4da450b2c6bf3afb2bbc9e05689d84e2cef58d883f2cec60a6",
+        "rootDigest": {
+          "algorithm": "sha256",
+          "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+        },
+        "snapshotId": "sha256:2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+      }
+    ],
+    "targetDigest": {
+      "algorithm": "sha256",
+      "value": "5ba48d3d72a38ad4533223e3a7d9b2a4c434d0efea5cc08068ef10cd83b183bd"
+    },
+    "universeDigest": {
+      "algorithm": "sha256",
+      "value": "7c451c052cd8388b857dc0a57bcc5597bd23242b2e0f48911d48a791a5df584a"
+    }
+  },
+  "receiptDigest": {
+    "algorithm": "sha256",
+    "value": "3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+  },
+  "signatures": [
+    {
+      "algorithm": "ed25519",
+      "keyId": "root",
+      "signature": "3ZJRrjH3enQAPGU62Xcaz64dV0PO39ufYvqU6aHPWwNOAOMFP4iYiaIAXDE8YG7LZ2MW45O0426xHgTDhZjKCA"
+    }
+  ]
+}

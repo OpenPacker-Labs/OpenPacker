@@ -1,0 +1,965 @@
+{
+  'openapi': '3.1.0',
+  'info':
+    {
+      'title': 'Package Resolution Exchange',
+      'version': '1.0-draft',
+      'description':
+        'Normative HTTP/JSON binding for PREX. OpenPacker extension operations
+        are explicitly marked x-openpacker-extension.',
+    },
+  'jsonSchemaDialect': 'https://json-schema.org/draft/2020-12/schema',
+  'servers': [{ 'url': 'http://127.0.0.1:7777' }],
+  'paths':
+    {
+      '/.well-known/prex':
+        {
+          'get':
+            {
+              'operationId': 'discoverPrex',
+              'responses':
+                { '200': { '$ref': '#/components/responses/Capabilities' } },
+            },
+        },
+      '/v1/capabilities':
+        {
+          'get':
+            {
+              'operationId': 'getCapabilities',
+              'responses':
+                { '200': { '$ref': '#/components/responses/Capabilities' } },
+            },
+        },
+      '/v1/health':
+        {
+          'get':
+            {
+              'operationId': 'health',
+              'responses':
+                { '200': { '$ref': '#/components/responses/Status' } },
+            },
+        },
+      '/v1/ready':
+        {
+          'get':
+            {
+              'operationId': 'ready',
+              'responses':
+                {
+                  '200': { '$ref': '#/components/responses/Status' },
+                  '503': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/normalize':
+        { 'post': { '$ref': '#/components/x-operations/normalize' } },
+      '/v1/identify':
+        { 'post': { '$ref': '#/components/x-operations/identify' } },
+      '/v1/enumerate':
+        { 'post': { '$ref': '#/components/x-operations/enumerate' } },
+      '/v1/inspect':
+        { 'post': { '$ref': '#/components/x-operations/inspect' } },
+      '/v1/solve': { 'post': { '$ref': '#/components/x-operations/solve' } },
+      '/v1/materialize':
+        { 'post': { '$ref': '#/components/x-operations/materialize' } },
+      '/v1/verify': { 'post': { '$ref': '#/components/x-operations/verify' } },
+      '/v1/explain':
+        { 'post': { '$ref': '#/components/x-operations/explain' } },
+      '/v1/receipts/{algorithm}/{digest}':
+        {
+          'get':
+            {
+              'operationId': 'getReceipt',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/Algorithm' },
+                  { '$ref': '#/components/parameters/Digest' },
+                ],
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Signed receipt',
+                      'content':
+                        {
+                          'application/vnd.openpacker.prex.receipt.v1+json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/resolution.schema.json#/$defs/SignedReceipt',
+                                },
+                            },
+                        },
+                    },
+                  '404': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/snapshots/{algorithm}/{digest}':
+        {
+          'get':
+            {
+              'operationId': 'getSnapshot',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/Algorithm' },
+                  { '$ref': '#/components/parameters/Digest' },
+                ],
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Immutable source snapshot',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/model.schema.json#/$defs/SourceSnapshot',
+                                },
+                            },
+                        },
+                    },
+                  '404': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/events':
+        {
+          'get':
+            {
+              'operationId': 'getEvents',
+              'parameters':
+                [
+                  {
+                    'name': 'cursor',
+                    'in': 'query',
+                    'schema': { 'type': 'string', 'maxLength': 4096 },
+                  },
+                ],
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'CloudEvents over SSE or NDJSON',
+                      'content':
+                        {
+                          'text/event-stream':
+                            { 'schema': { 'type': 'string' } },
+                          'application/x-ndjson':
+                            { 'schema': { 'type': 'string' } },
+                        },
+                    },
+                },
+            },
+        },
+      '/v1/openpacker/catalog/import':
+        {
+          'post':
+            {
+              'operationId': 'importCatalog',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/CatalogImportRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Imported catalog snapshot',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/CatalogImportResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/openpacker/catalog/snapshot':
+        {
+          'post':
+            {
+              'operationId': 'createSnapshot',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/CatalogSnapshotRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Catalog snapshots',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/CatalogSnapshotResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/openpacker/lock/import':
+        {
+          'post':
+            {
+              'operationId': 'lockImport',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/LockImportRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description':
+                        'Native lock capture solution and openpacker.lock.json',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/LockImportResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/openpacker/lifecycle/apply':
+        {
+          'post':
+            {
+              'operationId': 'applyLifecycle',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/vnd.openpacker.lifecycle.v1+json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/LifecycleApplyRequest',
+                            },
+                        },
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/LifecycleApplyRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Applied lifecycle event',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/LifecycleApplyResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/openpacker/pack':
+        {
+          'post':
+            {
+              'operationId': 'packArtifact',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/PackRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Packed artifact descriptor',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/PackResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      '/v1/openpacker/publish':
+        {
+          'post':
+            {
+              'operationId': 'publishArtifact',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/PublishRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description': 'Published artifact location',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/PublishResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+    },
+  'components':
+    {
+      'parameters':
+        {
+          'Algorithm':
+            {
+              'name': 'algorithm',
+              'in': 'path',
+              'required': true,
+              'schema': { 'const': 'sha256' },
+            },
+          'Digest':
+            {
+              'name': 'digest',
+              'in': 'path',
+              'required': true,
+              'schema': { 'type': 'string', 'pattern': '^[0-9a-f]{64}$' },
+            },
+          'CorrelationId':
+            {
+              'name': 'x-correlation-id',
+              'in': 'header',
+              'required': false,
+              'schema': { 'type': 'string', 'maxLength': 255 },
+            },
+          'Traceparent':
+            {
+              'name': 'traceparent',
+              'in': 'header',
+              'required': false,
+              'schema':
+                {
+                  'type': 'string',
+                  'pattern': '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$',
+                },
+            },
+          'Tracestate':
+            {
+              'name': 'tracestate',
+              'in': 'header',
+              'required': false,
+              'schema': { 'type': 'string', 'maxLength': 512 },
+            },
+          'IdempotencyKey':
+            {
+              'name': 'idempotency-key',
+              'in': 'header',
+              'required': false,
+              'schema': { 'type': 'string', 'maxLength': 255 },
+            },
+          'Timeout':
+            {
+              'name': 'x-prex-timeout-ms',
+              'in': 'header',
+              'required': false,
+              'schema': { 'type': 'integer', 'minimum': 1, 'maximum': 300000 },
+            },
+        },
+      'responses':
+        {
+          'Capabilities':
+            {
+              'description': 'Provider capabilities',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/Capabilities',
+                        },
+                    },
+                },
+            },
+          'Status':
+            {
+              'description': 'Service status',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          'type': 'object',
+                          'required': ['status', 'protocolVersion'],
+                          'properties':
+                            {
+                              'status':
+                                {
+                                  'enum':
+                                    ['ok', 'ready', 'accepted', 'created'],
+                                },
+                              'protocolVersion': { 'const': '1.0-draft' },
+                            },
+                          'additionalProperties': false,
+                        },
+                    },
+                },
+            },
+          'Problem':
+            {
+              'description': 'RFC 9457 PREX problem',
+              'content':
+                {
+                  'application/problem+json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/Problem',
+                        },
+                    },
+                },
+            },
+        },
+      'x-operations':
+        {
+          'normalize':
+            {
+              'operationId': 'normalize',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody':
+                { '$ref': '#/components/x-requestBodies/Normalize' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Normalize' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'identify':
+            {
+              'operationId': 'identify',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody':
+                { '$ref': '#/components/x-requestBodies/Identify' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Identify' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'enumerate':
+            {
+              'operationId': 'enumerate',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody':
+                { '$ref': '#/components/x-requestBodies/Enumerate' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Enumerate' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'inspect':
+            {
+              'operationId': 'inspect',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody': { '$ref': '#/components/x-requestBodies/Inspect' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Inspect' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'solve':
+            {
+              'operationId': 'solve',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody': { '$ref': '#/components/x-requestBodies/Solve' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Solve' },
+                  '409': { '$ref': '#/components/responses/Problem' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'materialize':
+            {
+              'operationId': 'materialize',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody':
+                { '$ref': '#/components/x-requestBodies/Materialize' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Materialize' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'verify':
+            {
+              'operationId': 'verify',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody': { '$ref': '#/components/x-requestBodies/Verify' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Verify' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+          'explain':
+            {
+              'operationId': 'explain',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'requestBody': { '$ref': '#/components/x-requestBodies/Explain' },
+              'responses':
+                {
+                  '200': { '$ref': '#/components/x-responses/Explain' },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
+      'x-requestBodies':
+        {
+          'Normalize':
+            { '$ref': '#/components/x-requestBodyFactory/normalize' },
+          'Identify': { '$ref': '#/components/x-requestBodyFactory/identify' },
+          'Enumerate':
+            { '$ref': '#/components/x-requestBodyFactory/enumerate' },
+          'Inspect': { '$ref': '#/components/x-requestBodyFactory/inspect' },
+          'Solve': { '$ref': '#/components/x-requestBodyFactory/solve' },
+          'Materialize':
+            { '$ref': '#/components/x-requestBodyFactory/materialize' },
+          'Verify': { '$ref': '#/components/x-requestBodyFactory/verify' },
+          'Explain': { '$ref': '#/components/x-requestBodyFactory/explain' },
+        },
+      'x-requestBodyFactory':
+        {
+          'normalize':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/NormalizeRequest',
+                        },
+                    },
+                },
+            },
+          'identify':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/IdentifyRequest',
+                        },
+                    },
+                },
+            },
+          'enumerate':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/EnumerateRequest',
+                        },
+                    },
+                },
+            },
+          'inspect':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/InspectRequest',
+                        },
+                    },
+                },
+            },
+          'solve':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/resolution.schema.json#/$defs/SolveRequest',
+                        },
+                    },
+                },
+            },
+          'materialize':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/MaterializeRequest',
+                        },
+                    },
+                },
+            },
+          'verify':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/VerifyRequest',
+                        },
+                    },
+                },
+            },
+          'explain':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/ExplainRequest',
+                        },
+                    },
+                },
+            },
+        },
+      'x-responses':
+        {
+          'Normalize':
+            {
+              'description': 'Normalized values',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/NormalizeResponse',
+                        },
+                    },
+                },
+            },
+          'Identify':
+            {
+              'description': 'Identity result',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/IdentifyResponse',
+                        },
+                    },
+                },
+            },
+          'Enumerate':
+            {
+              'description': 'Exact versions',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/EnumerateResponse',
+                        },
+                    },
+                },
+            },
+          'Inspect':
+            {
+              'description': 'Exact package',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/InspectResponse',
+                        },
+                    },
+                },
+            },
+          'Solve':
+            {
+              'description': 'Checked solution',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/resolution.schema.json#/$defs/SolveResponse',
+                        },
+                    },
+                },
+            },
+          'Materialize':
+            {
+              'description': 'Immutable descriptor',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/MaterializeResponse',
+                        },
+                    },
+                },
+            },
+          'Verify':
+            {
+              'description': 'Evidence facts and policy decision',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/VerifyResponse',
+                        },
+                    },
+                },
+            },
+          'Explain':
+            {
+              'description': 'Normative explanation graph',
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          '$ref': './schemas/operations.schema.json#/$defs/ExplainResponse',
+                        },
+                    },
+                },
+            },
+        },
+    },
+}

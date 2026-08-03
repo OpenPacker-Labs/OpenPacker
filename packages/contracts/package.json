@@ -1,0 +1,38 @@
+{
+  "name": "@openpacker/contracts",
+  "version": "0.1.0",
+  "description": "Generated TypeScript contracts and JSON Schemas for PREX 1.0-draft",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./schemas/*": "./schemas/*"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check:generated": "node scripts/generate.mjs --check",
+    "check:contracts": "node scripts/check-schemas.mjs",
+    "build": "npm run generate && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:conformance": "vitest run",
+    "test:security": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run"
+  }
+}

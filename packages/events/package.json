@@ -1,0 +1,39 @@
+{
+  "name": "@openpacker/events",
+  "version": "0.1.0",
+  "description": "CloudEvents 1.0 runtime contracts for OpenPacker",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./schemas/*": "./schemas/*"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:conformance": "vitest run",
+    "test:integration": "vitest run",
+    "test:compat": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0"
+  }
+}

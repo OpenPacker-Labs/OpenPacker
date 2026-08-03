@@ -1,0 +1,212 @@
+[
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "schemaVersion": "1",
+      "snapshot": {
+        "endpointIdentity": "https://fixtures.test",
+        "etag": "\"fixture-1\"",
+        "evaluationTime": "2026-08-02T00:00:00Z",
+        "evidenceRefs": [],
+        "providerId": "npm-registry",
+        "providerType": "npm-registry",
+        "recordsDigest": {
+          "algorithm": "sha256",
+          "value": "f1a00330d04d815541763738f1a1f0a7aabfc88b1bef0bd9d79af8884055a288"
+        },
+        "retrievedAt": "2026-08-02T00:00:00Z",
+        "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
+        "rootDigest": {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        },
+        "snapshotId": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      }
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:8b9a6d132f463e9a972da9254b1cb8c1741be9be11e97d3344220f9cf5683815",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.catalog.snapshot.created",
+    "externalrefs": [],
+    "id": "sha256:6dc36a8e7b88ac0f8b02a16d40875801971aa5061994c995a304e07885d5b2f4",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea",
+    "time": "2026-08-02T00:00:00Z",
+    "type": "org.openpacker.catalog.snapshot.created"
+  },
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "lifecycleEvent": {
+        "action": "yanked",
+        "actor": { "type": "key", "value": "fixture:publisher-key" },
+        "authority": "publisher",
+        "effectiveAt": "2026-08-02T01:00:00Z",
+        "eventId": "fixture-yank-demo-tool-1.0.0",
+        "eventVersion": "1",
+        "evidenceRefs": [],
+        "externalRefs": [],
+        "issuedAt": "2026-08-02T01:00:00Z",
+        "reason": "Deterministic lifecycle reselection fixture",
+        "reasonCode": "FIXTURE_YANK",
+        "replacementRefs": [],
+        "sourceSnapshot": {
+          "algorithm": "sha256",
+          "value": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "subject": {
+          "aliases": [],
+          "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+          "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "externalRefs": [],
+          "name": "demo-tool",
+          "namespace": "@openpacker",
+          "nativeCoordinates": [
+            {
+              "coordinate": "@openpacker/demo-tool",
+              "ecosystem": "npm",
+              "version": "1.0.0"
+            }
+          ],
+          "publisherRefs": [],
+          "purlType": "npm",
+          "qualifiers": {},
+          "sourceRefs": [],
+          "version": "1.0.0"
+        }
+      },
+      "schemaVersion": "1"
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:1db3d4bca4623c8b52a32e356fbad787df01e4c90a4b35bde6698320efd80272",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.lifecycle.changed",
+    "extensions": {
+      "org.openpacker.occurrenceid": "fixture-yank-demo-tool-1.0.0"
+    },
+    "externalrefs": [],
+    "id": "sha256:a0881483c6df4a454f037b5ac0194d1f4def09c4b3de870bb8837a0422849142",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "time": "2026-08-02T02:00:00Z",
+    "type": "org.openpacker.lifecycle.changed"
+  },
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "requestDigest": {
+        "algorithm": "sha256",
+        "value": "6b1b7cbe20a965ee7e1418addd4a8675da4541d02671551b0b120f198cec57a3"
+      },
+      "schemaVersion": "1",
+      "solutionDigest": {
+        "algorithm": "sha256",
+        "value": "eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd"
+      },
+      "universeDigest": {
+        "algorithm": "sha256",
+        "value": "7c451c052cd8388b857dc0a57bcc5597bd23242b2e0f48911d48a791a5df584a"
+      }
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:d6f700291705ae492e3359cdb2a1245daf4c8788b032fc1b36a4433553babed0",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.resolution.completed",
+    "externalrefs": [],
+    "id": "sha256:4862de6da9ed60259a5236b18264f708844f1a6f6947dd39332fcad1ee107fad",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "sha256:eb3e5d6f928ee4d432df66bd14e81e9266b91f81bcd242127a9605b434e252fd",
+    "time": "2026-08-02T00:00:00Z",
+    "type": "org.openpacker.resolution.completed"
+  },
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "receiptDigest": {
+        "algorithm": "sha256",
+        "value": "3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d"
+      },
+      "schemaVersion": "1"
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:6bb99d1037bd716792e290febaf23598ee569623b2dc3bae9491b77121dd762a",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.receipt.created",
+    "externalrefs": [],
+    "id": "sha256:71cdb58d234040e02e30638d70588a4f39c2b1ce8da00e8b6f221173d2cbc740",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "sha256:3aaaac6c369b868161dd4970236d7b69bb2bd11b94f7ff3b343a1ece0c80b74d",
+    "time": "2026-08-02T00:00:00Z",
+    "type": "org.openpacker.receipt.created"
+  },
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "descriptor": {
+        "artifactType": "application/vnd.openpacker.npm.package.v1",
+        "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+        },
+        "externalRefs": [],
+        "fileName": "npm-demo-1.0.0.native-bytes",
+        "locations": [],
+        "mediaType": "application/vnd.npm.package+gzip",
+        "nativeRole": "native-package",
+        "oci": {
+          "blobDigest": "sha256:947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b",
+          "manifestDigest": "sha256:f1798febc240c09525d396898c0d5d77c94829a3738e6d2bcaf700813928d2c6"
+        },
+        "referrers": [],
+        "size": 3095
+      },
+      "schemaVersion": "1"
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:b2a0121443d08b436af15e279150fbf1913432b11a74f5f9f49afdf19572ff3c",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.packed",
+    "externalrefs": [],
+    "id": "sha256:c7d25d2a5389cfc5bc39632c81ee63907f673dde7f20ec8b26083bbbeaaa2ab3",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "sha256:f1798febc240c09525d396898c0d5d77c94829a3738e6d2bcaf700813928d2c6",
+    "time": "2026-08-02T00:00:00Z",
+    "type": "org.openpacker.artifact.packed"
+  },
+  {
+    "correlationid": "openpacker-demo",
+    "data": {
+      "descriptor": {
+        "artifactType": "application/vnd.openpacker.npm.package.v1",
+        "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+        },
+        "externalRefs": [],
+        "fileName": "npm-demo-1.0.0.native-bytes",
+        "locations": [],
+        "mediaType": "application/vnd.npm.package+gzip",
+        "nativeRole": "native-package",
+        "oci": {
+          "blobDigest": "sha256:947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b",
+          "manifestDigest": "sha256:f1798febc240c09525d396898c0d5d77c94829a3738e6d2bcaf700813928d2c6"
+        },
+        "referrers": [],
+        "size": 3095
+      },
+      "schemaVersion": "1"
+    },
+    "datacontenttype": "application/json",
+    "datadigest": "sha256:b2a0121443d08b436af15e279150fbf1913432b11a74f5f9f49afdf19572ff3c",
+    "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.verified",
+    "externalrefs": [],
+    "id": "sha256:4421379c1ff6d963f5dc793a1b713fd767410673ef7c428807cbc2e3a17efd42",
+    "source": "urn:openpacker:demo",
+    "specversion": "1.0",
+    "subject": "sha256:947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b",
+    "time": "2026-08-02T00:00:00Z",
+    "type": "org.openpacker.artifact.verified"
+  }
+]

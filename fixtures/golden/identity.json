@@ -1,0 +1,44 @@
+{
+  "candidates": [
+    {
+      "confidence": 1,
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1",
+        "externalRefs": [],
+        "name": "@openpacker/demo-tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "@openpacker/demo-tool",
+            "ecosystem": "npm",
+            "version": "1.0.0-beta.1"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0-beta.1"
+      },
+      "provenance": [
+        { "type": "overlay", "uri": "https://openpacker.dev/fixtures/overlay" }
+      ],
+      "warnings": []
+    }
+  ],
+  "meta": {
+    "protocolVersion": "1.0-draft",
+    "provider": {
+      "id": "org.openpacker.reference",
+      "implementation": "openpackerd",
+      "version": "0.1.0"
+    }
+  },
+  "status": "identified"
+}

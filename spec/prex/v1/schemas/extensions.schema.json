@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openpacker.dev/spec/prex/v1/schemas/extensions.schema.json",
+  "title": "OpenPacker extension operation contracts",
+  "$defs": {
+    "CatalogImportRequest": {
+      "$ref": "model.schema.json#/$defs/SourceSnapshot"
+    },
+    "CatalogImportResponse": {
+      "type": "object",
+      "required": ["snapshot", "digest"],
+      "properties": {
+        "snapshot": { "$ref": "model.schema.json#/$defs/SourceSnapshot" },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CatalogSnapshotRequest": {
+      "type": "object",
+      "properties": {
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 255 }
+      },
+      "additionalProperties": false
+    },
+    "CatalogSnapshotResponse": {
+      "type": "object",
+      "required": ["snapshots"],
+      "properties": {
+        "snapshots": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LifecycleApplyRequest": {
+      "$ref": "events.schema.json#/$defs/LifecycleEvent"
+    },
+    "LifecycleApplyResponse": {
+      "type": "object",
+      "required": ["applied"],
+      "properties": {
+        "applied": { "$ref": "events.schema.json#/$defs/LifecycleEvent" }
+      },
+      "additionalProperties": false
+    },
+    "PackRequest": {
+      "type": "object",
+      "required": ["exactPurl", "artifact"],
+      "properties": {
+        "exactPurl": {
+          "type": "string",
+          "pattern": "^pkg:.*@",
+          "maxLength": 8192
+        },
+        "artifact": { "$ref": "model.schema.json#/$defs/ArtifactDescriptor" },
+        "reference": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      },
+      "additionalProperties": false
+    },
+    "PackResponse": {
+      "type": "object",
+      "required": ["manifest", "nativeBlob", "artifact"],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/OciDescriptor" },
+        "nativeBlob": { "$ref": "#/$defs/OciDescriptor" },
+        "artifact": { "$ref": "model.schema.json#/$defs/ArtifactDescriptor" }
+      },
+      "additionalProperties": false
+    },
+    "OciDescriptor": {
+      "type": "object",
+      "required": ["mediaType", "digest", "size"],
+      "properties": {
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "artifactType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "annotations": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": { "maxLength": 4096 },
+          "additionalProperties": { "type": "string", "maxLength": 8192 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PublishRequest": {
+      "type": "object",
+      "required": ["descriptor", "location"],
+      "properties": {
+        "descriptor": { "$ref": "model.schema.json#/$defs/ArtifactDescriptor" },
+        "location": { "$ref": "model.schema.json#/$defs/ArtifactLocation" }
+      },
+      "additionalProperties": false
+    },
+    "PublishResponse": {
+      "$ref": "#/$defs/PublishRequest"
+    },
+    "LockImportRequest": {
+      "type": "object",
+      "required": ["lockfile"],
+      "properties": {
+        "lockfile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16777216
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "package-lock",
+            "cargo-lock",
+            "nuget-assets",
+            "nuget-packages-lock",
+            "uv-lock",
+            "go-sum",
+            "gradle-lockfile"
+          ]
+        },
+        "ecosystem": {
+          "type": "string",
+          "enum": ["npm", "cargo", "nuget", "pypi", "golang", "maven"]
+        },
+        "evaluationTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "target": { "$ref": "model.schema.json#/$defs/TargetContext" },
+        "policy": { "$ref": "resolution.schema.json#/$defs/PolicyInput" },
+        "objectives": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LockImportResponse": {
+      "type": "object",
+      "required": ["lockCapture", "solveResponse", "lockfile", "semanticLoss"],
+      "properties": {
+        "lockCapture": {
+          "type": "object",
+          "required": ["format", "formatVersion", "packages", "semanticLoss"],
+          "properties": {
+            "format": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "formatVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "sourceDigest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "packages": {
+              "type": "array",
+              "maxItems": 100000,
+              "items": {
+                "type": "object",
+                "required": [
+                  "exactPurl",
+                  "nativeCoordinate",
+                  "dependencies",
+                  "native"
+                ],
+                "properties": {
+                  "exactPurl": {
+                    "type": "string",
+                    "pattern": "^pkg:.*@",
+                    "maxLength": 8192
+                  },
+                  "nativeCoordinate": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "resolved": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "artifactDigest": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "dependencies": {
+                    "type": "object",
+                    "maxProperties": 10000,
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 4096
+                    }
+                  },
+                  "native": true
+                },
+                "additionalProperties": false
+              }
+            },
+            "semanticLoss": {
+              "type": "array",
+              "maxItems": 10000,
+              "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "solveResponse": {
+          "$ref": "resolution.schema.json#/$defs/SolveResponse"
+        },
+        "lockfile": {
+          "$ref": "lockfile.schema.json"
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

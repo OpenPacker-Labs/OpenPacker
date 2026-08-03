@@ -1,0 +1,1083 @@
+{
+  "canonicalDigest": {
+    "algorithm": "sha256",
+    "value": "a644073e78d95997af293dfacc31494381b60edd30ce86dd185529efcca71267"
+  },
+  "lifecycleRoot": {
+    "algorithm": "sha256",
+    "value": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "overlays": [
+    {
+      "artifactAnnotations": [],
+      "authority": "publisher",
+      "capabilities": [],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "evidenceRefs": [],
+      "externalRefs": [],
+      "overlayVersion": "1",
+      "requirements": [
+        {
+          "authority": "publisher",
+          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "expression": {
+            "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "type": "package",
+            "vers": "vers:cargo/>=1.0.0"
+          },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "sourceRefs": [
+        { "type": "overlay", "uri": "https://openpacker.dev/fixtures/overlay" }
+      ],
+      "subject": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "externalRefs": [],
+        "name": "@openpacker/demo-tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "@openpacker/demo-tool",
+            "ecosystem": "npm",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      }
+    }
+  ],
+  "packages": [
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "capabilities": [],
+      "cardinalityConstraints": [
+        {
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0",
+          "maximum": 1,
+          "minimum": 1,
+          "scope": "solution",
+          "selector": { "name": "compression/zstd", "type": "capability" },
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "conflicts": [
+        {
+          "expression": {
+            "purl": "pkg:npm/conflicting-demo",
+            "type": "package"
+          },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0",
+          "scope": "solution",
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "externalRefs": [],
+        "name": "@openpacker/demo-tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "@openpacker/demo-tool",
+            "ecosystem": "npm",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "1274bc84cf3cb4fb304e21248cde3978c4bb394d9f0df3760717b6c5f9be1b7c"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "npm-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "normalizedVersion": "1.0.0",
+      "requirements": [
+        {
+          "authority": "publisher",
+          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "expression": {
+            "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "type": "package",
+            "vers": "vers:cargo/>=1.0.0"
+          },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "expression": {
+            "name": "compression/zstd",
+            "type": "capability",
+            "vers": "vers:generic/>=1"
+          },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "expression": {
+            "purl": "pkg:npm/openpacker-native-helper",
+            "type": "package",
+            "vers": "vers:npm/>=1.0.0"
+          },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3",
+          "kind": "optional",
+          "optional": true,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "capabilities": [],
+      "cardinalityConstraints": [
+        {
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:k0",
+          "maximum": 1,
+          "minimum": 1,
+          "scope": "solution",
+          "selector": { "name": "compression/zstd", "type": "capability" },
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "conflicts": [
+        {
+          "expression": {
+            "purl": "pkg:npm/conflicting-demo",
+            "type": "package"
+          },
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:c0",
+          "scope": "solution",
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@0.9.0",
+        "externalRefs": [],
+        "name": "@openpacker/demo-tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "@openpacker/demo-tool",
+            "ecosystem": "npm",
+            "version": "0.9.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "0.9.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "7014a2b5ebe61f302a5a3404ab1385ae393d1be087cc0d0dc153ad2f02b2fee5"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "npm-v1"
+      },
+      "nativeVersion": "0.9.0",
+      "nodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+      "normalizedVersion": "0.9.0",
+      "requirements": [
+        {
+          "authority": "publisher",
+          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "expression": {
+            "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "type": "package",
+            "vers": "vers:cargo/>=1.0.0"
+          },
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "expression": {
+            "name": "compression/zstd",
+            "type": "capability",
+            "vers": "vers:generic/>=1"
+          },
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r1",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "expression": {
+            "purl": "pkg:npm/openpacker-native-helper",
+            "type": "package",
+            "vers": "vers:npm/>=1.0.0"
+          },
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r2",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r3",
+          "kind": "optional",
+          "optional": true,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        }
+      ],
+      "versionSortKey": "0.9.0"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.tool.v1+tar+gzip",
+          "descriptorId": "fixture-tool",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+          },
+          "extensions": {
+            "org.openpacker.mise": { "executables": ["bin/openpacker-demo"] }
+          },
+          "externalRefs": [],
+          "fileName": "openpacker-demo.tar.gz",
+          "locations": [
+            {
+              "priority": 0,
+              "rangeSupported": false,
+              "transport": "file",
+              "uri": "file:///OPENPACKER_DEMO_OUTPUT/openpacker-demo.tar.gz"
+            }
+          ],
+          "mediaType": "application/gzip",
+          "nativeRole": "tool-payload",
+          "referrers": [],
+          "size": 135
+        },
+        {
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "descriptorId": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+          },
+          "externalRefs": [],
+          "fileName": "npm-demo-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.npm.package+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "capabilities": [],
+      "cardinalityConstraints": [
+        {
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:k0",
+          "maximum": 1,
+          "minimum": 1,
+          "scope": "solution",
+          "selector": { "name": "compression/zstd", "type": "capability" },
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "conflicts": [
+        {
+          "expression": {
+            "purl": "pkg:npm/conflicting-demo",
+            "type": "package"
+          },
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:c0",
+          "scope": "solution",
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1",
+        "externalRefs": [],
+        "name": "@openpacker/demo-tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "@openpacker/demo-tool",
+            "ecosystem": "npm",
+            "version": "1.0.0-beta.1"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0-beta.1"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "c062690d87d9d5ae1f1ca1163e95945ad2e1eaf3434e485396bd2a1c7199b10a"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "npm-v1"
+      },
+      "nativeVersion": "1.0.0-beta.1",
+      "nodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+      "normalizedVersion": "1.0.0-beta.1",
+      "requirements": [
+        {
+          "authority": "publisher",
+          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "expression": {
+            "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "type": "package",
+            "vers": "vers:cargo/>=1.0.0"
+          },
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "expression": {
+            "name": "compression/zstd",
+            "type": "capability",
+            "vers": "vers:generic/>=1"
+          },
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r1",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "expression": {
+            "purl": "pkg:npm/openpacker-native-helper",
+            "type": "package",
+            "vers": "vers:npm/>=1.0.0"
+          },
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r2",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        },
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r3",
+          "kind": "optional",
+          "optional": true,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        }
+      ],
+      "versionSortKey": "1.0.0-beta.1"
+    },
+    {
+      "artifacts": [],
+      "capabilities": [],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/openpacker-native-helper",
+        "exactPurl": "pkg:npm/openpacker-native-helper@1.0.0",
+        "externalRefs": [],
+        "name": "openpacker-native-helper",
+        "nativeCoordinates": [
+          {
+            "coordinate": "openpacker-native-helper",
+            "ecosystem": "npm",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "43a749320ab2827495c99adf905bdded66370e0f84e9be514cb75e22cc75dbe7"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "npm-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+      "normalizedVersion": "1.0.0",
+      "requirements": [],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.cargo.package.v1",
+          "descriptorId": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4"
+          },
+          "externalRefs": [],
+          "fileName": "cargo-zstd-wasm-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.crates.io.crate+gzip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 3095
+        }
+      ],
+      "capabilities": [
+        {
+          "attributes": {},
+          "name": "compression/zstd",
+          "providerNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          },
+          "targetPredicate": {
+            "path": "architecture",
+            "type": "equals",
+            "value": "arm64"
+          },
+          "version": "1"
+        }
+      ],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:cargo/openpacker-zstd-wasm",
+        "exactPurl": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+        "externalRefs": [],
+        "name": "openpacker-zstd-wasm",
+        "nativeCoordinates": [
+          {
+            "coordinate": "openpacker-zstd-wasm",
+            "ecosystem": "cargo",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "cargo",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "619a6dae01fa2fa8f4ee5416631f04e2de66d24acb6d7c6781b1bb74b4888790"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "cargo-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "normalizedVersion": "1.0.0",
+      "requirements": [
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+          "expression": {
+            "purl": "pkg:cargo/openpacker-native-helper",
+            "type": "package",
+            "vers": "vers:cargo/>=1.0.0"
+          },
+          "id": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [],
+      "capabilities": [],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:cargo/openpacker-native-helper",
+        "exactPurl": "pkg:cargo/openpacker-native-helper@1.0.0",
+        "externalRefs": [],
+        "name": "openpacker-native-helper",
+        "nativeCoordinates": [
+          {
+            "coordinate": "openpacker-native-helper",
+            "ecosystem": "cargo",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "cargo",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "cd9a2cee0e2759f6749fc133b159549e6dc39edc148416d89f022e66dcbafa95"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "cargo-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+      "normalizedVersion": "1.0.0",
+      "requirements": [],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactType": "application/vnd.openpacker.nuget.package.v1",
+          "descriptorId": "pkg:nuget/OpenPacker.Zstd.Tool@1.0.0",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee"
+          },
+          "externalRefs": [],
+          "fileName": "nuget-zstd-tool-1.0.0.native-bytes",
+          "locations": [],
+          "mediaType": "application/vnd.nuget.package+zip",
+          "nativeRole": "native-package",
+          "referrers": [],
+          "size": 791
+        }
+      ],
+      "capabilities": [
+        {
+          "attributes": {},
+          "name": "compression/zstd",
+          "providerNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          },
+          "targetPredicate": {
+            "path": "os",
+            "type": "equals",
+            "value": "windows"
+          },
+          "version": "1"
+        }
+      ],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:nuget/openpacker.zstd.tool",
+        "exactPurl": "pkg:nuget/openpacker.zstd.tool@1.0.0",
+        "externalRefs": [],
+        "name": "openpacker.zstd.tool",
+        "nativeCoordinates": [
+          {
+            "coordinate": "openpacker.zstd.tool",
+            "ecosystem": "nuget",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "nuget",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "6590634643463f9852d6bbe8bb4312b4c39daaa14dd304e8d3b71a347399de14"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "nuget-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+      "normalizedVersion": "1.0.0",
+      "requirements": [
+        {
+          "authority": "native",
+          "dependerNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+          "expression": {
+            "purl": "pkg:nuget/openpacker.native.helper",
+            "type": "package",
+            "vers": "vers:nuget/>=1.0.0"
+          },
+          "id": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+          "kind": "runtime",
+          "optional": false,
+          "semanticLoss": [],
+          "source": {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        }
+      ],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [],
+      "capabilities": [],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:nuget/openpacker.native.helper",
+        "exactPurl": "pkg:nuget/openpacker.native.helper@1.0.0",
+        "externalRefs": [],
+        "name": "openpacker.native.helper",
+        "nativeCoordinates": [
+          {
+            "coordinate": "openpacker.native.helper",
+            "ecosystem": "nuget",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "nuget",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "22861d39d1e28f1dea96e83a6afb3596b22d8975b6e32dcac01d74842c26d6d6"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "nuget-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+      "normalizedVersion": "1.0.0",
+      "requirements": [],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    },
+    {
+      "artifacts": [],
+      "capabilities": [],
+      "cardinalityConstraints": [],
+      "conflicts": [],
+      "identity": {
+        "aliases": [],
+        "canonicalPurl": "pkg:npm/conflicting-demo",
+        "exactPurl": "pkg:npm/conflicting-demo@1.0.0",
+        "externalRefs": [],
+        "name": "conflicting-demo",
+        "nativeCoordinates": [
+          {
+            "coordinate": "conflicting-demo",
+            "ecosystem": "npm",
+            "version": "1.0.0"
+          }
+        ],
+        "publisherRefs": [],
+        "purlType": "npm",
+        "qualifiers": {},
+        "sourceRefs": [
+          {
+            "type": "overlay",
+            "uri": "https://openpacker.dev/fixtures/overlay"
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "lifecycle": { "eligible": true, "status": "published", "warnings": [] },
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "fdffbb14e7c35732194620e1291974e5ec0e96de8281b0bcae93c41cc1a621ee"
+      },
+      "nativeSemantics": {
+        "data": { "lifecycleScriptsExecuted": false },
+        "version": "npm-v1"
+      },
+      "nativeVersion": "1.0.0",
+      "nodeId": "sha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc",
+      "normalizedVersion": "1.0.0",
+      "requirements": [],
+      "semanticLoss": [],
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        }
+      ],
+      "versionSortKey": "1.0.0"
+    }
+  ],
+  "sourceSnapshots": [
+    {
+      "endpointIdentity": "https://fixtures.test",
+      "etag": "\"fixture-1\"",
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "evidenceRefs": [],
+      "providerId": "npm-registry",
+      "providerType": "npm-registry",
+      "recordsDigest": {
+        "algorithm": "sha256",
+        "value": "f1a00330d04d815541763738f1a1f0a7aabfc88b1bef0bd9d79af8884055a288"
+      },
+      "retrievedAt": "2026-08-02T00:00:00Z",
+      "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
+      "rootDigest": {
+        "algorithm": "sha256",
+        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      },
+      "snapshotId": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+    },
+    {
+      "endpointIdentity": "https://fixtures.test",
+      "etag": "\"cargo-1\"",
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "evidenceRefs": [],
+      "providerId": "cargo-sparse",
+      "providerType": "cargo-sparse",
+      "recordsDigest": {
+        "algorithm": "sha256",
+        "value": "a4934e746a11575192c2f92067adc1ac24e9fa14ba6783e828dfa945c185c1bc"
+      },
+      "retrievedAt": "2026-08-02T00:00:00Z",
+      "revision": "sha256:d6d1f967ff31dc6de43ac7ae630659e20b153939a051e36036f7178b20614823",
+      "rootDigest": {
+        "algorithm": "sha256",
+        "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+      },
+      "snapshotId": "sha256:51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+    },
+    {
+      "endpointIdentity": "https://fixtures.openpacker.invalid/nuget/service-index.json",
+      "etag": "\"nuget-1\"",
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "evidenceRefs": [],
+      "providerId": "nuget-v3",
+      "providerType": "nuget-v3",
+      "recordsDigest": {
+        "algorithm": "sha256",
+        "value": "c7f9a9aadf4cc0783fffa5722d93a83b656914659762a385d6bf0584ee434f9d"
+      },
+      "retrievedAt": "2026-08-02T00:00:00Z",
+      "revision": "sha256:3c984429023afb4da450b2c6bf3afb2bbc9e05689d84e2cef58d883f2cec60a6",
+      "rootDigest": {
+        "algorithm": "sha256",
+        "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+      },
+      "snapshotId": "sha256:2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+    }
+  ],
+  "targetVocabularyVersion": "1",
+  "universeVersion": "1"
+}

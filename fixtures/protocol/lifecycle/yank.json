@@ -1,0 +1,38 @@
+{
+  "eventVersion": "1",
+  "eventId": "fixture-yank-demo-tool-1.0.0",
+  "subject": {
+    "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+    "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "purlType": "npm",
+    "namespace": "@openpacker",
+    "name": "demo-tool",
+    "version": "1.0.0",
+    "qualifiers": {},
+    "nativeCoordinates": [
+      {
+        "ecosystem": "npm",
+        "coordinate": "@openpacker/demo-tool",
+        "version": "1.0.0"
+      }
+    ],
+    "aliases": [],
+    "sourceRefs": [],
+    "publisherRefs": [],
+    "externalRefs": []
+  },
+  "action": "yanked",
+  "effectiveAt": "2026-08-02T01:00:00Z",
+  "issuedAt": "2026-08-02T01:00:00Z",
+  "actor": { "type": "key", "value": "fixture:publisher-key" },
+  "authority": "publisher",
+  "reasonCode": "FIXTURE_YANK",
+  "reason": "Deterministic lifecycle reselection fixture",
+  "replacementRefs": [],
+  "sourceSnapshot": {
+    "algorithm": "sha256",
+    "value": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "evidenceRefs": [],
+  "externalRefs": []
+}

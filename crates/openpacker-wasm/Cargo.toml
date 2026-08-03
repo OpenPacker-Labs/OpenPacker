@@ -1,0 +1,21 @@
+[package]
+name = "openpacker-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.88"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+openpacker-resolver = { path = "../openpacker-resolver" }
+serde_json.workspace = true
+sha2.workspace = true
+wasm-bindgen.workspace = true
+getrandom.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+napi = { version = "=3.12.0", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.2"

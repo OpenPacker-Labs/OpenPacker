@@ -1,0 +1,648 @@
+use std::collections::BTreeMap;
+
+use openpacker_resolver::*;
+use serde_json::{Value, json};
+
+fn digest(byte: char) -> Digest {
+    Digest {
+        algorithm: "sha256".into(),
+        value: byte.to_string().repeat(64),
+    }
+}
+
+fn source() -> Value {
+    json!({"type":"metadata","uri":"https://fixtures.openpacker.dev/catalog"})
+}
+
+fn requirement(id: &str, expression: RequirementExpression, optional: bool) -> Requirement {
+    Requirement {
+        id: id.into(),
+        depender_node_id: None,
+        expression,
+        kind: if optional { "optional" } else { "runtime" }.into(),
+        optional,
+        source: source(),
+        authority: "test-fixture".into(),
+        raw: None,
+        native_semantics: None,
+        semantic_loss: Vec::new(),
+    }
+}
+
+fn package(seed: char, name: &str, version: &str) -> PackageInstance {
+    let canonical_purl = format!("pkg:npm/{name}");
+    let node_id = format!("sha256:{}", seed.to_string().repeat(64));
+    PackageInstance {
+        node_id: node_id.clone(),
+        identity: PackageIdentity {
+            canonical_purl: canonical_purl.clone(),
+            exact_purl: Some(format!("{canonical_purl}@{version}")),
+            purl_type: "npm".into(),
+            namespace: None,
+            name: name.into(),
+            version: Some(version.into()),
+            qualifiers: BTreeMap::new(),
+            subpath: None,
+            native_coordinates: Vec::new(),
+            aliases: Vec::new(),
+            source_refs: Vec::new(),
+            publisher_refs: Vec::new(),
+            external_refs: Vec::new(),
+            extensions: BTreeMap::new(),
+        },
+        native_version: version.into(),
+        normalized_version: version.into(),
+        version_sort_key: format!("{version:0>12}"),
+        requirements: Vec::new(),
+        capabilities: Vec::new(),
+        conflicts: Vec::new(),
+        cardinality_constraints: Vec::new(),
+        artifacts: Vec::new(),
+        lifecycle: LifecycleState {
+            status: "published".into(),
+            eligible: true,
+            warnings: Vec::new(),
+            derivation_event_ids: Vec::new(),
+        },
+        source_snapshots: vec![digest('c')],
+        metadata_digest: digest(seed),
+        raw_metadata_ref: None,
+        native_semantics: json!({"version":"1","data":{}}),
+        semantic_loss: Vec::new(),
+        extensions: BTreeMap::new(),
+    }
+}
+
+fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> SolveInput {
+    SolveInput {
+        request: SolveRequest {
+            requirements,
+            target: TargetContext {
+                os: Some("linux".into()),
+                architecture: Some("arm64".into()),
+                ..TargetContext::default()
+            },
+            environment: Environment::default(),
+            policy: PolicyInput {
+                allow_yanked: false,
+                allow_quarantined: false,
+                semantic_loss_maximum: "warning".into(),
+                required_evidence: Vec::new(),
+                accepted_overlay_authorities: vec!["test-fixture".into()],
+                extensions: BTreeMap::new(),
+            },
+            semantics: SemanticsInput {
+                profile: "prex-calculus-subset-v1".into(),
+                native_compatibility: vec!["npm".into(), "cargo".into(), "nuget".into()],
+                extensions: BTreeMap::new(),
+            },
+            objectives: vec![
+                "satisfy-hard-constraints".into(),
+                "minimize-package-count".into(),
+                "exclude-lifecycle-denied".into(),
+                "prefer-stable".into(),
+                "prefer-highest-native-version".into(),
+                "canonical-lexical-tie-break".into(),
+            ],
+            mode: "closure".into(),
+            evaluation_time: "2026-08-02T00:00:00Z".into(),
+            provider_policy: None,
+            timeout_milliseconds: None,
+            extensions: BTreeMap::new(),
+        },
+        universe: ResolutionUniverse {
+            universe_version: "1".into(),
+            packages,
+            overlays: Vec::new(),
+            source_snapshots: Vec::new(),
+            lifecycle_root: digest('d'),
+            target_vocabulary_version: "1".into(),
+            canonical_digest: digest('e'),
+            extensions: BTreeMap::new(),
+        },
+    }
+}
+
+#[test]
+fn resolvo_default_matches_oracle_and_is_deterministic() {
+    let one = package('1', "demo", "1.0.0");
+    let two = package('2', "demo", "2.0.0");
+    let input = input(
+        vec![one, two.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: Some("vers:npm/>=1.0.0".into()),
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    let first = solve(&input).unwrap();
+    let second = solve(&input).unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.solution.selected_node_ids, vec![two.node_id]);
+    assert_eq!(
+        brute_force_oracle(&input).unwrap().selected_node_ids,
+        first.solution.selected_node_ids
+    );
+    assert!(check(&input, &first).unwrap().valid);
+}
+
+#[test]
+fn companion_enforces_capability_target_conflict_cardinality_and_optional() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "compression",
+        RequirementExpression::Capability {
+            name: "compression/zstd".into(),
+            vers: Some("vers:generic/>=1".into()),
+            attributes: BTreeMap::new(),
+        },
+        false,
+    ));
+    app.requirements.push(requirement(
+        "optional-missing",
+        RequirementExpression::Package {
+            purl: "pkg:npm/missing".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        true,
+    ));
+    app.conflicts.push(Conflict {
+        id: "no-bad".into(),
+        expression: RequirementExpression::Package {
+            purl: "pkg:npm/bad".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        scope: "solution".into(),
+        source: source(),
+    });
+    app.cardinality_constraints.push(CardinalityConstraint {
+        id: "one-zstd".into(),
+        selector: RequirementExpression::Capability {
+            name: "compression/zstd".into(),
+            vers: None,
+            attributes: BTreeMap::new(),
+        },
+        minimum: 1,
+        maximum: 1,
+        scope: "solution".into(),
+        source: source(),
+    });
+    let mut cargo = package('4', "cargo-zstd", "1.0.0");
+    cargo.identity.purl_type = "cargo".into();
+    cargo.identity.canonical_purl = "pkg:cargo/zstd-wasm".into();
+    cargo.identity.exact_purl = Some("pkg:cargo/zstd-wasm@1.0.0".into());
+    cargo.capabilities.push(Capability {
+        name: "compression/zstd".into(),
+        version: Some("1".into()),
+        attributes: BTreeMap::new(),
+        provider_node_id: cargo.node_id.clone(),
+        target_predicate: Some(TargetPredicate::Equals {
+            path: "architecture".into(),
+            value: json!("arm64"),
+        }),
+        source: source(),
+    });
+    let mut nuget = package('5', "nuget-zstd", "2.0.0");
+    nuget.capabilities.push(Capability {
+        name: "compression/zstd".into(),
+        version: Some("2".into()),
+        attributes: BTreeMap::new(),
+        provider_node_id: nuget.node_id.clone(),
+        target_predicate: Some(TargetPredicate::Equals {
+            path: "os".into(),
+            value: json!("windows"),
+        }),
+        source: source(),
+    });
+    let bad = package('6', "bad", "9.0.0");
+    let app_id = app.node_id.clone();
+    let cargo_id = cargo.node_id.clone();
+    let input = input(
+        vec![app, cargo, nuget, bad],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/app".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    let output = solve(&input).unwrap();
+    assert_eq!(output.solution.selected_node_ids, vec![app_id, cargo_id]);
+    let selected = serde_json::to_value(&output.selected[0]).unwrap();
+    for pointer in [
+        "/requirements/1/expression",
+        "/conflicts/0/expression",
+        "/cardinalityConstraints/0/selector",
+    ] {
+        assert!(selected.pointer(pointer).unwrap().get("vers").is_none());
+    }
+    assert!(
+        output
+            .proof
+            .requirement_witnesses
+            .iter()
+            .any(|witness| witness.requirement_id == "optional-missing"
+                && witness.status == "optional-omitted")
+    );
+    assert!(check(&input, &output).unwrap().valid);
+}
+
+#[test]
+fn checker_rejects_mutated_proof_and_solution() {
+    let package = package('7', "demo", "1.0.0");
+    let input = input(
+        vec![package],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    let mut output = solve(&input).unwrap();
+    output.proof.selected_assignments[0].node_digest = digest('f');
+    output.solution.objective_tuple[1] = json!(99);
+    let result = check(&input, &output).unwrap();
+    assert!(!result.valid);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("nodeDigest"))
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("objectiveTuple"))
+    );
+
+    let original = solve(&input).unwrap();
+    let mut missing_witnesses = original.clone();
+    missing_witnesses.proof.requirement_witnesses.clear();
+    assert!(!check(&input, &missing_witnesses).unwrap().valid);
+
+    let mut missing_objective_evidence = original.clone();
+    missing_objective_evidence.proof.objective_evidence.clear();
+    assert!(!check(&input, &missing_objective_evidence).unwrap().valid);
+
+    let mut changed_selected_object = original;
+    changed_selected_object.selected[0].native_version = "999.0.0".into();
+    assert!(!check(&input, &changed_selected_object).unwrap().valid);
+}
+
+#[test]
+fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
+    let candidate = package('9', "demo", "1.0.0");
+    let mut invalid_objective = input(
+        vec![candidate.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    invalid_objective.request.objectives = vec!["solver-magic".into()];
+    assert!(matches!(
+        solve(&invalid_objective),
+        Err(ResolverError::InvalidInput(message)) if message.contains("unsupported objective")
+    ));
+
+    let mut packages = Vec::new();
+    for index in 1..=23 {
+        let mut candidate = candidate.clone();
+        let value = format!("{index:064x}");
+        let version = format!("{index}.0.0");
+        candidate.node_id = format!("sha256:{value}");
+        candidate.identity.exact_purl = Some(format!("pkg:npm/demo@{version}"));
+        candidate.identity.version = Some(version.clone());
+        candidate.native_version = version.clone();
+        candidate.normalized_version = version;
+        candidate.version_sort_key = format!("{index:04}");
+        candidate.metadata_digest = Digest {
+            algorithm: "sha256".into(),
+            value,
+        };
+        packages.push(candidate);
+    }
+    let mut large = input(
+        packages,
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    large.request.objectives = vec!["canonical-lexical-tie-break".into()];
+    assert!(matches!(
+        solve(&large),
+        Err(ResolverError::ObjectiveLimit {
+            limit: 22,
+            actual: 23
+        })
+    ));
+}
+
+#[test]
+fn lifecycle_denial_makes_exact_root_unsatisfiable() {
+    let mut yanked = package('8', "demo", "1.0.0");
+    yanked.lifecycle.status = "yanked".into();
+    yanked.lifecycle.eligible = false;
+    let input = input(
+        vec![yanked],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    assert!(matches!(
+        solve(&input),
+        Err(ResolverError::Unsatisfiable(_))
+    ));
+}
+
+#[test]
+fn canonical_json_is_stable_and_integer_only() {
+    assert_eq!(
+        canonical_json(&json!({"z":1,"a":[true,"x"]})).unwrap(),
+        br#"{"a":[true,"x"],"z":1}"#
+    );
+    assert!(canonical_json(&json!({"notAllowed":1.5})).is_err());
+}
+
+#[test]
+fn native_capture_preserves_exact_selection_without_claiming_validation() {
+    let captured = package('a', "captured", "1.0.0");
+    let exact_purl = captured.identity.exact_purl.clone().unwrap();
+    let captured_id = captured.node_id.clone();
+    let mut input = input(
+        vec![captured],
+        vec![requirement(
+            "unrepresented-native-root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/not-selected".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    input.request.semantics.profile = "native-capture-v1".into();
+    input.request.environment.locked = vec![exact_purl];
+
+    let output = solve(&input).unwrap();
+    assert_eq!(output.solution.selected_node_ids, vec![captured_id]);
+    assert!(output.solution.satisfied_requirement_ids.is_empty());
+    assert!(output.solution.dependency_edges.is_empty());
+    assert!(
+        output
+            .solution
+            .objective_tuple
+            .iter()
+            .all(|value| value == "not-evaluated")
+    );
+    assert!(output.proof.objective_evidence.is_empty());
+    assert!(
+        output
+            .proof
+            .requirement_witnesses
+            .iter()
+            .all(|witness| witness.status == "inactive" && witness.witness_node_ids.is_empty())
+    );
+    assert!(
+        output
+            .solution
+            .semantic_loss
+            .iter()
+            .any(|loss| { loss.get("code") == Some(&json!("NATIVE_RESULT_CAPTURE_ONLY")) })
+    );
+    let proof_node = output
+        .explanation
+        .nodes
+        .iter()
+        .find(|node| node.id == "proof-check")
+        .unwrap();
+    assert_eq!(
+        proof_node.data.get("validationStatus"),
+        Some(&json!("not-performed"))
+    );
+    assert!(check(&input, &output).unwrap().valid);
+}
+
+#[test]
+fn native_capture_requires_unique_resolvable_exact_locks() {
+    let candidate = package('b', "captured", "1.0.0");
+    let node_id = candidate.node_id.clone();
+    let exact_purl = candidate.identity.exact_purl.clone().unwrap();
+    let mut native = input(vec![candidate.clone()], Vec::new());
+    native.request.semantics.profile = "native-capture-v1".into();
+
+    assert!(matches!(
+        solve(&native),
+        Err(ResolverError::InvalidInput(message)) if message.contains("at least one")
+    ));
+    native.request.environment.locked = vec!["pkg:npm/missing@1.0.0".into()];
+    assert!(matches!(
+        solve(&native),
+        Err(ResolverError::InvalidInput(message)) if message.contains("does not resolve")
+    ));
+    native.request.environment.locked = vec![node_id, exact_purl.clone()];
+    assert!(matches!(
+        solve(&native),
+        Err(ResolverError::InvalidInput(message)) if message.contains("duplicate node")
+    ));
+
+    let mut duplicate_identity = package('c', "captured", "1.0.0");
+    duplicate_identity.identity.exact_purl = Some(exact_purl.clone());
+    native.universe.packages.push(duplicate_identity);
+    native.request.environment.locked = vec![exact_purl];
+    assert!(matches!(
+        solve(&native),
+        Err(ResolverError::InvalidInput(message)) if message.contains("ambiguous")
+    ));
+}
+
+#[test]
+fn native_validated_checks_represented_constraints_without_optimizing() {
+    let selected = package('d', "captured", "1.0.0");
+    let selected_id = selected.node_id.clone();
+    let mut valid = input(
+        vec![selected],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/captured".into(),
+                vers: Some("vers:npm/>=1.0.0".into()),
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    valid.request.semantics.profile = "native-validated-v1".into();
+    valid.request.environment.locked = vec![selected_id];
+    valid.request.requirements[0].native_semantics =
+        Some(json!({"version":"npm-v1","peerOptional":false}));
+
+    let output = solve(&valid).unwrap();
+    assert_eq!(
+        output.solution.satisfied_requirement_ids,
+        vec!["root".to_string()]
+    );
+    assert!(output.proof.objective_evidence.is_empty());
+    assert!(
+        output
+            .solution
+            .objective_tuple
+            .iter()
+            .all(|value| value == "not-evaluated")
+    );
+    assert!(
+        output
+            .solution
+            .semantic_loss
+            .iter()
+            .any(|loss| { loss.get("code") == Some(&json!("NATIVE_SEMANTICS_NOT_VALIDATED")) })
+    );
+    assert!(output.solution.semantic_loss.iter().any(|loss| {
+        loss.get("sourcePath") == Some(&json!("/request/requirements/root/nativeSemantics"))
+    }));
+    assert!(
+        !output
+            .solution
+            .semantic_loss
+            .iter()
+            .any(|loss| { loss.get("code") == Some(&json!("NATIVE_RESULT_CAPTURE_ONLY")) })
+    );
+    assert!(check(&valid, &output).unwrap().valid);
+
+    let mut invalid = valid;
+    invalid.request.requirements[0].expression = RequirementExpression::Package {
+        purl: "pkg:npm/missing".into(),
+        vers: None,
+        qualifiers: BTreeMap::new(),
+    };
+    assert!(matches!(
+        solve(&invalid),
+        Err(ResolverError::InvalidProof(message))
+            if message.contains("failed represented PREX validation")
+                && message.contains("root requirement root is unsatisfied")
+    ));
+}
+
+#[test]
+fn native_validated_rejects_dependency_conflict_cardinality_target_and_lifecycle_failures() {
+    let mut app = package('e', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "needs-compression",
+        RequirementExpression::Capability {
+            name: "compression/zstd".into(),
+            vers: None,
+            attributes: BTreeMap::new(),
+        },
+        false,
+    ));
+    app.conflicts.push(Conflict {
+        id: "reject-bad".into(),
+        expression: RequirementExpression::Package {
+            purl: "pkg:npm/bad".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        scope: "solution".into(),
+        source: source(),
+    });
+    app.cardinality_constraints.push(CardinalityConstraint {
+        id: "exactly-one-compressor".into(),
+        selector: RequirementExpression::Capability {
+            name: "compression/zstd".into(),
+            vers: None,
+            attributes: BTreeMap::new(),
+        },
+        minimum: 1,
+        maximum: 1,
+        scope: "solution".into(),
+        source: source(),
+    });
+    let mut provider = package('f', "provider", "1.0.0");
+    provider.capabilities.push(Capability {
+        name: "compression/zstd".into(),
+        version: Some("1".into()),
+        attributes: BTreeMap::new(),
+        provider_node_id: provider.node_id.clone(),
+        target_predicate: Some(TargetPredicate::Equals {
+            path: "architecture".into(),
+            value: json!("arm64"),
+        }),
+        source: source(),
+    });
+    let bad = package('0', "bad", "1.0.0");
+    let app_id = app.node_id.clone();
+    let provider_id = provider.node_id.clone();
+    let bad_id = bad.node_id.clone();
+    let mut base = input(vec![app, provider, bad], Vec::new());
+    base.request.semantics.profile = "native-validated-v1".into();
+    base.request.environment.locked = vec![app_id.clone(), provider_id.clone()];
+    assert!(solve(&base).is_ok());
+
+    let mut missing_dependency = base.clone();
+    missing_dependency.request.environment.locked = vec![app_id.clone()];
+    assert!(matches!(
+        solve(&missing_dependency),
+        Err(ResolverError::InvalidProof(message))
+            if message.contains("needs-compression")
+                && message.contains("exactly-one-compressor")
+    ));
+
+    let mut conflict = base.clone();
+    conflict.request.environment.locked.push(bad_id);
+    assert!(matches!(
+        solve(&conflict),
+        Err(ResolverError::InvalidProof(message)) if message.contains("reject-bad")
+    ));
+
+    let mut wrong_target = base.clone();
+    wrong_target.request.target.architecture = Some("x86_64".into());
+    assert!(matches!(
+        solve(&wrong_target),
+        Err(ResolverError::InvalidProof(message)) if message.contains("needs-compression")
+    ));
+
+    let mut denied_lifecycle = base;
+    let provider = denied_lifecycle
+        .universe
+        .packages
+        .iter_mut()
+        .find(|package| package.node_id == provider_id)
+        .unwrap();
+    provider.lifecycle.status = "yanked".into();
+    provider.lifecycle.eligible = false;
+    assert!(matches!(
+        solve(&denied_lifecycle),
+        Err(ResolverError::InvalidProof(message)) if message.contains("lifecycle denied")
+    ));
+}

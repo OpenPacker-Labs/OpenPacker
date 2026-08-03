@@ -1,0 +1,89 @@
+{
+  "request": {
+    "requirements": [
+      {
+        "id": "root",
+        "expression": { "type": "package", "purl": "pkg:npm/demo" },
+        "kind": "runtime",
+        "optional": false,
+        "source": {
+          "type": "metadata",
+          "uri": "https://fixtures.openpacker.dev"
+        },
+        "authority": "test-fixture",
+        "semanticLoss": []
+      }
+    ],
+    "target": {},
+    "environment": { "installed": [], "locked": [] },
+    "policy": {
+      "allowYanked": false,
+      "allowQuarantined": false,
+      "semanticLossMaximum": "warning",
+      "requiredEvidence": [],
+      "acceptedOverlayAuthorities": ["test-fixture"]
+    },
+    "semantics": {
+      "profile": "prex-calculus-subset-v1",
+      "nativeCompatibility": ["npm"]
+    },
+    "objectives": [
+      "minimize-package-count",
+      "prefer-highest-native-version",
+      "canonical-lexical-tie-break"
+    ],
+    "mode": "closure",
+    "evaluationTime": "2026-08-02T00:00:00Z"
+  },
+  "universe": {
+    "universeVersion": "1",
+    "overlays": [],
+    "sourceSnapshots": [],
+    "lifecycleRoot": {
+      "algorithm": "sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "targetVocabularyVersion": "1",
+    "canonicalDigest": {
+      "algorithm": "sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "packages": [
+      {
+        "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "identity": {
+          "canonicalPurl": "pkg:npm/demo",
+          "exactPurl": "pkg:npm/demo@1.0.0",
+          "purlType": "npm",
+          "name": "demo",
+          "qualifiers": {},
+          "nativeCoordinates": [],
+          "aliases": [],
+          "sourceRefs": [],
+          "publisherRefs": [],
+          "externalRefs": []
+        },
+        "nativeVersion": "1.0.0",
+        "normalizedVersion": "1.0.0",
+        "versionSortKey": "0001.0000.0000",
+        "requirements": [],
+        "capabilities": [],
+        "conflicts": [],
+        "cardinalityConstraints": [],
+        "artifacts": [],
+        "lifecycle": {
+          "status": "published",
+          "eligible": true,
+          "warnings": []
+        },
+        "sourceSnapshots": [],
+        "metadataDigest": {
+          "algorithm": "sha256",
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "nativeSemantics": { "version": "1", "data": {} },
+        "semanticLoss": []
+      }
+    ]
+  }
+}

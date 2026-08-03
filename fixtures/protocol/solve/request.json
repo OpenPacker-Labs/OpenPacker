@@ -1,0 +1,54 @@
+{
+  "requirements": [
+    {
+      "id": "root-tool",
+      "expression": {
+        "type": "package",
+        "purl": "pkg:npm/%40openpacker/demo-tool",
+        "vers": "vers:npm/>=1.0.0|<2.0.0"
+      },
+      "kind": "runtime",
+      "optional": false,
+      "source": {
+        "type": "overlay",
+        "uri": "https://openpacker.dev/fixtures/root"
+      },
+      "authority": "test-fixture",
+      "semanticLoss": []
+    }
+  ],
+  "target": {
+    "os": "linux",
+    "architecture": "arm64",
+    "libc": "glibc",
+    "runtimes": { "node": "24" },
+    "capabilities": [
+      { "name": "cpu:arm64" },
+      { "name": "runtime:node", "version": "24" }
+    ]
+  },
+  "environment": { "installed": [], "locked": [] },
+  "policy": {
+    "allowYanked": false,
+    "allowQuarantined": false,
+    "semanticLossMaximum": "warning",
+    "requiredEvidence": ["receipt-signature"],
+    "acceptedOverlayAuthorities": ["publisher", "test-fixture"]
+  },
+  "semantics": {
+    "profile": "prex-calculus-subset-v1",
+    "nativeCompatibility": ["npm", "cargo", "nuget"]
+  },
+  "objectives": [
+    "satisfy-hard-constraints",
+    "preserve-locks",
+    "minimize-changes",
+    "minimize-package-count",
+    "exclude-lifecycle-denied",
+    "prefer-stable",
+    "prefer-highest-native-version",
+    "canonical-lexical-tie-break"
+  ],
+  "mode": "closure",
+  "evaluationTime": "2026-08-02T00:00:00Z"
+}

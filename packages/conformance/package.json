@@ -1,0 +1,41 @@
+{
+  "name": "@openpacker/conformance",
+  "version": "0.1.0",
+  "description": "Executable PREX conformance validators and vectors",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:conformance": "vitest run",
+    "test:security": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run",
+    "check:contracts": "vitest run test/contracts.test.ts",
+    "check:generated": "npm run check:generated -w @openpacker/contracts"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
+}

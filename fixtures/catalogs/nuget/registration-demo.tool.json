@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/registration/demo.tool/page/1.json",
+      "count": 2,
+      "lower": "1.0.0-beta.1",
+      "upper": "1.0.0"
+    }
+  ]
+}

@@ -1,0 +1,347 @@
+{
+  "vectors": [
+    {
+      "name": "solve-request",
+      "file": "solve/request.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "cross-ecosystem-overlay",
+      "file": "overlay/cross-ecosystem.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/OpenPackerOverlay",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-S"]
+    },
+    {
+      "name": "lifecycle-yank",
+      "file": "lifecycle/yank.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json#/$defs/LifecycleEvent",
+      "valid": true,
+      "levels": ["PREX-V", "PREX-C"]
+    },
+    {
+      "name": "invalid-purl-problem",
+      "file": "errors/invalid-purl.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/Problem",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "reject-unknown-problem-field",
+      "inline": {
+        "type": "https://openpacker.dev/problems/internal",
+        "title": "Internal",
+        "status": 500,
+        "code": "INTERNAL_ERROR",
+        "retryable": false,
+        "secret": "must fail"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/Problem",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "reject-unknown-solve-field",
+      "inline": {
+        "requirements": [],
+        "target": {},
+        "environment": { "installed": [], "locked": [] },
+        "policy": {
+          "allowYanked": false,
+          "allowQuarantined": false,
+          "semanticLossMaximum": "warning",
+          "requiredEvidence": []
+        },
+        "semantics": {
+          "profile": "prex-calculus-subset-v1",
+          "nativeCompatibility": []
+        },
+        "objectives": ["satisfy-hard-constraints"],
+        "mode": "closure",
+        "evaluationTime": "2026-08-02T00:00:00Z",
+        "drift": true
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "common-digest",
+      "file": "../golden/universe.json",
+      "pointer": "/canonicalDigest",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/Digest",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "reject-common-digest-algorithm",
+      "file": "../golden/universe.json",
+      "pointer": "/canonicalDigest",
+      "mutations": [
+        { "operation": "set", "path": "/algorithm", "value": "md5" }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/Digest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "model-package-instance",
+      "file": "../golden/universe.json",
+      "pointer": "/packages/0",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": true,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-model-package-without-node-id",
+      "file": "../golden/universe.json",
+      "pointer": "/packages/0",
+      "mutations": [{ "operation": "delete", "path": "/nodeId" }],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "cloud-event-envelope",
+      "file": "../golden/event.json",
+      "pointer": "/0",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json#/$defs/OpenPackerCloudEvent",
+      "valid": true,
+      "levels": ["PREX-C"]
+    },
+    {
+      "name": "reject-cloud-event-version",
+      "file": "../golden/event.json",
+      "pointer": "/0",
+      "mutations": [
+        { "operation": "set", "path": "/specversion", "value": "0.3" }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json#/$defs/OpenPackerCloudEvent",
+      "valid": false,
+      "levels": ["PREX-C"]
+    },
+    {
+      "name": "openpacker-lockfile",
+      "file": "../golden/lockfile.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": true,
+      "levels": ["PREX-S", "PREX-R"]
+    },
+    {
+      "name": "reject-lockfile-without-version",
+      "file": "../golden/lockfile.json",
+      "mutations": [{ "operation": "delete", "path": "/schemaVersion" }],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": false,
+      "levels": ["PREX-S", "PREX-R"]
+    },
+    {
+      "name": "openpacker-pack-request",
+      "inline": {
+        "exactPurl": "pkg:npm/openpacker-demo@1.0.0",
+        "artifact": {
+          "descriptorId": "fixture-native",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "size": 1,
+          "mediaType": "application/vnd.npm.package+gzip",
+          "artifactType": "application/vnd.openpacker.npm.package.v1",
+          "nativeRole": "native-package",
+          "locations": [],
+          "referrers": [],
+          "externalRefs": []
+        }
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/extensions.schema.json#/$defs/PackRequest",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-openpacker-pack-without-artifact",
+      "inline": {
+        "exactPurl": "pkg:npm/openpacker-demo@1.0.0"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/extensions.schema.json#/$defs/PackRequest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "prex-root-solve-request",
+      "file": "solve/request.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/prex.schema.json",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-prex-root-scalar",
+      "inline": "not-a-prex-document",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/prex.schema.json",
+      "valid": false,
+      "levels": []
+    },
+    {
+      "name": "identify-response",
+      "file": "../golden/identity.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/IdentifyResponse",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "reject-identify-status",
+      "file": "../golden/identity.json",
+      "mutations": [
+        { "operation": "set", "path": "/status", "value": "selected-silently" }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/IdentifyResponse",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "enumerate-response",
+      "file": "../golden/enumeration.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/EnumerateResponse",
+      "valid": true,
+      "levels": ["PREX-E"]
+    },
+    {
+      "name": "reject-enumeration-without-exact-purl",
+      "file": "../golden/enumeration.json",
+      "mutations": [{ "operation": "delete", "path": "/versions/0/exactPurl" }],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/EnumerateResponse",
+      "valid": false,
+      "levels": ["PREX-E"]
+    },
+    {
+      "name": "explain-response",
+      "file": "../golden/explanation.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/ExplainResponse",
+      "valid": true,
+      "levels": ["PREX-X"]
+    },
+    {
+      "name": "reject-explain-without-graph",
+      "file": "../golden/explanation.json",
+      "mutations": [{ "operation": "delete", "path": "/graph" }],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/ExplainResponse",
+      "valid": false,
+      "levels": ["PREX-X"]
+    },
+    {
+      "name": "signed-receipt",
+      "file": "../golden/receipt.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SignedReceipt",
+      "valid": true,
+      "levels": ["PREX-R"]
+    },
+    {
+      "name": "reject-receipt-signature-algorithm",
+      "file": "../golden/receipt.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures/0/algorithm",
+          "value": "rsa"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SignedReceipt",
+      "valid": false,
+      "levels": ["PREX-R"]
+    },
+    {
+      "name": "verify-request",
+      "inline": {
+        "subject": { "type": "metadata", "locator": "urn:openpacker:fixture" },
+        "checks": ["artifact-digest"],
+        "evaluationTime": "2026-08-02T00:00:00Z"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/VerifyRequest",
+      "valid": true,
+      "levels": ["PREX-V"]
+    },
+    {
+      "name": "reject-empty-verification-checks",
+      "inline": {
+        "subject": { "type": "metadata", "locator": "urn:openpacker:fixture" },
+        "checks": [],
+        "evaluationTime": "2026-08-02T00:00:00Z"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/VerifyRequest",
+      "valid": false,
+      "levels": ["PREX-V"]
+    },
+    {
+      "name": "ocm-materialize-request",
+      "inline": {
+        "subject": {
+          "type": "ocm",
+          "component": "github.com/openpacker/demo",
+          "version": "1.0.0"
+        }
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-ocm-materialize-without-version",
+      "inline": {
+        "subject": { "type": "ocm", "component": "github.com/openpacker/demo" }
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-floating-extension",
+      "file": "solve/request.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/extensions",
+          "value": { "org.example.float": 1.5 }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-N", "PREX-S"]
+    },
+    {
+      "name": "reject-event-type-data-mismatch",
+      "file": "../golden/event.json",
+      "pointer": "/0",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/type",
+          "value": "org.openpacker.receipt.created"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json#/$defs/OpenPackerCloudEvent",
+      "valid": false,
+      "levels": ["PREX-C"]
+    },
+    {
+      "name": "request-digest-projection",
+      "file": "../../spec/prex/v1/digest-projections.json",
+      "pointer": "/projections/0",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
+      "valid": true,
+      "levels": ["PREX-N", "PREX-R", "PREX-S"]
+    },
+    {
+      "name": "reject-digest-projection-algorithm",
+      "file": "../../spec/prex/v1/digest-projections.json",
+      "pointer": "/projections/0",
+      "mutations": [
+        { "operation": "set", "path": "/algorithm", "value": "sha512" }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
+      "valid": false,
+      "levels": ["PREX-N", "PREX-R", "PREX-S"]
+    }
+  ]
+}

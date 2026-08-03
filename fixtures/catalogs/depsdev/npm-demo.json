@@ -1,0 +1,11 @@
+{
+  "versionKey": {
+    "system": "NPM",
+    "name": "@openpacker/demo-tool",
+    "version": "1.0.0"
+  },
+  "publishedAt": "2026-08-02T00:00:00Z",
+  "isDefault": false,
+  "licenses": ["MIT"],
+  "advisoryKeys": []
+}
