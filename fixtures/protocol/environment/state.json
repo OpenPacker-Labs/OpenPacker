@@ -1,0 +1,18 @@
+{
+  "stateVersion": "1",
+  "environmentName": "devshell",
+  "currentGenerationDigest": {
+    "algorithm": "sha256",
+    "value": "e07eb4f028096d0959bddccb67cf9e0b7d974c9106452d819684ac4d7ca4d3c0"
+  },
+  "retainedGenerationDigests": [
+    {
+      "algorithm": "sha256",
+      "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+    },
+    {
+      "algorithm": "sha256",
+      "value": "e07eb4f028096d0959bddccb67cf9e0b7d974c9106452d819684ac4d7ca4d3c0"
+    }
+  ]
+}

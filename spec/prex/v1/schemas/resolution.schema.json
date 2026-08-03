@@ -19,30 +19,42 @@
         "externalRefs"
       ],
       "properties": {
-        "overlayVersion": { "const": "1" },
-        "subject": { "$ref": "model.schema.json#/$defs/PackageIdentity" },
+        "overlayVersion": {
+          "const": "1"
+        },
+        "subject": {
+          "$ref": "model.schema.json#/$defs/PackageIdentity"
+        },
         "appliesToMetadataDigest": {
           "$ref": "common.schema.json#/$defs/Digest"
         },
         "requirements": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/Requirement" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/Requirement"
+          }
         },
         "capabilities": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/Capability" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/Capability"
+          }
         },
         "conflicts": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/Conflict" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/Conflict"
+          }
         },
         "cardinalityConstraints": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/CardinalityConstraint" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/CardinalityConstraint"
+          }
         },
         "artifactAnnotations": {
           "type": "array",
@@ -51,11 +63,17 @@
             "type": "object",
             "required": ["descriptorId", "annotations"],
             "properties": {
-              "descriptorId": { "type": "string", "maxLength": 255 },
+              "descriptorId": {
+                "type": "string",
+                "maxLength": 255
+              },
               "annotations": {
                 "type": "object",
                 "maxProperties": 64,
-                "additionalProperties": { "type": "string", "maxLength": 4096 }
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
               }
             },
             "additionalProperties": false
@@ -64,7 +82,9 @@
         "sourceRefs": {
           "type": "array",
           "maxItems": 128,
-          "items": { "$ref": "common.schema.json#/$defs/SourceRef" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/SourceRef"
+          }
         },
         "authority": {
           "enum": [
@@ -78,14 +98,20 @@
         "evidenceRefs": {
           "type": "array",
           "maxItems": 128,
-          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/ExternalRef"
+          }
         },
         "externalRefs": {
           "type": "array",
           "maxItems": 128,
-          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/ExternalRef"
+          }
         },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -101,35 +127,52 @@
         "canonicalDigest"
       ],
       "properties": {
-        "universeVersion": { "const": "1" },
+        "universeVersion": {
+          "const": "1"
+        },
         "packages": {
           "type": "array",
           "maxItems": 100000,
-          "items": { "$ref": "model.schema.json#/$defs/PackageInstance" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/PackageInstance"
+          }
         },
         "overlays": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "#/$defs/OpenPackerOverlay" }
+          "items": {
+            "$ref": "#/$defs/OpenPackerOverlay"
+          }
         },
         "sourceSnapshots": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/SourceSnapshot"
+          }
         },
         "recipes": {
           "$comment": "Captured build plans referenced by artifact producedBy claims. Absent means no realisation facts were captured.",
           "type": "array",
           "maxItems": 100000,
-          "items": { "$ref": "model.schema.json#/$defs/BuildRecipe" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/BuildRecipe"
+          }
         },
-        "lifecycleRoot": { "$ref": "common.schema.json#/$defs/Digest" },
-        "targetVocabularyVersion": { "type": "string", "maxLength": 64 },
+        "lifecycleRoot": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "targetVocabularyVersion": {
+          "type": "string",
+          "maxLength": 64
+        },
         "canonicalDigest": {
           "$comment": "universe-v1 projection: omit /canonicalDigest and canonicalize declared set paths before hashing",
           "$ref": "common.schema.json#/$defs/Digest"
         },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -142,14 +185,23 @@
         "requiredEvidence"
       ],
       "properties": {
-        "allowYanked": { "type": "boolean" },
-        "allowQuarantined": { "type": "boolean" },
-        "semanticLossMaximum": { "enum": ["info", "warning", "error"] },
+        "allowYanked": {
+          "type": "boolean"
+        },
+        "allowQuarantined": {
+          "type": "boolean"
+        },
+        "semanticLossMaximum": {
+          "enum": ["info", "warning", "error"]
+        },
         "requiredEvidence": {
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         },
         "acceptedOverlayAuthorities": {
           "type": "array",
@@ -165,57 +217,93 @@
             ]
           }
         },
-        "allowDeprecated": { "type": "boolean" },
-        "allowDelisted": { "type": "boolean" },
-        "allowRevoked": { "type": "boolean" },
-        "requireFreshTufMetadata": { "type": "boolean" },
+        "allowDeprecated": {
+          "type": "boolean"
+        },
+        "allowDelisted": {
+          "type": "boolean"
+        },
+        "allowRevoked": {
+          "type": "boolean"
+        },
+        "requireFreshTufMetadata": {
+          "type": "boolean"
+        },
         "acceptedSignerIdentityPatterns": {
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
         },
         "sigstore": {
           "type": "object",
           "properties": {
-            "required": { "type": "boolean" },
+            "required": {
+              "type": "boolean"
+            },
             "issuerPatterns": {
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              }
             },
             "identityPatterns": {
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              }
             },
-            "requireTransparencyEvidence": { "type": "boolean" }
+            "requireTransparencyEvidence": {
+              "type": "boolean"
+            }
           },
           "additionalProperties": false
         },
         "slsa": {
           "type": "object",
           "properties": {
-            "required": { "type": "boolean" },
+            "required": {
+              "type": "boolean"
+            },
             "predicateTypes": {
               "type": "array",
               "maxItems": 64,
               "uniqueItems": true,
-              "items": { "type": "string", "format": "uri", "maxLength": 8192 }
+              "items": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 8192
+              }
             },
             "builderIds": {
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "maxLength": 2048 }
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
             },
             "buildTypes": {
               "type": "array",
               "maxItems": 128,
               "uniqueItems": true,
-              "items": { "type": "string", "maxLength": 2048 }
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
             }
           },
           "additionalProperties": false
@@ -227,16 +315,26 @@
               "type": "array",
               "maxItems": 1024,
               "uniqueItems": true,
-              "items": { "type": "string", "maxLength": 255 }
+              "items": {
+                "type": "string",
+                "maxLength": 255
+              }
             },
             "denied": {
               "type": "array",
               "maxItems": 1024,
               "uniqueItems": true,
-              "items": { "type": "string", "maxLength": 255 }
+              "items": {
+                "type": "string",
+                "maxLength": 255
+              }
             },
-            "allowUnknown": { "type": "boolean" },
-            "allowMissing": { "type": "boolean" }
+            "allowUnknown": {
+              "type": "boolean"
+            },
+            "allowMissing": {
+              "type": "boolean"
+            }
           },
           "additionalProperties": false
         },
@@ -244,7 +342,10 @@
           "type": "array",
           "maxItems": 256,
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 255 }
+          "items": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "allowedArtifactSourceSchemes": {
           "type": "array",
@@ -259,7 +360,9 @@
         "allowedTargets": {
           "type": "array",
           "maxItems": 128,
-          "items": { "$ref": "model.schema.json#/$defs/TargetPredicate" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/TargetPredicate"
+          }
         },
         "maximumArtifactSize": {
           "type": "integer",
@@ -275,16 +378,25 @@
           "type": "array",
           "maxItems": 1024,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,127}$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{2,127}$"
+          }
         },
         "requiredSourceSnapshotDigests": {
           "type": "array",
           "maxItems": 10000,
           "uniqueItems": true,
-          "items": { "$ref": "common.schema.json#/$defs/Digest" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/Digest"
+          }
         },
-        "permitForensicDigestMaterialization": { "type": "boolean" },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "permitForensicDigestMaterialization": {
+          "type": "boolean"
+        },
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -303,9 +415,14 @@
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 64 }
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
         },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -326,7 +443,9 @@
           "type": "array",
           "minItems": 0,
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/Requirement" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/Requirement"
+          }
         },
         "target": {
           "$comment": "The host platform: where selected packages will run. When platforms is present, platforms.host MUST equal this value.",
@@ -344,13 +463,17 @@
               "type": "array",
               "maxItems": 16,
               "uniqueItems": true,
-              "items": { "$ref": "model.schema.json#/$defs/RequirementKind" }
+              "items": {
+                "$ref": "model.schema.json#/$defs/RequirementKind"
+              }
             },
             "inactiveKinds": {
               "type": "array",
               "maxItems": 16,
               "uniqueItems": true,
-              "items": { "$ref": "model.schema.json#/$defs/RequirementKind" }
+              "items": {
+                "$ref": "model.schema.json#/$defs/RequirementKind"
+              }
             }
           },
           "additionalProperties": false
@@ -362,18 +485,32 @@
             "installed": {
               "type": "array",
               "maxItems": 100000,
-              "items": { "type": "string", "maxLength": 255 }
+              "items": {
+                "type": "string",
+                "maxLength": 255
+              }
             },
             "locked": {
               "type": "array",
               "maxItems": 100000,
-              "items": { "type": "string", "maxLength": 255 }
+              "items": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "generationDigest": {
+              "$comment": "Binds installed/locked to a specific environment generation record.",
+              "$ref": "common.schema.json#/$defs/Digest"
             }
           },
           "additionalProperties": false
         },
-        "policy": { "$ref": "#/$defs/PolicyInput" },
-        "semantics": { "$ref": "#/$defs/SemanticsInput" },
+        "policy": {
+          "$ref": "#/$defs/PolicyInput"
+        },
+        "semantics": {
+          "$ref": "#/$defs/SemanticsInput"
+        },
         "objectives": {
           "type": "array",
           "minItems": 1,
@@ -392,8 +529,13 @@
             ]
           }
         },
-        "mode": { "enum": ["closure", "direct", "validate-native"] },
-        "evaluationTime": { "type": "string", "format": "date-time" },
+        "mode": {
+          "enum": ["closure", "direct", "validate-native"]
+        },
+        "evaluationTime": {
+          "type": "string",
+          "format": "date-time"
+        },
         "providerPolicy": {
           "type": "object",
           "additionalProperties": false,
@@ -402,7 +544,10 @@
               "type": "array",
               "maxItems": 64,
               "uniqueItems": true,
-              "items": { "type": "string", "maxLength": 255 }
+              "items": {
+                "type": "string",
+                "maxLength": 255
+              }
             }
           }
         },
@@ -414,8 +559,12 @@
         "resourceLimits": {
           "$ref": "operations.schema.json#/$defs/ResourceLimits"
         },
-        "context": { "$ref": "operations.schema.json#/$defs/RequestContext" },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "context": {
+          "$ref": "operations.schema.json#/$defs/RequestContext"
+        },
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -423,9 +572,18 @@
       "type": "object",
       "required": ["requirementId", "fromNodeId", "toNodeId", "witnessType"],
       "properties": {
-        "requirementId": { "type": "string", "maxLength": 255 },
-        "fromNodeId": { "type": "string", "maxLength": 255 },
-        "toNodeId": { "type": "string", "maxLength": 255 },
+        "requirementId": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "fromNodeId": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "toNodeId": {
+          "type": "string",
+          "maxLength": 255
+        },
         "witnessType": {
           "enum": ["package", "capability", "replacement", "optional"]
         },
@@ -434,7 +592,9 @@
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,
-          "items": { "$ref": "model.schema.json#/$defs/OutputName" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/OutputName"
+          }
         }
       },
       "additionalProperties": false
@@ -457,7 +617,10 @@
           "type": "array",
           "maxItems": 100000,
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 255 }
+          "items": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "selectedCapabilityProviders": {
           "type": "array",
@@ -466,8 +629,14 @@
             "type": "object",
             "required": ["capability", "providerNodeId"],
             "properties": {
-              "capability": { "type": "string", "maxLength": 255 },
-              "providerNodeId": { "type": "string", "maxLength": 255 }
+              "capability": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "providerNodeId": {
+                "type": "string",
+                "maxLength": 255
+              }
             },
             "additionalProperties": false
           }
@@ -476,12 +645,17 @@
           "type": "array",
           "maxItems": 100000,
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 255 }
+          "items": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "dependencyEdges": {
           "type": "array",
           "maxItems": 1000000,
-          "items": { "$ref": "#/$defs/DependencyEdge" }
+          "items": {
+            "$ref": "#/$defs/DependencyEdge"
+          }
         },
         "excludedCandidates": {
           "type": "array",
@@ -490,11 +664,17 @@
             "type": "object",
             "required": ["nodeId", "reasonRefs"],
             "properties": {
-              "nodeId": { "type": "string", "maxLength": 255 },
+              "nodeId": {
+                "type": "string",
+                "maxLength": 255
+              },
               "reasonRefs": {
                 "type": "array",
                 "maxItems": 128,
-                "items": { "type": "string", "maxLength": 255 }
+                "items": {
+                  "type": "string",
+                  "maxLength": 255
+                }
               }
             },
             "additionalProperties": false
@@ -503,17 +683,23 @@
         "objectiveTuple": {
           "type": "array",
           "maxItems": 64,
-          "items": { "type": ["string", "integer", "boolean"] }
+          "items": {
+            "type": ["string", "integer", "boolean"]
+          }
         },
         "semanticLoss": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/SemanticLoss"
+          }
         },
         "sourceSnapshotDigests": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "common.schema.json#/$defs/Digest" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/Digest"
+          }
         },
         "solutionDigest": {
           "$comment": "solution-v1 projection: omit /solutionDigest before hashing",
@@ -536,9 +722,15 @@
         "objectiveEvidence"
       ],
       "properties": {
-        "proofVersion": { "const": "1" },
-        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
-        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "proofVersion": {
+          "const": "1"
+        },
+        "universeDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "requestDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "selectedAssignments": {
           "type": "array",
           "maxItems": 100000,
@@ -546,9 +738,16 @@
             "type": "object",
             "required": ["nodeId", "selected", "nodeDigest"],
             "properties": {
-              "nodeId": { "type": "string", "maxLength": 255 },
-              "selected": { "type": "boolean" },
-              "nodeDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+              "nodeId": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "selected": {
+                "type": "boolean"
+              },
+              "nodeDigest": {
+                "$ref": "common.schema.json#/$defs/Digest"
+              }
             },
             "additionalProperties": false
           }
@@ -560,23 +759,37 @@
             "type": "object",
             "required": ["requirementId", "status", "witnessNodeIds"],
             "properties": {
-              "requirementId": { "type": "string", "maxLength": 255 },
+              "requirementId": {
+                "type": "string",
+                "maxLength": 255
+              },
               "status": {
                 "enum": ["satisfied", "optional-omitted", "inactive"]
               },
               "witnessNodeIds": {
                 "type": "array",
                 "maxItems": 10000,
-                "items": { "type": "string", "maxLength": 255 }
+                "items": {
+                  "type": "string",
+                  "maxLength": 255
+                }
               }
             },
             "additionalProperties": false
           }
         },
-        "conflictChecks": { "$ref": "#/$defs/ProofChecks" },
-        "cardinalityChecks": { "$ref": "#/$defs/ProofChecks" },
-        "targetChecks": { "$ref": "#/$defs/ProofChecks" },
-        "objectiveEvidence": { "$ref": "#/$defs/ProofChecks" }
+        "conflictChecks": {
+          "$ref": "#/$defs/ProofChecks"
+        },
+        "cardinalityChecks": {
+          "$ref": "#/$defs/ProofChecks"
+        },
+        "targetChecks": {
+          "$ref": "#/$defs/ProofChecks"
+        },
+        "objectiveEvidence": {
+          "$ref": "#/$defs/ProofChecks"
+        }
       },
       "additionalProperties": false
     },
@@ -587,8 +800,13 @@
         "type": "object",
         "required": ["id", "valid", "evidence"],
         "properties": {
-          "id": { "type": "string", "maxLength": 255 },
-          "valid": { "type": "boolean" },
+          "id": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "valid": {
+            "type": "boolean"
+          },
           "evidence": {
             "$ref": "common.schema.json#/$defs/CanonicalJsonValue"
           }
@@ -607,7 +825,10 @@
             "type": "object",
             "required": ["id", "kind", "label", "data"],
             "properties": {
-              "id": { "type": "string", "maxLength": 255 },
+              "id": {
+                "type": "string",
+                "maxLength": 255
+              },
               "kind": {
                 "enum": [
                   "candidate",
@@ -624,7 +845,10 @@
                   "proof"
                 ]
               },
-              "label": { "type": "string", "maxLength": 4096 },
+              "label": {
+                "type": "string",
+                "maxLength": 4096
+              },
               "data": {
                 "type": "object",
                 "maxProperties": 128,
@@ -643,8 +867,14 @@
             "type": "object",
             "required": ["from", "to", "kind"],
             "properties": {
-              "from": { "type": "string", "maxLength": 255 },
-              "to": { "type": "string", "maxLength": 255 },
+              "from": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "to": {
+                "type": "string",
+                "maxLength": 255
+              },
               "kind": {
                 "enum": [
                   "requires",
@@ -664,17 +894,26 @@
         "roots": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "type": "string", "maxLength": 255 }
+          "items": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "unsatCore": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "type": "string", "maxLength": 255 }
+          "items": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "renderHints": {
           "type": "object",
           "maxProperties": 64,
-          "additionalProperties": { "type": "string", "maxLength": 4096 }
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
         }
       },
       "additionalProperties": false
@@ -703,19 +942,37 @@
         "externalRefs"
       ],
       "properties": {
-        "receiptVersion": { "const": "1" },
-        "protocolVersion": { "const": "1.0-draft" },
-        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
-        "normalizedRequest": { "$ref": "#/$defs/SolveRequest" },
-        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "receiptVersion": {
+          "const": "1"
+        },
+        "protocolVersion": {
+          "const": "1.0-draft"
+        },
+        "requestDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "normalizedRequest": {
+          "$ref": "#/$defs/SolveRequest"
+        },
+        "universeDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "sourceSnapshots": {
           "type": "array",
           "maxItems": 10000,
-          "items": { "$ref": "model.schema.json#/$defs/SourceSnapshot" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/SourceSnapshot"
+          }
         },
-        "targetDigest": { "$ref": "common.schema.json#/$defs/Digest" },
-        "policyDigest": { "$ref": "common.schema.json#/$defs/Digest" },
-        "lifecycleRoot": { "$ref": "common.schema.json#/$defs/Digest" },
+        "targetDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "policyDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "lifecycleRoot": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "semanticsProfile": {
           "enum": [
             "native-capture-v1",
@@ -726,7 +983,9 @@
         "objectiveOrdering": {
           "$ref": "#/$defs/SolveRequest/properties/objectives"
         },
-        "solutionDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "solutionDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "proofDigest": {
           "$comment": "proof-v1 projection: canonicalize the complete ResolutionProof",
           "$ref": "common.schema.json#/$defs/Digest"
@@ -748,25 +1007,45 @@
             "buildDigest"
           ],
           "properties": {
-            "providerId": { "type": "string", "maxLength": 255 },
-            "implementation": { "type": "string", "maxLength": 255 },
-            "version": { "type": "string", "maxLength": 128 },
-            "buildDigest": { "$ref": "common.schema.json#/$defs/Digest" }
+            "providerId": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "implementation": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "buildDigest": {
+              "$ref": "common.schema.json#/$defs/Digest"
+            }
           },
           "additionalProperties": false
         },
-        "evaluationTime": { "type": "string", "format": "date-time" },
+        "evaluationTime": {
+          "type": "string",
+          "format": "date-time"
+        },
         "evidenceRefs": {
           "type": "array",
           "maxItems": 1024,
-          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/ExternalRef"
+          }
         },
         "externalRefs": {
           "type": "array",
           "maxItems": 1024,
-          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+          "items": {
+            "$ref": "common.schema.json#/$defs/ExternalRef"
+          }
         },
-        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
       },
       "additionalProperties": false
     },
@@ -774,8 +1053,12 @@
       "type": "object",
       "required": ["receipt", "receiptDigest", "signatures"],
       "properties": {
-        "receipt": { "$ref": "#/$defs/ResolutionReceipt" },
-        "receiptDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "receipt": {
+          "$ref": "#/$defs/ResolutionReceipt"
+        },
+        "receiptDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "signatures": {
           "type": "array",
           "minItems": 1,
@@ -784,14 +1067,21 @@
             "type": "object",
             "required": ["algorithm", "keyId", "signature"],
             "properties": {
-              "algorithm": { "const": "ed25519" },
-              "keyId": { "type": "string", "maxLength": 1024 },
+              "algorithm": {
+                "const": "ed25519"
+              },
+              "keyId": {
+                "type": "string",
+                "maxLength": 1024
+              },
               "signature": {
                 "type": "string",
                 "contentEncoding": "base64",
                 "maxLength": 256
               },
-              "identity": { "$ref": "common.schema.json#/$defs/IdentityRef" }
+              "identity": {
+                "$ref": "common.schema.json#/$defs/IdentityRef"
+              }
             },
             "additionalProperties": false
           }
@@ -813,20 +1103,40 @@
         "unsignedReceipt"
       ],
       "properties": {
-        "meta": { "$ref": "common.schema.json#/$defs/ProtocolMeta" },
-        "normalizedRequest": { "$ref": "#/$defs/SolveRequest" },
-        "requestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
-        "universeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "meta": {
+          "$ref": "common.schema.json#/$defs/ProtocolMeta"
+        },
+        "normalizedRequest": {
+          "$ref": "#/$defs/SolveRequest"
+        },
+        "requestDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "universeDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
         "selected": {
           "type": "array",
           "maxItems": 100000,
-          "items": { "$ref": "model.schema.json#/$defs/PackageInstance" }
+          "items": {
+            "$ref": "model.schema.json#/$defs/PackageInstance"
+          }
         },
-        "solution": { "$ref": "#/$defs/ResolutionSolution" },
-        "proof": { "$ref": "#/$defs/ResolutionProof" },
-        "explanation": { "$ref": "#/$defs/ExplanationGraph" },
-        "unsignedReceipt": { "$ref": "#/$defs/ResolutionReceipt" },
-        "signedReceipt": { "$ref": "#/$defs/SignedReceipt" }
+        "solution": {
+          "$ref": "#/$defs/ResolutionSolution"
+        },
+        "proof": {
+          "$ref": "#/$defs/ResolutionProof"
+        },
+        "explanation": {
+          "$ref": "#/$defs/ExplanationGraph"
+        },
+        "unsignedReceipt": {
+          "$ref": "#/$defs/ResolutionReceipt"
+        },
+        "signedReceipt": {
+          "$ref": "#/$defs/SignedReceipt"
+        }
       },
       "additionalProperties": false
     }

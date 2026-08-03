@@ -20,16 +20,24 @@ const projectionFor = (id: string) => {
   return projection;
 };
 
-const realisationFixture = async (name: string): Promise<JsonValue> =>
+const protocolFixture = async (
+  group: string,
+  name: string,
+): Promise<JsonValue> =>
   JSON.parse(
     await readFile(
       new URL(
-        `../../../fixtures/protocol/realisation/${name}.json`,
+        `../../../fixtures/protocol/${group}/${name}.json`,
         import.meta.url,
       ),
       'utf8',
     ),
   ) as JsonValue;
+
+const realisationFixture = (name: string) =>
+  protocolFixture('realisation', name);
+const environmentFixture = (name: string) =>
+  protocolFixture('environment', name);
 
 describe('PREX canonical JSON', () => {
   it('sorts keys recursively without changing array order', () => {
@@ -209,5 +217,115 @@ describe('realisation digest projections', () => {
       projectionFor('tree-manifest-v1'),
     );
     expect(descriptor.treeDigest.value).toBe(treeDigest.value);
+  });
+});
+
+describe('environment generation ledger', () => {
+  it('pins manifest and generation digests', async () => {
+    const pinned = (await environmentFixture('projection-digests')) as {
+      manifest: { value: string };
+      generation1: { value: string };
+      generation2: { value: string };
+    };
+    const manifestDigest = await canonicalProjectionDigest(
+      await environmentFixture('manifest'),
+      projectionFor('environment-manifest-v1'),
+    );
+    expect(manifestDigest.value).toBe(pinned.manifest.value);
+
+    for (const [name, expected] of [
+      ['generation-1', pinned.generation1],
+      ['generation-2', pinned.generation2],
+    ] as const) {
+      const generation = (await environmentFixture(name)) as {
+        generationDigest: { value: string };
+      };
+      expect(generation.generationDigest.value).toBe(expected.value);
+    }
+  });
+
+  it('recomputes a generation digest without its own field', async () => {
+    const projection = projectionFor('environment-generation-v1');
+    const generation = (await environmentFixture('generation-2')) as Record<
+      string,
+      unknown
+    >;
+    // The stored digest must equal the projection of the record, and the
+    // projection must not depend on the stored value.
+    const recomputed = await canonicalProjectionDigest(
+      generation as JsonValue,
+      projection,
+    );
+    expect(recomputed.value).toBe(
+      (generation.generationDigest as { value: string }).value,
+    );
+    const tampered = {
+      ...generation,
+      generationDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
+    };
+    const fromTampered = await canonicalProjectionDigest(
+      tampered as JsonValue,
+      projection,
+    );
+    expect(fromTampered.value).toBe(recomputed.value);
+  });
+
+  it('links generations into a tamper-evident chain', async () => {
+    const first = (await environmentFixture('generation-1')) as {
+      generationDigest: { value: string };
+    };
+    const second = (await environmentFixture('generation-2')) as {
+      parentGenerationDigest: { value: string };
+      sequence: number;
+    };
+    expect(second.parentGenerationDigest.value).toBe(
+      first.generationDigest.value,
+    );
+    expect(second.sequence).toBe(2);
+
+    // Editing any earlier generation breaks the link to its child.
+    const projection = projectionFor('environment-generation-v1');
+    const edited = structuredClone(
+      (await environmentFixture('generation-1')) as Record<string, unknown>,
+    );
+    (edited as { sequence: number }).sequence = 99;
+    const editedDigest = await canonicalProjectionDigest(
+      edited as JsonValue,
+      projection,
+    );
+    expect(editedDigest.value).not.toBe(second.parentGenerationDigest.value);
+  });
+
+  it('rolls back by repointing state, never by rewriting generations', async () => {
+    const state = (await environmentFixture('state')) as {
+      currentGenerationDigest: { value: string };
+      retainedGenerationDigests: { value: string }[];
+    };
+    const rolledBack = (await environmentFixture('state-rolled-back')) as {
+      currentGenerationDigest: { value: string };
+      retainedGenerationDigests: { value: string }[];
+    };
+    const first = (await environmentFixture('generation-1')) as {
+      generationDigest: { value: string };
+    };
+    const second = (await environmentFixture('generation-2')) as {
+      generationDigest: { value: string };
+    };
+
+    expect(state.currentGenerationDigest.value).toBe(
+      second.generationDigest.value,
+    );
+    expect(rolledBack.currentGenerationDigest.value).toBe(
+      first.generationDigest.value,
+    );
+    // Rollback retains both records, so it stays reversible and collectible
+    // content stays reachable.
+    expect(
+      rolledBack.retainedGenerationDigests.map((item) => item.value),
+    ).toEqual(state.retainedGenerationDigests.map((item) => item.value));
+    for (const pointer of [state, rolledBack])
+      expect(
+        pointer.retainedGenerationDigests.map((item) => item.value),
+      ).toContain(pointer.currentGenerationDigest.value);
   });
 });

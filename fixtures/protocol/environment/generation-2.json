@@ -1,0 +1,59 @@
+{
+  "generationVersion": "1",
+  "environmentName": "devshell",
+  "sequence": 2,
+  "createdAt": "2026-08-03T01:00:00Z",
+  "parentGenerationDigest": {
+    "algorithm": "sha256",
+    "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+  },
+  "manifestDigest": {
+    "algorithm": "sha256",
+    "value": "1425690b5036264f766296b7f13bc353bcab4dabe41a99509d714b0dfd58d736"
+  },
+  "lockfileDigest": {
+    "algorithm": "sha256",
+    "value": "3c74922e6974e127a58eb60344cfb96fb6d923ad92c634c7249dae5272b3a0c0"
+  },
+  "solutionDigest": {
+    "algorithm": "sha256",
+    "value": "e0b7762143eeb6cbb03a9c178668e612aa6c4eddd05ae1eeeab86c8d73039849"
+  },
+  "receiptDigest": {
+    "algorithm": "sha256",
+    "value": "774ad7ab1a3d41b114b5f4a34e2d8fc19c2ee8d83dfc133f1d80068ed205597f"
+  },
+  "artifactSet": [
+    {
+      "nodeId": "sha256:e5865a49232a1fb1d0c7c3e53f30637a099a2fcb86ddb27354b2a698c2018ca2",
+      "exactPurl": "pkg:generic/libgreet@1.1.0",
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "ed149b7ffe2c7ce1bb9fa63b24bfb65b2683490b170f0e4e8dad802960353d74"
+      },
+      "treeDigest": {
+        "algorithm": "sha256",
+        "value": "64f89a3e8edfdfb713b7cb579c28cad0ac6da6ec854eabf062cc7988f99bd3d0"
+      },
+      "outputs": ["out", "dev"]
+    },
+    {
+      "nodeId": "sha256:f61ba482122c797e7ec94efee52382e308df664838d1b71df2d0cc19106f3f53",
+      "exactPurl": "pkg:generic/libc@2.39",
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "2ef176ff6509df009e4a57df6977c58a4c26ac98dabc23c1334f480cd5ba69fb"
+      },
+      "treeDigest": {
+        "algorithm": "sha256",
+        "value": "14a67e6df54452f91512cdbe12554e08da05b27484fe9dd86df8fa79a050b2cb"
+      },
+      "outputs": ["out"]
+    }
+  ],
+  "semanticLoss": [],
+  "generationDigest": {
+    "algorithm": "sha256",
+    "value": "e07eb4f028096d0959bddccb67cf9e0b7d974c9106452d819684ac4d7ca4d3c0"
+  }
+}

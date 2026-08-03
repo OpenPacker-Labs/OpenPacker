@@ -29,6 +29,9 @@
     { "$ref": "model.schema.json#/$defs/SubstituteDescriptor" },
     { "$ref": "events.schema.json#/$defs/LifecycleEvent" },
     { "$ref": "events.schema.json#/$defs/OpenPackerCloudEvent" },
-    { "$ref": "lockfile.schema.json" }
+    { "$ref": "lockfile.schema.json" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentManifest" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentGeneration" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentState" }
   ]
 }

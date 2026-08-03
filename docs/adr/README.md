@@ -28,6 +28,7 @@ Accepted decisions:
 24. [Canonical tree manifests instead of NAR](0024-canonical-tree-manifests.md)
 25. [Runtime references and substitute descriptors](0025-runtime-references-and-substitutes.md)
 26. [Package outputs and build/host/target platforms](0026-outputs-and-platform-triples.md)
+27. [Environment generations are an append-only ledger](0027-environment-generations.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

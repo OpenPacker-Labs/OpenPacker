@@ -148,6 +148,22 @@
       "includePaths": [],
       "excludePaths": ["/locations"],
       "orderedSetPaths": ["/evidenceRefs", "/runtimeReferences"]
+    },
+    {
+      "id": "environment-manifest-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/requirements"]
+    },
+    {
+      "id": "environment-generation-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/generationDigest"],
+      "orderedSetPaths": ["/artifactSet", "/semanticLoss"]
     }
   ]
 }

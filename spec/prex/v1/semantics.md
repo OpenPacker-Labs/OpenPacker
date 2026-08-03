@@ -103,6 +103,28 @@ per output either mints one instance per output — distinguished by the reserve
 `output` qualifier, which the existing exact qualifier match already selects —
 or records `OUTPUT_GRANULARITY_COLLAPSED`.
 
+## Environments and generations
+
+An `EnvironmentManifest` declares what an environment should contain. An
+`EnvironmentGeneration` records one realised state of it and is immutable:
+generations are append-only and hash-linked through `parentGenerationDigest`, so
+altering any earlier record invalidates the link its children assert.
+`generationDigest` is the `environment-generation-v1` projection digest and
+excludes itself, so it MUST be recomputable from the record alone.
+
+`EnvironmentState` is the only mutable part. Switching generations MUST replace
+that record atomically, and rolling back MUST re-point it at a retained
+ancestor; neither operation may rewrite or delete a generation record. Every
+user-visible view of an environment — executable shims, environment variables,
+search paths — MUST be derivable purely from the current generation plus store
+content and MUST be regenerable idempotently, so an interrupted switch is
+observed as either the previous state or the new one, never a blend.
+
+A stored artifact is **collectible** exactly when it lies outside the reference
+closure of every retained generation's artifact set. Retained generations are
+therefore the reachability roots; this specification defines the relation and
+does not mandate a collection schedule.
+
 ## Hypergraph compilation
 
 An exact `PackageInstance` is a vertex. Each capability offer is a

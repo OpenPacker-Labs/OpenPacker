@@ -228,7 +228,9 @@ export type DigestProjection = {
     | 'tree-manifest-v1'
     | 'build-recipe-v1'
     | 'recipe-output-v1'
-    | 'substitute-v1';
+    | 'substitute-v1'
+    | 'environment-manifest-v1'
+    | 'environment-generation-v1';
   algorithm: 'sha256';
   canonicalization: 'prex-jcs-safe-integer-v1';
   includePaths: Array<string>;
@@ -260,6 +262,46 @@ export type EnumeratedVersion = {
   sourceSnapshot: Digest;
   metadataDigest: Digest;
   warnings: Array<Warning>;
+};
+export type EnvironmentGeneration = {
+  generationVersion: '1';
+  environmentName: EnvironmentName;
+  sequence: number;
+  createdAt: string;
+  parentGenerationDigest?: Digest;
+  manifestDigest: Digest;
+  lockfileDigest?: Digest;
+  solutionDigest?: Digest;
+  receiptDigest?: Digest;
+  artifactSet: Array<EnvironmentMember>;
+  semanticLoss?: Array<SemanticLoss>;
+  generationDigest: Digest;
+  extensions?: Extensions;
+};
+export type EnvironmentManifest = {
+  manifestVersion: '1';
+  name: EnvironmentName;
+  description?: string;
+  requirements: Array<Requirement>;
+  target: TargetContext;
+  platforms?: PlatformContexts;
+  policy?: PolicyInput;
+  extensions?: Extensions;
+};
+export type EnvironmentMember = {
+  nodeId?: string;
+  exactPurl?: string;
+  artifactDigest: Digest;
+  treeDigest?: Digest;
+  outputs?: Array<OutputName>;
+};
+export type EnvironmentName = string;
+export type EnvironmentState = {
+  stateVersion: '1';
+  environmentName: EnvironmentName;
+  currentGenerationDigest: Digest;
+  retainedGenerationDigests: Array<Digest>;
+  extensions?: Extensions;
 };
 export type ErrorCode =
   | 'INVALID_REQUEST'
@@ -540,6 +582,11 @@ export type LockImportResponse = {
     solutionDigest: Digest;
     receiptDigest: Digest;
     externalRefs: Array<ExternalRef>;
+    platforms?: PlatformContexts;
+    selectedOutputs?: Array<{ exactPurl: string; outputs: Array<OutputName> }>;
+    recipeDigests?: Array<Digest>;
+    substitutes?: Array<SubstituteDescriptor>;
+    environment?: { name: EnvironmentName; baseGenerationDigest?: Digest };
     extensions?: Extensions;
   };
   semanticLoss: Array<SemanticLoss>;
@@ -655,6 +702,11 @@ export type OpenPackerLockfile = {
   solutionDigest: Digest;
   receiptDigest: Digest;
   externalRefs: Array<ExternalRef>;
+  platforms?: PlatformContexts;
+  selectedOutputs?: Array<{ exactPurl: string; outputs: Array<OutputName> }>;
+  recipeDigests?: Array<Digest>;
+  substitutes?: Array<SubstituteDescriptor>;
+  environment?: { name: EnvironmentName; baseGenerationDigest?: Digest };
   extensions?: Extensions;
 };
 export type OpenPackerOverlay = {
@@ -1069,7 +1121,11 @@ export type SolveRequest = {
     buildPlatformKinds?: Array<RequirementKind>;
     inactiveKinds?: Array<RequirementKind>;
   };
-  environment: { installed: Array<string>; locked: Array<string> };
+  environment: {
+    installed: Array<string>;
+    locked: Array<string>;
+    generationDigest?: Digest;
+  };
   policy: PolicyInput;
   semantics: SemanticsInput;
   objectives: Array<
@@ -1390,6 +1446,22 @@ export const DIGEST_PROJECTIONS = {
       excludePaths: ['/locations'],
       orderedSetPaths: ['/evidenceRefs', '/runtimeReferences'],
     },
+    {
+      id: 'environment-manifest-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: ['/requirements'],
+    },
+    {
+      id: 'environment-generation-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: ['/generationDigest'],
+      orderedSetPaths: ['/artifactSet', '/semanticLoss'],
+    },
   ],
 } as const;
 
@@ -1477,6 +1549,8 @@ export const schemaCatalog: Record<string, JsonValue> = {
               'build-recipe-v1',
               'recipe-output-v1',
               'substitute-v1',
+              'environment-manifest-v1',
+              'environment-generation-v1',
             ],
           },
           algorithm: {
@@ -1774,6 +1848,188 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: '#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json': {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json',
+    title: 'PREX environment manifests, generations, and state',
+    $defs: {
+      EnvironmentName: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9._-]{0,63}$',
+      },
+      EnvironmentManifest: {
+        $comment:
+          'The declarative input to an environment: what it should contain, for which platforms, under which policy. environment-manifest-v1 projection digest identifies it.',
+        type: 'object',
+        required: ['manifestVersion', 'name', 'requirements', 'target'],
+        properties: {
+          manifestVersion: {
+            const: '1',
+          },
+          name: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          description: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          requirements: {
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: 'model.schema.json#/$defs/Requirement',
+            },
+          },
+          target: {
+            $ref: 'model.schema.json#/$defs/TargetContext',
+          },
+          platforms: {
+            $ref: 'model.schema.json#/$defs/PlatformContexts',
+          },
+          policy: {
+            $ref: 'resolution.schema.json#/$defs/PolicyInput',
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentMember: {
+        type: 'object',
+        required: ['artifactDigest'],
+        properties: {
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          exactPurl: {
+            type: 'string',
+            pattern: '^pkg:[a-z0-9.+-]+/',
+            maxLength: 8192,
+          },
+          artifactDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          treeDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          outputs: {
+            type: 'array',
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentGeneration: {
+        $comment:
+          'An immutable record of one environment state. Generations are append-only and hash-linked through parentGenerationDigest; generationDigest is the environment-generation-v1 projection digest, which excludes itself.',
+        type: 'object',
+        required: [
+          'generationVersion',
+          'environmentName',
+          'sequence',
+          'createdAt',
+          'manifestDigest',
+          'artifactSet',
+          'generationDigest',
+        ],
+        properties: {
+          generationVersion: {
+            const: '1',
+          },
+          environmentName: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          sequence: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 9007199254740991,
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          parentGenerationDigest: {
+            $comment: 'Absent only for the first generation of an environment.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          manifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          lockfileDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          solutionDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          receiptDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          artifactSet: {
+            type: 'array',
+            maxItems: 100000,
+            items: {
+              $ref: '#/$defs/EnvironmentMember',
+            },
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          generationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentState: {
+        $comment:
+          'The single mutable pointer for an environment. Switching and rolling back replace this record atomically; generation records themselves are never rewritten. Retained generations are the reachability roots for collection.',
+        type: 'object',
+        required: [
+          'stateVersion',
+          'environmentName',
+          'currentGenerationDigest',
+          'retainedGenerationDigests',
+        ],
+        properties: {
+          stateVersion: {
+            const: '1',
+          },
+          environmentName: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          currentGenerationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          retainedGenerationDigests: {
+            $comment: 'MUST contain currentGenerationDigest.',
+            type: 'array',
+            minItems: 1,
+            maxItems: 10000,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
           },
         },
         additionalProperties: false,
@@ -2805,6 +3061,67 @@ export const schemaCatalog: Record<string, JsonValue> = {
         items: {
           $ref: 'common.schema.json#/$defs/ExternalRef',
         },
+      },
+      platforms: {
+        $ref: 'model.schema.json#/$defs/PlatformContexts',
+      },
+      selectedOutputs: {
+        $comment:
+          'Outputs pinned per selected package. Absent entries mean the default output.',
+        type: 'array',
+        maxItems: 100000,
+        items: {
+          type: 'object',
+          required: ['exactPurl', 'outputs'],
+          properties: {
+            exactPurl: {
+              type: 'string',
+              pattern: '^pkg:.*@',
+            },
+            outputs: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                $ref: 'model.schema.json#/$defs/OutputName',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      recipeDigests: {
+        $comment:
+          'build-recipe-v1 digests of the captured plans behind this lock.',
+        type: 'array',
+        maxItems: 100000,
+        uniqueItems: true,
+        items: {
+          $ref: 'common.schema.json#/$defs/Digest',
+        },
+      },
+      substitutes: {
+        type: 'array',
+        maxItems: 100000,
+        items: {
+          $ref: 'model.schema.json#/$defs/SubstituteDescriptor',
+        },
+      },
+      environment: {
+        $comment:
+          'The environment generation this lock was produced for, when it belongs to one.',
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: {
+            $ref: 'environment.schema.json#/$defs/EnvironmentName',
+          },
+          baseGenerationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
       },
       extensions: {
         $ref: 'common.schema.json#/$defs/Extensions',
@@ -5851,6 +6168,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
       {
         $ref: 'lockfile.schema.json',
       },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentManifest',
+      },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentGeneration',
+      },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentState',
+      },
     ],
   },
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json': {
@@ -6358,6 +6684,11 @@ export const schemaCatalog: Record<string, JsonValue> = {
                   type: 'string',
                   maxLength: 255,
                 },
+              },
+              generationDigest: {
+                $comment:
+                  'Binds installed/locked to a specific environment generation record.',
+                $ref: 'common.schema.json#/$defs/Digest',
               },
             },
             additionalProperties: false,

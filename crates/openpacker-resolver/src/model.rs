@@ -361,6 +361,10 @@ pub struct Environment {
     pub installed: Vec<String>,
     #[serde(default)]
     pub locked: Vec<String>,
+    /// Binds installed/locked state to an environment generation record. The
+    /// pure resolver does not interpret the ledger; it preserves the binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation_digest: Option<Digest>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

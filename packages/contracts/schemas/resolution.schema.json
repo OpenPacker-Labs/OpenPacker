@@ -368,6 +368,10 @@
               "type": "array",
               "maxItems": 100000,
               "items": { "type": "string", "maxLength": 255 }
+            },
+            "generationDigest": {
+              "$comment": "Binds installed/locked to a specific environment generation record.",
+              "$ref": "common.schema.json#/$defs/Digest"
             }
           },
           "additionalProperties": false

@@ -60,7 +60,9 @@
             "tree-manifest-v1",
             "build-recipe-v1",
             "recipe-output-v1",
-            "substitute-v1"
+            "substitute-v1",
+            "environment-manifest-v1",
+            "environment-generation-v1"
           ]
         },
         "algorithm": { "const": "sha256" },

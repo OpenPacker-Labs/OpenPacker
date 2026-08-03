@@ -868,6 +868,188 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/DependencyEdge",
       "valid": false,
       "levels": ["PREX-S"]
+    },
+    {
+      "name": "environment-manifest",
+      "file": "environment/manifest.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentManifest",
+      "valid": true,
+      "levels": ["PREX-S", "PREX-M"]
+    },
+    {
+      "name": "reject-environment-manifest-bad-name",
+      "file": "environment/manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/name",
+          "value": "Dev Shell"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentManifest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "environment-generation-first",
+      "file": "environment/generation-1.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "environment-generation-child",
+      "file": "environment/generation-2.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-generation-sequence-zero",
+      "file": "environment/generation-1.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/sequence",
+          "value": 0
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-generation-without-digest",
+      "file": "environment/generation-2.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/generationDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-generation-member-without-artifact-digest",
+      "file": "environment/generation-2.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/artifactSet/0/artifactDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "environment-state",
+      "file": "environment/state.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "environment-state-rolled-back",
+      "file": "environment/state-rolled-back.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-environment-state-without-retained",
+      "file": "environment/state.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/retainedGenerationDigests",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "solve-request-bound-to-generation",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "installed": [],
+            "locked": [],
+            "generationDigest": {
+              "algorithm": "sha256",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-solve-request-bad-generation-digest",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "installed": [],
+            "locked": [],
+            "generationDigest": {
+              "algorithm": "sha512",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "lockfile-with-environment-binding",
+      "file": "../golden/lockfile.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "name": "devshell",
+            "baseGenerationDigest": {
+              "algorithm": "sha256",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": true,
+      "levels": ["PREX-R"]
+    },
+    {
+      "name": "reject-lockfile-unknown-environment-key",
+      "file": "../golden/lockfile.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "name": "devshell",
+            "generation": 2
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": false,
+      "levels": ["PREX-R"]
     }
   ]
 }

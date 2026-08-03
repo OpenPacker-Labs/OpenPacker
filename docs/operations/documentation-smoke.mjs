@@ -72,7 +72,7 @@ const requiredDocuments = [
   'spec/prex/v1/semantics.md',
 ];
 for (const file of requiredDocuments) await access(join(root, file));
-for (let number = 1; number <= 25; number += 1) {
+for (let number = 1; number <= 27; number += 1) {
   const prefix = `${String(number).padStart(4, '0')}-`;
   if (!files.some((file) => file.startsWith(`docs/adr/${prefix}`)))
     throw new Error(`Required ADR ${prefix} is missing`);
