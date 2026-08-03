@@ -250,6 +250,55 @@
                 },
             },
         },
+      '/v1/openpacker/lock/import':
+        {
+          'post':
+            {
+              'operationId': 'lockImport',
+              'parameters':
+                [
+                  { '$ref': '#/components/parameters/CorrelationId' },
+                  { '$ref': '#/components/parameters/Traceparent' },
+                  { '$ref': '#/components/parameters/Tracestate' },
+                  { '$ref': '#/components/parameters/IdempotencyKey' },
+                  { '$ref': '#/components/parameters/Timeout' },
+                ],
+              'x-openpacker-extension': true,
+              'requestBody':
+                {
+                  'required': true,
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              '$ref': './schemas/extensions.schema.json#/$defs/LockImportRequest',
+                            },
+                        },
+                    },
+                },
+              'responses':
+                {
+                  '200':
+                    {
+                      'description':
+                        'Native lock capture solution and openpacker.lock.json',
+                      'content':
+                        {
+                          'application/json':
+                            {
+                              'schema':
+                                {
+                                  '$ref': './schemas/extensions.schema.json#/$defs/LockImportResponse',
+                                },
+                            },
+                        },
+                    },
+                  'default': { '$ref': '#/components/responses/Problem' },
+                },
+            },
+        },
       '/v1/openpacker/lifecycle/apply':
         {
           'post':

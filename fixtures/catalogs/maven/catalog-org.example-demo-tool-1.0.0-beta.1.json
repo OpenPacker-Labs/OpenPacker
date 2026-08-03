@@ -1,0 +1,11 @@
+{
+  "groupId": "org.example",
+  "artifactId": "demo-tool",
+  "version": "1.0.0-beta.1",
+  "packaging": "jar",
+  "name": "Demo Tool",
+  "description": "OpenPacker offline Maven catalog fixture (prerelease)",
+  "dependencies": [],
+  "openpackerSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "packageSize": 12
+}

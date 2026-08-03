@@ -2,8 +2,8 @@
 
 An `EcosystemCodec` is pure ecosystem semantics. It performs no HTTP,
 filesystem, credential, clock, or process operation. The interface is exported
-by `@openpacker/adapter-core`; npm, Cargo, and NuGet are the executable
-references.
+by `@openpacker/adapter-core`; npm, Cargo, NuGet, PyPI, Go modules, and Maven
+are the executable references.
 
 ## Required behavior
 
@@ -55,7 +55,14 @@ generic SemVer library:
   [V3 API overview](https://learn.microsoft.com/en-us/nuget/api/overview),
   [service index](https://learn.microsoft.com/en-us/nuget/api/service-index),
   and
-  [registration metadata](https://learn.microsoft.com/en-us/nuget/api/registration-base-url-resource).
+  [registration metadata](https://learn.microsoft.com/en-us/nuget/api/registration-base-url-resource);
+- PyPI: JSON project API and
+  [uv.lock](https://docs.astral.sh/uv/concepts/projects/layout/) as the primary
+  freeze format for lock import;
+- Go modules: [module proxy protocol](https://go.dev/ref/mod#goproxy-protocol)
+  and `go.sum` as the primary freeze format;
+- Maven: repository layout / `maven-metadata.xml` and Gradle `gradle.lockfile`
+  as the primary freeze format.
 
 These documents define source behavior. PREX still preserves the original native
 range and metadata whenever an exact VERS translation is impossible.

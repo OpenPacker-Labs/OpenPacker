@@ -16,6 +16,8 @@ import type {
   JsonValue,
   LifecycleApplyRequest,
   LifecycleApplyResponse,
+  LockImportRequest,
+  LockImportResponse,
   MaterializeRequest,
   MaterializeResponse,
   NormalizeRequest,
@@ -242,6 +244,12 @@ export class OpenPackerClient {
       input,
       options,
     );
+  }
+  lockImport(
+    input: LockImportRequest,
+    options?: RequestOptions,
+  ): Promise<RawResponse<LockImportResponse>> {
+    return this.#request('POST', '/v1/openpacker/lock/import', input, options);
   }
   lifecycleApply(
     input: LifecycleApplyRequest,

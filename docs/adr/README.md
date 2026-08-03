@@ -21,6 +21,8 @@ Accepted decisions:
 17. [Dual Node module compatibility](0017-dual-module-node-compatibility.md)
 18. [No Epoch or ATProto production dependency](0018-no-epoch-coupling.md)
 19. [Cross-runtime property and fuzz authority](0019-cross-runtime-property-fuzzing.md)
+20. [Control plane, not supersession](0020-control-plane-not-supersession.md)
+21. [Native lock import](0021-native-lock-import.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

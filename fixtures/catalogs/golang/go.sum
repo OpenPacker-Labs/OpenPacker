@@ -1,0 +1,6 @@
+# Deterministic OpenPacker fixture; no Go command is run to capture it.
+github.com/openpacker/cfg-if v1.0.0 h1:626wUn+gwDUgEU151DbfWuNie9lDoQy6qbooQN8q50Q=
+github.com/openpacker/cfg-if v1.0.0/go.mod h1:K0Rt4DzXghseMLmuhTjgRPCemCHcaU/pqCyLqawHoTc=
+github.com/openpacker/demo-zstd v1.0.0 h1:/xd4xipvyZMZERnuu3rPXterf1ltnibuQyR/lyUtCEQ=
+github.com/openpacker/demo-zstd v1.0.0/go.mod h1:YRAgWCg7LWT9AzVMAk2NbAcac3hYK32/rfdG83bvTQU=
+github.com/openpacker/demo-zstd v0.0.0-20260101120000-abcdefabcdef h1:4LcUv5A0iyW5GOComY9bdFGuXSdr4g1Gww1PT3JSZHA=

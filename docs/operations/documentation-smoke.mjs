@@ -40,6 +40,8 @@ const requiredDocuments = [
   'docs/operations/runtime-clients.md',
   'docs/operations/storage-deployment.md',
   'docs/operations/trust-lifecycle-policy.md',
+  'docs/product/leverage-guide.md',
+  'docs/product/user-surface.md',
   'docs/protocol/capabilities-errors-media.md',
   'docs/protocol/events.md',
   'docs/protocol/identity-canonicalization.md',
@@ -58,7 +60,7 @@ const requiredDocuments = [
   'spec/prex/v1/semantics.md',
 ];
 for (const file of requiredDocuments) await access(join(root, file));
-for (let number = 1; number <= 18; number += 1) {
+for (let number = 1; number <= 21; number += 1) {
   const prefix = `${String(number).padStart(4, '0')}-`;
   if (!files.some((file) => file.startsWith(`docs/adr/${prefix}`)))
     throw new Error(`Required ADR ${prefix} is missing`);

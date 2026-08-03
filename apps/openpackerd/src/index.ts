@@ -422,6 +422,39 @@ export function createOpenPackerDaemon(
   );
   post(
     app,
+    '/v1/openpacker/lock/import',
+    store,
+    maximumTimeout,
+    contractValidator,
+    `${EXTENSION_SCHEMA}LockImportRequest`,
+    `${EXTENSION_SCHEMA}LockImportResponse`,
+    async (body, context) => {
+      const result = await options.operations.lockImport(
+        body as unknown as import('@openpacker/contracts').LockImportRequest,
+        context,
+      );
+      await store.putReceipt(
+        result.solveResponse.signedReceipt ??
+          result.solveResponse.unsignedReceipt,
+      );
+      await emitEvent(
+        store,
+        clock,
+        context,
+        'org.openpacker.resolution.completed',
+        formatDigestValue(result.solveResponse.solution.solutionDigest),
+        {
+          schemaVersion: '1',
+          solutionDigest: result.solveResponse.solution.solutionDigest,
+          requestDigest: result.solveResponse.requestDigest,
+          universeDigest: result.solveResponse.universeDigest,
+        },
+      );
+      return result as never;
+    },
+  );
+  post(
+    app,
     '/v1/openpacker/lifecycle/apply',
     store,
     maximumTimeout,

@@ -6,7 +6,7 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 
-export type Ecosystem = 'npm' | 'cargo' | 'nuget';
+export type Ecosystem = 'npm' | 'cargo' | 'nuget' | 'pypi' | 'golang' | 'maven';
 
 export interface NativeCoordinate {
   ecosystem: Ecosystem;
@@ -780,7 +780,7 @@ export function evaluateSemverRange(
 }
 
 export interface SemverRangeOptions {
-  scheme: 'npm' | 'cargo';
+  scheme: 'npm' | 'cargo' | 'golang';
   bare: 'exact' | 'caret';
   commaAnd?: boolean;
   hyphenRanges?: boolean;

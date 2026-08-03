@@ -1,0 +1,17 @@
+{
+  "path": "github.com/openpacker/demo-zstd",
+  "version": "v1.0.0",
+  "time": "2026-01-01T12:00:00Z",
+  "go": "1.22",
+  "requires": [
+    {
+      "path": "github.com/openpacker/cfg-if",
+      "version": "v1.0.0",
+      "indirect": false
+    }
+  ],
+  "buildConstraints": ["linux && amd64"],
+  "h1": "h1:/xd4xipvyZMZERnuu3rPXterf1ltnibuQyR/lyUtCEQ=",
+  "size": 34,
+  "retracted": false
+}

@@ -307,6 +307,7 @@ describe('openpackerd', () => {
         'explain',
         'catalogImport',
         'catalogSnapshot',
+        'lockImport',
         'lifecycleApply',
         'pack',
         'publish',

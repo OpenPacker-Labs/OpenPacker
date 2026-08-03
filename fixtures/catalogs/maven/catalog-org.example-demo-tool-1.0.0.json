@@ -1,0 +1,28 @@
+{
+  "groupId": "org.example",
+  "artifactId": "demo-tool",
+  "version": "1.0.0",
+  "packaging": "jar",
+  "name": "Demo Tool",
+  "description": "OpenPacker offline Maven catalog fixture",
+  "dependencies": [
+    {
+      "groupId": "org.apache.commons",
+      "artifactId": "commons-lang3",
+      "version": "[3.12.0,4.0.0)",
+      "scope": "compile"
+    },
+    {
+      "groupId": "org.example",
+      "artifactId": "demo-tool",
+      "version": "1.0.0",
+      "type": "jar",
+      "classifier": "sources",
+      "scope": "provided",
+      "optional": true
+    }
+  ],
+  "openpackerSha256": "dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d",
+  "packageSize": 28,
+  "packageUrl": "https://fixtures.openpacker.invalid/maven/org/example/demo-tool/1.0.0/demo-tool-1.0.0.jar"
+}

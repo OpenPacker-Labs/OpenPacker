@@ -111,6 +111,132 @@
     },
     "PublishResponse": {
       "$ref": "#/$defs/PublishRequest"
+    },
+    "LockImportRequest": {
+      "type": "object",
+      "required": ["lockfile"],
+      "properties": {
+        "lockfile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16777216
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "package-lock",
+            "cargo-lock",
+            "nuget-assets",
+            "nuget-packages-lock",
+            "uv-lock",
+            "go-sum",
+            "gradle-lockfile"
+          ]
+        },
+        "ecosystem": {
+          "type": "string",
+          "enum": ["npm", "cargo", "nuget", "pypi", "golang", "maven"]
+        },
+        "evaluationTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "target": { "$ref": "model.schema.json#/$defs/TargetContext" },
+        "policy": { "$ref": "resolution.schema.json#/$defs/PolicyInput" },
+        "objectives": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LockImportResponse": {
+      "type": "object",
+      "required": ["lockCapture", "solveResponse", "lockfile", "semanticLoss"],
+      "properties": {
+        "lockCapture": {
+          "type": "object",
+          "required": ["format", "formatVersion", "packages", "semanticLoss"],
+          "properties": {
+            "format": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "formatVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "sourceDigest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "packages": {
+              "type": "array",
+              "maxItems": 100000,
+              "items": {
+                "type": "object",
+                "required": [
+                  "exactPurl",
+                  "nativeCoordinate",
+                  "dependencies",
+                  "native"
+                ],
+                "properties": {
+                  "exactPurl": {
+                    "type": "string",
+                    "pattern": "^pkg:.*@",
+                    "maxLength": 8192
+                  },
+                  "nativeCoordinate": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "resolved": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "artifactDigest": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "dependencies": {
+                    "type": "object",
+                    "maxProperties": 10000,
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 4096
+                    }
+                  },
+                  "native": true
+                },
+                "additionalProperties": false
+              }
+            },
+            "semanticLoss": {
+              "type": "array",
+              "maxItems": 10000,
+              "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "solveResponse": {
+          "$ref": "resolution.schema.json#/$defs/SolveResponse"
+        },
+        "lockfile": {
+          "$ref": "lockfile.schema.json"
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

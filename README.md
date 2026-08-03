@@ -6,12 +6,22 @@ beyond OCI. PREX standardizes package identity, constraints, resolution, proofs,
 receipts, and immutable artifact descriptions without pretending that all
 package managers share installation or build semantics.
 
-OpenPacker is not a replacement for npm, Cargo, NuGet, OCI, or native package
-managers. It preserves native package bytes and ecosystem-specific metadata;
-OCI/ORAS transport those bytes, OCM describes deliverable composition, and PREX
-describes resolution. OpenPacker is independent of Epoch. Epoch can consume its
+OpenPacker is a **package control plane**, not a command-compatible supersession
+of npm, pip, Cargo, NuGet, or other native package managers. PREX normalizes
+identity, constraints, solve, proof, receipts, and artifacts; native managers
+remain authoritative for install, build, and runtime scripts. OCI/ORAS transport
+unchanged native bytes, OCM describes deliverable composition, and tools such as
+mise proxy or integrate while PREX proves and pins. Offline-first `import-lock`
+captures native freeze formats under `native-capture-v1` without claiming an
+independent solve. OpenPacker is independent of Epoch. Epoch can consume its
 SDK, events, receipts, and artifact descriptors through public contracts, but no
 production OpenPacker package depends on Epoch or ATProto.
+
+Product framing:
+[control-plane ADR](docs/adr/0020-control-plane-not-supersession.md),
+[native lock import](docs/adr/0021-native-lock-import.md),
+[leverage guide](docs/product/leverage-guide.md), and
+[user surface](docs/product/user-surface.md).
 
 ## Five-minute offline demo
 

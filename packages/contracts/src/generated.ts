@@ -436,6 +436,72 @@ export type LifecycleState = {
   warnings: Array<Warning>;
   derivationEventIds?: Array<string>;
 };
+export type LockImportRequest = {
+  lockfile: string;
+  format?:
+    | 'auto'
+    | 'package-lock'
+    | 'cargo-lock'
+    | 'nuget-assets'
+    | 'nuget-packages-lock'
+    | 'uv-lock'
+    | 'go-sum'
+    | 'gradle-lockfile';
+  ecosystem?: 'npm' | 'cargo' | 'nuget' | 'pypi' | 'golang' | 'maven';
+  evaluationTime?: string;
+  target?: TargetContext;
+  policy?: PolicyInput;
+  objectives?: Array<string>;
+};
+export type LockImportResponse = {
+  lockCapture: {
+    format: string;
+    formatVersion: string;
+    sourceDigest?: string;
+    packages: Array<{
+      exactPurl: string;
+      nativeCoordinate: string;
+      resolved?: string;
+      artifactDigest?: string;
+      dependencies: { [key: string]: string };
+      native: JsonValue;
+    }>;
+    semanticLoss: Array<SemanticLoss>;
+  };
+  solveResponse: SolveResponse;
+  lockfile: {
+    schemaVersion: '1';
+    protocolVersion: '1.0-draft';
+    rootRequirements: Array<Requirement>;
+    target: TargetContext;
+    semanticsProfile:
+      | 'native-capture-v1'
+      | 'native-validated-v1'
+      | 'prex-calculus-subset-v1';
+    objectiveOrdering: Array<
+      | 'satisfy-hard-constraints'
+      | 'preserve-locks'
+      | 'minimize-changes'
+      | 'minimize-package-count'
+      | 'exclude-lifecycle-denied'
+      | 'prefer-stable'
+      | 'prefer-highest-native-version'
+      | 'canonical-lexical-tie-break'
+    >;
+    selectedExactPurls: Array<string>;
+    dependencyEdges: Array<DependencyEdge>;
+    artifactDescriptors: Array<ArtifactDescriptor>;
+    ocmReferences: Array<ExternalRef>;
+    sourceSnapshotDigests: Array<Digest>;
+    lifecycleRoot: Digest;
+    policyDigest: Digest;
+    solutionDigest: Digest;
+    receiptDigest: Digest;
+    externalRefs: Array<ExternalRef>;
+    extensions?: Extensions;
+  };
+  semanticLoss: Array<SemanticLoss>;
+};
 export type MaterializeRequest = {
   subject:
     | { type: 'purl'; exactPurl: string }
@@ -2346,6 +2412,148 @@ export const schemaCatalog: Record<string, JsonValue> = {
       PublishResponse: {
         $ref: '#/$defs/PublishRequest',
       },
+      LockImportRequest: {
+        type: 'object',
+        required: ['lockfile'],
+        properties: {
+          lockfile: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 16777216,
+          },
+          format: {
+            type: 'string',
+            enum: [
+              'auto',
+              'package-lock',
+              'cargo-lock',
+              'nuget-assets',
+              'nuget-packages-lock',
+              'uv-lock',
+              'go-sum',
+              'gradle-lockfile',
+            ],
+          },
+          ecosystem: {
+            type: 'string',
+            enum: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
+          },
+          evaluationTime: {
+            type: 'string',
+            format: 'date-time',
+          },
+          target: {
+            $ref: 'model.schema.json#/$defs/TargetContext',
+          },
+          policy: {
+            $ref: 'resolution.schema.json#/$defs/PolicyInput',
+          },
+          objectives: {
+            type: 'array',
+            maxItems: 32,
+            items: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 128,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      LockImportResponse: {
+        type: 'object',
+        required: ['lockCapture', 'solveResponse', 'lockfile', 'semanticLoss'],
+        properties: {
+          lockCapture: {
+            type: 'object',
+            required: ['format', 'formatVersion', 'packages', 'semanticLoss'],
+            properties: {
+              format: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 128,
+              },
+              formatVersion: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 64,
+              },
+              sourceDigest: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 256,
+              },
+              packages: {
+                type: 'array',
+                maxItems: 100000,
+                items: {
+                  type: 'object',
+                  required: [
+                    'exactPurl',
+                    'nativeCoordinate',
+                    'dependencies',
+                    'native',
+                  ],
+                  properties: {
+                    exactPurl: {
+                      type: 'string',
+                      pattern: '^pkg:.*@',
+                      maxLength: 8192,
+                    },
+                    nativeCoordinate: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 8192,
+                    },
+                    resolved: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 8192,
+                    },
+                    artifactDigest: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 512,
+                    },
+                    dependencies: {
+                      type: 'object',
+                      maxProperties: 10000,
+                      additionalProperties: {
+                        type: 'string',
+                        maxLength: 4096,
+                      },
+                    },
+                    native: true,
+                  },
+                  additionalProperties: false,
+                },
+              },
+              semanticLoss: {
+                type: 'array',
+                maxItems: 10000,
+                items: {
+                  $ref: 'common.schema.json#/$defs/SemanticLoss',
+                },
+              },
+            },
+            additionalProperties: false,
+          },
+          solveResponse: {
+            $ref: 'resolution.schema.json#/$defs/SolveResponse',
+          },
+          lockfile: {
+            $ref: 'lockfile.schema.json',
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
     },
   },
   'https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json': {
@@ -2380,7 +2588,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
       rootRequirements: {
         type: 'array',
-        minItems: 1,
+        minItems: 0,
         maxItems: 10000,
         items: {
           $ref: 'model.schema.json#/$defs/Requirement',
@@ -5367,7 +5575,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
         properties: {
           requirements: {
             type: 'array',
-            minItems: 1,
+            minItems: 0,
             maxItems: 10000,
             items: {
               $ref: 'model.schema.json#/$defs/Requirement',

@@ -31,14 +31,18 @@
   "dependencies": {
     "@openpacker/adapter-cargo": "0.1.0",
     "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/adapter-golang": "0.1.0",
+    "@openpacker/adapter-maven": "0.1.0",
     "@openpacker/adapter-npm": "0.1.0",
     "@openpacker/adapter-nuget": "0.1.0",
+    "@openpacker/adapter-pypi": "0.1.0",
     "@openpacker/artifact-model": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0",
     "@openpacker/conformance": "0.1.0",
     "@openpacker/embedded": "0.1.0",
     "@openpacker/events": "0.1.0",
+    "@openpacker/lock-import": "0.1.0",
     "@openpacker/receipts": "0.1.0",
     "@openpacker/trust": "0.1.0",
     "fastify": "5.6.1"

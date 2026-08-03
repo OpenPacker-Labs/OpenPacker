@@ -61,6 +61,7 @@ const COMMANDS = new Set([
   'enumerate',
   'inspect',
   'solve',
+  'resolve',
   'explain',
   'materialize',
   'verify',
@@ -68,6 +69,7 @@ const COMMANDS = new Set([
   'publish',
   'receipt',
   'catalog',
+  'import-lock',
   'lifecycle',
   'export',
   'serve',
@@ -179,7 +181,10 @@ async function execute(
     case 'inspect':
       return client.inspect(input as never, requestOptions);
     case 'solve':
+    case 'resolve':
       return client.solve(input as never, requestOptions);
+    case 'import-lock':
+      return client.lockImport(input as never, requestOptions);
     case 'explain':
       return client.explain(input as never, requestOptions);
     case 'materialize': {
@@ -231,11 +236,13 @@ async function commandInput(
   args: ParsedArguments,
   io: CliIo,
 ): Promise<JsonValue> {
+  if (args.command === 'import-lock')
+    return importLockInput(args, io, await optionalPolicy(args));
   let value: JsonValue;
   if (
     option(args, 'input') !== undefined ||
     args.positionals.length === 0 ||
-    ['solve', 'verify', 'pack', 'publish'].includes(args.command) ||
+    ['solve', 'verify', 'pack', 'publish', 'resolve'].includes(args.command) ||
     args.subcommand !== undefined
   ) {
     value = await inputObject(args, io);
@@ -286,6 +293,56 @@ async function inputObject(
   if (typeof value !== 'object' || value === null)
     throw new InputError('Input must be a JSON object');
   return value as JsonValue;
+}
+
+async function importLockInput(
+  args: ParsedArguments,
+  io: CliIo,
+  policy: JsonValue | undefined,
+): Promise<JsonValue> {
+  const source =
+    option(args, 'input') ??
+    (args.positionals[0] !== undefined ? args.positionals[0] : undefined);
+  if (source === undefined)
+    throw new UsageError('import-lock requires --input <lockfile|->');
+  const text =
+    source === '-' ? await readStdin(io.stdin) : await readFile(source, 'utf8');
+  // Accept either a LockImportRequest JSON object or a raw native lockfile body.
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof parsed.lockfile === 'string') {
+        const result: Record<string, JsonValue> = {
+          ...(parsed as unknown as Record<string, JsonValue>),
+        };
+        const format = option(args, 'format');
+        if (format) result.format = format;
+        const ecosystem = option(args, 'ecosystem');
+        if (ecosystem) result.ecosystem = ecosystem;
+        const evaluationTime = option(args, 'evaluation-time');
+        if (evaluationTime) result.evaluationTime = evaluationTime;
+        if (policy !== undefined) result.policy = policy;
+        const target = option(args, 'target');
+        if (target) result.target = parseTarget(target);
+        return result;
+      }
+    } catch {
+      // fall through — treat as raw lock JSON (e.g. package-lock)
+    }
+  }
+  const result: Record<string, JsonValue> = { lockfile: text };
+  const format = option(args, 'format');
+  if (format) result.format = format;
+  else result.format = 'auto';
+  const ecosystem = option(args, 'ecosystem');
+  if (ecosystem) result.ecosystem = ecosystem;
+  const evaluationTime = option(args, 'evaluation-time');
+  if (evaluationTime) result.evaluationTime = evaluationTime;
+  if (policy !== undefined) result.policy = policy;
+  const target = option(args, 'target');
+  if (target) result.target = parseTarget(target);
+  return result;
 }
 
 function applyOverrides(
@@ -767,7 +824,7 @@ class InputError extends Error {
 }
 
 function help(): string {
-  return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve explain materialize verify pack publish\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
+  return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve resolve explain materialize verify pack publish\n  import-lock\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nimport-lock: --input <lockfile> [--format auto|package-lock|cargo-lock|nuget-assets|...] [--json] [--output <lock.json>]\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href)

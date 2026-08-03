@@ -10,6 +10,15 @@
 | [mise backend](mise.md)                                           | PREX enumeration and verified isolated tool installation                             |
 | [Epoch consumption](epoch.md)                                     | Janus-owned downstream boundary and canonical-byte preservation                      |
 
+Product framing for how integrations fit the control plane:
+
+| Guide                                                              | Subject                                                                   |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [Leverage guide](../product/leverage-guide.md)                     | Reuse versus build; Nexus/mise/Epoch boundaries; codec and provider seams |
+| [User surface](../product/user-surface.md)                         | Recommended CLI/API including import-lock, resolve, export, and catalog   |
+| [Control plane ADR](../adr/0020-control-plane-not-supersession.md) | Package control plane, not native PM supersession                         |
+| [Native lock import ADR](../adr/0021-native-lock-import.md)        | Offline-first native-capture-v1 lock import                               |
+
 An extension advertises its ID/version, supported PREX versions, capabilities,
 configuration schema, determinism guarantees, security boundary, and
 diagnostics. It must not add undeclared top-level PREX fields.

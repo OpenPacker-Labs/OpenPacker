@@ -28,6 +28,8 @@ import type {
   JsonValue,
   LifecycleApplyRequest,
   LifecycleApplyResponse,
+  LockImportRequest,
+  LockImportResponse,
   MaterializeRequest,
   MaterializeResponse,
   NormalizeRequest,
@@ -59,7 +61,15 @@ import {
 import { NpmCodec } from '@openpacker/adapter-npm';
 import { CargoCodec } from '@openpacker/adapter-cargo';
 import { NugetCodec } from '@openpacker/adapter-nuget';
+import { PypiCodec } from '@openpacker/adapter-pypi';
+import { GolangCodec } from '@openpacker/adapter-golang';
+import { MavenCodec } from '@openpacker/adapter-maven';
 import type { EmbeddedResolver } from '@openpacker/embedded';
+import {
+  completeLockImport,
+  planNativeLockImport,
+  type LockFormat,
+} from '@openpacker/lock-import';
 import { signReceipt, verifySignedReceipt } from '@openpacker/receipts';
 import type { Signer, Verifier } from '@openpacker/trust';
 import type { OpenPackerStateStore } from './store.js';
@@ -112,6 +122,10 @@ export interface PrexOperations {
     input: CatalogSnapshotRequest,
     context: OperationContext,
   ): Promise<CatalogSnapshotResponse>;
+  lockImport(
+    input: LockImportRequest,
+    context: OperationContext,
+  ): Promise<LockImportResponse>;
   lifecycleApply(
     input: LifecycleApplyRequest,
     context: OperationContext,
@@ -170,6 +184,9 @@ export function createReferenceOperations(
     ['npm', new NpmCodec()],
     ['cargo', new CargoCodec()],
     ['nuget', new NugetCodec()],
+    ['pypi', new PypiCodec()],
+    ['golang', new GolangCodec()],
+    ['maven', new MavenCodec()],
   ]);
   const explanations = new Map<string, ExplanationGraph>();
   const instances = () => options.universe.packages;
@@ -571,6 +588,72 @@ export function createReferenceOperations(
       return { snapshots };
     },
 
+    async lockImport(input) {
+      try {
+        const solveInput = await planNativeLockImport(input.lockfile, {
+          ...(input.format === undefined
+            ? {}
+            : { format: input.format as LockFormat }),
+          ...(input.ecosystem === undefined
+            ? {}
+            : { ecosystem: input.ecosystem }),
+          ...(input.evaluationTime === undefined
+            ? {}
+            : { evaluationTime: input.evaluationTime }),
+          ...(input.target === undefined ? {} : { target: input.target }),
+          ...(input.policy === undefined ? {} : { policy: input.policy }),
+          ...(input.objectives === undefined
+            ? {}
+            : { objectives: input.objectives as SolveRequest['objectives'] }),
+          codecs,
+        });
+        const result = await completeLockImport(solveInput, options.resolver, {
+          providerId: options.meta.provider.id,
+          implementation: options.meta.provider.implementation,
+          version: options.meta.provider.version,
+          resolverBuildDigest: options.resolverBuildDigest,
+          protocolVersion: options.meta.protocolVersion,
+        });
+        return {
+          lockCapture: {
+            format: result.lockCapture.format,
+            formatVersion: result.lockCapture.formatVersion,
+            ...(result.lockCapture.sourceDigest === undefined
+              ? {}
+              : { sourceDigest: result.lockCapture.sourceDigest }),
+            packages: result.lockCapture.packages.map((entry) => ({
+              exactPurl: entry.exactPurl,
+              nativeCoordinate: entry.nativeCoordinate,
+              ...(entry.resolved === undefined
+                ? {}
+                : { resolved: entry.resolved }),
+              ...(entry.artifactDigest === undefined
+                ? {}
+                : { artifactDigest: entry.artifactDigest }),
+              dependencies: { ...entry.dependencies },
+              native: entry.native as JsonValue,
+            })),
+            semanticLoss: [...result.lockCapture.semanticLoss],
+          },
+          solveResponse: result.solveResponse,
+          lockfile: result.lockfile,
+          semanticLoss: result.semanticLoss,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          message.includes('INVALID_LOCKFILE') ||
+          message.includes('lockfile')
+        )
+          throw operationError('INVALID_REQUEST', message);
+        if (message.includes('unsupported semantics profile:'))
+          throw operationError('UNSUPPORTED_SEMANTICS_PROFILE', message);
+        if (message.includes('UNSATISFIABLE:'))
+          throw operationError('UNSATISFIABLE', message);
+        throw error;
+      }
+    },
+
     lifecycleApply: options.extensions.lifecycleApply,
     pack: options.extensions.pack,
     publish: options.extensions.publish,
@@ -918,8 +1001,8 @@ export function defaultCapabilities(meta: ProtocolMeta): Capabilities {
       'PREX-R',
       'PREX-C',
     ],
-    purlTypes: ['npm', 'cargo', 'nuget'],
-    versSchemes: ['npm', 'cargo', 'nuget'],
+    purlTypes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
+    versSchemes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
     semanticsProfiles: [
       'native-capture-v1',
       'native-validated-v1',
