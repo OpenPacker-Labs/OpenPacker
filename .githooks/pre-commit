@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+# OpenPacker agent/git pre-commit: impact-scoped staged gates (not full CI).
+cd "$(git rev-parse --show-toplevel)"
+if [ -n "${OPENPACKER_SKIP_HOOKS:-}" ]; then
+  echo "pre-commit: skipped (OPENPACKER_SKIP_HOOKS)"
+  exit 0
+fi
+node scripts/agent-check.mjs --staged

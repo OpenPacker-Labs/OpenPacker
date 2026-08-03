@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+set -eu
+# Soft conventional-commit hint (does not block free-form emergency messages).
+msg_file="$1"
+if [ -z "$msg_file" ] || [ ! -f "$msg_file" ]; then
+  exit 0
+fi
+# Allow merge/revert/fixup commits without nagging.
+if grep -Eq '^(Merge |Revert |fixup! |squash! )' "$msg_file"; then
+  exit 0
+fi
+if ! grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|build|ci|style)(\(.+\))?: .+' "$msg_file"; then
+  echo "commit-msg: prefer Conventional Commits (feat|fix|docs|chore|…): summary" >&2
+  # Advisory only — agents may still commit; exit 0.
+fi
+exit 0

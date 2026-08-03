@@ -36,15 +36,29 @@ ADRs + `spec/prex/v1` when draft/Linear are not in use.
 
 ## Quality gates (OpenPacker)
 
-| Intent                 | Command                                                   |
-| ---------------------- | --------------------------------------------------------- |
-| Package unit tests     | `npm run test --workspace <pkg>`                          |
-| Typecheck package      | `npm run typecheck --workspace <pkg>`                     |
-| Contracts / schemas    | `npm run check:contracts` / build `@openpacker/contracts` |
-| Docs                   | `npm run test:docs`                                       |
-| Conformance            | `npm run test:conformance`                                |
-| Full offline aggregate | `npm run verify`                                          |
-| Skill mirror integrity | `node scripts/check-skill-mirrors.mjs`                    |
+| Intent                       | Command                                              |
+| ---------------------------- | ---------------------------------------------------- |
+| **Agent impact-scoped gate** | `npm run agent:check` / `npm run agent:check:staged` |
+| Package unit tests           | `npm run test --workspace <pkg>`                     |
+| Typecheck package            | `npm run typecheck --workspace <pkg>`                |
+| Contracts / schemas          | `npm run check:contracts`                            |
+| Docs                         | `npm run test:docs`                                  |
+| Conformance                  | `npm run test:conformance`                           |
+| Full offline aggregate       | `npm run verify`                                     |
+| Skill mirror integrity       | `npm run skills:mirror-check`                        |
+| Install git hooks            | `npm run hooks:install` (also `prepare`)             |
+
+### Git hooks + agent hooks
+
+| Hook       | Path                   | Behavior                         |
+| ---------- | ---------------------- | -------------------------------- |
+| pre-commit | `.githooks/pre-commit` | `agent:check --staged`           |
+| pre-push   | `.githooks/pre-push`   | `agent:check --base=origin/main` |
+| commit-msg | `.githooks/commit-msg` | Conventional-commit advisory     |
+
+`core.hooksPath` → `.githooks` via `scripts/install-hooks.mjs`. Opt out:
+`OPENPACKER_SKIP_HOOKS=1`. **Prefer hooks/`agent:check` over remote CI** for
+agent loops; use `npm run verify` only for broad pre-merge validation.
 
 Live registry tests are opt-in and never substitute for offline failure.
 
