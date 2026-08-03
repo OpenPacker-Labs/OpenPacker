@@ -1,0 +1,14 @@
+# Example Open Package Manager project (offline fixture)
+[project]
+name = "opm-example"
+ecosystems = ["npm", "cargo", "pypi"]
+
+[packages.demo-tool]
+purl = "pkg:npm/@openpacker/demo-tool"
+version = "1.1.0"
+# Relative to this example dir; points at repo fixtures
+source = "file:../../fixtures/opm/demo-tool-1.1.0.tgz"
+
+[options]
+offline = true
+layout = "opm"

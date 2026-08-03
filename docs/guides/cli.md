@@ -1,13 +1,16 @@
-# OpenPacker CLI — package management recipes
+# `openpacker` CLI — PREX control plane recipes
 
-This is the practical guide to **`openpacker`**: how to pin locks, look up
-packages, resolve graphs, and export digests from the shell.
+> **Day-to-day package management** (`opm add` / `opm install` / `opmx`) lives
+> in **[opm.md](opm.md)**. This page is the **advanced PREX / control-plane**
+> CLI.
 
-OpenPacker is **not** a replacement for `npm install` / `cargo build` /
-`pip install`. It is a **package control plane**: normalize identity, resolve or
-capture dependency selections, prove them, and write portable digests.
+This guide covers **`openpacker`**: pin locks, look up packages, resolve graphs,
+and export digests from the shell.
 
-If you only read one docs page for day-to-day use, read this one.
+OpenPacker is a **package control plane** plus an **`opm` project manager**. The
+control plane normalizes identity, resolves or captures dependency selections,
+proves them, and writes portable digests. It does not claim full command
+compatibility with `npm install` / `cargo build` / `pip install`.
 
 ---
 

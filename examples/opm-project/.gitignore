@@ -1,0 +1,4 @@
+.opm/store/
+.opm/bin/
+.opm/links/
+.opm/project.json

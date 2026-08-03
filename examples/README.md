@@ -1,6 +1,10 @@
 # OpenPacker examples
 
-**Package management CLI (start here):**  
+**Package manager (start here):**  
+**[docs/guides/opm.md](../docs/guides/opm.md)** ·
+**[opm-project/](opm-project/)**
+
+**PREX control-plane CLI:**  
 **[docs/guides/cli.md](../docs/guides/cli.md)** · **[cli/](cli/)** sample inputs
 
 Library packages below are compile-checked and tested offline.
@@ -9,6 +13,7 @@ Library packages below are compile-checked and tested offline.
 
 | Package                                 | Path                                       | Demonstrates                                                                                     | Run                                                              |
 | --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| _(opm project)_                         | [`opm-project/`](opm-project/)             | `opm sync` / `opmx` offline package manager demo                                                 | see `opm-project/README.md`                                      |
 | _(CLI inputs)_                          | [`cli/`](cli/)                             | Copy-paste `openpacker` commands + JSON                                                          | see `cli/README.md`                                              |
 | `@openpacker/example-basic-client`      | [`basic-client/`](basic-client/)           | SDK discover → normalize; keep `rawBytes`                                                        | `npm run test --workspace @openpacker/example-basic-client`      |
 | `@openpacker/example-embedded-resolver` | [`embedded-resolver/`](embedded-resolver/) | Pure in-process solve, independent proof check, bounded oracle                                   | `npm run test --workspace @openpacker/example-embedded-resolver` |

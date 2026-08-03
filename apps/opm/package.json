@@ -1,0 +1,39 @@
+{
+  "name": "@openpacker/opm",
+  "version": "0.1.0",
+  "description": "Open Package Manager CLI (opm) and package executor (opmx)",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "opm": "./dist/opm.js",
+    "opmx": "./dist/opmx.js",
+    "opkg": "./dist/opm.js",
+    "opkgm": "./dist/opm.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/opm.d.ts",
+      "import": "./dist/opm.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/opm-project": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
+  }
+}
