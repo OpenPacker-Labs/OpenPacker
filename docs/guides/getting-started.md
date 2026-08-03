@@ -19,7 +19,7 @@ pip, Cargo, or NuGet install semantics. See
 
 | Tool                | Notes                                                   |
 | ------------------- | ------------------------------------------------------- |
-| Node.js             | `^20.20.0 \|\| >=22.13.0` (README demos target Node 24) |
+| Node.js             | `^22.13.0 \|\| >=24` (demos target Node 24) |
 | npm                 | 11.x with the committed lockfile (`npm ci`)             |
 | Rust                | Stable toolchain (2024 edition workspace)               |
 | wasm-bindgen-cli    | Pinned `0.2.126` for WASM builds                        |

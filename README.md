@@ -49,7 +49,7 @@ Full narratives: **[`docs/product/use-cases.md`](docs/product/use-cases.md)**.
 
 ### Prerequisites
 
-Node `^20.20.0 || >=22.13.0`, npm 11, stable Rust. For the full demo also
+Node `^22.13.0 || >=24`, npm 11, stable Rust. For the full demo also
 wasm-bindgen-cli `0.2.126`, Playwright Chromium, and mise `2026.7.13`.
 
 ```sh
