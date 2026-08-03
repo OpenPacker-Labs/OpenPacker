@@ -1,0 +1,530 @@
+{
+  "universeVersion": "1",
+  "packages": [
+    {
+      "nodeId": "sha256:a76cef2b02b0dd9465f6e8283e5abfbb8fe572e841d392edc019520fc9b596b0",
+      "identity": {
+        "canonicalPurl": "pkg:nix/libgreet",
+        "exactPurl": "pkg:nix/libgreet@1.0?outhash=b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c&output=out&plan=97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f",
+        "purlType": "nix",
+        "name": "libgreet",
+        "version": "1.0",
+        "qualifiers": {
+          "outhash": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+          "output": "out",
+          "plan": "97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f"
+        },
+        "nativeCoordinates": [
+          {
+            "ecosystem": "nix",
+            "coordinate": "/nix/store/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c-libgreet-1.0",
+            "version": "1.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "repository",
+            "uri": "https://github.com/example/libgreet",
+            "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+            }
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.0",
+      "normalizedVersion": "1.0",
+      "versionSortKey": "0000000001.0",
+      "requirements": [
+        {
+          "id": "libgreet-out-glibc",
+          "expression": {
+            "type": "package",
+            "purl": "pkg:nix/glibc",
+            "vers": "vers:nix/2.39",
+            "qualifiers": {
+              "outhash": "c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l",
+              "output": "out"
+            },
+            "outputs": ["out"]
+          },
+          "kind": "runtime",
+          "optional": false,
+          "source": {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.invalid/nix-store"
+          },
+          "authority": "derivation-capture",
+          "semanticLoss": []
+        }
+      ],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [
+        {
+          "descriptorId": "libgreet-out-nar",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2a246901334544f8982c0174729bb87295a8492d3ff10ba3dd2d3450e4232d8f"
+          },
+          "size": 49152,
+          "mediaType": "application/x-nix-nar",
+          "artifactType": "nix-output",
+          "nativeRole": "nix-output-nar",
+          "treeDigest": {
+            "algorithm": "sha256",
+            "value": "81c0899f3279cde402b5fadfb5deeb92083301bf05df6999d80b36de03cee6ae"
+          },
+          "producedBy": {
+            "recipeDigest": {
+              "algorithm": "sha256",
+              "value": "55169385106e2223620fc5b992408d3afcd67734735b6b40c26b1e25b0d22dc1"
+            },
+            "outputName": "out"
+          },
+          "runtimeReferences": [
+            {
+              "artifactDigest": {
+                "algorithm": "sha256",
+                "value": "a62bcc57205a5d9079d756f347af1fe63ddaa2eb6f150ccff377596b752d1179"
+              },
+              "outputName": "out"
+            }
+          ],
+          "locations": [
+            {
+              "transport": "https",
+              "uri": "https://cache.example.org/nar/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c.nar.xz",
+              "priority": 0,
+              "rangeSupported": true
+            }
+          ],
+          "referrers": [
+            {
+              "type": "substitution-evidence",
+              "locator": "https://cache.example.org/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c.narinfo",
+              "mediaType": "application/x-nix-narinfo",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "1d9c9d44736ea29931ea2b710c2824c2b55b0809a67e2e50a2a66efc08c0acef"
+              }
+            }
+          ],
+          "externalRefs": []
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "default": true,
+          "artifactDescriptorIds": ["libgreet-out-nar"],
+          "recipeOutputId": {
+            "algorithm": "sha256",
+            "value": "50b9297dde0039d21e0f112af93bda161e5fe7260fd21cca4f3826e2d9805b22"
+          }
+        }
+      ],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "05fef87df9f152c5bb7aabd4b92585327d8903aebb3436f246bfb74ac87ab140"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "9ecc6778804b71585ef7e79a06a7e1401d12fbbc3becf251e9fbb6b21329ca1d"
+      },
+      "nativeSemantics": {
+        "version": "nix-store-v1",
+        "data": {
+          "storePath": "/nix/store/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c-libgreet-1.0"
+        }
+      },
+      "semanticLoss": [
+        {
+          "code": "NIX_STORE_PATH_HASH_OPAQUE",
+          "severity": "info",
+          "sourceEcosystem": "nix",
+          "sourcePath": "/identity/qualifiers/outhash",
+          "originalMeaning": "Nix truncated base32 input-address hash",
+          "representedMeaning": "opaque exact-PURL qualifier; not a PREX digest",
+          "blocksProfile": []
+        }
+      ]
+    },
+    {
+      "nodeId": "sha256:c213dc3946b2bf7682c025589313cb5708a7aa4ea00d25199e764b46ae532780",
+      "identity": {
+        "canonicalPurl": "pkg:nix/libgreet",
+        "exactPurl": "pkg:nix/libgreet@1.0?outhash=e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9&output=dev&plan=97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f",
+        "purlType": "nix",
+        "name": "libgreet",
+        "version": "1.0",
+        "qualifiers": {
+          "outhash": "e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9",
+          "output": "dev",
+          "plan": "97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f"
+        },
+        "nativeCoordinates": [
+          {
+            "ecosystem": "nix",
+            "coordinate": "/nix/store/e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9-libgreet-1.0",
+            "version": "1.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "repository",
+            "uri": "https://github.com/example/libgreet",
+            "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+            }
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.0",
+      "normalizedVersion": "1.0",
+      "versionSortKey": "0000000001.0",
+      "requirements": [
+        {
+          "id": "libgreet-dev-out",
+          "expression": {
+            "type": "package",
+            "purl": "pkg:nix/libgreet",
+            "vers": "vers:nix/1.0",
+            "qualifiers": {
+              "outhash": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+              "output": "out"
+            },
+            "outputs": ["out"]
+          },
+          "kind": "runtime",
+          "optional": false,
+          "source": {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.invalid/nix-store"
+          },
+          "authority": "derivation-capture",
+          "semanticLoss": []
+        }
+      ],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [
+        {
+          "descriptorId": "libgreet-dev-nar",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "ee8066ae392ce2061478e41399565b79d98815ccef09a0fd983498ec43745382"
+          },
+          "size": 512,
+          "mediaType": "application/x-nix-nar",
+          "artifactType": "nix-output",
+          "nativeRole": "nix-output-nar",
+          "treeDigest": {
+            "algorithm": "sha256",
+            "value": "625bfe2cbaefeb63c6b5b07722e9b78ef1488831fd9fa55b27083a956233c3c4"
+          },
+          "producedBy": {
+            "recipeDigest": {
+              "algorithm": "sha256",
+              "value": "55169385106e2223620fc5b992408d3afcd67734735b6b40c26b1e25b0d22dc1"
+            },
+            "outputName": "dev"
+          },
+          "runtimeReferences": [
+            {
+              "recipeOutputId": {
+                "algorithm": "sha256",
+                "value": "50b9297dde0039d21e0f112af93bda161e5fe7260fd21cca4f3826e2d9805b22"
+              },
+              "outputName": "out"
+            }
+          ],
+          "locations": [
+            {
+              "transport": "https",
+              "uri": "https://cache.example.org/nar/e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9.nar.xz",
+              "priority": 0,
+              "rangeSupported": true
+            }
+          ],
+          "referrers": [
+            {
+              "type": "substitution-evidence",
+              "locator": "https://cache.example.org/e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9.narinfo",
+              "mediaType": "application/x-nix-narinfo",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "1c333d9e7d09166289479e2041d61274c8ada1b89b897a4a28e01af677d5ba28"
+              }
+            }
+          ],
+          "externalRefs": []
+        }
+      ],
+      "outputs": [
+        {
+          "name": "dev",
+          "default": true,
+          "artifactDescriptorIds": ["libgreet-dev-nar"],
+          "recipeOutputId": {
+            "algorithm": "sha256",
+            "value": "e68e3044aeaf813b983086e74bf96b57791e8f989e97437c4641a07827317c9f"
+          }
+        }
+      ],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "05fef87df9f152c5bb7aabd4b92585327d8903aebb3436f246bfb74ac87ab140"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "e1279f37b9d8ea98a325c1ce2e9626509efdc8bd812b317493b803644af5e8d1"
+      },
+      "nativeSemantics": {
+        "version": "nix-store-v1",
+        "data": {
+          "storePath": "/nix/store/e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9-libgreet-1.0"
+        }
+      },
+      "semanticLoss": [
+        {
+          "code": "NIX_STORE_PATH_HASH_OPAQUE",
+          "severity": "info",
+          "sourceEcosystem": "nix",
+          "sourcePath": "/identity/qualifiers/outhash",
+          "originalMeaning": "Nix truncated base32 input-address hash",
+          "representedMeaning": "opaque exact-PURL qualifier; not a PREX digest",
+          "blocksProfile": []
+        }
+      ]
+    },
+    {
+      "nodeId": "sha256:ed456d47b65435d1536399e4701cdf79e30af1beb9432221c82ee61a81279e08",
+      "identity": {
+        "canonicalPurl": "pkg:nix/glibc",
+        "exactPurl": "pkg:nix/glibc@2.39?outhash=c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l&output=out&plan=q1w2e3",
+        "purlType": "nix",
+        "name": "glibc",
+        "version": "2.39",
+        "qualifiers": {
+          "outhash": "c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l",
+          "output": "out",
+          "plan": "q1w2e3"
+        },
+        "nativeCoordinates": [
+          {
+            "ecosystem": "nix",
+            "coordinate": "/nix/store/c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l-glibc-2.39",
+            "version": "2.39"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "repository",
+            "uri": "https://github.com/example/libgreet",
+            "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+            }
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "2.39",
+      "normalizedVersion": "2.39",
+      "versionSortKey": "000000002.39",
+      "requirements": [],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [
+        {
+          "descriptorId": "glibc-out-nar",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "a62bcc57205a5d9079d756f347af1fe63ddaa2eb6f150ccff377596b752d1179"
+          },
+          "size": 2097152,
+          "mediaType": "application/x-nix-nar",
+          "artifactType": "nix-output",
+          "nativeRole": "nix-output-nar",
+          "treeDigest": {
+            "algorithm": "sha256",
+            "value": "4151e55be3a106a69bc80c6693f6002f25cac43675a49192eba7c35456deb0c0"
+          },
+          "runtimeReferences": [],
+          "locations": [
+            {
+              "transport": "https",
+              "uri": "https://cache.example.org/nar/c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l.nar.xz",
+              "priority": 0,
+              "rangeSupported": true
+            }
+          ],
+          "referrers": [],
+          "externalRefs": []
+        }
+      ],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "05fef87df9f152c5bb7aabd4b92585327d8903aebb3436f246bfb74ac87ab140"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "01d81aaf64659c3e86520afa38ceeb97b8d0e9886961c8e4a74748c2f00b8258"
+      },
+      "nativeSemantics": {
+        "version": "nix-store-v1",
+        "data": {
+          "storePath": "/nix/store/c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l-glibc-2.39"
+        }
+      },
+      "semanticLoss": [
+        {
+          "code": "NIX_STORE_PATH_HASH_OPAQUE",
+          "severity": "info",
+          "sourceEcosystem": "nix",
+          "sourcePath": "/identity/qualifiers/outhash",
+          "originalMeaning": "Nix truncated base32 input-address hash",
+          "representedMeaning": "opaque exact-PURL qualifier; not a PREX digest",
+          "blocksProfile": []
+        }
+      ]
+    }
+  ],
+  "overlays": [],
+  "sourceSnapshots": [],
+  "recipes": [
+    {
+      "recipeVersion": "1",
+      "captureProfile": "derivation-capture-v1",
+      "kind": "derivation",
+      "builder": {
+        "kind": "nix"
+      },
+      "system": "x86_64-linux",
+      "platforms": {
+        "build": {
+          "os": "linux",
+          "architecture": "x86_64"
+        },
+        "host": {
+          "os": "linux",
+          "architecture": "x86_64"
+        }
+      },
+      "planRef": {
+        "type": "nix-drv",
+        "locator": "/nix/store/97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f-libgreet-1.0.drv",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "92883b3d824578fce7b2b9e15eac2210387a869a245cc459c6dee49affc28789"
+        },
+        "mediaType": "application/x-nix-drv"
+      },
+      "inputs": [
+        {
+          "role": "source",
+          "sourceRef": {
+            "type": "repository",
+            "uri": "https://github.com/example/libgreet",
+            "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+            }
+          }
+        },
+        {
+          "role": "build",
+          "exactPurl": "pkg:nix/stdenv@2405?outhash=s7d9f1h3j5k7m9n1p3r5t7v9x1z3b5d7&output=out&plan=x1y2z3",
+          "outputs": ["out"]
+        },
+        {
+          "role": "host",
+          "exactPurl": "pkg:nix/glibc@2.39?outhash=c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l&output=out&plan=q1w2e3",
+          "outputs": ["out"]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "hashMode": "input-addressed",
+          "inputAddress": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+          "expectedTreeDigest": {
+            "algorithm": "sha256",
+            "value": "81c0899f3279cde402b5fadfb5deeb92083301bf05df6999d80b36de03cee6ae"
+          }
+        },
+        {
+          "name": "dev",
+          "hashMode": "input-addressed",
+          "inputAddress": "e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9",
+          "expectedTreeDigest": {
+            "algorithm": "sha256",
+            "value": "625bfe2cbaefeb63c6b5b07722e9b78ef1488831fd9fa55b27083a956233c3c4"
+          }
+        }
+      ],
+      "provenance": "captured",
+      "sourceRefs": [],
+      "attestations": [],
+      "evidenceRefs": [],
+      "semanticLoss": [
+        {
+          "code": "NIX_EXPRESSION_NOT_EVALUATED",
+          "severity": "info",
+          "sourceEcosystem": "nix",
+          "sourcePath": "/",
+          "originalMeaning": "The Nix expression that produced this derivation was not evaluated by PREX",
+          "representedMeaning": "the realised derivation graph as captured from the store",
+          "blocksProfile": []
+        }
+      ]
+    }
+  ],
+  "lifecycleRoot": {
+    "algorithm": "sha256",
+    "value": "d43e34c15d43655a25f5ca7bfa09ae564bd66d79c933ae57e2df2f9764cd2323"
+  },
+  "targetVocabularyVersion": "1",
+  "canonicalDigest": {
+    "algorithm": "sha256",
+    "value": "45300defb018217f66dbfe98db71a9f6dbcc1af69bf3b7e43705a9c41cbb6772"
+  }
+}

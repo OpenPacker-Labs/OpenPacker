@@ -1,0 +1,15 @@
+{
+  "manifestVersion": "1",
+  "entries": [
+    {
+      "path": "include/greet.h",
+      "kind": "file",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "0ec9951380207218fd242be0986c3f22495fd4c79c6ce97d7a489932ecaef977"
+      },
+      "size": 512
+    }
+  ],
+  "semanticLoss": []
+}

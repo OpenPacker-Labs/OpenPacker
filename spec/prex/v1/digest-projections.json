@@ -21,6 +21,7 @@
       "includePaths": [],
       "excludePaths": ["/canonicalDigest"],
       "orderedSetPaths": [
+        "/amendments",
         "/overlays",
         "/packages",
         "/recipes",
@@ -100,7 +101,12 @@
       "canonicalization": "prex-jcs-safe-integer-v1",
       "includePaths": [],
       "excludePaths": [],
-      "orderedSetPaths": ["/evidenceRefs", "/externalRefs", "/sourceSnapshots"]
+      "orderedSetPaths": [
+        "/amendmentDigests",
+        "/evidenceRefs",
+        "/externalRefs",
+        "/sourceSnapshots"
+      ]
     },
     {
       "id": "event-data-v1",

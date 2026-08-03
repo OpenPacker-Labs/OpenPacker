@@ -1,0 +1,87 @@
+{
+  "recipeVersion": "1",
+  "captureProfile": "derivation-capture-v1",
+  "kind": "derivation",
+  "builder": {
+    "kind": "nix"
+  },
+  "system": "x86_64-linux",
+  "platforms": {
+    "build": {
+      "os": "linux",
+      "architecture": "x86_64"
+    },
+    "host": {
+      "os": "linux",
+      "architecture": "x86_64"
+    }
+  },
+  "planRef": {
+    "type": "nix-drv",
+    "locator": "/nix/store/97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f-libgreet-1.0.drv",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "92883b3d824578fce7b2b9e15eac2210387a869a245cc459c6dee49affc28789"
+    },
+    "mediaType": "application/x-nix-drv"
+  },
+  "inputs": [
+    {
+      "role": "source",
+      "sourceRef": {
+        "type": "repository",
+        "uri": "https://github.com/example/libgreet",
+        "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+        }
+      }
+    },
+    {
+      "role": "build",
+      "exactPurl": "pkg:nix/stdenv@2405?outhash=s7d9f1h3j5k7m9n1p3r5t7v9x1z3b5d7&output=out&plan=x1y2z3",
+      "outputs": ["out"]
+    },
+    {
+      "role": "host",
+      "exactPurl": "pkg:nix/glibc@2.39?outhash=c9dd4k6m8p0r2t4v6x8z0b2d4f6h8j0l&output=out&plan=q1w2e3",
+      "outputs": ["out"]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "hashMode": "input-addressed",
+      "inputAddress": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+      "expectedTreeDigest": {
+        "algorithm": "sha256",
+        "value": "81c0899f3279cde402b5fadfb5deeb92083301bf05df6999d80b36de03cee6ae"
+      }
+    },
+    {
+      "name": "dev",
+      "hashMode": "input-addressed",
+      "inputAddress": "e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9",
+      "expectedTreeDigest": {
+        "algorithm": "sha256",
+        "value": "625bfe2cbaefeb63c6b5b07722e9b78ef1488831fd9fa55b27083a956233c3c4"
+      }
+    }
+  ],
+  "provenance": "captured",
+  "sourceRefs": [],
+  "attestations": [],
+  "evidenceRefs": [],
+  "semanticLoss": [
+    {
+      "code": "NIX_EXPRESSION_NOT_EVALUATED",
+      "severity": "info",
+      "sourceEcosystem": "nix",
+      "sourcePath": "/",
+      "originalMeaning": "The Nix expression that produced this derivation was not evaluated by PREX",
+      "representedMeaning": "the realised derivation graph as captured from the store",
+      "blocksProfile": []
+    }
+  ]
+}

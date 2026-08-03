@@ -91,6 +91,7 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
                 semantic_loss_maximum: "warning".into(),
                 required_evidence: Vec::new(),
                 accepted_overlay_authorities: vec!["test-fixture".into()],
+                accepted_amendment_authorities: Vec::new(),
                 extensions: BTreeMap::new(),
             },
             semantics: SemanticsInput {
@@ -118,6 +119,7 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
             overlays: Vec::new(),
             source_snapshots: Vec::new(),
             recipes: Vec::new(),
+            amendments: Vec::new(),
             lifecycle_root: digest('d'),
             target_vocabulary_version: "1".into(),
             canonical_digest: digest('e'),
@@ -648,4 +650,124 @@ fn native_validated_rejects_dependency_conflict_cardinality_target_and_lifecycle
         solve(&denied_lifecycle),
         Err(ResolverError::InvalidProof(message)) if message.contains("lifecycle denied")
     ));
+}
+
+#[test]
+fn unaccepted_amendments_do_not_change_the_solution() {
+    let one = package('1', "demo", "1.0.0");
+    let two = package('2', "demo", "2.0.0");
+    let requirements = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/demo".into(),
+            vers: Some("vers:npm/>=1.0.0".into()),
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    let plain = input(vec![one.clone(), two.clone()], requirements.clone());
+    let mut amended = input(vec![one.clone(), two.clone()], requirements);
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: one.metadata_digest.clone(),
+        operations: vec![
+            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
+        ],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+
+    let plain_output = solve(&plain).unwrap();
+    let amended_output = solve(&amended).unwrap();
+
+    // Policy admits no amendment authority, so the amendment contributes
+    // nothing: the solution and its digest are byte-identical.
+    assert_eq!(
+        amended_output.solution.solution_digest,
+        plain_output.solution.solution_digest
+    );
+    assert_eq!(
+        amended_output.solution.selected_node_ids,
+        plain_output.solution.selected_node_ids
+    );
+    // The fact that an amendment was present and ignored is still recorded.
+    assert!(
+        amended_output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-ignored")
+    );
+    assert!(
+        !plain_output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-ignored")
+    );
+    assert!(check(&amended, &amended_output).unwrap().valid);
+}
+
+#[test]
+fn accepting_an_amendment_authority_fails_closed() {
+    let one = package('1', "demo", "1.0.0");
+    let mut amended = input(
+        vec![one.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: one.metadata_digest.clone(),
+        operations: vec![
+            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
+        ],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    // Compilation is not implemented, so admitting an amendment must fail
+    // rather than quietly discard its operations.
+    assert!(solve(&amended).is_err());
+}
+
+#[test]
+fn amendments_must_bind_to_a_real_package() {
+    let one = package('1', "demo", "1.0.0");
+    let mut amended = input(
+        vec![one],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: digest('9'),
+        operations: vec![
+            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
+        ],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    assert!(solve(&amended).is_err());
 }

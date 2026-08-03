@@ -205,6 +205,38 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
         }
         validate_expression(&requirement.expression, 1)?;
     }
+    let (admitted, _ignored) = partition_amendments(input);
+    if !admitted.is_empty() {
+        return Err(ResolverError::InvalidInput(
+            "amendment compilation is not implemented; accepting an amendment authority would silently drop its operations".into(),
+        ));
+    }
+    for amendment in &input.universe.amendments {
+        if amendment.amendment_version != "1" {
+            return Err(ResolverError::InvalidInput(
+                "amendmentVersion must be 1".into(),
+            ));
+        }
+        validate_digest(
+            &amendment.applies_to_metadata_digest,
+            "appliesToMetadataDigest",
+        )?;
+        if amendment.operations.is_empty() {
+            return Err(ResolverError::InvalidInput(
+                "amendment must declare at least one operation".into(),
+            ));
+        }
+        if !input
+            .universe
+            .packages
+            .iter()
+            .any(|package| package.metadata_digest == amendment.applies_to_metadata_digest)
+        {
+            return Err(ResolverError::InvalidInput(
+                "amendment appliesToMetadataDigest does not match any universe package".into(),
+            ));
+        }
+    }
     if let Some(platforms) = &input.request.platforms {
         if platforms
             .host
@@ -240,6 +272,24 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
         });
     }
     Ok(())
+}
+
+/// Amendments the policy admits, and those present but ignored. Amendment
+/// compilation is not yet implemented, so an admitted amendment is an error
+/// rather than a silently dropped instruction; ignoring is only correct when
+/// policy declined it.
+pub(crate) fn partition_amendments(input: &SolveInput) -> (Vec<usize>, Vec<usize>) {
+    let accepted = &input.request.policy.accepted_amendment_authorities;
+    let (admitted, ignored): (Vec<_>, Vec<_>) = input
+        .universe
+        .amendments
+        .iter()
+        .enumerate()
+        .partition(|(_, amendment)| accepted.contains(&amendment.authority));
+    (
+        admitted.into_iter().map(|(index, _)| index).collect(),
+        ignored.into_iter().map(|(index, _)| index).collect(),
+    )
 }
 
 pub(crate) fn objectives_require_optimization(request: &SolveRequest) -> bool {
@@ -1264,6 +1314,26 @@ fn explanation(
             ]),
         }));
     }
+    let (_admitted, ignored) = partition_amendments(input);
+    nodes.extend(ignored.into_iter().map(|index| {
+        let amendment = &input.universe.amendments[index];
+        ExplanationNode {
+            id: format!("amendment-ignored:{index}"),
+            kind: "amendment-ignored".into(),
+            label: format!(
+                "amendment from {} was not admitted by policy",
+                amendment.authority
+            ),
+            data: BTreeMap::from([
+                ("authority".into(), json!(amendment.authority)),
+                (
+                    "appliesToMetadataDigest".into(),
+                    json!(amendment.applies_to_metadata_digest.as_string()),
+                ),
+                ("operationCount".into(), json!(amendment.operations.len())),
+            ]),
+        }
+    }));
     nodes.extend(
         solution
             .semantic_loss

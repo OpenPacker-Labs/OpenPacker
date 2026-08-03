@@ -279,6 +279,10 @@ pub struct ResolutionUniverse {
     /// opaque: they carry no selection semantics.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipes: Vec<Value>,
+    /// Authority-gated supersessions of interpretation. They never mutate the
+    /// native facts in `packages`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amendments: Vec<UniverseAmendment>,
     pub lifecycle_root: Digest,
     pub target_vocabulary_version: String,
     pub canonical_digest: Digest,
@@ -334,6 +338,21 @@ pub struct RequirementKindPolicy {
     pub inactive_kinds: Option<Vec<String>>,
 }
 
+/// A supersession of interpretation, bound to an exact native metadata state.
+/// The resolver reads only what it needs to gate and account for amendments;
+/// operation bodies stay opaque until amendment compilation lands.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UniverseAmendment {
+    pub amendment_version: String,
+    pub subject: Value,
+    pub applies_to_metadata_digest: Digest,
+    pub operations: Vec<Value>,
+    pub authority: String,
+    #[serde(flatten)]
+    pub rest: BTreeMap<String, Value>,
+}
+
 /// Requirement kinds consumed while building rather than while running.
 pub const DEFAULT_BUILD_PLATFORM_KINDS: [&str; 2] = ["build", "tool"];
 
@@ -377,6 +396,8 @@ pub struct PolicyInput {
     pub required_evidence: Vec<String>,
     #[serde(default)]
     pub accepted_overlay_authorities: Vec<String>,
+    #[serde(default)]
+    pub accepted_amendment_authorities: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
 }

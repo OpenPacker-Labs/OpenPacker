@@ -32,6 +32,7 @@
     { "$ref": "lockfile.schema.json" },
     { "$ref": "environment.schema.json#/$defs/EnvironmentManifest" },
     { "$ref": "environment.schema.json#/$defs/EnvironmentGeneration" },
-    { "$ref": "environment.schema.json#/$defs/EnvironmentState" }
+    { "$ref": "environment.schema.json#/$defs/EnvironmentState" },
+    { "$ref": "resolution.schema.json#/$defs/UniverseAmendment" }
   ]
 }

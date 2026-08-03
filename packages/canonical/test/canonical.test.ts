@@ -38,6 +38,7 @@ const realisationFixture = (name: string) =>
   protocolFixture('realisation', name);
 const environmentFixture = (name: string) =>
   protocolFixture('environment', name);
+const nixFixture = (name: string) => protocolFixture('nix', name);
 
 describe('PREX canonical JSON', () => {
   it('sorts keys recursively without changing array order', () => {
@@ -327,5 +328,98 @@ describe('environment generation ledger', () => {
       expect(
         pointer.retainedGenerationDigests.map((item) => item.value),
       ).toContain(pointer.currentGenerationDigest.value);
+  });
+});
+
+describe('nix worked example', () => {
+  it('derives output identity from the captured derivation', async () => {
+    const pinned = (await nixFixture('projection-digests')) as {
+      treeOut: { value: string };
+      treeDev: { value: string };
+      buildRecipe: { value: string };
+      recipeOutputIds: Record<string, { value: string }>;
+      universe: { value: string };
+    };
+    const recipeDigest = await canonicalProjectionDigest(
+      await nixFixture('build-recipe'),
+      projectionFor('build-recipe-v1'),
+    );
+    expect(recipeDigest.value).toBe(pinned.buildRecipe.value);
+
+    // Both outputs share one plan and differ only by output name, which is
+    // exactly how a multi-output derivation behaves.
+    const ids = await Promise.all(
+      ['out', 'dev'].map(async (outputName) => {
+        const id = await canonicalProjectionDigest(
+          { outputName, recipeDigest } as unknown as JsonValue,
+          projectionFor('recipe-output-v1'),
+        );
+        expect(id.value).toBe(pinned.recipeOutputIds[outputName]?.value);
+        return id.value;
+      }),
+    );
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('gives each store output a distinct node identity and tree digest', async () => {
+    const universe = (await nixFixture('universe')) as {
+      packages: {
+        nodeId: string;
+        identity: { exactPurl: string; qualifiers: Record<string, string> };
+        artifacts: { treeDigest: { value: string } }[];
+      }[];
+      canonicalDigest: { value: string };
+      recipes: unknown[];
+    };
+    const [out, dev] = universe.packages;
+    if (!out || !dev) throw new Error('fixture must contain both outputs');
+
+    // Same package and version; different output, so different node identity.
+    expect(out.identity.qualifiers.plan).toBe(dev.identity.qualifiers.plan);
+    expect(out.identity.qualifiers.output).toBe('out');
+    expect(dev.identity.qualifiers.output).toBe('dev');
+    expect(out.identity.qualifiers.outhash).not.toBe(
+      dev.identity.qualifiers.outhash,
+    );
+    expect(out.nodeId).not.toBe(dev.nodeId);
+    expect(out.artifacts[0]?.treeDigest.value).not.toBe(
+      dev.artifacts[0]?.treeDigest.value,
+    );
+
+    const pinned = (await nixFixture('projection-digests')) as {
+      treeOut: { value: string };
+      universe: { value: string };
+    };
+    const treeDigest = await canonicalProjectionDigest(
+      await nixFixture('tree-manifest-out'),
+      projectionFor('tree-manifest-v1'),
+    );
+    expect(treeDigest.value).toBe(pinned.treeOut.value);
+    expect(out.artifacts[0]?.treeDigest.value).toBe(pinned.treeOut.value);
+
+    const universeDigest = await canonicalProjectionDigest(
+      universe as unknown as JsonValue,
+      projectionFor('universe-v1'),
+    );
+    expect(universeDigest.value).toBe(pinned.universe.value);
+  });
+
+  it('keeps store-path hashes opaque and records the loss', async () => {
+    const universe = (await nixFixture('universe')) as {
+      packages: {
+        semanticLoss: { code: string; severity: string }[];
+        identity: { qualifiers: Record<string, string> };
+      }[];
+    };
+    for (const item of universe.packages) {
+      // A Nix store hash is truncated base32, so it is not a PREX digest and
+      // must not pretend to be one.
+      expect(item.identity.qualifiers.outhash).not.toMatch(/^[0-9a-f]{64}$/);
+      expect(
+        item.semanticLoss.some(
+          (loss) => loss.code === 'NIX_STORE_PATH_HASH_OPAQUE',
+        ),
+      ).toBe(true);
+    }
   });
 });

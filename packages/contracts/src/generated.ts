@@ -5,6 +5,18 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type AmendmentOperation =
+  | {
+      op: 'supersedeRequirement';
+      requirementId: string;
+      replacement: Requirement;
+    }
+  | { op: 'retractRequirement'; requirementId: string; justification: string }
+  | {
+      op: 'redirectPackage';
+      match: RequirementExpression;
+      to: RequirementExpression;
+    };
 export type ArtifactDescriptor = {
   descriptorId: string;
   digest: Digest;
@@ -846,6 +858,9 @@ export type PolicyInput = {
   requiredSourceSnapshotDigests?: Array<Digest>;
   permitForensicDigestMaterialization?: boolean;
   extensions?: Extensions;
+  acceptedAmendmentAuthorities?: Array<
+    'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture'
+  >;
 };
 export type PositiveLimit = number;
 export type Problem = {
@@ -1025,6 +1040,7 @@ export type ResolutionReceipt = {
   evidenceRefs: Array<ExternalRef>;
   externalRefs: Array<ExternalRef>;
   extensions?: Extensions;
+  amendmentDigests?: Array<Digest>;
 };
 export type ResolutionSolution = {
   selectedNodeIds: Array<string>;
@@ -1050,6 +1066,7 @@ export type ResolutionUniverse = {
   targetVocabularyVersion: string;
   canonicalDigest: Digest;
   extensions?: Extensions;
+  amendments?: Array<UniverseAmendment>;
 };
 export type ResolutionUnsatisfiableData = {
   schemaVersion: '1';
@@ -1238,6 +1255,23 @@ export type TreeManifestEntry = {
   size?: number;
   target?: string;
 };
+export type UniverseAmendment = {
+  amendmentVersion: '1';
+  subject: PackageIdentity;
+  appliesToMetadataDigest: Digest;
+  operations: Array<AmendmentOperation>;
+  authority:
+    | 'publisher'
+    | 'registry'
+    | 'organization'
+    | 'user'
+    | 'test-fixture';
+  justification?: string;
+  sourceRefs: Array<SourceRef>;
+  evidenceRefs: Array<ExternalRef>;
+  externalRefs?: Array<ExternalRef>;
+  extensions?: Extensions;
+};
 export type VerificationCheck =
   | (
       | 'artifact-digest'
@@ -1318,6 +1352,7 @@ export const DIGEST_PROJECTIONS = {
       includePaths: [],
       excludePaths: ['/canonicalDigest'],
       orderedSetPaths: [
+        '/amendments',
         '/overlays',
         '/packages',
         '/recipes',
@@ -1397,7 +1432,12 @@ export const DIGEST_PROJECTIONS = {
       canonicalization: 'prex-jcs-safe-integer-v1',
       includePaths: [],
       excludePaths: [],
-      orderedSetPaths: ['/evidenceRefs', '/externalRefs', '/sourceSnapshots'],
+      orderedSetPaths: [
+        '/amendmentDigests',
+        '/evidenceRefs',
+        '/externalRefs',
+        '/sourceSnapshots',
+      ],
     },
     {
       id: 'event-data-v1',
@@ -6177,6 +6217,9 @@ export const schemaCatalog: Record<string, JsonValue> = {
       {
         $ref: 'environment.schema.json#/$defs/EnvironmentState',
       },
+      {
+        $ref: 'resolution.schema.json#/$defs/UniverseAmendment',
+      },
     ],
   },
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json': {
@@ -6297,6 +6340,138 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         additionalProperties: false,
       },
+      UniverseAmendment: {
+        $comment:
+          'An authority-gated supersession of interpretation. An amendment never mutates a native fact: the PackageInstance it applies to is preserved verbatim, and every applied operation records NATIVE_FACT_SUPERSEDED semantic loss plus an explanation node.',
+        type: 'object',
+        required: [
+          'amendmentVersion',
+          'subject',
+          'appliesToMetadataDigest',
+          'operations',
+          'authority',
+          'sourceRefs',
+          'evidenceRefs',
+        ],
+        properties: {
+          amendmentVersion: {
+            const: '1',
+          },
+          subject: {
+            $ref: 'model.schema.json#/$defs/PackageIdentity',
+          },
+          appliesToMetadataDigest: {
+            $comment:
+              'Required: an amendment is bound to the exact native metadata state it was written against.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          operations: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 1024,
+            items: {
+              $ref: '#/$defs/AmendmentOperation',
+            },
+          },
+          authority: {
+            enum: [
+              'publisher',
+              'registry',
+              'organization',
+              'user',
+              'test-fixture',
+            ],
+          },
+          justification: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 16384,
+          },
+          sourceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SourceRef',
+            },
+          },
+          evidenceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          externalRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      AmendmentOperation: {
+        oneOf: [
+          {
+            type: 'object',
+            required: ['op', 'requirementId', 'replacement'],
+            properties: {
+              op: {
+                const: 'supersedeRequirement',
+              },
+              requirementId: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+              },
+              replacement: {
+                $ref: 'model.schema.json#/$defs/Requirement',
+              },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: 'object',
+            required: ['op', 'requirementId', 'justification'],
+            properties: {
+              op: {
+                const: 'retractRequirement',
+              },
+              requirementId: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+              },
+              justification: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 16384,
+              },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: 'object',
+            required: ['op', 'match', 'to'],
+            properties: {
+              op: {
+                const: 'redirectPackage',
+              },
+              match: {
+                $ref: 'model.schema.json#/$defs/RequirementExpression',
+              },
+              to: {
+                $ref: 'model.schema.json#/$defs/RequirementExpression',
+              },
+            },
+            additionalProperties: false,
+          },
+        ],
+      },
       ResolutionUniverse: {
         type: 'object',
         required: [
@@ -6356,6 +6531,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          amendments: {
+            $comment:
+              'Authority-gated supersessions. Ignored unless policy.acceptedAmendmentAuthorities admits their authority.',
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: '#/$defs/UniverseAmendment',
+            },
           },
         },
         additionalProperties: false,
@@ -6580,6 +6764,22 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          acceptedAmendmentAuthorities: {
+            $comment:
+              'Absent or empty means amendments are ignored with a warning; solutions are then identical to an amendment-free universe.',
+            type: 'array',
+            maxItems: 5,
+            uniqueItems: true,
+            items: {
+              enum: [
+                'publisher',
+                'registry',
+                'organization',
+                'user',
+                'test-fixture',
+              ],
+            },
           },
         },
         additionalProperties: false,
@@ -7238,6 +7438,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          amendmentDigests: {
+            $comment:
+              'Digests of amendments actually applied to produce this result.',
+            type: 'array',
+            maxItems: 10000,
+            uniqueItems: true,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
           },
         },
         additionalProperties: false,

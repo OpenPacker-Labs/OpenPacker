@@ -1,0 +1,29 @@
+{
+  "$comment": "Pinned nix worked-example digests. Recomputed by packages/canonical tests.",
+  "treeOut": {
+    "algorithm": "sha256",
+    "value": "81c0899f3279cde402b5fadfb5deeb92083301bf05df6999d80b36de03cee6ae"
+  },
+  "treeDev": {
+    "algorithm": "sha256",
+    "value": "625bfe2cbaefeb63c6b5b07722e9b78ef1488831fd9fa55b27083a956233c3c4"
+  },
+  "buildRecipe": {
+    "algorithm": "sha256",
+    "value": "55169385106e2223620fc5b992408d3afcd67734735b6b40c26b1e25b0d22dc1"
+  },
+  "recipeOutputIds": {
+    "out": {
+      "algorithm": "sha256",
+      "value": "50b9297dde0039d21e0f112af93bda161e5fe7260fd21cca4f3826e2d9805b22"
+    },
+    "dev": {
+      "algorithm": "sha256",
+      "value": "e68e3044aeaf813b983086e74bf96b57791e8f989e97437c4641a07827317c9f"
+    }
+  },
+  "universe": {
+    "algorithm": "sha256",
+    "value": "45300defb018217f66dbfe98db71a9f6dbcc1af69bf3b7e43705a9c41cbb6772"
+  }
+}

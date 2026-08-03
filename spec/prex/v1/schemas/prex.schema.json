@@ -92,6 +92,9 @@
     },
     {
       "$ref": "environment.schema.json#/$defs/EnvironmentState"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/UniverseAmendment"
     }
   ]
 }

@@ -1,0 +1,53 @@
+{
+  "substituteVersion": "1",
+  "subject": {
+    "artifactDigest": {
+      "algorithm": "sha256",
+      "value": "2a246901334544f8982c0174729bb87295a8492d3ff10ba3dd2d3450e4232d8f"
+    },
+    "recipeOutputId": {
+      "algorithm": "sha256",
+      "value": "50b9297dde0039d21e0f112af93bda161e5fe7260fd21cca4f3826e2d9805b22"
+    }
+  },
+  "treeDigest": {
+    "algorithm": "sha256",
+    "value": "81c0899f3279cde402b5fadfb5deeb92083301bf05df6999d80b36de03cee6ae"
+  },
+  "size": 49152,
+  "runtimeReferences": [
+    {
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "a62bcc57205a5d9079d756f347af1fe63ddaa2eb6f150ccff377596b752d1179"
+      },
+      "outputName": "out"
+    }
+  ],
+  "deriver": {
+    "algorithm": "sha256",
+    "value": "55169385106e2223620fc5b992408d3afcd67734735b6b40c26b1e25b0d22dc1"
+  },
+  "locations": [
+    {
+      "transport": "https",
+      "uri": "https://cache.example.org/nar/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c.nar.xz",
+      "priority": 0,
+      "rangeSupported": true
+    }
+  ],
+  "evidenceRefs": [
+    {
+      "type": "substituter-signature",
+      "locator": "https://cache.example.org/nix-cache-info",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "8d4c5aff4f37370a67930aafb6f02be794d011e81a3e0663353f45df4ea682cb"
+      },
+      "annotations": {
+        "verified": "false",
+        "code": "SUBSTITUTE_UNVERIFIED"
+      }
+    }
+  ]
+}

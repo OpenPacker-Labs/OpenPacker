@@ -125,6 +125,26 @@ closure of every retained generation's artifact set. Retained generations are
 therefore the reachability roots; this specification defines the relation and
 does not mandate a collection schedule.
 
+## Amendments
+
+A `UniverseAmendment` supersedes _interpretation_; it never mutates a native
+fact. The `PackageInstance` it applies to is preserved verbatim, and
+`appliesToMetadataDigest` binds the amendment to the exact metadata state it was
+written against.
+
+Amendments apply only when `policy.acceptedAmendmentAuthorities` admits their
+authority. When that list is absent or empty, amendments contribute nothing and
+the resulting `solutionDigest` MUST be identical to the same universe without
+them; implementations MUST still record that an amendment was present and
+ignored, in the explanation graph rather than the solution.
+
+Each applied operation MUST emit `NATIVE_FACT_SUPERSEDED` semantic loss
+(severity `warning`, blocking `native-validated-v1` for the affected relation)
+and a corresponding explanation node, and applied amendment digests MUST be
+bound into the receipt through `amendmentDigests`. An implementation that admits
+an amendment authority but cannot compile its operations MUST fail rather than
+return a result the caller would believe was amended.
+
 ## Hypergraph compilation
 
 An exact `PackageInstance` is a vertex. Each capability offer is a
