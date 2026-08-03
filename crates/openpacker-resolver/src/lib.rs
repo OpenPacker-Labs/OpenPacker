@@ -17,4 +17,7 @@ pub use error::ResolverError;
 pub use model::*;
 pub use normalize::{normalize_purl, parse_vers};
 pub use oracle::{OracleResult, brute_force_oracle};
-pub use semantics::{evaluate_target_predicate, version_satisfies};
+pub use semantics::{
+    PlatformView, RequirementPlatforms, evaluate_target_predicate, evaluate_target_predicate_in,
+    request_platforms, requirement_platforms, version_satisfies,
+};

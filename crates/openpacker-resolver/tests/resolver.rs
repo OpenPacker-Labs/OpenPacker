@@ -771,3 +771,242 @@ fn amendments_must_bind_to_a_real_package() {
     });
     assert!(solve(&amended).is_err());
 }
+
+/// Requirements consumed while building resolve against the build platform,
+/// and unprefixed paths follow the requirement's kind. Without these the
+/// platform plumbing could be removed and every other test would still pass.
+#[test]
+fn build_requirements_resolve_against_the_build_platform() {
+    let mut app = package('3', "app", "1.0.0");
+    // A build-kind requirement whose condition names no platform: it must be
+    // read against the build platform because of its kind.
+    app.requirements.push(Requirement {
+        kind: "build".into(),
+        ..requirement(
+            "needs-x86-compiler",
+            RequirementExpression::Conditional {
+                when: TargetPredicate::Equals {
+                    path: "architecture".into(),
+                    value: json!("x86_64"),
+                },
+                then: Box::new(RequirementExpression::Package {
+                    purl: "pkg:npm/compiler".into(),
+                    vers: None,
+                    qualifiers: BTreeMap::new(),
+                }),
+                otherwise: None,
+            },
+            false,
+        )
+    });
+    let compiler = package('4', "compiler", "1.0.0");
+
+    let mut cross = input(vec![app.clone(), compiler.clone()], Vec::new());
+    cross.request.target = TargetContext {
+        os: Some("linux".into()),
+        architecture: Some("aarch64".into()),
+        ..TargetContext::default()
+    };
+    cross.request.platforms = Some(PlatformContexts {
+        build: Some(TargetContext {
+            os: Some("linux".into()),
+            architecture: Some("x86_64".into()),
+            ..TargetContext::default()
+        }),
+        host: Some(cross.request.target.clone()),
+        target: None,
+    });
+    cross.request.requirements.push(requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+
+    // Build platform is x86_64, so the conditional is active and the compiler
+    // must be selected even though the host is aarch64.
+    let output = solve(&cross).unwrap();
+    assert!(
+        output
+            .solution
+            .selected_node_ids
+            .contains(&compiler.node_id),
+        "build-kind requirement must resolve against the build platform"
+    );
+    assert!(check(&cross, &output).unwrap().valid);
+
+    // Same universe, single platform aarch64: the conditional is inactive, so
+    // the compiler is not pulled in.
+    let mut host_only = input(vec![app, compiler.clone()], Vec::new());
+    host_only.request.target = TargetContext {
+        os: Some("linux".into()),
+        architecture: Some("aarch64".into()),
+        ..TargetContext::default()
+    };
+    host_only.request.requirements.push(requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+    let host_output = solve(&host_only).unwrap();
+    assert!(
+        !host_output
+            .solution
+            .selected_node_ids
+            .contains(&compiler.node_id)
+    );
+}
+
+/// Explicit platform prefixes override the requirement's kind default, and
+/// each prefix reaches its own context.
+#[test]
+fn platform_prefixed_predicates_select_their_context() {
+    let build = TargetContext {
+        os: Some("linux".into()),
+        architecture: Some("x86_64".into()),
+        ..TargetContext::default()
+    };
+    let host = TargetContext {
+        os: Some("darwin".into()),
+        architecture: Some("aarch64".into()),
+        ..TargetContext::default()
+    };
+    let emit = TargetContext {
+        os: Some("windows".into()),
+        architecture: Some("aarch64".into()),
+        ..TargetContext::default()
+    };
+    let platforms = PlatformView::new(&build, &host, &emit);
+
+    for (path, expected) in [
+        ("build.os", "linux"),
+        ("host.os", "darwin"),
+        ("target.os", "windows"),
+        // Unprefixed resolves against the view's default, which is the host.
+        ("os", "darwin"),
+    ] {
+        assert!(
+            evaluate_target_predicate_in(
+                &TargetPredicate::Equals {
+                    path: path.into(),
+                    value: json!(expected),
+                },
+                platforms,
+            ),
+            "{path} must resolve to {expected}"
+        );
+    }
+
+    // Defaulting to build moves only unprefixed paths.
+    let build_default = platforms.defaulting_to_build();
+    assert!(evaluate_target_predicate_in(
+        &TargetPredicate::Equals {
+            path: "os".into(),
+            value: json!("linux"),
+        },
+        build_default,
+    ));
+    assert!(evaluate_target_predicate_in(
+        &TargetPredicate::Equals {
+            path: "host.os".into(),
+            value: json!("darwin"),
+        },
+        build_default,
+    ));
+}
+
+#[test]
+fn platform_host_must_equal_the_request_target() {
+    let one = package('1', "demo", "1.0.0");
+    let mut mismatched = input(
+        vec![one],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    mismatched.request.platforms = Some(PlatformContexts {
+        build: None,
+        host: Some(TargetContext {
+            os: Some("windows".into()),
+            ..TargetContext::default()
+        }),
+        target: None,
+    });
+    assert!(solve(&mismatched).is_err());
+}
+
+#[test]
+fn inactive_requirement_kinds_are_dropped_from_the_solve() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(Requirement {
+        kind: "development".into(),
+        ..requirement(
+            "dev-only",
+            RequirementExpression::Package {
+                purl: "pkg:npm/absent".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )
+    });
+    let mut solve_input = input(
+        vec![app],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/app".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    // The development requirement cannot be satisfied by this universe.
+    assert!(solve(&solve_input).is_err());
+
+    // Marking the kind inactive removes it from consideration entirely.
+    solve_input.request.requirement_kind_policy = Some(RequirementKindPolicy {
+        build_platform_kinds: None,
+        inactive_kinds: Some(vec!["development".into()]),
+    });
+    let output = solve(&solve_input).unwrap();
+    assert!(check(&solve_input, &output).unwrap().valid);
+}
+
+#[test]
+fn misspelled_requirement_kinds_are_rejected_without_platforms() {
+    let one = package('1', "demo", "1.0.0");
+    let mut solve_input = input(
+        vec![one],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    // No platforms supplied, but the policy is still consulted, so a typo must
+    // not quietly no-op.
+    solve_input.request.requirement_kind_policy = Some(RequirementKindPolicy {
+        build_platform_kinds: None,
+        inactive_kinds: Some(vec!["runtim".into()]),
+    });
+    assert!(solve(&solve_input).is_err());
+}

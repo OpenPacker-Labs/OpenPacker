@@ -1148,16 +1148,9 @@
       "levels": ["PREX-M", "PREX-X"]
     },
     {
-      "name": "reject-nix-package-without-output-qualifier",
+      "name": "reject-nix-package-invalid-output-name",
       "file": "nix/universe.json",
       "mutations": [
-        {
-          "operation": "set",
-          "path": "/packages/0/identity/qualifiers",
-          "value": {
-            "outhash": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c"
-          }
-        },
         {
           "operation": "set",
           "path": "/packages/0/outputs/0/name",
@@ -1210,6 +1203,48 @@
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "explanation-with-ignored-amendment",
+      "file": "amendment/explanation-ignored.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ExplanationGraph",
+      "valid": true,
+      "levels": ["PREX-X", "PREX-S"]
+    },
+    {
+      "name": "reject-unknown-explanation-node-kind",
+      "file": "amendment/explanation-ignored.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/nodes/0/kind",
+          "value": "amendment-smuggled"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ExplanationGraph",
+      "valid": false,
+      "levels": ["PREX-X"]
+    },
+    {
+      "name": "universe-with-amendment",
+      "file": "amendment/universe-with-amendment.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-tree-manifest-embedded-newline-escape",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/1/path",
+          "value": "bin/greet\n../escape"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
       "valid": false,
       "levels": ["PREX-M"]
     }

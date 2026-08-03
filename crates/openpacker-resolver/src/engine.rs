@@ -247,17 +247,20 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
                 "platforms.host must equal the request target".into(),
             ));
         }
-        if let Some(policy) = &input.request.requirement_kind_policy {
-            for kinds in [&policy.build_platform_kinds, &policy.inactive_kinds]
-                .into_iter()
-                .flatten()
-            {
-                for kind in kinds {
-                    if !SUPPORTED_REQUIREMENT_KINDS.contains(&kind.as_str()) {
-                        return Err(ResolverError::InvalidInput(format!(
-                            "unsupported requirement kind: {kind}"
-                        )));
-                    }
+    }
+    // The kind policy is consulted whether or not platforms are supplied, so
+    // a misspelled kind must be rejected either way rather than silently
+    // failing to match.
+    if let Some(policy) = &input.request.requirement_kind_policy {
+        for kinds in [&policy.build_platform_kinds, &policy.inactive_kinds]
+            .into_iter()
+            .flatten()
+        {
+            for kind in kinds {
+                if !SUPPORTED_REQUIREMENT_KINDS.contains(&kind.as_str()) {
+                    return Err(ResolverError::InvalidInput(format!(
+                        "unsupported requirement kind: {kind}"
+                    )));
                 }
             }
         }
@@ -640,6 +643,12 @@ pub(crate) fn build_output(
             .iter()
             .flat_map(|package| package.requirements.iter()),
     ) {
+        // An inactive kind is not compiled, so it contributes no witness and
+        // no edge. Emitting one would make the proof describe a requirement
+        // the solve never considered.
+        if !requirement_is_active(&input.request, Some(requirement.kind.as_str())) {
+            continue;
+        }
         let resolved = expression_witness(
             &requirement.expression,
             input,
@@ -1156,6 +1165,9 @@ fn target_checks(input: &SolveInput, selected: &[PackageInstance]) -> Vec<ProofC
             .iter()
             .flat_map(|package| package.requirements.iter()),
     ) {
+        if !requirement_is_active(&input.request, Some(requirement.kind.as_str())) {
+            continue;
+        }
         let mut sequence = 0;
         collect_expression_target_checks(
             &requirement.id,

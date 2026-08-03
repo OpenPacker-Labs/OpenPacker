@@ -137,6 +137,14 @@ pub fn check(input: &SolveInput, output: &SolveOutput) -> Result<ProofCheckResul
             )
             .find(|requirement| requirement.id == witness.requirement_id);
         match requirement {
+            Some(requirement)
+                if !requirement_is_active(&input.request, Some(requirement.kind.as_str())) =>
+            {
+                diagnostics.push(format!(
+                    "proof witnesses inactive requirement {}",
+                    witness.requirement_id
+                ));
+            }
             Some(requirement) => {
                 let actual = expression_witness(
                     &requirement.expression,

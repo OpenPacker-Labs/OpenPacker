@@ -7,7 +7,7 @@ in `fixtures/protocol/nix/`, whose digests are recomputed by
 `packages/canonical` tests.
 
 OpenPacker **captures and verifies** Nix facts. It never evaluates a Nix
-expression and never runs a builder — see invariant 9 in
+expression and never runs a builder — see invariant 10 in
 [`spec/prex/v1/normative.md`](../../spec/prex/v1/normative.md).
 
 ## Identity

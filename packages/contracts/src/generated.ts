@@ -405,7 +405,9 @@ export type ExplanationGraph = {
       | 'policy'
       | 'objective'
       | 'semantic-loss'
-      | 'proof';
+      | 'proof'
+      | 'amendment-applied'
+      | 'amendment-ignored';
     label: string;
     data: { [key: string]: CanonicalJsonValue };
   }>;
@@ -4100,7 +4102,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             minLength: 1,
             maxLength: 4096,
             pattern:
-              '^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\\\]+$',
+              '^(?![\\s\\S]*(?:^/|//|/$|(?:^|/)\\.{1,2}(?:/|$)))[^\\\\\\u0000-\\u001f\\u007f]+$',
           },
           kind: {
             enum: ['file', 'executable', 'directory', 'symlink'],
@@ -6843,7 +6845,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           requirementKindPolicy: {
             $comment:
-              'Which requirement kinds resolve against the build platform, and which are inactive. Absent means every requirement resolves against the host platform.',
+              'Overrides which requirement kinds resolve against the build platform, and which are inactive. Absent means the default attribution applies: build and tool resolve against the build platform, every other kind against the host.',
             type: 'object',
             properties: {
               buildPlatformKinds: {
@@ -7233,6 +7235,8 @@ export const schemaCatalog: Record<string, JsonValue> = {
                     'objective',
                     'semantic-loss',
                     'proof',
+                    'amendment-applied',
+                    'amendment-ignored',
                   ],
                 },
                 label: {

@@ -44,7 +44,7 @@ carried alongside in `externalRefs` or `extensions`.
 The **reference closure** of a set of artifacts is the least fixpoint under
 `ArtifactDescriptor.runtimeReferences`. Closure computation is a
 materialization-side check and never a solver obligation. References discovered
-by reading artifact bytes are permitted; see invariant 9 in
+by reading artifact bytes are permitted; see invariant 10 in
 [normative.md](normative.md).
 
 A `SubstituteDescriptor` advertises prebuilt content. It locates bytes and
@@ -78,8 +78,14 @@ requirement is consumed on: requirements whose `kind` is `build` or `tool`
 resolve against the build platform, and every other kind resolves against the
 host. `requirementKindPolicy.buildPlatformKinds` replaces that set, and
 `requirementKindPolicy.inactiveKinds` marks kinds that do not participate in the
-solve at all. Conflicts, cardinality selectors, and capability target predicates
-are host-platform facts.
+solve at all. Conflicts, cardinality selectors, and the target predicates
+attached to capability offers are host-platform facts.
+
+The `capabilityPresent` predicate also resolves against the host platform
+regardless of the enclosing requirement's kind, because a capability describes
+what the running environment provides. A build-consumed requirement that needs a
+build-platform capability MUST state it as an explicit `build.`-prefixed scalar
+predicate rather than relying on `capabilityPresent`.
 
 Implementations MUST resolve predicates through one platform view shared by
 search, proof construction, and the independent checker. A capture that inferred

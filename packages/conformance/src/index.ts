@@ -166,7 +166,33 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
     }
 
     // A tree manifest with two entries for one path does not identify a tree.
+    // Path shape is also checked here: the schema pattern needs lookaheads,
+    // which several non-JavaScript validators do not support.
     if (record.manifestVersion === '1' && Array.isArray(record.entries)) {
+      for (const [index, item] of record.entries.entries()) {
+        const entryPath =
+          typeof item === 'object' && item !== null
+            ? (item as { path?: unknown }).path
+            : undefined;
+        if (typeof entryPath !== 'string') continue;
+        const segments = entryPath.split('/');
+        const unsafe =
+          entryPath.startsWith('/') ||
+          entryPath.includes('\\') ||
+          // eslint-disable-next-line no-control-regex
+          /[\u0000-\u001f\u007f]/u.test(entryPath) ||
+          segments.some(
+            (segment) =>
+              segment.length === 0 || segment === '.' || segment === '..',
+          );
+        if (unsafe)
+          errors.push(
+            prexError(
+              'treePathShape',
+              `Unsafe tree manifest path at ${path}/entries/${index}`,
+            ),
+          );
+      }
       const paths = record.entries
         .filter(
           (item): item is { path: string } =>

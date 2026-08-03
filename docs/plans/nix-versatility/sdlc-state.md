@@ -37,14 +37,15 @@ changes; adapters and installers are follow-on work.
    authority-gated, off by default, and digest-identical when unaccepted. Worked
    `pkg:nix` example: a two-output derivation with its closure. ADRs 0028-0029,
    `docs/integrations/nix.md`.
-5. **Performance + digest stability fixes** — see "Regressions caught" below.
+5. **Fixes found by review** — see "Regressions caught" below.
 
 ## Verification
 
-`npm run verify` green (all 22 steps). 98 conformance vectors (was 34), 21
-canonical tests including pinned projection digests, 13 resolver tests including
-cross-platform and amendment no-op proofs. All 19 protocol goldens
-byte-unchanged: no existing digest moved.
+`npm run verify` green (all 22 steps). 105 conformance vectors (was 34), 21
+canonical tests including pinned projection digests, and 18 resolver tests
+covering cross-platform solving, platform-prefixed predicate resolution,
+inactive requirement kinds, and the amendment no-op digest equality. All 19
+protocol goldens byte-unchanged: no existing digest moved.
 
 ## Regressions caught and fixed during implementation
 
@@ -56,6 +57,20 @@ byte-unchanged: no existing digest moved.
   `requestDigest`, `policyDigest`, and all 19 goldens. Fixed by skipping the
   field when empty — adding a policy field must never change an existing solve's
   digests.
+- Independent review found the resolver emitting an `amendment-ignored`
+  explanation node whose `kind` was absent from the closed schema enum, so every
+  solve over a universe with an unaccepted amendment produced an invalid
+  `SolveResponse`. Fixed and guarded by a vector built from real resolver
+  output.
+- Review also found the platform code had no test that would fail if it were
+  removed. Added cross-platform solve, prefix-resolution, host-equality, and
+  inactive-kind tests — the inactive-kind test immediately exposed a real bug
+  where dropped requirements still produced proof witnesses the checker
+  rejected.
+- The tree-manifest path pattern was bypassable with an embedded newline
+  (`[^\\]` matches newline, `.` does not). Tightened, and the rule is now also
+  enforced structurally because the pattern needs lookaheads that some
+  non-JavaScript validators lack.
 
 ## Deferred (named follow-on initiatives)
 

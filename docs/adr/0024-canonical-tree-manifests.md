@@ -25,11 +25,14 @@ SHA-256 digest, and size. It reuses the per-file digests the materializer
 already computes, so tree identity is a projection of data PREX had, not a new
 hashing pipeline.
 
-Path rules are normative and enforced in schema: relative, forward-slash
-separated, no leading slash, no empty segment, no `.` or `..` segment, no
-backslash. Entry kinds are `file`, `executable`, `directory`, and `symlink`; the
-executable bit is carried by `kind` rather than a mode integer so trees digest
-identically across platforms.
+Path rules are normative: relative, forward-slash separated, no leading slash,
+no empty segment, no `.` or `..` segment, no backslash, no control characters.
+The schema pattern enforces them, and the reference validator enforces them
+again structurally, because the pattern needs lookaheads that several
+non-JavaScript JSON Schema implementations do not support. Entry kinds are
+`file`, `executable`, `directory`, and `symlink`; the executable bit is carried
+by `kind` rather than a mode integer so trees digest identically across
+platforms.
 
 Byte compatibility with Nix NAR hashes is an explicit non-goal. A native NAR is
 an ordinary artifact: its bytes get an `ArtifactDescriptor.digest` like any
@@ -46,6 +49,11 @@ canonicalization rules and needs no new parser.
 
 The cost is honest and stated: a PREX `treeDigest` cannot be compared to a hash
 produced by `nix hash path`. Cross-checking against a native tree hash requires
-carrying that native value explicitly. Symlink entries are representable so
-captures stay faithful, but the reference implementation refuses to materialize
-them and records `TREE_ENTRY_UNSUPPORTED`.
+carrying that native value explicitly.
+
+Symlink entries are representable so that captures stay faithful to what a tree
+contained. Materializing one is a separate question: the reference materializer
+rejects symlink archive entries today, and a materializer that declines a
+symlink entry MUST record `TREE_ENTRY_UNSUPPORTED`. That rule is normative for
+implementations; wiring it into `packages/materializer` alongside tree-manifest
+production is follow-on work.

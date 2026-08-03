@@ -609,7 +609,7 @@
           "$ref": "model.schema.json#/$defs/PlatformContexts"
         },
         "requirementKindPolicy": {
-          "$comment": "Which requirement kinds resolve against the build platform, and which are inactive. Absent means every requirement resolves against the host platform.",
+          "$comment": "Overrides which requirement kinds resolve against the build platform, and which are inactive. Absent means the default attribution applies: build and tool resolve against the build platform, every other kind against the host.",
           "type": "object",
           "properties": {
             "buildPlatformKinds": {
@@ -995,7 +995,9 @@
                   "policy",
                   "objective",
                   "semantic-loss",
-                  "proof"
+                  "proof",
+                  "amendment-applied",
+                  "amendment-ignored"
                 ]
               },
               "label": {

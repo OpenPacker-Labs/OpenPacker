@@ -1,0 +1,192 @@
+{
+  "edges": [
+    {
+      "from": "requirement:root-tool",
+      "kind": "satisfied-by",
+      "to": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "from": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:satisfy-hard-constraints",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:preserve-locks",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:minimize-changes",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:minimize-package-count",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:exclude-lifecycle-denied",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:prefer-stable",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:prefer-highest-native-version",
+      "kind": "checked-by",
+      "to": "proof-check"
+    },
+    {
+      "from": "objective:canonical-lexical-tie-break",
+      "kind": "checked-by",
+      "to": "proof-check"
+    }
+  ],
+  "nodes": [
+    {
+      "data": {
+        "lifecycle": "published",
+        "rejectionReasons": ["objective-not-selected"],
+        "selected": false
+      },
+      "id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "kind": "candidate",
+      "label": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+    },
+    {
+      "data": {
+        "lifecycle": "published",
+        "rejectionReasons": [],
+        "selected": true
+      },
+      "id": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "kind": "candidate",
+      "label": "pkg:npm/%40openpacker/demo-tool@1.1.0"
+    },
+    {
+      "data": {
+        "status": "satisfied"
+      },
+      "id": "requirement:root-tool",
+      "kind": "requirement",
+      "label": "root-tool"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 0
+        },
+        "valid": true
+      },
+      "id": "objective:satisfy-hard-constraints",
+      "kind": "objective",
+      "label": "satisfy-hard-constraints"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 0
+        },
+        "valid": true
+      },
+      "id": "objective:preserve-locks",
+      "kind": "objective",
+      "label": "preserve-locks"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 1
+        },
+        "valid": true
+      },
+      "id": "objective:minimize-changes",
+      "kind": "objective",
+      "label": "minimize-changes"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 1
+        },
+        "valid": true
+      },
+      "id": "objective:minimize-package-count",
+      "kind": "objective",
+      "label": "minimize-package-count"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 0
+        },
+        "valid": true
+      },
+      "id": "objective:exclude-lifecycle-denied",
+      "kind": "objective",
+      "label": "exclude-lifecycle-denied"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": 0
+        },
+        "valid": true
+      },
+      "id": "objective:prefer-stable",
+      "kind": "objective",
+      "label": "prefer-stable"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": "1.1.0"
+        },
+        "valid": true
+      },
+      "id": "objective:prefer-highest-native-version",
+      "kind": "objective",
+      "label": "prefer-highest-native-version"
+    },
+    {
+      "data": {
+        "evidence": {
+          "value": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "valid": true
+      },
+      "id": "objective:canonical-lexical-tie-break",
+      "kind": "objective",
+      "label": "canonical-lexical-tie-break"
+    },
+    {
+      "data": {
+        "appliesToMetadataDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "authority": "organization",
+        "operationCount": 2
+      },
+      "id": "amendment-ignored:0",
+      "kind": "amendment-ignored",
+      "label": "amendment from organization was not admitted by policy"
+    },
+    {
+      "data": {
+        "valid": true
+      },
+      "id": "proof-check",
+      "kind": "proof",
+      "label": "independent proof check"
+    }
+  ],
+  "roots": ["requirement:root-tool"],
+  "unsatCore": []
+}
