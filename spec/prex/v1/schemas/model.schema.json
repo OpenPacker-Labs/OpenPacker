@@ -512,12 +512,330 @@
           }
         },
         "chunkIndexRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "treeDigest": {
+          "$comment": "tree-manifest-v1 projection digest of the extracted directory tree; identifies unpacked content, never transport bytes",
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "treeManifestRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "producedBy": {
+          "$comment": "Captured claim that a build recipe produced these bytes. Verification is an evidence fact; it never establishes identity.",
+          "type": "object",
+          "required": ["recipeDigest", "outputName"],
+          "properties": {
+            "recipeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+            "outputName": { "$ref": "#/$defs/OutputName" }
+          },
+          "additionalProperties": false
+        },
+        "runtimeReferences": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/ArtifactReference" }
+        },
         "referrers": {
           "type": "array",
           "maxItems": 128,
           "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
         },
         "externalRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "OutputName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "ArtifactReference": {
+      "$comment": "A reference from one realised artifact to another. At least one selector is required; multiple selectors must agree.",
+      "type": "object",
+      "anyOf": [
+        { "required": ["artifactDigest"] },
+        { "required": ["recipeOutputId"] },
+        { "required": ["nodeId"] }
+      ],
+      "properties": {
+        "artifactDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "recipeOutputId": { "$ref": "common.schema.json#/$defs/Digest" },
+        "nodeId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "outputName": { "$ref": "#/$defs/OutputName" }
+      },
+      "additionalProperties": false
+    },
+    "TreeManifestEntry": {
+      "type": "object",
+      "required": ["path", "kind"],
+      "properties": {
+        "path": {
+          "$comment": "Relative, forward-slash separated. No leading slash, no empty segment, no '.' or '..' segment, no backslash.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\\\]+$"
+        },
+        "kind": { "enum": ["file", "executable", "directory", "symlink"] },
+        "digest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "target": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "enum": ["file", "executable"] } }
+          },
+          "then": { "required": ["digest", "size"] }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "symlink" } }
+          },
+          "then": { "required": ["target"] }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "directory" } }
+          },
+          "then": {
+            "not": {
+              "anyOf": [{ "required": ["digest"] }, { "required": ["target"] }]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "TreeManifest": {
+      "$comment": "Canonical whole-tree identity. treeDigest = tree-manifest-v1 projection digest. Deliberately not byte-compatible with Nix NAR hashing; native serializations travel as ordinary artifacts.",
+      "type": "object",
+      "required": ["manifestVersion", "entries"],
+      "properties": {
+        "manifestVersion": { "const": "1" },
+        "entries": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": { "$ref": "#/$defs/TreeManifestEntry" }
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "PlatformContexts": {
+      "$comment": "Build/host/target separation. Absent members default to the host context; host defaults to the enclosing request target.",
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "build": { "$ref": "#/$defs/TargetContext" },
+        "host": { "$ref": "#/$defs/TargetContext" },
+        "target": { "$ref": "#/$defs/TargetContext" }
+      },
+      "additionalProperties": false
+    },
+    "BuildRecipeInput": {
+      "type": "object",
+      "required": ["role"],
+      "anyOf": [
+        { "required": ["nodeId"] },
+        { "required": ["exactPurl"] },
+        { "required": ["recipeOutputId"] },
+        { "required": ["artifactDigest"] },
+        { "required": ["sourceRef"] }
+      ],
+      "properties": {
+        "role": { "enum": ["source", "build", "host", "target", "recipe"] },
+        "nodeId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "exactPurl": {
+          "type": "string",
+          "pattern": "^pkg:[a-z0-9.+-]+/",
+          "maxLength": 4096
+        },
+        "recipeOutputId": { "$ref": "common.schema.json#/$defs/Digest" },
+        "artifactDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "sourceRef": { "$ref": "common.schema.json#/$defs/SourceRef" },
+        "outputs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OutputName" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "BuildRecipeOutput": {
+      "type": "object",
+      "required": ["name", "hashMode"],
+      "properties": {
+        "name": { "$ref": "#/$defs/OutputName" },
+        "hashMode": {
+          "enum": ["input-addressed", "content-addressed", "fixed-output"]
+        },
+        "inputAddress": {
+          "$comment": "Opaque native input-address token (for example a Nix store-path hash). Never a PREX Digest.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "expectedDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "expectedTreeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "nodeId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "allOf": [
+        {
+          "$comment": "A fixed-output recipe must pin what it expects to fetch.",
+          "if": {
+            "required": ["hashMode"],
+            "properties": { "hashMode": { "const": "fixed-output" } }
+          },
+          "then": {
+            "anyOf": [
+              { "required": ["expectedDigest"] },
+              { "required": ["expectedTreeDigest"] }
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "BuildRecipe": {
+      "$comment": "A captured build plan. PREX never executes a recipe; recipeDigest = build-recipe-v1 projection digest, and recipeOutputId = recipe-output-v1 projection digest over {outputName, recipeDigest}.",
+      "type": "object",
+      "required": [
+        "recipeVersion",
+        "captureProfile",
+        "kind",
+        "builder",
+        "inputs",
+        "outputs",
+        "provenance",
+        "semanticLoss"
+      ],
+      "properties": {
+        "recipeVersion": { "const": "1" },
+        "captureProfile": { "const": "derivation-capture-v1" },
+        "kind": {
+          "enum": [
+            "derivation",
+            "image-build",
+            "source-build",
+            "repackage",
+            "unknown"
+          ]
+        },
+        "builder": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "ref": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+          },
+          "additionalProperties": false
+        },
+        "system": { "type": "string", "maxLength": 128 },
+        "platforms": { "$ref": "#/$defs/PlatformContexts" },
+        "inputs": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/BuildRecipeInput" }
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/BuildRecipeOutput" }
+        },
+        "provenance": { "enum": ["captured", "attested", "declared"] },
+        "planRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "nativeRecipe": {
+          "type": "object",
+          "required": ["version", "data"],
+          "properties": {
+            "version": { "type": "string", "maxLength": 64 },
+            "data": { "$ref": "common.schema.json#/$defs/CanonicalJsonValue" }
+          },
+          "additionalProperties": false
+        },
+        "sourceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SourceRef" }
+        },
+        "attestations": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
+        },
+        "extensions": { "$ref": "common.schema.json#/$defs/Extensions" }
+      },
+      "additionalProperties": false
+    },
+    "SubstituteDescriptor": {
+      "$comment": "Prebuilt-content availability metadata (a binary-cache entry). A substitute locates bytes and declares references; it never establishes identity and must be digest-verified before use.",
+      "type": "object",
+      "required": [
+        "substituteVersion",
+        "subject",
+        "treeDigest",
+        "size",
+        "runtimeReferences",
+        "locations"
+      ],
+      "properties": {
+        "substituteVersion": { "const": "1" },
+        "subject": {
+          "type": "object",
+          "required": ["artifactDigest"],
+          "properties": {
+            "artifactDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+            "recipeOutputId": { "$ref": "common.schema.json#/$defs/Digest" },
+            "nodeId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          },
+          "additionalProperties": false
+        },
+        "treeDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "runtimeReferences": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/ArtifactReference" }
+        },
+        "deriver": { "$ref": "common.schema.json#/$defs/Digest" },
+        "chunkIndexRef": { "$ref": "common.schema.json#/$defs/ExternalRef" },
+        "locations": {
+          "$comment": "Excluded from the substitute-v1 projection: locations are mutable and never identity.",
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/ArtifactLocation" }
+        },
+        "evidenceRefs": {
           "type": "array",
           "maxItems": 128,
           "items": { "$ref": "common.schema.json#/$defs/ExternalRef" }

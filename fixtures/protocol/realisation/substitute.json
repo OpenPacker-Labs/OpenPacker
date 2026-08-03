@@ -1,0 +1,49 @@
+{
+  "substituteVersion": "1",
+  "subject": {
+    "artifactDigest": {
+      "algorithm": "sha256",
+      "value": "4cba440e079f40f50a56731293f73f3a754321e1133ed48470d13d13af633b6c"
+    },
+    "recipeOutputId": {
+      "algorithm": "sha256",
+      "value": "6bd556668ccc201f7a436c5ce4d4c6ccf46b736017382c51c193f586066022e8"
+    }
+  },
+  "treeDigest": {
+    "algorithm": "sha256",
+    "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+  },
+  "size": 40960,
+  "runtimeReferences": [
+    {
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "b91ca16db25e983db0558e49cb29b97a3c70a14523e8adebba83734814135673"
+      },
+      "outputName": "out"
+    }
+  ],
+  "deriver": {
+    "algorithm": "sha256",
+    "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+  },
+  "chunkIndexRef": {
+    "type": "chunk-index",
+    "locator": "urn:openpacker:chunk-index:sha256:8ef8e0e0c3016e5163f3af47aeaad520e20061d3cb95507828851cad01497437",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "8ef8e0e0c3016e5163f3af47aeaad520e20061d3cb95507828851cad01497437"
+    },
+    "mediaType": "application/vnd.openpacker.chunk-index.v1+json"
+  },
+  "locations": [
+    {
+      "transport": "https",
+      "uri": "https://cache-a.openpacker.invalid/nar/4cba440e079f40f50a56731293f73f3a754321e1133ed48470d13d13af633b6c",
+      "priority": 0,
+      "rangeSupported": true
+    }
+  ],
+  "evidenceRefs": []
+}

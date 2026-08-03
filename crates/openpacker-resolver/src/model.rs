@@ -275,6 +275,10 @@ pub struct ResolutionUniverse {
     pub overlays: Vec<Value>,
     #[serde(default)]
     pub source_snapshots: Vec<Value>,
+    /// Captured build plans. The pure resolver treats realisation facts as
+    /// opaque: they carry no selection semantics.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipes: Vec<Value>,
     pub lifecycle_root: Digest,
     pub target_vocabulary_version: String,
     pub canonical_digest: Digest,

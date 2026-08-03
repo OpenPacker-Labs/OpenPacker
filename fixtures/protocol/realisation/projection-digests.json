@@ -1,0 +1,29 @@
+{
+  "$comment": "Pinned projection digests for the realisation fixtures. Recomputed by packages/canonical tests; a mismatch means a projection or canonicalization rule changed.",
+  "treeManifest": {
+    "algorithm": "sha256",
+    "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+  },
+  "treeManifestDev": {
+    "algorithm": "sha256",
+    "value": "36e1aa0d0fe68fbb3f6b6d588ed554495cdc38eceb036be860751a751d0215e6"
+  },
+  "buildRecipe": {
+    "algorithm": "sha256",
+    "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+  },
+  "recipeOutputIds": {
+    "out": {
+      "algorithm": "sha256",
+      "value": "6bd556668ccc201f7a436c5ce4d4c6ccf46b736017382c51c193f586066022e8"
+    },
+    "dev": {
+      "algorithm": "sha256",
+      "value": "a4bff9c153f1af3488275b9724cf84d7af061dcb9bffbe2c20de4fc6580f3942"
+    }
+  },
+  "substitute": {
+    "algorithm": "sha256",
+    "value": "99ce25c58601816f702395ca9a870abaa2f93e58e91f196873686412f4e7a093"
+  }
+}

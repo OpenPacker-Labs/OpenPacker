@@ -1,0 +1,50 @@
+{
+  "descriptorId": "libgreet-out",
+  "digest": {
+    "algorithm": "sha256",
+    "value": "4cba440e079f40f50a56731293f73f3a754321e1133ed48470d13d13af633b6c"
+  },
+  "size": 40960,
+  "mediaType": "application/vnd.openpacker.package.tar+zstd",
+  "artifactType": "realisation-output",
+  "nativeRole": "package-archive",
+  "treeDigest": {
+    "algorithm": "sha256",
+    "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+  },
+  "treeManifestRef": {
+    "type": "tree-manifest",
+    "locator": "urn:openpacker:tree-manifest:sha256:3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+    },
+    "mediaType": "application/vnd.openpacker.tree-manifest.v1+json"
+  },
+  "producedBy": {
+    "recipeDigest": {
+      "algorithm": "sha256",
+      "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+    },
+    "outputName": "out"
+  },
+  "runtimeReferences": [
+    {
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "b91ca16db25e983db0558e49cb29b97a3c70a14523e8adebba83734814135673"
+      },
+      "outputName": "out"
+    }
+  ],
+  "locations": [
+    {
+      "transport": "https",
+      "uri": "https://fixtures.openpacker.invalid/libgreet-1.0-out.tar.zst",
+      "priority": 0,
+      "rangeSupported": true
+    }
+  ],
+  "referrers": [],
+  "externalRefs": []
+}

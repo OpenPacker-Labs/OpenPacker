@@ -115,6 +115,7 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
             packages,
             overlays: Vec::new(),
             source_snapshots: Vec::new(),
+            recipes: Vec::new(),
             lifecycle_root: digest('d'),
             target_vocabulary_version: "1".into(),
             canonical_digest: digest('e'),

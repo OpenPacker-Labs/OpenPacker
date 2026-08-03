@@ -20,7 +20,12 @@
       "canonicalization": "prex-jcs-safe-integer-v1",
       "includePaths": [],
       "excludePaths": ["/canonicalDigest"],
-      "orderedSetPaths": ["/overlays", "/packages", "/sourceSnapshots"]
+      "orderedSetPaths": [
+        "/overlays",
+        "/packages",
+        "/recipes",
+        "/sourceSnapshots"
+      ]
     },
     {
       "id": "package-node-v1",
@@ -104,6 +109,45 @@
       "includePaths": [],
       "excludePaths": [],
       "orderedSetPaths": []
+    },
+    {
+      "id": "tree-manifest-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/entries", "/semanticLoss"]
+    },
+    {
+      "id": "build-recipe-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": [
+        "/attestations",
+        "/evidenceRefs",
+        "/inputs",
+        "/outputs",
+        "/semanticLoss",
+        "/sourceRefs"
+      ]
+    },
+    {
+      "id": "recipe-output-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": []
+    },
+    {
+      "id": "substitute-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/locations"],
+      "orderedSetPaths": ["/evidenceRefs", "/runtimeReferences"]
     }
   ]
 }

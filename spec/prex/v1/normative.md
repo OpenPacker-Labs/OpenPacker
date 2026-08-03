@@ -36,6 +36,13 @@ locations, database identifiers, or transport credentials.
    profile, objective ordering, solution, proof, explanation, artifact set, and
    resolver build evidence MUST be bound into receipts as specified by the
    receipt schema.
+9. A build recipe is a captured claim about how bytes were produced. PREX
+   operations MUST NOT execute builders, lifecycle scripts, recipes, or
+   ecosystem expression languages. Reading artifact bytes to discover runtime
+   references is read-only analysis and is not execution. Output identity
+   (`recipe-output-v1`) and byte identity (artifact and tree digests) are
+   distinct and MUST NOT be conflated: a `producedBy` claim is verified as
+   evidence and never establishes identity by itself.
 
 ## Versioning and negotiation
 

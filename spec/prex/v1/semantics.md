@@ -10,6 +10,60 @@ and capability requirements, conjunction, alternatives, negation/conflict,
 optional requirements, target conditions, replacements, and
 cardinality/coexistence.
 
+`derivation-capture-v1` is a **capture profile**, carried on
+`BuildRecipe.captureProfile` rather than on `SemanticsInput`. It does not select
+a solver; the three solve profiles above are unchanged, and a fully captured
+realisation graph remains solvable under `prex-calculus-subset-v1` because its
+selections are exact. The profile claims exactly this: the recipe faithfully
+represents a native build plan as it existed at capture time, its declared
+digests are internally consistent, and every `producedBy` and
+`expectedTreeDigest` claim is mechanically checkable against realised bytes. It
+does not claim that the build is reproducible, that PREX executed anything, or
+that an ecosystem expression language was evaluated. `derivation-verified-v1` is
+reserved for a future profile in which an external builder attests a rebuild.
+
+## Realisation facts
+
+A `BuildRecipe` records inputs, outputs, platforms, and provenance for one build
+plan. `recipeDigest` is its `build-recipe-v1` projection digest;
+`recipeOutputId` is the `recipe-output-v1` projection digest over
+`{outputName, recipeDigest}` and identifies an output before any bytes exist.
+Sibling outputs of one plan share a `recipeDigest` and differ only by output
+name. Input roles (`source`, `build`, `host`, `target`, `recipe`) record which
+platform an input was consumed for; a capture that had to guess MUST record
+`PLATFORM_ATTRIBUTION_ASSUMED`.
+
+`treeDigest` is the `tree-manifest-v1` projection digest of a `TreeManifest` and
+identifies extracted content. Entry paths are relative and forward-slash
+separated, and MUST contain no empty, `.`, or `..` segment and no backslash.
+Executability is carried by entry `kind`, never by a mode integer, so identical
+trees digest identically across platforms. Tree identity is deliberately not
+byte-compatible with any native tree-serialization hash; a native value MAY be
+carried alongside in `externalRefs` or `extensions`.
+
+The **reference closure** of a set of artifacts is the least fixpoint under
+`ArtifactDescriptor.runtimeReferences`. Closure computation is a
+materialization-side check and never a solver obligation. References discovered
+by reading artifact bytes are permitted; see invariant 9 in
+[normative.md](normative.md).
+
+A `SubstituteDescriptor` advertises prebuilt content. It locates bytes and
+declares references; it MUST NOT establish identity. A consumer MUST verify the
+subject artifact digest or the tree digest before trusting substituted bytes,
+and MUST record `SUBSTITUTE_UNVERIFIED` when a substituter signature was not
+verified. Because the `substitute-v1` projection excludes `/locations`, the same
+content offered by different mirrors has one substitute digest.
+
+### Semantic-loss codes for realisation capture
+
+| Code                           | Severity | Meaning                                                            |
+| ------------------------------ | -------- | ------------------------------------------------------------------ |
+| `RECIPE_OPAQUE`                | info     | A build plan existed but its internals were not captured           |
+| `TREE_ENTRY_UNSUPPORTED`       | warning  | A tree entry kind is representable but not materializable here     |
+| `SUBSTITUTE_UNVERIFIED`        | warning  | Substituted bytes arrived without a verified substituter signature |
+| `CONTENT_ADDRESS_UNSUPPORTED`  | error    | A native content address uses an algorithm PREX cannot represent   |
+| `PLATFORM_ATTRIBUTION_ASSUMED` | warning  | An input's build/host/target role was inferred, not captured       |
+
 ## Hypergraph compilation
 
 An exact `PackageInstance` is a vertex. Each capability offer is a

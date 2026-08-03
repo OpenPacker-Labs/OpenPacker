@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   canonicalProjectionDigest,
@@ -9,7 +10,26 @@ import {
   projectCanonicalValue,
   sha256,
 } from '../src/index.js';
-import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
+import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
+
+const projectionFor = (id: string) => {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (item) => item.id === id,
+  );
+  if (!projection) throw new Error(`unknown projection ${id}`);
+  return projection;
+};
+
+const realisationFixture = async (name: string): Promise<JsonValue> =>
+  JSON.parse(
+    await readFile(
+      new URL(
+        `../../../fixtures/protocol/realisation/${name}.json`,
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as JsonValue;
 
 describe('PREX canonical JSON', () => {
   it('sorts keys recursively without changing array order', () => {
@@ -75,5 +95,119 @@ describe('PREX canonical JSON', () => {
     ).toBe(
       'sha256:4b1d2f63f36b7bb39a1330fcc07c7735100de097e10c32cbd6a4805c4f917935',
     );
+  });
+
+  it('sorts captured recipes into the universe projection', () => {
+    const projection = projectionFor('universe-v1');
+    const value = {
+      universeVersion: '1',
+      packages: [],
+      overlays: [],
+      recipes: [{ recipeVersion: '1', kind: 'source-build' }, { kind: 'aaa' }],
+      sourceSnapshots: [],
+      canonicalDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
+    };
+    expect(
+      (projectCanonicalValue(value, projection) as { recipes: unknown[] })
+        .recipes,
+    ).toEqual([{ kind: 'aaa' }, { recipeVersion: '1', kind: 'source-build' }]);
+  });
+});
+
+describe('realisation digest projections', () => {
+  it('pins tree, recipe, recipe-output, and substitute digests', async () => {
+    const pinned = (await realisationFixture('projection-digests')) as {
+      treeManifest: { value: string };
+      treeManifestDev: { value: string };
+      buildRecipe: { value: string };
+      recipeOutputIds: Record<string, { value: string }>;
+      substitute: { value: string };
+    };
+
+    const treeDigest = await canonicalProjectionDigest(
+      await realisationFixture('tree-manifest'),
+      projectionFor('tree-manifest-v1'),
+    );
+    expect(treeDigest.value).toBe(pinned.treeManifest.value);
+    const devTreeDigest = await canonicalProjectionDigest(
+      await realisationFixture('tree-manifest-dev'),
+      projectionFor('tree-manifest-v1'),
+    );
+    expect(devTreeDigest.value).toBe(pinned.treeManifestDev.value);
+    expect(devTreeDigest.value).not.toBe(treeDigest.value);
+
+    const recipeDigest = await canonicalProjectionDigest(
+      await realisationFixture('build-recipe'),
+      projectionFor('build-recipe-v1'),
+    );
+    expect(recipeDigest.value).toBe(pinned.buildRecipe.value);
+
+    // recipeOutputId derives identity from the plan before any bytes exist.
+    for (const outputName of ['out', 'dev']) {
+      const outputId = await canonicalProjectionDigest(
+        { outputName, recipeDigest } as unknown as JsonValue,
+        projectionFor('recipe-output-v1'),
+      );
+      expect(outputId.value).toBe(pinned.recipeOutputIds[outputName]?.value);
+    }
+    expect(pinned.recipeOutputIds.out?.value).not.toBe(
+      pinned.recipeOutputIds.dev?.value,
+    );
+
+    const substituteDigest = await canonicalProjectionDigest(
+      await realisationFixture('substitute'),
+      projectionFor('substitute-v1'),
+    );
+    expect(substituteDigest.value).toBe(pinned.substitute.value);
+  });
+
+  it('excludes mutable locations from the substitute projection', async () => {
+    const projection = projectionFor('substitute-v1');
+    const direct = await canonicalProjectionDigest(
+      await realisationFixture('substitute'),
+      projection,
+    );
+    const mirrored = await canonicalProjectionDigest(
+      await realisationFixture('substitute-mirrored'),
+      projection,
+    );
+    expect(mirrored.value).toBe(direct.value);
+  });
+
+  it('changes the tree digest when any file digest changes', async () => {
+    const projection = projectionFor('tree-manifest-v1');
+    const manifest = (await realisationFixture('tree-manifest')) as {
+      entries: { kind: string; digest?: { value: string } }[];
+    };
+    const before = await canonicalProjectionDigest(
+      manifest as unknown as JsonValue,
+      projection,
+    );
+    const tampered = structuredClone(manifest);
+    const file = tampered.entries.find((entry) => entry.kind === 'executable');
+    if (!file?.digest) throw new Error('fixture must contain an executable');
+    file.digest.value = 'f'.repeat(64);
+    const after = await canonicalProjectionDigest(
+      tampered as unknown as JsonValue,
+      projection,
+    );
+    expect(after.value).not.toBe(before.value);
+  });
+
+  it('binds an artifact to the recipe output that produced it', async () => {
+    const descriptor = (await realisationFixture('artifact-descriptor')) as {
+      treeDigest: { value: string };
+      producedBy: { recipeDigest: { value: string }; outputName: string };
+    };
+    const recipeDigest = await canonicalProjectionDigest(
+      await realisationFixture('build-recipe'),
+      projectionFor('build-recipe-v1'),
+    );
+    expect(descriptor.producedBy.recipeDigest.value).toBe(recipeDigest.value);
+    const treeDigest = await canonicalProjectionDigest(
+      await realisationFixture('tree-manifest'),
+      projectionFor('tree-manifest-v1'),
+    );
+    expect(descriptor.treeDigest.value).toBe(treeDigest.value);
   });
 });

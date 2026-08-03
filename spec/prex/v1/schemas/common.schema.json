@@ -56,7 +56,11 @@
             "explanation-v1",
             "artifact-set-v1",
             "receipt-v1",
-            "event-data-v1"
+            "event-data-v1",
+            "tree-manifest-v1",
+            "build-recipe-v1",
+            "recipe-output-v1",
+            "substitute-v1"
           ]
         },
         "algorithm": { "const": "sha256" },
@@ -201,7 +205,8 @@
             "enum": [
               "native-capture-v1",
               "native-validated-v1",
-              "prex-calculus-subset-v1"
+              "prex-calculus-subset-v1",
+              "derivation-capture-v1"
             ]
           }
         }
