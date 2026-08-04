@@ -126,3 +126,10 @@ export {
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
+
+export {
+  fetchTool,
+  selectToolBin,
+  toolCacheRoot,
+  type EphemeralTool,
+} from './ephemeral.js';

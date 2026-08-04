@@ -108,7 +108,17 @@ export async function materializeLockPackage(input: {
   pkg: LockPackage;
   offline: boolean;
   force?: boolean;
-}): Promise<{ storePath: string; bins: BinDeclaration[] }> {
+  /**
+   * Bytes already fetched and verified by the caller.
+   *
+   * Supplied by the ephemeral runner, whose provider downloaded them and
+   * checked them against the registry's own integrity claim to derive the
+   * digest. Fetching again would cost a second transfer and compare new bytes
+   * against a digest taken from the old ones. They are re-hashed below either
+   * way, so this is a transfer saving and not a trust shortcut.
+   */
+  bytes?: Uint8Array;
+}): Promise<{ storePath: string; bins: BinDeclaration[]; cached: boolean }> {
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
@@ -119,14 +129,15 @@ export async function materializeLockPackage(input: {
       input.pkg.bins.length > 0
         ? [...input.pkg.bins]
         : await discoverNpmBins(storePath);
-    return { storePath, bins };
+    return { storePath, bins, cached: true };
   }
   if (already && input.force) {
     await rm(storePath, { recursive: true, force: true });
   }
 
   await mkdir(paths.store, { recursive: true });
-  const bytes = await fetchArtifactBytes(input.pkg.source, input.offline);
+  const bytes =
+    input.bytes ?? (await fetchArtifactBytes(input.pkg.source, input.offline));
   const actual = digestOf(bytes);
   if (actual !== input.pkg.digest) {
     throw new OpmError(
@@ -161,7 +172,7 @@ export async function materializeLockPackage(input: {
     input.pkg.bins.length > 0
       ? [...input.pkg.bins]
       : await discoverNpmBins(storePath);
-  return { storePath, bins };
+  return { storePath, bins, cached: false };
 }
 
 export async function installFromLock(input: {

@@ -8,6 +8,8 @@ import {
   readProjectState,
   requireOpmRoot,
   resolveExecutable,
+  fetchTool,
+  selectToolBin,
 } from '@openpacker/opm-project';
 
 export const EXIT_CODES = {
@@ -39,6 +41,26 @@ export async function runOpmx(
     }
 
     const { packageAlias, binName, positionals, passthrough } = parse(argv);
+
+    // A PURL means "run this tool", not "run something this project
+    // installed" — the npx/uvx/pipx-run shape. It deliberately does not need a
+    // project, since the whole point is not having to make one.
+    const requested = packageAlias ?? positionals[0];
+    if (requested !== undefined && requested.startsWith('pkg:')) {
+      const tool = await fetchTool({ purl: requested });
+      const bin = selectToolBin(tool, binName);
+      const target = join(
+        tool.storePath,
+        ...bin.path.split('/').filter(Boolean),
+      );
+      // Say which version actually ran. An unpinned ephemeral run resolves to
+      // whatever is newest, so it is a different thing tomorrow.
+      io.stderr.write(
+        `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
+      );
+      return await spawnTool(target, passthrough, io, cwd);
+    }
+
     const root = await requireOpmRoot(cwd);
     const paths = projectPaths(root);
     const state = await readProjectState(paths.projectState);
@@ -67,35 +89,7 @@ export async function runOpmx(
       ...(positionals[0] !== undefined ? { positional: positionals[0] } : {}),
     });
 
-    const args = passthrough;
-    const useInherit = io.stdout === process.stdout;
-    const exitCode = await new Promise<number>((resolvePromise) => {
-      const child = spawn(process.execPath, [resolved.target, ...args], {
-        stdio: useInherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-        env: process.env,
-        cwd,
-      });
-      if (!useInherit) {
-        child.stdout?.on('data', (chunk: Buffer | string) => {
-          io.stdout.write(String(chunk));
-        });
-        child.stderr?.on('data', (chunk: Buffer | string) => {
-          io.stderr.write(String(chunk));
-        });
-      }
-      child.on('error', (error) => {
-        io.stderr.write(`opmx: ${error.message}\n`);
-        resolvePromise(EXIT_CODES.internal);
-      });
-      child.on('exit', (code, signal) => {
-        if (signal) {
-          resolvePromise(1);
-          return;
-        }
-        resolvePromise(code ?? 1);
-      });
-    });
-    return exitCode;
+    return await spawnTool(resolved.target, passthrough, io, cwd);
   } catch (error) {
     if (error instanceof OpmError) {
       io.stderr.write(`opmx: ${error.message}\n`);
@@ -109,6 +103,47 @@ export async function runOpmx(
     );
     return EXIT_CODES.internal;
   }
+}
+
+/**
+ * Run a resolved executable and forward its exit status.
+ *
+ * Shared by both paths so an ephemeral tool behaves exactly like an installed
+ * one: same stdio, same signal handling, same exit code.
+ */
+async function spawnTool(
+  target: string,
+  args: readonly string[],
+  io: CliIo,
+  cwd: string,
+): Promise<number> {
+  const useInherit = io.stdout === process.stdout;
+  return new Promise<number>((resolvePromise) => {
+    const child = spawn(process.execPath, [target, ...args], {
+      stdio: useInherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+      cwd,
+    });
+    if (!useInherit) {
+      child.stdout?.on('data', (chunk: Buffer | string) => {
+        io.stdout.write(String(chunk));
+      });
+      child.stderr?.on('data', (chunk: Buffer | string) => {
+        io.stderr.write(String(chunk));
+      });
+    }
+    child.on('error', (error) => {
+      io.stderr.write(`opmx: ${error.message}\n`);
+      resolvePromise(EXIT_CODES.internal);
+    });
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        resolvePromise(1);
+        return;
+      }
+      resolvePromise(code ?? 1);
+    });
+  });
 }
 
 function parse(argv: string[]): {
@@ -173,14 +208,23 @@ function parse(argv: string[]): {
 }
 
 function help(): string {
-  return `opmx — execute binaries from an opm project install
+  return `opmx — execute a package binary
 
-Usage:
+From this project's install (needs opm.toml and a prior opm install/sync):
   opmx <package-or-bin> [args...]
   opmx --package <alias> [--bin <name>] -- [args...]
   opmx -p demo-tool -c demo-tool -- --version
 
-Requires a nearby opm.toml and prior \`opm install\` / \`opm sync\`.
+Straight from a registry, without installing — the npx/uvx/pipx-run shape.
+No project required:
+  opmx pkg:npm/json@11.0.0 -- --version
+  opmx pkg:npm/json                     # newest published version
+  opmx pkg:npm/some-tool --bin other    # when a package ships several
+
+Tools are cached content-addressed, so a repeat run downloads nothing. The
+resolved version is printed to stderr, because an unpinned run is a different
+thing tomorrow. Cache location: OPM_TOOL_CACHE, else XDG_CACHE_HOME, else
+~/.cache/openpacker/x.
 `;
 }
 

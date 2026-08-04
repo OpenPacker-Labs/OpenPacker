@@ -10,6 +10,8 @@ import {
   registryEndpoint,
   resolveRegistryArtifact,
   searchRegistry,
+  selectToolBin,
+  fetchTool,
   OpmError,
 } from '../src/index.js';
 
@@ -243,5 +245,79 @@ describe('artifact resolution', () => {
         now: () => '2026-08-04T00:00:00Z',
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+});
+
+describe('ephemeral tool selection', () => {
+  const tool = (
+    bins: { name: string; path: string }[],
+    purl = 'pkg:npm/demo@1.0.0',
+  ) => ({
+    exactPurl: purl,
+    digest: `sha256:${'a'.repeat(64)}`,
+    storePath: '/tmp/store',
+    bins,
+    cached: false,
+  });
+
+  it('runs the only executable without being told which', () => {
+    expect(
+      selectToolBin(tool([{ name: 'anything', path: 'package/bin/x.js' }]))
+        .name,
+    ).toBe('anything');
+  });
+
+  it('prefers the executable named after the package', () => {
+    // `npx eslint` must run eslint, not whichever entry happens to sort first.
+    const chosen = selectToolBin(
+      tool(
+        [
+          { name: 'aaa-helper', path: 'package/bin/a.js' },
+          { name: 'demo', path: 'package/bin/demo.js' },
+        ],
+        'pkg:npm/demo@1.0.0',
+      ),
+    );
+    expect(chosen.name).toBe('demo');
+  });
+
+  it('refuses to guess when several executables and none matches', () => {
+    // Silently running a different tool than the one asked for is worse than
+    // an error.
+    expect(() =>
+      selectToolBin(
+        tool([
+          { name: 'one', path: 'package/bin/one.js' },
+          { name: 'two', path: 'package/bin/two.js' },
+        ]),
+      ),
+    ).toThrow(/--bin/u);
+  });
+
+  it('honours an explicit choice and names the alternatives when wrong', () => {
+    const bins = [
+      { name: 'one', path: 'package/bin/one.js' },
+      { name: 'two', path: 'package/bin/two.js' },
+    ];
+    expect(selectToolBin(tool(bins), 'two').name).toBe('two');
+    expect(() => selectToolBin(tool(bins), 'three')).toThrow(/one, two/u);
+  });
+
+  it('says so when a package ships nothing runnable', () => {
+    expect(() => selectToolBin(tool([]))).toThrow(/no executable/u);
+  });
+
+  it('refuses an ephemeral run offline rather than pretending to work', async () => {
+    // There is no lockfile here, so an ephemeral run is registry resolution by
+    // definition.
+    await expect(
+      fetchTool({ purl: 'pkg:npm/demo@1.0.0', offline: true }),
+    ).rejects.toMatchObject({ code: 'OFFLINE' });
+  });
+
+  it('refuses an ecosystem it cannot resolve', async () => {
+    await expect(
+      fetchTool({ purl: 'pkg:cocoapods/demo@1.0.0' }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_ECOSYSTEM' });
   });
 });
