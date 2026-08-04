@@ -16,6 +16,20 @@ export interface PackageRequirement {
 export interface BinDeclaration {
   name: string;
   path: string;
+  /**
+   * What runs this entry point.
+   *
+   * npm ships a script file that Node executes, which is why this was implicit
+   * for so long. Other ecosystems do not: a Python console script is a module
+   * and a function to call, and a .NET tool is a managed assembly. Naming the
+   * interpreter is what lets one runner serve all of them instead of silently
+   * finding nothing outside npm.
+   *
+   * Absent means Node, so every existing lockfile keeps its meaning.
+   */
+  interpreter?: 'node' | 'python' | 'dotnet';
+  /** For Python console scripts: the `module:callable` to invoke. */
+  entry?: string;
 }
 
 export interface OpmManifest {

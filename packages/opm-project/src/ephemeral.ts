@@ -136,11 +136,20 @@ export function selectToolBin(
   tool: EphemeralTool,
   requested?: string,
 ): BinDeclaration {
-  if (tool.bins.length === 0)
+  if (tool.bins.length === 0) {
+    // Name the reason. "Declares no executable" is true but useless when the
+    // real answer is that this ecosystem's entry-point convention is not
+    // implemented — those are different problems with different fixes.
+    const ecosystem = tool.exactPurl.slice('pkg:'.length).split('/')[0];
+    const understood = ecosystem === 'npm' || ecosystem === 'pypi';
     throw new OpmError(
-      'NOT_FOUND',
-      `${tool.exactPurl} declares no executable to run.`,
+      understood ? 'NOT_FOUND' : 'UNSUPPORTED_ECOSYSTEM',
+      understood
+        ? `${tool.exactPurl} declares no executable to run.`
+        : `${tool.exactPurl} was fetched and verified, but opm does not yet ` +
+          `know how ${ecosystem} declares executables, so it cannot be run.`,
     );
+  }
   if (requested !== undefined) {
     const found = tool.bins.find((bin) => bin.name === requested);
     if (!found)

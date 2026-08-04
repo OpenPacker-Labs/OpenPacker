@@ -52,7 +52,9 @@ export {
 } from './spec.js';
 
 export {
+  discoverBins,
   discoverNpmBins,
+  discoverPythonBins,
   removeBinShims,
   resolveExecutable,
   writeBinShims,

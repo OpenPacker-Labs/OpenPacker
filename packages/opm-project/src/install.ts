@@ -17,7 +17,12 @@ import type {
 } from './types.js';
 import { recordGeneration } from './generations.js';
 import { OpmError } from './types.js';
-import { discoverNpmBins, removeBinShims, writeBinShims } from './bins.js';
+import {
+  discoverBins,
+  discoverNpmBins,
+  removeBinShims,
+  writeBinShims,
+} from './bins.js';
 import {
   assertSafeSegment,
   assertStoreKey,
@@ -128,7 +133,7 @@ export async function materializeLockPackage(input: {
     const bins =
       input.pkg.bins.length > 0
         ? [...input.pkg.bins]
-        : await discoverNpmBins(storePath);
+        : await discoverBins(storePath, input.pkg.ecosystem);
     return { storePath, bins, cached: true };
   }
   if (already && input.force) {
@@ -171,7 +176,7 @@ export async function materializeLockPackage(input: {
   let bins: BinDeclaration[] =
     input.pkg.bins.length > 0
       ? [...input.pkg.bins]
-      : await discoverNpmBins(storePath);
+      : await discoverBins(storePath, input.pkg.ecosystem);
   return { storePath, bins, cached: false };
 }
 

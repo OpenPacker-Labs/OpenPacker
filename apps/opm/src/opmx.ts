@@ -49,16 +49,12 @@ export async function runOpmx(
     if (requested !== undefined && requested.startsWith('pkg:')) {
       const tool = await fetchTool({ purl: requested });
       const bin = selectToolBin(tool, binName);
-      const target = join(
-        tool.storePath,
-        ...bin.path.split('/').filter(Boolean),
-      );
       // Say which version actually ran. An unpinned ephemeral run resolves to
       // whatever is newest, so it is a different thing tomorrow.
       io.stderr.write(
         `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
       );
-      return await spawnTool(target, passthrough, io, cwd);
+      return await spawnDeclared(bin, tool.storePath, passthrough, io, cwd);
     }
 
     const root = await requireOpmRoot(cwd);
@@ -106,6 +102,55 @@ export async function runOpmx(
 }
 
 /**
+ * Run an entry point with whatever interpreter its ecosystem needs.
+ *
+ * npm ships a script Node executes; a Python console script is a module and a
+ * callable, with no file to point at. Dispatching here is what lets one runner
+ * serve both rather than only finding npm packages runnable.
+ */
+async function spawnDeclared(
+  bin: { path: string; interpreter?: string; entry?: string; name: string },
+  storePath: string,
+  args: readonly string[],
+  io: CliIo,
+  cwd: string,
+): Promise<number> {
+  if (bin.interpreter === 'python') {
+    const [moduleName, callable] = (bin.entry ?? '').split(':');
+    if (!moduleName || !callable)
+      throw new OpmError(
+        'NOT_FOUND',
+        `${bin.name} declares an unusable entry point: ${bin.entry ?? '(none)'}`,
+      );
+    // The wheel is on sys.path and its console script is called the way the
+    // packaging specification says to. Only the store path and the entry point
+    // are interpolated, and both were validated when they were discovered.
+    const program =
+      'import sys, runpy\n' +
+      `sys.path.insert(0, ${JSON.stringify(storePath)})\n` +
+      `from ${moduleName} import ${callable} as _entry\n` +
+      'sys.exit(_entry())\n';
+    return spawnProcess(
+      pythonExecutable(),
+      ['-c', program, ...args],
+      io,
+      cwd,
+      // A wheel with dependencies needs them importable; nothing resolves a
+      // Python dependency graph yet, so an ImportError here is that gap
+      // surfacing rather than a broken package.
+      `${bin.name} needs a Python interpreter on PATH`,
+    );
+  }
+  const target = join(storePath, ...bin.path.split('/').filter(Boolean));
+  return spawnTool(target, args, io, cwd);
+}
+
+/** The Python to run console scripts with. */
+function pythonExecutable(): string {
+  return process.env.OPM_PYTHON?.trim() || 'python3';
+}
+
+/**
  * Run a resolved executable and forward its exit status.
  *
  * Shared by both paths so an ephemeral tool behaves exactly like an installed
@@ -117,9 +162,19 @@ async function spawnTool(
   io: CliIo,
   cwd: string,
 ): Promise<number> {
+  return spawnProcess(process.execPath, [target, ...args], io, cwd);
+}
+
+function spawnProcess(
+  command: string,
+  argv: readonly string[],
+  io: CliIo,
+  cwd: string,
+  missingHint?: string,
+): Promise<number> {
   const useInherit = io.stdout === process.stdout;
   return new Promise<number>((resolvePromise) => {
-    const child = spawn(process.execPath, [target, ...args], {
+    const child = spawn(command, [...argv], {
       stdio: useInherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
       env: process.env,
       cwd,
@@ -133,8 +188,13 @@ async function spawnTool(
       });
     }
     child.on('error', (error) => {
-      io.stderr.write(`opmx: ${error.message}\n`);
-      resolvePromise(EXIT_CODES.internal);
+      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      io.stderr.write(
+        `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : error.message}\n`,
+      );
+      resolvePromise(
+        missing && missingHint ? EXIT_CODES.unavailable : EXIT_CODES.internal,
+      );
     });
     child.on('exit', (code, signal) => {
       if (signal) {
@@ -145,6 +205,8 @@ async function spawnTool(
     });
   });
 }
+
+export const parseForTest = (argv: string[]) => parse(argv);
 
 function parse(argv: string[]): {
   packageAlias?: string;
@@ -192,7 +254,12 @@ function parse(argv: string[]): {
       positionals.push(arg);
       seenSelector = true;
       i += 1;
-      // remaining args after selector are passthrough
+      // Everything after the selector belongs to the tool. A `--` sitting
+      // immediately there is the separator itself and must not be forwarded:
+      // `opmx tool -- -t x` was handing the tool a literal "--", which any
+      // argument parser reads as end-of-options and then fails on the flags
+      // that follow.
+      if (argv[i] === '--') i += 1;
       passthrough.push(...argv.slice(i));
       break;
     }
