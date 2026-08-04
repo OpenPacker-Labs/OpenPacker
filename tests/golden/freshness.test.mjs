@@ -193,6 +193,10 @@ test('imported native lockfiles derive node identity through the projection', as
   // own derivation. It ships as `npm run demo:lock-import` across all six
   // ecosystems, so every one of them is checked here.
   const expectedFor = await nodeIdProjection();
+  const { configureDefaultAdapters } = await import(
+    '@openpacker/adapters-default'
+  );
+  configureDefaultAdapters();
   const { planNativeLockImport } = await import('@openpacker/lock-import');
   const fixtures = [
     'npm/package-lock.json',

@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   OpmError,
   addPackage,
   activateGeneration,
   collectGarbage,
+  ecosystemFromPurl,
   environmentScript,
   environmentVariables,
+  findOpmRoot,
   initProject,
   installProject,
   listGenerations,
@@ -14,11 +17,13 @@ import {
   installSystemPackage,
   listRegistryVersions,
   listSystemInstallers,
+  parsePackageSpec,
   planSystemInstall,
   projectPaths,
   readEnvironmentState,
   removePackage,
-  REGISTRY_ECOSYSTEMS,
+  registryEcosystems,
+  requireAdapterRegistry,
   requireOpmRoot,
   resolveGraph,
   resolveRegistryArtifact,
@@ -83,6 +88,8 @@ export async function runOpm(
   cwd = process.cwd(),
 ): Promise<number> {
   try {
+    // Process entry registers adapters; core never imports ecosystems by name.
+    configureDefaultAdapters();
     const args = parseArgs(argv);
     if (
       args.command === 'help' ||
@@ -114,20 +121,44 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'add': {
-        const root = await requireOpmRoot(cwd);
         const spec = args.positionals[0];
         if (!spec) throw usage('opm add requires a package spec');
-        const ecosystem = option(args, 'ecosystem') ?? option(args, 'e');
+        const ecosystemOpt = option(args, 'ecosystem') ?? option(args, 'e');
         const source = option(args, 'source');
         const alias = option(args, 'alias');
+        // Host/profile install is capability-driven and does not need a project.
+        if (!source) {
+          const parsed = parsePackageSpec(spec, {
+            ...(ecosystemOpt !== undefined ? { ecosystem: ecosystemOpt } : {}),
+          });
+          const ecosystem = parsed.ecosystem ?? ecosystemFromPurl(parsed.purl);
+          if (await requireAdapterRegistry().prefersHostInstall(ecosystem)) {
+            const exact = parsed.purl.startsWith('pkg:')
+              ? parsed.version !== undefined
+                ? `${parsed.purl.split('@')[0]}@${parsed.version}`
+                : parsed.purl.includes('@')
+                  ? parsed.purl
+                  : parsed.version
+                    ? `${parsed.purl}@${parsed.version}`
+                    : parsed.purl
+              : `pkg:${ecosystem}/${parsed.alias}${parsed.version ? `@${parsed.version}` : ''}`;
+            return runHostInstall(exact, args, io);
+          }
+        }
+        const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const result = await addPackage({
+          allowElevation: args.options.has('allow-elevation'),
+          dryRun: args.options.has('dry-run'),
           root,
           spec,
-          ...(ecosystem !== undefined ? { ecosystem } : {}),
+          ...(ecosystemOpt !== undefined ? { ecosystem: ecosystemOpt } : {}),
           ...(source !== undefined ? { source } : {}),
           ...(alias !== undefined ? { alias } : {}),
           offline: args.options.has('offline'),
         });
+        if (result.hostInstall) {
+          return writeHostInstallResult(result.hostInstall, args, io);
+        }
         io.stdout.write(
           `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}\n`,
         );
@@ -509,12 +540,9 @@ function isBooleanFlag(key: string): boolean {
 }
 
 /**
- * Drive a native host installer (apt / nix / winget).
+ * Compat alias for capability-driven host install. Prefer `opm add pkg:…`.
  *
- * Subcommands:
- * - `available` — which installers can run on this host
- * - `plan <purl>` — show the argv without changing anything
- * - `install <purl>` — perform the install (elevation opt-in)
+ * Subcommands: available | plan | install
  */
 async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
   const sub = args.positionals[0] ?? 'available';
@@ -524,46 +552,66 @@ async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
       const status = entry.availability.available
         ? `available${entry.availability.tool?.version ? ` (${entry.availability.tool.name} ${entry.availability.tool.version})` : ''}`
         : `unavailable: ${entry.availability.reason ?? 'unknown'}`;
-      io.stdout.write(`${entry.id}\t${status}\n`);
+      io.stdout.write(`${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
     }
     return EXIT_CODES.success;
   }
   if (sub === 'plan' || sub === 'install') {
     const purl = args.positionals[1];
     if (!purl) throw usage(`opm system ${sub} requires a PURL`);
-    const options = {
-      offline: args.options.has('offline'),
-      dryRun: sub === 'plan' || args.options.has('dry-run'),
-      allowElevation: args.options.has('allow-elevation'),
-    };
-    if (sub === 'plan' || options.dryRun) {
-      const plan = await planSystemInstall(purl, options);
-      io.stdout.write(`${plan.command.join(' ')}\n`);
-      if (plan.requiresElevation)
-        io.stderr.write(
-          'opm: this install needs elevation; pass --allow-elevation to consent\n',
-        );
-      for (const loss of plan.semanticLoss)
-        io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
-      return EXIT_CODES.success;
-    }
-    const outcome = await installSystemPackage(purl, options);
-    if (outcome.stdout) io.stdout.write(outcome.stdout);
-    if (outcome.stderr) io.stderr.write(outcome.stderr);
-    if (outcome.exitCode !== 0) {
-      io.stderr.write(
-        `opm: system install exited ${outcome.exitCode}: ${outcome.command.join(' ')}\n`,
-      );
-      return EXIT_CODES.internal;
-    }
-    io.stdout.write(
-      `Installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
-    );
-    return EXIT_CODES.success;
+    if (sub === 'plan') args.options.set('dry-run', true);
+    return runHostInstall(purl, args, io);
   }
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
+}
+
+async function runHostInstall(
+  purl: string,
+  args: Parsed,
+  io: CliIo,
+): Promise<number> {
+  const options = {
+    offline: args.options.has('offline'),
+    dryRun: args.options.has('dry-run'),
+    allowElevation: args.options.has('allow-elevation'),
+  };
+  if (options.dryRun) {
+    const plan = await planSystemInstall(purl, options);
+    return writeHostInstallResult({ plan }, args, io);
+  }
+  const outcome = await installSystemPackage(purl, options);
+  return writeHostInstallResult({ plan: outcome, outcome }, args, io);
+}
+
+function writeHostInstallResult(
+  result: {
+    plan: Awaited<ReturnType<typeof planSystemInstall>>;
+    outcome?: Awaited<ReturnType<typeof installSystemPackage>>;
+  },
+  args: Parsed,
+  io: CliIo,
+): number {
+  const { plan, outcome } = result;
+  io.stdout.write(`${plan.command.join(' ')}\n`);
+  for (const loss of plan.semanticLoss)
+    io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
+  if (plan.requiresElevation && !args.options.has('allow-elevation'))
+    io.stderr.write(
+      'opm: host install needs elevation; pass --allow-elevation to consent\n',
+    );
+  if (!outcome) return EXIT_CODES.success;
+  if (outcome.stdout) io.stdout.write(outcome.stdout);
+  if (outcome.stderr) io.stderr.write(outcome.stderr);
+  if (outcome.exitCode !== 0) {
+    io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
+    return EXIT_CODES.internal;
+  }
+  io.stdout.write(
+    `Host-installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
+  );
+  return EXIT_CODES.success;
 }
 
 function option(args: Parsed, name: string): string | undefined {
@@ -586,9 +634,10 @@ function registryEcosystem(args: Parsed, target: string): string {
     const type = target.slice(4).split('/')[0]?.toLowerCase();
     if (type) return type;
   }
+  const ecosystems = registryEcosystems().join('|') || 'npm|cargo|…';
   throw usage(
     `Cannot tell which registry "${target}" belongs to. ` +
-      `Pass a PURL (pkg:npm/${target}) or --ecosystem <${REGISTRY_ECOSYSTEMS.join('|')}>.`,
+      `Pass a PURL (pkg:npm/${target}) or --ecosystem <${ecosystems}>.`,
   );
 }
 
@@ -615,14 +664,15 @@ Resolve a full dependency graph (transitive, proof-checked):
   opm resolve pkg:npm/chalk --range '^4.1.0'
   opm resolve pkg:npm/chalk --candidates 8
 
-Host installers (change the machine; not the project store):
-  opm system available
-  opm system plan pkg:nix/hello
-  opm system install pkg:nix/hello
-  opm system install pkg:deb/curl --allow-elevation
-  opm system plan pkg:winget/Microsoft.PowerShell
+Host/profile installers use the same verbs when the registry advertises
+install (capability discovery). Examples:
+  opm add pkg:nix/hello
+  opm add pkg:deb/curl --allow-elevation --dry-run
+  opm system available   # alias: list install-capable adapters
 
-Registries: ${REGISTRY_ECOSYSTEMS.join(', ')}
+Registries (catalog, from adapter discovery): ${registryEcosystems().join(', ') || '(none configured)'}
+Host/profile install uses the same verbs when Registry Definition advertises install.
+
   Override one with OPM_REGISTRY_<ECOSYSTEM>, e.g.
   OPM_REGISTRY_NPM=https://npm.internal.example
   --offline refuses every registry read.

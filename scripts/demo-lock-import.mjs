@@ -6,6 +6,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { canonicalDigest, formatDigest } from '@openpacker/canonical';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import * as bindings from '@openpacker/embedded/wasm-node';
@@ -13,6 +14,8 @@ import {
   completeLockImport,
   planNativeLockImport,
 } from '@openpacker/lock-import';
+
+configureDefaultAdapters();
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, '.demo-output', 'lock-import');

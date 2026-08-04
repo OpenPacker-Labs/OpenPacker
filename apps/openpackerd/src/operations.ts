@@ -59,13 +59,10 @@ import {
   type Ecosystem,
   type EcosystemCodec,
 } from '@openpacker/adapter-core';
-import { NpmCodec } from '@openpacker/adapter-npm';
-import { CargoCodec } from '@openpacker/adapter-cargo';
-import { NugetCodec } from '@openpacker/adapter-nuget';
-import { PypiCodec } from '@openpacker/adapter-pypi';
-import { GolangCodec } from '@openpacker/adapter-golang';
-import { MavenCodec } from '@openpacker/adapter-maven';
-import { NixCodec } from '@openpacker/adapter-nix';
+import {
+  tryGetAdapterRegistry,
+  type AdapterRegistry,
+} from '@openpacker/adapter-host';
 import type { EmbeddedResolver } from '@openpacker/embedded';
 import {
   completeLockImport,
@@ -163,11 +160,17 @@ export interface ReferenceOperationsOptions {
   receiptVerifiers?: ReadonlyMap<string, Verifier>;
   verificationChecks?: ReadonlyMap<string, EvidenceCheck>;
   /**
-   * Additional ecosystem codecs, keyed by PURL type. Entries override the
-   * built-ins, so a deployment can register a codec without patching this
-   * package.
+   * Optional codec map. When omitted, codecs are resolved from the process
+   * adapter registry (configured at process entry). Entries override the
+   * registry so tests and deployments can inject codecs without baking
+   * ecosystems into this package.
    */
   codecs?: ReadonlyMap<Ecosystem, EcosystemCodec>;
+  /**
+   * Adapter registry used when `codecs` is not fully specified. Defaults to
+   * the process-wide registry.
+   */
+  adapterRegistry?: AdapterRegistry;
 }
 
 export interface EvidenceCheckInput {
@@ -189,16 +192,7 @@ export type EvidenceCheck = (
 export function createReferenceOperations(
   options: ReferenceOperationsOptions,
 ): PrexOperations {
-  const codecs = new Map<Ecosystem, EcosystemCodec>([
-    ['npm', new NpmCodec()],
-    ['cargo', new CargoCodec()],
-    ['nuget', new NugetCodec()],
-    ['pypi', new PypiCodec()],
-    ['golang', new GolangCodec()],
-    ['maven', new MavenCodec()],
-    ['nix', new NixCodec()],
-    ...(options.codecs ?? []),
-  ]);
+  const codecs = buildCodecMap(options);
   const explanations = new Map<string, ExplanationGraph>();
   const instances = () => options.universe.packages;
 
@@ -823,6 +817,25 @@ function normalized(
     warnings: [],
     semanticLoss,
   };
+}
+
+function buildCodecMap(options: ReferenceOperationsOptions): CodecMap {
+  const codecs = new Map<Ecosystem, EcosystemCodec>();
+  const registry =
+    options.adapterRegistry ?? tryGetAdapterRegistry() ?? undefined;
+  if (registry) {
+    for (const module of registry.list()) {
+      if (!module.codec) continue;
+      const codec = module.codec();
+      for (const purlType of module.purlTypes)
+        codecs.set(purlType.toLowerCase() as Ecosystem, codec);
+    }
+  }
+  if (options.codecs) {
+    for (const [ecosystem, codec] of options.codecs)
+      codecs.set(ecosystem, codec);
+  }
+  return codecs;
 }
 
 function codecFor(ecosystem: string, codecs: CodecMap): EcosystemCodec {

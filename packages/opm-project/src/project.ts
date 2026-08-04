@@ -10,11 +10,8 @@ import type {
 } from './types.js';
 import { OpmError } from './types.js';
 import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
-import {
-  REGISTRY_ECOSYSTEMS,
-  listRegistryVersions,
-  resolveRegistryArtifact,
-} from './registry.js';
+import { listRegistryVersions, resolveRegistryArtifact } from './registry.js';
+import { requireAdapterRegistry } from './adapters.js';
 import { resolveGraph, solveGraph } from './resolve.js';
 import {
   emptyLockfile,
@@ -22,6 +19,8 @@ import {
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
+import { installSystemPackage, planSystemInstall } from './system.js';
+import type { InstallOutcome, InstallPlan } from '@openpacker/adapter-core';
 import {
   digestOf,
   fetchArtifactBytes,
@@ -142,11 +141,22 @@ export async function addPackage(input: {
   alias?: string;
   offline?: boolean;
   catalogPaths?: readonly string[];
+  /**
+   * Consent for host installers that require elevation (apt/winget/choco).
+   * Never implied by the PURL alone.
+   */
+  allowElevation?: boolean;
+  dryRun?: boolean;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
   state: ProjectState;
   alias: string;
+  /** When the adapter prefers host install, the plan/outcome is returned. */
+  hostInstall?: {
+    plan: InstallPlan;
+    outcome?: InstallOutcome;
+  };
 }> {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
@@ -166,6 +176,54 @@ export async function addPackage(input: {
       'ECOSYSTEM_DENIED',
       `Ecosystem "${parsed.ecosystem}" is not in project.ecosystems`,
     );
+  }
+
+  const ecosystem = parsed.ecosystem ?? ecosystemFromPurl(parsed.purl);
+  // Host/profile install is selected by Registry Definition capabilities, not
+  // a separate CLI product. Project-store materialize remains the default for
+  // artifact-advertising adapters.
+  if (
+    !input.source &&
+    (await requireAdapterRegistry().prefersHostInstall(ecosystem))
+  ) {
+    const exact =
+      parsed.version !== undefined
+        ? `${stripPurlVersion(parsed.purl)}@${parsed.version}`
+        : parsed.purl.startsWith('pkg:')
+          ? parsed.purl
+          : `pkg:${ecosystem}/${parsed.alias}`;
+    const planOptions = {
+      ...(input.offline !== undefined ? { offline: input.offline } : {}),
+      ...(input.dryRun !== undefined ? { dryRun: input.dryRun } : {}),
+      ...(input.allowElevation !== undefined
+        ? { allowElevation: input.allowElevation }
+        : {}),
+    };
+    const plan = await planSystemInstall(exact, planOptions);
+    const outcome =
+      input.dryRun === true
+        ? undefined
+        : await installSystemPackage(exact, {
+            ...(input.offline !== undefined ? { offline: input.offline } : {}),
+            ...(input.allowElevation !== undefined
+              ? { allowElevation: input.allowElevation }
+              : {}),
+          });
+    const alias = assertSafeSegment(parsed.alias, 'package alias');
+    const state = (await readProjectState(paths.projectState)) ?? {
+      schemaVersion: 1 as const,
+      packages: {},
+    };
+    return {
+      manifest,
+      lock: emptyLockfile(),
+      state,
+      alias,
+      hostInstall: {
+        plan,
+        ...(outcome === undefined ? {} : { outcome }),
+      },
+    };
   }
 
   const alias = assertSafeSegment(parsed.alias, 'package alias');
@@ -428,7 +486,7 @@ async function resolveTransitive(input: {
   manifest: OpmManifest;
 }): Promise<Record<string, LockPackage>> {
   const resolvable = input.direct.filter((pkg) =>
-    REGISTRY_ECOSYSTEMS.includes(pkg.ecosystem),
+    requireAdapterRegistry().has(pkg.ecosystem),
   );
   if (resolvable.length === 0) return {};
 
@@ -645,7 +703,7 @@ async function resolveRequirement(input: {
   // Last, so an explicit source or a catalog entry always wins: a project that
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
-  if (!input.offline && REGISTRY_ECOSYSTEMS.includes(ecosystem)) {
+  if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
     const target =
       candidateExact ??
       (await (async () => {

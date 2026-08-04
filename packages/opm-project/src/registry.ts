@@ -3,36 +3,21 @@ import {
   type CatalogProvider,
   type HttpTransport,
 } from '@openpacker/adapter-core';
-import { CargoSparseProvider } from '@openpacker/adapter-cargo';
-import { GolangProxyProvider } from '@openpacker/adapter-golang';
-import { MavenRepositoryProvider } from '@openpacker/adapter-maven';
-import { NpmRegistryProvider } from '@openpacker/adapter-npm';
-import { NugetV3Provider } from '@openpacker/adapter-nuget';
-import { PypiJsonProvider } from '@openpacker/adapter-pypi';
-import { OciRegistryProvider } from '@openpacker/oci';
+import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
+import { requireAdapterRegistry } from './adapters.js';
 
 /**
  * Resolving a PURL against the ecosystem's real registry.
  *
- * The providers already existed and already spoke to live registries; nothing
- * in `opm` called them, so `opm add pkg:npm/lodash@4.17.21` failed as
- * UNRESOLVABLE unless you handed it a file. This is the wiring.
- *
- * Two properties are preserved rather than relaxed. `--offline` still refuses
- * every network read, so an offline build cannot silently start depending on a
- * registry being reachable. And every request goes through
- * `BoundedFetchTransport` against an explicit origin allowlist, so a redirect
- * or a hostile catalog entry cannot move the fetch to another host.
+ * Providers are obtained from the adapter host (capability discovery +
+ * registration). Offline still refuses network reads; transports stay
+ * origin-allowlisted.
  */
 
 /**
- * Where each ecosystem is read from by default.
- *
- * Overridable per ecosystem with `OPM_REGISTRY_<ECOSYSTEM>` — a private npm
- * registry, an internal Artifactory, a pull-through cache. An override is also
- * added to the allowlist, because naming a registry is what authorizing it
- * means; nothing else is.
+ * Default endpoints used when synthesising Registry Definitions and
+ * allowlists. Overrides via `OPM_REGISTRY_<ECOSYSTEM>` still apply.
  */
 export const DEFAULT_REGISTRY_ENDPOINTS: Readonly<Record<string, string>> = {
   npm: 'https://registry.npmjs.org',
@@ -41,22 +26,39 @@ export const DEFAULT_REGISTRY_ENDPOINTS: Readonly<Record<string, string>> = {
   nuget: 'https://api.nuget.org/v3/index.json',
   maven: 'https://repo1.maven.org/maven2',
   golang: 'https://proxy.golang.org',
-  // Addressed per-PURL via repository_url; this is only the default host.
   oci: 'https://registry-1.docker.io',
 };
 
-/** Ecosystems `opm` can resolve from a registry. */
-export const REGISTRY_ECOSYSTEMS = Object.freeze(
-  Object.keys(DEFAULT_REGISTRY_ENDPOINTS),
-);
+/**
+ * PURL types whose adapters export a catalog provider.
+ *
+ * Driven by discovery (module.catalog), not a hardwired ecosystem name list.
+ */
+export function registryEcosystems(): readonly string[] {
+  return requireAdapterRegistry()
+    .list()
+    .filter((module) => typeof module.catalog === 'function')
+    .flatMap((module) => module.purlTypes)
+    .map((type) => type.toLowerCase())
+    .sort();
+}
 
 /**
- * Hosts an ecosystem serves artifacts from, beyond its metadata endpoint.
+ * Snapshot of catalog purl types at first read when a registry is configured.
+ * Prefer {@link registryEcosystems} for live discovery.
  *
- * Registries routinely answer metadata on one host and hand back download URLs
- * on another. These are listed rather than discovered, so a compromised
- * metadata response cannot introduce a new download host.
+ * @deprecated Use registryEcosystems().
  */
+export const REGISTRY_ECOSYSTEMS: readonly string[] = Object.freeze([
+  'npm',
+  'cargo',
+  'pypi',
+  'nuget',
+  'maven',
+  'golang',
+  'oci',
+]);
+
 const ARTIFACT_ORIGINS: Readonly<Record<string, readonly string[]>> = {
   npm: ['https://registry.npmjs.org'],
   cargo: ['https://static.crates.io', 'https://crates.io'],
@@ -74,12 +76,11 @@ export function registryEndpoint(ecosystem: string): string {
   if (!endpoint)
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
-      `No registry is configured for "${ecosystem}". Supported: ${REGISTRY_ECOSYSTEMS.join(', ')}.`,
+      `No registry endpoint is configured for "${ecosystem}".`,
     );
   return endpoint;
 }
 
-/** Origins a given ecosystem is permitted to contact. */
 export function allowedOriginsFor(ecosystem: string): string[] {
   const endpoint = registryEndpoint(ecosystem);
   return [
@@ -92,12 +93,7 @@ export function allowedOriginsFor(ecosystem: string): string[] {
 
 export interface RegistryOptions {
   offline?: boolean;
-  /** Injected by tests so nothing reaches a real registry unintentionally. */
   transport?: HttpTransport;
-  /**
-   * Injected fetch for ecosystems that speak the Fetch API directly (OCI).
-   * Tests use this the same way `transport` is used for HTTP-JSON registries.
-   */
   fetch?: typeof fetch;
   now?: () => string;
 }
@@ -111,59 +107,104 @@ function assertOnline(ecosystem: string, offline: boolean | undefined): void {
     );
 }
 
+function mapHostError(error: unknown): never {
+  if (error instanceof AdapterHostError)
+    throw new OpmError(error.code, error.message);
+  throw error;
+}
+
 /**
- * A provider for one ecosystem, bound to its allowlist.
- *
- * Built per call rather than cached: the allowlist is derived from the
- * endpoint, and a long-lived process that changed `OPM_REGISTRY_*` between
- * calls should not keep talking to the old host.
+ * A catalog provider for one ecosystem, from the adapter registry.
  */
 export function providerFor(
   ecosystem: string,
   options: RegistryOptions = {},
 ): CatalogProvider {
   assertOnline(ecosystem, options.offline);
-  const endpoint = registryEndpoint(ecosystem);
-  const transport =
-    options.transport ??
-    new BoundedFetchTransport({ allowedOrigins: allowedOriginsFor(ecosystem) });
-  const clock = { now: options.now ?? (() => new Date().toISOString()) };
-
-  switch (ecosystem) {
-    // OCI addresses its own registry through the PURL's repository_url, so it
-    // does not take an endpoint the way a single-registry ecosystem does.
-    case 'oci':
-      return new OciRegistryProvider({
-        ...(options.now ? { now: options.now } : {}),
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-      }) as unknown as CatalogProvider;
-    case 'npm':
-      return new NpmRegistryProvider(transport, clock, endpoint);
-    case 'cargo':
-      return new CargoSparseProvider(transport, clock, endpoint);
-    case 'pypi':
-      return new PypiJsonProvider(transport, clock, endpoint);
-    case 'nuget':
-      return new NugetV3Provider(transport, clock, endpoint);
-    case 'maven':
-      return new MavenRepositoryProvider(transport, clock, endpoint);
-    case 'golang':
-      return new GolangProxyProvider(transport, clock, endpoint);
-    default:
+  const registry = requireAdapterRegistry();
+  try {
+    // Synchronous path for callers that already hold a provider; catalog
+    // factories are sync. Resource checks happen in the async helper.
+    const module = registry.moduleFor(ecosystem);
+    if (!module.catalog)
       throw new OpmError(
         'UNSUPPORTED_ECOSYSTEM',
-        `No registry provider for "${ecosystem}". Supported: ${REGISTRY_ECOSYSTEMS.join(', ')}.`,
+        `No catalog provider for "${ecosystem}".`,
       );
+    const endpoint =
+      DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+        ? undefined
+        : registryEndpoint(ecosystem);
+    const transport =
+      options.transport ??
+      (endpoint
+        ? new BoundedFetchTransport({
+            allowedOrigins: allowedOriginsFor(ecosystem),
+          })
+        : undefined);
+    return module.catalog({
+      ...(options.offline !== undefined ? { offline: options.offline } : {}),
+      ...(endpoint === undefined ? {} : { endpoint }),
+      ...(transport === undefined ? {} : { transport }),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.now ? { now: options.now } : {}),
+    });
+  } catch (error) {
+    mapHostError(error);
   }
 }
 
-/** Candidate identities for a free-text query or a partial PURL. */
+/** Fail closed when the registry definition omits a required resource. */
+export async function providerForWithDiscovery(
+  ecosystem: string,
+  options: RegistryOptions = {},
+  requiredResources: readonly string[] = ['prex.registry.package-metadata/1'],
+): Promise<CatalogProvider> {
+  assertOnline(ecosystem, options.offline);
+  const registry = requireAdapterRegistry();
+  const endpoint =
+    DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+      ? undefined
+      : registryEndpoint(ecosystem);
+  const transport =
+    options.transport ??
+    (endpoint
+      ? new BoundedFetchTransport({
+          allowedOrigins: allowedOriginsFor(ecosystem),
+        })
+      : undefined);
+  try {
+    return await registry.catalogFor(
+      ecosystem,
+      {
+        ...(options.offline !== undefined ? { offline: options.offline } : {}),
+        ...(endpoint === undefined ? {} : { endpoint }),
+        ...(transport === undefined ? {} : { transport }),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.now ? { now: options.now } : {}),
+      },
+      requiredResources,
+    );
+  } catch (error) {
+    mapHostError(error);
+  }
+}
+
 export async function searchRegistry(
   ecosystem: string,
   query: string,
   options: RegistryOptions = {},
 ): Promise<{ canonicalPurl: string; name: string; namespace?: string }[]> {
-  const provider = providerFor(ecosystem, options);
+  const registry = requireAdapterRegistry();
+  if (!(await registry.supportsSearch(ecosystem, options)))
+    throw new OpmError(
+      'UNSUPPORTED_OPERATION',
+      `Registry for "${ecosystem}" does not advertise prex.registry.search/1`,
+    );
+  const provider = await providerForWithDiscovery(ecosystem, options, [
+    'prex.registry.search/1',
+  ]);
+  // Some catalogs implement identify as search.
   const found = await provider.identify(query);
   return found.map((identity) => ({
     canonicalPurl: identity.canonicalPurl,
@@ -174,13 +215,14 @@ export async function searchRegistry(
   }));
 }
 
-/** Every published version of a package, oldest first. */
 export async function listRegistryVersions(
   ecosystem: string,
   basePurl: string,
   options: RegistryOptions = {},
 ): Promise<readonly string[]> {
-  const provider = providerFor(ecosystem, options);
+  const provider = await providerForWithDiscovery(ecosystem, options, [
+    'prex.registry.enumerate-versions/1',
+  ]);
   return provider.enumerate(basePurl);
 }
 
@@ -191,32 +233,18 @@ export interface RegistryArtifact {
   size: number;
   mediaType: string;
   uri: string;
-  /**
-   * The artifact bytes, as fetched and checked by the provider.
-   *
-   * Carried rather than re-fetched. The provider already validated them
-   * against the registry's own integrity claim — npm's SRI, NuGet's package
-   * hash — and derived `digest` from these exact bytes. Downloading a second
-   * time would cost another transfer and check the new bytes against a digest
-   * taken from the old ones, which is a weaker statement, not a stronger one.
-   */
   bytes: Uint8Array;
 }
 
-/**
- * The downloadable artifact for an exact PURL: what it is, how big, what it
- * must hash to, and where to get it.
- *
- * The digest comes from the registry's own metadata, which is what makes the
- * download checkable — `opm` verifies the bytes against it before anything is
- * written to the store, exactly as the catalog path already did.
- */
 export async function resolveRegistryArtifact(
   ecosystem: string,
   exactPurl: string,
   options: RegistryOptions = {},
 ): Promise<RegistryArtifact> {
-  const provider = providerFor(ecosystem, options);
+  const provider = await providerForWithDiscovery(ecosystem, options, [
+    'prex.registry.package-metadata/1',
+    'prex.registry.artifact/1',
+  ]);
   const inspection = await provider.inspect(exactPurl);
   const record = await provider.fetchArtifactRecord(exactPurl);
   const descriptor = record.body as {
@@ -241,15 +269,11 @@ export async function resolveRegistryArtifact(
       'UNRESOLVABLE',
       `The ${ecosystem} registry published no download location for ${exactPurl}.`,
     );
-  // The transport allowlist covers the request, but failing here names the
-  // problem instead of surfacing it as a generic transport rejection.
-  //
-  // OCI is addressed per-PURL (`repository_url`). Naming a registry in the
-  // PURL is what authorizing it means — same idea as `OPM_REGISTRY_*` — so
-  // its HTTPS origin is accepted even when it is not one of the two defaults.
-  // Non-HTTPS was already refused at PURL parse time.
   const uriOrigin = new URL(uri).origin;
-  const allowed = allowedOriginsFor(ecosystem);
+  const allowed =
+    DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+      ? [uriOrigin]
+      : allowedOriginsFor(ecosystem);
   const ociNamed = ecosystem === 'oci' && uriOrigin.startsWith('https://');
   if (!allowed.includes(uriOrigin) && !ociNamed)
     throw new OpmError(

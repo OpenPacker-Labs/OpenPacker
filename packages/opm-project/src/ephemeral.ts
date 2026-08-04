@@ -5,12 +5,9 @@ import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { storeKeyFromDigest } from './paths.js';
 import { inferFormat, materializeLockPackage } from './install.js';
-import {
-  REGISTRY_ECOSYSTEMS,
-  listRegistryVersions,
-  resolveRegistryArtifact,
-} from './registry.js';
+import { listRegistryVersions, resolveRegistryArtifact } from './registry.js';
 import { resolveGraph, solveGraph } from './resolve.js';
+import { requireAdapterRegistry } from './adapters.js';
 
 /**
  * Run a tool without adding it to a project — what `npx`, `pipx run`, `uvx`
@@ -70,10 +67,10 @@ export async function fetchTool(input: {
   cacheRoot?: string;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
-  if (!REGISTRY_ECOSYSTEMS.includes(ecosystem))
+  if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
-      `Cannot run a ${ecosystem} package: no registry is configured for it.`,
+      `Cannot run a ${ecosystem} package: no adapter is registered for it.`,
     );
   if (input.offline)
     throw new OpmError(
@@ -121,7 +118,7 @@ export async function fetchTool(input: {
         const depExact = instance.identity.exactPurl;
         if (!depExact || depExact === primary.exactPurl) continue;
         const depEco = instance.identity.purlType;
-        if (!REGISTRY_ECOSYSTEMS.includes(depEco)) continue;
+        if (!requireAdapterRegistry().has(depEco)) continue;
         const dep = await materialiseExact(depEco, depExact, cacheRoot);
         if (!runtimePaths.includes(dep.storePath))
           runtimePaths.push(dep.storePath);

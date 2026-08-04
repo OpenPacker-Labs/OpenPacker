@@ -137,7 +137,10 @@ describe('registry configuration', () => {
 
   it('refuses an ecosystem it has no registry for', () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
-    expect(() => providerFor('cocoapods')).toThrow(/No registry/u);
+    // Discovery path: unregistered purl types fail closed at the adapter host.
+    expect(() => providerFor('cocoapods')).toThrow(
+      /No adapter is registered|No registry|UNSUPPORTED_ECOSYSTEM/u,
+    );
   });
 });
 

@@ -13,6 +13,8 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
+    "@openpacker/adapter-host": "0.1.0",
+    "@openpacker/adapters-default": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/embedded": "0.1.0",
     "@openpacker/lock-import": "0.1.0"

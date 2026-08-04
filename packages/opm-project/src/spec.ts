@@ -1,15 +1,8 @@
 import type { ParsedPackageSpec } from './types.js';
 import { OpmError } from './types.js';
 
-const ECOSYSTEMS = new Set([
-  'npm',
-  'cargo',
-  'pypi',
-  'nuget',
-  'golang',
-  'maven',
-  'generic',
-]);
+/** PURL type shape (package-url). Open set — adapters define which are known. */
+const PURL_TYPE = /^[a-z0-9][a-z0-9.+-]*$/u;
 
 /**
  * Parse package specs for `opm add`.
@@ -17,6 +10,9 @@ const ECOSYSTEMS = new Set([
  * - pkg:type/name@version
  * - name@version with --ecosystem
  * - name with --ecosystem
+ *
+ * Does not hardcode the set of ecosystems: any well-formed PURL type is
+ * accepted here; the adapter registry decides whether it is supported.
  */
 export function parsePackageSpec(
   raw: string,
@@ -33,10 +29,10 @@ export function parsePackageSpec(
   if (!ecosystem) {
     throw new OpmError(
       'AMBIGUOUS_SPEC',
-      `Bare package name "${trimmed}" requires --ecosystem <npm|cargo|pypi|...> or a full pkg: PURL`,
+      `Bare package name "${trimmed}" requires --ecosystem <purl-type> or a full pkg: PURL`,
     );
   }
-  if (!ECOSYSTEMS.has(ecosystem)) {
+  if (!PURL_TYPE.test(ecosystem)) {
     throw new OpmError('INVALID_SPEC', `Unknown ecosystem "${ecosystem}"`);
   }
 

@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import { canonicalDigest, formatDigest } from '@openpacker/canonical';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import type { EmbeddedBindings } from '@openpacker/embedded';
@@ -9,6 +11,10 @@ import {
   planNativeLockImport,
   type LockImportResult,
 } from '@openpacker/lock-import';
+
+function ensureAdapters(): void {
+  if (!tryGetAdapterRegistry()) configureDefaultAdapters();
+}
 
 export interface LockImportExampleSummary {
   ecosystem: string;
@@ -44,6 +50,7 @@ export async function importNativeLockExample(
   absoluteLockPath: string,
   meta: { providerId?: string; version?: string } = {},
 ): Promise<LockImportResult> {
+  ensureAdapters();
   const raw = await readFile(absoluteLockPath, 'utf8');
   const plan = await planNativeLockImport(raw);
   const resolver = createEmbeddedResolver(bindings);

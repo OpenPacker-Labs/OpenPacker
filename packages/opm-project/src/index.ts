@@ -156,7 +156,18 @@ export {
   installSystemPackage,
   listSystemInstallers,
   planSystemInstall,
-  systemInstaller,
   systemInstallerIdFor,
   type SystemInstallerId,
 } from './system.js';
+
+export {
+  AdapterRegistry,
+  configureAdapters,
+  ensureAdapterRegistry,
+  getAdapterRegistry,
+  requireAdapterRegistry,
+  setAdapterRegistry,
+  tryGetAdapterRegistry,
+  type AdapterModule,
+} from './adapters.js';
+export { providerForWithDiscovery, registryEcosystems } from './registry.js';

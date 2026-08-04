@@ -28,25 +28,17 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-apt": "0.1.0",
-    "@openpacker/adapter-cargo": "0.1.0",
     "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/adapter-golang": "0.1.0",
-    "@openpacker/adapter-maven": "0.1.0",
-    "@openpacker/adapter-nix": "0.1.0",
-    "@openpacker/adapter-npm": "0.1.0",
-    "@openpacker/adapter-nuget": "0.1.0",
-    "@openpacker/adapter-pypi": "0.1.0",
-    "@openpacker/adapter-winget": "0.1.0",
+    "@openpacker/adapter-host": "0.1.0",
     "@openpacker/artifact-model": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0",
     "@openpacker/embedded": "0.1.0",
     "@openpacker/materializer": "0.1.0",
-    "@openpacker/oci": "0.1.0",
     "shell-quote": "1.10.0"
   },
   "devDependencies": {
+    "@openpacker/adapters-default": "0.1.0",
     "@types/node": "24.2.1"
   }
 }
