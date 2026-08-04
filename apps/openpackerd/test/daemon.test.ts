@@ -154,6 +154,16 @@ describe('openpackerd', () => {
     expect(
       capabilities.json().authenticationSchemes.map(({ type }) => type),
     ).toEqual(['none']);
+    // Advertised PURL types come from the codec registry, so registering a
+    // codec is what makes an ecosystem appear.
+    expect(capabilities.json().purlTypes).toEqual([
+      'cargo',
+      'golang',
+      'maven',
+      'npm',
+      'nuget',
+      'pypi',
+    ]);
     const normalized = await app.inject({
       method: 'POST',
       url: '/v1/normalize',
@@ -438,6 +448,48 @@ describe('openpackerd', () => {
     expect(response.statusCode).toBe(408);
     expect(response.json().code).toBe('CANCELLED');
     expect(response.headers['x-correlation-id']).toBe(correlationId);
+    await app.close();
+  });
+
+  it('advertises a registered out-of-tree codec', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const codec = {
+      purlType: 'deb',
+      canonicalizePurl: (purl: string) => purl,
+    } as unknown as Parameters<
+      typeof createReferenceOperations
+    >[0]['codecs'] extends ReadonlyMap<string, infer Codec> | undefined
+      ? Codec
+      : never;
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      codecs: new Map([['deb', codec]]),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/capabilities',
+    });
+    expect(capabilities.json().purlTypes).toContain('deb');
+    expect(capabilities.json().versSchemes).toContain('deb');
     await app.close();
   });
 

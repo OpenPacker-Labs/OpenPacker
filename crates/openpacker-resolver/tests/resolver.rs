@@ -1023,3 +1023,58 @@ fn misspelled_requirement_kinds_are_rejected_without_platforms() {
     });
     assert!(solve(&solve_input).is_err());
 }
+
+/// Normalization must work for every PURL type, not only the three that used
+/// to be hard-coded, and must not coerce versions it does not understand.
+#[test]
+fn normalization_covers_every_purl_type() {
+    // Unchanged behaviour for the originally supported types.
+    assert_eq!(
+        normalize_purl("pkg:NPM/%40OpenPacker/Demo-Tool@v1.0").unwrap(),
+        "pkg:npm/%40openpacker/demo-tool@1.0.0"
+    );
+    assert_eq!(
+        normalize_purl("pkg:cargo/Demo-Zstd@1.0").unwrap(),
+        "pkg:cargo/demo-zstd@1.0.0"
+    );
+    assert_eq!(
+        normalize_purl("pkg:nuget/Demo.Tool@1.2.3").unwrap(),
+        "pkg:nuget/demo.tool@1.2.3"
+    );
+
+    // PEP 503 name folding; PEP 440 versions are preserved, not coerced.
+    assert_eq!(
+        normalize_purl("pkg:pypi/Demo_Tool.Extra@2024.1rc1").unwrap(),
+        "pkg:pypi/demo-tool-extra@2024.1rc1"
+    );
+
+    // Go module paths are lowercased; pseudo-versions survive intact.
+    assert_eq!(
+        normalize_purl("pkg:golang/GitHub.com/Example/Mod@v0.0.0-20260101120000-abcdefabcdef")
+            .unwrap(),
+        "pkg:golang/github.com/example/mod@v0.0.0-20260101120000-abcdefabcdef"
+    );
+
+    // Maven coordinates are case sensitive.
+    assert_eq!(
+        normalize_purl("pkg:maven/org.Example/DemoTool@1.0.0-RC1").unwrap(),
+        "pkg:maven/org.Example/DemoTool@1.0.0-RC1"
+    );
+
+    // A Nix store output keeps its qualifiers and its non-semver version.
+    let nix = normalize_purl("pkg:nix/libGreet@2405?output=dev&outhash=b3f2q8xr").unwrap();
+    assert!(nix.starts_with("pkg:nix/libGreet@2405"), "{nix}");
+    assert!(nix.contains("outhash=b3f2q8xr"), "{nix}");
+    assert!(nix.contains("output=dev"), "{nix}");
+
+    // An unknown type normalizes rather than erroring: canonical encoding does
+    // not require knowing the ecosystem.
+    assert_eq!(
+        normalize_purl("pkg:deb/Debian/OpenSSL@3.0.11").unwrap(),
+        "pkg:deb/Debian/OpenSSL@3.0.11"
+    );
+
+    // Namespace rules still hold where the ecosystem has none.
+    assert!(normalize_purl("pkg:cargo/scope/demo@1.0.0").is_err());
+    assert!(normalize_purl("pkg:npm/demo@not-a-version").is_err());
+}

@@ -189,33 +189,146 @@ fn normalize_release(value: &str, nuget: bool) -> Result<String, ResolverError> 
     Ok(output)
 }
 
+/// How a PURL type's version string is normalized. Types whose versions are
+/// not semver-shaped keep their native spelling rather than being coerced.
+#[derive(Clone, Copy, PartialEq)]
+enum VersionPolicy {
+    /// Strip a leading `v`, require up to three numeric parts, pad to three.
+    Semver,
+    /// NuGet's four-part release with no `v` prefix.
+    NuGet,
+    /// Keep the native version verbatim.
+    Preserve,
+}
+
+/// Per-type identity rules. Unknown types get the conservative policy: encode
+/// canonically, fold nothing, coerce nothing. A type PREX does not know is
+/// still normalizable, because normalization is about canonical encoding, not
+/// about understanding an ecosystem's naming conventions.
+struct PurlPolicy {
+    namespace: NamespacePolicy,
+    lowercase_name: bool,
+    pypi_name: bool,
+    version: VersionPolicy,
+}
+
+#[derive(PartialEq)]
+enum NamespacePolicy {
+    /// Namespaces are rejected for this type.
+    Forbidden,
+    /// Lowercased, with npm's `@` scope prefix preserved.
+    NpmScope,
+    /// Lowercased.
+    Lowercase,
+    /// Kept verbatim; the ecosystem's identifiers are case sensitive.
+    Preserve,
+}
+
+fn purl_policy(kind: &str) -> PurlPolicy {
+    match kind {
+        "npm" => PurlPolicy {
+            namespace: NamespacePolicy::NpmScope,
+            lowercase_name: true,
+            pypi_name: false,
+            version: VersionPolicy::Semver,
+        },
+        "cargo" => PurlPolicy {
+            namespace: NamespacePolicy::Forbidden,
+            lowercase_name: true,
+            pypi_name: false,
+            version: VersionPolicy::Semver,
+        },
+        "nuget" => PurlPolicy {
+            namespace: NamespacePolicy::Forbidden,
+            lowercase_name: true,
+            pypi_name: false,
+            version: VersionPolicy::NuGet,
+        },
+        "pypi" => PurlPolicy {
+            namespace: NamespacePolicy::Forbidden,
+            lowercase_name: true,
+            pypi_name: true,
+            version: VersionPolicy::Preserve,
+        },
+        "golang" => PurlPolicy {
+            namespace: NamespacePolicy::Lowercase,
+            lowercase_name: true,
+            pypi_name: false,
+            version: VersionPolicy::Preserve,
+        },
+        // Maven coordinates and Nix store names are case sensitive, and both
+        // carry versions that are not semver.
+        "maven" | "nix" => PurlPolicy {
+            namespace: NamespacePolicy::Preserve,
+            lowercase_name: false,
+            pypi_name: false,
+            version: VersionPolicy::Preserve,
+        },
+        _ => PurlPolicy {
+            namespace: NamespacePolicy::Preserve,
+            lowercase_name: false,
+            pypi_name: false,
+            version: VersionPolicy::Preserve,
+        },
+    }
+}
+
+/// PEP 503 name normalization: runs of `-`, `_`, and `.` collapse to `-`.
+fn normalize_pypi_name(name: &str) -> String {
+    let mut output = String::with_capacity(name.len());
+    let mut separator = false;
+    for character in name.chars() {
+        if matches!(character, '-' | '_' | '.') {
+            separator = true;
+            continue;
+        }
+        if separator && !output.is_empty() {
+            output.push('-');
+        }
+        separator = false;
+        output.push(character.to_ascii_lowercase());
+    }
+    output
+}
+
 pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
     let mut purl = parse_purl(value)?;
-    match purl.kind.as_str() {
-        "npm" => {
-            purl.namespace = purl.namespace.map(|namespace| {
-                format!(
-                    "@{}",
-                    namespace.trim_start_matches('@').to_ascii_lowercase()
-                )
-            });
-            purl.name = purl.name.to_ascii_lowercase();
-        }
-        "cargo" | "nuget" => {
+    let policy = purl_policy(purl.kind.as_str());
+    match policy.namespace {
+        NamespacePolicy::Forbidden => {
             if purl.namespace.is_some() {
                 return Err(invalid(format!(
                     "{} PURLs do not have namespaces",
                     purl.kind
                 )));
             }
-            purl.name = purl.name.to_ascii_lowercase();
         }
-        _ => {
-            return Err(invalid(format!("unsupported PURL type: {}", purl.kind)));
+        NamespacePolicy::NpmScope => {
+            purl.namespace = purl.namespace.map(|namespace| {
+                format!(
+                    "@{}",
+                    namespace.trim_start_matches('@').to_ascii_lowercase()
+                )
+            });
         }
+        NamespacePolicy::Lowercase => {
+            purl.namespace = purl
+                .namespace
+                .map(|namespace| namespace.to_ascii_lowercase());
+        }
+        NamespacePolicy::Preserve => {}
+    }
+    if policy.pypi_name {
+        purl.name = normalize_pypi_name(&purl.name);
+    } else if policy.lowercase_name {
+        purl.name = purl.name.to_ascii_lowercase();
     }
     if let Some(version) = &purl.version {
-        purl.version = Some(normalize_release(version, purl.kind == "nuget")?);
+        purl.version = match policy.version {
+            VersionPolicy::Semver => Some(normalize_release(version, false)?),
+            VersionPolicy::NuGet => Some(normalize_release(version, true)?),
+            VersionPolicy::Preserve => Some(version.trim().to_owned()),
+        };
     }
     let mut path = purl
         .namespace

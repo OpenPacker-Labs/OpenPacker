@@ -199,6 +199,15 @@ capability-like witness only when its source requirement declares `replacement`.
 Cardinality counts distinct selected node IDs matching the selector after target
 filtering; `minimum` MUST NOT exceed `maximum`.
 
+Normalization applies to every PURL type. Where PREX knows an ecosystem's rules
+it applies them (npm scopes, PEP 503 names, Go module case, NuGet and semver
+release shapes); where it does not, it applies canonical encoding only and
+preserves names and versions verbatim. An unknown type MUST normalize rather
+than fail: canonical encoding does not require understanding an ecosystem's
+naming conventions. Operations that need ecosystem semantics — `enumerate`,
+`inspect`, VERS membership — still require a registered codec and fail with
+`UNSUPPORTED_ECOSYSTEM` without one.
+
 Package expressions use the codec named by PURL type for VERS membership.
 Capability expressions match name, attributes, target predicate, and optional
 VERS. Target predicates are pure and use only the supplied `TargetContext`;

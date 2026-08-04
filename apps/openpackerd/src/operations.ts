@@ -160,6 +160,12 @@ export interface ReferenceOperationsOptions {
   receiptSigners?: readonly Signer[];
   receiptVerifiers?: ReadonlyMap<string, Verifier>;
   verificationChecks?: ReadonlyMap<string, EvidenceCheck>;
+  /**
+   * Additional ecosystem codecs, keyed by PURL type. Entries override the
+   * built-ins, so a deployment can register a codec without patching this
+   * package.
+   */
+  codecs?: ReadonlyMap<Ecosystem, EcosystemCodec>;
 }
 
 export interface EvidenceCheckInput {
@@ -188,13 +194,14 @@ export function createReferenceOperations(
     ['pypi', new PypiCodec()],
     ['golang', new GolangCodec()],
     ['maven', new MavenCodec()],
+    ...(options.codecs ?? []),
   ]);
   const explanations = new Map<string, ExplanationGraph>();
   const instances = () => options.universe.packages;
 
   return {
     capabilities: (meta) =>
-      defaultCapabilities(meta, capabilityFeatures(options)),
+      defaultCapabilities(meta, capabilityFeatures(options, codecs.keys())),
 
     async normalize(input) {
       return {
@@ -980,6 +987,8 @@ export interface CapabilityFeatures {
   receiptVerification?: boolean;
   artifactVerification?: boolean;
   configuredChecks?: Iterable<string>;
+  /** PURL types with a registered codec. Absent keeps the built-in set. */
+  ecosystems?: Iterable<string>;
 }
 
 const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
@@ -994,8 +1003,10 @@ const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
 
 export function capabilityFeatures(
   options: ReferenceOperationsOptions,
+  ecosystems?: Iterable<string>,
 ): CapabilityFeatures {
   return {
+    ...(ecosystems === undefined ? {} : { ecosystems: [...ecosystems] }),
     receiptVerification: (options.receiptVerifiers?.size ?? 0) > 0,
     artifactVerification: options.artifactSource !== undefined,
     configuredChecks: [...(options.verificationChecks?.keys() ?? [])],
@@ -1011,6 +1022,16 @@ export function defaultCapabilities(
   if (features.artifactVerification) evidenceTypes.add('artifact-digest');
   for (const check of features.configuredChecks ?? [])
     evidenceTypes.add(EVIDENCE_TYPE_BY_CHECK[check] ?? check);
+  const ecosystems = [
+    ...(features.ecosystems ?? [
+      'npm',
+      'cargo',
+      'nuget',
+      'pypi',
+      'golang',
+      'maven',
+    ]),
+  ].sort();
   return {
     meta,
     protocolVersions: ['1.0-draft'],
@@ -1039,8 +1060,8 @@ export function defaultCapabilities(
       'PREX-R',
       'PREX-C',
     ],
-    purlTypes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
-    versSchemes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
+    purlTypes: ecosystems,
+    versSchemes: ecosystems,
     semanticsProfiles: [
       'native-capture-v1',
       'native-validated-v1',

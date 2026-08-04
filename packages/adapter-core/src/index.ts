@@ -6,7 +6,32 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 
-export type Ecosystem = 'npm' | 'cargo' | 'nuget' | 'pypi' | 'golang' | 'maven';
+/** Ecosystems with a codec in this repository. */
+export type KnownEcosystem =
+  | 'npm'
+  | 'cargo'
+  | 'nuget'
+  | 'pypi'
+  | 'golang'
+  | 'maven'
+  | 'nix';
+
+/**
+ * A PURL type. The known set above keeps editor completion and catches typos
+ * in this repository, while any lowercase PURL type is accepted so that a
+ * codec can be registered out of tree without patching this union — the
+ * schemas have always allowed any type, and this is what lets that reach the
+ * daemon.
+ */
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type Ecosystem = KnownEcosystem | (string & {});
+
+/** PURL types are lowercase alphanumerics plus `.`, `+`, and `-`. */
+export const ECOSYSTEM_PATTERN = /^[a-z0-9.+-]+$/u;
+
+export function isEcosystem(value: string): boolean {
+  return ECOSYSTEM_PATTERN.test(value);
+}
 
 export interface NativeCoordinate {
   ecosystem: Ecosystem;
