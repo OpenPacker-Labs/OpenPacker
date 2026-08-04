@@ -819,3 +819,28 @@ describe('.NET tool discovery', () => {
     ]);
   });
 });
+
+describe('Windows-hostile names are refused on every platform', () => {
+  it('refuses reserved device names as aliases and bin names', () => {
+    // CON, NUL and friends are devices at every directory level and stay
+    // devices with an extension. A bin shim written as CON.cmd on Windows
+    // writes to the console.
+    for (const name of ['CON', 'con', 'nul', 'AUX', 'COM1', 'LPT9', 'CON.cmd'])
+      expect(() => assertSafeSegment(name, 'bin name'), name).toThrow(
+        /reserved Windows device/u,
+      );
+  });
+
+  it('refuses a trailing dot, which Windows strips into a collision', () => {
+    expect(() => assertSafeSegment('demo.', 'package alias')).toThrow(
+      /collide with "demo"/u,
+    );
+  });
+
+  it('still accepts names that merely start with a device name', () => {
+    // "console" and "context" are ordinary; a check that rejected them would
+    // be unusable.
+    for (const name of ['console', 'context', 'aux-helper', 'com', 'nullable'])
+      expect(assertSafeSegment(name, 'bin name'), name).toBe(name);
+  });
+});

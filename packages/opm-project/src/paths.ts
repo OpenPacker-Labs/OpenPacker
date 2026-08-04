@@ -43,6 +43,16 @@ export function projectPaths(root: string): ProjectPaths {
   };
 }
 
+/**
+ * Windows device names, reserved at every directory level and still reserved
+ * with an extension — `CON`, `CON.cmd` and `nul` are devices, not files. A bin
+ * shim written as `CON.cmd` on Windows writes to the console.
+ */
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu;
+
+/** Windows strips trailing dots, so `a.` and `a` are one name there. */
+const WINDOWS_TRAILING = /[ .]$/u;
+
 export function assertSafeSegment(value: string, kind: string): string {
   if (!SAFE_SEGMENT.test(value) || value === '.' || value === '..') {
     throw new OpmError(
@@ -50,6 +60,20 @@ export function assertSafeSegment(value: string, kind: string): string {
       `Invalid ${kind} "${value}" (must match ${SAFE_SEGMENT})`,
     );
   }
+  // Enforced on every platform. A store and a bin directory are portable
+  // artifacts, and a name that only works on Linux makes the same lockfile
+  // install differently depending on where it runs.
+  if (WINDOWS_DEVICE.test(value))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid ${kind} "${value}": that is a reserved Windows device name`,
+    );
+  if (WINDOWS_TRAILING.test(value))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid ${kind} "${value}": a trailing dot or space is stripped on Windows, ` +
+        `so this would collide with "${value.replace(/[ .]+$/u, '')}"`,
+    );
   return value;
 }
 

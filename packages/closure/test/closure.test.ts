@@ -444,3 +444,22 @@ describe('digests agree with the spec projections', () => {
     );
   });
 });
+
+describe('tree paths are portable, not merely POSIX-safe', () => {
+  it('refuses Windows device names at any depth', () => {
+    for (const path of ['CON', 'aux.txt', 'lib/NUL', 'COM1/x', 'a/lpt3'])
+      expect(isSafeTreePath(path), path).toBe(false);
+  });
+
+  it('refuses a trailing dot or space, which Windows strips', () => {
+    // "a." and "a" name one file on Windows and two here, which would defeat
+    // the duplicate and case-collision checks that make a manifest unambiguous.
+    for (const path of ['a.', 'a ', 'dir./file'])
+      expect(isSafeTreePath(path), path).toBe(false);
+  });
+
+  it('still accepts ordinary names that begin with a device name', () => {
+    for (const path of ['console.js', 'lib/context.ts', 'nullable.d.ts'])
+      expect(isSafeTreePath(path), path).toBe(true);
+  });
+});
