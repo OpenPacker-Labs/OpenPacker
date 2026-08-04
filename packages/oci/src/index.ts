@@ -1280,3 +1280,4 @@ export class RegistryProtocolError extends Error {
   }
 }
 export * from './provider.js';
+export { packUstar, type TarFile } from './tar.js';
