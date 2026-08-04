@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   detectLockFormat,
+  parseRequirementsTxt,
   planLockCapture,
   planNativeLockImport,
 } from './index.js';
@@ -148,5 +149,40 @@ describe('lock-import planning', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('requirements.txt import', () => {
+  it('imports a fully pinned file', () => {
+    const parsed = parseRequirementsTxt(
+      '# comment\nrequests==2.32.3\nidna==3.7  --hash=sha256:abc\n',
+    );
+    expect(parsed.package).toEqual([
+      { name: 'requests', version: '2.32.3' },
+      { name: 'idna', version: '3.7' },
+    ]);
+  });
+
+  it('normalises names the way PyPI does', () => {
+    // Foo_Bar and foo-bar are the same distribution.
+    expect(
+      parseRequirementsTxt('Foo_Bar==1.0\nfoo-bar==1.0\n').package,
+    ).toEqual([{ name: 'foo-bar', version: '1.0' }]);
+  });
+
+  it('refuses anything that is not an exact pin', () => {
+    // Importing an unpinned requirements file would produce a pinned universe
+    // from an input that never pinned anything.
+    for (const bad of ['requests>=2.0', 'requests', 'requests~=2.0'])
+      expect(() => parseRequirementsTxt(bad), bad).toThrow(/exact pin/u);
+    expect(() => parseRequirementsTxt('-e .\n')).toThrow(/no exact pins/u);
+  });
+
+  it('is detected only when every line is a pin', () => {
+    expect(detectLockFormat('requests==2.32.3\nidna==3.7\n')).toBe(
+      'requirements-txt',
+    );
+    // A loose test here would claim any text file is a requirements.txt.
+    expect(() => detectLockFormat('requests>=2.0\n')).toThrow(/detect/u);
   });
 });

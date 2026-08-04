@@ -39,6 +39,7 @@ export type LockFormat =
   | 'nuget-assets'
   | 'nuget-packages-lock'
   | 'uv-lock'
+  | 'requirements-txt'
   | 'go-sum'
   | 'gradle-lockfile'
   | 'auto';
@@ -163,6 +164,18 @@ function defaultHandlers(
       },
     ],
     [
+      'requirements-txt',
+      {
+        ecosystem: 'pypi',
+        codec: pypi,
+        // Normalised into the uv.lock shape the pypi codec already reads,
+        // rather than teaching that codec a second Python lock dialect. A
+        // pinned requirements.txt carries strictly less than uv.lock does, and
+        // the conversion is where that shows.
+        parse: (raw) => parseRequirementsTxt(asText(raw)),
+      },
+    ],
+    [
       'go-sum',
       {
         ecosystem: 'golang',
@@ -179,6 +192,54 @@ function defaultHandlers(
       },
     ],
   ]);
+}
+
+/**
+ * A fully pinned `requirements.txt`, as a uv.lock-shaped document.
+ *
+ * Only `name==version` lines are importable. A requirements file may also
+ * carry ranges, markers, editable installs, VCS URLs and `-r` includes; none
+ * of those name an exact package, and importing a lock that is not actually
+ * locked would produce a pinned universe from an unpinned input. Those lines
+ * are refused rather than approximated — `pip freeze` output imports cleanly,
+ * a hand-written requirements file with ranges does not, and the error says
+ * which line is the problem.
+ */
+export function parseRequirementsTxt(text: string): {
+  version: 1;
+  package: { name: string; version: string }[];
+} {
+  const packages: { name: string; version: string }[] = [];
+  const seen = new Set<string>();
+  let lineNumber = 0;
+  for (const rawLine of text.split(/\r?\n/u)) {
+    lineNumber += 1;
+    // Strip comments, then hash options like `--hash=sha256:...` which pin the
+    // artifact but not the identity this import is about.
+    const line = rawLine
+      .split('#')[0]!
+      .trim()
+      .replace(/\s+--hash=\S+/gu, '');
+    if (line === '' || line.startsWith('-')) continue;
+    const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^\s;]+)$/u.exec(line);
+    if (!match) {
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `requirements.txt line ${lineNumber} is not an exact pin: "${rawLine.trim()}". ` +
+          `Only "name==version" can be imported; a range or marker does not name a package.`,
+      );
+    }
+    const name = match[1]!.toLowerCase().replace(/[-_.]+/gu, '-');
+    if (seen.has(name)) continue;
+    seen.add(name);
+    packages.push({ name, version: match[2]! });
+  }
+  if (packages.length === 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'requirements.txt contains no exact pins to import',
+    );
+  return { version: 1, package: packages };
 }
 
 function asText(raw: string | Uint8Array): string {
@@ -235,6 +296,24 @@ export function detectLockFormat(
       )
   )
     return 'gradle-lockfile';
+  // Last, and only when every meaningful line is an exact pin. A loose test
+  // here would claim any text file is a requirements.txt, so this asks for
+  // proof rather than a hint.
+  {
+    const lines = text
+      .split(/\r?\n/u)
+      .map((line) => line.split('#')[0]!.trim())
+      .filter((line) => line !== '' && !line.startsWith('-'));
+    if (
+      lines.length > 0 &&
+      lines.every((line) =>
+        /^[A-Za-z0-9][A-Za-z0-9._-]*\s*==\s*[^\s;]+(\s+--hash=\S+)*$/u.test(
+          line,
+        ),
+      )
+    )
+      return 'requirements-txt';
+  }
   throw new ProviderError(
     'INVALID_LOCKFILE',
     'Unable to detect native lockfile format',
