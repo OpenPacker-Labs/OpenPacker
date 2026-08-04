@@ -80,7 +80,7 @@ protocol goldens byte-unchanged: no existing digest moved.
   enforced structurally because the pattern needs lookaheads that some
   non-JavaScript validators lack.
 
-## Follow-on work, now implemented
+## Follow-on work, implemented and merged as `141ef53` (PR #9)
 
 Everything originally deferred has landed on this branch:
 
@@ -109,3 +109,27 @@ Everything originally deferred has landed on this branch:
 Still out of scope, and stated as such rather than implied: universe
 composition, and building or evaluating anything (PREX captures and verifies; it
 does not run builders or Nix expressions).
+
+## What review caught that gates did not
+
+`npm run verify` was green at every point below. Each of these was found by
+independent review, not by the suite:
+
+- `adapter-nix` emitted `runtimeReferences` entries containing
+  `nodeId: undefined as never` and the package's own NAR digest, plus
+  `externalRefs` locators naming store paths that do not exist. Removed;
+  resolving a reference to an identity belongs to the closure assembler.
+- `treeDigest` and `closureDigest` claimed to be the `tree-manifest-v1` and
+  `closure-v1` projections while hand-rolling different orderings. Measurably
+  different digests, so two conforming implementations would have disagreed.
+- A 31-character nixbase32 alphabet (missing `c`) rejected ~81% of real narinfo
+  hashes and silently decoded the rest to a **wrong** sha256 written into
+  `artifactDigest`. The covering test used a synthetic `c`-free string and
+  asserted only shape, so it passed under any alphabet.
+- Two guards that did nothing: a containment check applied to a `basename`,
+  which can never fail, and an `isEcosystem` guard on a code path the change had
+  just stopped using.
+
+The lesson recorded for the next initiative: a green gate is worth only what its
+assertions are worth. Every fix above now has a test that fails without it,
+confirmed by mutation.
