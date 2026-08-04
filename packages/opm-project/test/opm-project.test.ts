@@ -36,6 +36,7 @@ import {
   syncProject,
   uninstallProject,
   writeBinShims,
+  discoverBins,
   whyPackage,
   OpmError,
 } from '../src/index.js';
@@ -695,5 +696,67 @@ describe('environment generations', () => {
     expect(environment.OPM_GENERATION).toBe('1');
     expect(environment.OPM_ENVIRONMENT).toBe('default');
     expect(environment.PATH?.startsWith(environment.OPM_BIN!)).toBe(true);
+  });
+});
+
+describe('cross-ecosystem executable discovery', () => {
+  it('reads console scripts from a wheel dist-info', async () => {
+    // A wheel has no script file to point at: the entry point is a module and
+    // a callable, which is why npm-shaped discovery found nothing here.
+    const dir = await mkdtemp(join(tmpdir(), 'opm-wheel-'));
+    temps.push(dir);
+    await mkdir(join(dir, 'cowsay-6.1.dist-info'), { recursive: true });
+    await writeFile(
+      join(dir, 'cowsay-6.1.dist-info/entry_points.txt'),
+      '[console_scripts]\ncowsay = cowsay.__main__:cli\n\n[gui_scripts]\nnope = x:y\n',
+    );
+    const bins = await discoverBins(dir, 'pypi');
+    expect(bins).toEqual([
+      {
+        name: 'cowsay',
+        path: 'cowsay-6.1.dist-info/entry_points.txt',
+        interpreter: 'python',
+        entry: 'cowsay.__main__:cli',
+      },
+    ]);
+  });
+
+  it('ignores sections other than console_scripts and malformed entries', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-wheel-'));
+    temps.push(dir);
+    await mkdir(join(dir, 'x-1.0.dist-info'), { recursive: true });
+    await writeFile(
+      join(dir, 'x-1.0.dist-info/entry_points.txt'),
+      [
+        '[console_scripts]',
+        'good = mod:fn',
+        'no-colon = mod',
+        '../escape = mod:fn',
+        'inject = mod:fn; rm -rf /',
+      ].join('\n'),
+    );
+    expect((await discoverBins(dir, 'pypi')).map((bin) => bin.name)).toEqual([
+      'good',
+    ]);
+  });
+
+  it('returns nothing for an ecosystem with no convention yet', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-other-'));
+    temps.push(dir);
+    expect(await discoverBins(dir, 'cargo')).toEqual([]);
+  });
+
+  it('still finds npm bins', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-npm-'));
+    temps.push(dir);
+    await mkdir(join(dir, 'package'), { recursive: true });
+    await writeFile(
+      join(dir, 'package/package.json'),
+      JSON.stringify({ name: 'demo', bin: { demo: './bin/demo.js' } }),
+    );
+    const bins = await discoverBins(dir, 'npm');
+    expect(bins[0]).toMatchObject({ name: 'demo' });
+    // Absent interpreter means Node, so existing lockfiles keep their meaning.
+    expect(bins[0]?.interpreter).toBeUndefined();
   });
 });

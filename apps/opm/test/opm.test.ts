@@ -198,3 +198,21 @@ describe('opm + opmx CLI', () => {
     expect(await runOpm(['rollback'], cap.io, root)).toBe(4);
   });
 });
+
+describe('opmx argument forwarding', () => {
+  it('does not forward the -- separator to the tool', async () => {
+    // `opmx tool -- -t x` was handing the tool a literal "--", which any
+    // argument parser reads as end-of-options and then fails on what follows.
+    const { parseForTest } = await import('../src/opmx.js');
+    expect(parseForTest(['tool', '--', '-t', 'x']).passthrough).toEqual([
+      '-t',
+      'x',
+    ]);
+    // A later `--` is the tool's own argument and must survive.
+    expect(parseForTest(['tool', '-a', '--', '-b']).passthrough).toEqual([
+      '-a',
+      '--',
+      '-b',
+    ]);
+  });
+});

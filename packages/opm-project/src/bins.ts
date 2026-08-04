@@ -1,4 +1,11 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
@@ -44,6 +51,79 @@ export async function discoverNpmBins(
       throw error;
     }
   }
+  return [];
+}
+
+/**
+ * Console scripts declared by an installed wheel.
+ *
+ * A wheel records its entry points in `<name>.dist-info/entry_points.txt`, an
+ * INI file whose `[console_scripts]` section maps a command name to
+ * `module:callable`. There is no script file to point at — the launcher is
+ * generated — which is why npm-shaped discovery finds nothing here.
+ */
+export async function discoverPythonBins(
+  extractRoot: string,
+): Promise<BinDeclaration[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(extractRoot);
+  } catch {
+    return [];
+  }
+  const bins: BinDeclaration[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.dist-info')) continue;
+    let text: string;
+    try {
+      text = await readFile(
+        join(extractRoot, entry, 'entry_points.txt'),
+        'utf8',
+      );
+    } catch {
+      continue;
+    }
+    let section = '';
+    for (const rawLine of text.split(/\r?\n/u)) {
+      const line = rawLine.trim();
+      if (line === '' || line.startsWith('#')) continue;
+      if (line.startsWith('[')) {
+        section = line.slice(1, -1).trim().toLowerCase();
+        continue;
+      }
+      if (section !== 'console_scripts') continue;
+      const separator = line.indexOf('=');
+      if (separator <= 0) continue;
+      const name = line.slice(0, separator).trim();
+      const target = line.slice(separator + 1).trim();
+      // `module:callable`, optionally with a `[extra]` suffix this cannot
+      // honour without resolving extras.
+      const spec = target.split('[')[0]!.trim();
+      if (!/^[A-Za-z0-9_.]+:[A-Za-z0-9_.]+$/u.test(spec)) continue;
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)) continue;
+      bins.push({
+        name,
+        // The dist-info file is what declares it; recorded so the origin of
+        // the entry point is traceable rather than invented.
+        path: `${entry}/entry_points.txt`,
+        interpreter: 'python',
+        entry: spec,
+      });
+    }
+  }
+  return bins.sort((left, right) => (left.name < right.name ? -1 : 1));
+}
+
+/** Executables an extracted package declares, however its ecosystem does it. */
+export async function discoverBins(
+  extractRoot: string,
+  ecosystem: string,
+): Promise<BinDeclaration[]> {
+  if (ecosystem === 'pypi') return discoverPythonBins(extractRoot);
+  if (ecosystem === 'npm') return discoverNpmBins(extractRoot);
+  // Other ecosystems have no convention this understands yet. Returning
+  // nothing is honest; the runner turns it into a message that says which
+  // ecosystem is unsupported rather than implying the package is empty.
   return [];
 }
 
