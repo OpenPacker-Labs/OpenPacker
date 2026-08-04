@@ -4,6 +4,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   root: resolve(import.meta.dirname, '..'),
   test: {
-    setupFiles: [resolve(import.meta.dirname, 'v8-coverage-setup.mjs')],
+    setupFiles: [
+      resolve(import.meta.dirname, 'adapter-registry-setup.mjs'),
+      resolve(import.meta.dirname, 'v8-coverage-setup.mjs'),
+    ],
   },
 });

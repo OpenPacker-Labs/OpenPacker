@@ -902,6 +902,12 @@ async function emit(store, type, subject, data, time, occurrenceId) {
 export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
   if (!offline)
     throw new Error('the mandatory OpenPacker demo must run with --offline');
+  // Process entry: register adapters (demo never hardcodes ecosystem codecs).
+  const { configureDefaultAdapters } = await import(
+    '@openpacker/adapters-default'
+  );
+  const { tryGetAdapterRegistry } = await import('@openpacker/adapter-host');
+  if (!tryGetAdapterRegistry()) configureDefaultAdapters();
   await mkdir(output, { recursive: true });
   const fixture = await fixtureUniverse(output);
   const keys = json('fixtures/trust/keys.json');

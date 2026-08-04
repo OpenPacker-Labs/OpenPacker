@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import { canonicalDigest } from '@openpacker/canonical';
 import type { JsonValue, ResolutionUniverse } from '@openpacker/contracts';
 import { createEmbeddedResolver } from '@openpacker/embedded';
@@ -9,9 +11,15 @@ import {
   type PrexOperations,
 } from './operations.js';
 
+/** Ensure the process adapter registry is populated for the reference daemon. */
+export function ensureReferenceAdapters(): void {
+  if (!tryGetAdapterRegistry()) configureDefaultAdapters();
+}
+
 export async function createStandaloneReferenceOperations(
   universePath?: string,
 ): Promise<PrexOperations> {
+  ensureReferenceAdapters();
   const universe = universePath
     ? (JSON.parse(await readFile(universePath, 'utf8')) as ResolutionUniverse)
     : await emptyUniverse();

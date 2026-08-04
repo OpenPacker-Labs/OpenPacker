@@ -8,12 +8,7 @@ import {
   type LockCapture,
   type TranslationProvenance,
 } from '@openpacker/adapter-core';
-import { CargoCodec } from '@openpacker/adapter-cargo';
-import { GolangCodec } from '@openpacker/adapter-golang';
-import { MavenCodec } from '@openpacker/adapter-maven';
-import { NpmCodec } from '@openpacker/adapter-npm';
-import { NugetCodec } from '@openpacker/adapter-nuget';
-import { PypiCodec } from '@openpacker/adapter-pypi';
+import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import { parse as parseYaml } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
 import {
@@ -96,15 +91,30 @@ export interface LockImportResult {
 
 const DEFAULT_EVALUATION_TIME = '2026-08-02T00:00:00Z';
 
-const defaultCodecs = (): Map<Ecosystem, EcosystemCodec> =>
-  new Map<Ecosystem, EcosystemCodec>([
-    ['npm', new NpmCodec()],
-    ['cargo', new CargoCodec()],
-    ['nuget', new NugetCodec()],
-    ['pypi', new PypiCodec()],
-    ['golang', new GolangCodec()],
-    ['maven', new MavenCodec()],
-  ]);
+/**
+ * Resolve codecs from options or the process adapter registry.
+ *
+ * Never constructs ecosystem codecs by name — that is the adapter host's job.
+ */
+function resolveCodecs(
+  options: LockImportOptions,
+): Map<Ecosystem, EcosystemCodec> {
+  const codecs = new Map<Ecosystem, EcosystemCodec>();
+  const registry = tryGetAdapterRegistry();
+  if (registry) {
+    for (const module of registry.list()) {
+      if (!module.codec) continue;
+      const codec = module.codec();
+      for (const purlType of module.purlTypes)
+        codecs.set(purlType.toLowerCase() as Ecosystem, codec);
+    }
+  }
+  if (options.codecs) {
+    for (const [ecosystem, codec] of options.codecs)
+      codecs.set(ecosystem, codec);
+  }
+  return codecs;
+}
 
 function defaultHandlers(
   codecs: ReadonlyMap<Ecosystem, EcosystemCodec>,
@@ -118,7 +128,8 @@ function defaultHandlers(
   if (!npm || !cargo || !nuget || !pypi || !golang || !maven)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      'Default lock-import codecs for npm, cargo, nuget, pypi, golang, and maven are required',
+      'Lock-import requires codecs for npm, cargo, nuget, pypi, golang, and maven. ' +
+        'Configure the adapter registry at process entry or pass options.codecs.',
     );
   return new Map([
     [
@@ -468,7 +479,7 @@ export async function planLockCapture(
   raw: string | Uint8Array,
   options: LockImportOptions = {},
 ): Promise<CapturePlan> {
-  const codecs = options.codecs ?? defaultCodecs();
+  const codecs = resolveCodecs(options);
   const handlers = new Map([
     ...defaultHandlers(codecs),
     ...(options.formatHandlers ?? []),

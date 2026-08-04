@@ -393,7 +393,9 @@ async function candidatesFor(
   range: string | undefined,
   options: RegistryOptions,
 ): Promise<string[]> {
-  const provider = providerFor(ecosystem, options);
+  const provider = await providerFor(ecosystem, options, [
+    'prex.registry.enumerate-versions/1',
+  ]);
   const published = await provider.enumerate(basePurl);
   if (range === undefined || range === '' || range === '*')
     return [...published].reverse();
@@ -483,7 +485,9 @@ export async function resolveGraph(input: {
       candidates = candidates.slice(0, bounds.candidatesPerPackage);
     }
 
-    const provider = providerFor(ecosystem, options);
+    const provider = await providerFor(ecosystem, options, [
+      'prex.registry.package-metadata/1',
+    ]);
     for (const candidate of candidates) {
       if (inspected.has(candidate)) continue;
       inspected.add(candidate);

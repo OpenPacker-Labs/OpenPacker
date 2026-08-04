@@ -1,0 +1,44 @@
+{
+  "name": "@openpacker/adapters-default",
+  "version": "0.1.0",
+  "description": "Default PREX adapter set registered into the adapter host",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-apt": "0.1.0",
+    "@openpacker/adapter-cargo": "0.1.0",
+    "@openpacker/adapter-chocolatey": "0.1.0",
+    "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/adapter-golang": "0.1.0",
+    "@openpacker/adapter-host": "0.1.0",
+    "@openpacker/adapter-maven": "0.1.0",
+    "@openpacker/adapter-nix": "0.1.0",
+    "@openpacker/adapter-npm": "0.1.0",
+    "@openpacker/adapter-nuget": "0.1.0",
+    "@openpacker/adapter-pypi": "0.1.0",
+    "@openpacker/adapter-winget": "0.1.0",
+    "@openpacker/oci": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
+  }
+}

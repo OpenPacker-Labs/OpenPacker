@@ -154,7 +154,15 @@ if (gate in vitestTargets && targets.length !== vitestTargets[gate].length) {
 if (targets.length > 0) {
   const packageTests = spawnSync(
     'npm',
-    ['exec', '--', 'vitest', 'run', ...targets],
+    [
+      'exec',
+      '--',
+      'vitest',
+      'run',
+      ...targets,
+      '--config',
+      'scripts/vitest.gate.config.mjs',
+    ],
     { cwd: root, stdio: 'inherit' },
   );
   if (packageTests.error) throw packageTests.error;

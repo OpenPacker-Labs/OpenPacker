@@ -3,92 +3,94 @@ import {
   type InstallOutcome,
   type InstallPlan,
   type InstallerAvailability,
-  type InstallerProvider,
 } from '@openpacker/adapter-core';
-import { AptSystemProvider } from '@openpacker/adapter-apt';
-import { NixStoreProvider } from '@openpacker/adapter-nix';
-import { WingetSystemProvider } from '@openpacker/adapter-winget';
+import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl } from './spec.js';
+import { requireAdapterRegistry } from './adapters.js';
 
 /**
- * Host installers that change the machine through a native tool.
+ * Host / profile installers discovered through the adapter registry.
  *
- * apt, nix and winget are not catalog providers: they install onto the host
- * and run maintainer scripts / profile changes. Routing them here rather than
- * through the project store is what keeps those effects honest — the project
- * store is content-addressed and rollback-able; a system install is neither.
+ * Prefer unified `opm add` for capability-driven install; these helpers remain
+ * as a thin alias for scripts that called `opm system` explicitly.
  */
-
-export type SystemInstallerId = 'apt' | 'nix' | 'winget';
-
-const BY_ECOSYSTEM: Readonly<Record<string, SystemInstallerId>> = {
-  deb: 'apt',
-  apt: 'apt',
-  nix: 'nix',
-  winget: 'winget',
-};
-
-export function systemInstallerIdFor(
-  purlOrEcosystem: string,
-): SystemInstallerId {
-  const ecosystem = purlOrEcosystem.startsWith('pkg:')
-    ? ecosystemFromPurl(purlOrEcosystem)
-    : purlOrEcosystem;
-  const id = BY_ECOSYSTEM[ecosystem];
-  if (!id)
-    throw new OpmError(
-      'UNSUPPORTED_ECOSYSTEM',
-      `"${ecosystem}" is not a system installer. Supported: deb/apt, nix, winget.`,
-    );
-  return id;
-}
-
-export function systemInstaller(id: SystemInstallerId): InstallerProvider {
-  switch (id) {
-    case 'apt':
-      return new AptSystemProvider();
-    case 'nix':
-      return new NixStoreProvider();
-    case 'winget':
-      return new WingetSystemProvider();
-  }
-}
 
 export async function listSystemInstallers(): Promise<
   {
-    id: SystemInstallerId;
+    id: string;
+    purlTypes: readonly string[];
     availability: InstallerAvailability;
   }[]
 > {
-  const ids: SystemInstallerId[] = ['apt', 'nix', 'winget'];
-  return Promise.all(
-    ids.map(async (id) => ({
-      id,
-      availability: await systemInstaller(id).available(),
-    })),
-  );
+  const registry = requireAdapterRegistry();
+  const out: {
+    id: string;
+    purlTypes: readonly string[];
+    availability: InstallerAvailability;
+  }[] = [];
+  for (const module of registry.list()) {
+    if (!module.installer) continue;
+    const definition = await module.registryDefinition();
+    const hasInstall = definition.resources.some((resource) => {
+      const types = Array.isArray(resource['@type'])
+        ? resource['@type']
+        : [resource['@type']];
+      return types.includes('prex.registry.install/1');
+    });
+    if (!hasInstall) continue;
+    const installer = module.installer();
+    out.push({
+      id: module.id,
+      purlTypes: module.purlTypes,
+      availability: await installer.available(),
+    });
+  }
+  return out;
 }
 
 export async function planSystemInstall(
   exactPurl: string,
   options: InstallOptions = {},
 ): Promise<InstallPlan> {
-  const id = systemInstallerIdFor(exactPurl);
-  return systemInstaller(id).plan(exactPurl, options);
+  const ecosystem = ecosystemFromPurl(exactPurl);
+  try {
+    const installer = await requireAdapterRegistry().installerFor(ecosystem);
+    return installer.plan(exactPurl, options);
+  } catch (error) {
+    if (error instanceof AdapterHostError)
+      throw new OpmError(error.code, error.message);
+    throw error;
+  }
 }
 
 export async function installSystemPackage(
   exactPurl: string,
   options: InstallOptions = {},
 ): Promise<InstallOutcome> {
-  const id = systemInstallerIdFor(exactPurl);
-  const provider = systemInstaller(id);
-  const availability = await provider.available(options.signal);
-  if (!availability.available)
-    throw new OpmError(
-      'UNAVAILABLE',
-      `${id} cannot install here: ${availability.reason ?? 'unavailable'}`,
-    );
-  return provider.install(exactPurl, options);
+  const ecosystem = ecosystemFromPurl(exactPurl);
+  try {
+    const installer = await requireAdapterRegistry().installerFor(ecosystem);
+    const availability = await installer.available(options.signal);
+    if (!availability.available)
+      throw new OpmError(
+        'UNAVAILABLE',
+        `${ecosystem} cannot install here: ${availability.reason ?? 'unavailable'}`,
+      );
+    return installer.install(exactPurl, options);
+  } catch (error) {
+    if (error instanceof AdapterHostError)
+      throw new OpmError(error.code, error.message);
+    throw error;
+  }
+}
+
+/** @deprecated Use listSystemInstallers / adapter purl types. */
+export type SystemInstallerId = string;
+
+/** @deprecated Discovery uses the adapter registry. */
+export function systemInstallerIdFor(purlOrEcosystem: string): string {
+  return purlOrEcosystem.startsWith('pkg:')
+    ? ecosystemFromPurl(purlOrEcosystem)
+    : purlOrEcosystem;
 }
