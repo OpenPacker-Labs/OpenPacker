@@ -3,15 +3,23 @@ import { pathToFileURL } from 'node:url';
 import {
   OpmError,
   addPackage,
+  activateGeneration,
+  collectGarbage,
+  environmentVariables,
   initProject,
   installProject,
+  listGenerations,
   listInstalled,
   projectPaths,
+  readEnvironmentState,
   removePackage,
   requireOpmRoot,
+  rollbackTarget,
+  switchGeneration,
   syncProject,
   uninstallProject,
   whyPackage,
+  type Generation,
 } from '@openpacker/opm-project';
 
 export const EXIT_CODES = {
@@ -47,6 +55,10 @@ const COMMANDS = new Set([
   'update',
   'list',
   'why',
+  'generations',
+  'rollback',
+  'gc',
+  'shell',
   'help',
 ]);
 
@@ -188,12 +200,89 @@ export async function runOpm(
         io.stdout.write(`${await whyPackage(root, alias)}\n`);
         return EXIT_CODES.success;
       }
+      case 'generations': {
+        const root = await requireOpmRoot(cwd);
+        const state = await readEnvironmentState(root);
+        const generations = await listGenerations(root);
+        if (generations.length === 0) {
+          io.stdout.write('No generations yet. Run: opm install\n');
+          return EXIT_CODES.success;
+        }
+        for (const generation of generations) {
+          const current =
+            generation.generationDigest === state?.currentGenerationDigest;
+          io.stdout.write(
+            `${current ? '*' : ' '} ${generation.sequence}\t${generation.createdAt}\t${generation.members.length} package(s)\n`,
+          );
+        }
+        return EXIT_CODES.success;
+      }
+      case 'rollback': {
+        const root = await requireOpmRoot(cwd);
+        const to = option(args, 'to');
+        const target = to
+          ? await switchGeneration({ root, target: Number(to) })
+          : await rollbackToPrevious(root);
+        await reinstallGeneration(root, target);
+        io.stdout.write(`Rolled back to generation ${target.sequence}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'gc': {
+        const root = await requireOpmRoot(cwd);
+        const keepValue = option(args, 'keep');
+        const result = await collectGarbage({
+          root,
+          ...(keepValue === undefined ? {} : { keep: Number(keepValue) }),
+          dryRun: args.options.has('dry-run'),
+        });
+        const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
+        io.stdout.write(
+          `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
+        );
+        for (const path of result.removed) io.stdout.write(`  ${path}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'shell': {
+        const root = await requireOpmRoot(cwd);
+        const environment = await environmentVariables({ root });
+        if (args.options.has('json')) {
+          io.stdout.write(`${JSON.stringify(environment, null, 2)}\n`);
+          return EXIT_CODES.success;
+        }
+        // Printing assignments keeps this composable: `eval "$(opm shell)"`
+        // works without opm needing to spawn or manage a shell.
+        for (const [key, value] of Object.entries(environment))
+          io.stdout.write(`export ${key}=${JSON.stringify(value)}\n`);
+        return EXIT_CODES.success;
+      }
       default:
         throw usage(`Unhandled command ${args.command}`);
     }
   } catch (error) {
     return handleError(error, io);
   }
+}
+
+/** Roll back one step, which is the common case. */
+async function rollbackToPrevious(root: string): Promise<Generation> {
+  const target = await rollbackTarget(root);
+  if (!target)
+    throw new OpmError(
+      'NOT_FOUND',
+      'There is no earlier generation to roll back to',
+    );
+  return switchGeneration({ root, target: target.generationDigest });
+}
+
+/**
+ * Rebuild the derived view for a generation. The record is the source of
+ * truth, so switching is a pointer move plus an idempotent regeneration.
+ */
+async function reinstallGeneration(
+  root: string,
+  generation: Generation,
+): Promise<void> {
+  await activateGeneration({ root, generation });
 }
 
 function handleError(error: unknown, io: CliIo): number {

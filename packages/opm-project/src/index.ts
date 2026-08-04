@@ -87,3 +87,23 @@ export {
   whyPackage,
   writeManifestFile,
 } from './project.js';
+
+export {
+  GENERATIONS_DIR,
+  ENVIRONMENT_STATE,
+  activateGeneration,
+  collectGarbage,
+  collectableStorePaths,
+  environmentPaths,
+  environmentVariables,
+  generationDigest,
+  listGenerations,
+  readEnvironmentState,
+  readGeneration,
+  recordGeneration,
+  rollbackTarget,
+  switchGeneration,
+  type EnvironmentState,
+  type Generation,
+  type GenerationMember,
+} from './generations.js';

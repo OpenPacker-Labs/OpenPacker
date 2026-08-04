@@ -15,6 +15,7 @@ import type {
   OpmLockfile,
   ProjectState,
 } from './types.js';
+import { recordGeneration } from './generations.js';
 import { OpmError } from './types.js';
 import { discoverNpmBins, removeBinShims, writeBinShims } from './bins.js';
 import {
@@ -229,6 +230,15 @@ export async function installFromLock(input: {
   }
 
   await writeProjectState(paths.projectState, state);
+  // Every install appends an immutable generation, which is what makes the
+  // result rollback-able rather than a destructive overwrite.
+  await recordGeneration({
+    root: input.root,
+    packages: state.packages,
+    lockDigest: digestOf(
+      new TextEncoder().encode(JSON.stringify(input.lock.packages)),
+    ),
+  });
   return state;
 }
 
@@ -259,6 +269,15 @@ export async function uninstallPackages(input: {
     delete state.packages[safeAlias];
   }
   await writeProjectState(paths.projectState, state);
+  // Removing packages changes the environment, so it is a new generation for
+  // the same reason installing is: the previous state stays rollback-able.
+  await recordGeneration({
+    root: input.root,
+    packages: state.packages,
+    lockDigest: digestOf(
+      new TextEncoder().encode(JSON.stringify(Object.keys(state.packages))),
+    ),
+  });
   return state;
 }
 
