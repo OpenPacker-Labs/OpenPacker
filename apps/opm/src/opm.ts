@@ -17,7 +17,9 @@ import {
   removePackage,
   REGISTRY_ECOSYSTEMS,
   requireOpmRoot,
+  resolveGraph,
   resolveRegistryArtifact,
+  solveGraph,
   rollbackTarget,
   searchRegistry,
   switchGeneration,
@@ -63,6 +65,7 @@ const COMMANDS = new Set([
   'search',
   'versions',
   'info',
+  'resolve',
   'generations',
   'rollback',
   'gc',
@@ -238,6 +241,38 @@ export async function runOpm(
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
         for (const version of versions) io.stdout.write(`${version}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'resolve': {
+        const target = args.positionals[0];
+        if (!target) throw usage('opm resolve requires a package or PURL');
+        const range = option(args, 'range');
+        const graph = await resolveGraph({
+          roots: [{ purl: target, ...(range === undefined ? {} : { range }) }],
+          ...(option(args, 'candidates') === undefined
+            ? {}
+            : {
+                bounds: {
+                  candidatesPerPackage: Number(option(args, 'candidates')),
+                },
+              }),
+        });
+        if (graph.truncated.length > 0)
+          io.stderr.write(
+            `opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +
+              `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
+          );
+        for (const item of graph.unresolved)
+          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
+        const solved = await solveGraph({
+          graph,
+          rootRequirements: [{ purl: target }],
+        });
+        io.stdout.write(
+          `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
+        );
+        for (const instance of solved.selected)
+          io.stdout.write(`  ${instance.identity.exactPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'info': {
@@ -502,6 +537,10 @@ Browse registries (no project needed):
   opm search <query|purl> [--ecosystem|-e <eco>]
   opm versions <purl> [--ecosystem|-e <eco>]
   opm info <exact-purl> [--ecosystem|-e <eco>]
+
+Resolve a full dependency graph (transitive, proof-checked):
+  opm resolve pkg:npm/chalk --range '^4.1.0'
+  opm resolve pkg:npm/chalk --candidates 8
 
 Registries: ${REGISTRY_ECOSYSTEMS.join(', ')}
   Override one with OPM_REGISTRY_<ECOSYSTEM>, e.g.

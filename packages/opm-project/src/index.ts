@@ -135,3 +135,12 @@ export {
   toolCacheRoot,
   type EphemeralTool,
 } from './ephemeral.js';
+
+export { codecFor } from './codecs.js';
+export {
+  resolveGraph,
+  solveGraph,
+  universeFrom,
+  type ResolutionBounds,
+  type ResolvedGraph,
+} from './resolve.js';
