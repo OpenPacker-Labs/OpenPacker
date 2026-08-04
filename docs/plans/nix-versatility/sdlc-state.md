@@ -3,7 +3,8 @@
 - **Initiative:** Nix-level versatility for the PREX normalized form
 - **Phase:** closed
 - **Trunk:** main
-- **Branch:** `feat/prex-realisation-foundations`
+- **Branch:** `feat/prex-realisation-foundations` → squash-merged `53bdb36` (PR
+  #7)
 
 ## Goal
 
