@@ -41,7 +41,7 @@ changes; adapters and installers are follow-on work.
 
 ## Verification
 
-`npm run verify` green (all 22 steps). 105 conformance vectors (was 34), 21
+`npm run verify` green (all 22 steps). 106 conformance vectors (was 34), 21
 canonical tests including pinned projection digests, and 18 resolver tests
 covering cross-platform solving, platform-prefixed predicate resolution,
 inactive requirement kinds, and the amendment no-op digest equality. All 19
@@ -67,6 +67,13 @@ protocol goldens byte-unchanged: no existing digest moved.
   inactive-kind tests — the inactive-kind test immediately exposed a real bug
   where dropped requirements still produced proof witnesses the checker
   rejected.
+- Re-review closed all ten findings and raised five documentation/auditability
+  ones, all addressed: suppressed requirements now emit a
+  `requirement-suppressed` explanation node (the same asymmetry this work
+  rejected for amendments), the new semantic-loss codes have table rows, and the
+  normative prose now states exactly what the reference validator enforces,
+  including that output-name uniqueness applies to build recipes as well as
+  packages.
 - The tree-manifest path pattern was bypassable with an embedded newline
   (`[^\\]` matches newline, `.` does not). Tightened, and the rule is now also
   enforced structurally because the pattern needs lookaheads that some

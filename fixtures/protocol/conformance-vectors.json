@@ -1247,6 +1247,20 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
       "valid": false,
       "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-duplicate-recipe-output-name",
+      "file": "realisation/build-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "out"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D"]
     }
   ]
 }

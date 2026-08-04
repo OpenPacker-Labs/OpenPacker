@@ -407,7 +407,8 @@ export type ExplanationGraph = {
       | 'semantic-loss'
       | 'proof'
       | 'amendment-applied'
-      | 'amendment-ignored';
+      | 'amendment-ignored'
+      | 'requirement-suppressed';
     label: string;
     data: { [key: string]: CanonicalJsonValue };
   }>;
@@ -7237,7 +7238,10 @@ export const schemaCatalog: Record<string, JsonValue> = {
                     'proof',
                     'amendment-applied',
                     'amendment-ignored',
+                    'requirement-suppressed',
                   ],
+                  $comment:
+                    'amendment-applied is reserved for compiled amendments; amendment compilation is not implemented, so no current implementation emits it.',
                 },
                 label: {
                   type: 'string',

@@ -1324,6 +1324,39 @@ fn explanation(
             ]),
         }));
     }
+    // A requirement suppressed by policy left the solve; say so, for the same
+    // reason an ignored amendment does. A consumer reading only the solution
+    // would otherwise see a hard requirement silently absent.
+    nodes.extend(
+        input
+            .request
+            .requirements
+            .iter()
+            .chain(
+                input
+                    .universe
+                    .packages
+                    .iter()
+                    .filter(|package| solution.selected_node_ids.contains(&package.node_id))
+                    .flat_map(|package| package.requirements.iter()),
+            )
+            .filter(|requirement| {
+                !requirement_is_active(&input.request, Some(requirement.kind.as_str()))
+            })
+            .map(|requirement| ExplanationNode {
+                id: format!("requirement-suppressed:{}", requirement.id),
+                kind: "requirement-suppressed".into(),
+                label: format!(
+                    "requirement {} was suppressed: kind {} is inactive for this solve",
+                    requirement.id, requirement.kind
+                ),
+                data: BTreeMap::from([
+                    ("requirementId".into(), json!(requirement.id)),
+                    ("kind".into(), json!(requirement.kind)),
+                    ("optional".into(), json!(requirement.optional)),
+                ]),
+            }),
+    );
     let (_admitted, ignored) = partition_amendments(input);
     nodes.extend(ignored.into_iter().map(|index| {
         let amendment = &input.universe.amendments[index];

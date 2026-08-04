@@ -35,11 +35,11 @@ platform an input was consumed for; a capture that had to guess MUST record
 
 `treeDigest` is the `tree-manifest-v1` projection digest of a `TreeManifest` and
 identifies extracted content. Entry paths are relative and forward-slash
-separated, and MUST contain no empty, `.`, or `..` segment and no backslash.
-Executability is carried by entry `kind`, never by a mode integer, so identical
-trees digest identically across platforms. Tree identity is deliberately not
-byte-compatible with any native tree-serialization hash; a native value MAY be
-carried alongside in `externalRefs` or `extensions`.
+separated, and MUST contain no empty, `.`, or `..` segment, no backslash, and no
+control character. Executability is carried by entry `kind`, never by a mode
+integer, so identical trees digest identically across platforms. Tree identity
+is deliberately not byte-compatible with any native tree-serialization hash; a
+native value MAY be carried alongside in `externalRefs` or `extensions`.
 
 The **reference closure** of a set of artifacts is the least fixpoint under
 `ArtifactDescriptor.runtimeReferences`. Closure computation is a
@@ -56,13 +56,16 @@ content offered by different mirrors has one substitute digest.
 
 ### Semantic-loss codes for realisation capture
 
-| Code                           | Severity | Meaning                                                            |
-| ------------------------------ | -------- | ------------------------------------------------------------------ |
-| `RECIPE_OPAQUE`                | info     | A build plan existed but its internals were not captured           |
-| `TREE_ENTRY_UNSUPPORTED`       | warning  | A tree entry kind is representable but not materializable here     |
-| `SUBSTITUTE_UNVERIFIED`        | warning  | Substituted bytes arrived without a verified substituter signature |
-| `CONTENT_ADDRESS_UNSUPPORTED`  | error    | A native content address uses an algorithm PREX cannot represent   |
-| `PLATFORM_ATTRIBUTION_ASSUMED` | warning  | An input's build/host/target role was inferred, not captured       |
+| Code                           | Severity | Meaning                                                             |
+| ------------------------------ | -------- | ------------------------------------------------------------------- |
+| `RECIPE_OPAQUE`                | info     | A build plan existed but its internals were not captured            |
+| `TREE_ENTRY_UNSUPPORTED`       | warning  | A tree entry kind is representable but not materializable here      |
+| `SUBSTITUTE_UNVERIFIED`        | warning  | Substituted bytes arrived without a verified substituter signature  |
+| `CONTENT_ADDRESS_UNSUPPORTED`  | error    | A native content address uses an algorithm PREX cannot represent    |
+| `PLATFORM_ATTRIBUTION_ASSUMED` | warning  | An input's build/host/target role was inferred, not captured        |
+| `OUTPUT_SELECTOR_DEFAULTED`    | info     | A normalize implementation supplied a missing `output` qualifier    |
+| `OUTPUT_GRANULARITY_COLLAPSED` | warning  | Native per-output resolution was represented at package granularity |
+| `CROSS_STAGE_APPROXIMATED`     | warning  | Staging finer than one build/host/target split was not represented  |
 
 ## Platforms and requirement kinds
 
@@ -78,8 +81,12 @@ requirement is consumed on: requirements whose `kind` is `build` or `tool`
 resolve against the build platform, and every other kind resolves against the
 host. `requirementKindPolicy.buildPlatformKinds` replaces that set, and
 `requirementKindPolicy.inactiveKinds` marks kinds that do not participate in the
-solve at all. Conflicts, cardinality selectors, and the target predicates
-attached to capability offers are host-platform facts.
+solve at all. A suppressed requirement contributes no witness, edge, or target
+check, and implementations MUST record each suppression as a
+`requirement-suppressed` explanation node: a hard requirement that silently
+disappears is indistinguishable from one that was never declared. Conflicts,
+cardinality selectors, and the target predicates attached to capability offers
+are host-platform facts.
 
 The `capabilityPresent` predicate also resolves against the host platform
 regardless of the enclosing requirement's kind, because a capability describes
@@ -116,10 +123,16 @@ rules are normative and MUST be enforced by validators alongside schema
 validation, exactly as duplicate object members are rejected before schema
 handling:
 
-- Output names MUST be unique within a package, and at most one output may be
-  `default`. A duplicate name makes an output selector ambiguous.
+- Output names MUST be unique, and at most one output may be `default`, wherever
+  named outputs are declared — `PackageInstance.outputs` and
+  `BuildRecipe.outputs` alike. A duplicate name makes an output selector
+  ambiguous.
 - Tree manifest entry paths MUST be unique within a manifest. Two entries for
   one path do not identify a tree.
+- Tree manifest entry paths MUST satisfy the path shape above. The schema
+  pattern expresses it, and validators MUST enforce it independently: the
+  pattern requires lookaheads that several non-JavaScript JSON Schema
+  implementations do not support.
 - `EnvironmentState.currentGenerationDigest` MUST appear in
   `retainedGenerationDigests`, or the pointer names a record that may already
   have been collected.

@@ -985,6 +985,19 @@ fn inactive_requirement_kinds_are_dropped_from_the_solve() {
     });
     let output = solve(&solve_input).unwrap();
     assert!(check(&solve_input, &output).unwrap().valid);
+    // Suppression must be visible: a consumer reading the solution alone would
+    // otherwise never learn a hard requirement was dropped.
+    let suppressed: Vec<_> = output
+        .explanation
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "requirement-suppressed")
+        .collect();
+    assert_eq!(suppressed.len(), 1);
+    assert_eq!(
+        suppressed[0].data.get("requirementId"),
+        Some(&json!("dev-only"))
+    );
 }
 
 #[test]
