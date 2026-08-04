@@ -563,9 +563,11 @@ export function assertDaemonBindAddress(
 }
 
 export function assertDaemonPort(port: number): number {
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535)
+  // 0 asks the OS for an ephemeral port (tests, one-shot fixtures). 1–65535
+  // are ordinary binds. Anything else is a misconfiguration.
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535)
     throw new RangeError(
-      `Daemon port must be an integer 1–65535 (got ${String(port)})`,
+      `Daemon port must be an integer 0–65535 (got ${String(port)})`,
     );
   return port;
 }

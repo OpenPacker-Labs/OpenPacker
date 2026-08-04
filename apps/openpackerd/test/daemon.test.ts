@@ -674,10 +674,11 @@ describe('openpackerd HTTP surface hardening', () => {
     ).not.toThrow();
   });
 
-  it('rejects ports outside 1–65535', () => {
-    expect(() => assertDaemonPort(0)).toThrow(/port/i);
+  it('rejects ports outside 0–65535 (0 is OS-assigned ephemeral)', () => {
+    expect(() => assertDaemonPort(-1)).toThrow(/port/i);
     expect(() => assertDaemonPort(65_536)).toThrow(/port/i);
     expect(() => assertDaemonPort(Number.NaN)).toThrow(/port/i);
+    expect(assertDaemonPort(0)).toBe(0);
     expect(assertDaemonPort(7337)).toBe(7337);
   });
 
