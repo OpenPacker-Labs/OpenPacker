@@ -4,6 +4,7 @@ import {
   detectLockFormat,
   parseRequirementsTxt,
   parsePnpmLock,
+  parsePoetryLock,
   planLockCapture,
   planNativeLockImport,
 } from './index.js';
@@ -223,5 +224,31 @@ describe('pnpm-lock.yaml import', () => {
         lock("  'a@1.0.0':\n    resolution: {integrity: sha512-z}\n"),
       ),
     ).toBe('pnpm-lock');
+  });
+});
+
+describe('poetry.lock import', () => {
+  const poetry = `[[package]]\nname = "Foo_Bar"\nversion = "1.0"\n\n[[package]]\nname = "foo-bar"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\n`;
+
+  it('normalises names the way PyPI does', () => {
+    expect(parsePoetryLock(poetry).package).toEqual([
+      { name: 'foo-bar', version: '1.0' },
+    ]);
+  });
+
+  it('is distinguished from Cargo.lock, which also uses [[package]]', () => {
+    // The [metadata] lock-version block is what separates them.
+    expect(detectLockFormat(poetry)).toBe('poetry-lock');
+    expect(
+      detectLockFormat(
+        'version = 3\n\n[[package]]\nname = "a"\nversion = "1.0"\n',
+      ),
+    ).toBe('cargo-lock');
+  });
+
+  it('refuses a file with no importable packages', () => {
+    expect(() => parsePoetryLock('[metadata]\nlock-version = "2.0"\n')).toThrow(
+      /\[\[package\]\]/u,
+    );
   });
 });
