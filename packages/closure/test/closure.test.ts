@@ -163,11 +163,20 @@ describe('scanner equivalence and scaling', () => {
   };
 
   it('agrees with the naive scanner on adversarial data', () => {
-    // A deterministic PRNG so a failure is reproducible.
-    let seed = 0x2f6e2b1;
+    // A deterministic PRNG so a failure is reproducible. An LCG's low bits
+    // have period equal to their modulus, so `lcg() % 2` alternates and
+    // `% 16` repeats every sixteen — drawing from a small alphabet that way
+    // produces strictly periodic "random" data. This finalizes with murmur3's
+    // avalanche step instead, which mixes every bit.
+    let counter = 0x2f6e2b1;
     const next = () => {
-      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
-      return seed;
+      counter = (counter + 0x9e3779b9) >>> 0;
+      let value = counter;
+      value ^= value >>> 16;
+      value = Math.imul(value, 0x85ebca6b) >>> 0;
+      value ^= value >>> 13;
+      value = Math.imul(value, 0xc2b2ae35) >>> 0;
+      return (value ^ (value >>> 16)) >>> 0;
     };
     for (let round = 0; round < 40; round += 1) {
       // A tiny alphabet maximises accidental partial matches and hash
@@ -187,6 +196,17 @@ describe('scanner equivalence and scaling', () => {
         path: `file-${index}`,
         data: new TextEncoder().encode(draw(200)),
       }));
+      // The corpus has to be aperiodic or this compares two scanners over a
+      // handful of repeating bytes and proves nothing.
+      const text = new TextDecoder().decode(files[0]!.data);
+      for (const period of [1, 2, 4, 8, 16])
+        expect(
+          text
+            .slice(0, period)
+            .repeat(Math.ceil(200 / period))
+            .slice(0, 200),
+          `round ${round} corpus is periodic with period ${period}`,
+        ).not.toBe(text);
       expect(scanReferences(files, candidates), `round ${round}`).toEqual(
         naiveScan(files, candidates),
       );
@@ -224,15 +244,25 @@ describe('scanner equivalence and scaling', () => {
     // The point of the rewrite: cost tracks bytes, not candidates. The old
     // scanner took ~8s for this shape.
     const alphabet = '0123456789abcdfghijklmnpqrsvwxyz';
+    // Each character takes five *high* bits of a mixed value. Taking `% 32` of
+    // an LCG uses its low five bits, whose period is 32 — that produced 32
+    // distinct tokens, all rotations of one string, rather than 1000.
     const candidates = Array.from({ length: 1000 }, (_, index) => {
-      let value = Math.imul(index + 1, 2654435761) >>> 0;
       let token = '';
       for (let i = 0; i < 32; i += 1) {
-        value = (Math.imul(value, 1103515245) + 12345) >>> 0;
-        token += alphabet[value % 32]!;
+        let value =
+          (Math.imul(index + 1, 0x9e3779b9) + Math.imul(i, 0x85ebca6b)) >>> 0;
+        value ^= value >>> 16;
+        value = Math.imul(value, 0x85ebca6b) >>> 0;
+        value ^= value >>> 13;
+        value = Math.imul(value, 0xc2b2ae35) >>> 0;
+        token += alphabet[(value >>> 27) % 32]!;
       }
       return { token, nodeId: `sha256:${String(index).padStart(64, '0')}` };
     });
+    // The point of the benchmark is a large candidate set, so it has to
+    // actually be one.
+    expect(new Set(candidates.map(({ token }) => token)).size).toBe(1000);
     const data = new Uint8Array(2 * 1024 * 1024);
     for (let index = 0; index < data.length; index += 1)
       data[index] = 48 + (index % 10);

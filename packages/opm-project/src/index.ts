@@ -91,6 +91,7 @@ export {
 export {
   GENERATIONS_DIR,
   ENVIRONMENT_STATE,
+  STORE_REFERENCES,
   activateGeneration,
   collectGarbage,
   collectableStorePaths,
@@ -100,12 +101,15 @@ export {
   shellQuote,
   generationDigest,
   listGenerations,
+  mergeStoreReferences,
   readEnvironmentState,
   readGeneration,
+  readStoreReferences,
   recordGeneration,
   rollbackTarget,
   switchGeneration,
   type EnvironmentState,
   type Generation,
   type GenerationMember,
+  type StoreReferences,
 } from './generations.js';

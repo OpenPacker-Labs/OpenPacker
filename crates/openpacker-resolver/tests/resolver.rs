@@ -914,7 +914,15 @@ fn the_amended_universe_digest_is_universe_v1_over_the_whole_struct() {
         "sourceSnapshots",
     ] {
         if let Some(Value::Array(items)) = object.get_mut(path) {
-            items.sort_by_key(|item| serde_json::to_string(item).unwrap());
+            // Sorted the way the specification says — canonical JSON, UTF-16
+            // code units — rather than by `to_string`, which is a third
+            // serialization that agrees with neither.
+            items.sort_by_key(|item| {
+                String::from_utf8(canonical_json(item).unwrap())
+                    .unwrap()
+                    .encode_utf16()
+                    .collect::<Vec<u16>>()
+            });
         }
     }
     let recomputed = digest_json(&expected).unwrap();
@@ -924,6 +932,83 @@ fn the_amended_universe_digest_is_universe_v1_over_the_whole_struct() {
         applied.input.universe.canonical_digest,
         amended.universe.canonical_digest
     );
+}
+
+#[test]
+fn amended_universe_ordered_sets_sort_by_utf16_code_units() {
+    // The sibling test above has one element per ordered set, so it pins the
+    // field set but never the sort. This pins the sort, and specifically its
+    // collation: `canonical.rs` already sorts object *names* by UTF-16 code
+    // units to match ECMAScript, and array ordered sets must agree or this
+    // crate's universe digest disagrees with every other implementation.
+    //
+    // U+10000 is above the BMP. As UTF-8 it is F0 90 80 80 and so follows
+    // U+E000 (EE 80 80); as UTF-16 it is the surrogate pair D800 DC00 and so
+    // precedes it. The two collations put these two overlays in opposite
+    // orders, which is exactly the disagreement being pinned.
+    let mut one = package('1', "demo", "1.0.0");
+    one.requirements.push(requirement(
+        "demo-optional-extra",
+        RequirementExpression::Package {
+            purl: "pkg:npm/absent".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        true,
+    ));
+    let mut amended = input(
+        vec![one.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    let astral = json!({ "id": "\u{10000}" });
+    let private_use = json!({ "id": "\u{E000}" });
+    // Inserted in the order a byte sort would already consider correct, so a
+    // byte-sorting implementation leaves them alone and lands on the wrong
+    // order rather than accidentally on the right one.
+    amended.universe.overlays = vec![private_use.clone(), astral.clone()];
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: one.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "retractRequirement",
+            "requirementId": "demo-optional-extra",
+            "justification": "not applicable",
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+
+    let applied = apply_amendments(&amended).unwrap();
+
+    // Build both candidate orderings and require the UTF-16 one.
+    let digest_with = |overlays: Vec<Value>| {
+        let mut value = serde_json::to_value(&applied.input.universe).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("canonicalDigest");
+        object.insert("overlays".into(), Value::Array(overlays));
+        digest_json(&value).unwrap()
+    };
+    let utf16_order = digest_with(vec![astral.clone(), private_use.clone()]);
+    let utf8_order = digest_with(vec![private_use, astral]);
+    assert_ne!(
+        utf16_order, utf8_order,
+        "the two collations must disagree, or this test proves nothing"
+    );
+    assert_eq!(applied.input.universe.canonical_digest, utf16_order);
 }
 
 #[test]

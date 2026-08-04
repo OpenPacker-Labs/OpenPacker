@@ -1,18 +1,18 @@
 {
   "schemaVersion": "1",
-  "initiative": "nix-versatility",
-  "branch": "feat/open-ecosystems",
+  "initiative": "review-followups",
+  "branch": "fix/review-followups",
   "status": "ready-for-review",
-  "summary": "Implements the follow-on work PR #7 deferred: open PURL types, amendment compilation, the nix codec, closures, and opm generations.",
+  "summary": "Resolves the six self-review findings, then the ten an adversarial review raised against those fixes: node identity in lock-import and maven, ordered-set collation in the Rust amend path, the gc reference closure, and tests that passed under the very bugs they claimed to cover.",
   "gates": {
     "verify": "green",
-    "cargoTest": "21 passed",
-    "conformanceVectors": 110,
-    "goldens": "19 unchanged"
+    "cargoTest": "23 passed",
+    "goldens": "16 moved, every hunk node-ID derived"
   },
   "reviewFindingsAddressed": 16,
   "residuals": [
-    "Universe composition remains out of scope.",
+    "Nothing populates store references yet; gc computes the closure correctly in advance of that.",
+    "No JS producer applies the universe-v1 ordered-set projection, so the Rust amend path is the only implementation that sorts and nothing cross-checks the two.",
     "PREX captures and verifies; it does not build or evaluate."
   ]
 }

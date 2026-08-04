@@ -10,6 +10,8 @@ import {
   addPackage,
   activateGeneration,
   collectGarbage,
+  mergeStoreReferences,
+  readStoreReferences,
   environmentScript,
   environmentVariables,
   shellQuote,
@@ -397,10 +399,160 @@ describe('environment generations', () => {
       root,
       packages: { [record.alias]: { ...record, digest: `${record.digest}` } },
       lockDigest: 'sha256:edge',
-      references: { [record.alias]: [referenced] },
+      references: { [record.storePath]: [referenced] },
     });
     const afterEdge = await collectGarbage({ root, dryRun: true });
     expect(afterEdge.removed).not.toContain(referenced);
+  });
+
+  it('retains references transitively, through paths that are not members', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    // A three-deep chain. Only the first hop is a generation member: a
+    // transitive runtime dependency is by definition not something the project
+    // installed directly, so a closure that only walks member edges stops one
+    // hop short and deletes content that is still referenced.
+    const store = join(root, '.opm/store');
+    const middle = join(store, `sha256-${'b'.repeat(64)}`);
+    const leaf = join(store, `sha256-${'c'.repeat(64)}`);
+    for (const path of [middle, leaf]) {
+      await mkdir(path, { recursive: true });
+      await writeFile(join(path, 'marker'), 'x');
+    }
+
+    const record = Object.values(
+      (await readProjectState(join(root, '.opm/project.json')))?.packages ?? {},
+    )[0];
+    if (!record) throw new Error('expected an installed package record');
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: record },
+      lockDigest: 'sha256:chain',
+      references: {
+        [record.storePath]: [middle],
+        [middle]: [leaf],
+      },
+    });
+
+    const removed = (await collectGarbage({ root, dryRun: true })).removed;
+    expect(removed).not.toContain(middle);
+    expect(removed).not.toContain(leaf);
+  });
+
+  it('keeps the reference graph across a gc that forgets generations', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const store = join(root, '.opm/store');
+    const middle = join(store, `sha256-${'b'.repeat(64)}`);
+    const leaf = join(store, `sha256-${'c'.repeat(64)}`);
+    for (const path of [middle, leaf]) {
+      await mkdir(path, { recursive: true });
+      await writeFile(join(path, 'marker'), 'x');
+    }
+
+    const record = Object.values(
+      (await readProjectState(join(root, '.opm/project.json')))?.packages ?? {},
+    )[0];
+    if (!record) throw new Error('expected an installed package record');
+
+    // The generation that observed the deep edge is not the one that survives
+    // gc. If the graph lived in the generation record it would be deleted with
+    // it, and a second gc over identical live content would collect the leaf.
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: record },
+      lockDigest: 'sha256:observed',
+      references: { [record.storePath]: [middle], [middle]: [leaf] },
+    });
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: record },
+      lockDigest: 'sha256:later',
+    });
+
+    const first = await collectGarbage({ root, keep: 1 });
+    expect(first.removed).not.toContain(middle);
+    expect(first.removed).not.toContain(leaf);
+
+    const second = await collectGarbage({ root, keep: 1 });
+    expect(second.removed).not.toContain(middle);
+    expect(second.removed).not.toContain(leaf);
+  });
+
+  it('forgets reference edges out of a path it collected', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const store = join(root, '.opm/store');
+    const orphan = join(store, `sha256-${'a'.repeat(64)}`);
+    const target = join(store, `sha256-${'d'.repeat(64)}`);
+    for (const path of [orphan, target]) {
+      await mkdir(path, { recursive: true });
+      await writeFile(join(path, 'marker'), 'x');
+    }
+    // Nothing reaches the orphan, so both it and what it points at collect.
+    await mergeStoreReferences({ root, references: { [orphan]: [target] } });
+
+    const removed = (await collectGarbage({ root })).removed;
+    expect(removed).toContain(orphan);
+    expect(removed).toContain(target);
+    // The ledger must not keep describing paths that no longer exist.
+    expect((await readStoreReferences(root)).edges).toEqual({});
+  });
+
+  it('unions reference edges across generations rather than overwriting', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const store = join(root, '.opm/store');
+    const first = join(store, `sha256-${'e'.repeat(64)}`);
+    const second = join(store, `sha256-${'f'.repeat(64)}`);
+    for (const path of [first, second]) {
+      await mkdir(path, { recursive: true });
+      await writeFile(join(path, 'marker'), 'x');
+    }
+
+    const record = Object.values(
+      (await readProjectState(join(root, '.opm/project.json')))?.packages ?? {},
+    )[0];
+    if (!record) throw new Error('expected an installed package record');
+
+    // The same store path referenced differently by two retained generations.
+    // Both edges are live, because both generations can still be rolled back to.
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: record },
+      lockDigest: 'sha256:first',
+      references: { [record.storePath]: [first] },
+    });
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: record },
+      lockDigest: 'sha256:second',
+      references: { [record.storePath]: [second] },
+    });
+
+    const removed = (await collectGarbage({ root, dryRun: true })).removed;
+    expect(removed).not.toContain(first);
+    expect(removed).not.toContain(second);
   });
 
   it('never collects the current generation', async () => {
@@ -435,6 +587,24 @@ describe('environment generations', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it("refuses a bin directory containing ':' for every consumer", async () => {
+    // PATH cannot represent such a directory, so the environment is wrong for
+    // anyone who reads it — the script, `--json`, or an embedder. The check
+    // belongs where PATH is built, not in the one consumer that quotes.
+    const dir = await mkdtemp(join(tmpdir(), 'opm-colon-'));
+    temps.push(dir);
+    const root = join(dir, 'has:colon');
+    await mkdir(root, { recursive: true });
+    await initProject({ root, name: 'test-app' });
+
+    await expect(environmentVariables({ root })).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    await expect(environmentScript({ root })).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
   });
 
   it('quotes shell values so eval cannot execute them', async () => {

@@ -287,9 +287,22 @@ fn universe_digest(universe: &crate::ResolutionUniverse) -> Result<Digest, Resol
         "sourceSnapshots",
     ] {
         if let Some(Value::Array(items)) = object.get_mut(path) {
-            let mut sortable: Vec<(Vec<u8>, Value)> = std::mem::take(items)
+            // Ordered sets sort by UTF-16 code units, not by UTF-8 bytes. The
+            // normative implementation compares canonical JSON with JavaScript
+            // string comparison, and the two orders disagree whenever a
+            // non-BMP character meets one in U+E000..U+FFFF — the same hazard
+            // `canonical.rs` already guards for object keys. Sorting by bytes
+            // here would put this crate's universe digest at odds with every
+            // other conforming implementation.
+            let mut sortable: Vec<(Vec<u16>, Value)> = std::mem::take(items)
                 .into_iter()
-                .map(|item| Ok((canonical_json(&item)?, item)))
+                .map(|item| {
+                    let key = String::from_utf8(canonical_json(&item)?)
+                        .map_err(|error| ResolverError::InvalidInput(error.to_string()))?
+                        .encode_utf16()
+                        .collect();
+                    Ok((key, item))
+                })
                 .collect::<Result<_, ResolverError>>()?;
             sortable.sort_by(|left, right| left.0.cmp(&right.0));
             *items = sortable.into_iter().map(|(_, item)| item).collect();
