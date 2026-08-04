@@ -533,14 +533,58 @@ export function createOpenPackerDaemon(
   return app;
 }
 
+/**
+ * Hosts the reference daemon is willing to bind without an explicit override.
+ *
+ * The control plane is unauthenticated by design (capabilities say so). That
+ * is only safe on a loopback interface. Binding `0.0.0.0` / `::` would expose
+ * normalize/solve/materialize to the network with no auth — refuse that unless
+ * the operator opts in with `allowRemoteBind`.
+ */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
+export function assertDaemonBindAddress(
+  host: string,
+  options: { allowRemoteBind?: boolean } = {},
+): void {
+  const normalized = host.trim().toLowerCase();
+  if (normalized === '') throw new RangeError('Daemon host must not be empty');
+  if (LOOPBACK_HOSTS.has(normalized)) return;
+  // Node also accepts `0.0.0.0` / `::` / public addresses. Those require an
+  // explicit opt-in so a mis-set OPENPACKER_HOST cannot accidentally publish
+  // an unauthenticated control plane.
+  if (options.allowRemoteBind === true) return;
+  throw new RangeError(
+    `Refusing to bind openpackerd to ${host}: the reference daemon is ` +
+      `unauthenticated and only listens on loopback by default. Set ` +
+      `OPENPACKER_ALLOW_REMOTE_BIND=1 (or allowRemoteBind: true) only if you ` +
+      `intentionally expose it behind another auth boundary.`,
+  );
+}
+
+export function assertDaemonPort(port: number): number {
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535)
+    throw new RangeError(
+      `Daemon port must be an integer 1–65535 (got ${String(port)})`,
+    );
+  return port;
+}
+
 export async function startOpenPackerDaemon(
-  options: OpenPackerDaemonOptions & { host?: string; port?: number },
+  options: OpenPackerDaemonOptions & {
+    host?: string;
+    port?: number;
+    /** Permit non-loopback binds. Default false — see assertDaemonBindAddress. */
+    allowRemoteBind?: boolean;
+  },
 ): Promise<StartedOpenPackerDaemon> {
-  const app = createOpenPackerDaemon(options);
-  const address = await app.listen({
-    host: options.host ?? '127.0.0.1',
-    port: options.port ?? 7337,
+  const host = options.host ?? '127.0.0.1';
+  const port = assertDaemonPort(options.port ?? 7337);
+  assertDaemonBindAddress(host, {
+    allowRemoteBind: options.allowRemoteBind === true,
   });
+  const app = createOpenPackerDaemon(options);
+  const address = await app.listen({ host, port });
   return { app, address, close: () => app.close() };
 }
 
@@ -830,7 +874,14 @@ function correlationId(value: string | string[] | undefined): string {
 function naturalNumber(value: string, name: string): number {
   if (!/^(0|[1-9][0-9]*)$/u.test(value))
     throw new TypeError(`${name} must be a non-negative integer`);
-  return Number(value);
+  // Reject values that would lose precision as JS numbers before Number().
+  // MAX_SAFE_INTEGER is 16 digits; anything longer is out of range.
+  if (value.length > 16)
+    throw new RangeError(`${name} exceeds the safe integer range`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new RangeError(`${name} exceeds the safe integer range`);
+  return parsed;
 }
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0)
