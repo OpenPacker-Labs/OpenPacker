@@ -39,6 +39,40 @@ with adversarial and rubber-duck passes per step.
 6. **Duplicated materializer type (LOW).** Aliased to the real type; divergence
    is now a compile error.
 
+## Adversarial review of the fixes
+
+An independent review was asked to break the fixes rather than re-litigate the
+findings. It confirmed three (shell quoting, the scanner, the type alias) and
+broke three, raising ten items in total. All are resolved.
+
+- **Node identity was 4/6 producers, not 6/6.** `lock-import` had its own
+  derivation — `sha256(exactPurl)` — so every package of every imported lockfile
+  violated `package-node-v1`, across the six ecosystems shipped as
+  `npm run demo:lock-import`. `adapter-maven` called the helper without
+  qualifiers while its identity carries `type` and `classifier`, so any non-jar
+  packaging or classifier produced the projection of a different identity. The
+  golden test could see neither: it walks npm, cargo and nuget instances that
+  all have empty qualifiers.
+- **The gc closure fix was incomplete in three ways.** Edges keyed by member
+  alias cannot express a chain deeper than one hop; they were overwritten rather
+  than merged; and they lived in generation records, which gc deletes, so a
+  second gc collected what the first had correctly kept. Edges are a fact about
+  bytes on disk, so they now live beside the store.
+- **The `amend.rs` fix introduced a worse bug than it removed.** Sorting ordered
+  sets by UTF-8 bytes disagrees with the normative UTF-16 ordering for non-BMP
+  characters — the hazard `canonical.rs` already guards for object names. The
+  test that appeared to pin the sort had no array longer than one element and
+  used a third serialization as its oracle.
+- Also: the closure tests drew "random" data from an LCG's low bits, giving
+  period-2 corpora and 32 distinct tokens where 1000 were claimed; the
+  `:`-in-PATH check sat in the one consumer that quoted, so `--json` bypassed
+  it; the handback report described the previous initiative.
+
+Each new test was run against the code it indicts. The two node-identity tests
+fail on the previous derivations while the golden test still passes; the
+collation test fails under byte sorting; the gc tests fail under the previous
+walk.
+
 ## Verification
 
 `npm run verify` green. One property test legitimately broke — it identified
@@ -48,8 +82,18 @@ what it asserts.
 
 ## Note for the next initiative
 
-Items 1 and 4 were both present while every gate was green, and item 4 had gone
-through two prior review rounds without being caught in full. The scanner and
-shell fixes were only provable because a measurement and an exploit were written
-first. Prefer that order: demonstrate the defect, then fix it, then keep the
-demonstration as the test.
+Every defect in this initiative — the original six and the ten found against
+their fixes — was present while `npm run verify` was green. Item 4 survived
+three review rounds because each round's test was satisfied by the bug.
+
+The pattern is specific enough to act on: a test written from the same
+understanding that produced the code inherits its blind spot. The golden node-ID
+test covered three ecosystems with empty qualifiers, which is exactly the shape
+that cannot distinguish the two derivations. The gc test covered depth 1, which
+is exactly the depth a non-transitive walk gets right. The closure "1000
+candidates" were 32 rotations of one string.
+
+So: run every new test against the code it indicts, and keep it only if it
+fails. That check is cheap and it caught all four of this round's tests being
+worth keeping — and it is the only thing that would have caught the earlier ones
+being worthless.
