@@ -30,6 +30,38 @@ export const OCI_MEDIA_TYPES = {
   emptyConfig: 'application/vnd.oci.empty.v1+json',
 } as const;
 
+/**
+ * Docker's pre-OCI media types.
+ *
+ * Docker Hub still serves these for most repositories, and a client that only
+ * accepts the OCI types is told the manifest is unknown for the majority of
+ * real tags. Recognised for reading; nothing is written in these types.
+ */
+export const DOCKER_MEDIA_TYPES = {
+  manifest: 'application/vnd.docker.distribution.manifest.v2+json',
+  list: 'application/vnd.docker.distribution.manifest.list.v2+json',
+} as const;
+
+/** Media types that name a set of platform-specific manifests. */
+const INDEX_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  OCI_MEDIA_TYPES.index,
+  DOCKER_MEDIA_TYPES.list,
+]);
+
+/** Media types that name a single image. */
+const IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  OCI_MEDIA_TYPES.manifest,
+  DOCKER_MEDIA_TYPES.manifest,
+]);
+
+export function isIndexMediaType(mediaType: string): boolean {
+  return INDEX_MEDIA_TYPES.has(mediaType);
+}
+
+export function isImageMediaType(mediaType: string): boolean {
+  return IMAGE_MEDIA_TYPES.has(mediaType);
+}
+
 export const OCI_EMPTY_CONFIG_BYTES = canonicalBytes({});
 
 export interface OciDescriptor {
@@ -980,7 +1012,21 @@ export class OciRegistryClient {
     validateReference(reference);
     const response = await this.request(
       this.endpoint(`manifests/${encodeURIComponent(reference)}`),
-      { method: 'GET', headers: { accept: OCI_MEDIA_TYPES.manifest } },
+      {
+        method: 'GET',
+        // Indexes and Docker's pre-OCI types are accepted for reading. Most
+        // published tags are multi-arch indexes, and Docker Hub still serves
+        // its own media types, so a client requesting only the OCI image
+        // manifest is told "unknown manifest" for the majority of real tags.
+        headers: {
+          accept: [
+            OCI_MEDIA_TYPES.index,
+            OCI_MEDIA_TYPES.manifest,
+            DOCKER_MEDIA_TYPES.list,
+            DOCKER_MEDIA_TYPES.manifest,
+          ].join(', '),
+        },
+      },
       `repository:${this.repository}:pull`,
       signal,
     );
@@ -1002,8 +1048,25 @@ export class OciRegistryClient {
         'Manifest digest does not match requested digest',
       );
     const manifest = parseJson<OciManifest>(bytes);
-    validateManifest(manifest);
-    return { descriptor, bytes, manifest };
+    // `mediaType` is optional inside the document — the OCI specification puts
+    // it on the response — and ghcr.io omits it. So the transported type
+    // decides, and a document that names a different one is a contradiction
+    // rather than something to pick a winner from.
+    if (
+      manifest.mediaType !== undefined &&
+      manifest.mediaType !== descriptor.mediaType
+    )
+      throw new RegistryProtocolError(
+        'UNEXPECTED_STATUS',
+        `Manifest declares ${manifest.mediaType} but was served as ${descriptor.mediaType}`,
+      );
+    const effective = { ...manifest, mediaType: descriptor.mediaType };
+    // An index names platform manifests rather than layers, so the image
+    // envelope check does not apply to it. Both stay digest-verified above,
+    // which is what identity rests on.
+    if (isIndexMediaType(descriptor.mediaType)) validateIndex(effective);
+    else validateManifest(effective as OciManifest);
+    return { descriptor, bytes, manifest: effective as OciManifest };
   }
 
   async listReferrers(
@@ -1066,10 +1129,32 @@ export class OciRegistryClient {
   }
 }
 
+/**
+ * An index is valid when every manifest it names is a well-formed descriptor.
+ *
+ * Kept separate from `validateManifest` rather than loosening it: an index has
+ * no config and no layers, so accepting one through the image check would mean
+ * dropping the checks that make an image manifest meaningful.
+ */
+export function validateIndex(index: {
+  schemaVersion?: number;
+  mediaType?: string;
+  manifests?: unknown;
+}): void {
+  if (index.schemaVersion !== 2 || !isIndexMediaType(index.mediaType ?? ''))
+    throw new TypeError('Invalid OCI index envelope');
+  if (!Array.isArray(index.manifests))
+    throw new TypeError('OCI index must carry a manifests array');
+  if (index.manifests.length > 1024)
+    throw new TypeError('OCI index exceeds the bounded manifest count');
+  for (const descriptor of index.manifests)
+    validateOciDescriptor(descriptor as OciDescriptor);
+}
+
 export function validateManifest(manifest: OciManifest): void {
   if (
     manifest.schemaVersion !== 2 ||
-    manifest.mediaType !== OCI_MEDIA_TYPES.manifest
+    !isImageMediaType(manifest.mediaType as string)
   )
     throw new TypeError('Invalid OCI manifest envelope');
   validateOciDescriptor(manifest.config);
@@ -1194,3 +1279,4 @@ export class RegistryProtocolError extends Error {
     this.name = 'RegistryProtocolError';
   }
 }
+export * from './provider.js';
