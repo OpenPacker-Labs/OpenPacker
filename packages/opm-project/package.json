@@ -31,7 +31,8 @@
     "@openpacker/artifact-model": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0",
-    "@openpacker/materializer": "0.1.0"
+    "@openpacker/materializer": "0.1.0",
+    "shell-quote": "1.10.0"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

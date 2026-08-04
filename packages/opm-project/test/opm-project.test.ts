@@ -637,16 +637,23 @@ describe('environment generations', () => {
       offline: true,
     });
     const script = await environmentScript({ root });
-    // Every line is a single-quoted export, and evaluating it reproduces the
-    // same values the structured form reports.
+    // Asserted as a property, not as a quoting style: every line assigns one
+    // fixed variable, and evaluating the script reproduces exactly the values
+    // the structured form reports. The previous shape assertion pinned single
+    // quotes specifically, which is an implementation detail of whatever does
+    // the quoting rather than anything a caller depends on.
     for (const line of script.trimEnd().split('\n'))
-      expect(line).toMatch(/^export [A-Z_]+='.*'$/u);
+      expect(line).toMatch(/^export [A-Z_]+=/u);
     const environment = await environmentVariables({ root });
-    const echoed = execFileSync('/bin/sh', [
-      '-c',
-      `${script}printf '%s' "$OPM_BIN"`,
-    ]);
-    expect(echoed.toString()).toBe(environment.OPM_BIN);
+    for (const name of Object.keys(environment)) {
+      const echoed = execFileSync('/bin/sh', [
+        '-c',
+        `${script}printf '%s' "$${name}"`,
+      ]);
+      expect(echoed.toString(), `${name} survives eval`).toBe(
+        environment[name],
+      );
+    }
   });
 
   it('derives shell environment from the current generation', async () => {

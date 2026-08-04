@@ -138,8 +138,9 @@ describe('reference scanning', () => {
 
 describe('scanner equivalence and scaling', () => {
   // The obvious implementation, kept as an oracle. The fast scanner must agree
-  // with it exactly; a rolling hash that got the arithmetic wrong would show up
-  // here as a missed or invented reference.
+  // with it exactly. It stays after the move to a library matcher: the value
+  // now is catching a wrong adaptation — the byte-to-latin1 mapping, overlap
+  // handling, or the token-to-nodeId fan-out — rather than wrong arithmetic.
   const naiveScan = (
     files: readonly { path: string; data: Uint8Array }[],
     candidates: readonly { token: string; nodeId: string }[],
@@ -179,8 +180,8 @@ describe('scanner equivalence and scaling', () => {
       return (value ^ (value >>> 16)) >>> 0;
     };
     for (let round = 0; round < 40; round += 1) {
-      // A tiny alphabet maximises accidental partial matches and hash
-      // collisions — the cases a rolling hash is most likely to get wrong.
+      // A tiny alphabet maximises accidental partial matches and overlapping
+      // candidates — where a matcher is most likely to lose or double-count.
       const alphabet = round % 2 === 0 ? 'ab' : '0123456789abcdef';
       const draw = (length: number) =>
         Array.from({ length }, () => alphabet[next() % alphabet.length]!).join(
