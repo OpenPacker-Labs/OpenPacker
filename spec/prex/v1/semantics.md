@@ -47,6 +47,20 @@ materialization-side check and never a solver obligation. References discovered
 by reading artifact bytes are permitted; see invariant 10 in
 [normative.md](normative.md).
 
+A `RuntimeClosure` records that fixpoint with the provenance of every edge.
+`declared` edges come from metadata, `scanned` edges from references observed in
+realised bytes, and `both` from agreement. The distinction is normative because
+the two are different knowledge: metadata says what a package claims to need,
+bytes say what they actually reference.
+
+`completeness` MUST NOT claim `reconciled` unless both kinds of edge were
+gathered and every scanned reference resolved to a member. A declared edge with
+no observed reference is ordinary and records
+`CLOSURE_EDGE_DECLARED_NOT_OBSERVED` (info). A scanned reference with no member
+is an error (`CLOSURE_REFERENCE_UNRESOLVED`): the closure would be incomplete
+for anyone who copied it. A closure built from metadata alone MUST record
+`CLOSURE_EDGES_DECLARED_ONLY`.
+
 A `SubstituteDescriptor` advertises prebuilt content. It locates bytes and
 declares references; it MUST NOT establish identity. A consumer MUST verify the
 subject artifact digest or the tree digest before trusting substituted bytes,

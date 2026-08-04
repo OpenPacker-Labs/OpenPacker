@@ -95,6 +95,9 @@
     },
     {
       "$ref": "resolution.schema.json#/$defs/UniverseAmendment"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/RuntimeClosure"
     }
   ]
 }

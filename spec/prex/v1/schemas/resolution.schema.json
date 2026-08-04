@@ -187,6 +187,111 @@
       },
       "additionalProperties": false
     },
+    "RuntimeClosure": {
+      "$comment": "A runtime reference closure. Edges carry the provenance that produced them, so a declared graph is never mistaken for an observed one.",
+      "type": "object",
+      "required": [
+        "closureVersion",
+        "rootNodeIds",
+        "members",
+        "edges",
+        "completeness"
+      ],
+      "properties": {
+        "closureVersion": {
+          "const": "1"
+        },
+        "rootNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/ClosureMember"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "$ref": "#/$defs/ClosureEdge"
+          }
+        },
+        "completeness": {
+          "$comment": "declared: only metadata edges. scanned: only observed edges. reconciled: both agree, or divergence is loss-recorded.",
+          "enum": ["declared", "scanned", "reconciled"]
+        },
+        "semanticLoss": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "common.schema.json#/$defs/SemanticLoss"
+          }
+        },
+        "extensions": {
+          "$ref": "common.schema.json#/$defs/Extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ClosureMember": {
+      "type": "object",
+      "required": ["nodeId", "artifactDigest"],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "exactPurl": {
+          "type": "string",
+          "pattern": "^pkg:[a-z0-9.+-]+/",
+          "maxLength": 8192
+        },
+        "artifactDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "treeDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "outputName": {
+          "$ref": "model.schema.json#/$defs/OutputName"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ClosureEdge": {
+      "type": "object",
+      "required": ["fromNodeId", "toNodeId", "provenance"],
+      "properties": {
+        "fromNodeId": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "toNodeId": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "provenance": {
+          "enum": ["declared", "scanned", "both"]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "common.schema.json#/$defs/ExternalRef"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "AmendmentOperation": {
       "oneOf": [
         {

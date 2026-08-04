@@ -171,6 +171,14 @@
       "includePaths": [],
       "excludePaths": ["/generationDigest"],
       "orderedSetPaths": ["/artifactSet", "/semanticLoss"]
+    },
+    {
+      "id": "closure-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/edges", "/members", "/rootNodeIds", "/semanticLoss"]
     }
   ]
 }
