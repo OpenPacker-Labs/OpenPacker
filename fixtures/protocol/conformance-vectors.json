@@ -1261,6 +1261,54 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
       "valid": false,
       "levels": ["PREX-D"]
+    },
+    {
+      "name": "runtime-closure-reconciled",
+      "file": "closure/reconciled.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/RuntimeClosure",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-X"]
+    },
+    {
+      "name": "reject-closure-unknown-provenance",
+      "file": "closure/reconciled.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/edges/0/provenance",
+          "value": "assumed"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/RuntimeClosure",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-closure-without-roots",
+      "file": "closure/reconciled.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/rootNodeIds",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/RuntimeClosure",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-closure-member-without-artifact-digest",
+      "file": "closure/reconciled.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/members/0/artifactDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/RuntimeClosure",
+      "valid": false,
+      "levels": ["PREX-M"]
     }
   ]
 }

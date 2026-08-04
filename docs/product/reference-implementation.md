@@ -63,6 +63,12 @@ Service and embedded modes must emit identical digests for identical inputs
 
 Optional enrichment providers: deps.dev, Sonatype (not identity authorities).
 
+PURL types are open: `normalize` canonicalizes any well-formed type, applying
+per-ecosystem naming and version rules where PREX knows them and canonical
+encoding alone where it does not. A deployment registers an additional codec
+through `createReferenceOperations({ codecs })`, and `/v1/capabilities`
+advertises exactly the registry's types.
+
 Coverage caveats: the PyPI lock import consumes a JSON projection of `uv.lock`
 (the native TOML must be converted first), and the Maven provider's `inspect`
 reads OpenPacker-authored `*.catalog.json` sidecars — it does not parse POMs and

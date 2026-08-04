@@ -53,6 +53,7 @@ import type {
 } from '@openpacker/contracts';
 import {
   formatPurl,
+  isEcosystem,
   parsePurl,
   parseVers,
   type Ecosystem,
@@ -64,6 +65,7 @@ import { NugetCodec } from '@openpacker/adapter-nuget';
 import { PypiCodec } from '@openpacker/adapter-pypi';
 import { GolangCodec } from '@openpacker/adapter-golang';
 import { MavenCodec } from '@openpacker/adapter-maven';
+import { NixCodec } from '@openpacker/adapter-nix';
 import type { EmbeddedResolver } from '@openpacker/embedded';
 import {
   completeLockImport,
@@ -160,6 +162,12 @@ export interface ReferenceOperationsOptions {
   receiptSigners?: readonly Signer[];
   receiptVerifiers?: ReadonlyMap<string, Verifier>;
   verificationChecks?: ReadonlyMap<string, EvidenceCheck>;
+  /**
+   * Additional ecosystem codecs, keyed by PURL type. Entries override the
+   * built-ins, so a deployment can register a codec without patching this
+   * package.
+   */
+  codecs?: ReadonlyMap<Ecosystem, EcosystemCodec>;
 }
 
 export interface EvidenceCheckInput {
@@ -188,13 +196,15 @@ export function createReferenceOperations(
     ['pypi', new PypiCodec()],
     ['golang', new GolangCodec()],
     ['maven', new MavenCodec()],
+    ['nix', new NixCodec()],
+    ...(options.codecs ?? []),
   ]);
   const explanations = new Map<string, ExplanationGraph>();
   const instances = () => options.universe.packages;
 
   return {
     capabilities: (meta) =>
-      defaultCapabilities(meta, capabilityFeatures(options)),
+      defaultCapabilities(meta, capabilityFeatures(options, codecs.keys())),
 
     async normalize(input) {
       return {
@@ -364,6 +374,11 @@ export function createReferenceOperations(
           output.normalizedRequest.policy as unknown as JsonValue,
         ),
         lifecycleRoot: options.universe.lifecycleRoot,
+        // Amendments that shaped this result are bound into the receipt, so a
+        // consumer can tell an amended solve from an unamended one.
+        ...(output.proof.appliedAmendmentDigests?.length
+          ? { amendmentDigests: output.proof.appliedAmendmentDigests }
+          : {}),
         semanticsProfile: output.normalizedRequest.semantics.profile,
         objectiveOrdering: output.normalizedRequest.objectives,
         solutionDigest: output.solution.solutionDigest,
@@ -672,15 +687,37 @@ function normalizeItem(
 ): NormalizeResponse['results'][number] {
   if (item.type === 'purl') {
     const parsed = parsePurl(item.value);
-    const canonical = codecFor(parsed.type, codecs).canonicalizePurl(
-      item.value,
-    );
+    // Normalization is canonical encoding, which does not require knowing an
+    // ecosystem's naming rules. A registered codec applies its rules; an
+    // unregistered type still normalizes, and records that no codec refined
+    // it. Operations that genuinely need ecosystem semantics still fail with
+    // UNSUPPORTED_ECOSYSTEM.
+    if (!isEcosystem(parsed.type))
+      throw operationError('INVALID_PURL', `Not a PURL type: ${parsed.type}`);
+    const codec = codecs.get(parsed.type as Ecosystem);
+    const canonical = codec
+      ? codec.canonicalizePurl(item.value)
+      : formatPurl(parsed);
     return normalized(
       item.type,
       item.value,
       canonical,
       parsePurl(canonical) as unknown as JsonValue,
       parsed.type,
+      codec
+        ? []
+        : [
+            {
+              code: 'ECOSYSTEM_RULES_NOT_APPLIED',
+              severity: 'info',
+              sourceEcosystem: parsed.type,
+              sourcePath: '/',
+              originalMeaning: `no codec is registered for PURL type ${parsed.type}`,
+              representedMeaning:
+                'canonical encoding only; ecosystem naming and version rules were not applied',
+              blocksProfile: [],
+            },
+          ],
     );
   }
   if (item.type === 'vers') {
@@ -789,6 +826,10 @@ function normalized(
 }
 
 function codecFor(ecosystem: string, codecs: CodecMap): EcosystemCodec {
+  // The Ecosystem type accepts any string so codecs can be registered out of
+  // tree; the PURL-type shape is therefore checked here instead.
+  if (!isEcosystem(ecosystem))
+    throw operationError('INVALID_PURL', `Not a PURL type: ${ecosystem}`);
   const codec = codecs.get(ecosystem as Ecosystem);
   if (!codec)
     throw operationError(
@@ -980,6 +1021,8 @@ export interface CapabilityFeatures {
   receiptVerification?: boolean;
   artifactVerification?: boolean;
   configuredChecks?: Iterable<string>;
+  /** PURL types with a registered codec. Absent keeps the built-in set. */
+  ecosystems?: Iterable<string>;
 }
 
 const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
@@ -994,8 +1037,10 @@ const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
 
 export function capabilityFeatures(
   options: ReferenceOperationsOptions,
+  ecosystems?: Iterable<string>,
 ): CapabilityFeatures {
   return {
+    ...(ecosystems === undefined ? {} : { ecosystems: [...ecosystems] }),
     receiptVerification: (options.receiptVerifiers?.size ?? 0) > 0,
     artifactVerification: options.artifactSource !== undefined,
     configuredChecks: [...(options.verificationChecks?.keys() ?? [])],
@@ -1011,6 +1056,16 @@ export function defaultCapabilities(
   if (features.artifactVerification) evidenceTypes.add('artifact-digest');
   for (const check of features.configuredChecks ?? [])
     evidenceTypes.add(EVIDENCE_TYPE_BY_CHECK[check] ?? check);
+  const ecosystems = [
+    ...(features.ecosystems ?? [
+      'npm',
+      'cargo',
+      'nuget',
+      'pypi',
+      'golang',
+      'maven',
+    ]),
+  ].sort();
   return {
     meta,
     protocolVersions: ['1.0-draft'],
@@ -1039,8 +1094,8 @@ export function defaultCapabilities(
       'PREX-R',
       'PREX-C',
     ],
-    purlTypes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
-    versSchemes: ['npm', 'cargo', 'nuget', 'pypi', 'golang', 'maven'],
+    purlTypes: ecosystems,
+    versSchemes: ecosystems,
     semanticsProfiles: [
       'native-capture-v1',
       'native-validated-v1',

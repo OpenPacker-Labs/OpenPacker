@@ -710,10 +710,156 @@ fn unaccepted_amendments_do_not_change_the_solution() {
 }
 
 #[test]
-fn accepting_an_amendment_authority_fails_closed() {
+fn an_accepted_amendment_redirects_and_retracts_requirements() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "needs-old-libc",
+        RequirementExpression::Package {
+            purl: "pkg:npm/libc".into(),
+            vers: Some("vers:npm/2.39".into()),
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+    let mut old_libc = package('4', "libc", "2.39");
+    old_libc.identity.canonical_purl = "pkg:npm/libc".into();
+    old_libc.identity.exact_purl = Some("pkg:npm/libc@2.39".into());
+    let mut patched = package('5', "libc", "2.40");
+    patched.identity.canonical_purl = "pkg:npm/libc".into();
+    patched.identity.exact_purl = Some("pkg:npm/libc@2.40".into());
+
+    let root = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    let plain = input(
+        vec![app.clone(), old_libc.clone(), patched.clone()],
+        root.clone(),
+    );
+    let plain_output = solve(&plain).unwrap();
+    assert!(
+        plain_output
+            .solution
+            .selected_node_ids
+            .contains(&old_libc.node_id),
+        "without an amendment the declared 2.39 requirement stands"
+    );
+
+    // The organization pins its patched libc for this package.
+    let mut amended = input(vec![app.clone(), old_libc.clone(), patched.clone()], root);
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: app.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "redirectPackage",
+            "match": {"type": "package", "purl": "pkg:npm/libc", "vers": "vers:npm/2.39"},
+            "to": {"type": "package", "purl": "pkg:npm/libc", "vers": "vers:npm/2.40"},
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    let output = solve(&amended).unwrap();
+
+    assert!(
+        output.solution.selected_node_ids.contains(&patched.node_id),
+        "the redirect must move the selection to the patched libc"
+    );
+    assert!(
+        !output
+            .solution
+            .selected_node_ids
+            .contains(&old_libc.node_id)
+    );
+    assert_ne!(
+        output.solution.solution_digest,
+        plain_output.solution.solution_digest
+    );
+
+    // The change is recorded, not silent.
+    assert_eq!(output.proof.applied_amendment_digests.len(), 1);
+    assert!(
+        output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-applied")
+    );
+    let superseded = output.selected.iter().any(|package| {
+        package.requirements.iter().any(|requirement| {
+            requirement.semantic_loss.iter().any(|loss| {
+                loss.get("code").and_then(|value| value.as_str()) == Some("NATIVE_FACT_SUPERSEDED")
+            })
+        })
+    });
+    assert!(superseded, "an applied amendment must record semantic loss");
+
+    // The independent checker re-derives the amendment and agrees.
+    assert!(check(&amended, &output).unwrap().valid);
+}
+
+#[test]
+fn a_retraction_removes_an_unsatisfiable_requirement() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "needs-absent",
+        RequirementExpression::Package {
+            purl: "pkg:npm/absent".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+    let root = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    assert!(solve(&input(vec![app.clone()], root.clone())).is_err());
+
+    let mut amended = input(vec![app.clone()], root);
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: app.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "retractRequirement",
+            "requirementId": "needs-absent",
+            "justification": "not applicable to this deployment",
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    let output = solve(&amended).unwrap();
+    let checked = check(&amended, &output).unwrap();
+    assert!(checked.valid, "{:?}", checked.diagnostics);
+    assert_eq!(output.proof.applied_amendment_digests.len(), 1);
+}
+
+#[test]
+fn a_forged_amendment_claim_is_rejected() {
     let one = package('1', "demo", "1.0.0");
-    let mut amended = input(
-        vec![one.clone()],
+    let solve_input = input(
+        vec![one],
         vec![requirement(
             "root",
             RequirementExpression::Package {
@@ -724,24 +870,11 @@ fn accepting_an_amendment_authority_fails_closed() {
             false,
         )],
     );
-    amended
-        .request
-        .policy
-        .accepted_amendment_authorities
-        .push("organization".into());
-    amended.universe.amendments.push(UniverseAmendment {
-        amendment_version: "1".into(),
-        subject: json!({}),
-        applies_to_metadata_digest: one.metadata_digest.clone(),
-        operations: vec![
-            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
-        ],
-        authority: "organization".into(),
-        rest: BTreeMap::new(),
-    });
-    // Compilation is not implemented, so admitting an amendment must fail
-    // rather than quietly discard its operations.
-    assert!(solve(&amended).is_err());
+    let mut output = solve(&solve_input).unwrap();
+    // Claiming an amendment was applied when the policy admitted none must not
+    // pass the checker.
+    output.proof.applied_amendment_digests.push(digest('9'));
+    assert!(!check(&solve_input, &output).unwrap().valid);
 }
 
 #[test]
@@ -1022,4 +1155,90 @@ fn misspelled_requirement_kinds_are_rejected_without_platforms() {
         inactive_kinds: Some(vec!["runtim".into()]),
     });
     assert!(solve(&solve_input).is_err());
+}
+
+/// Normalization must work for every PURL type, not only the three that used
+/// to be hard-coded, and must not coerce versions it does not understand.
+#[test]
+fn normalization_covers_every_purl_type() {
+    // Unchanged behaviour for the originally supported types.
+    assert_eq!(
+        normalize_purl("pkg:NPM/%40OpenPacker/Demo-Tool@v1.0").unwrap(),
+        "pkg:npm/%40openpacker/demo-tool@1.0.0"
+    );
+    assert_eq!(
+        normalize_purl("pkg:cargo/Demo-Zstd@1.0").unwrap(),
+        "pkg:cargo/demo-zstd@1.0.0"
+    );
+    assert_eq!(
+        normalize_purl("pkg:nuget/Demo.Tool@1.2.3").unwrap(),
+        "pkg:nuget/demo.tool@1.2.3"
+    );
+
+    // PEP 503 name folding; PEP 440 versions are preserved, not coerced.
+    assert_eq!(
+        normalize_purl("pkg:pypi/Demo_Tool.Extra@2024.1rc1").unwrap(),
+        "pkg:pypi/demo-tool-extra@2024.1rc1"
+    );
+
+    // Go module paths are lowercased; pseudo-versions survive intact.
+    assert_eq!(
+        normalize_purl("pkg:golang/GitHub.com/Example/Mod@v0.0.0-20260101120000-abcdefabcdef")
+            .unwrap(),
+        "pkg:golang/github.com/example/mod@v0.0.0-20260101120000-abcdefabcdef"
+    );
+
+    // Maven coordinates are case sensitive.
+    assert_eq!(
+        normalize_purl("pkg:maven/org.Example/DemoTool@1.0.0-RC1").unwrap(),
+        "pkg:maven/org.Example/DemoTool@1.0.0-RC1"
+    );
+
+    // A Nix store output keeps its qualifiers and its non-semver version.
+    let nix = normalize_purl("pkg:nix/libGreet@2405?output=dev&outhash=b3f2q8xr").unwrap();
+    assert!(nix.starts_with("pkg:nix/libGreet@2405"), "{nix}");
+    assert!(nix.contains("outhash=b3f2q8xr"), "{nix}");
+    assert!(nix.contains("output=dev"), "{nix}");
+
+    // An unknown type normalizes rather than erroring: canonical encoding does
+    // not require knowing the ecosystem.
+    assert_eq!(
+        normalize_purl("pkg:deb/Debian/OpenSSL@3.0.11").unwrap(),
+        "pkg:deb/Debian/OpenSSL@3.0.11"
+    );
+
+    // PEP 503 collapses runs of separators; it does not delete them at the
+    // edges, and a name that normalizes to nothing is an error rather than a
+    // PURL that cannot be re-parsed.
+    assert_eq!(
+        normalize_purl("pkg:pypi/_Demo__Tool_@1.0").unwrap(),
+        "pkg:pypi/-demo-tool-@1.0"
+    );
+    assert!(normalize_purl("pkg:pypi/___@1.0").is_err());
+    // Normalization is idempotent for every type it accepts.
+    for purl in [
+        "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "pkg:pypi/demo-tool@2024.1rc1",
+        "pkg:maven/org.Example/DemoTool@1.0.0-RC1",
+        "pkg:deb/Debian/OpenSSL@3.0.11",
+    ] {
+        let once = normalize_purl(purl).unwrap();
+        assert_eq!(normalize_purl(&once).unwrap(), once, "{purl}");
+    }
+
+    // A malformed type is rejected here, not merely downstream: the library,
+    // the daemon, and the schema pattern must agree on what a PURL type is.
+    for purl in ["pkg:DEB!/x@1", "pkg:  /x@1", "pkg:%41%42/x@1"] {
+        assert!(normalize_purl(purl).is_err(), "{purl}");
+    }
+    // Types the spec does allow still work, and the type is case insensitive.
+    assert_eq!(
+        normalize_purl("pkg:my-eco.v2+ext/x@1").unwrap(),
+        "pkg:my-eco.v2+ext/x@1"
+    );
+    assert_eq!(normalize_purl("pkg:DEB/x@1").unwrap(), "pkg:deb/x@1");
+
+    // Namespace rules still hold where the ecosystem has none.
+    assert!(normalize_purl("pkg:cargo/scope/demo@1.0.0").is_err());
+    assert!(normalize_purl("pkg:npm/demo@not-a-version").is_err());
 }

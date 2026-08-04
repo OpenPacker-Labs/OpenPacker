@@ -80,11 +80,32 @@ protocol goldens byte-unchanged: no existing digest moved.
   enforced structurally because the pattern needs lookaheads that some
   non-JavaScript validators lack.
 
-## Deferred (named follow-on initiatives)
+## Follow-on work, now implemented
 
-`adapter-nix` codec capturing from `nix path-info --json` /
-`nix derivation show` / narinfo; reference scanning and closure assembly in
-materialize/verify; amendment compilation (currently fails closed when an
-authority is accepted); opm generations, `opm shell`, and garbage collection;
-widening the closed TS `Ecosystem` union and the Rust `normalize.rs`
-npm/cargo/nuget allowlist; universe composition.
+Everything originally deferred has landed on this branch:
+
+1. **Open ecosystems** — `normalize_purl` is policy-driven per PURL type instead
+   of erroring outside npm/cargo/nuget; existing types are byte-identical. The
+   TS `Ecosystem` union accepts any PURL type, the daemon takes additional
+   codecs, and advertised `purlTypes` derive from the registry.
+2. **Amendment compilation** — admitted amendments produce a derived universe
+   that search, proof, checker, and oracle all run against;
+   `supersedeRequirement`, `retractRequirement`, and `redirectPackage` are
+   implemented with `NATIVE_FACT_SUPERSEDED` loss, proof and receipt binding,
+   and independent re-derivation so a forged claim is rejected.
+3. **`adapter-nix`** — a real codec: store-path parsing matching Nix's
+   `parseDrvName`, `compareVersions` ordering (not semver), `nix path-info`
+   translation, closure capture, and nixbase32/SRI/hex hash decoding, registered
+   in the daemon so `pkg:nix` normalizes end to end. References are recorded as
+   the store paths they are; resolving them to node identities is the closure
+   assembler's job.
+4. **Closures** — `RuntimeClosure` in the schema plus `@openpacker/closure`:
+   tree manifests from materialized files, byte-level reference scanning, and
+   assembly that keeps declared and observed edges distinguishable.
+5. **opm generations** — hash-linked ledger with atomic pointer switch, rollback
+   that rebuilds views from the generation record alone, reachability -based
+   `gc`, and `opm shell`.
+
+Still out of scope, and stated as such rather than implied: universe
+composition, and building or evaluating anything (PREX captures and verifies; it
+does not run builders or Nix expressions).

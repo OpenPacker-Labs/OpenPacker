@@ -13,7 +13,21 @@ pub struct OracleResult {
     pub assignments_checked: u64,
 }
 
+/// The bounded optimum for a solve.
+///
+/// Amendments are applied first, so an external caller gets the optimum for
+/// the universe that is actually solved rather than the pre-amendment one.
 pub fn brute_force_oracle(input: &SolveInput) -> Result<OracleResult, ResolverError> {
+    let amended = crate::amend::apply_amendments(input)?;
+    if !amended.applied.is_empty() {
+        return brute_force_oracle_amended(&amended.input);
+    }
+    brute_force_oracle_amended(input)
+}
+
+pub(crate) fn brute_force_oracle_amended(
+    input: &SolveInput,
+) -> Result<OracleResult, ResolverError> {
     let nodes = input.universe.packages.len();
     if nodes > MAX_COMPANION_NODES {
         return Err(ResolverError::UniverseLimit {

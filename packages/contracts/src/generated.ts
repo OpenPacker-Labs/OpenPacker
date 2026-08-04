@@ -187,6 +187,19 @@ export type CatalogSnapshotCreatedEvent = CloudEventCommon & {
 };
 export type CatalogSnapshotRequest = { providerId?: string };
 export type CatalogSnapshotResponse = { snapshots: Array<SourceSnapshot> };
+export type ClosureEdge = {
+  fromNodeId: string;
+  toNodeId: string;
+  provenance: 'declared' | 'scanned' | 'both';
+  evidenceRefs?: Array<ExternalRef>;
+};
+export type ClosureMember = {
+  nodeId: string;
+  exactPurl?: string;
+  artifactDigest: Digest;
+  treeDigest?: Digest;
+  outputName?: OutputName;
+};
 export type CloudEventCommon = {
   specversion: '1.0';
   id: string;
@@ -242,7 +255,8 @@ export type DigestProjection = {
     | 'recipe-output-v1'
     | 'substitute-v1'
     | 'environment-manifest-v1'
-    | 'environment-generation-v1';
+    | 'environment-generation-v1'
+    | 'closure-v1';
   algorithm: 'sha256';
   canonicalization: 'prex-jcs-safe-integer-v1';
   includePaths: Array<string>;
@@ -1004,6 +1018,7 @@ export type ResolutionProof = {
   cardinalityChecks: ProofChecks;
   targetChecks: ProofChecks;
   objectiveEvidence: ProofChecks;
+  appliedAmendmentDigests?: Array<Digest>;
 };
 export type ResolutionReceipt = {
   receiptVersion: '1';
@@ -1097,6 +1112,15 @@ export type ResourceLimits = {
   solveWallTimeMilliseconds?: PositiveLimit;
   solverMemoryBytes?: PositiveLimit;
   explanationEdges?: PositiveLimit;
+};
+export type RuntimeClosure = {
+  closureVersion: '1';
+  rootNodeIds: Array<string>;
+  members: Array<ClosureMember>;
+  edges: Array<ClosureEdge>;
+  completeness: 'declared' | 'scanned' | 'reconciled';
+  semanticLoss?: Array<SemanticLoss>;
+  extensions?: Extensions;
 };
 export type SafeInteger = number;
 export type SemanticLoss = {
@@ -1405,6 +1429,7 @@ export const DIGEST_PROJECTIONS = {
       includePaths: [],
       excludePaths: [],
       orderedSetPaths: [
+        '/appliedAmendmentDigests',
         '/cardinalityChecks',
         '/conflictChecks',
         '/objectiveEvidence',
@@ -1505,6 +1530,14 @@ export const DIGEST_PROJECTIONS = {
       excludePaths: ['/generationDigest'],
       orderedSetPaths: ['/artifactSet', '/semanticLoss'],
     },
+    {
+      id: 'closure-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: ['/edges', '/members', '/rootNodeIds', '/semanticLoss'],
+    },
   ],
 } as const;
 
@@ -1594,6 +1627,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               'substitute-v1',
               'environment-manifest-v1',
               'environment-generation-v1',
+              'closure-v1',
             ],
           },
           algorithm: {
@@ -6223,6 +6257,9 @@ export const schemaCatalog: Record<string, JsonValue> = {
       {
         $ref: 'resolution.schema.json#/$defs/UniverseAmendment',
       },
+      {
+        $ref: 'resolution.schema.json#/$defs/RuntimeClosure',
+      },
     ],
   },
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json': {
@@ -6413,6 +6450,113 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      RuntimeClosure: {
+        $comment:
+          'A runtime reference closure. Edges carry the provenance that produced them, so a declared graph is never mistaken for an observed one.',
+        type: 'object',
+        required: [
+          'closureVersion',
+          'rootNodeIds',
+          'members',
+          'edges',
+          'completeness',
+        ],
+        properties: {
+          closureVersion: {
+            const: '1',
+          },
+          rootNodeIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100000,
+            uniqueItems: true,
+            items: {
+              type: 'string',
+              pattern: '^sha256:[0-9a-f]{64}$',
+            },
+          },
+          members: {
+            type: 'array',
+            maxItems: 100000,
+            items: {
+              $ref: '#/$defs/ClosureMember',
+            },
+          },
+          edges: {
+            type: 'array',
+            maxItems: 1000000,
+            items: {
+              $ref: '#/$defs/ClosureEdge',
+            },
+          },
+          completeness: {
+            $comment:
+              'declared: only metadata edges. scanned: only observed edges. reconciled: both agree, or divergence is loss-recorded.',
+            enum: ['declared', 'scanned', 'reconciled'],
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 1024,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      ClosureMember: {
+        type: 'object',
+        required: ['nodeId', 'artifactDigest'],
+        properties: {
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          exactPurl: {
+            type: 'string',
+            pattern: '^pkg:[a-z0-9.+-]+/',
+            maxLength: 8192,
+          },
+          artifactDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          treeDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          outputName: {
+            $ref: 'model.schema.json#/$defs/OutputName',
+          },
+        },
+        additionalProperties: false,
+      },
+      ClosureEdge: {
+        type: 'object',
+        required: ['fromNodeId', 'toNodeId', 'provenance'],
+        properties: {
+          fromNodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          toNodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          provenance: {
+            enum: ['declared', 'scanned', 'both'],
+          },
+          evidenceRefs: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
           },
         },
         additionalProperties: false,
@@ -7182,6 +7326,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           objectiveEvidence: {
             $ref: '#/$defs/ProofChecks',
+          },
+          appliedAmendmentDigests: {
+            $comment:
+              'Digests of the amendments that produced the universe this proof is about. Absent for an unamended solve.',
+            type: 'array',
+            maxItems: 10000,
+            uniqueItems: true,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
           },
         },
         additionalProperties: false,

@@ -81,7 +81,8 @@
             "recipe-output-v1",
             "substitute-v1",
             "environment-manifest-v1",
-            "environment-generation-v1"
+            "environment-generation-v1",
+            "closure-v1"
           ]
         },
         "algorithm": {

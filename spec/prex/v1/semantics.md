@@ -47,6 +47,20 @@ materialization-side check and never a solver obligation. References discovered
 by reading artifact bytes are permitted; see invariant 10 in
 [normative.md](normative.md).
 
+A `RuntimeClosure` records that fixpoint with the provenance of every edge.
+`declared` edges come from metadata, `scanned` edges from references observed in
+realised bytes, and `both` from agreement. The distinction is normative because
+the two are different knowledge: metadata says what a package claims to need,
+bytes say what they actually reference.
+
+`completeness` MUST NOT claim `reconciled` unless both kinds of edge were
+gathered and every scanned reference resolved to a member. A declared edge with
+no observed reference is ordinary and records
+`CLOSURE_EDGE_DECLARED_NOT_OBSERVED` (info). A scanned reference with no member
+is an error (`CLOSURE_REFERENCE_UNRESOLVED`): the closure would be incomplete
+for anyone who copied it. A closure built from metadata alone MUST record
+`CLOSURE_EDGES_DECLARED_ONLY`.
+
 A `SubstituteDescriptor` advertises prebuilt content. It locates bytes and
 declares references; it MUST NOT establish identity. A consumer MUST verify the
 subject artifact digest or the tree digest before trusting substituted bytes,
@@ -172,12 +186,27 @@ the resulting `solutionDigest` MUST be identical to the same universe without
 them; implementations MUST still record that an amendment was present and
 ignored, in the explanation graph rather than the solution.
 
+Admitted amendments compile into a **derived universe**: the original package
+facts are left intact and the amended universe is what search, proof
+construction, the independent checker, and the bounded oracle all run against,
+so none of them can disagree about what was solved. Amendments are applied in
+canonical digest order, so the result never depends on the order a universe
+listed them.
+
+The three operations apply to the package named by `appliesToMetadataDigest`:
+`supersedeRequirement` replaces a requirement of the same id,
+`retractRequirement` removes one, and `redirectPackage` rewrites matching
+package expressions within that package's requirements. An operation that
+matches nothing MUST fail rather than silently succeed.
+
 Each applied operation MUST emit `NATIVE_FACT_SUPERSEDED` semantic loss
 (severity `warning`, blocking `native-validated-v1` for the affected relation)
-and a corresponding explanation node, and applied amendment digests MUST be
-bound into the receipt through `amendmentDigests`. An implementation that admits
-an amendment authority but cannot compile its operations MUST fail rather than
-return a result the caller would believe was amended.
+and an `amendment-applied` explanation node, applied amendment digests MUST
+appear in `ResolutionProof.appliedAmendmentDigests`, and they MUST be bound into
+the receipt through `amendmentDigests`. A checker MUST re-derive the amended
+universe from the original inputs rather than trusting the solver's, and MUST
+reject a proof whose claimed amendment digests differ from what the policy
+admits.
 
 ## Hypergraph compilation
 
@@ -198,6 +227,15 @@ is compiled as a negative clause over its matching set. A replacement is a
 capability-like witness only when its source requirement declares `replacement`.
 Cardinality counts distinct selected node IDs matching the selector after target
 filtering; `minimum` MUST NOT exceed `maximum`.
+
+Normalization applies to every PURL type. Where PREX knows an ecosystem's rules
+it applies them (npm scopes, PEP 503 names, Go module case, NuGet and semver
+release shapes); where it does not, it applies canonical encoding only and
+preserves names and versions verbatim. An unknown type MUST normalize rather
+than fail: canonical encoding does not require understanding an ecosystem's
+naming conventions. Operations that need ecosystem semantics — `enumerate`,
+`inspect`, VERS membership — still require a registered codec and fail with
+`UNSUPPORTED_ECOSYSTEM` without one.
 
 Package expressions use the codec named by PURL type for VERS membership.
 Capability expressions match name, attributes, target predicate, and optional

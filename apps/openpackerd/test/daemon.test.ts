@@ -154,6 +154,17 @@ describe('openpackerd', () => {
     expect(
       capabilities.json().authenticationSchemes.map(({ type }) => type),
     ).toEqual(['none']);
+    // Advertised PURL types come from the codec registry, so registering a
+    // codec is what makes an ecosystem appear.
+    expect(capabilities.json().purlTypes).toEqual([
+      'cargo',
+      'golang',
+      'maven',
+      'nix',
+      'npm',
+      'nuget',
+      'pypi',
+    ]);
     const normalized = await app.inject({
       method: 'POST',
       url: '/v1/normalize',
@@ -438,6 +449,142 @@ describe('openpackerd', () => {
     expect(response.statusCode).toBe(408);
     expect(response.json().code).toBe('CANCELLED');
     expect(response.headers['x-correlation-id']).toBe(correlationId);
+    await app.close();
+  });
+
+  it('normalizes a nix store path through the registered codec', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      payload: {
+        items: [
+          {
+            type: 'native-coordinate',
+            ecosystem: 'nix',
+            value: '/nix/store/b3f2q8xr7k1v5m9n0p4s6w2y4z6a8c1d-libgreet-1.0',
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    // A store path becomes an exact PURL whose output selector is explicit.
+    expect(response.json().results[0].canonical).toContain('pkg:nix/libgreet');
+    await app.close();
+  });
+
+  it('normalizes an unregistered PURL type instead of rejecting it', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      payload: {
+        items: [{ type: 'purl', value: 'pkg:deb/debian/openssl@3.0.11' }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().results[0];
+    expect(result.canonical).toBe('pkg:deb/debian/openssl@3.0.11');
+    // Canonical encoding happened; ecosystem rules did not, and it says so.
+    expect(result.semanticLoss[0].code).toBe('ECOSYSTEM_RULES_NOT_APPLIED');
+    expect(result.reversibility).toBe('lossy');
+
+    // Opening the path must not bless a malformed type as canonical: a PURL
+    // type is lowercase alphanumerics plus '.', '+', and '-'.
+    for (const value of ['pkg:DEB!/x@1', 'pkg:  /x@1', 'pkg:%41%42/x@1']) {
+      const rejected = await app.inject({
+        method: 'POST',
+        url: '/v1/normalize',
+        payload: { items: [{ type: 'purl', value }] },
+      });
+      expect(rejected.statusCode, value).toBeGreaterThanOrEqual(400);
+    }
+    await app.close();
+  });
+
+  it('advertises a registered out-of-tree codec', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const codec = {
+      purlType: 'deb',
+      canonicalizePurl: (purl: string) => purl,
+    } as unknown as Parameters<
+      typeof createReferenceOperations
+    >[0]['codecs'] extends ReadonlyMap<string, infer Codec> | undefined
+      ? Codec
+      : never;
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      codecs: new Map([['deb', codec]]),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/capabilities',
+    });
+    expect(capabilities.json().purlTypes).toContain('deb');
+    expect(capabilities.json().versSchemes).toContain('deb');
     await app.close();
   });
 

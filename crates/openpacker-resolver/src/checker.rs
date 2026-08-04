@@ -8,7 +8,7 @@ use crate::semantics::{
 };
 use crate::{
     Digest, PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
-    SolveOutput, TargetPredicate, brute_force_oracle, digest_json,
+    SolveOutput, TargetPredicate, digest_json,
     engine::{
         MAX_COMPANION_NODES, build_native_output, build_output, captured_indices,
         objectives_require_optimization, validate_solve_request,
@@ -17,9 +17,58 @@ use crate::{
 };
 
 pub fn check(input: &SolveInput, output: &SolveOutput) -> Result<ProofCheckResult, ResolverError> {
-    let mut diagnostics = Vec::new();
     validate_universe(&input.universe)?;
     validate_solve_request(input)?;
+    // The checker re-derives the amended universe from the original inputs
+    // rather than trusting the solver's, so a forged amendment application
+    // cannot pass: the digests it recomputes would not match.
+    let amended = crate::amend::apply_amendments(input)?;
+    if !amended.applied.is_empty() {
+        let expected: Vec<_> = amended
+            .applied
+            .iter()
+            .map(|item| item.digest.clone())
+            .collect();
+        let mut claimed = output.proof.applied_amendment_digests.clone();
+        claimed.sort_by(|left, right| left.value.cmp(&right.value));
+        let mut expected_sorted = expected.clone();
+        expected_sorted.sort_by(|left, right| left.value.cmp(&right.value));
+        if claimed != expected_sorted {
+            return Ok(ProofCheckResult {
+                valid: false,
+                diagnostics: vec![
+                    "proof appliedAmendmentDigests do not match the admitted amendments".into(),
+                ],
+            });
+        }
+        let mut nested = check_amended(&amended.input, output)?;
+        if !output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-applied")
+        {
+            nested
+                .diagnostics
+                .push("explanation omits applied amendments".into());
+            nested.valid = false;
+        }
+        return Ok(nested);
+    }
+    if !output.proof.applied_amendment_digests.is_empty() {
+        return Ok(ProofCheckResult {
+            valid: false,
+            diagnostics: vec!["proof claims applied amendments but policy admitted none".into()],
+        });
+    }
+    check_amended(input, output)
+}
+
+pub(crate) fn check_amended(
+    input: &SolveInput,
+    output: &SolveOutput,
+) -> Result<ProofCheckResult, ResolverError> {
+    let mut diagnostics = Vec::new();
     if output.normalized_request != input.request {
         diagnostics.push("normalizedRequest differs from checked request".into());
     }
@@ -114,7 +163,7 @@ pub fn check(input: &SolveInput, output: &SolveOutput) -> Result<ProofCheckResul
                 "objective optimality is not independently provable above {MAX_COMPANION_NODES} nodes"
             ));
         } else {
-            match brute_force_oracle(input) {
+            match crate::oracle::brute_force_oracle_amended(input) {
                 Ok(oracle) if oracle.selected_node_ids != output.solution.selected_node_ids => {
                     diagnostics.push("selected assignment is not the bounded optimum".into());
                 }

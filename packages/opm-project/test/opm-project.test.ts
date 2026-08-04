@@ -6,6 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   addPackage,
+  activateGeneration,
+  collectGarbage,
+  environmentVariables,
+  listGenerations,
+  readEnvironmentState,
+  rollbackTarget,
+  switchGeneration,
   assertSafeSegment,
   assertStoreKey,
   fetchArtifactBytes,
@@ -238,5 +245,164 @@ describe('project lifecycle offline', () => {
     // still in lock/manifest but not installed
     const row = state.find((p) => p.alias === 'demo-tool');
     expect(row?.installed).toBe(false);
+  });
+});
+
+describe('environment generations', () => {
+  it('appends an immutable, hash-linked generation per install', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const first = await listGenerations(root);
+    expect(first).toHaveLength(1);
+    expect(first[0]?.sequence).toBe(1);
+    expect(first[0]?.parentGenerationDigest).toBeUndefined();
+    expect(first[0]?.members).toHaveLength(1);
+
+    const state = await readEnvironmentState(root);
+    expect(state?.currentGenerationDigest).toBe(first[0]?.generationDigest);
+    expect(state?.retainedGenerationDigests).toContain(
+      first[0]?.generationDigest,
+    );
+
+    // Removing a package is a new generation, not an edit of the old one.
+    await removePackage({ root, alias: 'demo-tool', offline: true });
+    const second = await listGenerations(root);
+    expect(second).toHaveLength(2);
+    expect(second[1]?.sequence).toBe(2);
+    expect(second[1]?.parentGenerationDigest).toBe(first[0]?.generationDigest);
+    // The first record is byte-identical to what it was.
+    expect(second[0]).toEqual(first[0]);
+  });
+
+  it('does not record a generation when nothing changed', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    await installProject({ root, offline: true });
+    await installProject({ root, offline: true });
+    // An install that changes nothing would otherwise grow the ledger forever.
+    expect(await listGenerations(root)).toHaveLength(1);
+  });
+
+  it('rolls back by repointing state, never by rewriting a record', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    await removePackage({ root, alias: 'demo-tool', offline: true });
+
+    const target = await rollbackTarget(root);
+    expect(target?.sequence).toBe(1);
+    const before = await listGenerations(root);
+
+    await switchGeneration({ root, target: 1 });
+    const state = await readEnvironmentState(root);
+    expect(state?.currentGenerationDigest).toBe(target?.generationDigest);
+    // Both records survive, so the rollback is itself reversible.
+    expect(await listGenerations(root)).toEqual(before);
+
+    await switchGeneration({ root, target: 2 });
+    expect((await readEnvironmentState(root))?.currentGenerationDigest).toBe(
+      before[1]?.generationDigest,
+    );
+  });
+
+  it('refuses to switch to an unknown generation', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    await expect(switchGeneration({ root, target: 99 })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('collects only store paths outside every retained generation', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const installed = await listGenerations(root);
+    const storePath = installed[0]?.members[0]?.storePath;
+    expect(storePath).toBeDefined();
+
+    // Keeping every generation keeps the content reachable.
+    const dry = await collectGarbage({ root, dryRun: true });
+    expect(dry.removed).not.toContain(storePath);
+
+    await removePackage({ root, alias: 'demo-tool', offline: true });
+    // The package is gone from the current generation, but generation 1 still
+    // names it, so it must stay collectible-free while retained.
+    expect(
+      (await collectGarbage({ root, dryRun: true })).removed,
+    ).not.toContain(storePath);
+
+    // Keeping only the newest generation makes the old content unreachable.
+    const collected = await collectGarbage({ root, keep: 1 });
+    expect(collected.removed).toContain(storePath);
+    expect(collected.retained).toHaveLength(1);
+    // A retained set that no longer includes a generation drops its record.
+    expect(await listGenerations(root)).toHaveLength(1);
+  });
+
+  it('never collects the current generation', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const result = await collectGarbage({ root, keep: 1 });
+    expect(result.retained.map((item) => item.sequence)).toContain(1);
+    expect(result.removed).toEqual([]);
+  });
+
+  it('refuses a generation whose store path escapes the project store', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [generation] = await listGenerations(root);
+    if (!generation) throw new Error('expected a generation');
+    // A record is digest-verified, but a path outside the store must still be
+    // refused rather than generating shims that point anywhere on disk.
+    await expect(
+      activateGeneration({
+        root,
+        generation: {
+          ...generation,
+          members: [{ ...generation.members[0]!, storePath: '/etc' }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('derives shell environment from the current generation', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const environment = await environmentVariables({ root });
+    expect(environment.OPM_GENERATION).toBe('1');
+    expect(environment.OPM_ENVIRONMENT).toBe('default');
+    expect(environment.PATH?.startsWith(environment.OPM_BIN!)).toBe(true);
   });
 });

@@ -126,4 +126,75 @@ describe('opm + opmx CLI', () => {
     ).toBe(5);
     expect(cap.err).toMatch(/Cannot resolve/);
   });
+
+  it('exposes generations, rollback, gc, and shell', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-gen-'));
+    temps.push(root);
+    let cap = capture();
+    expect(await runOpm(['init', '--name', 'gen-demo'], cap.io, root)).toBe(0);
+
+    await mkdir(join(root, '.opm'), { recursive: true });
+    const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
+      packages: Record<string, { source: string }>;
+    };
+    for (const entry of Object.values(catalog.packages))
+      entry.source = `file:${fixtureTgz}`;
+    await writeFile(
+      join(root, '.opm/catalog.json'),
+      `${JSON.stringify(catalog, null, 2)}\n`,
+    );
+
+    cap = capture();
+    expect(
+      await runOpm(
+        ['add', 'pkg:npm/@openpacker/demo-tool@1.1.0', '--offline'],
+        cap.io,
+        root,
+      ),
+    ).toBe(0);
+
+    // One install, one generation, and it is current.
+    cap = capture();
+    expect(await runOpm(['generations'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/\*\s+1\t/);
+
+    cap = capture();
+    expect(await runOpm(['remove', 'demo-tool'], cap.io, root)).toBe(0);
+    cap = capture();
+    expect(await runOpm(['generations'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/\*\s+2\t/);
+
+    // Rollback moves the pointer back without deleting history.
+    cap = capture();
+    expect(await runOpm(['rollback', '--offline'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/Rolled back to generation 1/);
+    cap = capture();
+    expect(await runOpm(['generations'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/\*\s+1\t/);
+    expect(cap.out).toMatch(/\s+2\t/);
+
+    // A dry-run gc reports without removing.
+    cap = capture();
+    expect(await runOpm(['gc', '--dry-run'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/Would remove/);
+
+    // The shell environment is derived, and composable with eval.
+    cap = capture();
+    expect(await runOpm(['shell'], cap.io, root)).toBe(0);
+    expect(cap.out).toMatch(/export OPM_BIN=/);
+    expect(cap.out).toMatch(/export PATH=/);
+    cap = capture();
+    expect(await runOpm(['shell', '--json'], cap.io, root)).toBe(0);
+    expect(JSON.parse(cap.out).OPM_GENERATION).toBe('1');
+  });
+
+  it('refuses to roll back with no earlier generation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-gen-none-'));
+    temps.push(root);
+    let cap = capture();
+    expect(await runOpm(['init', '--name', 'gen-demo'], cap.io, root)).toBe(0);
+    cap = capture();
+    // Exit 4 is not-found: there is no earlier state to return to.
+    expect(await runOpm(['rollback'], cap.io, root)).toBe(4);
+  });
 });

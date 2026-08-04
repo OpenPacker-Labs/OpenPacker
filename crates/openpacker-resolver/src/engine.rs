@@ -13,7 +13,7 @@ use crate::{
     ExplanationGraph, ExplanationNode, PackageInstance, ProofCheck, RequirementExpression,
     RequirementWitness, ResolutionProof, ResolutionSolution, ResolutionUniverse, ResolverError,
     SelectedAssignment, SolveInput, SolveOutput, SolveRequest, TargetPredicate, canonical_json,
-    check, digest_json, parse_json_as, version_satisfies,
+    digest_json, parse_json_as, version_satisfies,
 };
 
 pub const MAX_COMPANION_NODES: usize = 22;
@@ -205,12 +205,6 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
         }
         validate_expression(&requirement.expression, 1)?;
     }
-    let (admitted, _ignored) = partition_amendments(input);
-    if !admitted.is_empty() {
-        return Err(ResolverError::InvalidInput(
-            "amendment compilation is not implemented; accepting an amendment authority would silently drop its operations".into(),
-        ));
-    }
     for amendment in &input.universe.amendments {
         if amendment.amendment_version != "1" {
             return Err(ResolverError::InvalidInput(
@@ -277,11 +271,10 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
     Ok(())
 }
 
-/// Amendments the policy admits, and those present but ignored. Amendment
-/// compilation is not yet implemented, so an admitted amendment is an error
-/// rather than a silently dropped instruction; ignoring is only correct when
-/// policy declined it.
-pub(crate) fn partition_amendments(input: &SolveInput) -> (Vec<usize>, Vec<usize>) {
+/// Amendments the policy admits, and those present but ignored. Admitted
+/// amendments are compiled into a derived universe; ignored ones contribute
+/// nothing but are still recorded in the explanation.
+pub fn partition_amendments(input: &SolveInput) -> (Vec<usize>, Vec<usize>) {
     let accepted = &input.request.policy.accepted_amendment_authorities;
     let (admitted, ignored): (Vec<_>, Vec<_>) = input
         .universe
@@ -404,6 +397,23 @@ pub fn validate_universe_json(input: &str) -> Result<(), ResolverError> {
 pub fn solve(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
     validate_universe(&input.universe)?;
     validate_solve_request(input)?;
+    // Amendments produce a derived universe; everything downstream — search,
+    // proof, explanation, and the independent checker — runs against it, so no
+    // two of them can disagree about what was solved.
+    let amended = crate::amend::apply_amendments(input)?;
+    if !amended.applied.is_empty() {
+        let mut output = solve_amended(&amended.input)?;
+        output.proof.applied_amendment_digests = amended
+            .applied
+            .iter()
+            .map(|item| item.digest.clone())
+            .collect();
+        return Ok(output);
+    }
+    solve_amended(input)
+}
+
+fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
     let output = match input.request.semantics.profile.as_str() {
         "native-capture-v1" => {
             let captured = captured_indices(input)?;
@@ -424,7 +434,7 @@ pub fn solve(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
             let best = if crate::resolvo_engine::supports(input) {
                 let selected = crate::resolvo_engine::resolve(input)?;
                 if input.universe.packages.len() <= MAX_COMPANION_NODES {
-                    let oracle = crate::brute_force_oracle(input)?;
+                    let oracle = crate::oracle::brute_force_oracle_amended(input)?;
                     let ids = node_ids(input, &selected);
                     if ids != oracle.selected_node_ids {
                         return Err(ResolverError::InvalidProof(format!(
@@ -441,7 +451,9 @@ pub fn solve(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         }
         _ => unreachable!("semantics profile was validated"),
     };
-    let checked = check(input, &output)?;
+    // The already-amended universe is checked directly: re-entering the public
+    // checker would apply the same amendments a second time.
+    let checked = crate::checker::check_amended(input, &output)?;
     if !checked.valid {
         return Err(ResolverError::InvalidProof(checked.diagnostics.join("; ")));
     }
@@ -749,6 +761,7 @@ pub(crate) fn build_output(
         .sort_by(|a, b| a.value.cmp(&b.value));
     solution.solution_digest = digest_json(&solution)?;
     let proof = ResolutionProof {
+        applied_amendment_digests: Vec::new(),
         proof_version: "1".into(),
         universe_digest: universe_digest.clone(),
         request_digest: request_digest.clone(),
@@ -1357,7 +1370,27 @@ fn explanation(
                 ]),
             }),
     );
-    let (_admitted, ignored) = partition_amendments(input);
+    let (admitted, ignored) = partition_amendments(input);
+    nodes.extend(admitted.into_iter().filter_map(|index| {
+        let amendment = &input.universe.amendments[index];
+        let digest = digest_json(amendment).ok()?;
+        Some(ExplanationNode {
+            id: format!("amendment-applied:{}", digest.value),
+            kind: "amendment-applied".into(),
+            label: format!(
+                "amendment from {} superseded interpretation for this solve",
+                amendment.authority
+            ),
+            data: BTreeMap::from([
+                ("authority".into(), json!(amendment.authority)),
+                (
+                    "appliesToMetadataDigest".into(),
+                    json!(amendment.applies_to_metadata_digest.as_string()),
+                ),
+                ("operationCount".into(), json!(amendment.operations.len())),
+            ]),
+        })
+    }));
     nodes.extend(ignored.into_iter().map(|index| {
         let amendment = &input.universe.amendments[index];
         ExplanationNode {

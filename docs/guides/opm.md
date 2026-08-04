@@ -130,6 +130,56 @@ resolves through a [resolution source](#resolution-sources) — an explicit
 | `opm list`                | Show aliases, PURLs, digests, install status        |
 | `opm why <alias>`         | Why a package is present                            |
 | `opmx <bin\|pkg> [args…]` | Run an installed executable                         |
+| `opm generations`         | List the environment history; `*` marks current     |
+| `opm rollback [--to N]`   | Return to the previous generation, or a named one   |
+| `opm gc [--keep N]`       | Remove store paths no retained generation needs     |
+| `opm shell [--json]`      | Print the environment for this generation           |
+
+### Generations and rollback
+
+Every install and removal appends an immutable generation recording what was
+installed. Generations are hash-linked, so editing one breaks the link its child
+asserts, and the only mutable state is a pointer naming the current generation —
+replaced atomically, so an interrupted switch is observed as the old state or
+the new one and never a blend.
+
+```sh
+opm generations          # * 2  2026-08-03T…  3 package(s)
+opm rollback             # back one generation
+opm rollback --to 1      # back to a specific one
+```
+
+Rolling back re-points the pointer and rebuilds the derived view — bin shims,
+link records, project state — from the generation's own record plus store
+content. It never rewrites a generation, so a rollback is itself reversible, and
+it does not depend on the current manifest or lock still describing what that
+generation contained.
+
+No symlinks are involved, so this behaves identically on every platform.
+
+### Collecting unused store paths
+
+A store path is collectible exactly when no retained generation needs it.
+
+```sh
+opm gc --dry-run   # report without removing
+opm gc --keep 3    # retain the three newest generations
+```
+
+The current generation is always retained; `--keep` bounds history so an
+environment that is never pruned does not grow forever. Dropping a generation
+also drops its record, so what is retained and what is reachable stay
+consistent.
+
+### Shell environment
+
+`opm shell` prints the environment derived from the current generation, which
+composes with a shell rather than replacing one:
+
+```sh
+eval "$(opm shell)"
+opm shell --json   # for tooling
+```
 
 ### `opmx`
 
