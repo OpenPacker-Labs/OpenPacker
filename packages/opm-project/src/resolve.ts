@@ -21,6 +21,13 @@ import { codecFor } from './codecs.js';
  * candidate set that is recorded, because a solve over a truncated universe
  * can report unsatisfiable for a problem that is actually satisfiable, and the
  * difference matters.
+ *
+ * Native ranges are read from each ecosystem's own encoding (npm `range`,
+ * PyPI `specifier`, …) rather than only from a single field name. Environment
+ * markers on optional requirements are evaluated against an explicit host
+ * profile for *this* resolve — adapters still refuse to claim marker truth in
+ * translated metadata; evaluation is a resolve-time decision, not a capture
+ * one.
  */
 
 /** Requirement kinds that belong in an install. */
@@ -38,6 +45,56 @@ const DEFAULT_BOUNDS: Required<ResolutionBounds> = {
   maximumPackages: 256,
 };
 
+/**
+ * Host facts used to decide marker-gated requirements for this resolve.
+ *
+ * Defaults come from the running process. Callers can override for a known
+ * target (cross-compile, CI image) without re-running on that host.
+ */
+export interface HostEnvironment {
+  /** PEP 440 public version of the Python interpreter, e.g. `3.12`. */
+  pythonVersion: string;
+  /** `sys.platform` value: `linux`, `darwin`, `win32`, … */
+  sysPlatform: string;
+  /** `os.name` value: `posix` or `nt`. */
+  osName: 'posix' | 'nt';
+  /** `platform.system()` value: `Linux`, `Darwin`, `Windows`, … */
+  platformSystem: string;
+  /** Requested extras; empty means a bare install. */
+  extras: ReadonlySet<string>;
+}
+
+export function defaultHostEnvironment(
+  overrides: Partial<HostEnvironment> = {},
+): HostEnvironment {
+  const platform =
+    process.platform === 'win32'
+      ? 'win32'
+      : process.platform === 'darwin'
+        ? 'darwin'
+        : 'linux';
+  return {
+    pythonVersion:
+      overrides.pythonVersion ??
+      process.env.OPM_PYTHON_VERSION?.trim() ??
+      process.versions?.python?.split('.').slice(0, 2).join('.') ??
+      // Node does not embed a Python version. Default to a current stable so
+      // marker-gated deps that gate on modern Python are not silently dropped
+      // on a host that has no interpreter of its own in-process.
+      '3.12',
+    sysPlatform: overrides.sysPlatform ?? platform,
+    osName: overrides.osName ?? (process.platform === 'win32' ? 'nt' : 'posix'),
+    platformSystem:
+      overrides.platformSystem ??
+      (process.platform === 'win32'
+        ? 'Windows'
+        : process.platform === 'darwin'
+          ? 'Darwin'
+          : 'Linux'),
+    extras: overrides.extras ?? new Set(),
+  };
+}
+
 export interface ResolvedGraph {
   /** Every candidate instance discovered, ready to become a universe. */
   packages: PackageInstance[];
@@ -47,18 +104,279 @@ export interface ResolvedGraph {
   truncated: string[];
   /** Packages reachable but not resolvable, with the reason. */
   unresolved: { purl: string; reason: string }[];
+  /** Marker-gated requirements skipped because the host marker is false. */
+  skippedMarkers: { purl: string; marker: string }[];
 }
 
-/** The native range a requirement expresses, in its own ecosystem's syntax. */
-function nativeRange(requirement: unknown): string | undefined {
+/**
+ * The native range a requirement expresses, in its own ecosystem's syntax.
+ *
+ * Ecosystems do not agree on the field name. npm stores `range`, PyPI stores
+ * `specifier`, and some capture paths leave only the raw string. Reading only
+ * `range` made every PyPI edge look unconstrained (or worse, dropped when
+ * paired with other bugs), which is why a Python graph looked unresolved.
+ */
+export function nativeRange(requirement: unknown): string | undefined {
   const value = requirement as {
-    nativeSemantics?: { data?: { range?: unknown } };
-    raw?: { range?: unknown };
+    nativeSemantics?: { data?: Record<string, unknown> };
+    raw?: unknown;
+    expression?: { vers?: unknown };
   };
-  const fromSemantics = value.nativeSemantics?.data?.range;
-  if (typeof fromSemantics === 'string') return fromSemantics;
-  const fromRaw = value.raw?.range;
-  return typeof fromRaw === 'string' ? fromRaw : undefined;
+  const data = value.nativeSemantics?.data;
+  if (data) {
+    for (const key of ['range', 'specifier'] as const) {
+      const candidate = data[key];
+      if (typeof candidate === 'string' && candidate.trim() !== '')
+        return candidate.trim();
+    }
+  }
+  if (value.raw && typeof value.raw === 'object' && !Array.isArray(value.raw)) {
+    const raw = value.raw as { range?: unknown; specifier?: unknown };
+    if (typeof raw.range === 'string' && raw.range.trim() !== '')
+      return raw.range.trim();
+    if (typeof raw.specifier === 'string' && raw.specifier.trim() !== '')
+      return raw.specifier.trim();
+  }
+  if (typeof value.raw === 'string' && value.raw.trim() !== '') {
+    // PEP 508: "name[extra]>=1.0; marker" → keep the specifier body.
+    const body = value.raw.split(';', 1)[0]!.trim();
+    const withoutExtras = body.replace(/\[[^\]]*]/g, '');
+    const match = /([<>=!~]=?.+)$/.exec(withoutExtras);
+    if (match) return match[1]!.trim();
+  }
+  return undefined;
+}
+
+/** Marker string attached to a requirement, if any. */
+export function requirementMarker(requirement: unknown): string | undefined {
+  const value = requirement as {
+    nativeSemantics?: { data?: { marker?: unknown } };
+    raw?: unknown;
+  };
+  const fromData = value.nativeSemantics?.data?.marker;
+  if (typeof fromData === 'string' && fromData.trim() !== '')
+    return fromData.trim();
+  if (typeof value.raw === 'string' && value.raw.includes(';')) {
+    const marker = value.raw.slice(value.raw.indexOf(';') + 1).trim();
+    if (marker !== '') return marker;
+  }
+  return undefined;
+}
+
+/**
+ * Evaluate a PEP 508 environment marker against a host profile.
+ *
+ * Supports the atoms that dominate `requires_dist` in practice:
+ * `python_version`, `sys_platform`, `os_name`, `platform_system`, and
+ * `extra`, combined with `and` / `or` and parentheses. Anything outside that
+ * subset returns `'unknown'` so the walk can refuse to invent an answer.
+ */
+export function evaluateEnvironmentMarker(
+  marker: string,
+  env: HostEnvironment,
+): boolean | 'unknown' {
+  try {
+    return evalMarkerExpr(marker.trim(), env);
+  } catch {
+    return 'unknown';
+  }
+}
+
+function evalMarkerExpr(
+  expr: string,
+  env: HostEnvironment,
+): boolean | 'unknown' {
+  const trimmed = expr.trim();
+  if (trimmed === '') return true;
+
+  // Split on top-level `or`, then `and`.
+  const orParts = splitTopLevel(trimmed, 'or');
+  if (orParts.length > 1) {
+    let sawUnknown = false;
+    for (const part of orParts) {
+      const result = evalMarkerExpr(part, env);
+      if (result === true) return true;
+      if (result === 'unknown') sawUnknown = true;
+    }
+    return sawUnknown ? 'unknown' : false;
+  }
+
+  const andParts = splitTopLevel(trimmed, 'and');
+  if (andParts.length > 1) {
+    let sawUnknown = false;
+    for (const part of andParts) {
+      const result = evalMarkerExpr(part, env);
+      if (result === false) return false;
+      if (result === 'unknown') sawUnknown = true;
+    }
+    return sawUnknown ? 'unknown' : true;
+  }
+
+  if (trimmed.startsWith('(') && trimmed.endsWith(')'))
+    return evalMarkerExpr(trimmed.slice(1, -1), env);
+
+  return evalMarkerAtom(trimmed, env);
+}
+
+function splitTopLevel(expr: string, keyword: 'and' | 'or'): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inQuote: '"' | "'" | null = null;
+  let start = 0;
+  const pattern = keyword === 'and' ? /\band\b/giu : /\bor\b/giu;
+  let match: RegExpExecArray | null;
+  // Manual scan so quotes and parentheses are respected.
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i]!;
+    if (inQuote) {
+      if (ch === inQuote) inQuote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')') {
+      depth -= 1;
+      continue;
+    }
+    if (depth !== 0) continue;
+    pattern.lastIndex = i;
+    match = pattern.exec(expr);
+    if (match && match.index === i) {
+      parts.push(expr.slice(start, i));
+      i = match.index + match[0].length - 1;
+      start = i + 1;
+    }
+  }
+  if (parts.length === 0) return [expr];
+  parts.push(expr.slice(start));
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+function evalMarkerAtom(
+  atom: string,
+  env: HostEnvironment,
+): boolean | 'unknown' {
+  const match =
+    /^(python_version|python_full_version|sys_platform|os_name|platform_system|extra)\s*(<=|>=|==|!=|<|>)\s*(['"])(.*?)\3$/u.exec(
+      atom.trim(),
+    );
+  if (!match) return 'unknown';
+  const [, variable, op, , literal] = match as unknown as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+
+  if (variable === 'extra') {
+    if (op === '==') return env.extras.has(literal);
+    if (op === '!=') return !env.extras.has(literal);
+    return 'unknown';
+  }
+
+  const left =
+    variable === 'python_version' || variable === 'python_full_version'
+      ? env.pythonVersion
+      : variable === 'sys_platform'
+        ? env.sysPlatform
+        : variable === 'os_name'
+          ? env.osName
+          : env.platformSystem;
+
+  if (variable === 'python_version' || variable === 'python_full_version') {
+    return compareDotted(left, literal, op);
+  }
+
+  switch (op) {
+    case '==':
+      return left === literal;
+    case '!=':
+      return left !== literal;
+    default:
+      return 'unknown';
+  }
+}
+
+function compareDotted(
+  left: string,
+  right: string,
+  op: string,
+): boolean | 'unknown' {
+  const a = left.split('.').map((part) => Number.parseInt(part, 10));
+  const b = right.split('.').map((part) => Number.parseInt(part, 10));
+  if (a.some((n) => Number.isNaN(n)) || b.some((n) => Number.isNaN(n)))
+    return 'unknown';
+  const len = Math.max(a.length, b.length);
+  let cmp = 0;
+  for (let i = 0; i < len; i += 1) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av < bv) {
+      cmp = -1;
+      break;
+    }
+    if (av > bv) {
+      cmp = 1;
+      break;
+    }
+  }
+  switch (op) {
+    case '==':
+      return cmp === 0;
+    case '!=':
+      return cmp !== 0;
+    case '<':
+      return cmp < 0;
+    case '<=':
+      return cmp <= 0;
+    case '>':
+      return cmp > 0;
+    case '>=':
+      return cmp >= 0;
+    default:
+      return 'unknown';
+  }
+}
+
+/**
+ * Whether a requirement should be followed during the install walk.
+ *
+ * Hard requirements always are. Optional ones are followed only when they
+ * carry an environment marker that evaluates to true for this host — that is
+ * how PyPI encodes "required on this platform" without making every marker a
+ * hard edge on every host.
+ */
+export function shouldFollowRequirement(
+  requirement: unknown,
+  env: HostEnvironment,
+): { follow: boolean; skipReason?: string } {
+  const kind = (requirement as { kind?: string }).kind ?? 'runtime';
+  if (!INSTALLED_KINDS.has(kind))
+    return { follow: false, skipReason: `kind ${kind} is not installed` };
+
+  const optional = (requirement as { optional?: boolean }).optional === true;
+  const marker = requirementMarker(requirement);
+
+  if (!optional) return { follow: true };
+
+  if (marker === undefined)
+    return { follow: false, skipReason: 'optional without marker' };
+
+  const result = evaluateEnvironmentMarker(marker, env);
+  if (result === true) return { follow: true };
+  if (result === false)
+    return { follow: false, skipReason: `marker false: ${marker}` };
+  return {
+    follow: false,
+    skipReason: `marker not evaluable: ${marker}`,
+  };
 }
 
 /**
@@ -107,12 +425,15 @@ export async function resolveGraph(input: {
   roots: readonly { purl: string; range?: string }[];
   bounds?: ResolutionBounds;
   options?: RegistryOptions;
+  host?: HostEnvironment;
 }): Promise<ResolvedGraph> {
   const bounds = { ...DEFAULT_BOUNDS, ...(input.bounds ?? {}) };
   const options = input.options ?? {};
+  const host = input.host ?? defaultHostEnvironment();
   const packages: PackageInstance[] = [];
   const truncated: string[] = [];
   const unresolved: { purl: string; reason: string }[] = [];
+  const skippedMarkers: { purl: string; marker: string }[] = [];
   const inspected = new Set<string>();
   const queued = new Set<string>();
 
@@ -176,20 +497,61 @@ export async function resolveGraph(input: {
         });
         continue;
       }
-      packages.push(instance);
+      // Requirements whose markers are true for this host become hard edges
+      // for the solver. Adapters leave them `optional: true` so capture does
+      // not invent host truth; resolve is the place that decides.
+      const rewrittenRequirements = (instance.requirements ?? []).map(
+        (requirement) => {
+          const decision = shouldFollowRequirement(requirement, host);
+          if (
+            decision.follow &&
+            (requirement as { optional?: boolean }).optional === true
+          ) {
+            return { ...requirement, optional: false };
+          }
+          return requirement;
+        },
+      );
+      packages.push({
+        ...instance,
+        requirements: rewrittenRequirements,
+      } as PackageInstance);
 
-      for (const requirement of instance.requirements ?? []) {
-        const kind = (requirement as { kind?: string }).kind ?? 'runtime';
-        if (!INSTALLED_KINDS.has(kind)) continue;
-        if ((requirement as { optional?: boolean }).optional === true) continue;
+      for (const requirement of rewrittenRequirements) {
+        const decision = shouldFollowRequirement(requirement, host);
+        if (!decision.follow) {
+          const marker = requirementMarker(requirement);
+          if (
+            marker !== undefined &&
+            decision.skipReason?.startsWith('marker false')
+          ) {
+            const expression = (
+              requirement as { expression?: { purl?: string } }
+            ).expression;
+            if (expression?.purl)
+              skippedMarkers.push({ purl: expression.purl, marker });
+          }
+          // Marker unknown: surface so a silent empty graph is not the only
+          // signal that something was skipped.
+          if (decision.skipReason?.startsWith('marker not evaluable')) {
+            const expression = (
+              requirement as { expression?: { purl?: string } }
+            ).expression;
+            if (expression?.purl)
+              unresolved.push({
+                purl: expression.purl,
+                reason: decision.skipReason,
+              });
+          }
+          continue;
+        }
         const expression = (requirement as { expression?: { purl?: string } })
           .expression;
         if (!expression?.purl) continue;
+        const range = nativeRange(requirement);
         const next = {
           purl: stripPurlVersion(expression.purl),
-          ...(nativeRange(requirement) === undefined
-            ? {}
-            : { range: nativeRange(requirement)! }),
+          ...(range === undefined ? {} : { range }),
         };
         const key = `${next.purl}|${next.range ?? ''}`;
         if (queued.has(key)) continue;
@@ -204,6 +566,7 @@ export async function resolveGraph(input: {
     roots: input.roots.map((root) => root.purl),
     truncated: [...new Set(truncated)],
     unresolved,
+    skippedMarkers,
   };
 }
 
@@ -282,7 +645,10 @@ export async function solveGraph(input: {
       capabilities: [],
       libc: 'glibc',
       os: process.platform === 'win32' ? 'windows' : process.platform,
-      runtimes: { node: process.versions.node.split('.')[0]! },
+      runtimes: {
+        node: process.versions.node.split('.')[0]!,
+        python: defaultHostEnvironment().pythonVersion.split('.')[0]!,
+      },
       variables: {},
     },
     requirements: input.rootRequirements.map((root, index) => ({

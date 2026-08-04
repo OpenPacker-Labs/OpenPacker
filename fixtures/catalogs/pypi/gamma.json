@@ -1,0 +1,45 @@
+{
+  "info": {
+    "name": "gamma",
+    "version": "1.2.4",
+    "summary": "fixture gamma",
+    "requires_dist": [],
+    "yanked": false
+  },
+  "releases": {
+    "1.2.4": [
+      {
+        "filename": "gamma-1.2.4-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.8",
+        "size": 31,
+        "upload_time_iso_8601": "2026-08-02T00:00:00.000000Z",
+        "url": "https://files.pythonhosted.org/packages/fixture/gamma-1.2.4-py3-none-any.whl",
+        "yanked": false,
+        "digests": {
+          "sha256": "d93c74da6add765cc6a03769e21752daf17bdd291376b82347e3c71a7e0f5318",
+          "md5": "00000000000000000000000000000000"
+        }
+      }
+    ],
+    "1.2.3": [
+      {
+        "filename": "gamma-1.2.3-py3-none-any.whl",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.8",
+        "size": 31,
+        "upload_time_iso_8601": "2026-08-02T00:00:00.000000Z",
+        "url": "https://files.pythonhosted.org/packages/fixture/gamma-1.2.3-py3-none-any.whl",
+        "yanked": false,
+        "digests": {
+          "sha256": "d93c74da6add765cc6a03769e21752daf17bdd291376b82347e3c71a7e0f5318",
+          "md5": "00000000000000000000000000000000"
+        }
+      }
+    ]
+  },
+  "urls": [],
+  "last_serial": 1
+}

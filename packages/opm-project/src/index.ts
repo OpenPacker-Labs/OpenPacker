@@ -139,9 +139,15 @@ export {
 
 export { codecFor } from './codecs.js';
 export {
+  defaultHostEnvironment,
+  evaluateEnvironmentMarker,
+  nativeRange,
+  requirementMarker,
   resolveGraph,
+  shouldFollowRequirement,
   solveGraph,
   universeFrom,
+  type HostEnvironment,
   type ResolutionBounds,
   type ResolvedGraph,
 } from './resolve.js';
