@@ -9,7 +9,11 @@ import type {
   ResolutionUniverse,
   SolveRequest,
 } from '@openpacker/contracts';
-import { createOpenPackerDaemon } from '../src/index.js';
+import {
+  assertDaemonBindAddress,
+  assertDaemonPort,
+  createOpenPackerDaemon,
+} from '../src/index.js';
 import {
   createReferenceOperations,
   OperationError,
@@ -620,6 +624,127 @@ describe('openpackerd', () => {
     expect(capabilities.json().evidenceTypes).toEqual([]);
     expect(
       capabilities.json().authenticationSchemes.map(({ type }) => type),
+    ).toEqual(['none']);
+    await app.close();
+  });
+});
+
+describe('openpackerd HTTP surface hardening', () => {
+  const meta = {
+    protocolVersion: '1.0-draft',
+    provider: {
+      id: 'fixture',
+      implementation: 'openpackerd',
+      version: '0.1.0',
+    },
+  } as const;
+
+  function minimalApp(bodyLimit = 1024) {
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    return createOpenPackerDaemon({
+      operations,
+      meta,
+      bodyLimit,
+      eventPageSize: 10,
+    });
+  }
+
+  it('refuses non-loopback binds unless allowRemoteBind is set', () => {
+    // authenticationSchemes is none — a LAN bind without auth is a footgun.
+    expect(() => assertDaemonBindAddress('0.0.0.0')).toThrow(/loopback/i);
+    expect(() => assertDaemonBindAddress('::')).toThrow(/loopback/i);
+    expect(() => assertDaemonBindAddress('192.168.1.10')).toThrow(/loopback/i);
+    expect(() => assertDaemonBindAddress('127.0.0.1')).not.toThrow();
+    expect(() => assertDaemonBindAddress('localhost')).not.toThrow();
+    expect(() =>
+      assertDaemonBindAddress('0.0.0.0', { allowRemoteBind: true }),
+    ).not.toThrow();
+  });
+
+  it('rejects ports outside 0–65535 (0 is OS-assigned ephemeral)', () => {
+    expect(() => assertDaemonPort(-1)).toThrow(/port/i);
+    expect(() => assertDaemonPort(65_536)).toThrow(/port/i);
+    expect(() => assertDaemonPort(Number.NaN)).toThrow(/port/i);
+    expect(assertDaemonPort(0)).toBe(0);
+    expect(assertDaemonPort(7337)).toBe(7337);
+  });
+
+  it('rejects oversized request bodies at the Fastify limit', async () => {
+    const app = minimalApp(64);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'content-type': 'application/json' },
+      // Larger than bodyLimit; Fastify must refuse before the operation runs.
+      payload: JSON.stringify({ pad: 'x'.repeat(200) }),
+    });
+    // inject surfaces the limit as 413 in some Fastify versions and as a
+    // 400 from the content-type parser in others; either is fail-closed.
+    expect([400, 413]).toContain(response.statusCode);
+    expect(response.statusCode).not.toBe(200);
+    await app.close();
+  });
+
+  it('rejects malformed receipt digests instead of querying the store', async () => {
+    const app = minimalApp();
+    for (const url of [
+      '/v1/receipts/md5/not-a-digest',
+      `/v1/receipts/sha256/${'g'.repeat(64)}`,
+      `/v1/receipts/sha256/${'a'.repeat(63)}`,
+      '/v1/receipts/sha256/../etc/passwd',
+    ]) {
+      const response = await app.inject({ method: 'GET', url });
+      expect(response.statusCode, url).toBe(400);
+    }
+    await app.close();
+  });
+
+  it('caps event page size and rejects unsafe cursors', async () => {
+    const app = minimalApp();
+    const oversized = await app.inject({
+      method: 'GET',
+      url: '/v1/events?limit=999999',
+    });
+    // limit is clamped; the request itself is still valid.
+    expect(oversized.statusCode).toBe(200);
+
+    const badCursor = await app.inject({
+      method: 'GET',
+      url: `/v1/events?cursor=${'9'.repeat(20)}`,
+    });
+    expect(badCursor.statusCode).toBe(400);
+
+    const negative = await app.inject({
+      method: 'GET',
+      url: '/v1/events?limit=-1',
+    });
+    expect(negative.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('advertises authenticationSchemes none so callers do not invent auth', async () => {
+    const app = minimalApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/capabilities',
+    });
+    expect(
+      response
+        .json()
+        .authenticationSchemes.map(({ type }: { type: string }) => type),
     ).toEqual(['none']);
     await app.close();
   });

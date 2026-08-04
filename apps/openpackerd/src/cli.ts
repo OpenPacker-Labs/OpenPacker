@@ -29,6 +29,10 @@ const server = await startOpenPackerDaemon({
     process.env.OPENPACKER_DATABASE ?? '.openpacker/openpackerd.sqlite',
   host: process.env.OPENPACKER_HOST ?? '127.0.0.1',
   port: Number(process.env.OPENPACKER_PORT ?? '7337'),
+  // The daemon advertises authenticationSchemes: none. Non-loopback binds are
+  // therefore opt-in only — a typo'd OPENPACKER_HOST must not open the
+  // control plane on the LAN.
+  allowRemoteBind: process.env.OPENPACKER_ALLOW_REMOTE_BIND === '1',
   logger: true,
 });
 process.stdout.write(`${server.address}\n`);
