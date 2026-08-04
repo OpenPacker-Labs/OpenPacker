@@ -39,12 +39,37 @@ export type MaterializedFileLike = MaterializedFile;
 
 const CONTROL = /[\u0000-\u001f\u007f]/u;
 
+/**
+ * Windows device names, which are reserved at every directory level and stay
+ * reserved with an extension: `CON`, `CON.txt` and `con.tar.gz` are all the
+ * console, not files. Writing a package entry called `NUL` on Windows
+ * discards it silently.
+ */
+const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu;
+
+/**
+ * A segment Windows would silently rewrite.
+ *
+ * Trailing dots and spaces are stripped when a path is resolved, so `a.` and
+ * `a` name one file there and two here — which would defeat the duplicate and
+ * case-collision checks that make a tree manifest unambiguous.
+ */
+const WINDOWS_TRAILING = /[ .]$/u;
+
 export function isSafeTreePath(value: string): boolean {
   if (value.length === 0 || value.startsWith('/')) return false;
   if (value.includes('\\') || CONTROL.test(value)) return false;
-  return value
-    .split('/')
-    .every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  return value.split('/').every(
+    (segment) =>
+      segment !== '' &&
+      segment !== '.' &&
+      segment !== '..' &&
+      // Checked on every platform, not just Windows: a manifest is a
+      // portable description, and a tree that only materializes safely on
+      // Linux is not one.
+      !WINDOWS_DEVICE.test(segment) &&
+      !WINDOWS_TRAILING.test(segment),
+  );
 }
 
 /**
