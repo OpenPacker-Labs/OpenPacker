@@ -9,6 +9,7 @@ import {
   ProviderError,
   compareCodePoints,
   formatPurl,
+  packageNodeId,
   parsePurl,
   semanticLoss,
   sourceRef,
@@ -343,7 +344,11 @@ export class NixCodec implements EcosystemCodec {
       : [];
 
     const instance: PackageInstance = {
-      nodeId: `sha256:${(await canonicalDigest({ exactPurl } as unknown as JsonValue)).value}`,
+      nodeId: await packageNodeId({
+        exactPurl,
+        qualifiers,
+        nativeSemanticsVersion: 'nix-store-v1',
+      }),
       identity: {
         canonicalPurl,
         exactPurl,

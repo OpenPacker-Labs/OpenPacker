@@ -17,7 +17,7 @@ import {
   descriptorForBytes,
   streamFromBytes,
 } from '@openpacker/artifact-model';
-import { FixtureHttpTransport } from '@openpacker/adapter-core';
+import { FixtureHttpTransport, packageNodeId } from '@openpacker/adapter-core';
 import { NpmRegistryProvider } from '@openpacker/adapter-npm';
 import { CargoSparseProvider } from '@openpacker/adapter-cargo';
 import { NugetV3Provider } from '@openpacker/adapter-nuget';
@@ -153,7 +153,13 @@ async function instance({
   status = 'published',
 }) {
   const canonicalPurl = exactPurl.slice(0, exactPurl.lastIndexOf('@'));
-  const nodeId = formatDigest(await canonicalDigest(exactPurl));
+  // Node identity is the package-node-v1 projection, the same helper every
+  // codec uses, so a universe built here is indistinguishable from one a codec
+  // produced.
+  const nodeId = await packageNodeId({
+    exactPurl,
+    nativeSemanticsVersion: `${purlType}-v1`,
+  });
   const identity = {
     canonicalPurl,
     exactPurl,

@@ -15,6 +15,7 @@ import {
   evaluateSemverRange,
   formatPurl,
   header,
+  packageNodeId,
   parsePurl,
   parseSemver,
   parseSemverRange,
@@ -208,7 +209,10 @@ export class CargoCodec
     const exactPurl = this.canonicalizePurl(
       `pkg:cargo/${encodeURIComponent(metadata.name)}@${encodeURIComponent(metadata.vers)}`,
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'cargo-v1',
+    });
     const requirements: Requirement[] = metadata.deps
       .map((dependency, index) => {
         const name = (dependency.package ?? dependency.name).toLowerCase();

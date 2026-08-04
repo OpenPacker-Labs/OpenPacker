@@ -1,7 +1,7 @@
 {
   "canonicalDigest": {
     "algorithm": "sha256",
-    "value": "a644073e78d95997af293dfacc31494381b60edd30ce86dd185529efcca71267"
+    "value": "c23c11a2c949419531d059518532ad78f41a24a89aa50a20d55a35509380d874"
   },
   "lifecycleRoot": {
     "algorithm": "sha256",
@@ -20,13 +20,13 @@
       "requirements": [
         {
           "authority": "publisher",
-          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -112,7 +112,7 @@
       "capabilities": [],
       "cardinalityConstraints": [
         {
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:k0",
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
@@ -129,7 +129,7 @@
             "purl": "pkg:npm/conflicting-demo",
             "type": "package"
           },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0",
           "scope": "solution",
           "source": {
             "type": "overlay",
@@ -171,18 +171,18 @@
         "version": "npm-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+      "nodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
       "normalizedVersion": "1.0.0",
       "requirements": [
         {
           "authority": "publisher",
-          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -193,13 +193,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
           },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -210,13 +210,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -227,9 +227,9 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+          "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
-          "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3",
+          "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3",
           "kind": "optional",
           "optional": true,
           "semanticLoss": [],
@@ -243,7 +243,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -294,7 +294,7 @@
       "capabilities": [],
       "cardinalityConstraints": [
         {
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:k0",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:k0",
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
@@ -311,7 +311,7 @@
             "purl": "pkg:npm/conflicting-demo",
             "type": "package"
           },
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:c0",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:c0",
           "scope": "solution",
           "source": {
             "type": "overlay",
@@ -353,18 +353,18 @@
         "version": "npm-v1"
       },
       "nativeVersion": "0.9.0",
-      "nodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+      "nodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
       "normalizedVersion": "0.9.0",
       "requirements": [
         {
           "authority": "publisher",
-          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r0",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -375,13 +375,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
           },
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r1",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:r1",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -392,13 +392,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r2",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:r2",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -409,9 +409,9 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+          "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
-          "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0:r3",
+          "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:r3",
           "kind": "optional",
           "optional": true,
           "semanticLoss": [],
@@ -425,7 +425,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
         }
       ],
       "versionSortKey": "0.9.0"
@@ -476,7 +476,7 @@
       "capabilities": [],
       "cardinalityConstraints": [
         {
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:k0",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:k0",
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
@@ -493,7 +493,7 @@
             "purl": "pkg:npm/conflicting-demo",
             "type": "package"
           },
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:c0",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:c0",
           "scope": "solution",
           "source": {
             "type": "overlay",
@@ -535,18 +535,18 @@
         "version": "npm-v1"
       },
       "nativeVersion": "1.0.0-beta.1",
-      "nodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+      "nodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
       "normalizedVersion": "1.0.0-beta.1",
       "requirements": [
         {
           "authority": "publisher",
-          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r0",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -557,13 +557,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
           },
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r1",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:r1",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -574,13 +574,13 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r2",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:r2",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -591,9 +591,9 @@
         },
         {
           "authority": "native",
-          "dependerNodeId": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+          "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
-          "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e:r3",
+          "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:r3",
           "kind": "optional",
           "optional": true,
           "semanticLoss": [],
@@ -607,7 +607,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
         }
       ],
       "versionSortKey": "1.0.0-beta.1"
@@ -651,14 +651,14 @@
         "version": "npm-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+      "nodeId": "sha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d",
       "normalizedVersion": "1.0.0",
       "requirements": [],
       "semanticLoss": [],
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -685,7 +685,7 @@
         {
           "attributes": {},
           "name": "compression/zstd",
-          "providerNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+          "providerNodeId": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
           "source": {
             "type": "overlay",
             "uri": "https://openpacker.dev/fixtures/overlay"
@@ -734,18 +734,18 @@
         "version": "cargo-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+      "nodeId": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
       "normalizedVersion": "1.0.0",
       "requirements": [
         {
           "authority": "native",
-          "dependerNodeId": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+          "dependerNodeId": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
           "expression": {
             "purl": "pkg:cargo/openpacker-native-helper",
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
-          "id": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+          "id": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -759,7 +759,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+          "value": "fc65f6fdb519bf1fb378e4fe9d40b06bc9276c5d2b0484c117fbd4e5ceca2cea"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -803,14 +803,14 @@
         "version": "cargo-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+      "nodeId": "sha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528",
       "normalizedVersion": "1.0.0",
       "requirements": [],
       "semanticLoss": [],
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+          "value": "fc65f6fdb519bf1fb378e4fe9d40b06bc9276c5d2b0484c117fbd4e5ceca2cea"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -837,7 +837,7 @@
         {
           "attributes": {},
           "name": "compression/zstd",
-          "providerNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+          "providerNodeId": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
           "source": {
             "type": "overlay",
             "uri": "https://openpacker.dev/fixtures/overlay"
@@ -886,18 +886,18 @@
         "version": "nuget-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+      "nodeId": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
       "normalizedVersion": "1.0.0",
       "requirements": [
         {
           "authority": "native",
-          "dependerNodeId": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+          "dependerNodeId": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
           "expression": {
             "purl": "pkg:nuget/openpacker.native.helper",
             "type": "package",
             "vers": "vers:nuget/>=1.0.0"
           },
-          "id": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+          "id": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0",
           "kind": "runtime",
           "optional": false,
           "semanticLoss": [],
@@ -911,7 +911,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+          "value": "3f73545a379f09d516b0be18b5ea1225c5a54a1f5657ea6f74ef2a77305f1281"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -955,14 +955,14 @@
         "version": "nuget-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+      "nodeId": "sha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb",
       "normalizedVersion": "1.0.0",
       "requirements": [],
       "semanticLoss": [],
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+          "value": "3f73545a379f09d516b0be18b5ea1225c5a54a1f5657ea6f74ef2a77305f1281"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -1006,14 +1006,14 @@
         "version": "npm-v1"
       },
       "nativeVersion": "1.0.0",
-      "nodeId": "sha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc",
+      "nodeId": "sha256:7ae9c32bac81f24316a588f2182e106ca6d00830bb37eb924ff858f77ce0fea6",
       "normalizedVersion": "1.0.0",
       "requirements": [],
       "semanticLoss": [],
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -1029,15 +1029,15 @@
       "providerType": "npm-registry",
       "recordsDigest": {
         "algorithm": "sha256",
-        "value": "f1a00330d04d815541763738f1a1f0a7aabfc88b1bef0bd9d79af8884055a288"
+        "value": "8dbb3ae40086459066da7fb353d0634530e7b41d87827e0003995d9e0f7d8cad"
       },
       "retrievedAt": "2026-08-02T00:00:00Z",
       "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
       "rootDigest": {
         "algorithm": "sha256",
-        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
       },
-      "snapshotId": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+      "snapshotId": "sha256:b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
     },
     {
       "endpointIdentity": "https://fixtures.test",
@@ -1048,15 +1048,15 @@
       "providerType": "cargo-sparse",
       "recordsDigest": {
         "algorithm": "sha256",
-        "value": "a4934e746a11575192c2f92067adc1ac24e9fa14ba6783e828dfa945c185c1bc"
+        "value": "020244b424b4f3fea7009e9d2b8e5fe0ac84d7d47f99b909b36793eade5b2bae"
       },
       "retrievedAt": "2026-08-02T00:00:00Z",
       "revision": "sha256:d6d1f967ff31dc6de43ac7ae630659e20b153939a051e36036f7178b20614823",
       "rootDigest": {
         "algorithm": "sha256",
-        "value": "51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+        "value": "fc65f6fdb519bf1fb378e4fe9d40b06bc9276c5d2b0484c117fbd4e5ceca2cea"
       },
-      "snapshotId": "sha256:51268f43b9699d60f00d8797ea4f908102f4134fc9fc737828844dc3a3ab3b75"
+      "snapshotId": "sha256:fc65f6fdb519bf1fb378e4fe9d40b06bc9276c5d2b0484c117fbd4e5ceca2cea"
     },
     {
       "endpointIdentity": "https://fixtures.openpacker.invalid/nuget/service-index.json",
@@ -1067,15 +1067,15 @@
       "providerType": "nuget-v3",
       "recordsDigest": {
         "algorithm": "sha256",
-        "value": "c7f9a9aadf4cc0783fffa5722d93a83b656914659762a385d6bf0584ee434f9d"
+        "value": "c1cd17c21ea99fd14361f4a1b6c9db4b66e0acb6aac53694203f5f8a83de7149"
       },
       "retrievedAt": "2026-08-02T00:00:00Z",
       "revision": "sha256:3c984429023afb4da450b2c6bf3afb2bbc9e05689d84e2cef58d883f2cec60a6",
       "rootDigest": {
         "algorithm": "sha256",
-        "value": "2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+        "value": "3f73545a379f09d516b0be18b5ea1225c5a54a1f5657ea6f74ef2a77305f1281"
       },
-      "snapshotId": "sha256:2716d8d0469dc769b88c736808b85cf6e5af208dcc889889cc9176158a3fafcb"
+      "snapshotId": "sha256:3f73545a379f09d516b0be18b5ea1225c5a54a1f5657ea6f74ef2a77305f1281"
     }
   ],
   "targetVocabularyVersion": "1",

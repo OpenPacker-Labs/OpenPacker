@@ -8,7 +8,8 @@
 use serde_json::{Value, json};
 
 use crate::{
-    Digest, RequirementExpression, ResolverError, SolveInput, UniverseAmendment, digest_json,
+    Digest, RequirementExpression, ResolverError, SolveInput, UniverseAmendment, canonical_json,
+    digest_json,
 };
 
 /// One applied operation, kept so the proof and explanation can name it.
@@ -257,49 +258,55 @@ pub fn apply_amendments(input: &SolveInput) -> Result<AmendedInput, ResolverErro
     }
 
     // The amended universe is a different universe; its digest must say so.
-    amended.universe.canonical_digest = digest_json(&UniverseDigestBody::from(&amended.universe))?;
+    amended.universe.canonical_digest = universe_digest(&amended.universe)?;
     Ok(AmendedInput {
         input: amended,
         applied,
     })
 }
 
-/// The universe without its self-referential digest, matching `universe-v1`.
-#[derive(serde::Serialize)]
-struct UniverseDigestBody<'a> {
-    #[serde(rename = "universeVersion")]
-    universe_version: &'a str,
-    packages: &'a [crate::PackageInstance],
-    overlays: &'a [Value],
-    #[serde(rename = "sourceSnapshots")]
-    source_snapshots: &'a [Value],
-    #[serde(rename = "recipes", skip_serializing_if = "<[Value]>::is_empty")]
-    recipes: &'a [Value],
-    #[serde(
-        rename = "amendments",
-        skip_serializing_if = "<[UniverseAmendment]>::is_empty"
-    )]
-    amendments: &'a [UniverseAmendment],
-    #[serde(rename = "lifecycleRoot")]
-    lifecycle_root: &'a Digest,
-    #[serde(rename = "targetVocabularyVersion")]
-    target_vocabulary_version: &'a str,
-    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    extensions: &'a crate::Extensions,
-}
-
-impl<'a> From<&'a crate::ResolutionUniverse> for UniverseDigestBody<'a> {
-    fn from(universe: &'a crate::ResolutionUniverse) -> Self {
-        Self {
-            universe_version: &universe.universe_version,
-            packages: &universe.packages,
-            overlays: &universe.overlays,
-            source_snapshots: &universe.source_snapshots,
-            recipes: &universe.recipes,
-            amendments: &universe.amendments,
-            lifecycle_root: &universe.lifecycle_root,
-            target_vocabulary_version: &universe.target_vocabulary_version,
-            extensions: &universe.extensions,
+/// The `universe-v1` digest of a universe.
+///
+/// The value is derived from the struct itself rather than a hand-listed set
+/// of fields: a mirror would silently produce a wrong digest the first time a
+/// field is added and the copy is not updated.
+fn universe_digest(universe: &crate::ResolutionUniverse) -> Result<Digest, ResolverError> {
+    let mut value = serde_json::to_value(universe)
+        .map_err(|error| ResolverError::InvalidInput(error.to_string()))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| ResolverError::InvalidInput("universe must be an object".into()))?;
+    // universe-v1 excludes the self-referential digest and canonicalizes the
+    // declared set paths before hashing.
+    object.remove("canonicalDigest");
+    for path in [
+        "amendments",
+        "overlays",
+        "packages",
+        "recipes",
+        "sourceSnapshots",
+    ] {
+        if let Some(Value::Array(items)) = object.get_mut(path) {
+            // Ordered sets sort by UTF-16 code units, not by UTF-8 bytes. The
+            // normative implementation compares canonical JSON with JavaScript
+            // string comparison, and the two orders disagree whenever a
+            // non-BMP character meets one in U+E000..U+FFFF — the same hazard
+            // `canonical.rs` already guards for object keys. Sorting by bytes
+            // here would put this crate's universe digest at odds with every
+            // other conforming implementation.
+            let mut sortable: Vec<(Vec<u16>, Value)> = std::mem::take(items)
+                .into_iter()
+                .map(|item| {
+                    let key = String::from_utf8(canonical_json(&item)?)
+                        .map_err(|error| ResolverError::InvalidInput(error.to_string()))?
+                        .encode_utf16()
+                        .collect();
+                    Ok((key, item))
+                })
+                .collect::<Result<_, ResolverError>>()?;
+            sortable.sort_by(|left, right| left.0.cmp(&right.0));
+            *items = sortable.into_iter().map(|(_, item)| item).collect();
         }
     }
+    digest_json(&value)
 }

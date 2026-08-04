@@ -136,6 +136,142 @@ describe('reference scanning', () => {
   });
 });
 
+describe('scanner equivalence and scaling', () => {
+  // The obvious implementation, kept as an oracle. The fast scanner must agree
+  // with it exactly; a rolling hash that got the arithmetic wrong would show up
+  // here as a missed or invented reference.
+  const naiveScan = (
+    files: readonly { path: string; data: Uint8Array }[],
+    candidates: readonly { token: string; nodeId: string }[],
+  ) => {
+    const found = new Map<string, Set<string>>();
+    for (const file of files)
+      for (const candidate of candidates) {
+        const needle = new TextEncoder().encode(candidate.token);
+        outer: for (let i = 0; i + needle.length <= file.data.length; i += 1) {
+          for (let j = 0; j < needle.length; j += 1)
+            if (file.data[i + j] !== needle[j]) continue outer;
+          const paths = found.get(candidate.nodeId) ?? new Set<string>();
+          paths.add(file.path);
+          found.set(candidate.nodeId, paths);
+          break;
+        }
+      }
+    return [...found.entries()]
+      .map(([nodeId, paths]) => ({ nodeId, paths: [...paths].sort() }))
+      .sort((left, right) => (left.nodeId < right.nodeId ? -1 : 1));
+  };
+
+  it('agrees with the naive scanner on adversarial data', () => {
+    // A deterministic PRNG so a failure is reproducible. An LCG's low bits
+    // have period equal to their modulus, so `lcg() % 2` alternates and
+    // `% 16` repeats every sixteen — drawing from a small alphabet that way
+    // produces strictly periodic "random" data. This finalizes with murmur3's
+    // avalanche step instead, which mixes every bit.
+    let counter = 0x2f6e2b1;
+    const next = () => {
+      counter = (counter + 0x9e3779b9) >>> 0;
+      let value = counter;
+      value ^= value >>> 16;
+      value = Math.imul(value, 0x85ebca6b) >>> 0;
+      value ^= value >>> 13;
+      value = Math.imul(value, 0xc2b2ae35) >>> 0;
+      return (value ^ (value >>> 16)) >>> 0;
+    };
+    for (let round = 0; round < 40; round += 1) {
+      // A tiny alphabet maximises accidental partial matches and hash
+      // collisions — the cases a rolling hash is most likely to get wrong.
+      const alphabet = round % 2 === 0 ? 'ab' : '0123456789abcdef';
+      const draw = (length: number) =>
+        Array.from({ length }, () => alphabet[next() % alphabet.length]!).join(
+          '',
+        );
+
+      const candidates = Array.from({ length: 8 }, (_, index) => ({
+        // Mixed token lengths exercise the per-length index.
+        token: draw(2 + (index % 5)),
+        nodeId: `sha256:${String(index).padStart(64, '0')}`,
+      }));
+      const files = Array.from({ length: 3 }, (_, index) => ({
+        path: `file-${index}`,
+        data: new TextEncoder().encode(draw(200)),
+      }));
+      // The corpus has to be aperiodic or this compares two scanners over a
+      // handful of repeating bytes and proves nothing.
+      const text = new TextDecoder().decode(files[0]!.data);
+      for (const period of [1, 2, 4, 8, 16])
+        expect(
+          text
+            .slice(0, period)
+            .repeat(Math.ceil(200 / period))
+            .slice(0, 200),
+          `round ${round} corpus is periodic with period ${period}`,
+        ).not.toBe(text);
+      expect(scanReferences(files, candidates), `round ${round}`).toEqual(
+        naiveScan(files, candidates),
+      );
+    }
+  });
+
+  it('finds a needle at the very start and very end of a file', () => {
+    // Boundary positions are where an off-by-one in the roll would hide.
+    const candidates = [
+      { token: 'HEAD', nodeId: `sha256:${'1'.repeat(64)}` },
+      { token: 'TAIL', nodeId: `sha256:${'2'.repeat(64)}` },
+    ];
+    const data = new TextEncoder().encode('HEADmiddleTAIL');
+    expect(scanReferences([{ path: 'f', data }], candidates)).toEqual([
+      { nodeId: `sha256:${'1'.repeat(64)}`, paths: ['f'] },
+      { nodeId: `sha256:${'2'.repeat(64)}`, paths: ['f'] },
+    ]);
+    // A needle exactly as long as the file is still found.
+    expect(
+      scanReferences(
+        [{ path: 'f', data: new TextEncoder().encode('HEAD') }],
+        candidates,
+      ),
+    ).toEqual([{ nodeId: `sha256:${'1'.repeat(64)}`, paths: ['f'] }]);
+    // A needle longer than the file is not.
+    expect(
+      scanReferences(
+        [{ path: 'f', data: new TextEncoder().encode('HEA') }],
+        candidates,
+      ),
+    ).toEqual([]);
+  });
+
+  it('stays fast as the candidate set grows', () => {
+    // The point of the rewrite: cost tracks bytes, not candidates. The old
+    // scanner took ~8s for this shape.
+    const alphabet = '0123456789abcdfghijklmnpqrsvwxyz';
+    // Each character takes five *high* bits of a mixed value. Taking `% 32` of
+    // an LCG uses its low five bits, whose period is 32 — that produced 32
+    // distinct tokens, all rotations of one string, rather than 1000.
+    const candidates = Array.from({ length: 1000 }, (_, index) => {
+      let token = '';
+      for (let i = 0; i < 32; i += 1) {
+        let value =
+          (Math.imul(index + 1, 0x9e3779b9) + Math.imul(i, 0x85ebca6b)) >>> 0;
+        value ^= value >>> 16;
+        value = Math.imul(value, 0x85ebca6b) >>> 0;
+        value ^= value >>> 13;
+        value = Math.imul(value, 0xc2b2ae35) >>> 0;
+        token += alphabet[(value >>> 27) % 32]!;
+      }
+      return { token, nodeId: `sha256:${String(index).padStart(64, '0')}` };
+    });
+    // The point of the benchmark is a large candidate set, so it has to
+    // actually be one.
+    expect(new Set(candidates.map(({ token }) => token)).size).toBe(1000);
+    const data = new Uint8Array(2 * 1024 * 1024);
+    for (let index = 0; index < data.length; index += 1)
+      data[index] = 48 + (index % 10);
+    const started = Date.now();
+    expect(scanReferences([{ path: 'big', data }], candidates)).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
 describe('closure assembly', () => {
   const members = [
     { nodeId: nodeId('1'), artifactDigest: digest('1') },

@@ -1,6 +1,7 @@
 import {
   ProviderError,
   formatPurl,
+  packageNodeId,
   parsePurl,
   type Ecosystem,
   type EcosystemCodec,
@@ -539,9 +540,16 @@ async function minimalInstanceFromLockEntry(
       'INVALID_LOCKFILE',
       `Locked package is missing an exact version: ${exactPurl}`,
     );
-  const nodeId = formatDigest(
-    await sha256(new TextEncoder().encode(exactPurl)),
-  );
+  // Through the shared helper, not sha256(exactPurl): the node ID is defined
+  // as the `package-node-v1` projection of the instance it labels, and this
+  // instance carries both qualifiers and a native semantics version. Hashing
+  // the PURL alone produced an ID that did not match its own projection for
+  // every package in every imported lockfile.
+  const nodeId = await packageNodeId({
+    exactPurl,
+    qualifiers: parsed.qualifiers,
+    nativeSemanticsVersion: `${ecosystem}-lock-import-v1`,
+  });
   const metadataDigest = await sha256(
     new TextEncoder().encode(
       JSON.stringify({

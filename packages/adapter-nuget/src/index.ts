@@ -15,6 +15,7 @@ import {
   formatPurl,
   header,
   json,
+  packageNodeId,
   parsePurl,
   ProviderError,
   providerErrorForStatus,
@@ -430,7 +431,10 @@ export class NugetCodec
     const exactPurl = this.canonicalizePurl(
       `pkg:nuget/${encodeURIComponent(metadata.id)}@${encodeURIComponent(metadata.version)}`,
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'nuget-v1',
+    });
     const requirements: Requirement[] = [];
     const losses: SemanticLoss[] = [];
     for (const [groupIndex, group] of (

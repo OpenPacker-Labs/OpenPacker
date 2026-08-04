@@ -5,6 +5,7 @@ import {
   addPackage,
   activateGeneration,
   collectGarbage,
+  environmentScript,
   environmentVariables,
   initProject,
   installProject,
@@ -244,15 +245,14 @@ export async function runOpm(
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
-        const environment = await environmentVariables({ root });
         if (args.options.has('json')) {
+          const environment = await environmentVariables({ root });
           io.stdout.write(`${JSON.stringify(environment, null, 2)}\n`);
           return EXIT_CODES.success;
         }
         // Printing assignments keeps this composable: `eval "$(opm shell)"`
         // works without opm needing to spawn or manage a shell.
-        for (const [key, value] of Object.entries(environment))
-          io.stdout.write(`export ${key}=${JSON.stringify(value)}\n`);
+        io.stdout.write(await environmentScript({ root }));
         return EXIT_CODES.success;
       }
       default:

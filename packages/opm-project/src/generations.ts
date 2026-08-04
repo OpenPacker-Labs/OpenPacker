@@ -29,6 +29,7 @@ import { readProjectState, writeProjectState } from './install.js';
 
 export const GENERATIONS_DIR = 'generations';
 export const ENVIRONMENT_STATE = 'environment.json';
+export const STORE_REFERENCES = 'references.json';
 
 export interface GenerationMember {
   alias: string;
@@ -46,6 +47,32 @@ export interface Generation {
   lockDigest: string;
   members: GenerationMember[];
   generationDigest: string;
+}
+
+/**
+ * The store's reference graph, keyed by referring store path.
+ *
+ * Deliberately not part of a generation record, for two reasons. It is keyed
+ * by store path rather than by member alias because the paths that matter most
+ * are the ones that are *not* members: a transitive runtime dependency is by
+ * definition not something the project installed directly, and an edge map
+ * that only the installed set can index cannot express a chain deeper than one
+ * hop. And it lives beside the store rather than inside a generation because
+ * gc forgets non-retained generation records — edges stored there would be
+ * deleted while the paths they describe are still on disk, so a later gc would
+ * collect live content.
+ *
+ * A store path referring to another is a fact about bytes on disk, not about
+ * which generation is current. So the ledger only ever accumulates, and is
+ * pruned exactly when a path is collected.
+ *
+ * opm resolves direct requirements only and its packages carry no embedded
+ * store references, so nothing populates this today and the closure equals the
+ * member set.
+ */
+export interface StoreReferences {
+  referencesVersion: '1';
+  edges: Record<string, string[]>;
 }
 
 export interface EnvironmentState {
@@ -88,13 +115,107 @@ function contentKey(generation: Generation): string {
   });
 }
 
+/**
+ * A store path, checked to be a direct child of this project's store.
+ *
+ * Reference edges name paths that gc will keep alive, so they are validated on
+ * the way in rather than trusted from the ledger. Comparing against the
+ * contained resolution is the check; passing a basename would make it
+ * unconditionally true.
+ */
+function assertStorePath(store: string, value: string, what: string): string {
+  if (value !== resolveContained(store, basename(value)))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `${what} escapes the project store: ${value}`,
+    );
+  return value;
+}
+
 export function environmentPaths(root: string) {
   const paths = projectPaths(root);
   return {
     ...paths,
     generations: join(paths.opmDir, GENERATIONS_DIR),
     environmentState: join(paths.opmDir, ENVIRONMENT_STATE),
+    storeReferences: join(paths.opmDir, STORE_REFERENCES),
   };
+}
+
+/** The recorded store reference graph, or an empty one. */
+export async function readStoreReferences(
+  root: string,
+): Promise<StoreReferences> {
+  const paths = environmentPaths(root);
+  try {
+    const parsed = JSON.parse(
+      await readFile(paths.storeReferences, 'utf8'),
+    ) as StoreReferences;
+    if (parsed.referencesVersion !== '1')
+      throw new OpmError(
+        'INVALID_INPUT',
+        `Unsupported store reference version: ${String(parsed.referencesVersion)}`,
+      );
+    return { referencesVersion: '1', edges: parsed.edges ?? {} };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return { referencesVersion: '1', edges: {} };
+    throw error;
+  }
+}
+
+async function writeStoreReferences(
+  root: string,
+  references: StoreReferences,
+): Promise<void> {
+  const paths = environmentPaths(root);
+  // Sorted so the file is stable under review and diffing, and written
+  // through a temp file so an interrupted write leaves the old graph intact
+  // rather than a truncated one gc would read as "nothing is referenced".
+  const edges = Object.fromEntries(
+    Object.entries(references.edges)
+      .filter(([, targets]) => targets.length > 0)
+      .map(
+        ([from, targets]) =>
+          [from, [...new Set(targets)].sort()] as [string, string[]],
+      )
+      .sort((left, right) => (left[0] < right[0] ? -1 : 1)),
+  );
+  await mkdir(paths.opmDir, { recursive: true });
+  const temporary = `${paths.storeReferences}.tmp`;
+  await writeFile(
+    temporary,
+    `${JSON.stringify({ referencesVersion: '1', edges }, null, 2)}\n`,
+    'utf8',
+  );
+  await rename(temporary, paths.storeReferences);
+}
+
+/**
+ * Add observed edges to the store reference graph.
+ *
+ * Merging rather than replacing is the point: an edge is a fact about bytes
+ * that are still on disk, so a later observation that does not mention it has
+ * not retracted it.
+ */
+export async function mergeStoreReferences(input: {
+  root: string;
+  references: Readonly<Record<string, readonly string[]>>;
+}): Promise<StoreReferences> {
+  const paths = environmentPaths(input.root);
+  const current = await readStoreReferences(input.root);
+  const edges = { ...current.edges };
+  for (const [from, to] of Object.entries(input.references)) {
+    if (to.length === 0) continue;
+    const source = assertStorePath(paths.store, from, 'Store reference source');
+    const targets = to.map((path) =>
+      assertStorePath(paths.store, path, 'Store reference target'),
+    );
+    edges[source] = [...new Set([...(edges[source] ?? []), ...targets])].sort();
+  }
+  const merged: StoreReferences = { referencesVersion: '1', edges };
+  await writeStoreReferences(input.root, merged);
+  return merged;
 }
 
 function generationFile(generations: string, digest: string): string {
@@ -184,6 +305,12 @@ export async function recordGeneration(input: {
   packages: Readonly<Record<string, InstalledPackageRecord>>;
   lockDigest: string;
   createdAt?: string;
+  /**
+   * Runtime store references keyed by referring store path, when a caller has
+   * discovered them. Entries for paths that are not members are the point:
+   * that is how a chain deeper than one hop is expressed.
+   */
+  references?: Readonly<Record<string, readonly string[]>>;
 }): Promise<Generation> {
   const paths = environmentPaths(input.root);
   const state = await readEnvironmentState(input.root);
@@ -210,6 +337,15 @@ export async function recordGeneration(input: {
       storePath: record.storePath,
     }))
     .sort((left, right) => (left.alias < right.alias ? -1 : 1));
+
+  // Edges go to the store ledger, not into the generation record: gc forgets
+  // non-retained generations, and edges kept there would be forgotten with
+  // them while the paths they describe are still on disk.
+  if (input.references && Object.keys(input.references).length > 0)
+    await mergeStoreReferences({
+      root: input.root,
+      references: input.references,
+    });
 
   const body: Omit<Generation, 'generationDigest'> = {
     generationVersion: '1',
@@ -328,11 +464,30 @@ export async function collectableStorePaths(input: {
   const retained =
     current && !newest.includes(current) ? [...newest, current] : newest;
 
-  const reachable = new Set(
-    retained.flatMap((generation) =>
-      generation.members.map((member) => member.storePath),
-    ),
+  // Reachability, not direct membership: collection is defined over the
+  // reference closure of the retained generations. Computed here over store
+  // paths rather than through @openpacker/closure because that operates on
+  // PREX node identities, which opm store paths are not.
+  //
+  // Edges come from the store ledger rather than from generation records,
+  // which gc deletes. They accumulate and are never replaced: a store path
+  // physically referring to another is a fact about bytes on disk, not about
+  // which generation is current.
+  const edges = new Map<string, readonly string[]>(
+    Object.entries((await readStoreReferences(input.root)).edges),
   );
+  const reachable = new Set<string>();
+  const pending = retained.flatMap((generation) =>
+    generation.members.map((member) => member.storePath),
+  );
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    // A visited set is what makes this terminate: store references are
+    // routinely cyclic.
+    if (reachable.has(current)) continue;
+    reachable.add(current);
+    pending.push(...(edges.get(current) ?? []));
+  }
   let present: string[];
   try {
     present = (await readdir(paths.store, { withFileTypes: true }))
@@ -360,6 +515,28 @@ export async function collectGarbage(input: {
 
   for (const path of collectable)
     await rm(path, { recursive: true, force: true });
+
+  // Forget edges whose source was just collected. The ledger accumulates
+  // otherwise, and an edge out of a path that no longer exists cannot describe
+  // anything on disk. Edges *into* a collected path are dropped with it, so a
+  // target that is gone is removed from every remaining source too.
+  const collected = new Set(collectable);
+  if (collectable.length > 0) {
+    const references = await readStoreReferences(input.root);
+    const edges = Object.fromEntries(
+      Object.entries(references.edges)
+        .filter(([from]) => !collected.has(from))
+        .map(
+          ([from, targets]) =>
+            [from, targets.filter((target) => !collected.has(target))] as [
+              string,
+              string[],
+            ],
+        )
+        .filter(([, targets]) => targets.length > 0),
+    );
+    await writeStoreReferences(input.root, { referencesVersion: '1', edges });
+  }
 
   const state = await readEnvironmentState(input.root);
   if (state) {
@@ -399,6 +576,15 @@ export async function environmentVariables(input: {
     (state
       ? await readGeneration(input.root, state.currentGenerationDigest)
       : undefined);
+  // A directory containing ':' cannot be expressed in PATH at all. Checked
+  // here, where PATH is built, rather than in the script writer: every
+  // consumer — `opm shell`, `--json`, anything embedding these variables —
+  // gets a truncated search path otherwise, and only one of them was quoting.
+  if (paths.bin.includes(':'))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `The project bin directory contains ':', which PATH cannot represent: ${paths.bin}`,
+    );
   return {
     OPM_PROJECT_ROOT: paths.root,
     OPM_BIN: paths.bin,
@@ -410,6 +596,35 @@ export async function environmentVariables(input: {
       : {}),
     PATH: [paths.bin, process.env.PATH ?? ''].filter(Boolean).join(':'),
   };
+}
+
+/**
+ * Quote a value for POSIX `sh`.
+ *
+ * Single quotes are the only form that interprets nothing: inside double
+ * quotes `$`, a backtick, and `\` remain live, so a project directory named
+ * `demo$(...)` would execute under the documented `eval "$(opm shell)"`. The
+ * one character single quotes cannot carry is `'` itself, which is emitted by
+ * closing the quote, escaping it, and reopening.
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * The environment as `export` statements for `eval "$(opm shell)"`.
+ *
+ * Variable names are fixed constants rather than data, so only values need
+ * quoting; a caller adding a dynamic name would have to validate it here.
+ */
+export async function environmentScript(input: {
+  root: string;
+  generation?: Generation;
+}): Promise<string> {
+  const environment = await environmentVariables(input);
+  return Object.entries(environment)
+    .map(([name, value]) => `export ${name}=${shellQuote(value)}\n`)
+    .join('');
 }
 
 /**

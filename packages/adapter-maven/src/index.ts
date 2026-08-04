@@ -15,6 +15,7 @@ import {
   formatPurl,
   header,
   json,
+  packageNodeId,
   parsePurl,
   ProviderError,
   providerErrorForStatus,
@@ -765,7 +766,15 @@ export class MavenCodec
       packaging,
       classifier,
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    // Qualifiers must be passed: Maven puts `type` and `classifier` in the
+    // PURL, so `identity.qualifiers` is non-empty for any non-jar packaging or
+    // any classifier. Omitting them here would make the node ID the projection
+    // of a different identity than the one it labels.
+    const nodeId = await packageNodeId({
+      exactPurl,
+      qualifiers: parsePurl(exactPurl).qualifiers,
+      nativeSemanticsVersion: 'maven-v1',
+    });
     const requirements: Requirement[] = [];
     const losses: SemanticLoss[] = [];
 

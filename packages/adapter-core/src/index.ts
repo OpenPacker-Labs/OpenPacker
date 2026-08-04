@@ -1,3 +1,5 @@
+import { canonicalProjectionDigest, formatDigest } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
   PackageIdentity,
   PackageInstance,
@@ -1205,4 +1207,38 @@ export function sourceRef(ecosystem: Ecosystem, endpoint: string) {
     uri: endpoint,
     extensions: { 'openpacker.dev/ecosystem': ecosystem },
   };
+}
+
+/**
+ * The `package-node-v1` node identity for a package instance.
+ *
+ * Node identity is normative: `spec/prex/v1/digest-projections.json` defines
+ * it as the digest of a projection over exact PURL, qualifiers, and native
+ * semantics version. Computing it through the projection registry rather than
+ * by hashing a convenient value keeps every codec — and anyone recomputing it
+ * from a universe — in agreement by construction.
+ */
+export async function packageNodeId(input: {
+  exactPurl: string;
+  qualifiers?: Readonly<Record<string, string>>;
+  nativeSemanticsVersion?: string;
+}): Promise<string> {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (item) => item.id === 'package-node-v1',
+  );
+  if (!projection)
+    throw new Error('package-node-v1 projection is missing from the registry');
+  const digest = await canonicalProjectionDigest(
+    {
+      identity: {
+        exactPurl: input.exactPurl,
+        qualifiers: { ...(input.qualifiers ?? {}) },
+      },
+      ...(input.nativeSemanticsVersion === undefined
+        ? {}
+        : { nativeSemantics: { version: input.nativeSemanticsVersion } }),
+    } as unknown as JsonValue,
+    projection,
+  );
+  return formatDigest(digest);
 }
