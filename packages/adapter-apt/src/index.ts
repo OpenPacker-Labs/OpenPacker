@@ -70,9 +70,12 @@ function aptName(exactPurl: string): { name: string; version?: string } {
       'INVALID_PURL',
       `Not a valid Debian package name: ${parsed.name}`,
     );
+  // Debian policy requires a version to begin with a digit (after an optional
+  // numeric epoch). Anchoring on that is what keeps a version from ever
+  // looking like an option, however it is later concatenated.
   if (
     parsed.version !== undefined &&
-    !/^[A-Za-z0-9+.~:-]+$/u.test(parsed.version)
+    !/^(?:[0-9]+:)?[0-9][A-Za-z0-9+.~:-]*$/u.test(parsed.version)
   )
     throw new ProviderError(
       'INVALID_PURL',

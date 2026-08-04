@@ -111,9 +111,24 @@ describe('planning', () => {
 
   it('refuses a version that is not a Debian version', async () => {
     const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
-    await expect(
-      apt.plan('pkg:deb/curl@1.0%20--reinstall'),
-    ).rejects.toMatchObject({ code: 'INVALID_PURL' });
+    for (const bad of [
+      'pkg:deb/curl@1.0 --reinstall',
+      // Debian versions start with a digit. Anchoring there is what stops a
+      // version ever resembling an option, however it is concatenated later.
+      'pkg:deb/curl@--allow-downgrades',
+      'pkg:deb/curl@-o',
+    ])
+      await expect(apt.plan(bad), bad).rejects.toMatchObject({
+        code: 'INVALID_PURL',
+      });
+  });
+
+  it('accepts the Debian versions that are actually legal', async () => {
+    const apt = new AptSystemProvider(fakeApt().execute, linux, () => true);
+    for (const good of ['8.5.0-2ubuntu10.11', '1:2.39-0ubuntu8', '2.8.3']) {
+      const plan = await apt.plan(`pkg:deb/curl@${good}`);
+      expect(plan.command.at(-1)).toBe(`curl=${good}`);
+    }
   });
 });
 
