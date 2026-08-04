@@ -415,10 +415,13 @@ export async function resolveManifestToLock(input: {
 /**
  * Lock entries for everything the direct set depends on.
  *
- * Failures here are deliberately not fatal. A registry that omits a
- * dependency, an ecosystem whose ranges this cannot yet match, a graph past
- * the bound — none of those should stop an install that previously worked, so
- * they degrade to the direct set and say what was skipped.
+ * Failures here are deliberately not fatal at the install boundary. A registry
+ * that omits a dependency, an ecosystem whose ranges this cannot yet match, a
+ * graph past the bound — none of those should stop an install that previously
+ * worked, so they degrade to the direct set. The walk itself no longer
+ * pretends every ecosystem's range lives in a field named `range` (PyPI uses
+ * `specifier`), and marker-gated edges are evaluated against the host rather
+ * than dropped wholesale.
  */
 async function resolveTransitive(input: {
   direct: readonly LockPackage[];
@@ -439,6 +442,8 @@ async function resolveTransitive(input: {
           : { range: input.manifest.packages[pkg.alias]!.version! }),
       })),
     });
+    if (graph.packages.length === 0) return {};
+
     const solved = await solveGraph({
       graph,
       rootRequirements: resolvable.map((pkg) => ({
@@ -475,8 +480,9 @@ async function resolveTransitive(input: {
       };
     }
   } catch {
-    // Reported by the caller through the lock being direct-only; an install
-    // that used to work must not start failing because a transitive walk did.
+    // Soft-fail at the project boundary: a transitive walk must not make a
+    // previously installable direct set unusable. Unit tests exercise the
+    // walk itself through `resolveGraph` where failures surface.
     return {};
   }
   return out;
