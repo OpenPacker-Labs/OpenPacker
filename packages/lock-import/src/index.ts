@@ -14,6 +14,7 @@ import { MavenCodec } from '@openpacker/adapter-maven';
 import { NpmCodec } from '@openpacker/adapter-npm';
 import { NugetCodec } from '@openpacker/adapter-nuget';
 import { PypiCodec } from '@openpacker/adapter-pypi';
+import { parse as parseYaml } from 'yaml';
 import {
   canonicalDigest,
   compareCanonicalStrings,
@@ -35,6 +36,7 @@ import type {
 
 export type LockFormat =
   | 'package-lock'
+  | 'pnpm-lock'
   | 'cargo-lock'
   | 'nuget-assets'
   | 'nuget-packages-lock'
@@ -126,6 +128,14 @@ function defaultHandlers(
       },
     ],
     [
+      'pnpm-lock',
+      {
+        ecosystem: 'npm',
+        codec: npm,
+        parse: (raw) => parsePnpmLock(asText(raw)),
+      },
+    ],
+    [
       'cargo-lock',
       {
         ecosystem: 'cargo',
@@ -192,6 +202,79 @@ function defaultHandlers(
       },
     ],
   ]);
+}
+
+/**
+ * A `pnpm-lock.yaml`, as the package-lock document the npm codec reads.
+ *
+ * pnpm resolves against the same registry npm does, so the packages are the
+ * same packages; only the lock format differs. Converting here rather than
+ * teaching the npm codec a second dialect keeps one npm translation with one
+ * set of semantics.
+ *
+ * pnpm keys packages as `name@version`, with scoped names carrying their own
+ * `@` — `@scope/pkg@1.0.0`. The split is on the last `@` for that reason.
+ */
+export function parsePnpmLock(text: string): {
+  lockfileVersion: 3;
+  packages: Record<
+    string,
+    { version: string; resolved?: string; integrity?: string }
+  >;
+} {
+  const document = parseYaml(text) as {
+    lockfileVersion?: unknown;
+    packages?: Record<
+      string,
+      { resolution?: { integrity?: string; tarball?: string } }
+    >;
+  };
+  const version = String(document.lockfileVersion ?? '');
+  // v5 keyed packages as `/name/version`, a different shape entirely. Refusing
+  // beats importing a v5 file as though it were v6+ and getting names wrong.
+  if (!/^(?:6|7|8|9)/u.test(version))
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `Unsupported pnpm lockfileVersion "${version}"; 6.0 and later are supported.`,
+    );
+  if (!document.packages || typeof document.packages !== 'object')
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'pnpm-lock.yaml has no packages section',
+    );
+
+  const packages: Record<
+    string,
+    { version: string; resolved?: string; integrity?: string }
+  > = {};
+  for (const [key, value] of Object.entries(document.packages)) {
+    // Peer-dependency suffixes like `(react@18.0.0)` describe how a package was
+    // resolved, not which package it is.
+    const identifier = key.split('(')[0]!;
+    const at = identifier.lastIndexOf('@');
+    if (at <= 0) continue;
+    const name = identifier.slice(0, at);
+    const packageVersion = identifier.slice(at + 1);
+    if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name)) continue;
+    if (!/^[0-9]/u.test(packageVersion)) continue;
+    // package-lock keys packages by install path; `node_modules/<name>` is the
+    // form the npm codec reads.
+    packages[`node_modules/${name}`] = {
+      version: packageVersion,
+      ...(value?.resolution?.tarball
+        ? { resolved: value.resolution.tarball }
+        : {}),
+      ...(value?.resolution?.integrity
+        ? { integrity: value.resolution.integrity }
+        : {}),
+    };
+  }
+  if (Object.keys(packages).length === 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'pnpm-lock.yaml contains no importable packages',
+    );
+  return { lockfileVersion: 3, packages };
 }
 
 /**
@@ -296,6 +379,8 @@ export function detectLockFormat(
       )
   )
     return 'gradle-lockfile';
+  if (/^lockfileVersion:\s*'?[6-9]/mu.test(text) && /^packages:/mu.test(text))
+    return 'pnpm-lock';
   // Last, and only when every meaningful line is an exact pin. A loose test
   // here would claim any text file is a requirements.txt, so this asks for
   // proof rather than a hint.

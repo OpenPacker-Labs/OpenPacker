@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   detectLockFormat,
   parseRequirementsTxt,
+  parsePnpmLock,
   planLockCapture,
   planNativeLockImport,
 } from './index.js';
@@ -184,5 +185,43 @@ describe('requirements.txt import', () => {
     );
     // A loose test here would claim any text file is a requirements.txt.
     expect(() => detectLockFormat('requests>=2.0\n')).toThrow(/detect/u);
+  });
+});
+
+describe('pnpm-lock.yaml import', () => {
+  const lock = (body: string) => `lockfileVersion: '9.0'\npackages:\n${body}`;
+
+  it('splits scoped names on the last @, not the first', () => {
+    // `@scope/pkg@1.2.3` carries two @; splitting on the first would name the
+    // package "" at version "scope/pkg@1.2.3".
+    const parsed = parsePnpmLock(
+      lock("  '@scope/pkg@1.2.3':\n    resolution: {integrity: sha512-x}\n"),
+    );
+    expect(parsed.packages['node_modules/@scope/pkg']?.version).toBe('1.2.3');
+  });
+
+  it('drops the peer-dependency suffix, which describes resolution not identity', () => {
+    const parsed = parsePnpmLock(
+      lock(
+        "  'react-dom@18.2.0(react@18.2.0)':\n    resolution: {integrity: sha512-y}\n",
+      ),
+    );
+    expect(parsed.packages['node_modules/react-dom']?.version).toBe('18.2.0');
+  });
+
+  it('refuses lockfileVersion 5, whose keys mean something else', () => {
+    // v5 keys are `/name/version`; importing one as v6+ would produce wrong
+    // names rather than an error.
+    expect(() =>
+      parsePnpmLock("lockfileVersion: '5.4'\npackages:\n  /a/1.0.0: {}\n"),
+    ).toThrow(/lockfileVersion/u);
+  });
+
+  it('is detected from its version and packages sections', () => {
+    expect(
+      detectLockFormat(
+        lock("  'a@1.0.0':\n    resolution: {integrity: sha512-z}\n"),
+      ),
+    ).toBe('pnpm-lock');
   });
 });
