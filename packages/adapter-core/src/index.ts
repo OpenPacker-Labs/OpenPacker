@@ -121,6 +121,11 @@ export interface ProviderCapabilities {
     | 'artifact'
     | 'snapshot'
     | 'enrich'
+    // Side-effecting classes. A provider that lists these is stating that it
+    // changes the host, which is what lets system package managers plug in at
+    // all; one that omits them is stating it does not.
+    | 'install'
+    | 'run'
   )[];
   readonly purlTypes: readonly Ecosystem[];
   readonly qualifierSupport: 'complete' | 'partial' | 'none';
@@ -177,6 +182,95 @@ export interface EnrichmentResult {
   source: ProviderRecord;
   warnings: readonly ProviderWarning[];
   semanticLoss: readonly SemanticLoss[];
+}
+
+/**
+ * How a package manager that installs onto the host plugs into PREX.
+ *
+ * apt, winget, nix and the ecosystem runners (`npx`, `pipx`, `uvx`, `dnx`)
+ * cannot be modelled as pure metadata: doing their job means changing
+ * something. A `CatalogProvider` answers "what is this and where does it come
+ * from"; this answers "make it present", and says honestly what it can and
+ * cannot promise about the result.
+ *
+ * Implementations are expected to shell out to the native tool. That is the
+ * point — PREX is the interface, not a reimplementation of every installer.
+ */
+export interface InstallerProvider {
+  readonly providerId: string;
+  readonly capabilities: ProviderCapabilities;
+
+  /**
+   * Whether this provider can act on this host right now.
+   *
+   * Separate from `capabilities` because the answer is environmental: winget
+   * on Linux, apt on Windows, or a missing binary. Reported rather than
+   * thrown, so a caller can choose another provider.
+   */
+  available(signal?: AbortSignal): Promise<InstallerAvailability>;
+
+  /** What would happen, without doing it. */
+  plan(exactPurl: string, options?: InstallOptions): Promise<InstallPlan>;
+
+  /**
+   * Perform the installation.
+   *
+   * The result records the command actually run, because a system install is
+   * not content-addressed and the receipt is the only account of it.
+   */
+  install(exactPurl: string, options?: InstallOptions): Promise<InstallOutcome>;
+}
+
+export interface InstallerAvailability {
+  available: boolean;
+  /** Why not, when unavailable — a missing tool, wrong platform, no privilege. */
+  reason?: string;
+  /** The native tool this provider drives, when it found one. */
+  tool?: { name: string; version?: string; path?: string };
+}
+
+export interface InstallOptions {
+  /** Refuse anything that would touch the network. */
+  offline?: boolean;
+  /** Do not perform the change; report what would happen. */
+  dryRun?: boolean;
+  /**
+   * Consent to a change that requires elevation.
+   *
+   * Off by default. A system-wide install is not something to perform because
+   * a PURL happened to name a system package.
+   */
+  allowElevation?: boolean;
+  signal?: AbortSignal;
+  /** Where a provider that can install without root should put things. */
+  prefix?: string;
+}
+
+export interface InstallPlan {
+  exactPurl: string;
+  /** The exact argv this would run, so a caller can show it before consenting. */
+  command: readonly string[];
+  /** True when the command needs root or administrator rights. */
+  requiresElevation: boolean;
+  /** True when the change cannot be undone by PREX's own generation ledger. */
+  irreversible: boolean;
+  /**
+   * What this provider cannot promise about the outcome.
+   *
+   * A system installer runs vendor scripts and mutates paths PREX does not
+   * own, so claims like byte-verification and rollback do not survive. Saying
+   * so is the difference between a plug-in point and an overclaim.
+   */
+  semanticLoss: readonly SemanticLoss[];
+}
+
+export interface InstallOutcome extends InstallPlan {
+  performed: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  /** When the native tool reports what it settled on, the resolved version. */
+  installedVersion?: string;
 }
 
 export interface EnrichmentProvider {
