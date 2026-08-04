@@ -15,6 +15,7 @@ import { NpmCodec } from '@openpacker/adapter-npm';
 import { NugetCodec } from '@openpacker/adapter-nuget';
 import { PypiCodec } from '@openpacker/adapter-pypi';
 import { parse as parseYaml } from 'yaml';
+import { parse as parseToml } from 'smol-toml';
 import {
   canonicalDigest,
   compareCanonicalStrings,
@@ -41,6 +42,7 @@ export type LockFormat =
   | 'nuget-assets'
   | 'nuget-packages-lock'
   | 'uv-lock'
+  | 'poetry-lock'
   | 'requirements-txt'
   | 'go-sum'
   | 'gradle-lockfile'
@@ -174,6 +176,14 @@ function defaultHandlers(
       },
     ],
     [
+      'poetry-lock',
+      {
+        ecosystem: 'pypi',
+        codec: pypi,
+        parse: (raw) => parsePoetryLock(asText(raw)),
+      },
+    ],
+    [
       'requirements-txt',
       {
         ecosystem: 'pypi',
@@ -202,6 +212,50 @@ function defaultHandlers(
       },
     ],
   ]);
+}
+
+/**
+ * A `poetry.lock`, as the uv.lock document the pypi codec reads.
+ *
+ * Poetry pins exactly like uv does — `[[package]]` entries with a name and a
+ * version — so the conversion is a rename rather than a translation. What it
+ * does not carry is uv's per-package artifact hashes in the same shape, and
+ * that difference is where the import loses information rather than inventing
+ * it.
+ */
+export function parsePoetryLock(text: string): {
+  version: 1;
+  package: { name: string; version: string }[];
+} {
+  const document = parseToml(text) as {
+    package?: { name?: unknown; version?: unknown }[];
+    metadata?: { 'lock-version'?: unknown };
+  };
+  if (!Array.isArray(document.package))
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'poetry.lock has no [[package]] entries',
+    );
+
+  const packages: { name: string; version: string }[] = [];
+  const seen = new Set<string>();
+  for (const entry of document.package) {
+    if (typeof entry?.name !== 'string' || typeof entry.version !== 'string')
+      continue;
+    // Normalised the way PyPI normalises, so Foo_Bar and foo-bar are one
+    // distribution — the same rule requirements.txt import applies.
+    const name = entry.name.toLowerCase().replace(/[-_.]+/gu, '-');
+    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    packages.push({ name, version: entry.version });
+  }
+  if (packages.length === 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'poetry.lock contains no importable packages',
+    );
+  return { version: 1, package: packages };
 }
 
 /**
@@ -381,6 +435,11 @@ export function detectLockFormat(
     return 'gradle-lockfile';
   if (/^lockfileVersion:\s*'?[6-9]/mu.test(text) && /^packages:/mu.test(text))
     return 'pnpm-lock';
+  // Poetry writes a [metadata] lock-version alongside [[package]] tables;
+  // Cargo.lock has [[package]] too, so the metadata block is what separates
+  // them and it is checked before the cargo test above would match.
+  if (/^\[\[package\]\]/mu.test(text) && /^lock-version\s*=/mu.test(text))
+    return 'poetry-lock';
   // Last, and only when every meaningful line is an exact pin. A loose test
   // here would claim any text file is a requirements.txt, so this asks for
   // proof rather than a hint.
