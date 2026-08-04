@@ -8,6 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { quote } from 'shell-quote';
 import {
   OpmError,
   type InstalledPackageRecord,
@@ -601,14 +602,15 @@ export async function environmentVariables(input: {
 /**
  * Quote a value for POSIX `sh`.
  *
- * Single quotes are the only form that interprets nothing: inside double
- * quotes `$`, a backtick, and `\` remain live, so a project directory named
- * `demo$(...)` would execute under the documented `eval "$(opm shell)"`. The
- * one character single quotes cannot carry is `'` itself, which is emitted by
- * closing the quote, escaping it, and reopening.
+ * Delegated to `shell-quote` rather than written here. The bug this replaced
+ * used `JSON.stringify`, where `$`, a backtick and `\` stay live, so a project
+ * directory named `demo$(...)` executed under the documented
+ * `eval "$(opm shell)"`. Shell quoting has more edge cases than it appears to
+ * — `!` under history expansion, `#`, globs, embedded quotes — and getting
+ * them right is not this project's problem to solve.
  */
 export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
+  return quote([value]);
 }
 
 /**

@@ -24,5 +24,8 @@
   "dependencies": {
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0"
+  },
+  "devDependencies": {
+    "packageurl-js": "2.0.1"
   }
 }

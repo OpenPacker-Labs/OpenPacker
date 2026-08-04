@@ -17,3 +17,6 @@ thiserror.workspace = true
 name = "bounded_oracle"
 harness = false
 
+[dev-dependencies]
+serde_jcs = "0.2.0"
+

@@ -31,6 +31,7 @@ Accepted decisions:
 27. [Environment generations are an append-only ledger](0027-environment-generations.md)
 28. [Amendments supersede interpretation](0028-amendments-supersede-interpretation.md)
 29. [Nix ecosystem mapping](0029-nix-ecosystem-mapping.md)
+30. [Build versus buy for standard primitives](0030-build-versus-buy-for-primitives.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.
