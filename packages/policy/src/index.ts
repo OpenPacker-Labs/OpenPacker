@@ -6,6 +6,7 @@ import type {
   Digest,
   EvidenceStatus,
   LifecycleState,
+  PolicyInput,
   SemanticLoss,
 } from '@openpacker/contracts';
 
@@ -472,4 +473,108 @@ export async function evaluatePolicy(
       compareCanonicalStrings(left.code, right.code),
     ),
   };
+}
+
+/**
+ * Map normative PREX PolicyInput (schema) onto the evaluation PolicyDocument.
+ * Supply-chain knobs are optional on PolicyInput; absent means not configured.
+ */
+export function policyDocumentFromPolicyInput(
+  input: PolicyInput,
+): PolicyDocument {
+  const document: PolicyDocument = {
+    allowYanked: input.allowYanked,
+    allowQuarantined: input.allowQuarantined,
+    requiredEvidence: [...input.requiredEvidence],
+    semanticLossMaximum: input.semanticLossMaximum,
+  };
+  if (input.permitForensicDigestMaterialization !== undefined)
+    document.permitForensicDigestMaterialization =
+      input.permitForensicDigestMaterialization;
+  if (input.deniedSemanticLossCodes)
+    document.deniedSemanticLossCodes = [...input.deniedSemanticLossCodes];
+  if (input.allowedProviderIds)
+    document.allowedProviders = [...input.allowedProviderIds];
+  if (input.allowedArtifactSourceSchemes)
+    document.allowedSourceSchemes = [...input.allowedArtifactSourceSchemes];
+  if (input.allowedTargets) {
+    document.allowedTargets = input.allowedTargets.flatMap((target) => {
+      if (!('os' in target) && !('architecture' in target)) return [];
+      const os =
+        'os' in target && typeof target.os === 'string' ? target.os : undefined;
+      const architecture =
+        'architecture' in target && typeof target.architecture === 'string'
+          ? target.architecture
+          : undefined;
+      return [
+        {
+          ...(os === undefined ? {} : { os }),
+          ...(architecture === undefined ? {} : { architecture }),
+        },
+      ];
+    });
+  }
+  if (input.maximumArtifactSize !== undefined)
+    document.maximumArtifactSize = input.maximumArtifactSize;
+  if (input.maximumExpandedMaterializationSize !== undefined)
+    document.maximumExpandedSize = input.maximumExpandedMaterializationSize;
+  if (input.licenses?.denied)
+    document.deniedLicenses = [...input.licenses.denied];
+  if (input.acceptedSignerIdentityPatterns)
+    document.acceptedIdentities = [...input.acceptedSignerIdentityPatterns];
+  if (input.sigstore?.issuerPatterns)
+    document.acceptedIssuers = [...input.sigstore.issuerPatterns];
+  if (input.minimumReleaseAgeMinutes !== undefined)
+    document.minimumReleaseAgeMinutes = input.minimumReleaseAgeMinutes;
+  if (input.minimumReleaseAgeExclude)
+    document.minimumReleaseAgeExclude = [...input.minimumReleaseAgeExclude];
+  if (input.minimumReleaseAgeStrict !== undefined)
+    document.minimumReleaseAgeStrict = input.minimumReleaseAgeStrict;
+  if (input.trustPolicy !== undefined) document.trustPolicy = input.trustPolicy;
+  if (input.trustPolicyExclude)
+    document.trustPolicyExclude = [...input.trustPolicyExclude];
+  if (input.blockExoticSources) {
+    document.blockExoticSources = {
+      ...(input.blockExoticSources.direct === undefined
+        ? {}
+        : { direct: input.blockExoticSources.direct }),
+      ...(input.blockExoticSources.transitive === undefined
+        ? {}
+        : { transitive: input.blockExoticSources.transitive }),
+    };
+  }
+  if (input.allowLifecycleScripts !== undefined)
+    document.allowLifecycleScripts = input.allowLifecycleScripts;
+  if (input.allowedLifecycleScriptPackages)
+    document.allowedLifecycleScriptPackages = [
+      ...input.allowedLifecycleScriptPackages,
+    ];
+  if (input.expectedRegistryId !== undefined)
+    document.expectedRegistryId = input.expectedRegistryId;
+  if (input.requiredSourceSnapshotDigests !== undefined)
+    document.requireExactSourceSnapshot =
+      input.requiredSourceSnapshotDigests.length > 0;
+  return document;
+}
+
+/** Type guard for lock/project persistence of trust tiers. */
+export function isTrustTier(value: unknown): value is TrustTier {
+  return (
+    value === 'trusted-publisher' ||
+    value === 'provenance' ||
+    value === 'registry-attested' ||
+    value === 'unsigned' ||
+    value === 'unknown'
+  );
+}
+
+export function isSourceKind(value: unknown): value is SourceKind {
+  return (
+    value === 'registry' ||
+    value === 'git' ||
+    value === 'tarball' ||
+    value === 'path' ||
+    value === 'oci' ||
+    value === 'exotic'
+  );
 }

@@ -45,23 +45,45 @@ is hard-denied), not a silent allow.
 
 ## Policy profile (recommended production)
 
+Normative knobs live on PREX `PolicyInput` (schema) and are evaluated by
+`@openpacker/policy`. Projects commit them under `[policy]` in `opm.toml` (no
+`${ENV}` expansion in registry pins):
+
+```toml
+[policy]
+allow_yanked = false
+allow_quarantined = false
+semantic_loss_maximum = "warning"
+minimum_release_age_minutes = 1440
+minimum_release_age_strict = false
+trust_policy = "no-downgrade"
+block_exotic_transitive = true
+block_exotic_direct = false
+allow_lifecycle_scripts = false
+expected_registry_id = "urn:openpacker:registry:npmjs-org"
+```
+
+Equivalent JSON `PolicyInput`:
+
 ```json
 {
   "allowYanked": false,
   "allowQuarantined": false,
   "requiredEvidence": [],
   "semanticLossMaximum": "warning",
-  "requireExactSourceSnapshot": true,
   "allowLifecycleScripts": false,
   "minimumReleaseAgeMinutes": 1440,
   "trustPolicy": "no-downgrade",
-  "blockExoticSources": { "transitive": true, "direct": false },
-  "allowedSourceSchemes": ["https", "file"]
+  "blockExoticSources": { "transitive": true, "direct": false }
 }
 ```
 
 Tune excludes (`minimumReleaseAgeExclude`, `trustPolicyExclude`) only for
 packages you have reviewed — same spirit as pnpm’s exclude lists.
+
+Prior trust tier is persisted on `opm.lock.json` packages as `trustLevel` so
+`trustPolicy: no-downgrade` can compare upgrades against the last selected
+release.
 
 ## Adapter obligations
 

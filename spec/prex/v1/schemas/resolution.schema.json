@@ -637,6 +637,68 @@
         "permitForensicDigestMaterialization": {
           "type": "boolean"
         },
+        "minimumReleaseAgeMinutes": {
+          "$comment": "pnpm-aligned detection-window quarantine: minutes after publish before a version may be selected.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5256000
+        },
+        "minimumReleaseAgeExclude": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "minimumReleaseAgeStrict": {
+          "$comment": "When true, missing publishedAt under a minimum age policy is policy-denied rather than not-provided.",
+          "type": "boolean"
+        },
+        "trustPolicy": {
+          "$comment": "no-downgrade refuses a candidate whose trust tier is lower than a prior selected release.",
+          "enum": ["none", "no-downgrade"]
+        },
+        "trustPolicyExclude": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "blockExoticSources": {
+          "type": "object",
+          "properties": {
+            "direct": { "type": "boolean" },
+            "transitive": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "allowLifecycleScripts": {
+          "$comment": "Default posture is refuse execution of dependency lifecycle scripts.",
+          "type": "boolean"
+        },
+        "allowedLifecycleScriptPackages": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "expectedRegistryId": {
+          "$comment": "Pin expected Registry Definition registryId (named-registry spirit).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
         "extensions": {
           "$ref": "common.schema.json#/$defs/Extensions"
         },

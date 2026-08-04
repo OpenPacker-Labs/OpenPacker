@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest';
 import {
   evaluatePolicy,
+  policyDocumentFromPolicyInput,
   TRUST_TIER_RANK,
   type PolicyDocument,
 } from '../src/index.js';
+import type { PolicyInput } from '@openpacker/contracts';
 
 const policy: PolicyDocument = {
   allowYanked: false,
@@ -302,4 +304,25 @@ test('registry pin refuses a different registry authority', async () => {
     registryId: 'urn:openpacker:registry:npmjs-org',
   });
   expect(ok.decision).toBe('allow');
+});
+
+test('policyDocumentFromPolicyInput promotes normative schema knobs', async () => {
+  const input: PolicyInput = {
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'error',
+    requiredEvidence: ['tuf'],
+    minimumReleaseAgeMinutes: 1440,
+    minimumReleaseAgeStrict: true,
+    trustPolicy: 'no-downgrade',
+    blockExoticSources: { transitive: true, direct: false },
+    allowLifecycleScripts: false,
+    expectedRegistryId: 'urn:openpacker:registry:npmjs-org',
+  };
+  const document = policyDocumentFromPolicyInput(input);
+  expect(document.minimumReleaseAgeMinutes).toBe(1440);
+  expect(document.trustPolicy).toBe('no-downgrade');
+  expect(document.blockExoticSources?.transitive).toBe(true);
+  expect(document.expectedRegistryId).toBe('urn:openpacker:registry:npmjs-org');
+  expect(document.requiredEvidence).toEqual(['tuf']);
 });

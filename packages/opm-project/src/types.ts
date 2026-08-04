@@ -1,4 +1,8 @@
+import type { PolicyInput } from '@openpacker/contracts';
+import type { SourceKind, TrustTier } from '@openpacker/policy';
+
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
+export type { SourceKind, TrustTier };
 
 export interface PackageRequirement {
   /** Local alias used by opm list / remove / opmx */
@@ -42,6 +46,11 @@ export interface OpmManifest {
     offline: boolean;
     layout: 'opm';
   };
+  /**
+   * Committed supply-chain / PREX policy profile (PolicyInput subset).
+   * Digested when evaluated; no secret expansion in registry URLs.
+   */
+  policy?: PolicyInput;
 }
 
 export interface LockPackage {
@@ -57,6 +66,14 @@ export interface LockPackage {
   bins: readonly BinDeclaration[];
   reason: 'direct' | 'transitive';
   ecosystem: string;
+  /** Captured trust tier for no-downgrade on upgrade. */
+  trustLevel?: TrustTier;
+  /** Registry-reported publish time when captured. */
+  publishedAt?: string;
+  /** Registry Definition registryId when known. */
+  registryId?: string;
+  /** How the package source was obtained. */
+  sourceKind?: SourceKind;
 }
 
 export interface OpmLockfile {

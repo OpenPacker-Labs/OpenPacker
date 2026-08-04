@@ -35,6 +35,7 @@
     "@openpacker/contracts": "0.1.0",
     "@openpacker/embedded": "0.1.0",
     "@openpacker/materializer": "0.1.0",
+    "@openpacker/policy": "0.1.0",
     "shell-quote": "1.10.0"
   },
   "devDependencies": {

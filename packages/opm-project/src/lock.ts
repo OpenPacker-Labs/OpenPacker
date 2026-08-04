@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import type { LockPackage, OpmLockfile } from './types.js';
 import { OpmError } from './types.js';
 
@@ -130,6 +131,36 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (reason !== 'direct' && reason !== 'transitive') {
     throw new OpmError('INVALID_LOCK', `Package "${alias}" has invalid reason`);
   }
+  if (pkg.trustLevel !== undefined && !isTrustTier(pkg.trustLevel)) {
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid trustLevel`,
+    );
+  }
+  if (pkg.sourceKind !== undefined && !isSourceKind(pkg.sourceKind)) {
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid sourceKind`,
+    );
+  }
+  if (
+    pkg.publishedAt !== undefined &&
+    (typeof pkg.publishedAt !== 'string' || pkg.publishedAt === '')
+  ) {
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid publishedAt`,
+    );
+  }
+  if (
+    pkg.registryId !== undefined &&
+    (typeof pkg.registryId !== 'string' || pkg.registryId === '')
+  ) {
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid registryId`,
+    );
+  }
   return {
     alias: typeof pkg.alias === 'string' ? pkg.alias : alias,
     purl: requiredString('purl'),
@@ -143,6 +174,14 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     bins,
     reason,
     ecosystem: requiredString('ecosystem'),
+    ...(isTrustTier(pkg.trustLevel) ? { trustLevel: pkg.trustLevel } : {}),
+    ...(typeof pkg.publishedAt === 'string'
+      ? { publishedAt: pkg.publishedAt }
+      : {}),
+    ...(typeof pkg.registryId === 'string'
+      ? { registryId: pkg.registryId }
+      : {}),
+    ...(isSourceKind(pkg.sourceKind) ? { sourceKind: pkg.sourceKind } : {}),
   };
 }
 

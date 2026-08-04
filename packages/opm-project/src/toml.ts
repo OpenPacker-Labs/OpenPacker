@@ -1,9 +1,11 @@
+import type { PolicyInput } from '@openpacker/contracts';
 import type { OpmManifest, PackageRequirement } from './types.js';
 import { OpmError } from './types.js';
 
 /**
  * Minimal TOML subset reader/writer for opm.toml.
- * Supports: [section], [section.key], string/bool/array-of-string, dotted keys.
+ * Supports: [section], string/bool/number/array-of-string.
+ * [policy] holds committed supply-chain governance (no secret expansion).
  */
 
 export function defaultManifest(name = 'project'): OpmManifest {
@@ -62,6 +64,65 @@ export function serializeManifest(manifest: OpmManifest): string {
   lines.push(`offline = ${manifest.options.offline ? 'true' : 'false'}`);
   lines.push(`layout = ${tomlString(manifest.options.layout)}`);
   lines.push('');
+
+  if (manifest.policy) {
+    lines.push(
+      '# Supply-chain / PREX policy (committed; no secrets in registry URLs)',
+    );
+    lines.push('[policy]');
+    const policy = manifest.policy;
+    lines.push(`allow_yanked = ${policy.allowYanked ? 'true' : 'false'}`);
+    lines.push(
+      `allow_quarantined = ${policy.allowQuarantined ? 'true' : 'false'}`,
+    );
+    lines.push(
+      `semantic_loss_maximum = ${tomlString(policy.semanticLossMaximum)}`,
+    );
+    if (policy.requiredEvidence.length > 0)
+      lines.push(
+        `required_evidence = ${tomlStringArray(policy.requiredEvidence)}`,
+      );
+    if (policy.minimumReleaseAgeMinutes !== undefined)
+      lines.push(
+        `minimum_release_age_minutes = ${policy.minimumReleaseAgeMinutes}`,
+      );
+    if (policy.minimumReleaseAgeStrict !== undefined)
+      lines.push(
+        `minimum_release_age_strict = ${policy.minimumReleaseAgeStrict ? 'true' : 'false'}`,
+      );
+    if (policy.minimumReleaseAgeExclude?.length)
+      lines.push(
+        `minimum_release_age_exclude = ${tomlStringArray(policy.minimumReleaseAgeExclude)}`,
+      );
+    if (policy.trustPolicy !== undefined)
+      lines.push(`trust_policy = ${tomlString(policy.trustPolicy)}`);
+    if (policy.trustPolicyExclude?.length)
+      lines.push(
+        `trust_policy_exclude = ${tomlStringArray(policy.trustPolicyExclude)}`,
+      );
+    if (policy.blockExoticSources?.transitive !== undefined)
+      lines.push(
+        `block_exotic_transitive = ${policy.blockExoticSources.transitive ? 'true' : 'false'}`,
+      );
+    if (policy.blockExoticSources?.direct !== undefined)
+      lines.push(
+        `block_exotic_direct = ${policy.blockExoticSources.direct ? 'true' : 'false'}`,
+      );
+    if (policy.allowLifecycleScripts !== undefined)
+      lines.push(
+        `allow_lifecycle_scripts = ${policy.allowLifecycleScripts ? 'true' : 'false'}`,
+      );
+    if (policy.allowedLifecycleScriptPackages?.length)
+      lines.push(
+        `allowed_lifecycle_script_packages = ${tomlStringArray(policy.allowedLifecycleScriptPackages)}`,
+      );
+    if (policy.expectedRegistryId !== undefined)
+      lines.push(
+        `expected_registry_id = ${tomlString(policy.expectedRegistryId)}`,
+      );
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -79,6 +140,9 @@ export function parseManifest(text: string): OpmManifest {
       bin_paths?: string[];
     }
   >();
+  const policyScratch: Record<string, string | boolean | number | string[]> =
+    {};
+  let hasPolicy = false;
 
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
@@ -89,9 +153,10 @@ export function parseManifest(text: string): OpmManifest {
     const header = line.match(/^\[([^\]]+)\]$/);
     if (header) {
       const name = header[1] ?? '';
-      if (name === 'project' || name === 'options') {
+      if (name === 'project' || name === 'options' || name === 'policy') {
         section = name;
         packageAlias = undefined;
+        if (name === 'policy') hasPolicy = true;
       } else if (name.startsWith('packages.')) {
         section = 'packages';
         packageAlias = name.slice('packages.'.length);
@@ -145,6 +210,8 @@ export function parseManifest(text: string): OpmManifest {
           'INVALID_MANIFEST',
           `Unknown options field "${key}" at line ${i + 1}`,
         );
+    } else if (section === 'policy') {
+      policyScratch[key] = value as string | boolean | number | string[];
     } else if (section === 'packages') {
       if (packageAlias === undefined)
         throw new OpmError(
@@ -207,7 +274,89 @@ export function parseManifest(text: string): OpmManifest {
     manifest.packages[alias] = requirement;
   }
 
+  if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
+
   return manifest;
+}
+
+function policyFromScratch(
+  scratch: Record<string, string | boolean | number | string[]>,
+): PolicyInput {
+  const bool = (key: string, fallback: boolean): boolean => {
+    const value = scratch[key];
+    return typeof value === 'boolean' ? value : fallback;
+  };
+  const str = (key: string): string | undefined => {
+    const value = scratch[key];
+    return typeof value === 'string' ? value : undefined;
+  };
+  const num = (key: string): number | undefined => {
+    const value = scratch[key];
+    return typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
+  };
+  const arr = (key: string): string[] | undefined => {
+    const value = scratch[key];
+    return Array.isArray(value) ? value : undefined;
+  };
+
+  const semantic = str('semantic_loss_maximum') ?? 'warning';
+  if (semantic !== 'info' && semantic !== 'warning' && semantic !== 'error')
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `policy.semantic_loss_maximum must be info|warning|error`,
+    );
+
+  const trust = str('trust_policy');
+  if (trust !== undefined && trust !== 'none' && trust !== 'no-downgrade')
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `policy.trust_policy must be none|no-downgrade`,
+    );
+
+  const policy: PolicyInput = {
+    allowYanked: bool('allow_yanked', false),
+    allowQuarantined: bool('allow_quarantined', false),
+    semanticLossMaximum: semantic,
+    requiredEvidence: arr('required_evidence') ?? [],
+  };
+
+  const age = num('minimum_release_age_minutes');
+  if (age !== undefined) policy.minimumReleaseAgeMinutes = age;
+  if (scratch.minimum_release_age_strict !== undefined)
+    policy.minimumReleaseAgeStrict = bool('minimum_release_age_strict', false);
+  const ageExclude = arr('minimum_release_age_exclude');
+  if (ageExclude) policy.minimumReleaseAgeExclude = ageExclude;
+  if (trust !== undefined) policy.trustPolicy = trust;
+  const trustExclude = arr('trust_policy_exclude');
+  if (trustExclude) policy.trustPolicyExclude = trustExclude;
+
+  const blockTransitive = scratch.block_exotic_transitive;
+  const blockDirect = scratch.block_exotic_direct;
+  if (blockTransitive !== undefined || blockDirect !== undefined) {
+    policy.blockExoticSources = {
+      ...(typeof blockTransitive === 'boolean'
+        ? { transitive: blockTransitive }
+        : {}),
+      ...(typeof blockDirect === 'boolean' ? { direct: blockDirect } : {}),
+    };
+  }
+  if (scratch.allow_lifecycle_scripts !== undefined)
+    policy.allowLifecycleScripts = bool('allow_lifecycle_scripts', false);
+  const allowedScripts = arr('allowed_lifecycle_script_packages');
+  if (allowedScripts) policy.allowedLifecycleScriptPackages = allowedScripts;
+  const registryId = str('expected_registry_id');
+  if (registryId !== undefined) {
+    // Refuse secret-like env placeholders in committed registry pins (pnpm lesson).
+    if (/\$\{[^}]+\}/.test(registryId))
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'policy.expected_registry_id must not contain ${ENV} expansion (committed config cannot leak secrets via registry settings)',
+      );
+    policy.expectedRegistryId = registryId;
+  }
+  return policy;
 }
 
 function stripComment(line: string): string {
@@ -223,10 +372,12 @@ function stripComment(line: string): string {
 function parseTomlValue(
   raw: string,
   line: number,
-): string | boolean | string[] {
+): string | boolean | number | string[] {
   const value = raw.trim();
   if (value === 'true') return true;
   if (value === 'false') return false;
+  if (/^-?\d+$/.test(value)) return Number(value);
+  if (/^-?\d+\.\d+$/.test(value)) return Number(value);
   if (value.startsWith('"')) {
     if (!value.endsWith('"') || value.length < 2) {
       throw new OpmError(

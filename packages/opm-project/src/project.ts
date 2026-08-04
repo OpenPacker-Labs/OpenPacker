@@ -48,6 +48,15 @@ import {
   parsePackageSpec,
   stripPurlVersion,
 } from './spec.js';
+import {
+  assertSupplyChainAllowed,
+  captureFactsFromCatalog,
+  captureFactsFromSourceUri,
+  lockPackageSupplyChainFields,
+  priorTrustFromLock,
+  projectPolicyDocument,
+} from './supply-chain.js';
+import { providerFor } from './registry.js';
 import { defaultManifest, parseManifest, serializeManifest } from './toml.js';
 import { discoverNpmBins } from './bins.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -439,6 +448,7 @@ export async function resolveManifestToLock(input: {
 
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
+  const priorLock = await readLockfile(paths.lock);
 
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
     const locked = await resolveRequirement({
@@ -447,6 +457,8 @@ export async function resolveManifestToLock(input: {
       req,
       offline: input.offline,
       catalog,
+      manifest: input.manifest,
+      ...(priorLock === undefined ? {} : { priorLock }),
     });
     lock.packages[alias] = locked;
   }
@@ -573,6 +585,8 @@ async function resolveRequirement(input: {
       bins?: readonly { name: string; path: string }[];
     }
   >;
+  manifest: OpmManifest;
+  priorLock?: OpmLockfile | undefined;
 }): Promise<LockPackage> {
   const ecosystem = ecosystemFromPurl(input.req.purl);
   const versionHint = input.req.version;
@@ -582,10 +596,25 @@ async function resolveRequirement(input: {
       : input.req.purl.includes('@')
         ? input.req.purl
         : undefined;
+  const policy = projectPolicyDocument(input.manifest);
+  const evaluationTime = new Date().toISOString();
+  const packageKey = candidateExact ?? stripPurlVersion(input.req.purl);
+  const priorTrust = priorTrustFromLock(input.priorLock, packageKey);
 
   // 1) Explicit source on requirement
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
+    const sourceUri =
+      resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
+        ? toFileUrl(resolved)
+        : resolved;
+    const facts = captureFactsFromSourceUri(packageKey, sourceUri, {
+      evaluationTime,
+      dependencyDepth: 0,
+      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+      lifecycleScriptsExecuted: false,
+    });
+    await assertSupplyChainAllowed(policy, facts);
     const bytes = await fetchArtifactBytes(resolved, input.offline);
     const version =
       versionHint &&
@@ -601,21 +630,19 @@ async function resolveRequirement(input: {
     if (bins.length === 0 && ecosystem === 'npm') {
       bins = await discoverBinsFromArchive(bytes, format);
     }
-    return lockPackageFromSource({
+    const locked = lockPackageFromSource({
       alias: input.alias,
       purl,
       version,
       ecosystem,
       bytes,
-      source:
-        resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
-          ? toFileUrl(resolved)
-          : resolved,
+      source: sourceUri,
       format,
       mediaType,
       bins,
       reason: 'direct',
     });
+    return { ...locked, ...lockPackageSupplyChainFields(facts) };
   }
 
   // 2) Catalog lookup by exact purl or base+version
@@ -677,24 +704,34 @@ async function resolveRequirement(input: {
     if (bins.length === 0 && ecosystem === 'npm') {
       bins = await discoverBinsFromArchive(bytes, entry.format);
     }
+    const sourceUri =
+      source.startsWith('/') || /^[A-Za-z]:/.test(source)
+        ? toFileUrl(source)
+        : source;
+    const entryPurl = entry.purl.includes('@')
+      ? entry.purl
+      : exactPurl(entry.purl, entry.version);
+    const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
+      evaluationTime,
+      dependencyDepth: 0,
+      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+      lifecycleScriptsExecuted: false,
+    });
+    await assertSupplyChainAllowed(policy, facts);
     return {
       alias: input.alias,
-      purl: entry.purl.includes('@')
-        ? entry.purl
-        : exactPurl(entry.purl, entry.version),
+      purl: entryPurl,
       version: entry.version,
       digest: entry.digest,
       size: entry.size,
       format: entry.format,
       mediaType: entry.mediaType,
-      source:
-        source.startsWith('/') || /^[A-Za-z]:/.test(source)
-          ? toFileUrl(source)
-          : source,
+      source: sourceUri,
       storeKey: storeKeyFromDigest(entry.digest),
       bins,
       reason: 'direct',
       ecosystem,
+      ...lockPackageSupplyChainFields(facts),
     };
   }
 
@@ -746,6 +783,53 @@ async function resolveRequirement(input: {
     if (bins.length === 0 && ecosystem === 'npm')
       bins = await discoverBinsFromArchive(bytes, format);
 
+    // Capture supply-chain facts from the real inspect path when available.
+    let supplyFields: ReturnType<typeof lockPackageSupplyChainFields> = {};
+    try {
+      const catalog = await providerFor(ecosystem, { offline: input.offline });
+      const registryId = (
+        await requireAdapterRegistry().definitionFor(ecosystem)
+      ).registryId;
+      const { facts } = await captureFactsFromCatalog(catalog, target, {
+        evaluationTime,
+        dependencyDepth: 0,
+        registryId,
+        ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+      });
+      // Prefer artifact URI for source kind when inspect did not set one.
+      if (facts.sourceKind === undefined) {
+        Object.assign(
+          facts,
+          captureFactsFromSourceUri(artifact.exactPurl, artifact.uri, {
+            evaluationTime,
+            dependencyDepth: 0,
+          }),
+        );
+      }
+      await assertSupplyChainAllowed(policy, facts);
+      supplyFields = lockPackageSupplyChainFields(facts);
+    } catch (error) {
+      if (
+        error instanceof OpmError &&
+        (error.code === 'POLICY_DENIED' ||
+          error.code === 'POLICY_INDETERMINATE')
+      )
+        throw error;
+      // Inspect capture failed — evaluate with honest partial facts from URI.
+      const facts = captureFactsFromSourceUri(
+        artifact.exactPurl,
+        artifact.uri,
+        {
+          evaluationTime,
+          dependencyDepth: 0,
+          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+          lifecycleScriptsExecuted: false,
+        },
+      );
+      await assertSupplyChainAllowed(policy, facts);
+      supplyFields = lockPackageSupplyChainFields(facts);
+    }
+
     return {
       alias: input.alias,
       purl: artifact.exactPurl,
@@ -759,6 +843,7 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
+      ...supplyFields,
     };
   }
 
