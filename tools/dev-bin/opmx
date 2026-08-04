@@ -1,0 +1,8 @@
+#!/bin/sh
+# The opmx CLI from this working tree, rebuilt on demand. See _ensure.sh.
+set -e
+openpacker_here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+openpacker_repo=$(CDPATH= cd -- "$openpacker_here/../.." && pwd)
+. "$openpacker_here/_ensure.sh"
+openpacker_ensure_build "$openpacker_repo" "$openpacker_repo/apps/opm/dist/opmx.js"
+exec node "$openpacker_repo/apps/opm/dist/opmx.js" "$@"

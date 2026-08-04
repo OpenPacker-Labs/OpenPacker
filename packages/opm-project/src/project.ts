@@ -11,6 +11,11 @@ import type {
 import { OpmError } from './types.js';
 import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
 import {
+  REGISTRY_ECOSYSTEMS,
+  listRegistryVersions,
+  resolveRegistryArtifact,
+} from './registry.js';
+import {
   emptyLockfile,
   readLockfile,
   serializeLockfile,
@@ -529,6 +534,70 @@ async function resolveRequirement(input: {
           ? toFileUrl(source)
           : source,
       storeKey: storeKeyFromDigest(entry.digest),
+      bins,
+      reason: 'direct',
+      ecosystem,
+    };
+  }
+
+  // 4) The ecosystem's registry.
+  //
+  // Last, so an explicit source or a catalog entry always wins: a project that
+  // has pinned where a package comes from does not start reaching the network
+  // because a registry happens to publish the same name.
+  if (!input.offline && REGISTRY_ECOSYSTEMS.includes(ecosystem)) {
+    const target =
+      candidateExact ??
+      (await (async () => {
+        // No exact version given, so ask the registry what exists and take the
+        // newest. `enumerate` returns oldest-first.
+        const versions = await listRegistryVersions(
+          ecosystem,
+          stripPurlVersion(input.req.purl),
+        );
+        const newest = versions[versions.length - 1];
+        if (!newest)
+          throw new OpmError(
+            'UNRESOLVABLE',
+            `The ${ecosystem} registry published no versions of ${input.req.purl}.`,
+          );
+        return newest;
+      })());
+
+    const artifact = await resolveRegistryArtifact(ecosystem, target);
+    // The provider fetched these bytes and checked them against the registry's
+    // own integrity claim; this re-derives the digest from the same bytes so
+    // nothing enters the store on a provider's say-so.
+    const bytes = artifact.bytes;
+    const actual = digestOf(bytes);
+    if (actual !== artifact.digest)
+      throw new OpmError(
+        'DIGEST_MISMATCH',
+        `Registry digest mismatch for ${artifact.exactPurl}: ` +
+          `the ${ecosystem} provider reported ${artifact.digest}, the bytes hash to ${actual}`,
+      );
+    if (artifact.size > 0 && bytes.byteLength !== artifact.size)
+      throw new OpmError(
+        'SIZE_MISMATCH',
+        `Registry size mismatch for ${artifact.exactPurl}: ` +
+          `expected ${artifact.size} bytes, got ${bytes.byteLength}`,
+      );
+
+    const format = inferFormat(artifact.uri, artifact.mediaType);
+    let bins = input.req.bins ? [...input.req.bins] : [];
+    if (bins.length === 0 && ecosystem === 'npm')
+      bins = await discoverBinsFromArchive(bytes, format);
+
+    return {
+      alias: input.alias,
+      purl: artifact.exactPurl,
+      version: artifact.version || (versionHint ?? '0.0.0'),
+      digest: artifact.digest,
+      size: bytes.byteLength,
+      format,
+      mediaType: artifact.mediaType,
+      source: artifact.uri,
+      storeKey: storeKeyFromDigest(artifact.digest),
       bins,
       reason: 'direct',
       ecosystem,

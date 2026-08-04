@@ -8,3 +8,8 @@ coverage/
 !fixtures/**/*.tgz
 .serena/
 .opm/
+
+# direnv: `npm run dev:shell` documents an .envrc for putting tools/dev-bin on
+# PATH. It stays local — .envrc is a common home for secrets, and agent:check
+# refuses to stage anything matching .env*.
+.envrc
