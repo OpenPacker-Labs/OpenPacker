@@ -594,3 +594,4 @@ export function parseNarHash(
   }
   return undefined;
 }
+export * from './provider.js';
