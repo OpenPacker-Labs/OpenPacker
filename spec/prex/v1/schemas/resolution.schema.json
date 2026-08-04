@@ -942,6 +942,15 @@
         },
         "objectiveEvidence": {
           "$ref": "#/$defs/ProofChecks"
+        },
+        "appliedAmendmentDigests": {
+          "$comment": "Digests of the amendments that produced the universe this proof is about. Absent for an unamended solve.",
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/Digest"
+          }
         }
       },
       "additionalProperties": false

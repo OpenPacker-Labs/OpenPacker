@@ -71,6 +71,7 @@
       "includePaths": [],
       "excludePaths": [],
       "orderedSetPaths": [
+        "/appliedAmendmentDigests",
         "/cardinalityChecks",
         "/conflictChecks",
         "/objectiveEvidence",

@@ -710,10 +710,156 @@ fn unaccepted_amendments_do_not_change_the_solution() {
 }
 
 #[test]
-fn accepting_an_amendment_authority_fails_closed() {
+fn an_accepted_amendment_redirects_and_retracts_requirements() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "needs-old-libc",
+        RequirementExpression::Package {
+            purl: "pkg:npm/libc".into(),
+            vers: Some("vers:npm/2.39".into()),
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+    let mut old_libc = package('4', "libc", "2.39");
+    old_libc.identity.canonical_purl = "pkg:npm/libc".into();
+    old_libc.identity.exact_purl = Some("pkg:npm/libc@2.39".into());
+    let mut patched = package('5', "libc", "2.40");
+    patched.identity.canonical_purl = "pkg:npm/libc".into();
+    patched.identity.exact_purl = Some("pkg:npm/libc@2.40".into());
+
+    let root = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    let plain = input(
+        vec![app.clone(), old_libc.clone(), patched.clone()],
+        root.clone(),
+    );
+    let plain_output = solve(&plain).unwrap();
+    assert!(
+        plain_output
+            .solution
+            .selected_node_ids
+            .contains(&old_libc.node_id),
+        "without an amendment the declared 2.39 requirement stands"
+    );
+
+    // The organization pins its patched libc for this package.
+    let mut amended = input(vec![app.clone(), old_libc.clone(), patched.clone()], root);
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: app.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "redirectPackage",
+            "match": {"type": "package", "purl": "pkg:npm/libc", "vers": "vers:npm/2.39"},
+            "to": {"type": "package", "purl": "pkg:npm/libc", "vers": "vers:npm/2.40"},
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    let output = solve(&amended).unwrap();
+
+    assert!(
+        output.solution.selected_node_ids.contains(&patched.node_id),
+        "the redirect must move the selection to the patched libc"
+    );
+    assert!(
+        !output
+            .solution
+            .selected_node_ids
+            .contains(&old_libc.node_id)
+    );
+    assert_ne!(
+        output.solution.solution_digest,
+        plain_output.solution.solution_digest
+    );
+
+    // The change is recorded, not silent.
+    assert_eq!(output.proof.applied_amendment_digests.len(), 1);
+    assert!(
+        output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-applied")
+    );
+    let superseded = output.selected.iter().any(|package| {
+        package.requirements.iter().any(|requirement| {
+            requirement.semantic_loss.iter().any(|loss| {
+                loss.get("code").and_then(|value| value.as_str()) == Some("NATIVE_FACT_SUPERSEDED")
+            })
+        })
+    });
+    assert!(superseded, "an applied amendment must record semantic loss");
+
+    // The independent checker re-derives the amendment and agrees.
+    assert!(check(&amended, &output).unwrap().valid);
+}
+
+#[test]
+fn a_retraction_removes_an_unsatisfiable_requirement() {
+    let mut app = package('3', "app", "1.0.0");
+    app.requirements.push(requirement(
+        "needs-absent",
+        RequirementExpression::Package {
+            purl: "pkg:npm/absent".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    ));
+    let root = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/app".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    assert!(solve(&input(vec![app.clone()], root.clone())).is_err());
+
+    let mut amended = input(vec![app.clone()], root);
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: app.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "retractRequirement",
+            "requirementId": "needs-absent",
+            "justification": "not applicable to this deployment",
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    let output = solve(&amended).unwrap();
+    let checked = check(&amended, &output).unwrap();
+    assert!(checked.valid, "{:?}", checked.diagnostics);
+    assert_eq!(output.proof.applied_amendment_digests.len(), 1);
+}
+
+#[test]
+fn a_forged_amendment_claim_is_rejected() {
     let one = package('1', "demo", "1.0.0");
-    let mut amended = input(
-        vec![one.clone()],
+    let solve_input = input(
+        vec![one],
         vec![requirement(
             "root",
             RequirementExpression::Package {
@@ -724,24 +870,11 @@ fn accepting_an_amendment_authority_fails_closed() {
             false,
         )],
     );
-    amended
-        .request
-        .policy
-        .accepted_amendment_authorities
-        .push("organization".into());
-    amended.universe.amendments.push(UniverseAmendment {
-        amendment_version: "1".into(),
-        subject: json!({}),
-        applies_to_metadata_digest: one.metadata_digest.clone(),
-        operations: vec![
-            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
-        ],
-        authority: "organization".into(),
-        rest: BTreeMap::new(),
-    });
-    // Compilation is not implemented, so admitting an amendment must fail
-    // rather than quietly discard its operations.
-    assert!(solve(&amended).is_err());
+    let mut output = solve(&solve_input).unwrap();
+    // Claiming an amendment was applied when the policy admitted none must not
+    // pass the checker.
+    output.proof.applied_amendment_digests.push(digest('9'));
+    assert!(!check(&solve_input, &output).unwrap().valid);
 }
 
 #[test]

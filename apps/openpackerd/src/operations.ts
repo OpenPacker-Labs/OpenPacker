@@ -371,6 +371,11 @@ export function createReferenceOperations(
           output.normalizedRequest.policy as unknown as JsonValue,
         ),
         lifecycleRoot: options.universe.lifecycleRoot,
+        // Amendments that shaped this result are bound into the receipt, so a
+        // consumer can tell an amended solve from an unamended one.
+        ...(output.proof.appliedAmendmentDigests?.length
+          ? { amendmentDigests: output.proof.appliedAmendmentDigests }
+          : {}),
         semanticsProfile: output.normalizedRequest.semantics.profile,
         objectiveOrdering: output.normalizedRequest.objectives,
         solutionDigest: output.solution.solutionDigest,

@@ -172,12 +172,27 @@ the resulting `solutionDigest` MUST be identical to the same universe without
 them; implementations MUST still record that an amendment was present and
 ignored, in the explanation graph rather than the solution.
 
+Admitted amendments compile into a **derived universe**: the original package
+facts are left intact and the amended universe is what search, proof
+construction, the independent checker, and the bounded oracle all run against,
+so none of them can disagree about what was solved. Amendments are applied in
+canonical digest order, so the result never depends on the order a universe
+listed them.
+
+The three operations apply to the package named by `appliesToMetadataDigest`:
+`supersedeRequirement` replaces a requirement of the same id,
+`retractRequirement` removes one, and `redirectPackage` rewrites matching
+package expressions within that package's requirements. An operation that
+matches nothing MUST fail rather than silently succeed.
+
 Each applied operation MUST emit `NATIVE_FACT_SUPERSEDED` semantic loss
 (severity `warning`, blocking `native-validated-v1` for the affected relation)
-and a corresponding explanation node, and applied amendment digests MUST be
-bound into the receipt through `amendmentDigests`. An implementation that admits
-an amendment authority but cannot compile its operations MUST fail rather than
-return a result the caller would believe was amended.
+and an `amendment-applied` explanation node, applied amendment digests MUST
+appear in `ResolutionProof.appliedAmendmentDigests`, and they MUST be bound into
+the receipt through `amendmentDigests`. A checker MUST re-derive the amended
+universe from the original inputs rather than trusting the solver's, and MUST
+reject a proof whose claimed amendment digests differ from what the policy
+admits.
 
 ## Hypergraph compilation
 

@@ -470,6 +470,10 @@ pub struct ResolutionProof {
     pub cardinality_checks: Vec<ProofCheck>,
     pub target_checks: Vec<ProofCheck>,
     pub objective_evidence: Vec<ProofCheck>,
+    /// Digests of the amendments that produced the universe this proof is
+    /// about. Empty for an unamended solve, so existing proofs are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applied_amendment_digests: Vec<Digest>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

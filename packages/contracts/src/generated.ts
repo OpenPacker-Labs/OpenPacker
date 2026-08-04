@@ -1004,6 +1004,7 @@ export type ResolutionProof = {
   cardinalityChecks: ProofChecks;
   targetChecks: ProofChecks;
   objectiveEvidence: ProofChecks;
+  appliedAmendmentDigests?: Array<Digest>;
 };
 export type ResolutionReceipt = {
   receiptVersion: '1';
@@ -1405,6 +1406,7 @@ export const DIGEST_PROJECTIONS = {
       includePaths: [],
       excludePaths: [],
       orderedSetPaths: [
+        '/appliedAmendmentDigests',
         '/cardinalityChecks',
         '/conflictChecks',
         '/objectiveEvidence',
@@ -7182,6 +7184,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           objectiveEvidence: {
             $ref: '#/$defs/ProofChecks',
+          },
+          appliedAmendmentDigests: {
+            $comment:
+              'Digests of the amendments that produced the universe this proof is about. Absent for an unamended solve.',
+            type: 'array',
+            maxItems: 10000,
+            uniqueItems: true,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
           },
         },
         additionalProperties: false,
