@@ -278,6 +278,21 @@ describe('nar hashes', () => {
     expect(parseNarHash(`sha256-${base64}`)?.value).toBe(hex);
   });
 
+  it('rejects a hash whose excess bits are set, as Nix does', () => {
+    // A 52-character nixbase32 string carries 260 bits for a 256-bit hash.
+    // The leading character therefore encodes only 4 usable bits: '0' and '1'
+    // are representable, anything larger overflows and is not a valid hash.
+    // Without this, a decoder that truncates instead of rejecting would accept
+    // strings Nix refuses and silently drop the excess.
+    const tail = '0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73'.slice(
+      1,
+    );
+    expect(parseNarHash(`sha256:0${tail}`)?.value).toMatch(/^[0-9a-f]{64}$/u);
+    expect(parseNarHash(`sha256:1${tail}`)?.value).toMatch(/^[0-9a-f]{64}$/u);
+    for (const leading of ['2', '9', 'z'])
+      expect(parseNarHash(`sha256:${leading}${tail}`)).toBeUndefined();
+  });
+
   it('refuses what it cannot represent instead of guessing', () => {
     // A non-sha256 algorithm must not be coerced into a PREX digest.
     expect(parseNarHash('sha512-abcdef')).toBeUndefined();

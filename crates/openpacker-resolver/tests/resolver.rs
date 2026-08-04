@@ -1226,6 +1226,18 @@ fn normalization_covers_every_purl_type() {
         assert_eq!(normalize_purl(&once).unwrap(), once, "{purl}");
     }
 
+    // A malformed type is rejected here, not merely downstream: the library,
+    // the daemon, and the schema pattern must agree on what a PURL type is.
+    for purl in ["pkg:DEB!/x@1", "pkg:  /x@1", "pkg:%41%42/x@1"] {
+        assert!(normalize_purl(purl).is_err(), "{purl}");
+    }
+    // Types the spec does allow still work, and the type is case insensitive.
+    assert_eq!(
+        normalize_purl("pkg:my-eco.v2+ext/x@1").unwrap(),
+        "pkg:my-eco.v2+ext/x@1"
+    );
+    assert_eq!(normalize_purl("pkg:DEB/x@1").unwrap(), "pkg:deb/x@1");
+
     // Namespace rules still hold where the ecosystem has none.
     assert!(normalize_purl("pkg:cargo/scope/demo@1.0.0").is_err());
     assert!(normalize_purl("pkg:npm/demo@not-a-version").is_err());

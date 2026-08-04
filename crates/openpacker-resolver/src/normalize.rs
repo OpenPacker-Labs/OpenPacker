@@ -70,6 +70,17 @@ fn parse_purl(value: &str) -> Result<Purl, ResolverError> {
     if kind.is_empty() {
         return Err(invalid("PURL type is empty"));
     }
+    // The type is case insensitive and canonicalizes to lowercase; beyond that
+    // it is alphanumerics plus `.`, `+`, and `-`, and the spec forbids
+    // percent-encoding it. Validating here keeps this library agreeing with
+    // the daemon and the schema pattern rather than relying on a downstream
+    // check to catch a malformed type.
+    let kind = kind.to_ascii_lowercase();
+    if !kind.bytes().all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'+' | b'-')
+    }) {
+        return Err(invalid(format!("PURL type is not well formed: {kind}")));
+    }
     let (path, version) = path_and_version
         .rsplit_once('@')
         .map_or((path_and_version, None), |(left, right)| {
