@@ -1,9 +1,9 @@
 # sdlc-state: review-followups
 
 - **Initiative:** Resolve the six findings from self-review
-- **Phase:** review
+- **Phase:** done
 - **Trunk:** main
-- **Branch:** `fix/review-followups` → PR #11
+- **Branch:** `fix/review-followups` → PR #11 → squash-merged `0c855a9`
 
 ## Goal
 
