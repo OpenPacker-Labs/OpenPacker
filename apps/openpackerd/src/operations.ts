@@ -64,6 +64,7 @@ import { NugetCodec } from '@openpacker/adapter-nuget';
 import { PypiCodec } from '@openpacker/adapter-pypi';
 import { GolangCodec } from '@openpacker/adapter-golang';
 import { MavenCodec } from '@openpacker/adapter-maven';
+import { NixCodec } from '@openpacker/adapter-nix';
 import type { EmbeddedResolver } from '@openpacker/embedded';
 import {
   completeLockImport,
@@ -194,6 +195,7 @@ export function createReferenceOperations(
     ['pypi', new PypiCodec()],
     ['golang', new GolangCodec()],
     ['maven', new MavenCodec()],
+    ['nix', new NixCodec()],
     ...(options.codecs ?? []),
   ]);
   const explanations = new Map<string, ExplanationGraph>();

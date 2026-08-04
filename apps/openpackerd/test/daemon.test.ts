@@ -160,6 +160,7 @@ describe('openpackerd', () => {
       'cargo',
       'golang',
       'maven',
+      'nix',
       'npm',
       'nuget',
       'pypi',
@@ -448,6 +449,49 @@ describe('openpackerd', () => {
     expect(response.statusCode).toBe(408);
     expect(response.json().code).toBe('CANCELLED');
     expect(response.headers['x-correlation-id']).toBe(correlationId);
+    await app.close();
+  });
+
+  it('normalizes a nix store path through the registered codec', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      payload: {
+        items: [
+          {
+            type: 'native-coordinate',
+            ecosystem: 'nix',
+            value: '/nix/store/b3f2q8xr7k1v5m9n0p4s6w2y4z6a8c1d-libgreet-1.0',
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    // A store path becomes an exact PURL whose output selector is explicit.
+    expect(response.json().results[0].canonical).toContain('pkg:nix/libgreet');
     await app.close();
   });
 

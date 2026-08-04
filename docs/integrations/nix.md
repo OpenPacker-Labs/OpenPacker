@@ -115,6 +115,27 @@ Nix expression evaluation, building or realising anything, overlay-style
 attribute overrides (use
 [amendments](../adr/0028-amendments-supersede-interpretation.md), which
 supersede interpretation rather than facts), NixOS activation, and store garbage
-collection. An `adapter-nix` codec that captures from `nix path-info --json`,
-`nix derivation show`, and narinfo is follow-on work; this page fixes the shape
-it must produce.
+collection.
+
+## The codec
+
+`@openpacker/adapter-nix` implements the mapping above and is registered in the
+reference daemon, so `pkg:nix` normalize, identify, and inspect work without
+extra configuration.
+
+It consumes `nix path-info --json` entries: `path` becomes the exact PURL and
+native coordinate, `deriver` becomes the `plan` qualifier, `references` become
+runtime requirements on exact sibling paths (the self-reference is dropped),
+`narHash` becomes the output artifact digest when it is sha256 — other
+algorithms record `CONTENT_ADDRESS_UNSUPPORTED` rather than being coerced — and
+`output` becomes the declared package output.
+
+Version comparison follows Nix rather than semver: components split on `.`, `-`,
+and digit/non-digit boundaries, numeric components compare numerically, and a
+pre-release marker sorts before the bare release. Nix has no range syntax, so a
+captured requirement is always exact; anything range-shaped records
+`NIX_RANGE_NOT_REPRESENTED`.
+
+A closure listing (`nix path-info --json --recursive`) captures as a lock
+result, which is the closest Nix equivalent of a lockfile: an exact,
+already-resolved set.
