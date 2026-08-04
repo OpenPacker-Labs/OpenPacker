@@ -41,13 +41,22 @@ locations, database identifiers, or transport credentials.
    implementation MAY default it, and MUST record `OUTPUT_SELECTOR_DEFAULTED`
    when it does. Reserving the key is what makes an output selector portable;
    PREX does not otherwise require any package to carry it.
-10. A build recipe is a captured claim about how bytes were produced. PREX
-    operations MUST NOT execute builders, lifecycle scripts, recipes, or
-    ecosystem expression languages. Reading artifact bytes to discover runtime
-    references is read-only analysis and is not execution. Output identity
-    (`recipe-output-v1`) and byte identity (artifact and tree digests) are
-    distinct and MUST NOT be conflated: a `producedBy` claim is verified as
-    evidence and never establishes identity by itself.
+10. A build recipe is a captured claim about how bytes were produced. Executing
+    builders, lifecycle scripts, recipes, ecosystem expression languages, or
+    system installers is a **declared capability**, not a prohibition: PREX is
+    the interface other package managers plug into, and several of them cannot
+    do their job without running something. An implementation that executes MUST
+    advertise the corresponding operation in its capabilities, MUST record what
+    it ran in the receipt, and MUST NOT represent the result as byte-verified
+    when it is not. Reading artifact bytes to discover runtime references is
+    read-only analysis and is not execution.
+
+    Execution never establishes identity. Output identity (`recipe-output-v1`)
+    and byte identity (artifact and tree digests) remain distinct and MUST NOT
+    be conflated: a `producedBy` claim is verified as evidence and never
+    establishes identity by itself. `normalize` and `solve` MUST remain free of
+    side effects on the host, so a solution stays reproducible; side effects
+    belong to the `install` and `run` operation classes, which say so.
 
 ## Versioning and negotiation
 
