@@ -1,0 +1,38 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:fixtures-nuget",
+  "displayName": "Fixture NuGet v3 feed (mapped from service index)",
+  "purlTypes": ["nuget"],
+  "protocol": {
+    "native": "nuget-v3",
+    "transport": ["https"]
+  },
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/service-index.json",
+      "@type": "prex.registry.service-index/1",
+      "clientVersion": "3.0.0"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/registration/",
+      "@type": [
+        "prex.registry.package-metadata/1",
+        "prex.registry.enumerate-versions/1"
+      ],
+      "clientVersion": "RegistrationsBaseUrl/3.6.0"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/nuget/flat/",
+      "@type": "prex.registry.artifact/1",
+      "clientVersion": "PackageBaseAddress/3.0.0",
+      "mediaTypes": ["application/octet-stream"]
+    }
+  ],
+  "features": {
+    "offlineReplay": false,
+    "signedMetadata": false,
+    "installSideEffects": "project-store",
+    "reversibility": "project-generation",
+    "requiresElevation": "never"
+  }
+}

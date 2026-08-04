@@ -1,0 +1,119 @@
+/// PREX adapter world — plug-in ABI for package-manager backends.
+///
+/// Hosts load components that export this world (or a subset of its interfaces).
+/// Guests never assume ambient network or process access: WASI imports are
+/// policy-gated by the host.
+///
+/// Capability discovery has two layers:
+/// 1. Which interfaces this component exports (WIT).
+/// 2. Which operations a named source supports — JSON Registry Definition
+///    from `registry.service-index` (see spec/prex/v1/registry-definition.md).
+///
+/// Payloads that mirror PREX IR are canonical JSON bytes validated against
+/// PREX schemas. This avoids freezing the full IR into WIT records in v0.1.
+
+package openpacker:prex-adapter@0.1.0;
+
+/// Shared error and availability shapes.
+interface types {
+    /// Machine-oriented error code (PREX problem `code` or adapter-local).
+    type error-code = string;
+
+    record error {
+        code: error-code,
+        /// Human-readable detail; not a substitute for `code`.
+        message: string,
+    }
+
+    record availability {
+        available: bool,
+        /// Why not, when unavailable.
+        reason: option<string>,
+        tool-name: option<string>,
+        tool-version: option<string>,
+    }
+
+    record install-options {
+        offline: bool,
+        dry-run: bool,
+        /// Consent to elevation; never implied by PURL alone.
+        allow-elevation: bool,
+        /// Optional install prefix for user-scoped installs.
+        prefix: option<string>,
+    }
+}
+
+/// Capability-discoverable package source (Registry Definition document).
+interface registry {
+    use types.{error};
+
+    /// Return canonical JSON bytes of a RegistryDefinition (schema
+    /// registry-definition.schema.json).
+    service-index: func() -> result<list<u8>, error>;
+}
+
+/// Read-only catalog operations against a discovered registry.
+interface catalog {
+    use types.{error};
+
+    /// Free-text or partial identity query → JSON array of package identities.
+    identify: func(query: string) -> result<list<u8>, error>;
+
+    /// Versions for a base PURL, oldest-first or adapter-documented order.
+    enumerate: func(base-purl: string) -> result<list<string>, error>;
+
+    /// Exact PURL → JSON ProviderInspection / PackageInstance document.
+    inspect: func(exact-purl: string) -> result<list<u8>, error>;
+
+    /// Exact PURL → JSON artifact record including digest and bytes or locator.
+    fetch-artifact: func(exact-purl: string) -> result<list<u8>, error>;
+}
+
+/// Pure ecosystem semantics (no I/O). Optional export.
+interface codec {
+    use types.{error};
+
+    canonicalize-purl: func(purl: string) -> result<string, error>;
+
+    /// Native version ordering: negative / zero / positive.
+    compare-versions: func(left: string, right: string) -> result<s32, error>;
+
+    satisfies: func(version: string, range: string) -> result<bool, error>;
+}
+
+/// Side-effecting install surface. Optional export; requires matching
+/// `prex.registry.install/1` (and related) resources on the service index.
+interface install {
+    use types.{error, availability, install-options};
+
+    available: func() -> result<availability, error>;
+
+    /// Plan without performing; JSON InstallPlan + semantic loss.
+    plan: func(exact-purl: string, options: install-options) -> result<list<u8>, error>;
+
+    install: func(exact-purl: string, options: install-options) -> result<list<u8>, error>;
+
+    update: func(exact-purl: string, options: install-options) -> result<list<u8>, error>;
+
+    uninstall: func(exact-purl: string, options: install-options) -> result<list<u8>, error>;
+}
+
+/// Execution environment projection (mise BackendExecEnv, nix shell, profile PATH).
+interface environment {
+    use types.{error};
+
+    /// Exact PURL → JSON env document (PATH entries, variables).
+    exec-env: func(exact-purl: string) -> result<list<u8>, error>;
+}
+
+/// Full adapter world. Components may export a subset; hosts probe exports.
+world adapter {
+    /// Wall clock for provenance timestamps when the host permits it.
+    import wasi:clocks/wall-clock@0.2.0;
+
+    export registry;
+    export catalog;
+    export codec;
+    export install;
+    export environment;
+}

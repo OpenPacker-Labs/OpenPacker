@@ -488,6 +488,12 @@ export type InspectRequest = {
   context?: RequestContext;
 };
 export type InspectResponse = { meta: ProtocolMeta; package: PackageInstance };
+export type InstallSideEffects =
+  | 'none'
+  | 'project-store'
+  | 'user-profile'
+  | 'system'
+  | 'unknown';
 export type LifecycleApplyRequest = LifecycleEvent;
 export type LifecycleApplyResponse = { applied: LifecycleEvent };
 export type LifecycleChangedData = {
@@ -923,11 +929,50 @@ export type PublishRequest = {
   location: ArtifactLocation;
 };
 export type PublishResponse = PublishRequest;
+export type PurlType = string;
 export type ReceiptCreatedData = { schemaVersion: '1'; receiptDigest: Digest };
 export type ReceiptCreatedEvent = CloudEventCommon & {
   type: 'org.openpacker.receipt.created';
   dataschema: 'https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.receipt.created';
   data: ReceiptCreatedData;
+};
+export type RegistryDefinition = {
+  registryDefinitionVersion: RegistryDefinitionVersion;
+  registryId: RegistryId;
+  displayName?: string;
+  purlTypes: Array<PurlType>;
+  protocol?: RegistryProtocol;
+  resources: Array<RegistryResource>;
+  features?: RegistryFeatures;
+  limits?: RegistryLimits;
+  semanticLossDefaults?: Array<SemanticLoss>;
+  extensions?: Extensions;
+};
+export type RegistryDefinitionVersion = '1';
+export type RegistryFeatures = {
+  offlineReplay?: boolean;
+  signedMetadata?: boolean;
+  installSideEffects?: InstallSideEffects;
+  reversibility?: Reversibility;
+  requiresElevation?: 'never' | 'sometimes' | 'always' | 'unknown';
+};
+export type RegistryId = string;
+export type RegistryLimits = {
+  maxEnumerate?: number;
+  maxSearchResults?: number;
+  maxArtifactBytes?: number;
+};
+export type RegistryProtocol = {
+  native?: string;
+  transport?: Array<Transport>;
+};
+export type RegistryResource = {
+  '@id': ResourceId;
+  '@type': ResourceTypeName | Array<ResourceTypeName>;
+  comment?: string;
+  mediaTypes?: Array<string>;
+  clientVersion?: string;
+  extensions?: Extensions;
 };
 export type RequestContext = {
   correlationId?: string;
@@ -1097,6 +1142,7 @@ export type ResolutionUnsatisfiableEvent = CloudEventCommon & {
   dataschema: 'https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.resolution.unsatisfiable';
   data: ResolutionUnsatisfiableData;
 };
+export type ResourceId = string;
 export type ResourceLimits = {
   requestBytes: PositiveLimit;
   batchItems: PositiveLimit;
@@ -1113,6 +1159,13 @@ export type ResourceLimits = {
   solverMemoryBytes?: PositiveLimit;
   explanationEdges?: PositiveLimit;
 };
+export type ResourceTypeName = string;
+export type Reversibility =
+  | 'none'
+  | 'uninstall'
+  | 'project-generation'
+  | 'native-generation'
+  | 'unknown';
 export type RuntimeClosure = {
   closureVersion: '1';
   rootNodeIds: Array<string>;
@@ -1269,6 +1322,15 @@ export type TargetPredicate =
   | { type: 'capabilityPresent'; name: string; constraint?: VersionConstraint }
   | { type: 'allOf' | 'anyOf'; predicates: Array<TargetPredicate> }
   | { type: 'not'; predicate: TargetPredicate };
+export type Transport =
+  | 'https'
+  | 'http'
+  | 'file'
+  | 'exec'
+  | 'git'
+  | 'oci'
+  | 'nix'
+  | 'other';
 export type TreeManifest = {
   manifestVersion: '1';
   entries: Array<TreeManifestEntry>;
@@ -6262,6 +6324,232 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
     ],
   },
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json':
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json',
+      title:
+        'PREX registry definition (capability-discoverable package source)',
+      $comment:
+        'A Registry Definition is the portable service index for a package source. Inspired by NuGet v3 service index resource discovery; applicable to HTTP registries and local/CLI backends via non-HTTP @id schemes.',
+      $defs: {
+        RegistryDefinitionVersion: {
+          const: '1',
+        },
+        RegistryId: {
+          type: 'string',
+          minLength: 3,
+          maxLength: 512,
+          pattern: '^(urn:|https://|prex-registry:)[A-Za-z0-9._:/-]+$',
+        },
+        PurlType: {
+          type: 'string',
+          pattern: '^[a-z][a-z0-9+.-]{0,63}$',
+          maxLength: 64,
+        },
+        ResourceTypeName: {
+          $comment:
+            'NuGet-style Name/Version resource types. Major versions are incompatible; clients feature-detect by type string.',
+          type: 'string',
+          pattern: '^prex\\.registry\\.[a-z][a-z0-9-]*\\/[1-9][0-9]*$',
+          maxLength: 128,
+        },
+        ResourceId: {
+          $comment:
+            'Locator for a resource: HTTPS URL, or a non-HTTP scheme for CLI/local backends (nix+flake://, exec:, file:, git+, oci+).',
+          type: 'string',
+          minLength: 1,
+          maxLength: 8192,
+        },
+        Transport: {
+          type: 'string',
+          enum: ['https', 'http', 'file', 'exec', 'git', 'oci', 'nix', 'other'],
+        },
+        InstallSideEffects: {
+          type: 'string',
+          enum: ['none', 'project-store', 'user-profile', 'system', 'unknown'],
+        },
+        Reversibility: {
+          type: 'string',
+          enum: [
+            'none',
+            'uninstall',
+            'project-generation',
+            'native-generation',
+            'unknown',
+          ],
+        },
+        RegistryResource: {
+          type: 'object',
+          required: ['@id', '@type'],
+          properties: {
+            '@id': {
+              $ref: '#/$defs/ResourceId',
+            },
+            '@type': {
+              oneOf: [
+                {
+                  $ref: '#/$defs/ResourceTypeName',
+                },
+                {
+                  type: 'array',
+                  minItems: 1,
+                  maxItems: 16,
+                  uniqueItems: true,
+                  items: {
+                    $ref: '#/$defs/ResourceTypeName',
+                  },
+                },
+              ],
+            },
+            comment: {
+              type: 'string',
+              maxLength: 1024,
+            },
+            mediaTypes: {
+              type: 'array',
+              maxItems: 32,
+              uniqueItems: true,
+              items: {
+                type: 'string',
+                maxLength: 255,
+              },
+            },
+            clientVersion: {
+              $comment:
+                'Optional native protocol version this resource speaks (e.g. RegistrationsBaseUrl/3.6.0).',
+              type: 'string',
+              maxLength: 128,
+            },
+            extensions: {
+              $ref: 'common.schema.json#/$defs/Extensions',
+            },
+          },
+          additionalProperties: false,
+        },
+        RegistryFeatures: {
+          type: 'object',
+          properties: {
+            offlineReplay: {
+              type: 'boolean',
+            },
+            signedMetadata: {
+              type: 'boolean',
+            },
+            installSideEffects: {
+              $ref: '#/$defs/InstallSideEffects',
+            },
+            reversibility: {
+              $ref: '#/$defs/Reversibility',
+            },
+            requiresElevation: {
+              type: 'string',
+              enum: ['never', 'sometimes', 'always', 'unknown'],
+            },
+          },
+          additionalProperties: false,
+        },
+        RegistryLimits: {
+          type: 'object',
+          properties: {
+            maxEnumerate: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 9007199254740991,
+            },
+            maxSearchResults: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 9007199254740991,
+            },
+            maxArtifactBytes: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 9007199254740991,
+            },
+          },
+          additionalProperties: false,
+        },
+        RegistryProtocol: {
+          type: 'object',
+          properties: {
+            native: {
+              type: 'string',
+              maxLength: 128,
+              pattern: '^[a-z][a-z0-9+.-]*$',
+            },
+            transport: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 16,
+              uniqueItems: true,
+              items: {
+                $ref: '#/$defs/Transport',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        RegistryDefinition: {
+          type: 'object',
+          required: [
+            'registryDefinitionVersion',
+            'registryId',
+            'purlTypes',
+            'resources',
+          ],
+          properties: {
+            registryDefinitionVersion: {
+              $ref: '#/$defs/RegistryDefinitionVersion',
+            },
+            registryId: {
+              $ref: '#/$defs/RegistryId',
+            },
+            displayName: {
+              type: 'string',
+              maxLength: 256,
+            },
+            purlTypes: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                $ref: '#/$defs/PurlType',
+              },
+            },
+            protocol: {
+              $ref: '#/$defs/RegistryProtocol',
+            },
+            resources: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 256,
+              items: {
+                $ref: '#/$defs/RegistryResource',
+              },
+            },
+            features: {
+              $ref: '#/$defs/RegistryFeatures',
+            },
+            limits: {
+              $ref: '#/$defs/RegistryLimits',
+            },
+            semanticLossDefaults: {
+              type: 'array',
+              maxItems: 128,
+              items: {
+                $ref: 'common.schema.json#/$defs/SemanticLoss',
+              },
+            },
+            extensions: {
+              $ref: 'common.schema.json#/$defs/Extensions',
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json': {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json',

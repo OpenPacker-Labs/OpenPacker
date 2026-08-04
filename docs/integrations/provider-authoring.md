@@ -17,8 +17,14 @@ they extend and are re-exported by `@openpacker/testkit` for conformance checks.
 
 ## Extension descriptor
 
-Wrap an implementation in `OpenPackerExtension<T>` with an `ExtensionDescriptor`
-containing:
+Long-term adapters implement the WIT world
+[`spec/wit/prex-adapter.wit`](../../spec/wit/prex-adapter.wit) and return a
+[Registry Definition](../../spec/prex/v1/registry-definition.md) from
+`registry.service-index`. TypeScript `CatalogProvider` / `InstallerProvider`
+interfaces remain the in-process migration shape.
+
+Wrap a TypeScript implementation in `OpenPackerExtension<T>` with an
+`ExtensionDescriptor` containing:
 
 - reverse-domain `id` and SemVer `version`;
 - a unique non-empty capability list;
