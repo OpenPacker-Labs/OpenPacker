@@ -16,6 +16,7 @@ import {
   formatPurl,
   header,
   json,
+  packageNodeId,
   parsePurl,
   ProviderError,
   providerErrorForStatus,
@@ -1115,7 +1116,10 @@ export class PypiCodec
         qualifiers: {},
       }),
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'pypi-v1',
+    });
     const files =
       metadata.kind === 'project-version'
         ? (metadata.project.releases[version] ?? [])

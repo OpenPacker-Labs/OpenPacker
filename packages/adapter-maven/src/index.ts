@@ -15,6 +15,7 @@ import {
   formatPurl,
   header,
   json,
+  packageNodeId,
   parsePurl,
   ProviderError,
   providerErrorForStatus,
@@ -765,7 +766,10 @@ export class MavenCodec
       packaging,
       classifier,
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'maven-v1',
+    });
     const requirements: Requirement[] = [];
     const losses: SemanticLoss[] = [];
 

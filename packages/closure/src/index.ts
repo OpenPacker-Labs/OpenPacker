@@ -1,6 +1,7 @@
 import { canonicalProjectionDigest } from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import type { Digest, JsonValue, SemanticLoss } from '@openpacker/contracts';
+import type { MaterializedFile } from '@openpacker/materializer';
 
 /**
  * Tree manifests, reference scanning, and closure assembly.
@@ -27,13 +28,13 @@ export interface TreeManifest {
   semanticLoss: SemanticLoss[];
 }
 
-/** A materialized file as `@openpacker/materializer` reports it. */
-export interface MaterializedFileLike {
-  path: string;
-  size: number;
-  digest: Digest;
-  mode: number;
-}
+/**
+ * A materialized file, as the materializer reports it.
+ *
+ * Aliased to the real type rather than restated, so a change there is a
+ * compile error here instead of silent divergence.
+ */
+export type MaterializedFileLike = MaterializedFile;
 
 const CONTROL = /[\u0000-\u001f\u007f]/u;
 
@@ -140,20 +141,51 @@ export function scanReferences(
   candidates: readonly ScanCandidate[],
   options: { selfNodeId?: string } = {},
 ): ScannedReference[] {
-  const found = new Map<string, Set<string>>();
   const needles = candidates
     .filter((candidate) => candidate.nodeId !== options.selfNodeId)
     .map((candidate) => ({
       nodeId: candidate.nodeId,
-      bytes: new TextEncoder().encode(candidate.token),
+      bytes: encoder.encode(candidate.token),
     }))
     .filter((candidate) => candidate.bytes.length > 0);
+  if (needles.length === 0) return [];
+
+  // One index per distinct needle length. A real closure has thousands of
+  // store hashes of one length, so this is a single pass over the bytes
+  // rather than one pass per candidate.
+  const byLength = new Map<number, Map<number, typeof needles>>();
+  for (const needle of needles) {
+    const index = byLength.get(needle.bytes.length) ?? new Map();
+    const hash = rollingHash(needle.bytes, 0, needle.bytes.length);
+    index.set(hash, [...(index.get(hash) ?? []), needle]);
+    byLength.set(needle.bytes.length, index);
+  }
+
+  const found = new Map<string, Set<string>>();
   for (const file of files) {
-    for (const needle of needles) {
-      if (!containsBytes(file.data, needle.bytes)) continue;
-      const paths = found.get(needle.nodeId) ?? new Set<string>();
-      paths.add(file.path);
-      found.set(needle.nodeId, paths);
+    for (const [length, index] of byLength) {
+      if (file.data.length < length) continue;
+      // Rabin-Karp: hash each window once, and compare bytes only when a
+      // hash matches, so a collision costs a comparison rather than a wrong
+      // answer.
+      const shift = powerOfBase(length - 1);
+      let hash = rollingHash(file.data, 0, length);
+      const limit = file.data.length - length;
+      for (let start = 0; ; start += 1) {
+        for (const needle of index.get(hash) ?? [])
+          if (matchesAt(file.data, start, needle.bytes)) {
+            const paths = found.get(needle.nodeId) ?? new Set<string>();
+            paths.add(file.path);
+            found.set(needle.nodeId, paths);
+          }
+        if (start === limit) break;
+        hash = rollForward(
+          hash,
+          file.data[start]!,
+          file.data[start + length]!,
+          shift,
+        );
+      }
     }
   }
   return [...found.entries()]
@@ -161,17 +193,43 @@ export function scanReferences(
     .sort((left, right) => (left.nodeId < right.nodeId ? -1 : 1));
 }
 
-function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
-  if (needle.length === 0 || needle.length > haystack.length) return false;
-  const first = needle[0]!;
-  const limit = haystack.length - needle.length;
-  outer: for (let index = 0; index <= limit; index += 1) {
-    if (haystack[index] !== first) continue;
-    for (let offset = 1; offset < needle.length; offset += 1)
-      if (haystack[index + offset] !== needle[offset]) continue outer;
-    return true;
-  }
-  return false;
+const encoder = new TextEncoder();
+
+/** Multiplier for the rolling hash; arithmetic is exact modulo 2^32. */
+const BASE = 16_777_619;
+
+function rollingHash(bytes: Uint8Array, start: number, length: number): number {
+  let hash = 0;
+  for (let index = start; index < start + length; index += 1)
+    hash = (Math.imul(hash, BASE) + bytes[index]!) >>> 0;
+  return hash;
+}
+
+function powerOfBase(exponent: number): number {
+  let value = 1;
+  for (let index = 0; index < exponent; index += 1)
+    value = Math.imul(value, BASE) >>> 0;
+  return value;
+}
+
+function rollForward(
+  hash: number,
+  leaving: number,
+  entering: number,
+  shift: number,
+): number {
+  const without = (hash - Math.imul(leaving, shift)) >>> 0;
+  return (Math.imul(without, BASE) + entering) >>> 0;
+}
+
+function matchesAt(
+  haystack: Uint8Array,
+  start: number,
+  needle: Uint8Array,
+): boolean {
+  for (let offset = 0; offset < needle.length; offset += 1)
+    if (haystack[start + offset] !== needle[offset]) return false;
+  return true;
 }
 
 export interface ClosureMember {

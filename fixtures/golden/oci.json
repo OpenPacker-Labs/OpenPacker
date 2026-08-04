@@ -10,10 +10,10 @@
       "size": 768
     },
     {
-      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
-      "digest": "sha256:15f0a5daedcc71943f32e510962198eba940a864df6ab712f4a8593ca2844a9b",
+      "artifactType": "application/vnd.openpacker.overlay.v1+json",
+      "digest": "sha256:2ef8b8403510f3103e6da05118e68793f22907f7d28de7d01ccc09d04759eac4",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
-      "size": 653
+      "size": 648
     },
     {
       "artifactType": "application/vnd.openpacker.offline-sigstore-fixture.v1+json",
@@ -28,10 +28,10 @@
       "size": 635
     },
     {
-      "artifactType": "application/vnd.openpacker.overlay.v1+json",
-      "digest": "sha256:69f57778ccaaa679a6487a4885569f0f7ce414f917d081f0770c421e58cde954",
+      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
+      "digest": "sha256:9c5816dbb15205dae9f40f01cede079718ffc6351e8beb32f660b1436306b6ea",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
-      "size": 648
+      "size": 653
     },
     {
       "artifactType": "application/vnd.in-toto+json",

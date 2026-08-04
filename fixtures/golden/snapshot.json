@@ -7,13 +7,13 @@
   "providerType": "npm-registry",
   "recordsDigest": {
     "algorithm": "sha256",
-    "value": "f1a00330d04d815541763738f1a1f0a7aabfc88b1bef0bd9d79af8884055a288"
+    "value": "8dbb3ae40086459066da7fb353d0634530e7b41d87827e0003995d9e0f7d8cad"
   },
   "retrievedAt": "2026-08-02T00:00:00Z",
   "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
   "rootDigest": {
     "algorithm": "sha256",
-    "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+    "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
   },
-  "snapshotId": "sha256:c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+  "snapshotId": "sha256:b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
 }

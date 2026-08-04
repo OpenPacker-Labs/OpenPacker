@@ -62,7 +62,7 @@
       "sortKey": "0.9.0",
       "sourceSnapshot": {
         "algorithm": "sha256",
-        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
       },
       "warnings": []
     },
@@ -120,7 +120,7 @@
       "sortKey": "1.0.0-beta.1",
       "sourceSnapshot": {
         "algorithm": "sha256",
-        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
       },
       "warnings": []
     },
@@ -178,7 +178,7 @@
       "sortKey": "1.0.0",
       "sourceSnapshot": {
         "algorithm": "sha256",
-        "value": "c93b60b76ec4ef32108d5a460dbb89f252f0effa3c9c09b541081225bade7aea"
+        "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
       },
       "warnings": []
     }

@@ -285,8 +285,20 @@ test('target predicate resolution is deterministic for generated targets', () =>
   fc.assert(
     fc.property(
       fc.constantFrom(
-        { os: 'linux', architecture: 'arm64', provider: '825cac7e' },
-        { os: 'windows', architecture: 'x64', provider: '85c19ecd' },
+        // The provider is named by identity rather than a node-ID prefix: a
+        // node ID is a derived digest, so pinning its hex here would make this
+        // test fail whenever the derivation legitimately changes, without
+        // saying anything about which provider was actually selected.
+        {
+          os: 'linux',
+          architecture: 'arm64',
+          provider: 'pkg:cargo/openpacker-zstd-wasm@1.0.0',
+        },
+        {
+          os: 'windows',
+          architecture: 'x64',
+          provider: 'pkg:nuget/openpacker.zstd.tool@1.0.0',
+        },
       ),
       (target) => {
         const input = structuredClone(baseInput);
@@ -295,11 +307,11 @@ test('target predicate resolution is deterministic for generated targets', () =>
         const first = resolver.solve(input);
         const second = resolver.solve(input);
         assert.deepEqual(second, first);
-        assert.ok(
-          first.solution.selectedCapabilityProviders[0].providerNodeId.includes(
-            target.provider,
-          ),
+        const selected = first.solution.selectedCapabilityProviders[0];
+        const provider = input.universe.packages.find(
+          (item) => item.nodeId === selected.providerNodeId,
         );
+        assert.equal(provider?.identity.exactPurl, target.provider);
       },
     ),
     { seed: 0x54415247, numRuns: 50 },

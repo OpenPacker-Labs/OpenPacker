@@ -16,6 +16,7 @@ import {
   evaluateSemverRange,
   formatPurl,
   header,
+  packageNodeId,
   parsePurl,
   parseSemver,
   parseSemverRange,
@@ -526,7 +527,10 @@ export class GolangCodec
     const exactPurl = this.canonicalizePurl(
       purlForModule(metadata.path, version),
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'golang-v1',
+    });
     const losses: SemanticLoss[] = [];
     if (isPseudoVersion(version)) {
       losses.push(

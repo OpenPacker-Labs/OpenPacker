@@ -856,6 +856,77 @@ fn a_retraction_removes_an_unsatisfiable_requirement() {
 }
 
 #[test]
+fn the_amended_universe_digest_is_universe_v1_over_the_whole_struct() {
+    // Guards the field set: a universe field added without updating the digest
+    // computation would leave this equal to the hand-derived value below.
+    let mut one = package('1', "demo", "1.0.0");
+    // Amendments act on the subject package's own requirements.
+    one.requirements.push(requirement(
+        "demo-optional-extra",
+        RequirementExpression::Package {
+            purl: "pkg:npm/absent".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        true,
+    ));
+    let mut amended = input(
+        vec![one.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: one.metadata_digest.clone(),
+        operations: vec![json!({
+            "op": "retractRequirement",
+            "requirementId": "demo-optional-extra",
+            "justification": "not applicable",
+        })],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+
+    let applied = apply_amendments(&amended).unwrap();
+    // Recompute independently: serialize the amended universe, drop the
+    // self-referential digest, canonicalize the declared set paths.
+    let mut expected = serde_json::to_value(&applied.input.universe).unwrap();
+    let object = expected.as_object_mut().unwrap();
+    object.remove("canonicalDigest");
+    for path in [
+        "amendments",
+        "overlays",
+        "packages",
+        "recipes",
+        "sourceSnapshots",
+    ] {
+        if let Some(Value::Array(items)) = object.get_mut(path) {
+            items.sort_by_key(|item| serde_json::to_string(item).unwrap());
+        }
+    }
+    let recomputed = digest_json(&expected).unwrap();
+    assert_eq!(applied.input.universe.canonical_digest, recomputed);
+    // And it must differ from the universe it was derived from.
+    assert_ne!(
+        applied.input.universe.canonical_digest,
+        amended.universe.canonical_digest
+    );
+}
+
+#[test]
 fn a_forged_amendment_claim_is_rejected() {
     let one = package('1', "demo", "1.0.0");
     let solve_input = input(

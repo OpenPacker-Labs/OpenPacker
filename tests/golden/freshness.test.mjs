@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { join, resolve } from 'node:path';
@@ -59,4 +60,33 @@ test('native artifact fixtures exactly match their deterministic generator', () 
     { cwd: root, encoding: 'utf8' },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test('every golden node identity is the package-node-v1 projection', async () => {
+  // Node identity is normative, not a convenient hash of whatever was handy.
+  // Six codecs, the nix codec, and the demo each derived it differently once;
+  // this pins them to the projection so they cannot drift apart again.
+  const { canonicalProjectionDigest, formatDigest } = await import(
+    '@openpacker/canonical'
+  );
+  const { DIGEST_PROJECTIONS } = await import('@openpacker/contracts');
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (item) => item.id === 'package-node-v1',
+  );
+  assert.ok(projection, 'package-node-v1 must exist in the registry');
+
+  const universe = JSON.parse(
+    await readFile(join(root, 'fixtures/golden/universe.json'), 'utf8'),
+  );
+  assert.ok(universe.packages.length > 0, 'universe must contain packages');
+  for (const instance of universe.packages) {
+    const expected = formatDigest(
+      await canonicalProjectionDigest(instance, projection),
+    );
+    assert.equal(
+      instance.nodeId,
+      expected,
+      `${instance.identity.exactPurl} nodeId is not its package-node-v1 digest`,
+    );
+  }
 });

@@ -35,6 +35,16 @@ export interface GenerationMember {
   purl: string;
   digest: string;
   storePath: string;
+  /**
+   * Store paths this member needs at run time.
+   *
+   * opm resolves direct requirements only and its packages carry no embedded
+   * store references, so nothing populates this today and the closure equals
+   * the member set. It exists because collection is defined over the closure,
+   * not over direct membership: when references do appear, gc must already be
+   * computing the right thing rather than deleting live content.
+   */
+  references?: string[];
 }
 
 export interface Generation {
@@ -184,6 +194,8 @@ export async function recordGeneration(input: {
   packages: Readonly<Record<string, InstalledPackageRecord>>;
   lockDigest: string;
   createdAt?: string;
+  /** Runtime store references per alias, when a caller has discovered them. */
+  references?: Readonly<Record<string, readonly string[]>>;
 }): Promise<Generation> {
   const paths = environmentPaths(input.root);
   const state = await readEnvironmentState(input.root);
@@ -203,12 +215,16 @@ export async function recordGeneration(input: {
   );
 
   const members: GenerationMember[] = Object.values(input.packages)
-    .map((record) => ({
-      alias: record.alias,
-      purl: record.purl,
-      digest: record.digest,
-      storePath: record.storePath,
-    }))
+    .map((record) => {
+      const references = input.references?.[record.alias];
+      return {
+        alias: record.alias,
+        purl: record.purl,
+        digest: record.digest,
+        storePath: record.storePath,
+        ...(references?.length ? { references: [...references].sort() } : {}),
+      };
+    })
     .sort((left, right) => (left.alias < right.alias ? -1 : 1));
 
   const body: Omit<Generation, 'generationDigest'> = {
@@ -328,11 +344,27 @@ export async function collectableStorePaths(input: {
   const retained =
     current && !newest.includes(current) ? [...newest, current] : newest;
 
-  const reachable = new Set(
-    retained.flatMap((generation) =>
-      generation.members.map((member) => member.storePath),
-    ),
+  // Reachability, not direct membership: collection is defined over the
+  // reference closure of the retained generations. Computed here over store
+  // paths rather than through @openpacker/closure because that operates on
+  // PREX node identities, which opm store paths are not.
+  const edges = new Map<string, readonly string[]>();
+  for (const generation of generations)
+    for (const member of generation.members)
+      if (member.references?.length)
+        edges.set(member.storePath, member.references);
+  const reachable = new Set<string>();
+  const pending = retained.flatMap((generation) =>
+    generation.members.map((member) => member.storePath),
   );
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    // A visited set is what makes this terminate: store references are
+    // routinely cyclic.
+    if (reachable.has(current)) continue;
+    reachable.add(current);
+    pending.push(...(edges.get(current) ?? []));
+  }
   let present: string[];
   try {
     present = (await readdir(paths.store, { withFileTypes: true }))
@@ -410,6 +442,44 @@ export async function environmentVariables(input: {
       : {}),
     PATH: [paths.bin, process.env.PATH ?? ''].filter(Boolean).join(':'),
   };
+}
+
+/**
+ * Quote a value for POSIX `sh`.
+ *
+ * Single quotes are the only form that interprets nothing: inside double
+ * quotes `$`, a backtick, and `\` remain live, so a project directory named
+ * `demo$(...)` would execute under the documented `eval "$(opm shell)"`. The
+ * one character single quotes cannot carry is `'` itself, which is emitted by
+ * closing the quote, escaping it, and reopening.
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * The environment as `export` statements for `eval "$(opm shell)"`.
+ *
+ * Variable names are fixed constants rather than data, so only values need
+ * quoting; a caller adding a dynamic name would have to validate it here.
+ */
+export async function environmentScript(input: {
+  root: string;
+  generation?: Generation;
+}): Promise<string> {
+  const environment = await environmentVariables(input);
+  const separator = environment.PATH?.includes(':') ?? false;
+  // A directory containing ':' cannot be expressed in PATH at all, so say so
+  // rather than emitting a silently truncated search path.
+  const binary = environment.OPM_BIN ?? '';
+  if (separator && binary.includes(':'))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `The project bin directory contains ':', which cannot appear in PATH: ${binary}`,
+    );
+  return Object.entries(environment)
+    .map(([name, value]) => `export ${name}=${shellQuote(value)}\n`)
+    .join('');
 }
 
 /**

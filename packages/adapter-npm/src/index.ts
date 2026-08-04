@@ -19,6 +19,7 @@ import {
   formatPurl,
   header,
   json,
+  packageNodeId,
   parsePurl,
   parseSemver,
   parseSemverRange,
@@ -303,7 +304,10 @@ export class NpmCodec
         qualifiers: {},
       }),
     );
-    const nodeId = formatDigest(await canonicalDigest(exactPurl));
+    const nodeId = await packageNodeId({
+      exactPurl,
+      nativeSemanticsVersion: 'npm-v1',
+    });
     const requirements: Requirement[] = [];
     const optionalNames = new Set(
       Object.keys(metadata.optionalDependencies ?? {}),

@@ -4,70 +4,70 @@
       {
         "from": "requirement:root-tool",
         "kind": "satisfied-by",
-        "to": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f"
+        "to": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9"
       },
       {
         "from": "requirement:root-capability",
         "kind": "satisfied-by",
-        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+        "to": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c"
       },
       {
         "from": "requirement:root-nuget",
         "kind": "satisfied-by",
-        "to": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0"
+        "to": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0"
       },
       {
-        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+        "from": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0",
         "kind": "satisfied-by",
-        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+        "to": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c"
       },
       {
-        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+        "from": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1",
         "kind": "satisfied-by",
-        "to": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d"
+        "to": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c"
       },
       {
-        "from": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+        "from": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2",
         "kind": "satisfied-by",
-        "to": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5"
+        "to": "sha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d"
       },
       {
-        "from": "requirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+        "from": "requirement:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0",
         "kind": "satisfied-by",
-        "to": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f"
+        "to": "sha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528"
       },
       {
-        "from": "requirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+        "from": "requirement:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0",
         "kind": "satisfied-by",
-        "to": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b"
+        "to": "sha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb"
       },
       {
-        "from": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+        "from": "sha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d",
         "kind": "checked-by",
         "to": "proof-check"
       },
       {
-        "from": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+        "from": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
         "kind": "checked-by",
         "to": "proof-check"
       },
       {
-        "from": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+        "from": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
         "kind": "checked-by",
         "to": "proof-check"
       },
       {
-        "from": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+        "from": "sha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb",
         "kind": "checked-by",
         "to": "proof-check"
       },
       {
-        "from": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+        "from": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
         "kind": "checked-by",
         "to": "proof-check"
       },
       {
-        "from": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+        "from": "sha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528",
         "kind": "checked-by",
         "to": "proof-check"
       },
@@ -109,7 +109,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f",
+        "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
         "kind": "candidate",
         "label": "pkg:npm/%40openpacker/demo-tool@1.0.0"
       },
@@ -119,7 +119,7 @@
           "rejectionReasons": ["objective-not-selected"],
           "selected": false
         },
-        "id": "sha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0",
+        "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
         "kind": "candidate",
         "label": "pkg:npm/%40openpacker/demo-tool@0.9.0"
       },
@@ -129,7 +129,7 @@
           "rejectionReasons": ["objective-not-selected"],
           "selected": false
         },
-        "id": "sha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e",
+        "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
         "kind": "candidate",
         "label": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1"
       },
@@ -139,7 +139,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5",
+        "id": "sha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d",
         "kind": "candidate",
         "label": "pkg:npm/openpacker-native-helper@1.0.0"
       },
@@ -149,7 +149,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d",
+        "id": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
         "kind": "candidate",
         "label": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
       },
@@ -159,7 +159,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f",
+        "id": "sha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528",
         "kind": "candidate",
         "label": "pkg:cargo/openpacker-native-helper@1.0.0"
       },
@@ -169,7 +169,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0",
+        "id": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
         "kind": "candidate",
         "label": "pkg:nuget/openpacker.zstd.tool@1.0.0"
       },
@@ -179,7 +179,7 @@
           "rejectionReasons": [],
           "selected": true
         },
-        "id": "sha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b",
+        "id": "sha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb",
         "kind": "candidate",
         "label": "pkg:nuget/openpacker.native.helper@1.0.0"
       },
@@ -189,7 +189,7 @@
           "rejectionReasons": ["objective-not-selected"],
           "selected": false
         },
-        "id": "sha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc",
+        "id": "sha256:7ae9c32bac81f24316a588f2182e106ca6d00830bb37eb924ff858f77ce0fea6",
         "kind": "candidate",
         "label": "pkg:npm/conflicting-demo@1.0.0"
       },
@@ -213,39 +213,39 @@
       },
       {
         "data": { "status": "satisfied" },
-        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0",
+        "id": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0",
         "kind": "requirement",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0"
       },
       {
         "data": { "status": "satisfied" },
-        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1",
+        "id": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1",
         "kind": "requirement",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1"
       },
       {
         "data": { "status": "satisfied" },
-        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2",
+        "id": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2",
         "kind": "requirement",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2"
       },
       {
         "data": { "status": "optional-omitted" },
-        "id": "requirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3",
+        "id": "requirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3",
         "kind": "requirement",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3"
       },
       {
         "data": { "status": "satisfied" },
-        "id": "requirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0",
+        "id": "requirement:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0",
         "kind": "requirement",
-        "label": "sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0"
+        "label": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0"
       },
       {
         "data": { "status": "satisfied" },
-        "id": "requirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0",
+        "id": "requirement:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0",
         "kind": "requirement",
-        "label": "sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0"
+        "label": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0"
       },
       {
         "data": { "evidence": { "value": 0 }, "valid": true },
@@ -285,7 +285,7 @@
       {
         "data": {
           "evidence": {
-            "value": "sha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5\u001fsha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d\u001fsha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0\u001fsha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f\u001fsha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b\u001fsha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f"
+            "value": "sha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d\u001fsha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c\u001fsha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0\u001fsha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb\u001fsha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9\u001fsha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528"
           },
           "valid": true
         },
@@ -297,13 +297,13 @@
         "data": {
           "evidence": {
             "scope": "solution",
-            "selectedNodeId": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f"
+            "selectedNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9"
           },
           "valid": true
         },
-        "id": "conflict:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0",
+        "id": "conflict:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0",
         "kind": "conflict",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0"
       },
       {
         "data": {
@@ -315,9 +315,9 @@
           },
           "valid": true
         },
-        "id": "cardinality:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0",
+        "id": "cardinality:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:k0",
         "kind": "cardinality",
-        "label": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0"
+        "label": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:k0"
       },
       {
         "data": {
@@ -329,9 +329,9 @@
           },
           "valid": true
         },
-        "id": "target:target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd",
+        "id": "target:target:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:capability:compression/zstd",
         "kind": "target",
-        "label": "target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd"
+        "label": "target:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:capability:compression/zstd"
       },
       {
         "data": {
@@ -343,9 +343,9 @@
           },
           "valid": false
         },
-        "id": "target:target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd",
+        "id": "target:target:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:capability:compression/zstd",
         "kind": "target",
-        "label": "target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd"
+        "label": "target:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:capability:compression/zstd"
       },
       {
         "data": { "valid": true },
@@ -369,5 +369,5 @@
       "version": "0.1.0"
     }
   },
-  "text": "sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f: pkg:npm/%40openpacker/demo-tool@1.0.0\nsha256:7b8ca3b5134667e9cd9476656112d2f48c221d0e8dfaf4f0700d03611f2923d0: pkg:npm/%40openpacker/demo-tool@0.9.0\nsha256:bad381889f925b7ce9ba12b1d0bbe828b6b389eb70a98ef77b10604f3cf1e93e: pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1\nsha256:79a1e2ceda9e6dea021a50a96737123283929240930e6860a8e5466975ef95c5: pkg:npm/openpacker-native-helper@1.0.0\nsha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d: pkg:cargo/openpacker-zstd-wasm@1.0.0\nsha256:fb03b883142389909bc144ddf418e82a91d3c9427bb4025bdf1f1b168c41949f: pkg:cargo/openpacker-native-helper@1.0.0\nsha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0: pkg:nuget/openpacker.zstd.tool@1.0.0\nsha256:e7ba18f4c03551ed684f6494136d7314da5a9caeed1234f7c7d8984436306d8b: pkg:nuget/openpacker.native.helper@1.0.0\nsha256:41b4e51d48df55850820b98c7feaea7f96abcd3049512d80523fe9f9ead02dfc: pkg:npm/conflicting-demo@1.0.0\nrequirement:root-tool: root-tool\nrequirement:root-capability: root-capability\nrequirement:root-nuget: root-nuget\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r0\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r1\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r2\nrequirement:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:r3\nrequirement:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0: sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:r0\nrequirement:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0: sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:r0\nobjective:satisfy-hard-constraints: satisfy-hard-constraints\nobjective:minimize-package-count: minimize-package-count\nobjective:exclude-lifecycle-denied: exclude-lifecycle-denied\nobjective:prefer-stable: prefer-stable\nobjective:prefer-highest-native-version: prefer-highest-native-version\nobjective:canonical-lexical-tie-break: canonical-lexical-tie-break\nconflict:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:c0\ncardinality:sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0: sha256:aaa373c679c9f919f6b2c8a72e862a9d7c5bc2f60b330133ba9872a62714ad9f:k0\ntarget:target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd: target:sha256:825cac7eddd956741cded4fcdc809774e8e26ec8804bfe1c3a080752ce335a1d:capability:compression/zstd\ntarget:target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd: target:sha256:85c19ecd41704fb39a14ee479bbba698cf7357cd439ab7cb39a4a035f0a191d0:capability:compression/zstd\nproof-check: independent proof check"
+  "text": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9: pkg:npm/%40openpacker/demo-tool@1.0.0\nsha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f: pkg:npm/%40openpacker/demo-tool@0.9.0\nsha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382: pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1\nsha256:23b9e4b352c39e365046e4968bc93f61be544599f8c35d70ba6becf71ece187d: pkg:npm/openpacker-native-helper@1.0.0\nsha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c: pkg:cargo/openpacker-zstd-wasm@1.0.0\nsha256:de79503901b7a0fd0527201801ee46e393c6a1e2523d98dde036608054fb3528: pkg:cargo/openpacker-native-helper@1.0.0\nsha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0: pkg:nuget/openpacker.zstd.tool@1.0.0\nsha256:8d4533757e71570f92901004cce0342a686f8d11b63860a0d963bb1ac8b76cdb: pkg:nuget/openpacker.native.helper@1.0.0\nsha256:7ae9c32bac81f24316a588f2182e106ca6d00830bb37eb924ff858f77ce0fea6: pkg:npm/conflicting-demo@1.0.0\nrequirement:root-tool: root-tool\nrequirement:root-capability: root-capability\nrequirement:root-nuget: root-nuget\nrequirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r0\nrequirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r1\nrequirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r2\nrequirement:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3\nrequirement:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0: sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:r0\nrequirement:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0: sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:r0\nobjective:satisfy-hard-constraints: satisfy-hard-constraints\nobjective:minimize-package-count: minimize-package-count\nobjective:exclude-lifecycle-denied: exclude-lifecycle-denied\nobjective:prefer-stable: prefer-stable\nobjective:prefer-highest-native-version: prefer-highest-native-version\nobjective:canonical-lexical-tie-break: canonical-lexical-tie-break\nconflict:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0\ncardinality:sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:k0: sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:k0\ntarget:target:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:capability:compression/zstd: target:sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c:capability:compression/zstd\ntarget:target:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:capability:compression/zstd: target:sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0:capability:compression/zstd\nproof-check: independent proof check"
 }

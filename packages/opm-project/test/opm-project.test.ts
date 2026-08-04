@@ -1,5 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,9 +10,13 @@ import {
   addPackage,
   activateGeneration,
   collectGarbage,
+  environmentScript,
   environmentVariables,
+  shellQuote,
   listGenerations,
   readEnvironmentState,
+  readProjectState,
+  recordGeneration,
   rollbackTarget,
   switchGeneration,
   assertSafeSegment,
@@ -359,6 +365,44 @@ describe('environment generations', () => {
     expect(await listGenerations(root)).toHaveLength(1);
   });
 
+  it('retains store paths reachable through references, not just members', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const state = await readEnvironmentState(root);
+    const [installed] = await listGenerations(root);
+    if (!installed || !state)
+      throw new Error('expected an installed generation');
+
+    // A store path no generation lists as a member. Nothing reaches it, so it
+    // is collectable.
+    const referenced = join(root, `.opm/store/sha256-${'d'.repeat(64)}`);
+    await mkdir(referenced, { recursive: true });
+    await writeFile(join(referenced, 'marker'), 'x');
+    expect((await collectGarbage({ root, dryRun: true })).removed).toContain(
+      referenced,
+    );
+
+    // Recording a generation whose member references it must protect it:
+    // collection is defined over the closure, and deleting a referenced path
+    // would break the member that needs it.
+    const record = Object.values(
+      (await readProjectState(join(root, '.opm/project.json')))?.packages ?? {},
+    )[0];
+    if (!record) throw new Error('expected an installed package record');
+    await recordGeneration({
+      root,
+      packages: { [record.alias]: { ...record, digest: `${record.digest}` } },
+      lockDigest: 'sha256:edge',
+      references: { [record.alias]: [referenced] },
+    });
+    const afterEdge = await collectGarbage({ root, dryRun: true });
+    expect(afterEdge.removed).not.toContain(referenced);
+  });
+
   it('never collects the current generation', async () => {
     const root = await tempProject();
     await addPackage({
@@ -391,6 +435,48 @@ describe('environment generations', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('quotes shell values so eval cannot execute them', async () => {
+    // Inside double quotes a shell still expands $, backticks, and \; only
+    // single quotes interpret nothing. `eval "$(opm shell)"` is the documented
+    // usage, so a project directory name is enough to reach a shell.
+    const hostile = [
+      '$(touch /tmp/opm-should-not-exist)',
+      '`touch /tmp/opm-should-not-exist`',
+      '${HOME}',
+      "single'quote",
+      "quote-at-end'",
+      'semi;colon && echo pwned',
+      'back\\slash',
+      'new\nline',
+    ];
+    for (const value of hostile) {
+      const quoted = shellQuote(value);
+      const printed = execFileSync('/bin/sh', ['-c', `printf '%s' ${quoted}`]);
+      expect(printed.toString(), value).toBe(value);
+    }
+    expect(existsSync('/tmp/opm-should-not-exist')).toBe(false);
+  });
+
+  it('emits an evaluable script for the current generation', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const script = await environmentScript({ root });
+    // Every line is a single-quoted export, and evaluating it reproduces the
+    // same values the structured form reports.
+    for (const line of script.trimEnd().split('\n'))
+      expect(line).toMatch(/^export [A-Z_]+='.*'$/u);
+    const environment = await environmentVariables({ root });
+    const echoed = execFileSync('/bin/sh', [
+      '-c',
+      `${script}printf '%s' "$OPM_BIN"`,
+    ]);
+    expect(echoed.toString()).toBe(environment.OPM_BIN);
   });
 
   it('derives shell environment from the current generation', async () => {

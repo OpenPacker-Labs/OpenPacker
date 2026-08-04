@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/materializer": "0.1.0"
   }
 }
