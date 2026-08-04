@@ -15,7 +15,7 @@ import {
   type ProjectState,
 } from './types.js';
 import { assertSafeSegment, projectPaths, resolveContained } from './paths.js';
-import { discoverNpmBins, removeBinShims, writeBinShims } from './bins.js';
+import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
 
 /**
@@ -669,7 +669,16 @@ export async function activateGeneration(input: {
         'UNSAFE_PATH',
         `Generation store path escapes the project store: ${member.storePath}`,
       );
-    const bins = await discoverNpmBins(member.storePath).catch(() => {
+    const ecosystem = (() => {
+      try {
+        return member.purl.startsWith('pkg:')
+          ? member.purl.slice('pkg:'.length).split('/')[0]!
+          : 'npm';
+      } catch {
+        return 'npm';
+      }
+    })();
+    const bins = await discoverBins(member.storePath, ecosystem).catch(() => {
       throw new OpmError(
         'NOT_FOUND',
         `Generation ${input.generation.sequence} needs ${member.storePath}, which is no longer in the store`,

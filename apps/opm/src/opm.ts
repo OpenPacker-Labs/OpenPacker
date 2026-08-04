@@ -11,7 +11,10 @@ import {
   installProject,
   listGenerations,
   listInstalled,
+  installSystemPackage,
   listRegistryVersions,
+  listSystemInstallers,
+  planSystemInstall,
   projectPaths,
   readEnvironmentState,
   removePackage,
@@ -66,6 +69,7 @@ const COMMANDS = new Set([
   'versions',
   'info',
   'resolve',
+  'system',
   'generations',
   'rollback',
   'gc',
@@ -292,6 +296,12 @@ export async function runOpm(
         );
         return EXIT_CODES.success;
       }
+      // Host installers change the machine through a native tool. They are
+      // deliberately not the project store path: apt/nix/winget run vendor
+      // scripts and are not covered by generation rollback.
+      case 'system': {
+        return runSystemCommand(args, io);
+      }
       case 'generations': {
         const root = await requireOpmRoot(cwd);
         const state = await readEnvironmentState(root);
@@ -489,7 +499,70 @@ function shortToLong(short: string): string {
 
 function isBooleanFlag(key: string): boolean {
   return (
-    key === 'help' || key === 'force' || key === 'offline' || key === 'json'
+    key === 'help' ||
+    key === 'force' ||
+    key === 'offline' ||
+    key === 'json' ||
+    key === 'dry-run' ||
+    key === 'allow-elevation'
+  );
+}
+
+/**
+ * Drive a native host installer (apt / nix / winget).
+ *
+ * Subcommands:
+ * - `available` — which installers can run on this host
+ * - `plan <purl>` — show the argv without changing anything
+ * - `install <purl>` — perform the install (elevation opt-in)
+ */
+async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
+  const sub = args.positionals[0] ?? 'available';
+  if (sub === 'available' || sub === 'list') {
+    const installers = await listSystemInstallers();
+    for (const entry of installers) {
+      const status = entry.availability.available
+        ? `available${entry.availability.tool?.version ? ` (${entry.availability.tool.name} ${entry.availability.tool.version})` : ''}`
+        : `unavailable: ${entry.availability.reason ?? 'unknown'}`;
+      io.stdout.write(`${entry.id}\t${status}\n`);
+    }
+    return EXIT_CODES.success;
+  }
+  if (sub === 'plan' || sub === 'install') {
+    const purl = args.positionals[1];
+    if (!purl) throw usage(`opm system ${sub} requires a PURL`);
+    const options = {
+      offline: args.options.has('offline'),
+      dryRun: sub === 'plan' || args.options.has('dry-run'),
+      allowElevation: args.options.has('allow-elevation'),
+    };
+    if (sub === 'plan' || options.dryRun) {
+      const plan = await planSystemInstall(purl, options);
+      io.stdout.write(`${plan.command.join(' ')}\n`);
+      if (plan.requiresElevation)
+        io.stderr.write(
+          'opm: this install needs elevation; pass --allow-elevation to consent\n',
+        );
+      for (const loss of plan.semanticLoss)
+        io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
+      return EXIT_CODES.success;
+    }
+    const outcome = await installSystemPackage(purl, options);
+    if (outcome.stdout) io.stdout.write(outcome.stdout);
+    if (outcome.stderr) io.stderr.write(outcome.stderr);
+    if (outcome.exitCode !== 0) {
+      io.stderr.write(
+        `opm: system install exited ${outcome.exitCode}: ${outcome.command.join(' ')}\n`,
+      );
+      return EXIT_CODES.internal;
+    }
+    io.stdout.write(
+      `Installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
+    );
+    return EXIT_CODES.success;
+  }
+  throw usage(
+    `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
 }
 
@@ -542,6 +615,13 @@ Resolve a full dependency graph (transitive, proof-checked):
   opm resolve pkg:npm/chalk --range '^4.1.0'
   opm resolve pkg:npm/chalk --candidates 8
 
+Host installers (change the machine; not the project store):
+  opm system available
+  opm system plan pkg:nix/hello
+  opm system install pkg:nix/hello
+  opm system install pkg:deb/curl --allow-elevation
+  opm system plan pkg:winget/Microsoft.PowerShell
+
 Registries: ${REGISTRY_ECOSYSTEMS.join(', ')}
   Override one with OPM_REGISTRY_<ECOSYSTEM>, e.g.
   OPM_REGISTRY_NPM=https://npm.internal.example
@@ -562,6 +642,8 @@ Project files:
   .opm/bin          executable shims (use with opmx or PATH)
 
 Execute installed bins with: opmx <bin|package> [args...]
+  Ephemeral: opmx pkg:nuget/dotnet-cowsay@1.3.0
+  Ephemeral: opmx pkg:pypi/cowsay
 
 Aliases: opkg, opkgm → opm
 Protocol/control plane: openpacker (advanced)

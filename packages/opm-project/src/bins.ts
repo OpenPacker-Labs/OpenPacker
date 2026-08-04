@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -6,6 +7,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
@@ -121,12 +123,19 @@ export async function discoverPythonBins(
  * `<Command>` elements name the command, the managed assembly to run, and the
  * runner. There is no native executable to point at — `dotnet` runs the dll —
  * which is why this needs its own discovery rather than a file lookup.
+ *
+ * Packages ship the same command under several TFMs (`net8.0`, `net9.0`,
+ * `net10.0`). Emitting one entry per TFM made every multi-target tool look
+ * ambiguous. One command name wins: the highest TFM that the host runtime can
+ * load (or the newest TFM when no runtime is detected).
  */
 export async function discoverDotnetBins(
   extractRoot: string,
 ): Promise<BinDeclaration[]> {
   const settings = await findToolSettings(join(extractRoot, 'tools'));
-  const bins: BinDeclaration[] = [];
+  const hostMajor = hostDotnetMajor();
+  type Candidate = BinDeclaration & { tfmMajor: number; tfmMinor: number };
+  const best = new Map<string, Candidate>();
   for (const file of settings) {
     let xml: string;
     try {
@@ -134,6 +143,9 @@ export async function discoverDotnetBins(
     } catch {
       continue;
     }
+    const tfm = tfmFromToolsPath(file) ?? { major: 0, minor: 0 };
+    // Skip TFMs the host cannot load when we know what is installed.
+    if (hostMajor !== undefined && tfm.major > hostMajor) continue;
     for (const match of xml.matchAll(/<Command\b([^>]*)\/?>/giu)) {
       const attributes = match[1] ?? '';
       const name = /\bName\s*=\s*"([^"]+)"/iu.exec(attributes)?.[1];
@@ -147,14 +159,73 @@ export async function discoverDotnetBins(
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)) continue;
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.dll$/iu.test(entryPoint)) continue;
       const directory = dirname(file);
-      bins.push({
+      const candidate: Candidate = {
         name,
         path: `${relative(extractRoot, directory).split(sep).join('/')}/${entryPoint}`,
         interpreter: 'dotnet',
-      });
+        tfmMajor: tfm.major,
+        tfmMinor: tfm.minor,
+      };
+      const previous = best.get(name);
+      if (
+        previous === undefined ||
+        candidate.tfmMajor > previous.tfmMajor ||
+        (candidate.tfmMajor === previous.tfmMajor &&
+          candidate.tfmMinor > previous.tfmMinor)
+      )
+        best.set(name, candidate);
     }
   }
-  return bins.sort((left, right) => (left.name < right.name ? -1 : 1));
+  return [...best.values()]
+    .map(({ tfmMajor: _a, tfmMinor: _b, ...bin }) => bin)
+    .sort((left, right) => (left.name < right.name ? -1 : 1));
+}
+
+/** `tools/net8.0/any/…` → { major: 8, minor: 0 }. */
+function tfmFromToolsPath(
+  settingsPath: string,
+): { major: number; minor: number } | undefined {
+  const match = /[/\\](?:net|netcoreapp|netstandard)(\d+)(?:\.(\d+))?/iu.exec(
+    settingsPath,
+  );
+  if (!match) return undefined;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2] ?? '0'),
+  };
+}
+
+/**
+ * Highest Microsoft.NETCore.App major the host has installed.
+ *
+ * Reads the shared framework directory rather than shelling out, so discovery
+ * stays offline and cheap. Undefined when nothing is installed — callers then
+ * keep the newest TFM in the package.
+ */
+export function hostDotnetMajor(): number | undefined {
+  const roots = [
+    process.env.DOTNET_ROOT?.trim(),
+    process.env.OPM_DOTNET?.trim()
+      ? dirname(process.env.OPM_DOTNET.trim())
+      : undefined,
+    join(homedir(), '.dotnet'),
+    '/usr/share/dotnet',
+  ].filter((value): value is string => value !== undefined && value !== '');
+  let highest: number | undefined;
+  for (const root of roots) {
+    let entries: string[];
+    try {
+      entries = readdirSync(join(root, 'shared', 'Microsoft.NETCore.App'));
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const major = Number(/^(\d+)\./u.exec(entry)?.[1]);
+      if (!Number.isFinite(major)) continue;
+      if (highest === undefined || major > highest) highest = major;
+    }
+  }
+  return highest;
 }
 
 /** `DotnetToolSettings.xml` files under a tools directory. */
@@ -203,20 +274,43 @@ function joinPosix(...parts: string[]): string {
     .replace(/\\/g, '/');
 }
 
+export interface WrittenBinShim {
+  name: string;
+  path: string;
+  shim: string;
+  target: string;
+  interpreter?: 'node' | 'python' | 'dotnet';
+  entry?: string;
+}
+
+/**
+ * Write launchers for discovered entry points.
+ *
+ * npm bins are Node scripts; Python console scripts are a module:callable;
+ * .NET tools are managed assemblies. Each gets a launcher that invokes the
+ * right runtime — a Node shebang for a .dll is not an install, it is a
+ * deferred crash.
+ *
+ * `pythonPath` is every store root that should be importable when a Python
+ * console script runs (the package itself plus its resolved transitive
+ * dependencies). Without it a tool that imports a locked dependency fails
+ * at runtime even though `opm install` put that dependency on disk.
+ */
 export async function writeBinShims(input: {
   binDir: string;
   storeRoot: string;
   bins: readonly BinDeclaration[];
-}): Promise<{ name: string; path: string; shim: string; target: string }[]> {
+  /** Extra store roots on PYTHONPATH for Python entry points. */
+  pythonPath?: readonly string[];
+}): Promise<WrittenBinShim[]> {
   await mkdir(input.binDir, { recursive: true });
-  const written: {
-    name: string;
-    path: string;
-    shim: string;
-    target: string;
-  }[] = [];
+  const written: WrittenBinShim[] = [];
   const storeRoot = resolve(input.storeRoot);
   const binDir = resolve(input.binDir);
+  const pythonRoots = [
+    storeRoot,
+    ...(input.pythonPath ?? []).map((path) => resolve(path)),
+  ];
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
     // "." segments are dropped, not refused. npm bin paths are conventionally
@@ -232,8 +326,95 @@ export async function writeBinShims(input: {
     }
     const target = resolveContained(storeRoot, ...segments);
     const shimPath = resolveContained(binDir, name);
-    const relTarget = relative(binDir, target);
-    const script = `#!/usr/bin/env node
+    const script = shimScriptFor(bin, {
+      binDir,
+      target,
+      pythonRoots,
+    });
+    await writeFile(shimPath, script, { mode: 0o755 });
+    await chmod(shimPath, 0o755);
+    written.push({
+      name,
+      path: bin.path,
+      shim: shimPath,
+      target,
+      ...(bin.interpreter === undefined
+        ? {}
+        : { interpreter: bin.interpreter }),
+      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+    });
+  }
+  return written;
+}
+
+function shimScriptFor(
+  bin: BinDeclaration,
+  context: {
+    binDir: string;
+    target: string;
+    pythonRoots: readonly string[];
+  },
+): string {
+  if (bin.interpreter === 'python') {
+    const [moduleName, callable] = (bin.entry ?? '').split(':');
+    if (!moduleName || !callable)
+      throw new OpmError(
+        'UNSAFE_BIN',
+        `${bin.name} declares an unusable Python entry point: ${bin.entry ?? '(none)'}`,
+      );
+    const pathLiteral = JSON.stringify(context.pythonRoots);
+    return `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+const roots = ${pathLiteral};
+const env = { ...process.env };
+const existing = env.PYTHONPATH ? env.PYTHONPATH.split(/[:;]/) : [];
+env.PYTHONPATH = [...roots, ...existing].join(process.platform === 'win32' ? ';' : ':');
+const program =
+  'import sys\\n' +
+  ${JSON.stringify(`from ${moduleName} import ${callable} as _entry\\nsys.exit(_entry())\\n`)};
+const python = process.env.OPM_PYTHON?.trim() || 'python3';
+const child = spawn(python, ['-c', program, ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  env,
+});
+child.on('exit', (code, signal) => {
+  if (signal) process.kill(process.pid, signal);
+  process.exit(code ?? 1);
+});
+child.on('error', (error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+  }
+
+  if (bin.interpreter === 'dotnet') {
+    const relTarget = relative(context.binDir, context.target);
+    return `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const here = dirname(fileURLToPath(import.meta.url));
+const assembly = resolve(here, ${JSON.stringify(relTarget)});
+const dotnet = process.env.OPM_DOTNET?.trim() || 'dotnet';
+const child = spawn(dotnet, [assembly, ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  env: process.env,
+});
+child.on('exit', (code, signal) => {
+  if (signal) process.kill(process.pid, signal);
+  process.exit(code ?? 1);
+});
+child.on('error', (error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+  }
+
+  // Default / node: the package ships a script Node executes.
+  const relTarget = relative(context.binDir, context.target);
+  return `#!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -252,16 +433,6 @@ child.on('error', (error) => {
   process.exit(1);
 });
 `;
-    await writeFile(shimPath, script, { mode: 0o755 });
-    await chmod(shimPath, 0o755);
-    written.push({
-      name,
-      path: bin.path,
-      shim: shimPath,
-      target,
-    });
-  }
-  return written;
 }
 
 export async function removeBinShims(

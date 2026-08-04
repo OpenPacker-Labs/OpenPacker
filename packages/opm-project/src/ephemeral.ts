@@ -10,6 +10,7 @@ import {
   listRegistryVersions,
   resolveRegistryArtifact,
 } from './registry.js';
+import { resolveGraph, solveGraph } from './resolve.js';
 
 /**
  * Run a tool without adding it to a project — what `npx`, `pipx run`, `uvx`
@@ -23,6 +24,11 @@ import {
  *
  * Being content-addressed also makes the second run free, which is the
  * behaviour people actually want from `npx` and rarely get.
+ *
+ * For ecosystems that declare runtime dependencies (npm, PyPI, …) the full
+ * solved closure is materialised into the cache and returned as
+ * `runtimePaths`, so a Python console script that imports a locked dependency
+ * finds it on sys.path rather than crashing with ImportError.
  */
 
 /** Where cached tools live. Honours XDG, falls back to a home directory. */
@@ -40,12 +46,18 @@ export interface EphemeralTool {
   digest: string;
   storePath: string;
   bins: BinDeclaration[];
-  /** True when the bytes were already cached and nothing was downloaded. */
+  /** True when the primary package bytes were already cached. */
   cached: boolean;
+  /**
+   * Store roots that must be on the runtime path (e.g. PYTHONPATH) so
+   * transitive dependencies of the tool are importable.
+   */
+  runtimePaths: string[];
 }
 
 /**
- * Resolve a PURL, verify it, and place it in the tool cache.
+ * Resolve a PURL, verify it (and its runtime closure), and place everything
+ * in the tool cache.
  *
  * Resolution mirrors `opm add`: an exact version is used as given, and a bare
  * package takes the newest the registry publishes. There is no lockfile here,
@@ -86,10 +98,61 @@ export async function fetchTool(input: {
         return newest;
       })();
 
-  const artifact = await resolveRegistryArtifact(ecosystem, exact);
   const cacheRoot = input.cacheRoot ?? toolCacheRoot();
   await mkdir(cacheRoot, { recursive: true });
 
+  const primary = await materialiseExact(ecosystem, exact, cacheRoot);
+
+  // Runtime closure: everything the tool needs at run time. Soft-fail if the
+  // walk cannot complete — a tool that declares no dependencies must still
+  // run, and a registry that omits a dependency must not make a previously
+  // runnable tool unusable.
+  const runtimePaths = [primary.storePath];
+  try {
+    const graph = await resolveGraph({
+      roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
+    });
+    if (graph.packages.length > 0) {
+      const solved = await solveGraph({
+        graph,
+        rootRequirements: [{ purl: stripPurlVersion(primary.exactPurl) }],
+      });
+      for (const instance of solved.selected) {
+        const depExact = instance.identity.exactPurl;
+        if (!depExact || depExact === primary.exactPurl) continue;
+        const depEco = instance.identity.purlType;
+        if (!REGISTRY_ECOSYSTEMS.includes(depEco)) continue;
+        const dep = await materialiseExact(depEco, depExact, cacheRoot);
+        if (!runtimePaths.includes(dep.storePath))
+          runtimePaths.push(dep.storePath);
+      }
+    }
+  } catch {
+    // Direct tool only; the run path still works for packages without a graph.
+  }
+
+  return {
+    exactPurl: primary.exactPurl,
+    digest: primary.digest,
+    storePath: primary.storePath,
+    bins: primary.bins,
+    cached: primary.cached,
+    runtimePaths,
+  };
+}
+
+async function materialiseExact(
+  ecosystem: string,
+  exact: string,
+  cacheRoot: string,
+): Promise<{
+  exactPurl: string;
+  digest: string;
+  storePath: string;
+  bins: BinDeclaration[];
+  cached: boolean;
+}> {
+  const artifact = await resolveRegistryArtifact(ecosystem, exact);
   const pkg: LockPackage = {
     alias: 'tool',
     purl: artifact.exactPurl,
@@ -104,16 +167,12 @@ export async function fetchTool(input: {
     reason: 'direct',
     ecosystem,
   };
-
   const { storePath, bins, cached } = await materializeLockPackage({
     root: cacheRoot,
     pkg,
     offline: false,
-    // The provider already fetched and checked these; handing them over keeps
-    // the run to a single download.
     bytes: artifact.bytes,
   });
-
   return {
     exactPurl: artifact.exactPurl,
     digest: artifact.digest,

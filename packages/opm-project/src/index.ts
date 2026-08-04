@@ -151,3 +151,12 @@ export {
   type ResolutionBounds,
   type ResolvedGraph,
 } from './resolve.js';
+
+export {
+  installSystemPackage,
+  listSystemInstallers,
+  planSystemInstall,
+  systemInstaller,
+  systemInstallerIdFor,
+  type SystemInstallerId,
+} from './system.js';
