@@ -9,6 +9,7 @@ import { MavenRepositoryProvider } from '@openpacker/adapter-maven';
 import { NpmRegistryProvider } from '@openpacker/adapter-npm';
 import { NugetV3Provider } from '@openpacker/adapter-nuget';
 import { PypiJsonProvider } from '@openpacker/adapter-pypi';
+import { OciRegistryProvider } from '@openpacker/oci';
 import { OpmError } from './types.js';
 
 /**
@@ -40,6 +41,8 @@ export const DEFAULT_REGISTRY_ENDPOINTS: Readonly<Record<string, string>> = {
   nuget: 'https://api.nuget.org/v3/index.json',
   maven: 'https://repo1.maven.org/maven2',
   golang: 'https://proxy.golang.org',
+  // Addressed per-PURL via repository_url; this is only the default host.
+  oci: 'https://registry-1.docker.io',
 };
 
 /** Ecosystems `opm` can resolve from a registry. */
@@ -61,6 +64,7 @@ const ARTIFACT_ORIGINS: Readonly<Record<string, readonly string[]>> = {
   nuget: ['https://api.nuget.org', 'https://globalcdn.nuget.org'],
   maven: ['https://repo1.maven.org', 'https://repo.maven.apache.org'],
   golang: ['https://proxy.golang.org'],
+  oci: ['https://registry-1.docker.io', 'https://ghcr.io'],
 };
 
 export function registryEndpoint(ecosystem: string): string {
@@ -121,6 +125,12 @@ export function providerFor(
   const clock = { now: options.now ?? (() => new Date().toISOString()) };
 
   switch (ecosystem) {
+    // OCI addresses its own registry through the PURL's repository_url, so it
+    // does not take an endpoint the way a single-registry ecosystem does.
+    case 'oci':
+      return new OciRegistryProvider(
+        options.now ? { now: options.now } : {},
+      ) as unknown as CatalogProvider;
     case 'npm':
       return new NpmRegistryProvider(transport, clock, endpoint);
     case 'cargo':

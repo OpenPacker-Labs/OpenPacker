@@ -89,7 +89,7 @@ const options = () => ({
 describe('registry configuration', () => {
   it('covers every ecosystem opm claims to support', () => {
     expect([...REGISTRY_ECOSYSTEMS].sort()).toEqual(
-      ['cargo', 'golang', 'maven', 'npm', 'nuget', 'pypi'].sort(),
+      ['cargo', 'golang', 'maven', 'npm', 'nuget', 'oci', 'pypi'].sort(),
     );
     for (const ecosystem of REGISTRY_ECOSYSTEMS)
       expect(
