@@ -94,6 +94,11 @@ export interface RegistryOptions {
   offline?: boolean;
   /** Injected by tests so nothing reaches a real registry unintentionally. */
   transport?: HttpTransport;
+  /**
+   * Injected fetch for ecosystems that speak the Fetch API directly (OCI).
+   * Tests use this the same way `transport` is used for HTTP-JSON registries.
+   */
+  fetch?: typeof fetch;
   now?: () => string;
 }
 
@@ -128,9 +133,10 @@ export function providerFor(
     // OCI addresses its own registry through the PURL's repository_url, so it
     // does not take an endpoint the way a single-registry ecosystem does.
     case 'oci':
-      return new OciRegistryProvider(
-        options.now ? { now: options.now } : {},
-      ) as unknown as CatalogProvider;
+      return new OciRegistryProvider({
+        ...(options.now ? { now: options.now } : {}),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+      }) as unknown as CatalogProvider;
     case 'npm':
       return new NpmRegistryProvider(transport, clock, endpoint);
     case 'cargo':
@@ -237,11 +243,18 @@ export async function resolveRegistryArtifact(
     );
   // The transport allowlist covers the request, but failing here names the
   // problem instead of surfacing it as a generic transport rejection.
+  //
+  // OCI is addressed per-PURL (`repository_url`). Naming a registry in the
+  // PURL is what authorizing it means — same idea as `OPM_REGISTRY_*` — so
+  // its HTTPS origin is accepted even when it is not one of the two defaults.
+  // Non-HTTPS was already refused at PURL parse time.
+  const uriOrigin = new URL(uri).origin;
   const allowed = allowedOriginsFor(ecosystem);
-  if (!allowed.includes(new URL(uri).origin))
+  const ociNamed = ecosystem === 'oci' && uriOrigin.startsWith('https://');
+  if (!allowed.includes(uriOrigin) && !ociNamed)
     throw new OpmError(
       'UNSAFE_PATH',
-      `${exactPurl} points at ${new URL(uri).origin}, which is not an allowed ` +
+      `${exactPurl} points at ${uriOrigin}, which is not an allowed ` +
         `origin for ${ecosystem} (${allowed.join(', ')}).`,
     );
 

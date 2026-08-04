@@ -16,10 +16,17 @@ import type {
 import { sha256 } from '@openpacker/canonical';
 import {
   BearerTokenAuthentication,
+  DOCKER_MEDIA_TYPES,
+  OCI_MEDIA_TYPES,
+  isIndexMediaType,
+  isImageMediaType,
   OciRegistryClient,
+  type OciDescriptor,
+  type OciIndex,
   type OciManifest,
   type RegistryAuthentication,
 } from './index.js';
+import { packUstar } from './tar.js';
 
 /**
  * OCI registries as a PREX catalog.
@@ -354,15 +361,167 @@ export class OciRegistryProvider implements CatalogProvider {
     };
   }
 
+  /**
+   * Materialise an image into one verifiable artifact: an OCI image layout
+   * packed as ustar.
+   *
+   * Browse/pin (`inspect`) only needs the manifest. Install needs the config
+   * and every layer too, each digest-checked against its descriptor, then
+   * assembled into the layout a container runtime expects. The layout tar's
+   * own sha256 is what the store verifies; the image manifest digest remains
+   * the PURL version (identity), which is a different statement.
+   */
   async fetchArtifactRecord(
     exactPurl: string,
     signal?: AbortSignal,
   ): Promise<ProviderRecord> {
-    const inspection = await this.inspect(exactPurl, signal);
+    const reference = parseOciPurl(exactPurl);
+    const target = reference.digest ?? reference.tag;
+    if (target === undefined)
+      throw new ProviderError(
+        'INVALID_PURL',
+        `${exactPurl} names neither a tag nor a digest`,
+      );
+
+    const client = this.#client(reference);
+    const pulled = await client.pullManifest(target, undefined, signal);
+    const image = await this.#resolveImageManifest(client, pulled, signal);
+    const layout = await this.#packImageLayout(client, image, signal);
+    const digestValue = (await sha256(layout.bytes)).value;
+    const uri = `https://${reference.registry}/v2/${reference.repository}/manifests/${image.digest}`;
+
     return {
-      ...inspection.record,
-      body: inspection.package.artifacts[0],
+      key: purlFor(reference, { kind: 'digest', digest: image.digest }),
+      endpoint: uri,
+      body: {
+        digest: { algorithm: 'sha256', value: digestValue },
+        size: layout.bytes.byteLength,
+        mediaType: 'application/vnd.oci.image.layout.v1.tar',
+        locations: [
+          {
+            transport: 'oci',
+            uri,
+            priority: 0,
+            rangeSupported: false,
+          },
+        ],
+        referrers: [],
+        externalRefs: [],
+        nativeRole: 'oci-image-layout',
+        imageDigest: image.digest,
+      },
+      rawBody: layout.bytes,
+      retrievedAt: this.options.now?.() ?? new Date().toISOString(),
     };
+  }
+
+  /**
+   * Resolve an index or list to a single image manifest for this host.
+   *
+   * Multi-arch tags publish an index. Identity still ends at a digest; the
+   * choice of which platform digest is for *this* materialisation and is
+   * recorded on the layout, not smuggled into a tag.
+   */
+  async #resolveImageManifest(
+    client: OciRegistryClient,
+    pulled: {
+      descriptor: OciDescriptor;
+      bytes: Uint8Array;
+      manifest: OciManifest;
+    },
+    signal?: AbortSignal,
+  ): Promise<{
+    digest: string;
+    bytes: Uint8Array;
+    manifest: OciManifest;
+  }> {
+    if (isImageMediaType(pulled.descriptor.mediaType)) {
+      return {
+        digest: pulled.descriptor.digest,
+        bytes: pulled.bytes,
+        manifest: pulled.manifest,
+      };
+    }
+    if (!isIndexMediaType(pulled.descriptor.mediaType))
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `Unsupported OCI media type ${pulled.descriptor.mediaType}`,
+      );
+
+    const index = pulled.manifest as unknown as OciIndex & {
+      manifests: Array<
+        OciDescriptor & {
+          platform?: { os?: string; architecture?: string; variant?: string };
+        }
+      >;
+    };
+    const selected = selectPlatformManifest(index.manifests);
+    if (selected === undefined)
+      throw new ProviderError(
+        'ARTIFACT_NOT_FOUND',
+        `No image manifest matches this host (${hostPlatform().os}/${hostPlatform().architecture}) ` +
+          `and the index published no usable fallback`,
+      );
+    const image = await client.pullManifest(selected.digest, undefined, signal);
+    if (!isImageMediaType(image.descriptor.mediaType))
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `Platform entry ${selected.digest} is not an image manifest`,
+      );
+    return {
+      digest: image.descriptor.digest,
+      bytes: image.bytes,
+      manifest: image.manifest,
+    };
+  }
+
+  async #packImageLayout(
+    client: OciRegistryClient,
+    image: { digest: string; bytes: Uint8Array; manifest: OciManifest },
+    signal?: AbortSignal,
+  ): Promise<{ bytes: Uint8Array }> {
+    const files: { path: string; body: Uint8Array }[] = [];
+    const putBlob = (digest: string, body: Uint8Array) => {
+      const hex = digest.startsWith('sha256:')
+        ? digest.slice('sha256:'.length)
+        : digest;
+      files.push({ path: `blobs/sha256/${hex}`, body });
+    };
+
+    putBlob(image.digest, image.bytes);
+
+    const configBytes = await client.pullBlob(image.manifest.config, signal);
+    putBlob(image.manifest.config.digest, configBytes);
+
+    for (const layer of image.manifest.layers) {
+      const layerBytes = await client.pullBlob(layer, signal);
+      putBlob(layer.digest, layerBytes);
+    }
+
+    const indexDocument = {
+      schemaVersion: 2,
+      mediaType: OCI_MEDIA_TYPES.index,
+      manifests: [
+        {
+          mediaType: image.manifest.mediaType ?? OCI_MEDIA_TYPES.manifest,
+          digest: image.digest,
+          size: image.bytes.byteLength,
+          platform: hostPlatform(),
+        },
+      ],
+    };
+    files.push({
+      path: 'index.json',
+      body: new TextEncoder().encode(`${JSON.stringify(indexDocument)}\n`),
+    });
+    files.push({
+      path: 'oci-layout',
+      body: new TextEncoder().encode(
+        `${JSON.stringify({ imageLayoutVersion: '1.0.0' })}\n`,
+      ),
+    });
+
+    return { bytes: packUstar(files) };
   }
 
   async snapshot(evaluationTime: string): Promise<SourceSnapshot> {
@@ -373,4 +532,65 @@ export class OciRegistryProvider implements CatalogProvider {
       sources: [],
     } as unknown as SourceSnapshot;
   }
+}
+
+/** Host platform as OCI names it. */
+export function hostPlatform(): { os: string; architecture: string } {
+  const os =
+    process.platform === 'win32'
+      ? 'windows'
+      : process.platform === 'darwin'
+        ? 'darwin'
+        : 'linux';
+  const architecture =
+    process.arch === 'x64'
+      ? 'amd64'
+      : process.arch === 'arm64'
+        ? 'arm64'
+        : process.arch;
+  return { os, architecture };
+}
+
+/**
+ * Pick one platform-specific manifest from an index.
+ *
+ * Prefer an exact os/arch match for this host; if the index only publishes
+ * one image (common for single-arch tags served as a trivial index), take
+ * it. Otherwise fail closed — guessing the wrong arch is worse than refusing.
+ */
+export function selectPlatformManifest(
+  manifests: ReadonlyArray<
+    OciDescriptor & {
+      platform?: { os?: string; architecture?: string; variant?: string };
+    }
+  >,
+):
+  | (OciDescriptor & {
+      platform?: { os?: string; architecture?: string; variant?: string };
+    })
+  | undefined {
+  const host = hostPlatform();
+  const images = manifests.filter(
+    (entry) =>
+      entry.mediaType === OCI_MEDIA_TYPES.manifest ||
+      entry.mediaType === DOCKER_MEDIA_TYPES.manifest ||
+      entry.mediaType === undefined,
+  );
+  if (images.length === 0) return undefined;
+
+  const exact = images.find(
+    (entry) =>
+      entry.platform?.os === host.os &&
+      entry.platform?.architecture === host.architecture,
+  );
+  if (exact) return exact;
+
+  // Single entry with no platform, or one entry total: the publisher made the
+  // choice already.
+  if (images.length === 1) return images[0];
+
+  const unplatformed = images.filter((entry) => entry.platform === undefined);
+  if (unplatformed.length === 1) return unplatformed[0];
+
+  return undefined;
 }
