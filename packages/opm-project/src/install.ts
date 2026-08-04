@@ -239,10 +239,12 @@ export async function installFromLock(input: {
       new TextEncoder().encode(
         JSON.stringify(
           Object.fromEntries(
-            Object.entries(state.packages).map(([alias, record]) => [
-              alias,
-              record.digest,
-            ]),
+            Object.entries(state.packages)
+              .map(([alias, record]): [string, string] => [
+                alias,
+                record.digest,
+              ])
+              .sort(([left], [right]) => (left < right ? -1 : 1)),
           ),
         ),
       ),
@@ -287,10 +289,12 @@ export async function uninstallPackages(input: {
       new TextEncoder().encode(
         JSON.stringify(
           Object.fromEntries(
-            Object.entries(state.packages).map(([alias, record]) => [
-              alias,
-              record.digest,
-            ]),
+            Object.entries(state.packages)
+              .map(([alias, record]): [string, string] => [
+                alias,
+                record.digest,
+              ])
+              .sort(([left], [right]) => (left < right ? -1 : 1)),
           ),
         ),
       ),

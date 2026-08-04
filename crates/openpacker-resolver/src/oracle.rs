@@ -18,8 +18,6 @@ pub struct OracleResult {
 /// Amendments are applied first, so an external caller gets the optimum for
 /// the universe that is actually solved rather than the pre-amendment one.
 pub fn brute_force_oracle(input: &SolveInput) -> Result<OracleResult, ResolverError> {
-    // Amendments are applied first, so an external caller gets the optimum for
-    // the universe that is actually solved rather than the pre-amendment one.
     let amended = crate::amend::apply_amendments(input)?;
     if !amended.applied.is_empty() {
         return brute_force_oracle_amended(&amended.input);

@@ -441,8 +441,17 @@ export async function activateGeneration(input: {
     // The store path is content-addressed and immutable, so if it is gone the
     // generation is genuinely unrestorable — say so rather than half-restore.
     // Every other generation field is validated; the store path must be too,
-    // even though the record is digest-verified.
-    resolveContained(paths.store, basename(member.storePath));
+    // even though the record is digest-verified. Comparing against the
+    // contained resolution is the check — passing a basename would make it
+    // unconditionally true.
+    if (
+      member.storePath !==
+      resolveContained(paths.store, basename(member.storePath))
+    )
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Generation store path escapes the project store: ${member.storePath}`,
+      );
     const bins = await discoverNpmBins(member.storePath).catch(() => {
       throw new OpmError(
         'NOT_FOUND',

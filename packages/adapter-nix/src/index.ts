@@ -528,7 +528,7 @@ function versionSortKey(version: string): string {
     .join('.');
 }
 
-const NIXBASE32 = '0123456789abdfghijklmnpqrsvwxyz';
+const NIXBASE32 = '0123456789abcdfghijklmnpqrsvwxyz';
 
 /**
  * Decode Nix's base32, which reads least-significant character first and is
@@ -572,7 +572,7 @@ export function parseNarHash(
       : undefined;
   if (body === undefined) return undefined;
   if (/^[0-9a-f]{64}$/u.test(body)) return { algorithm: 'sha256', value: body };
-  if (/^[0-9abdfghijklmnpqrsvwxyz]{52}$/u.test(body)) {
+  if (/^[0-9abcdfghijklmnpqrsvwxyz]{52}$/u.test(body)) {
     const bytes = decodeNixBase32(body);
     return bytes && bytes.length >= 32
       ? { algorithm: 'sha256', value: hex(bytes.slice(0, 32)) }

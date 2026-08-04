@@ -692,6 +692,8 @@ function normalizeItem(
     // unregistered type still normalizes, and records that no codec refined
     // it. Operations that genuinely need ecosystem semantics still fail with
     // UNSUPPORTED_ECOSYSTEM.
+    if (!isEcosystem(parsed.type))
+      throw operationError('INVALID_PURL', `Not a PURL type: ${parsed.type}`);
     const codec = codecs.get(parsed.type as Ecosystem);
     const canonical = codec
       ? codec.canonicalizePurl(item.value)

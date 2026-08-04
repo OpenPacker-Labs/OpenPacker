@@ -532,6 +532,17 @@ describe('openpackerd', () => {
     // Canonical encoding happened; ecosystem rules did not, and it says so.
     expect(result.semanticLoss[0].code).toBe('ECOSYSTEM_RULES_NOT_APPLIED');
     expect(result.reversibility).toBe('lossy');
+
+    // Opening the path must not bless a malformed type as canonical: a PURL
+    // type is lowercase alphanumerics plus '.', '+', and '-'.
+    for (const value of ['pkg:DEB!/x@1', 'pkg:  /x@1', 'pkg:%41%42/x@1']) {
+      const rejected = await app.inject({
+        method: 'POST',
+        url: '/v1/normalize',
+        payload: { items: [{ type: 'purl', value }] },
+      });
+      expect(rejected.statusCode, value).toBeGreaterThanOrEqual(400);
+    }
     await app.close();
   });
 

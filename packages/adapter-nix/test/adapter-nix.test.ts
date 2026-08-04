@@ -235,35 +235,58 @@ describe('nix path-info translation', () => {
 });
 
 describe('nar hashes', () => {
-  it('accepts every spelling sha256 can take', () => {
-    expect(parseNarHash(`sha256:${'a'.repeat(64)}`)).toEqual({
-      algorithm: 'sha256',
-      value: 'a'.repeat(64),
-    });
-    const base64 = Buffer.from('b'.repeat(32), 'binary').toString('base64');
-    expect(parseNarHash(`sha256-${base64}`)?.algorithm).toBe('sha256');
+  // Vectors produced by an independent reimplementation of Nix printHash32,
+  // anchored on the published value for sha256(""). Every one contains 'c',
+  // the character an earlier alphabet omitted — a synthetic c-free string
+  // would pass under a wrong alphabet and prove nothing.
+  const NIXBASE32_VECTORS: readonly [string, string][] = [
+    [
+      '0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73',
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    ],
+    [
+      '0p2hwbp8ma7m3ln7qimhyasnrnq1m5b9zw0fg6y9y9dl10c8fc2z',
+      '5f30871808b4259fbc790ef09f56a901db6cb5f2b0467c2c1df5a88aeee2505c',
+    ],
+    [
+      '0mz9x17mpa80cwc42b1z7x3fb49z5m5zc3qp8gj7dskrpcrgc9mi',
+      'b126f632bb79ea76e443170ff64b2d3f91e5463f3f2c41186700a95b4fe8e957',
+    ],
+    [
+      '0gm4dkkh8gjxf3hymjkniw7gi6891mwd4wn30w6zwycfqwwd6ixc',
+      'ac47d338c78e79fe0d07c372d2780d0999f80e8f76caeae1705d3e04e76ca43e',
+    ],
+  ];
 
-    // What nix path-info and narinfo actually emit is nixbase32, so a codec
-    // that only read hex and base64 would find no artifacts on a real store.
-    const nixbase32 =
-      'sha256:0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f';
-    const decoded = parseNarHash(nixbase32);
-    expect(decoded?.algorithm).toBe('sha256');
-    expect(decoded?.value).toMatch(/^[0-9a-f]{64}$/u);
-    // Decoding is deterministic and distinguishes different hashes.
-    expect(parseNarHash(nixbase32)?.value).toBe(decoded?.value);
-    expect(
-      parseNarHash(
-        'sha256:1f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f',
-      )?.value,
-    ).not.toBe(decoded?.value);
+  it('decodes real nixbase32 hashes to the right sha256', () => {
+    for (const [base32, hex] of NIXBASE32_VECTORS) {
+      expect(base32).toContain('c');
+      expect(parseNarHash(`sha256:${base32}`)).toEqual({
+        algorithm: 'sha256',
+        value: hex,
+      });
+    }
   });
 
-  it('refuses algorithms PREX cannot represent', () => {
-    // SRI with a non-sha256 algorithm must not be coerced into a PREX digest.
+  it('decodes the same bytes from every spelling of one hash', () => {
+    const [base32, hex] = NIXBASE32_VECTORS[0]!;
+    const base64 = Buffer.from(hex, 'hex').toString('base64');
+    // nixbase32, hex, and SRI base64 are three spellings of one digest, so
+    // they must all yield the same value.
+    expect(parseNarHash(`sha256:${base32}`)?.value).toBe(hex);
+    expect(parseNarHash(`sha256:${hex}`)?.value).toBe(hex);
+    expect(parseNarHash(`sha256-${base64}`)?.value).toBe(hex);
+  });
+
+  it('refuses what it cannot represent instead of guessing', () => {
+    // A non-sha256 algorithm must not be coerced into a PREX digest.
     expect(parseNarHash('sha512-abcdef')).toBeUndefined();
     expect(parseNarHash('md5:abc')).toBeUndefined();
     expect(parseNarHash(undefined)).toBeUndefined();
+    // A character outside the nixbase32 alphabet is not a nixbase32 hash;
+    // 'e', 'o', 't', and 'u' are the four Nix omits.
+    expect(parseNarHash(`sha256:${'e'.repeat(52)}`)).toBeUndefined();
+    expect(parseNarHash(`sha256:${'0'.repeat(51)}`)).toBeUndefined();
   });
 });
 

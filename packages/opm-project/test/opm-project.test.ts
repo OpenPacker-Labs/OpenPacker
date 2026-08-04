@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   addPackage,
+  activateGeneration,
   collectGarbage,
   environmentVariables,
   listGenerations,
@@ -368,6 +369,28 @@ describe('environment generations', () => {
     const result = await collectGarbage({ root, keep: 1 });
     expect(result.retained.map((item) => item.sequence)).toContain(1);
     expect(result.removed).toEqual([]);
+  });
+
+  it('refuses a generation whose store path escapes the project store', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [generation] = await listGenerations(root);
+    if (!generation) throw new Error('expected a generation');
+    // A record is digest-verified, but a path outside the store must still be
+    // refused rather than generating shims that point anywhere on disk.
+    await expect(
+      activateGeneration({
+        root,
+        generation: {
+          ...generation,
+          members: [{ ...generation.members[0]!, storePath: '/etc' }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
   });
 
   it('derives shell environment from the current generation', async () => {
