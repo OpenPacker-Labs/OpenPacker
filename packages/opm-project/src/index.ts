@@ -53,6 +53,7 @@ export {
 
 export {
   discoverBins,
+  discoverDotnetBins,
   discoverNpmBins,
   discoverPythonBins,
   removeBinShims,

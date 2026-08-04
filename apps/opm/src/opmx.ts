@@ -141,6 +141,18 @@ async function spawnDeclared(
       `${bin.name} needs a Python interpreter on PATH`,
     );
   }
+  if (bin.interpreter === 'dotnet') {
+    // A .NET tool is a managed assembly; `dotnet` is the runner its own
+    // manifest names.
+    const assembly = join(storePath, ...bin.path.split('/').filter(Boolean));
+    return spawnProcess(
+      process.env.OPM_DOTNET?.trim() || 'dotnet',
+      [assembly, ...args],
+      io,
+      cwd,
+      `${bin.name} needs the .NET runtime on PATH`,
+    );
+  }
   const target = join(storePath, ...bin.path.split('/').filter(Boolean));
   return spawnTool(target, args, io, cwd);
 }
