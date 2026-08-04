@@ -310,6 +310,40 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
     );
   });
 
+  it('allows first install under no-downgrade when lock has no prior tier', async () => {
+    const policy = policyDocumentFromPolicyInput({
+      ...baseInput,
+      trustPolicy: 'no-downgrade',
+    });
+    // Empty lock / undefined priorLock → first install (nothing to compare).
+    expect(priorTrustFromLock(emptyLockfile(), 'pkg:npm/demo@1.1.0')).toBe(
+      undefined,
+    );
+    expect(priorTrustFromLock(undefined, 'pkg:npm/demo@1.1.0')).toBe(undefined);
+
+    const provider = await providerFor('npm', { transport: npmTransport() });
+    const { facts } = await captureFactsFromCatalog(
+      provider,
+      'pkg:npm/demo@1.0.0',
+      {
+        evaluationTime: '2026-08-05T00:00:00.000Z',
+        // no priorTrustLevel — mirrors resolveRequirement with priorLock undefined
+      },
+    );
+    expect(facts.priorTrustLevel).toBeUndefined();
+    expect(facts.trustLevel).toBe('unsigned');
+    const result = await assertSupplyChainAllowed(policy, facts);
+    expect(result.decision).toBe('allow');
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'supply-chain.trust-no-downgrade',
+          status: 'valid',
+        }),
+      ]),
+    );
+  });
+
   it('blocks exotic transitive git sources', async () => {
     const policy = policyDocumentFromPolicyInput({
       ...baseInput,

@@ -383,12 +383,20 @@ export async function evaluatePolicy(
     policy.trustPolicy === 'no-downgrade' &&
     !matchesExclude(facts.packageId, policy.trustPolicyExclude)
   ) {
-    if (facts.trustLevel === undefined || facts.priorTrustLevel === undefined) {
+    // First install: no prior selected release → nothing to compare; allow.
+    if (facts.priorTrustLevel === undefined) {
+      checks.push({
+        code: 'supply-chain.trust-no-downgrade',
+        status: 'valid',
+        message:
+          'No prior trust tier (first install); no-downgrade check skipped',
+      });
+    } else if (facts.trustLevel === undefined) {
       checks.push({
         code: 'supply-chain.trust-no-downgrade',
         status: 'not-provided',
         message:
-          'trustPolicy no-downgrade needs trustLevel and priorTrustLevel facts',
+          'trustPolicy no-downgrade needs trustLevel for the candidate when a prior tier exists',
       });
     } else {
       const current = TRUST_TIER_RANK[facts.trustLevel];

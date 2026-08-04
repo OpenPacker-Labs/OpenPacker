@@ -224,6 +224,31 @@ test('trustPolicy no-downgrade refuses unsigned after trusted-publisher', async 
   expect(ok.decision).toBe('allow');
 });
 
+test('trustPolicy no-downgrade allows first install when priorTrustLevel is absent', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    trustPolicy: 'no-downgrade',
+  };
+  // Recommended production profile sets no-downgrade; first install has no lock prior.
+  const first = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/demo@1.0.0',
+    trustLevel: 'unsigned',
+    // priorTrustLevel intentionally omitted
+  });
+  expect(first.decision).toBe('allow');
+  expect(first.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'supply-chain.trust-no-downgrade',
+        status: 'valid',
+        message: expect.stringMatching(/first install/i),
+      }),
+    ]),
+  );
+});
+
 test('blockExoticSources blocks transitive git/tarball but can allow direct', async () => {
   const policy: PolicyDocument = {
     ...baseSupply,
