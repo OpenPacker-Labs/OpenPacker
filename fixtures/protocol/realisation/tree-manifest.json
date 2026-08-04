@@ -1,0 +1,41 @@
+{
+  "manifestVersion": "1",
+  "entries": [
+    {
+      "path": "bin",
+      "kind": "directory"
+    },
+    {
+      "path": "bin/greet",
+      "kind": "executable",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "e902a5ab8e918227e1fec1e21f3b9c55dd50202b2c6782476f339ff17ab88a6e"
+      },
+      "size": 21
+    },
+    {
+      "path": "include",
+      "kind": "directory"
+    },
+    {
+      "path": "include/greet.h",
+      "kind": "file",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "16c20fc2bb034e959f8ddb43d5d884e8a55a96bd0327534bb27ed0dfeaef2cb8"
+      },
+      "size": 18
+    },
+    {
+      "path": "lib/libgreet.so.1.0",
+      "kind": "file",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "dddaf5457e56d62a59613b397504303ec4248024ca67dfcf724a0754ddd200ec"
+      },
+      "size": 16
+    }
+  ],
+  "semanticLoss": []
+}

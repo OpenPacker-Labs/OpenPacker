@@ -1,0 +1,69 @@
+{
+  "amendmentVersion": "1",
+  "subject": {
+    "canonicalPurl": "pkg:nix/libgreet",
+    "exactPurl": "pkg:nix/libgreet@1.0?outhash=b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c&output=out&plan=97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f",
+    "purlType": "nix",
+    "name": "libgreet",
+    "version": "1.0",
+    "qualifiers": {
+      "outhash": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+      "output": "out",
+      "plan": "97ml2f4h6j8k0n2p4r6t8v0x2z4b6d8f"
+    },
+    "nativeCoordinates": [
+      {
+        "ecosystem": "nix",
+        "coordinate": "/nix/store/b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c-libgreet-1.0",
+        "version": "1.0"
+      }
+    ],
+    "aliases": [],
+    "sourceRefs": [
+      {
+        "type": "repository",
+        "uri": "https://github.com/example/libgreet",
+        "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "b7ab8304c3d703308aa501d9c5b42900a9633604ddaa2c08fe3449e608f1a618"
+        }
+      }
+    ],
+    "publisherRefs": [],
+    "externalRefs": []
+  },
+  "appliesToMetadataDigest": {
+    "algorithm": "sha256",
+    "value": "9ecc6778804b71585ef7e79a06a7e1401d12fbbc3becf251e9fbb6b21329ca1d"
+  },
+  "operations": [
+    {
+      "op": "redirectPackage",
+      "match": {
+        "type": "package",
+        "purl": "pkg:nix/glibc",
+        "vers": "vers:nix/2.39"
+      },
+      "to": {
+        "type": "package",
+        "purl": "pkg:nix/glibc",
+        "vers": "vers:nix/2.40"
+      }
+    },
+    {
+      "op": "retractRequirement",
+      "requirementId": "libgreet-out-glibc",
+      "justification": "Superseded by the redirect above for this organization's patched libc"
+    }
+  ],
+  "authority": "organization",
+  "justification": "Organization policy pins a patched libc for every internally built package",
+  "sourceRefs": [
+    {
+      "type": "overlay",
+      "uri": "https://policy.example.invalid/amendments/libc-2.40"
+    }
+  ],
+  "evidenceRefs": []
+}

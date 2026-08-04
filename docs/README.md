@@ -42,6 +42,7 @@ API detail.
 | [Runtime clients](operations/runtime-clients.md) | Daemon, SDK, embedded API details          |
 | [Examples](../examples/README.md)                | CLI inputs + library samples               |
 | [mise integration](integrations/mise.md)         | Tool install via PREX materialize          |
+| [Nix](integrations/nix.md)                       | Store paths, derivations, closures, caches |
 | [Epoch consumption](integrations/epoch.md)       | Downstream consumer boundary               |
 | [OCI / ORAS / OCM](integrations/oci-oras-ocm.md) | Artifact transport and composition         |
 

@@ -1,0 +1,209 @@
+{
+  "universeVersion": "1",
+  "packages": [
+    {
+      "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "identity": {
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "purlType": "npm",
+        "namespace": "@openpacker",
+        "name": "demo-tool",
+        "version": "1.0.0",
+        "qualifiers": {},
+        "nativeCoordinates": [
+          {
+            "ecosystem": "npm",
+            "coordinate": "@openpacker/demo-tool",
+            "version": "1.0.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.dev/catalog"
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.0.0",
+      "normalizedVersion": "1.0.0",
+      "versionSortKey": "1.0.0",
+      "requirements": [],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "nativeSemantics": {
+        "version": "npm-v1",
+        "data": {}
+      },
+      "semanticLoss": []
+    },
+    {
+      "nodeId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "identity": {
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.1.0",
+        "purlType": "npm",
+        "namespace": "@openpacker",
+        "name": "demo-tool",
+        "version": "1.1.0",
+        "qualifiers": {},
+        "nativeCoordinates": [
+          {
+            "ecosystem": "npm",
+            "coordinate": "@openpacker/demo-tool",
+            "version": "1.1.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.dev/catalog"
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.1.0",
+      "normalizedVersion": "1.1.0",
+      "versionSortKey": "1.1.0",
+      "requirements": [],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "nativeSemantics": {
+        "version": "npm-v1",
+        "data": {}
+      },
+      "semanticLoss": []
+    }
+  ],
+  "overlays": [],
+  "sourceSnapshots": [
+    {
+      "snapshotId": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "providerId": "fixture",
+      "providerType": "npm",
+      "endpointIdentity": "urn:fixture:npm",
+      "retrievedAt": "2026-08-02T00:00:00Z",
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "rootDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "recordsDigest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "evidenceRefs": []
+    }
+  ],
+  "lifecycleRoot": {
+    "algorithm": "sha256",
+    "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "targetVocabularyVersion": "1",
+  "canonicalDigest": {
+    "algorithm": "sha256",
+    "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "amendments": [
+    {
+      "amendmentVersion": "1",
+      "subject": {
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "purlType": "npm",
+        "namespace": "@openpacker",
+        "name": "demo-tool",
+        "version": "1.0.0",
+        "qualifiers": {},
+        "nativeCoordinates": [
+          {
+            "ecosystem": "npm",
+            "coordinate": "@openpacker/demo-tool",
+            "version": "1.0.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.dev/catalog"
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "appliesToMetadataDigest": {
+        "algorithm": "sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "operations": [
+        {
+          "op": "redirectPackage",
+          "match": {
+            "type": "package",
+            "purl": "pkg:nix/glibc",
+            "vers": "vers:nix/2.39"
+          },
+          "to": {
+            "type": "package",
+            "purl": "pkg:nix/glibc",
+            "vers": "vers:nix/2.40"
+          }
+        },
+        {
+          "op": "retractRequirement",
+          "requirementId": "libgreet-out-glibc",
+          "justification": "Superseded by the redirect above for this organization's patched libc"
+        }
+      ],
+      "authority": "organization",
+      "justification": "Organization policy pins a patched libc for every internally built package",
+      "sourceRefs": [
+        {
+          "type": "overlay",
+          "uri": "https://policy.example.invalid/amendments/libc-2.40"
+        }
+      ],
+      "evidenceRefs": []
+    }
+  ]
+}

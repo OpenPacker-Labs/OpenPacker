@@ -57,6 +57,17 @@ metadata-record, and event-data projections hash their complete projected
 objects. Implementations MUST reject unknown projection IDs rather than infer a
 projection.
 
+`tree-manifest-v1` hashes a complete `TreeManifest` with entries sorted as a
+canonical set, giving one digest per extracted tree regardless of the order a
+producer walked the filesystem. Producers MUST reject duplicate normalized entry
+paths before hashing: two entries for one path make the manifest ambiguous, not
+merely unsorted. `build-recipe-v1` hashes a complete `BuildRecipe`, which
+carries no self-digest field, so a recipe's digest is always recomputable from
+the recipe alone. `recipe-output-v1` hashes exactly `{outputName, recipeDigest}`
+and yields output identity that exists before any bytes do. `substitute-v1`
+excludes mutable `locations`, so the same prebuilt content advertised by any
+number of mirrors has a single substitute digest.
+
 Golden vectors under `fixtures/protocol/canonical/` are normative executable
 examples. Each vector contains input JSON, exact canonical text, and expected
 SHA-256 digest. Negative vectors state the required rejection class.

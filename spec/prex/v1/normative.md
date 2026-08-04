@@ -36,6 +36,18 @@ locations, database identifiers, or transport credentials.
    profile, objective ordering, solution, proof, explanation, artifact set, and
    resolver build evidence MUST be bound into receipts as specified by the
    receipt schema.
+9. The qualifier key `output` is reserved across every ecosystem: it names a
+   package output and MUST NOT be used for any other meaning. A normalize
+   implementation MAY default it, and MUST record `OUTPUT_SELECTOR_DEFAULTED`
+   when it does. Reserving the key is what makes an output selector portable;
+   PREX does not otherwise require any package to carry it.
+10. A build recipe is a captured claim about how bytes were produced. PREX
+    operations MUST NOT execute builders, lifecycle scripts, recipes, or
+    ecosystem expression languages. Reading artifact bytes to discover runtime
+    references is read-only analysis and is not execution. Output identity
+    (`recipe-output-v1`) and byte identity (artifact and tree digests) are
+    distinct and MUST NOT be conflated: a `producedBy` claim is verified as
+    evidence and never establishes identity by itself.
 
 ## Versioning and negotiation
 

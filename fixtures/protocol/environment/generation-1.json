@@ -1,0 +1,42 @@
+{
+  "generationVersion": "1",
+  "environmentName": "devshell",
+  "sequence": 1,
+  "createdAt": "2026-08-03T00:00:00Z",
+  "manifestDigest": {
+    "algorithm": "sha256",
+    "value": "1425690b5036264f766296b7f13bc353bcab4dabe41a99509d714b0dfd58d736"
+  },
+  "lockfileDigest": {
+    "algorithm": "sha256",
+    "value": "3de4ec6d5e4c94ccc7266cb1deb45d433f2c96000f63c395a301c1b75ab037fc"
+  },
+  "solutionDigest": {
+    "algorithm": "sha256",
+    "value": "272217c1e453daa3ca515b980f00580213e4079c2a7319e2f62cfb0fa169144b"
+  },
+  "receiptDigest": {
+    "algorithm": "sha256",
+    "value": "fea5396a7f4325c408b1b65b33a4d77ba5486ceba941804d8889a8546cfbab96"
+  },
+  "artifactSet": [
+    {
+      "nodeId": "sha256:b3e4ab4cd4f1725cf6b57c5d9c7378f4fe8c77febb0c3ca7a37bc063f98b9cfc",
+      "exactPurl": "pkg:generic/libgreet@1.0.0",
+      "artifactDigest": {
+        "algorithm": "sha256",
+        "value": "9f9e7b044fc8ab43d84ccf0e47f5d426fcb62a1c65cb7217308d2943b8698780"
+      },
+      "treeDigest": {
+        "algorithm": "sha256",
+        "value": "60b6dd829f5b9db175994aa424fc4e8de114b6fa84a9dd0193fac5e97b246edc"
+      },
+      "outputs": ["out"]
+    }
+  ],
+  "semanticLoss": [],
+  "generationDigest": {
+    "algorithm": "sha256",
+    "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+  }
+}

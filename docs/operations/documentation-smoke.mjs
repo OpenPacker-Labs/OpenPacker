@@ -39,6 +39,7 @@ const requiredDocuments = [
   'docs/integrations/ecosystem-codec-authoring.md',
   'docs/integrations/epoch.md',
   'docs/integrations/mise.md',
+  'docs/integrations/nix.md',
   'docs/integrations/oci-oras-ocm.md',
   'docs/integrations/overlays.md',
   'docs/integrations/provider-authoring.md',
@@ -72,7 +73,7 @@ const requiredDocuments = [
   'spec/prex/v1/semantics.md',
 ];
 for (const file of requiredDocuments) await access(join(root, file));
-for (let number = 1; number <= 22; number += 1) {
+for (let number = 1; number <= 29; number += 1) {
   const prefix = `${String(number).padStart(4, '0')}-`;
   if (!files.some((file) => file.startsWith(`docs/adr/${prefix}`)))
     throw new Error(`Required ADR ${prefix} is missing`);

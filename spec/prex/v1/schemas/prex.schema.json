@@ -3,29 +3,98 @@
   "$id": "https://openpacker.dev/spec/prex/v1/schemas/prex.schema.json",
   "title": "PREX 1.0-draft schema catalog",
   "oneOf": [
-    { "$ref": "common.schema.json#/$defs/DigestProjection" },
-    { "$ref": "operations.schema.json#/$defs/Capabilities" },
-    { "$ref": "operations.schema.json#/$defs/NormalizeRequest" },
-    { "$ref": "operations.schema.json#/$defs/NormalizeResponse" },
-    { "$ref": "operations.schema.json#/$defs/IdentifyRequest" },
-    { "$ref": "operations.schema.json#/$defs/IdentifyResponse" },
-    { "$ref": "operations.schema.json#/$defs/EnumerateRequest" },
-    { "$ref": "operations.schema.json#/$defs/EnumerateResponse" },
-    { "$ref": "operations.schema.json#/$defs/InspectRequest" },
-    { "$ref": "operations.schema.json#/$defs/InspectResponse" },
-    { "$ref": "resolution.schema.json#/$defs/SolveRequest" },
-    { "$ref": "resolution.schema.json#/$defs/SolveResponse" },
-    { "$ref": "operations.schema.json#/$defs/MaterializeRequest" },
-    { "$ref": "operations.schema.json#/$defs/MaterializeResponse" },
-    { "$ref": "operations.schema.json#/$defs/VerifyRequest" },
-    { "$ref": "operations.schema.json#/$defs/VerifyResponse" },
-    { "$ref": "operations.schema.json#/$defs/ExplainRequest" },
-    { "$ref": "operations.schema.json#/$defs/ExplainResponse" },
-    { "$ref": "operations.schema.json#/$defs/Problem" },
-    { "$ref": "resolution.schema.json#/$defs/ResolutionUniverse" },
-    { "$ref": "resolution.schema.json#/$defs/SignedReceipt" },
-    { "$ref": "events.schema.json#/$defs/LifecycleEvent" },
-    { "$ref": "events.schema.json#/$defs/OpenPackerCloudEvent" },
-    { "$ref": "lockfile.schema.json" }
+    {
+      "$ref": "common.schema.json#/$defs/DigestProjection"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/Capabilities"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/NormalizeRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/NormalizeResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/IdentifyRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/IdentifyResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/EnumerateRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/EnumerateResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/InspectRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/InspectResponse"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/SolveRequest"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/SolveResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/MaterializeRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/MaterializeResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/VerifyRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/VerifyResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/ExplainRequest"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/ExplainResponse"
+    },
+    {
+      "$ref": "operations.schema.json#/$defs/Problem"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/ResolutionUniverse"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/SignedReceipt"
+    },
+    {
+      "$ref": "model.schema.json#/$defs/TreeManifest"
+    },
+    {
+      "$ref": "model.schema.json#/$defs/BuildRecipe"
+    },
+    {
+      "$ref": "model.schema.json#/$defs/SubstituteDescriptor"
+    },
+    {
+      "$ref": "events.schema.json#/$defs/LifecycleEvent"
+    },
+    {
+      "$ref": "events.schema.json#/$defs/OpenPackerCloudEvent"
+    },
+    {
+      "$ref": "lockfile.schema.json"
+    },
+    {
+      "$ref": "environment.schema.json#/$defs/EnvironmentManifest"
+    },
+    {
+      "$ref": "environment.schema.json#/$defs/EnvironmentGeneration"
+    },
+    {
+      "$ref": "environment.schema.json#/$defs/EnvironmentState"
+    },
+    {
+      "$ref": "resolution.schema.json#/$defs/UniverseAmendment"
+    }
   ]
 }

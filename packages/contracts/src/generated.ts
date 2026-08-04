@@ -5,6 +5,18 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type AmendmentOperation =
+  | {
+      op: 'supersedeRequirement';
+      requirementId: string;
+      replacement: Requirement;
+    }
+  | { op: 'retractRequirement'; requirementId: string; justification: string }
+  | {
+      op: 'redirectPackage';
+      match: RequirementExpression;
+      to: RequirementExpression;
+    };
 export type ArtifactDescriptor = {
   descriptorId: string;
   digest: Digest;
@@ -18,6 +30,10 @@ export type ArtifactDescriptor = {
   oci?: { [key: string]: CanonicalJsonValue };
   ocm?: { [key: string]: CanonicalJsonValue };
   chunkIndexRef?: ExternalRef;
+  treeDigest?: Digest;
+  treeManifestRef?: ExternalRef;
+  producedBy?: { recipeDigest: Digest; outputName: OutputName };
+  runtimeReferences?: Array<ArtifactReference>;
   referrers: Array<ExternalRef>;
   externalRefs: Array<ExternalRef>;
   extensions?: Extensions;
@@ -41,6 +57,7 @@ export type ArtifactPackedEvent = CloudEventCommon & {
   dataschema: 'https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.packed';
   data: ArtifactPackedData;
 };
+export type ArtifactReference = JsonValue | JsonValue | JsonValue;
 export type ArtifactVerifiedData = {
   schemaVersion: '1';
   descriptor: ArtifactDescriptor;
@@ -49,6 +66,38 @@ export type ArtifactVerifiedEvent = CloudEventCommon & {
   type: 'org.openpacker.artifact.verified';
   dataschema: 'https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.artifact.verified';
   data: ArtifactVerifiedData;
+};
+export type BuildRecipe = {
+  recipeVersion: '1';
+  captureProfile: 'derivation-capture-v1';
+  kind: 'derivation' | 'image-build' | 'source-build' | 'repackage' | 'unknown';
+  builder: { kind: string; ref?: ExternalRef };
+  system?: string;
+  platforms?: PlatformContexts;
+  inputs: Array<BuildRecipeInput>;
+  outputs: Array<BuildRecipeOutput>;
+  provenance: 'captured' | 'attested' | 'declared';
+  planRef?: ExternalRef;
+  nativeRecipe?: { version: string; data: CanonicalJsonValue };
+  sourceRefs?: Array<SourceRef>;
+  attestations?: Array<ExternalRef>;
+  evidenceRefs?: Array<ExternalRef>;
+  semanticLoss: Array<SemanticLoss>;
+  extensions?: Extensions;
+};
+export type BuildRecipeInput =
+  | JsonValue
+  | JsonValue
+  | JsonValue
+  | JsonValue
+  | JsonValue;
+export type BuildRecipeOutput = {
+  name: OutputName;
+  hashMode: 'input-addressed' | 'content-addressed' | 'fixed-output';
+  inputAddress?: string;
+  expectedDigest?: Digest;
+  expectedTreeDigest?: Digest;
+  nodeId?: string;
 };
 export type CanonicalJsonValue =
   | null
@@ -173,6 +222,7 @@ export type DependencyEdge = {
   fromNodeId: string;
   toNodeId: string;
   witnessType: 'package' | 'capability' | 'replacement' | 'optional';
+  toOutputs?: Array<OutputName>;
 };
 export type Digest = { algorithm: 'sha256'; value: string };
 export type DigestProjection = {
@@ -186,7 +236,13 @@ export type DigestProjection = {
     | 'explanation-v1'
     | 'artifact-set-v1'
     | 'receipt-v1'
-    | 'event-data-v1';
+    | 'event-data-v1'
+    | 'tree-manifest-v1'
+    | 'build-recipe-v1'
+    | 'recipe-output-v1'
+    | 'substitute-v1'
+    | 'environment-manifest-v1'
+    | 'environment-generation-v1';
   algorithm: 'sha256';
   canonicalization: 'prex-jcs-safe-integer-v1';
   includePaths: Array<string>;
@@ -218,6 +274,46 @@ export type EnumeratedVersion = {
   sourceSnapshot: Digest;
   metadataDigest: Digest;
   warnings: Array<Warning>;
+};
+export type EnvironmentGeneration = {
+  generationVersion: '1';
+  environmentName: EnvironmentName;
+  sequence: number;
+  createdAt: string;
+  parentGenerationDigest?: Digest;
+  manifestDigest: Digest;
+  lockfileDigest?: Digest;
+  solutionDigest?: Digest;
+  receiptDigest?: Digest;
+  artifactSet: Array<EnvironmentMember>;
+  semanticLoss?: Array<SemanticLoss>;
+  generationDigest: Digest;
+  extensions?: Extensions;
+};
+export type EnvironmentManifest = {
+  manifestVersion: '1';
+  name: EnvironmentName;
+  description?: string;
+  requirements: Array<Requirement>;
+  target: TargetContext;
+  platforms?: PlatformContexts;
+  policy?: PolicyInput;
+  extensions?: Extensions;
+};
+export type EnvironmentMember = {
+  nodeId?: string;
+  exactPurl?: string;
+  artifactDigest: Digest;
+  treeDigest?: Digest;
+  outputs?: Array<OutputName>;
+};
+export type EnvironmentName = string;
+export type EnvironmentState = {
+  stateVersion: '1';
+  environmentName: EnvironmentName;
+  currentGenerationDigest: Digest;
+  retainedGenerationDigests: Array<Digest>;
+  extensions?: Extensions;
 };
 export type ErrorCode =
   | 'INVALID_REQUEST'
@@ -309,7 +405,10 @@ export type ExplanationGraph = {
       | 'policy'
       | 'objective'
       | 'semantic-loss'
-      | 'proof';
+      | 'proof'
+      | 'amendment-applied'
+      | 'amendment-ignored'
+      | 'requirement-suppressed';
     label: string;
     data: { [key: string]: CanonicalJsonValue };
   }>;
@@ -498,6 +597,11 @@ export type LockImportResponse = {
     solutionDigest: Digest;
     receiptDigest: Digest;
     externalRefs: Array<ExternalRef>;
+    platforms?: PlatformContexts;
+    selectedOutputs?: Array<{ exactPurl: string; outputs: Array<OutputName> }>;
+    recipeDigests?: Array<Digest>;
+    substitutes?: Array<SubstituteDescriptor>;
+    environment?: { name: EnvironmentName; baseGenerationDigest?: Digest };
     extensions?: Extensions;
   };
   semanticLoss: Array<SemanticLoss>;
@@ -516,6 +620,7 @@ export type MaterializeRequest = {
         descriptorDigest?: Digest;
       };
   forensic?: boolean;
+  outputs?: Array<OutputName>;
   target?: TargetContext;
   policy?: PolicyInput;
   resourceLimits?: ResourceLimits;
@@ -612,6 +717,11 @@ export type OpenPackerLockfile = {
   solutionDigest: Digest;
   receiptDigest: Digest;
   externalRefs: Array<ExternalRef>;
+  platforms?: PlatformContexts;
+  selectedOutputs?: Array<{ exactPurl: string; outputs: Array<OutputName> }>;
+  recipeDigests?: Array<Digest>;
+  substitutes?: Array<SubstituteDescriptor>;
+  environment?: { name: EnvironmentName; baseGenerationDigest?: Digest };
   extensions?: Extensions;
 };
 export type OpenPackerOverlay = {
@@ -637,6 +747,7 @@ export type OpenPackerOverlay = {
   externalRefs: Array<ExternalRef>;
   extensions?: Extensions;
 };
+export type OutputName = string;
 export type PackRequest = {
   exactPurl: string;
   artifact: ArtifactDescriptor;
@@ -678,6 +789,7 @@ export type PackageInstance = {
   conflicts: Array<Conflict>;
   cardinalityConstraints: Array<CardinalityConstraint>;
   artifacts: Array<ArtifactDescriptor>;
+  outputs?: Array<PackageOutput>;
   lifecycle: LifecycleState;
   sourceSnapshots: Array<Digest>;
   metadataDigest: Digest;
@@ -685,6 +797,18 @@ export type PackageInstance = {
   nativeSemantics: { version: string; data: CanonicalJsonValue };
   semanticLoss: Array<SemanticLoss>;
   extensions?: Extensions;
+};
+export type PackageOutput = {
+  name: OutputName;
+  default?: boolean;
+  description?: string;
+  artifactDescriptorIds?: Array<string>;
+  recipeOutputId?: Digest;
+};
+export type PlatformContexts = {
+  build?: TargetContext;
+  host?: TargetContext;
+  target?: TargetContext;
 };
 export type PolicyEvaluatedData = {
   schemaVersion: '1';
@@ -737,6 +861,9 @@ export type PolicyInput = {
   requiredSourceSnapshotDigests?: Array<Digest>;
   permitForensicDigestMaterialization?: boolean;
   extensions?: Extensions;
+  acceptedAmendmentAuthorities?: Array<
+    'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture'
+  >;
 };
 export type PositiveLimit = number;
 export type Problem = {
@@ -806,18 +933,7 @@ export type Requirement = {
   id: string;
   dependerNodeId?: string;
   expression: RequirementExpression;
-  kind:
-    | 'runtime'
-    | 'build'
-    | 'development'
-    | 'peer'
-    | 'optional'
-    | 'feature'
-    | 'tool'
-    | 'platform'
-    | 'replacement'
-    | 'conflict'
-    | 'unknown-native';
+  kind: RequirementKind;
   optional: boolean;
   source: SourceRef;
   authority: string;
@@ -831,6 +947,7 @@ export type RequirementExpression =
       purl: string;
       vers?: string;
       qualifiers?: { [key: string]: string };
+      outputs?: Array<OutputName>;
     }
   | {
       type: 'capability';
@@ -846,6 +963,18 @@ export type RequirementExpression =
       then: RequirementExpression;
       else?: RequirementExpression;
     };
+export type RequirementKind =
+  | 'runtime'
+  | 'build'
+  | 'development'
+  | 'peer'
+  | 'optional'
+  | 'feature'
+  | 'tool'
+  | 'platform'
+  | 'replacement'
+  | 'conflict'
+  | 'unknown-native';
 export type ResolutionCompletedData = {
   schemaVersion: '1';
   solutionDigest: Digest;
@@ -914,6 +1043,7 @@ export type ResolutionReceipt = {
   evidenceRefs: Array<ExternalRef>;
   externalRefs: Array<ExternalRef>;
   extensions?: Extensions;
+  amendmentDigests?: Array<Digest>;
 };
 export type ResolutionSolution = {
   selectedNodeIds: Array<string>;
@@ -934,10 +1064,12 @@ export type ResolutionUniverse = {
   packages: Array<PackageInstance>;
   overlays: Array<OpenPackerOverlay>;
   sourceSnapshots: Array<SourceSnapshot>;
+  recipes?: Array<BuildRecipe>;
   lifecycleRoot: Digest;
   targetVocabularyVersion: string;
   canonicalDigest: Digest;
   extensions?: Extensions;
+  amendments?: Array<UniverseAmendment>;
 };
 export type ResolutionUnsatisfiableData = {
   schemaVersion: '1';
@@ -977,7 +1109,10 @@ export type SemanticLoss = {
   omittedMeaning?: string;
   mitigation?: string;
   blocksProfile: Array<
-    'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1'
+    | 'native-capture-v1'
+    | 'native-validated-v1'
+    | 'prex-calculus-subset-v1'
+    | 'derivation-capture-v1'
   >;
 };
 export type SemanticsInput = {
@@ -1001,7 +1136,16 @@ export type SignedReceipt = {
 export type SolveRequest = {
   requirements: Array<Requirement>;
   target: TargetContext;
-  environment: { installed: Array<string>; locked: Array<string> };
+  platforms?: PlatformContexts;
+  requirementKindPolicy?: {
+    buildPlatformKinds?: Array<RequirementKind>;
+    inactiveKinds?: Array<RequirementKind>;
+  };
+  environment: {
+    installed: Array<string>;
+    locked: Array<string>;
+    generationDigest?: Digest;
+  };
   policy: PolicyInput;
   semantics: SemanticsInput;
   objectives: Array<
@@ -1058,6 +1202,18 @@ export type SourceSnapshot = {
   extensions?: Extensions;
 };
 export type StringSet = Array<string>;
+export type SubstituteDescriptor = {
+  substituteVersion: '1';
+  subject: { artifactDigest: Digest; recipeOutputId?: Digest; nodeId?: string };
+  treeDigest: Digest;
+  size: number;
+  runtimeReferences: Array<ArtifactReference>;
+  deriver?: Digest;
+  chunkIndexRef?: ExternalRef;
+  locations: Array<ArtifactLocation>;
+  evidenceRefs?: Array<ExternalRef>;
+  extensions?: Extensions;
+};
 export type TargetContext = {
   os?: string;
   architecture?: string;
@@ -1089,6 +1245,36 @@ export type TargetPredicate =
   | { type: 'capabilityPresent'; name: string; constraint?: VersionConstraint }
   | { type: 'allOf' | 'anyOf'; predicates: Array<TargetPredicate> }
   | { type: 'not'; predicate: TargetPredicate };
+export type TreeManifest = {
+  manifestVersion: '1';
+  entries: Array<TreeManifestEntry>;
+  semanticLoss?: Array<SemanticLoss>;
+  extensions?: Extensions;
+};
+export type TreeManifestEntry = {
+  path: string;
+  kind: 'file' | 'executable' | 'directory' | 'symlink';
+  digest?: Digest;
+  size?: number;
+  target?: string;
+};
+export type UniverseAmendment = {
+  amendmentVersion: '1';
+  subject: PackageIdentity;
+  appliesToMetadataDigest: Digest;
+  operations: Array<AmendmentOperation>;
+  authority:
+    | 'publisher'
+    | 'registry'
+    | 'organization'
+    | 'user'
+    | 'test-fixture';
+  justification?: string;
+  sourceRefs: Array<SourceRef>;
+  evidenceRefs: Array<ExternalRef>;
+  externalRefs?: Array<ExternalRef>;
+  extensions?: Extensions;
+};
 export type VerificationCheck =
   | (
       | 'artifact-digest'
@@ -1168,7 +1354,13 @@ export const DIGEST_PROJECTIONS = {
       canonicalization: 'prex-jcs-safe-integer-v1',
       includePaths: [],
       excludePaths: ['/canonicalDigest'],
-      orderedSetPaths: ['/overlays', '/packages', '/sourceSnapshots'],
+      orderedSetPaths: [
+        '/amendments',
+        '/overlays',
+        '/packages',
+        '/recipes',
+        '/sourceSnapshots',
+      ],
     },
     {
       id: 'package-node-v1',
@@ -1243,7 +1435,12 @@ export const DIGEST_PROJECTIONS = {
       canonicalization: 'prex-jcs-safe-integer-v1',
       includePaths: [],
       excludePaths: [],
-      orderedSetPaths: ['/evidenceRefs', '/externalRefs', '/sourceSnapshots'],
+      orderedSetPaths: [
+        '/amendmentDigests',
+        '/evidenceRefs',
+        '/externalRefs',
+        '/sourceSnapshots',
+      ],
     },
     {
       id: 'event-data-v1',
@@ -1252,6 +1449,61 @@ export const DIGEST_PROJECTIONS = {
       includePaths: [],
       excludePaths: [],
       orderedSetPaths: [],
+    },
+    {
+      id: 'tree-manifest-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: ['/entries', '/semanticLoss'],
+    },
+    {
+      id: 'build-recipe-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: [
+        '/attestations',
+        '/evidenceRefs',
+        '/inputs',
+        '/outputs',
+        '/semanticLoss',
+        '/sourceRefs',
+      ],
+    },
+    {
+      id: 'recipe-output-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: [],
+    },
+    {
+      id: 'substitute-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: ['/locations'],
+      orderedSetPaths: ['/evidenceRefs', '/runtimeReferences'],
+    },
+    {
+      id: 'environment-manifest-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: [],
+      orderedSetPaths: ['/requirements'],
+    },
+    {
+      id: 'environment-generation-v1',
+      algorithm: 'sha256',
+      canonicalization: 'prex-jcs-safe-integer-v1',
+      includePaths: [],
+      excludePaths: ['/generationDigest'],
+      orderedSetPaths: ['/artifactSet', '/semanticLoss'],
     },
   ],
 } as const;
@@ -1336,6 +1588,12 @@ export const schemaCatalog: Record<string, JsonValue> = {
               'artifact-set-v1',
               'receipt-v1',
               'event-data-v1',
+              'tree-manifest-v1',
+              'build-recipe-v1',
+              'recipe-output-v1',
+              'substitute-v1',
+              'environment-manifest-v1',
+              'environment-generation-v1',
             ],
           },
           algorithm: {
@@ -1562,6 +1820,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
                 'native-capture-v1',
                 'native-validated-v1',
                 'prex-calculus-subset-v1',
+                'derivation-capture-v1',
               ],
             },
           },
@@ -1632,6 +1891,188 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: '#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json': {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json',
+    title: 'PREX environment manifests, generations, and state',
+    $defs: {
+      EnvironmentName: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9._-]{0,63}$',
+      },
+      EnvironmentManifest: {
+        $comment:
+          'The declarative input to an environment: what it should contain, for which platforms, under which policy. environment-manifest-v1 projection digest identifies it.',
+        type: 'object',
+        required: ['manifestVersion', 'name', 'requirements', 'target'],
+        properties: {
+          manifestVersion: {
+            const: '1',
+          },
+          name: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          description: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          requirements: {
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: 'model.schema.json#/$defs/Requirement',
+            },
+          },
+          target: {
+            $ref: 'model.schema.json#/$defs/TargetContext',
+          },
+          platforms: {
+            $ref: 'model.schema.json#/$defs/PlatformContexts',
+          },
+          policy: {
+            $ref: 'resolution.schema.json#/$defs/PolicyInput',
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentMember: {
+        type: 'object',
+        required: ['artifactDigest'],
+        properties: {
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          exactPurl: {
+            type: 'string',
+            pattern: '^pkg:[a-z0-9.+-]+/',
+            maxLength: 8192,
+          },
+          artifactDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          treeDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          outputs: {
+            type: 'array',
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentGeneration: {
+        $comment:
+          'An immutable record of one environment state. Generations are append-only and hash-linked through parentGenerationDigest; generationDigest is the environment-generation-v1 projection digest, which excludes itself.',
+        type: 'object',
+        required: [
+          'generationVersion',
+          'environmentName',
+          'sequence',
+          'createdAt',
+          'manifestDigest',
+          'artifactSet',
+          'generationDigest',
+        ],
+        properties: {
+          generationVersion: {
+            const: '1',
+          },
+          environmentName: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          sequence: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 9007199254740991,
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          parentGenerationDigest: {
+            $comment: 'Absent only for the first generation of an environment.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          manifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          lockfileDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          solutionDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          receiptDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          artifactSet: {
+            type: 'array',
+            maxItems: 100000,
+            items: {
+              $ref: '#/$defs/EnvironmentMember',
+            },
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          generationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      EnvironmentState: {
+        $comment:
+          'The single mutable pointer for an environment. Switching and rolling back replace this record atomically; generation records themselves are never rewritten. Retained generations are the reachability roots for collection.',
+        type: 'object',
+        required: [
+          'stateVersion',
+          'environmentName',
+          'currentGenerationDigest',
+          'retainedGenerationDigests',
+        ],
+        properties: {
+          stateVersion: {
+            const: '1',
+          },
+          environmentName: {
+            $ref: '#/$defs/EnvironmentName',
+          },
+          currentGenerationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          retainedGenerationDigests: {
+            $comment: 'MUST contain currentGenerationDigest.',
+            type: 'array',
+            minItems: 1,
+            maxItems: 10000,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
           },
         },
         additionalProperties: false,
@@ -2664,6 +3105,67 @@ export const schemaCatalog: Record<string, JsonValue> = {
           $ref: 'common.schema.json#/$defs/ExternalRef',
         },
       },
+      platforms: {
+        $ref: 'model.schema.json#/$defs/PlatformContexts',
+      },
+      selectedOutputs: {
+        $comment:
+          'Outputs pinned per selected package. Absent entries mean the default output.',
+        type: 'array',
+        maxItems: 100000,
+        items: {
+          type: 'object',
+          required: ['exactPurl', 'outputs'],
+          properties: {
+            exactPurl: {
+              type: 'string',
+              pattern: '^pkg:.*@',
+            },
+            outputs: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                $ref: 'model.schema.json#/$defs/OutputName',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      recipeDigests: {
+        $comment:
+          'build-recipe-v1 digests of the captured plans behind this lock.',
+        type: 'array',
+        maxItems: 100000,
+        uniqueItems: true,
+        items: {
+          $ref: 'common.schema.json#/$defs/Digest',
+        },
+      },
+      substitutes: {
+        type: 'array',
+        maxItems: 100000,
+        items: {
+          $ref: 'model.schema.json#/$defs/SubstituteDescriptor',
+        },
+      },
+      environment: {
+        $comment:
+          'The environment generation this lock was produced for, when it belongs to one.',
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: {
+            $ref: 'environment.schema.json#/$defs/EnvironmentName',
+          },
+          baseGenerationDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
+      },
       extensions: {
         $ref: 'common.schema.json#/$defs/Extensions',
       },
@@ -2991,7 +3493,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               path: {
                 type: 'string',
                 pattern:
-                  '^(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$',
+                  '^(?:build\\.|host\\.|target\\.)?(os|architecture|libc|kernel|runtimes\\.[A-Za-z0-9_.-]+|abi\\.[A-Za-z0-9_.-]+|variables\\.[A-Za-z0-9_.-]+)$',
               },
               value: {
                 type: ['string', 'boolean', 'integer'],
@@ -3112,6 +3614,17 @@ export const schemaCatalog: Record<string, JsonValue> = {
                   type: 'string',
                 },
               },
+              outputs: {
+                $comment:
+                  'Outputs required from the matched package. Absent means the default output.',
+                type: 'array',
+                minItems: 1,
+                maxItems: 64,
+                uniqueItems: true,
+                items: {
+                  $ref: '#/$defs/OutputName',
+                },
+              },
             },
             additionalProperties: false,
           },
@@ -3216,19 +3729,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             $ref: '#/$defs/RequirementExpression',
           },
           kind: {
-            enum: [
-              'runtime',
-              'build',
-              'development',
-              'peer',
-              'optional',
-              'feature',
-              'tool',
-              'platform',
-              'replacement',
-              'conflict',
-              'unknown-native',
-            ],
+            $ref: '#/$defs/RequirementKind',
           },
           optional: {
             type: 'boolean',
@@ -3459,6 +3960,36 @@ export const schemaCatalog: Record<string, JsonValue> = {
           chunkIndexRef: {
             $ref: 'common.schema.json#/$defs/ExternalRef',
           },
+          treeDigest: {
+            $comment:
+              'tree-manifest-v1 projection digest of the extracted directory tree; identifies unpacked content, never transport bytes',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          treeManifestRef: {
+            $ref: 'common.schema.json#/$defs/ExternalRef',
+          },
+          producedBy: {
+            $comment:
+              'Captured claim that a build recipe produced these bytes. Verification is an evidence fact; it never establishes identity.',
+            type: 'object',
+            required: ['recipeDigest', 'outputName'],
+            properties: {
+              recipeDigest: {
+                $ref: 'common.schema.json#/$defs/Digest',
+              },
+              outputName: {
+                $ref: '#/$defs/OutputName',
+              },
+            },
+            additionalProperties: false,
+          },
+          runtimeReferences: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              $ref: '#/$defs/ArtifactReference',
+            },
+          },
           referrers: {
             type: 'array',
             maxItems: 128,
@@ -3467,6 +3998,521 @@ export const schemaCatalog: Record<string, JsonValue> = {
             },
           },
           externalRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      OutputName: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9._-]{0,63}$',
+      },
+      RequirementKind: {
+        enum: [
+          'runtime',
+          'build',
+          'development',
+          'peer',
+          'optional',
+          'feature',
+          'tool',
+          'platform',
+          'replacement',
+          'conflict',
+          'unknown-native',
+        ],
+      },
+      PackageOutput: {
+        $comment:
+          'A separately installable part of one package. Outputs refine materialization and closure membership; the node remains the atomic unit of selection.',
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: {
+            $ref: '#/$defs/OutputName',
+          },
+          default: {
+            type: 'boolean',
+          },
+          description: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          artifactDescriptorIds: {
+            type: 'array',
+            maxItems: 1024,
+            uniqueItems: true,
+            items: {
+              type: 'string',
+              maxLength: 255,
+            },
+          },
+          recipeOutputId: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
+      },
+      ArtifactReference: {
+        $comment:
+          'A reference from one realised artifact to another. At least one selector is required; multiple selectors must agree.',
+        type: 'object',
+        anyOf: [
+          {
+            required: ['artifactDigest'],
+          },
+          {
+            required: ['recipeOutputId'],
+          },
+          {
+            required: ['nodeId'],
+          },
+        ],
+        properties: {
+          artifactDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          recipeOutputId: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          outputName: {
+            $ref: '#/$defs/OutputName',
+          },
+        },
+        additionalProperties: false,
+      },
+      TreeManifestEntry: {
+        type: 'object',
+        required: ['path', 'kind'],
+        properties: {
+          path: {
+            $comment:
+              "Relative, forward-slash separated. No leading slash, no empty segment, no '.' or '..' segment, no backslash.",
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+            pattern:
+              '^(?![\\s\\S]*(?:^/|//|/$|(?:^|/)\\.{1,2}(?:/|$)))[^\\\\\\u0000-\\u001f\\u007f]+$',
+          },
+          kind: {
+            enum: ['file', 'executable', 'directory', 'symlink'],
+          },
+          digest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          size: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 9007199254740991,
+          },
+          target: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+          },
+        },
+        allOf: [
+          {
+            if: {
+              required: ['kind'],
+              properties: {
+                kind: {
+                  enum: ['file', 'executable'],
+                },
+              },
+            },
+            then: {
+              required: ['digest', 'size'],
+            },
+          },
+          {
+            if: {
+              required: ['kind'],
+              properties: {
+                kind: {
+                  const: 'symlink',
+                },
+              },
+            },
+            then: {
+              required: ['target'],
+            },
+          },
+          {
+            if: {
+              required: ['kind'],
+              properties: {
+                kind: {
+                  const: 'directory',
+                },
+              },
+            },
+            then: {
+              not: {
+                anyOf: [
+                  {
+                    required: ['digest'],
+                  },
+                  {
+                    required: ['target'],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        additionalProperties: false,
+      },
+      TreeManifest: {
+        $comment:
+          'Canonical whole-tree identity. treeDigest = tree-manifest-v1 projection digest. Deliberately not byte-compatible with Nix NAR hashing; native serializations travel as ordinary artifacts.',
+        type: 'object',
+        required: ['manifestVersion', 'entries'],
+        properties: {
+          manifestVersion: {
+            const: '1',
+          },
+          entries: {
+            type: 'array',
+            maxItems: 100000,
+            items: {
+              $ref: '#/$defs/TreeManifestEntry',
+            },
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      PlatformContexts: {
+        $comment:
+          'Build/host/target separation. Absent members default to the host context; host defaults to the enclosing request target.',
+        type: 'object',
+        minProperties: 1,
+        properties: {
+          build: {
+            $ref: '#/$defs/TargetContext',
+          },
+          host: {
+            $ref: '#/$defs/TargetContext',
+          },
+          target: {
+            $ref: '#/$defs/TargetContext',
+          },
+        },
+        additionalProperties: false,
+      },
+      BuildRecipeInput: {
+        type: 'object',
+        required: ['role'],
+        anyOf: [
+          {
+            required: ['nodeId'],
+          },
+          {
+            required: ['exactPurl'],
+          },
+          {
+            required: ['recipeOutputId'],
+          },
+          {
+            required: ['artifactDigest'],
+          },
+          {
+            required: ['sourceRef'],
+          },
+        ],
+        properties: {
+          role: {
+            enum: ['source', 'build', 'host', 'target', 'recipe'],
+          },
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+          exactPurl: {
+            type: 'string',
+            pattern: '^pkg:[a-z0-9.+-]+/',
+            maxLength: 4096,
+          },
+          recipeOutputId: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          artifactDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          sourceRef: {
+            $ref: 'common.schema.json#/$defs/SourceRef',
+          },
+          outputs: {
+            type: 'array',
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: '#/$defs/OutputName',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      BuildRecipeOutput: {
+        type: 'object',
+        required: ['name', 'hashMode'],
+        properties: {
+          name: {
+            $ref: '#/$defs/OutputName',
+          },
+          hashMode: {
+            enum: ['input-addressed', 'content-addressed', 'fixed-output'],
+          },
+          inputAddress: {
+            $comment:
+              'Opaque native input-address token (for example a Nix store-path hash). Never a PREX Digest.',
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+          },
+          expectedDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          expectedTreeDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          nodeId: {
+            type: 'string',
+            pattern: '^sha256:[0-9a-f]{64}$',
+          },
+        },
+        allOf: [
+          {
+            $comment:
+              'A fixed-output recipe must pin what it expects to fetch.',
+            if: {
+              required: ['hashMode'],
+              properties: {
+                hashMode: {
+                  const: 'fixed-output',
+                },
+              },
+            },
+            then: {
+              anyOf: [
+                {
+                  required: ['expectedDigest'],
+                },
+                {
+                  required: ['expectedTreeDigest'],
+                },
+              ],
+            },
+          },
+        ],
+        additionalProperties: false,
+      },
+      BuildRecipe: {
+        $comment:
+          'A captured build plan. PREX never executes a recipe; recipeDigest = build-recipe-v1 projection digest, and recipeOutputId = recipe-output-v1 projection digest over {outputName, recipeDigest}.',
+        type: 'object',
+        required: [
+          'recipeVersion',
+          'captureProfile',
+          'kind',
+          'builder',
+          'inputs',
+          'outputs',
+          'provenance',
+          'semanticLoss',
+        ],
+        properties: {
+          recipeVersion: {
+            const: '1',
+          },
+          captureProfile: {
+            const: 'derivation-capture-v1',
+          },
+          kind: {
+            enum: [
+              'derivation',
+              'image-build',
+              'source-build',
+              'repackage',
+              'unknown',
+            ],
+          },
+          builder: {
+            type: 'object',
+            required: ['kind'],
+            properties: {
+              kind: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 64,
+              },
+              ref: {
+                $ref: 'common.schema.json#/$defs/ExternalRef',
+              },
+            },
+            additionalProperties: false,
+          },
+          system: {
+            type: 'string',
+            maxLength: 128,
+          },
+          platforms: {
+            $ref: '#/$defs/PlatformContexts',
+          },
+          inputs: {
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: '#/$defs/BuildRecipeInput',
+            },
+          },
+          outputs: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/BuildRecipeOutput',
+            },
+          },
+          provenance: {
+            enum: ['captured', 'attested', 'declared'],
+          },
+          planRef: {
+            $ref: 'common.schema.json#/$defs/ExternalRef',
+          },
+          nativeRecipe: {
+            type: 'object',
+            required: ['version', 'data'],
+            properties: {
+              version: {
+                type: 'string',
+                maxLength: 64,
+              },
+              data: {
+                $ref: 'common.schema.json#/$defs/CanonicalJsonValue',
+              },
+            },
+            additionalProperties: false,
+          },
+          sourceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SourceRef',
+            },
+          },
+          attestations: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          evidenceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      SubstituteDescriptor: {
+        $comment:
+          'Prebuilt-content availability metadata (a binary-cache entry). A substitute locates bytes and declares references; it never establishes identity and must be digest-verified before use.',
+        type: 'object',
+        required: [
+          'substituteVersion',
+          'subject',
+          'treeDigest',
+          'size',
+          'runtimeReferences',
+          'locations',
+        ],
+        properties: {
+          substituteVersion: {
+            const: '1',
+          },
+          subject: {
+            type: 'object',
+            required: ['artifactDigest'],
+            properties: {
+              artifactDigest: {
+                $ref: 'common.schema.json#/$defs/Digest',
+              },
+              recipeOutputId: {
+                $ref: 'common.schema.json#/$defs/Digest',
+              },
+              nodeId: {
+                type: 'string',
+                pattern: '^sha256:[0-9a-f]{64}$',
+              },
+            },
+            additionalProperties: false,
+          },
+          treeDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          size: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 9007199254740991,
+          },
+          runtimeReferences: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              $ref: '#/$defs/ArtifactReference',
+            },
+          },
+          deriver: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          chunkIndexRef: {
+            $ref: 'common.schema.json#/$defs/ExternalRef',
+          },
+          locations: {
+            $comment:
+              'Excluded from the substitute-v1 projection: locations are mutable and never identity.',
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/ArtifactLocation',
+            },
+          },
+          evidenceRefs: {
             type: 'array',
             maxItems: 128,
             items: {
@@ -3660,6 +4706,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
             maxItems: 1024,
             items: {
               $ref: '#/$defs/ArtifactDescriptor',
+            },
+          },
+          outputs: {
+            $comment:
+              'Absent means one implicit default output covering every artifact.',
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/PackageOutput',
             },
           },
           lifecycle: {
@@ -4534,6 +5589,17 @@ export const schemaCatalog: Record<string, JsonValue> = {
           forensic: {
             type: 'boolean',
           },
+          outputs: {
+            $comment:
+              'Restrict materialization to these package outputs. Absent means the default output.',
+            type: 'array',
+            minItems: 1,
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
+          },
           target: {
             $ref: 'model.schema.json#/$defs/TargetContext',
           },
@@ -5128,6 +6194,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
         $ref: 'resolution.schema.json#/$defs/SignedReceipt',
       },
       {
+        $ref: 'model.schema.json#/$defs/TreeManifest',
+      },
+      {
+        $ref: 'model.schema.json#/$defs/BuildRecipe',
+      },
+      {
+        $ref: 'model.schema.json#/$defs/SubstituteDescriptor',
+      },
+      {
         $ref: 'events.schema.json#/$defs/LifecycleEvent',
       },
       {
@@ -5135,6 +6210,18 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
       {
         $ref: 'lockfile.schema.json',
+      },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentManifest',
+      },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentGeneration',
+      },
+      {
+        $ref: 'environment.schema.json#/$defs/EnvironmentState',
+      },
+      {
+        $ref: 'resolution.schema.json#/$defs/UniverseAmendment',
       },
     ],
   },
@@ -5256,6 +6343,138 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         additionalProperties: false,
       },
+      UniverseAmendment: {
+        $comment:
+          'An authority-gated supersession of interpretation. An amendment never mutates a native fact: the PackageInstance it applies to is preserved verbatim, and every applied operation records NATIVE_FACT_SUPERSEDED semantic loss plus an explanation node.',
+        type: 'object',
+        required: [
+          'amendmentVersion',
+          'subject',
+          'appliesToMetadataDigest',
+          'operations',
+          'authority',
+          'sourceRefs',
+          'evidenceRefs',
+        ],
+        properties: {
+          amendmentVersion: {
+            const: '1',
+          },
+          subject: {
+            $ref: 'model.schema.json#/$defs/PackageIdentity',
+          },
+          appliesToMetadataDigest: {
+            $comment:
+              'Required: an amendment is bound to the exact native metadata state it was written against.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          operations: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 1024,
+            items: {
+              $ref: '#/$defs/AmendmentOperation',
+            },
+          },
+          authority: {
+            enum: [
+              'publisher',
+              'registry',
+              'organization',
+              'user',
+              'test-fixture',
+            ],
+          },
+          justification: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 16384,
+          },
+          sourceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/SourceRef',
+            },
+          },
+          evidenceRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          externalRefs: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      AmendmentOperation: {
+        oneOf: [
+          {
+            type: 'object',
+            required: ['op', 'requirementId', 'replacement'],
+            properties: {
+              op: {
+                const: 'supersedeRequirement',
+              },
+              requirementId: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+              },
+              replacement: {
+                $ref: 'model.schema.json#/$defs/Requirement',
+              },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: 'object',
+            required: ['op', 'requirementId', 'justification'],
+            properties: {
+              op: {
+                const: 'retractRequirement',
+              },
+              requirementId: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+              },
+              justification: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 16384,
+              },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: 'object',
+            required: ['op', 'match', 'to'],
+            properties: {
+              op: {
+                const: 'redirectPackage',
+              },
+              match: {
+                $ref: 'model.schema.json#/$defs/RequirementExpression',
+              },
+              to: {
+                $ref: 'model.schema.json#/$defs/RequirementExpression',
+              },
+            },
+            additionalProperties: false,
+          },
+        ],
+      },
       ResolutionUniverse: {
         type: 'object',
         required: [
@@ -5292,6 +6511,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
               $ref: 'model.schema.json#/$defs/SourceSnapshot',
             },
           },
+          recipes: {
+            $comment:
+              'Captured build plans referenced by artifact producedBy claims. Absent means no realisation facts were captured.',
+            type: 'array',
+            maxItems: 100000,
+            items: {
+              $ref: 'model.schema.json#/$defs/BuildRecipe',
+            },
+          },
           lifecycleRoot: {
             $ref: 'common.schema.json#/$defs/Digest',
           },
@@ -5306,6 +6534,15 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          amendments: {
+            $comment:
+              'Authority-gated supersessions. Ignored unless policy.acceptedAmendmentAuthorities admits their authority.',
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              $ref: '#/$defs/UniverseAmendment',
+            },
           },
         },
         additionalProperties: false,
@@ -5531,6 +6768,22 @@ export const schemaCatalog: Record<string, JsonValue> = {
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
           },
+          acceptedAmendmentAuthorities: {
+            $comment:
+              'Absent or empty means amendments are ignored with a warning; solutions are then identical to an amendment-free universe.',
+            type: 'array',
+            maxItems: 5,
+            uniqueItems: true,
+            items: {
+              enum: [
+                'publisher',
+                'registry',
+                'organization',
+                'user',
+                'test-fixture',
+              ],
+            },
+          },
         },
         additionalProperties: false,
       },
@@ -5582,7 +6835,38 @@ export const schemaCatalog: Record<string, JsonValue> = {
             },
           },
           target: {
+            $comment:
+              'The host platform: where selected packages will run. When platforms is present, platforms.host MUST equal this value.',
             $ref: 'model.schema.json#/$defs/TargetContext',
+          },
+          platforms: {
+            $comment:
+              'Build/host/target separation for cross compilation. Absent members default to the host platform, so omitting this field reproduces single-platform behavior exactly.',
+            $ref: 'model.schema.json#/$defs/PlatformContexts',
+          },
+          requirementKindPolicy: {
+            $comment:
+              'Overrides which requirement kinds resolve against the build platform, and which are inactive. Absent means the default attribution applies: build and tool resolve against the build platform, every other kind against the host.',
+            type: 'object',
+            properties: {
+              buildPlatformKinds: {
+                type: 'array',
+                maxItems: 16,
+                uniqueItems: true,
+                items: {
+                  $ref: 'model.schema.json#/$defs/RequirementKind',
+                },
+              },
+              inactiveKinds: {
+                type: 'array',
+                maxItems: 16,
+                uniqueItems: true,
+                items: {
+                  $ref: 'model.schema.json#/$defs/RequirementKind',
+                },
+              },
+            },
+            additionalProperties: false,
           },
           environment: {
             type: 'object',
@@ -5603,6 +6887,11 @@ export const schemaCatalog: Record<string, JsonValue> = {
                   type: 'string',
                   maxLength: 255,
                 },
+              },
+              generationDigest: {
+                $comment:
+                  'Binds installed/locked to a specific environment generation record.',
+                $ref: 'common.schema.json#/$defs/Digest',
               },
             },
             additionalProperties: false,
@@ -5688,6 +6977,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           witnessType: {
             enum: ['package', 'capability', 'replacement', 'optional'],
+          },
+          toOutputs: {
+            $comment:
+              "Outputs of the target node this edge needs. Absent means the target's default output.",
+            type: 'array',
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              $ref: 'model.schema.json#/$defs/OutputName',
+            },
           },
         },
         additionalProperties: false,
@@ -5937,7 +7236,12 @@ export const schemaCatalog: Record<string, JsonValue> = {
                     'objective',
                     'semantic-loss',
                     'proof',
+                    'amendment-applied',
+                    'amendment-ignored',
+                    'requirement-suppressed',
                   ],
+                  $comment:
+                    'amendment-applied is reserved for compiled amendments; amendment compilation is not implemented, so no current implementation emits it.',
                 },
                 label: {
                   type: 'string',
@@ -6142,6 +7446,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           extensions: {
             $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          amendmentDigests: {
+            $comment:
+              'Digests of amendments actually applied to produce this result.',
+            type: 'array',
+            maxItems: 10000,
+            uniqueItems: true,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
+            },
           },
         },
         additionalProperties: false,

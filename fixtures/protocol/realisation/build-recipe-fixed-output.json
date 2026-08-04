@@ -1,0 +1,39 @@
+{
+  "recipeVersion": "1",
+  "captureProfile": "derivation-capture-v1",
+  "kind": "repackage",
+  "builder": {
+    "kind": "fetchurl"
+  },
+  "inputs": [
+    {
+      "role": "source",
+      "sourceRef": {
+        "type": "registry",
+        "uri": "https://fixtures.openpacker.invalid/libgreet-1.0.tar.gz"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "hashMode": "fixed-output",
+      "expectedDigest": {
+        "algorithm": "sha256",
+        "value": "15b675bfa786f30345aec3e607729f02f85f75ebea65bef17708db98f9021015"
+      }
+    }
+  ],
+  "provenance": "declared",
+  "semanticLoss": [
+    {
+      "code": "RECIPE_OPAQUE",
+      "severity": "info",
+      "sourceEcosystem": "generic",
+      "sourcePath": "/builder",
+      "originalMeaning": "The native fetcher implementation was not captured; only its declared output hash is represented",
+      "representedMeaning": "fixed-output recipe pinned by expected digest",
+      "blocksProfile": []
+    }
+  ]
+}

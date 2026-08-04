@@ -1,0 +1,24 @@
+{
+  "manifestVersion": "1",
+  "entries": [
+    {
+      "path": "bin/greet",
+      "kind": "executable",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "d8d8c4ece34a1579c4e680474ef9a3f003edcfb9a47010197ce47045cd8ab62c"
+      },
+      "size": 8192
+    },
+    {
+      "path": "lib/libgreet.so.1.0",
+      "kind": "file",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "85ea8cd47424212277a774b53a81f6f0aada2b6bf0ddeac091b1be8e07e9a4ff"
+      },
+      "size": 40960
+    }
+  ],
+  "semanticLoss": []
+}

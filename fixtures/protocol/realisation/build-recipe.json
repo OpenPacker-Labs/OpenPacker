@@ -1,0 +1,68 @@
+{
+  "recipeVersion": "1",
+  "captureProfile": "derivation-capture-v1",
+  "kind": "source-build",
+  "builder": {
+    "kind": "nix"
+  },
+  "system": "x86_64-linux",
+  "platforms": {
+    "build": {
+      "os": "linux",
+      "architecture": "x86_64"
+    },
+    "host": {
+      "os": "linux",
+      "architecture": "x86_64"
+    }
+  },
+  "inputs": [
+    {
+      "role": "source",
+      "sourceRef": {
+        "type": "repository",
+        "uri": "https://fixtures.openpacker.invalid/libgreet.git",
+        "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "c5a977d8b8bc711415e37202b039023e12e0bc7bf7b40c59813f8d537f86565d"
+        }
+      }
+    },
+    {
+      "role": "build",
+      "exactPurl": "pkg:generic/stdenv@1.0.0",
+      "outputs": ["out"]
+    },
+    {
+      "role": "host",
+      "exactPurl": "pkg:generic/libc@2.39",
+      "outputs": ["out"]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "hashMode": "input-addressed",
+      "inputAddress": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+      "expectedTreeDigest": {
+        "algorithm": "sha256",
+        "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+      }
+    },
+    {
+      "name": "dev",
+      "hashMode": "input-addressed",
+      "inputAddress": "e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9",
+      "expectedTreeDigest": {
+        "algorithm": "sha256",
+        "value": "36e1aa0d0fe68fbb3f6b6d588ed554495cdc38eceb036be860751a751d0215e6"
+      }
+    }
+  ],
+  "provenance": "captured",
+  "sourceRefs": [],
+  "attestations": [],
+  "evidenceRefs": [],
+  "semanticLoss": []
+}

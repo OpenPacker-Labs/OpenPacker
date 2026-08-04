@@ -24,8 +24,15 @@
     { "$ref": "operations.schema.json#/$defs/Problem" },
     { "$ref": "resolution.schema.json#/$defs/ResolutionUniverse" },
     { "$ref": "resolution.schema.json#/$defs/SignedReceipt" },
+    { "$ref": "model.schema.json#/$defs/TreeManifest" },
+    { "$ref": "model.schema.json#/$defs/BuildRecipe" },
+    { "$ref": "model.schema.json#/$defs/SubstituteDescriptor" },
     { "$ref": "events.schema.json#/$defs/LifecycleEvent" },
     { "$ref": "events.schema.json#/$defs/OpenPackerCloudEvent" },
-    { "$ref": "lockfile.schema.json" }
+    { "$ref": "lockfile.schema.json" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentManifest" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentGeneration" },
+    { "$ref": "environment.schema.json#/$defs/EnvironmentState" },
+    { "$ref": "resolution.schema.json#/$defs/UniverseAmendment" }
   ]
 }

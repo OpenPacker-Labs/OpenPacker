@@ -1,0 +1,15 @@
+{
+  "$comment": "Pinned environment projection digests. Recomputed by packages/canonical tests.",
+  "manifest": {
+    "algorithm": "sha256",
+    "value": "1425690b5036264f766296b7f13bc353bcab4dabe41a99509d714b0dfd58d736"
+  },
+  "generation1": {
+    "algorithm": "sha256",
+    "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+  },
+  "generation2": {
+    "algorithm": "sha256",
+    "value": "e07eb4f028096d0959bddccb67cf9e0b7d974c9106452d819684ac4d7ca4d3c0"
+  }
+}

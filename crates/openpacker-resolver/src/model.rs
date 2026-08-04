@@ -275,6 +275,14 @@ pub struct ResolutionUniverse {
     pub overlays: Vec<Value>,
     #[serde(default)]
     pub source_snapshots: Vec<Value>,
+    /// Captured build plans. The pure resolver treats realisation facts as
+    /// opaque: they carry no selection semantics.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipes: Vec<Value>,
+    /// Authority-gated supersessions of interpretation. They never mutate the
+    /// native facts in `packages`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amendments: Vec<UniverseAmendment>,
     pub lifecycle_root: Digest,
     pub target_vocabulary_version: String,
     pub canonical_digest: Digest,
@@ -287,6 +295,10 @@ pub struct ResolutionUniverse {
 pub struct SolveRequest {
     pub requirements: Vec<Requirement>,
     pub target: TargetContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platforms: Option<PlatformContexts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirement_kind_policy: Option<RequirementKindPolicy>,
     pub environment: Environment,
     pub policy: PolicyInput,
     pub semantics: SemanticsInput,
@@ -301,6 +313,66 @@ pub struct SolveRequest {
     pub extensions: Extensions,
 }
 
+/// Build, host, and target platforms for a cross-compiling solve. Absent
+/// members fall back to the host platform, which itself defaults to
+/// `SolveRequest.target`.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlatformContexts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<TargetContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<TargetContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetContext>,
+}
+
+/// Which requirement kinds are consumed on the build platform, and which are
+/// inactive for this solve.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequirementKindPolicy {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_platform_kinds: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inactive_kinds: Option<Vec<String>>,
+}
+
+/// A supersession of interpretation, bound to an exact native metadata state.
+/// The resolver reads only what it needs to gate and account for amendments;
+/// operation bodies stay opaque until amendment compilation lands.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UniverseAmendment {
+    pub amendment_version: String,
+    pub subject: Value,
+    pub applies_to_metadata_digest: Digest,
+    pub operations: Vec<Value>,
+    pub authority: String,
+    #[serde(flatten)]
+    pub rest: BTreeMap<String, Value>,
+}
+
+/// Requirement kinds consumed while building rather than while running.
+pub const DEFAULT_BUILD_PLATFORM_KINDS: [&str; 2] = ["build", "tool"];
+
+impl RequirementKindPolicy {
+    pub fn is_build_platform(&self, kind: Option<&str>) -> bool {
+        let Some(kind) = kind else { return false };
+        self.build_platform_kinds.as_ref().map_or_else(
+            || DEFAULT_BUILD_PLATFORM_KINDS.contains(&kind),
+            |kinds| kinds.iter().any(|item| item == kind),
+        )
+    }
+
+    pub fn is_inactive(&self, kind: Option<&str>) -> bool {
+        let Some(kind) = kind else { return false };
+        self.inactive_kinds
+            .as_ref()
+            .is_some_and(|kinds| kinds.iter().any(|item| item == kind))
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Environment {
@@ -308,6 +380,10 @@ pub struct Environment {
     pub installed: Vec<String>,
     #[serde(default)]
     pub locked: Vec<String>,
+    /// Binds installed/locked state to an environment generation record. The
+    /// pure resolver does not interpret the ledger; it preserves the binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation_digest: Option<Digest>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -320,6 +396,10 @@ pub struct PolicyInput {
     pub required_evidence: Vec<String>,
     #[serde(default)]
     pub accepted_overlay_authorities: Vec<String>,
+    /// Skipped when empty so that adding amendment support does not alter the
+    /// request digest of any existing solve.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_amendment_authorities: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
 }

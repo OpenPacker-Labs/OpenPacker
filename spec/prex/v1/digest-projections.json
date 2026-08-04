@@ -20,7 +20,13 @@
       "canonicalization": "prex-jcs-safe-integer-v1",
       "includePaths": [],
       "excludePaths": ["/canonicalDigest"],
-      "orderedSetPaths": ["/overlays", "/packages", "/sourceSnapshots"]
+      "orderedSetPaths": [
+        "/amendments",
+        "/overlays",
+        "/packages",
+        "/recipes",
+        "/sourceSnapshots"
+      ]
     },
     {
       "id": "package-node-v1",
@@ -95,7 +101,12 @@
       "canonicalization": "prex-jcs-safe-integer-v1",
       "includePaths": [],
       "excludePaths": [],
-      "orderedSetPaths": ["/evidenceRefs", "/externalRefs", "/sourceSnapshots"]
+      "orderedSetPaths": [
+        "/amendmentDigests",
+        "/evidenceRefs",
+        "/externalRefs",
+        "/sourceSnapshots"
+      ]
     },
     {
       "id": "event-data-v1",
@@ -104,6 +115,61 @@
       "includePaths": [],
       "excludePaths": [],
       "orderedSetPaths": []
+    },
+    {
+      "id": "tree-manifest-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/entries", "/semanticLoss"]
+    },
+    {
+      "id": "build-recipe-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": [
+        "/attestations",
+        "/evidenceRefs",
+        "/inputs",
+        "/outputs",
+        "/semanticLoss",
+        "/sourceRefs"
+      ]
+    },
+    {
+      "id": "recipe-output-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": []
+    },
+    {
+      "id": "substitute-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/locations"],
+      "orderedSetPaths": ["/evidenceRefs", "/runtimeReferences"]
+    },
+    {
+      "id": "environment-manifest-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": [],
+      "orderedSetPaths": ["/requirements"]
+    },
+    {
+      "id": "environment-generation-v1",
+      "algorithm": "sha256",
+      "canonicalization": "prex-jcs-safe-integer-v1",
+      "includePaths": [],
+      "excludePaths": ["/generationDigest"],
+      "orderedSetPaths": ["/artifactSet", "/semanticLoss"]
     }
   ]
 }

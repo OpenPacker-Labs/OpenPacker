@@ -47,7 +47,10 @@
       "inline": {
         "requirements": [],
         "target": {},
-        "environment": { "installed": [], "locked": [] },
+        "environment": {
+          "installed": [],
+          "locked": []
+        },
         "policy": {
           "allowYanked": false,
           "allowQuarantined": false,
@@ -80,7 +83,11 @@
       "file": "../golden/universe.json",
       "pointer": "/canonicalDigest",
       "mutations": [
-        { "operation": "set", "path": "/algorithm", "value": "md5" }
+        {
+          "operation": "set",
+          "path": "/algorithm",
+          "value": "md5"
+        }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/Digest",
       "valid": false,
@@ -98,7 +105,12 @@
       "name": "reject-model-package-without-node-id",
       "file": "../golden/universe.json",
       "pointer": "/packages/0",
-      "mutations": [{ "operation": "delete", "path": "/nodeId" }],
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/nodeId"
+        }
+      ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
       "valid": false,
       "levels": ["PREX-D"]
@@ -116,7 +128,11 @@
       "file": "../golden/event.json",
       "pointer": "/0",
       "mutations": [
-        { "operation": "set", "path": "/specversion", "value": "0.3" }
+        {
+          "operation": "set",
+          "path": "/specversion",
+          "value": "0.3"
+        }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/events.schema.json#/$defs/OpenPackerCloudEvent",
       "valid": false,
@@ -132,7 +148,12 @@
     {
       "name": "reject-lockfile-without-version",
       "file": "../golden/lockfile.json",
-      "mutations": [{ "operation": "delete", "path": "/schemaVersion" }],
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/schemaVersion"
+        }
+      ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
       "valid": false,
       "levels": ["PREX-S", "PREX-R"]
@@ -194,7 +215,11 @@
       "name": "reject-identify-status",
       "file": "../golden/identity.json",
       "mutations": [
-        { "operation": "set", "path": "/status", "value": "selected-silently" }
+        {
+          "operation": "set",
+          "path": "/status",
+          "value": "selected-silently"
+        }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/IdentifyResponse",
       "valid": false,
@@ -210,7 +235,12 @@
     {
       "name": "reject-enumeration-without-exact-purl",
       "file": "../golden/enumeration.json",
-      "mutations": [{ "operation": "delete", "path": "/versions/0/exactPurl" }],
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/versions/0/exactPurl"
+        }
+      ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/EnumerateResponse",
       "valid": false,
       "levels": ["PREX-E"]
@@ -225,7 +255,12 @@
     {
       "name": "reject-explain-without-graph",
       "file": "../golden/explanation.json",
-      "mutations": [{ "operation": "delete", "path": "/graph" }],
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/graph"
+        }
+      ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/ExplainResponse",
       "valid": false,
       "levels": ["PREX-X"]
@@ -254,7 +289,10 @@
     {
       "name": "verify-request",
       "inline": {
-        "subject": { "type": "metadata", "locator": "urn:openpacker:fixture" },
+        "subject": {
+          "type": "metadata",
+          "locator": "urn:openpacker:fixture"
+        },
         "checks": ["artifact-digest"],
         "evaluationTime": "2026-08-02T00:00:00Z"
       },
@@ -265,7 +303,10 @@
     {
       "name": "reject-empty-verification-checks",
       "inline": {
-        "subject": { "type": "metadata", "locator": "urn:openpacker:fixture" },
+        "subject": {
+          "type": "metadata",
+          "locator": "urn:openpacker:fixture"
+        },
         "checks": [],
         "evaluationTime": "2026-08-02T00:00:00Z"
       },
@@ -289,7 +330,10 @@
     {
       "name": "reject-ocm-materialize-without-version",
       "inline": {
-        "subject": { "type": "ocm", "component": "github.com/openpacker/demo" }
+        "subject": {
+          "type": "ocm",
+          "component": "github.com/openpacker/demo"
+        }
       },
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
       "valid": false,
@@ -302,7 +346,9 @@
         {
           "operation": "set",
           "path": "/extensions",
-          "value": { "org.example.float": 1.5 }
+          "value": {
+            "org.example.float": 1.5
+          }
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
@@ -337,11 +383,884 @@
       "file": "../../spec/prex/v1/digest-projections.json",
       "pointer": "/projections/0",
       "mutations": [
-        { "operation": "set", "path": "/algorithm", "value": "sha512" }
+        {
+          "operation": "set",
+          "path": "/algorithm",
+          "value": "sha512"
+        }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
       "valid": false,
       "levels": ["PREX-N", "PREX-R", "PREX-S"]
+    },
+    {
+      "name": "tree-manifest",
+      "file": "realisation/tree-manifest.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-V"]
+    },
+    {
+      "name": "reject-tree-manifest-parent-segment",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/0/path",
+          "value": "../escape"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-V"]
+    },
+    {
+      "name": "reject-tree-manifest-absolute-path",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/0/path",
+          "value": "/etc/passwd"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-tree-manifest-backslash-path",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/0/path",
+          "value": "bin\\greet"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-tree-manifest-file-without-digest",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/entries/1/digest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-V"]
+    },
+    {
+      "name": "reject-tree-manifest-directory-with-digest",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/0/digest",
+          "value": {
+            "algorithm": "sha256",
+            "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "build-recipe-source-build",
+      "file": "realisation/build-recipe.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-V"]
+    },
+    {
+      "name": "build-recipe-fixed-output",
+      "file": "realisation/build-recipe-fixed-output.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": true,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-build-recipe-fixed-output-without-expected-digest",
+      "file": "realisation/build-recipe-fixed-output.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/outputs/0/expectedDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D", "PREX-V"]
+    },
+    {
+      "name": "reject-build-recipe-input-without-selector",
+      "file": "realisation/build-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/inputs/1",
+          "value": {
+            "role": "build"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-build-recipe-unknown-hash-mode",
+      "file": "realisation/build-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/0/hashMode",
+          "value": "trust-me"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-build-recipe-executed-provenance",
+      "file": "realisation/build-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/provenance",
+          "value": "executed"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D", "PREX-V"]
+    },
+    {
+      "name": "artifact-descriptor-realisation-facts",
+      "file": "realisation/artifact-descriptor.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/ArtifactDescriptor",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "reject-artifact-runtime-reference-without-selector",
+      "file": "realisation/artifact-descriptor.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/runtimeReferences/0",
+          "value": {
+            "outputName": "out"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/ArtifactDescriptor",
+      "valid": false,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "reject-artifact-produced-by-without-output",
+      "file": "realisation/artifact-descriptor.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/producedBy/outputName"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/ArtifactDescriptor",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "substitute-descriptor",
+      "file": "realisation/substitute.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SubstituteDescriptor",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-X"]
+    },
+    {
+      "name": "substitute-descriptor-mirrored-location",
+      "file": "realisation/substitute-mirrored.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SubstituteDescriptor",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-X"]
+    },
+    {
+      "name": "reject-substitute-without-tree-digest",
+      "file": "realisation/substitute.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/treeDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SubstituteDescriptor",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-X"]
+    },
+    {
+      "name": "reject-substitute-subject-without-artifact-digest",
+      "file": "realisation/substitute.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/subject/artifactDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SubstituteDescriptor",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "tree-manifest-digest-projection",
+      "file": "../../spec/prex/v1/digest-projections.json",
+      "pointer": "/projections/10",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "substitute-digest-projection",
+      "file": "../../spec/prex/v1/digest-projections.json",
+      "pointer": "/projections/13",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-unknown-digest-projection-id",
+      "file": "../../spec/prex/v1/digest-projections.json",
+      "pointer": "/projections/10",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/id",
+          "value": "nar-hash-v1"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/DigestProjection",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-universe-recipe-without-outputs",
+      "file": "realisation/universe-with-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/recipes/0/outputs",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "solve-request-cross-platform",
+      "file": "realisation/solve-cross-platform.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-platform-member",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/platforms/deploy",
+          "value": {
+            "os": "linux"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-empty-platforms",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/platforms",
+          "value": {}
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-requirement-kind-policy-kind",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/requirementKindPolicy/inactiveKinds",
+          "value": ["deploy"]
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "build-prefixed-target-predicate",
+      "inline": {
+        "type": "equals",
+        "path": "build.architecture",
+        "value": "x86_64"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "host-prefixed-runtime-predicate",
+      "inline": {
+        "type": "equals",
+        "path": "host.runtimes.node",
+        "value": "24"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-unknown-platform-prefix",
+      "inline": {
+        "type": "equals",
+        "path": "deploy.os",
+        "value": "linux"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-double-platform-prefix",
+      "inline": {
+        "type": "equals",
+        "path": "build.host.os",
+        "value": "linux"
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TargetPredicate",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "package-with-outputs",
+      "file": "realisation/package-with-outputs.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "reject-duplicate-output-name",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "out"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-invalid-output-name",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "Dev Files"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D", "PREX-M"]
+    },
+    {
+      "name": "requirement-expression-with-outputs",
+      "inline": {
+        "type": "package",
+        "purl": "pkg:generic/libgreet",
+        "vers": "vers:generic/1.0.0",
+        "outputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/RequirementExpression",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-requirement-expression-empty-outputs",
+      "inline": {
+        "type": "package",
+        "purl": "pkg:generic/libgreet",
+        "outputs": []
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/RequirementExpression",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "materialize-request-with-outputs",
+      "inline": {
+        "subject": {
+          "type": "purl",
+          "exactPurl": "pkg:generic/libgreet@1.0.0"
+        },
+        "outputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-materialize-request-duplicate-outputs",
+      "inline": {
+        "subject": {
+          "type": "purl",
+          "exactPurl": "pkg:generic/libgreet@1.0.0"
+        },
+        "outputs": ["dev", "dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json#/$defs/MaterializeRequest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "dependency-edge-with-outputs",
+      "inline": {
+        "requirementId": "libgreet-dev",
+        "fromNodeId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "toNodeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "witnessType": "package",
+        "toOutputs": ["dev"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/DependencyEdge",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-dependency-edge-invalid-output",
+      "inline": {
+        "requirementId": "libgreet-dev",
+        "fromNodeId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "toNodeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "witnessType": "package",
+        "toOutputs": ["DEV"]
+      },
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/DependencyEdge",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "environment-manifest",
+      "file": "environment/manifest.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentManifest",
+      "valid": true,
+      "levels": ["PREX-S", "PREX-M"]
+    },
+    {
+      "name": "reject-environment-manifest-bad-name",
+      "file": "environment/manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/name",
+          "value": "Dev Shell"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentManifest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "environment-generation-first",
+      "file": "environment/generation-1.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "environment-generation-child",
+      "file": "environment/generation-2.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-generation-sequence-zero",
+      "file": "environment/generation-1.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/sequence",
+          "value": 0
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M", "PREX-R"]
+    },
+    {
+      "name": "reject-generation-without-digest",
+      "file": "environment/generation-2.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/generationDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-generation-member-without-artifact-digest",
+      "file": "environment/generation-2.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/artifactSet/0/artifactDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentGeneration",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "environment-state",
+      "file": "environment/state.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "environment-state-rolled-back",
+      "file": "environment/state-rolled-back.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-environment-state-without-retained",
+      "file": "environment/state.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/retainedGenerationDigests",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "solve-request-bound-to-generation",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "installed": [],
+            "locked": [],
+            "generationDigest": {
+              "algorithm": "sha256",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-solve-request-bad-generation-digest",
+      "file": "realisation/solve-cross-platform.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "installed": [],
+            "locked": [],
+            "generationDigest": {
+              "algorithm": "sha512",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SolveRequest",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "lockfile-with-environment-binding",
+      "file": "../golden/lockfile.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "name": "devshell",
+            "baseGenerationDigest": {
+              "algorithm": "sha256",
+              "value": "8ef003b026ba6e43cc876a0d5cf094c851aae51f0299e8fb0619f623c3145a2c"
+            }
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": true,
+      "levels": ["PREX-R"]
+    },
+    {
+      "name": "reject-lockfile-unknown-environment-key",
+      "file": "../golden/lockfile.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/environment",
+          "value": {
+            "name": "devshell",
+            "generation": 2
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/lockfile.schema.json",
+      "valid": false,
+      "levels": ["PREX-R"]
+    },
+    {
+      "name": "universe-amendment",
+      "file": "amendment/organization-redirect.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/UniverseAmendment",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-amendment-without-applies-to",
+      "file": "amendment/organization-redirect.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/appliesToMetadataDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/UniverseAmendment",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-amendment-unknown-operation",
+      "file": "amendment/organization-redirect.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/operations/0",
+          "value": {
+            "op": "deletePackage",
+            "requirementId": "x"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/UniverseAmendment",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-amendment-empty-operations",
+      "file": "amendment/organization-redirect.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/operations",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/UniverseAmendment",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-amendment-retraction-without-justification",
+      "file": "amendment/organization-redirect.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/operations/0",
+          "value": {
+            "op": "retractRequirement",
+            "requirementId": "demo"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/UniverseAmendment",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "nix-universe-two-outputs",
+      "file": "nix/universe.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
+      "valid": true,
+      "levels": ["PREX-S", "PREX-D"]
+    },
+    {
+      "name": "nix-build-recipe",
+      "file": "nix/build-recipe.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": true,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "nix-output-tree-manifest",
+      "file": "nix/tree-manifest-out.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": true,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "nix-substitute",
+      "file": "nix/substitute.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SubstituteDescriptor",
+      "valid": true,
+      "levels": ["PREX-M", "PREX-X"]
+    },
+    {
+      "name": "reject-nix-package-invalid-output-name",
+      "file": "nix/universe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/packages/0/outputs/0/name",
+          "value": "Out"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
+      "valid": false,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-two-default-outputs",
+      "file": "realisation/package-with-outputs.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/default",
+          "value": true
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance",
+      "valid": false,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "reject-duplicate-tree-manifest-path",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/3/path",
+          "value": "bin/greet"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-state-current-not-retained",
+      "file": "environment/state.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/currentGenerationDigest",
+          "value": {
+            "algorithm": "sha256",
+            "value": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json#/$defs/EnvironmentState",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "explanation-with-ignored-amendment",
+      "file": "amendment/explanation-ignored.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ExplanationGraph",
+      "valid": true,
+      "levels": ["PREX-X", "PREX-S"]
+    },
+    {
+      "name": "reject-unknown-explanation-node-kind",
+      "file": "amendment/explanation-ignored.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/nodes/0/kind",
+          "value": "amendment-smuggled"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ExplanationGraph",
+      "valid": false,
+      "levels": ["PREX-X"]
+    },
+    {
+      "name": "universe-with-amendment",
+      "file": "amendment/universe-with-amendment.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/ResolutionUniverse",
+      "valid": true,
+      "levels": ["PREX-S"]
+    },
+    {
+      "name": "reject-tree-manifest-embedded-newline-escape",
+      "file": "realisation/tree-manifest.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/entries/1/path",
+          "value": "bin/greet\n../escape"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/TreeManifest",
+      "valid": false,
+      "levels": ["PREX-M"]
+    },
+    {
+      "name": "reject-duplicate-recipe-output-name",
+      "file": "realisation/build-recipe.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/outputs/1/name",
+          "value": "out"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/BuildRecipe",
+      "valid": false,
+      "levels": ["PREX-D"]
     }
   ]
 }

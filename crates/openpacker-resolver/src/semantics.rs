@@ -4,27 +4,179 @@ use serde_json::Value;
 
 use crate::{TargetContext, TargetPredicate, VersionConstraint};
 
+/// The build, host, and target platforms a predicate may address, plus the
+/// platform an unprefixed path resolves against.
+///
+/// A single-platform solve builds a view whose three platforms are the same
+/// context, so `build.`, `host.`, and `target.` prefixes are accepted and
+/// answer identically. Cross-compilation supplies distinct contexts.
+#[derive(Clone, Copy)]
+pub struct PlatformView<'a> {
+    build: &'a TargetContext,
+    host: &'a TargetContext,
+    target: &'a TargetContext,
+    default: &'a TargetContext,
+}
+
+impl<'a> PlatformView<'a> {
+    /// One context answering for every platform.
+    pub fn uniform(context: &'a TargetContext) -> Self {
+        Self {
+            build: context,
+            host: context,
+            target: context,
+            default: context,
+        }
+    }
+
+    pub fn new(
+        build: &'a TargetContext,
+        host: &'a TargetContext,
+        target: &'a TargetContext,
+    ) -> Self {
+        Self {
+            build,
+            host,
+            target,
+            default: host,
+        }
+    }
+
+    /// The same platforms, but unprefixed paths resolve against the build
+    /// platform. Used for requirements whose kind is consumed while building.
+    #[must_use]
+    pub fn defaulting_to_build(self) -> Self {
+        Self {
+            default: self.build,
+            ..self
+        }
+    }
+
+    pub fn host(&self) -> &'a TargetContext {
+        self.host
+    }
+
+    fn resolve(&self, path: &'a str) -> (&'a TargetContext, &'a str) {
+        // No unprefixed target path begins with 'b', 'h', or 't', so this one
+        // byte check skips prefix matching for every ordinary lookup.
+        if matches!(path.as_bytes().first(), Some(b'b' | b'h' | b't')) {
+            for (prefix, context) in [
+                ("build.", self.build),
+                ("host.", self.host),
+                ("target.", self.target),
+            ] {
+                if let Some(rest) = path.strip_prefix(prefix) {
+                    return (context, rest);
+                }
+            }
+        }
+        (self.default, path)
+    }
+
+    pub fn scalar(&self, path: &'a str) -> Option<Value> {
+        let (context, rest) = self.resolve(path);
+        target_scalar(context, rest)
+    }
+}
+
+/// The platforms a solve addresses. Without `platforms`, every platform is the
+/// request target, so a single-platform solve is unchanged.
+pub fn request_platforms(request: &crate::SolveRequest) -> PlatformView<'_> {
+    let host = request
+        .platforms
+        .as_ref()
+        .and_then(|platforms| platforms.host.as_ref())
+        .unwrap_or(&request.target);
+    let build = request
+        .platforms
+        .as_ref()
+        .and_then(|platforms| platforms.build.as_ref())
+        .unwrap_or(host);
+    let target = request
+        .platforms
+        .as_ref()
+        .and_then(|platforms| platforms.target.as_ref())
+        .unwrap_or(host);
+    PlatformView::new(build, host, target)
+}
+
+/// The platforms a single requirement is resolved against. Build-consumed
+/// kinds resolve unprefixed paths against the build platform; every other kind
+/// resolves against the host.
+pub fn requirement_platforms<'a>(
+    request: &'a crate::SolveRequest,
+    kind: Option<&str>,
+) -> PlatformView<'a> {
+    RequirementPlatforms::new(request).select(request, kind)
+}
+
+/// Platform views for a whole solve, computed once. The hot paths iterate
+/// thousands of requirements, so rebuilding the view per requirement is
+/// measurable; selecting between two precomputed views is not.
+#[derive(Clone, Copy)]
+pub struct RequirementPlatforms<'a> {
+    host_default: PlatformView<'a>,
+    build_default: PlatformView<'a>,
+}
+
+impl<'a> RequirementPlatforms<'a> {
+    pub fn new(request: &'a crate::SolveRequest) -> Self {
+        let host_default = request_platforms(request);
+        Self {
+            host_default,
+            build_default: host_default.defaulting_to_build(),
+        }
+    }
+
+    pub fn select(&self, request: &crate::SolveRequest, kind: Option<&str>) -> PlatformView<'a> {
+        let build_consumed = request.requirement_kind_policy.as_ref().map_or_else(
+            || kind.is_some_and(|kind| crate::DEFAULT_BUILD_PLATFORM_KINDS.contains(&kind)),
+            |policy| policy.is_build_platform(kind),
+        );
+        if build_consumed {
+            self.build_default
+        } else {
+            self.host_default
+        }
+    }
+
+    pub fn host_default(&self) -> PlatformView<'a> {
+        self.host_default
+    }
+}
+
+/// Whether a requirement of this kind participates in the solve at all.
+pub fn requirement_is_active(request: &crate::SolveRequest, kind: Option<&str>) -> bool {
+    request
+        .requirement_kind_policy
+        .as_ref()
+        .is_none_or(|policy| !policy.is_inactive(kind))
+}
+
 pub fn evaluate_target_predicate(predicate: &TargetPredicate, target: &TargetContext) -> bool {
+    evaluate_target_predicate_in(predicate, PlatformView::uniform(target))
+}
+
+pub fn evaluate_target_predicate_in(predicate: &TargetPredicate, platforms: PlatformView) -> bool {
     match predicate {
         TargetPredicate::True => true,
         TargetPredicate::False => false,
-        TargetPredicate::Equals { path, value } => {
-            target_scalar(target, path).as_ref() == Some(value)
-        }
+        TargetPredicate::Equals { path, value } => platforms.scalar(path).as_ref() == Some(value),
         TargetPredicate::NotEquals { path, value } => {
-            target_scalar(target, path).as_ref() != Some(value)
+            platforms.scalar(path).as_ref() != Some(value)
         }
         TargetPredicate::In { path, values } => {
-            target_scalar(target, path).is_some_and(|v| values.contains(&v))
+            platforms.scalar(path).is_some_and(|v| values.contains(&v))
         }
         TargetPredicate::NotIn { path, values } => {
-            target_scalar(target, path).is_none_or(|v| !values.contains(&v))
+            platforms.scalar(path).is_none_or(|v| !values.contains(&v))
         }
-        TargetPredicate::VersionSatisfies { path, constraint } => target_scalar(target, path)
+        TargetPredicate::VersionSatisfies { path, constraint } => platforms
+            .scalar(path)
             .and_then(|value| value.as_str().map(str::to_owned))
             .is_some_and(|version| version_constraint_satisfies(&version, constraint)),
         TargetPredicate::CapabilityPresent { name, constraint } => {
-            target.capabilities.iter().any(|capability| {
+            platforms.host().capabilities.iter().any(|capability| {
                 capability.name == *name
                     && constraint.as_ref().is_none_or(|constraint| {
                         capability.version.as_deref().is_some_and(|version| {
@@ -35,11 +187,11 @@ pub fn evaluate_target_predicate(predicate: &TargetPredicate, target: &TargetCon
         }
         TargetPredicate::AllOf { predicates } => predicates
             .iter()
-            .all(|predicate| evaluate_target_predicate(predicate, target)),
+            .all(|predicate| evaluate_target_predicate_in(predicate, platforms)),
         TargetPredicate::AnyOf { predicates } => predicates
             .iter()
-            .any(|predicate| evaluate_target_predicate(predicate, target)),
-        TargetPredicate::Not { predicate } => !evaluate_target_predicate(predicate, target),
+            .any(|predicate| evaluate_target_predicate_in(predicate, platforms)),
+        TargetPredicate::Not { predicate } => !evaluate_target_predicate_in(predicate, platforms),
     }
 }
 

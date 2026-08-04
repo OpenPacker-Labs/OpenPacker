@@ -1,0 +1,267 @@
+{
+  "universeVersion": "1",
+  "packages": [
+    {
+      "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "identity": {
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "purlType": "npm",
+        "namespace": "@openpacker",
+        "name": "demo-tool",
+        "version": "1.0.0",
+        "qualifiers": {},
+        "nativeCoordinates": [
+          {
+            "ecosystem": "npm",
+            "coordinate": "@openpacker/demo-tool",
+            "version": "1.0.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.dev/catalog"
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.0.0",
+      "normalizedVersion": "1.0.0",
+      "versionSortKey": "1.0.0",
+      "requirements": [],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [
+        {
+          "descriptorId": "libgreet-out",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "4cba440e079f40f50a56731293f73f3a754321e1133ed48470d13d13af633b6c"
+          },
+          "size": 40960,
+          "mediaType": "application/vnd.openpacker.package.tar+zstd",
+          "artifactType": "realisation-output",
+          "nativeRole": "package-archive",
+          "treeDigest": {
+            "algorithm": "sha256",
+            "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+          },
+          "treeManifestRef": {
+            "type": "tree-manifest",
+            "locator": "urn:openpacker:tree-manifest:sha256:3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+            },
+            "mediaType": "application/vnd.openpacker.tree-manifest.v1+json"
+          },
+          "producedBy": {
+            "recipeDigest": {
+              "algorithm": "sha256",
+              "value": "a0ee008f06d3b5284c4697d1bc83e9f40ede164a4ce1ea08f857c628ac635f41"
+            },
+            "outputName": "out"
+          },
+          "runtimeReferences": [
+            {
+              "artifactDigest": {
+                "algorithm": "sha256",
+                "value": "b91ca16db25e983db0558e49cb29b97a3c70a14523e8adebba83734814135673"
+              },
+              "outputName": "out"
+            }
+          ],
+          "locations": [
+            {
+              "transport": "https",
+              "uri": "https://fixtures.openpacker.invalid/libgreet-1.0-out.tar.zst",
+              "priority": 0,
+              "rangeSupported": true
+            }
+          ],
+          "referrers": [],
+          "externalRefs": []
+        }
+      ],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "nativeSemantics": {
+        "version": "npm-v1",
+        "data": {}
+      },
+      "semanticLoss": []
+    },
+    {
+      "nodeId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "identity": {
+        "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
+        "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.1.0",
+        "purlType": "npm",
+        "namespace": "@openpacker",
+        "name": "demo-tool",
+        "version": "1.1.0",
+        "qualifiers": {},
+        "nativeCoordinates": [
+          {
+            "ecosystem": "npm",
+            "coordinate": "@openpacker/demo-tool",
+            "version": "1.1.0"
+          }
+        ],
+        "aliases": [],
+        "sourceRefs": [
+          {
+            "type": "metadata",
+            "uri": "https://fixtures.openpacker.dev/catalog"
+          }
+        ],
+        "publisherRefs": [],
+        "externalRefs": []
+      },
+      "nativeVersion": "1.1.0",
+      "normalizedVersion": "1.1.0",
+      "versionSortKey": "1.1.0",
+      "requirements": [],
+      "capabilities": [],
+      "conflicts": [],
+      "cardinalityConstraints": [],
+      "artifacts": [],
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "sourceSnapshots": [
+        {
+          "algorithm": "sha256",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "metadataDigest": {
+        "algorithm": "sha256",
+        "value": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "nativeSemantics": {
+        "version": "npm-v1",
+        "data": {}
+      },
+      "semanticLoss": []
+    }
+  ],
+  "overlays": [],
+  "sourceSnapshots": [
+    {
+      "snapshotId": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "providerId": "fixture",
+      "providerType": "npm",
+      "endpointIdentity": "urn:fixture:npm",
+      "retrievedAt": "2026-08-02T00:00:00Z",
+      "evaluationTime": "2026-08-02T00:00:00Z",
+      "rootDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "recordsDigest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "evidenceRefs": []
+    }
+  ],
+  "lifecycleRoot": {
+    "algorithm": "sha256",
+    "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "targetVocabularyVersion": "1",
+  "canonicalDigest": {
+    "algorithm": "sha256",
+    "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "recipes": [
+    {
+      "recipeVersion": "1",
+      "captureProfile": "derivation-capture-v1",
+      "kind": "source-build",
+      "builder": {
+        "kind": "nix"
+      },
+      "system": "x86_64-linux",
+      "platforms": {
+        "build": {
+          "os": "linux",
+          "architecture": "x86_64"
+        },
+        "host": {
+          "os": "linux",
+          "architecture": "x86_64"
+        }
+      },
+      "inputs": [
+        {
+          "role": "source",
+          "sourceRef": {
+            "type": "repository",
+            "uri": "https://fixtures.openpacker.invalid/libgreet.git",
+            "revision": "8f3c0d5a1b2c3d4e5f60718293a4b5c6d7e8f900",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "c5a977d8b8bc711415e37202b039023e12e0bc7bf7b40c59813f8d537f86565d"
+            }
+          }
+        },
+        {
+          "role": "build",
+          "exactPurl": "pkg:generic/stdenv@1.0.0",
+          "outputs": ["out"]
+        },
+        {
+          "role": "host",
+          "exactPurl": "pkg:generic/libc@2.39",
+          "outputs": ["out"]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "hashMode": "input-addressed",
+          "inputAddress": "b3f2q8xr7k1v5m9n0p4s6t8w2y4z6a8c",
+          "expectedTreeDigest": {
+            "algorithm": "sha256",
+            "value": "3dbcb3cf39b0395cfaa8fdc94b45117141bbc4c5cf733d00203523e1015804cb"
+          }
+        },
+        {
+          "name": "dev",
+          "hashMode": "input-addressed",
+          "inputAddress": "e1a0m3d5f7g9h1j3k5l7n9p1r3t5v7x9",
+          "expectedTreeDigest": {
+            "algorithm": "sha256",
+            "value": "36e1aa0d0fe68fbb3f6b6d588ed554495cdc38eceb036be860751a751d0215e6"
+          }
+        }
+      ],
+      "provenance": "captured",
+      "sourceRefs": [],
+      "attestations": [],
+      "evidenceRefs": [],
+      "semanticLoss": []
+    }
+  ]
+}
