@@ -35,6 +35,61 @@ opmx --help
 
 ---
 
+## Working on OpenPacker itself
+
+When you are developing OpenPacker, `npm link` is the wrong tool: it pins a
+global name to whatever was last built, so a stale binary looks exactly like a
+fresh one. `tools/dev-bin` holds launchers that rebuild before running, and a
+shell hook puts them on PATH only while the shell is inside this repository.
+
+```sh
+npm run dev:shell     # prints the one line to add to ~/.bashrc or ~/.zshrc
+```
+
+That line is:
+
+```sh
+source /path/to/openpacker/tools/shell/openpacker-env.sh
+```
+
+With it in place, `opm` and `opmx` resolve to this checkout inside the
+repository and are gone again outside it — so they never shadow a real install
+elsewhere on the machine.
+
+If you prefer **direnv**, create your own `.envrc` and allow it:
+
+```sh
+echo 'PATH_add tools/dev-bin' > .envrc
+direnv allow
+```
+
+That file is gitignored and is deliberately not shipped: `.envrc` is a common
+place to keep secrets, and `npm run agent:check` refuses to stage anything
+matching `.env*`. Keeping it local means the guard stays strict for everyone.
+
+Every run compares workspace sources against the built CLI and rebuilds when
+they are newer:
+
+| Situation                    | Cost  | Behaviour                             |
+| ---------------------------- | ----- | ------------------------------------- |
+| Nothing changed              | ~50ms | Runs the built CLI                    |
+| A source file changed        | ~1.5s | Rebuilds, then runs the new CLI       |
+| A source file does not build | —     | **Refuses to run** and exits non-zero |
+
+The last row is deliberate. Silently running the previous build after a failed
+compile is how you end up debugging code that is not the code you are running.
+
+```sh
+OPENPACKER_DEV_NO_BUILD=1 opm ...   # skip the check, run whatever is built
+tools/dev-bin/opm --help            # one-off, no PATH setup at all
+```
+
+On Windows, `opm.cmd` and `opmx.cmd` do the same thing, except that they ask
+turbo every time rather than checking file times first — a warm cache hit is
+about 0.4s.
+
+---
+
 ## 60-second project workflow
 
 ```sh
