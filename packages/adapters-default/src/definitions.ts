@@ -59,6 +59,14 @@ export function httpRegistryDefinition(input: {
   };
 }
 
+/**
+ * Registry Definition for a host CLI installer that only exports InstallerProvider.
+ *
+ * Advertise only operations the module can honor. InstallerProvider is plan +
+ * install (+ available); it is not catalog search/metadata and does not export
+ * uninstall through the PREX install interface unless wired separately.
+ * Features may still describe native reversibility honesty.
+ */
 export function hostInstallerDefinition(input: {
   registryId: string;
   displayName: string;
@@ -66,7 +74,13 @@ export function hostInstallerDefinition(input: {
   native: string;
   execId: string;
   features: NonNullable<RegistryDefinition['features']>;
+  /** Extra resource types this installer module actually implements. */
+  extraResources?: readonly string[];
 }): RegistryDefinition {
+  const types = [
+    'prex.registry.install/1',
+    ...(input.extraResources ?? []),
+  ] as const;
   return {
     registryDefinitionVersion: '1',
     registryId: input.registryId,
@@ -76,12 +90,7 @@ export function hostInstallerDefinition(input: {
     resources: [
       {
         '@id': input.execId,
-        '@type': [
-          'prex.registry.search/1',
-          'prex.registry.package-metadata/1',
-          'prex.registry.install/1',
-          'prex.registry.uninstall/1',
-        ],
+        '@type': types.length === 1 ? types[0]! : [...types],
       },
     ],
     features: input.features,

@@ -157,11 +157,49 @@ describe('WIT-shaped bridge', () => {
           },
         ]),
       codec: () => ({ purlType: 'fixture' }) as never,
+      catalog: () => ({}) as never,
     });
     await assertWitShapedModule(module);
     const bytes = await serviceIndexBytes(module);
     const parsed = parseServiceIndex(bytes);
     expect(parsed.registryId).toBe('urn:openpacker:registry:fixture');
+  });
+
+  it('rejects modules that advertise catalog resources without catalog export', async () => {
+    const dishonest = fixtureModule({
+      registryDefinition: () =>
+        definition([
+          {
+            '@id': 'exec:tool',
+            '@type': [
+              'prex.registry.search/1',
+              'prex.registry.package-metadata/1',
+              'prex.registry.install/1',
+            ],
+          },
+        ]),
+      installer: () => ({ install: async () => ({}) }) as never,
+    });
+    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+      code: 'INVALID_ADAPTER',
+    });
+  });
+
+  it('rejects uninstall advertisement without uninstall() on installer', async () => {
+    const dishonest = fixtureModule({
+      registryDefinition: () =>
+        definition([
+          {
+            '@id': 'exec:tool',
+            '@type': ['prex.registry.install/1', 'prex.registry.uninstall/1'],
+          },
+        ]),
+      installer: () =>
+        ({ install: async () => ({}), plan: async () => ({}) }) as never,
+    });
+    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+      code: 'INVALID_ADAPTER',
+    });
   });
 });
 

@@ -279,6 +279,9 @@ export function defaultAdapterModules(): AdapterModule[] {
     {
       id: 'org.openpacker.adapter.nix',
       purlTypes: ['nix'],
+      // Only advertise what the module exports: codec + InstallerProvider.
+      // NixStoreProvider also has search/closure helpers, but they are not
+      // wired as catalog/environment WIT exports yet — do not lie on the index.
       registryDefinition: () => ({
         registryDefinitionVersion: '1' as const,
         registryId: 'urn:openpacker:registry:nixpkgs',
@@ -288,23 +291,15 @@ export function defaultAdapterModules(): AdapterModule[] {
         resources: [
           {
             '@id': 'exec:nix',
-            '@type': [
-              'prex.registry.search/1',
-              'prex.registry.enumerate-versions/1',
-              'prex.registry.package-metadata/1',
-              'prex.registry.artifact/1',
-              'prex.registry.install/1',
-              'prex.registry.uninstall/1',
-              'prex.registry.environment/1',
-            ],
+            '@type': 'prex.registry.install/1' as const,
           },
         ],
         features: {
           offlineReplay: false,
           signedMetadata: true,
-          installSideEffects: 'user-profile',
-          reversibility: 'native-generation',
-          requiresElevation: 'never',
+          installSideEffects: 'user-profile' as const,
+          reversibility: 'native-generation' as const,
+          requiresElevation: 'never' as const,
         },
       }),
       codec: () => new NixCodec(),

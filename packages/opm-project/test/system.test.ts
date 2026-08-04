@@ -41,4 +41,14 @@ describe('system installer routing via adapter registry', () => {
       planSystemInstall('pkg:npm/lodash@1.0.0'),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
   });
+
+  it('refuses search on install-only host adapters (no capability lie)', async () => {
+    const { searchRegistry } = await import('../src/index.js');
+    await expect(searchRegistry('deb', 'curl')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_OPERATION',
+    });
+    await expect(searchRegistry('nix', 'hello')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_OPERATION',
+    });
+  });
 });

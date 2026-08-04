@@ -114,44 +114,20 @@ function mapHostError(error: unknown): never {
 }
 
 /**
- * A catalog provider for one ecosystem, from the adapter registry.
+ * Catalog provider for one ecosystem — always discovery-gated.
+ *
+ * Missing Registry Definition resource types mean unsupported. The resolve
+ * path and browse path share this gate; there is no production bypass.
  */
-export function providerFor(
+export async function providerFor(
   ecosystem: string,
   options: RegistryOptions = {},
-): CatalogProvider {
-  assertOnline(ecosystem, options.offline);
-  const registry = requireAdapterRegistry();
-  try {
-    // Synchronous path for callers that already hold a provider; catalog
-    // factories are sync. Resource checks happen in the async helper.
-    const module = registry.moduleFor(ecosystem);
-    if (!module.catalog)
-      throw new OpmError(
-        'UNSUPPORTED_ECOSYSTEM',
-        `No catalog provider for "${ecosystem}".`,
-      );
-    const endpoint =
-      DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
-        ? undefined
-        : registryEndpoint(ecosystem);
-    const transport =
-      options.transport ??
-      (endpoint
-        ? new BoundedFetchTransport({
-            allowedOrigins: allowedOriginsFor(ecosystem),
-          })
-        : undefined);
-    return module.catalog({
-      ...(options.offline !== undefined ? { offline: options.offline } : {}),
-      ...(endpoint === undefined ? {} : { endpoint }),
-      ...(transport === undefined ? {} : { transport }),
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-      ...(options.now ? { now: options.now } : {}),
-    });
-  } catch (error) {
-    mapHostError(error);
-  }
+  requiredResources: readonly string[] = [
+    'prex.registry.package-metadata/1',
+    'prex.registry.enumerate-versions/1',
+  ],
+): Promise<CatalogProvider> {
+  return providerForWithDiscovery(ecosystem, options, requiredResources);
 }
 
 /** Fail closed when the registry definition omits a required resource. */

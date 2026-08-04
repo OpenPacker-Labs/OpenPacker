@@ -64,7 +64,7 @@ describe('default adapters', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
   });
 
-  it('advertises expected resource mappings for every peer adapter', async () => {
+  it('advertises only resources each module can honor', async () => {
     const registry = createDefaultAdapterRegistry();
     const expected: Record<string, string[]> = {
       npm: [
@@ -84,24 +84,47 @@ describe('default adapters', () => {
         'prex.registry.enumerate-versions/1',
         'prex.registry.artifact/1',
       ],
+      // Install-only until catalog/environment exports are wired.
+      nix: ['prex.registry.install/1'],
+      deb: ['prex.registry.install/1'],
+      winget: ['prex.registry.install/1'],
+      chocolatey: ['prex.registry.install/1'],
+    };
+    const forbiddenOnHost: Record<string, string[]> = {
       nix: [
         'prex.registry.search/1',
         'prex.registry.package-metadata/1',
-        'prex.registry.install/1',
+        'prex.registry.uninstall/1',
         'prex.registry.environment/1',
       ],
       deb: [
-        'prex.registry.install/1',
-        'prex.registry.uninstall/1',
+        'prex.registry.search/1',
         'prex.registry.package-metadata/1',
+        'prex.registry.uninstall/1',
       ],
-      winget: ['prex.registry.install/1', 'prex.registry.uninstall/1'],
-      chocolatey: ['prex.registry.install/1', 'prex.registry.uninstall/1'],
+      winget: [
+        'prex.registry.search/1',
+        'prex.registry.package-metadata/1',
+        'prex.registry.uninstall/1',
+      ],
+      chocolatey: [
+        'prex.registry.search/1',
+        'prex.registry.package-metadata/1',
+        'prex.registry.uninstall/1',
+      ],
     };
     for (const [purlType, resources] of Object.entries(expected)) {
       const definition = await registry.definitionFor(purlType);
       for (const type of resources)
         expect(hasResource(definition, type), `${purlType} ${type}`).toBe(true);
+    }
+    for (const [purlType, resources] of Object.entries(forbiddenOnHost)) {
+      const definition = await registry.definitionFor(purlType);
+      for (const type of resources)
+        expect(
+          hasResource(definition, type),
+          `${purlType} must not lie ${type}`,
+        ).toBe(false);
     }
   });
 

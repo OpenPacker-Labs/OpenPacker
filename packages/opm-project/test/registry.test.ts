@@ -135,10 +135,10 @@ describe('registry configuration', () => {
     }
   });
 
-  it('refuses an ecosystem it has no registry for', () => {
+  it('refuses an ecosystem it has no registry for', async () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
     // Discovery path: unregistered purl types fail closed at the adapter host.
-    expect(() => providerFor('cocoapods')).toThrow(
+    await expect(providerFor('cocoapods')).rejects.toThrow(
       /No adapter is registered|No registry|UNSUPPORTED_ECOSYSTEM/u,
     );
   });
@@ -148,7 +148,9 @@ describe('offline is fail-closed', () => {
   it('refuses every registry operation while offline', async () => {
     // The whole offline posture rests on this: an offline build must not be
     // able to start depending on a registry being reachable.
-    expect(() => providerFor('npm', { offline: true })).toThrow(OpmError);
+    await expect(providerFor('npm', { offline: true })).rejects.toBeInstanceOf(
+      OpmError,
+    );
     await expect(
       listRegistryVersions('npm', 'pkg:npm/demo', { offline: true }),
     ).rejects.toMatchObject({ code: 'OFFLINE' });
