@@ -1,0 +1,53 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:nixpkgs-local",
+  "displayName": "nixpkgs via local nix CLI",
+  "purlTypes": ["nix"],
+  "protocol": {
+    "native": "nix-flake-v1",
+    "transport": ["nix", "exec"]
+  },
+  "resources": [
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.search/1",
+      "comment": "nix search"
+    },
+    {
+      "@id": "nix+flake://nixpkgs",
+      "@type": "prex.registry.enumerate-versions/1",
+      "comment": "flake attributes; versions are not a registry list in the npm sense"
+    },
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.package-metadata/1",
+      "comment": "nix path-info / derivation show"
+    },
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.artifact/1",
+      "comment": "NAR / store path realisation"
+    },
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.install/1",
+      "comment": "nix profile install or store realisation"
+    },
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.uninstall/1"
+    },
+    {
+      "@id": "exec:nix",
+      "@type": "prex.registry.environment/1",
+      "comment": "profile PATH / nix shell"
+    }
+  ],
+  "features": {
+    "offlineReplay": false,
+    "signedMetadata": true,
+    "installSideEffects": "user-profile",
+    "reversibility": "native-generation",
+    "requiresElevation": "never"
+  }
+}

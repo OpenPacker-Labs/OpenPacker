@@ -2,6 +2,8 @@
 
 ## Capability discovery
 
+### Control plane
+
 `Capabilities` is defined in
 [`operations.schema.json`](../../spec/prex/v1/schemas/operations.schema.json). A
 consumer must negotiate all fields relevant to its call:
@@ -19,6 +21,19 @@ consumer must negotiate all fields relevant to its call:
 An empty list means unsupported, not unknown. A provider advertises only checks
 it passes; clients must not assume the OpenPacker reference daemon's full set
 for another provider.
+
+### Package sources (Registry Definition)
+
+Per-source capability discovery uses a **Registry Definition** service index
+([normative](../../spec/prex/v1/registry-definition.md),
+[schema](../../spec/prex/v1/schemas/registry-definition.schema.json)). Versioned
+resource `@type` values (NuGet-style) advertise search, enumerate, metadata,
+artifact, install, update, uninstall, and environment. Missing type ⇒
+unsupported. Adapters expose the document via the WIT `registry.service-index`
+export ([prex-adapter.wit](../../spec/wit/prex-adapter.wit)).
+
+Control-plane capabilities and Registry Definitions answer different questions;
+clients merge both when negotiating a call.
 
 ## Conformance capabilities
 

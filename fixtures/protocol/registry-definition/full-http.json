@@ -1,0 +1,45 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:fixtures-npm",
+  "displayName": "Fixture npm-shaped registry",
+  "purlTypes": ["npm"],
+  "protocol": {
+    "native": "npm-registry-v1",
+    "transport": ["https"]
+  },
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/npm/",
+      "@type": "prex.registry.package-metadata/1",
+      "mediaTypes": ["application/json"]
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/npm/-/v1/search",
+      "@type": "prex.registry.search/1"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/npm/",
+      "@type": "prex.registry.enumerate-versions/1"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/npm/",
+      "@type": "prex.registry.artifact/1",
+      "mediaTypes": ["application/octet-stream"]
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/npm/",
+      "@type": "prex.registry.dependency-graph/1"
+    }
+  ],
+  "features": {
+    "offlineReplay": false,
+    "signedMetadata": false,
+    "installSideEffects": "project-store",
+    "reversibility": "project-generation",
+    "requiresElevation": "never"
+  },
+  "limits": {
+    "maxEnumerate": 10000,
+    "maxSearchResults": 250
+  }
+}

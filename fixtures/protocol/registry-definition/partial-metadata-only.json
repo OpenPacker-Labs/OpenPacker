@@ -1,0 +1,29 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:fixtures-read-only",
+  "displayName": "Metadata-only fixture (no install, no search)",
+  "purlTypes": ["generic"],
+  "protocol": {
+    "native": "fixture-v1",
+    "transport": ["https"]
+  },
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/ro/metadata/",
+      "@type": [
+        "prex.registry.package-metadata/1",
+        "prex.registry.enumerate-versions/1"
+      ]
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/ro/artifacts/",
+      "@type": "prex.registry.artifact/1"
+    }
+  ],
+  "features": {
+    "offlineReplay": true,
+    "installSideEffects": "none",
+    "reversibility": "none",
+    "requiresElevation": "never"
+  }
+}

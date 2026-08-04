@@ -22,16 +22,17 @@ API detail.
 
 ## Normative PREX
 
-| Document                                                               | Authority                                                            |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [`spec/prex/v1/`](../spec/prex/v1/)                                    | Normative protocol: schemas, OpenAPI, semantics, errors, media types |
-| [Operations](protocol/operations.md)                                   | PREX and OpenPacker operation catalogue                              |
-| [Conformance](protocol/conformance.md)                                 | Capability levels PREX-N … PREX-C                                    |
-| [Identity and canonicalization](protocol/identity-canonicalization.md) | PURL/VERS and digest rules                                           |
-| [IR and semantics](protocol/ir-semantics.md)                           | Profiles and loss-aware IR                                           |
-| [Resolution and proof](protocol/resolution-proof.md)                   | Solver outputs and independent checking                              |
-| [Receipts and lockfiles](protocol/receipts-lockfiles.md)               | Pin formats                                                          |
-| [Events](protocol/events.md)                                           | CloudEvents outbox and replay                                        |
+| Document                                                               | Authority                                                                                                                           |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [`spec/prex/v1/`](../spec/prex/v1/)                                    | Normative protocol: schemas, OpenAPI, semantics, errors, media types, [registry definition](../spec/prex/v1/registry-definition.md) |
+| [`spec/wit/`](../spec/wit/)                                            | WIT adapter worlds ([prex-adapter](../spec/wit/prex-adapter.wit))                                                                   |
+| [Operations](protocol/operations.md)                                   | PREX and OpenPacker operation catalogue                                                                                             |
+| [Conformance](protocol/conformance.md)                                 | Capability levels PREX-N … PREX-C                                                                                                   |
+| [Identity and canonicalization](protocol/identity-canonicalization.md) | PURL/VERS and digest rules                                                                                                          |
+| [IR and semantics](protocol/ir-semantics.md)                           | Profiles and loss-aware IR                                                                                                          |
+| [Resolution and proof](protocol/resolution-proof.md)                   | Solver outputs and independent checking                                                                                             |
+| [Receipts and lockfiles](protocol/receipts-lockfiles.md)               | Pin formats                                                                                                                         |
+| [Events](protocol/events.md)                                           | CloudEvents outbox and replay                                                                                                       |
 
 ## Using the reference implementation
 

@@ -1309,6 +1309,62 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/RuntimeClosure",
       "valid": false,
       "levels": ["PREX-M"]
+    },
+    {
+      "name": "registry-definition-full-http",
+      "file": "registry-definition/full-http.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-E", "PREX-D"]
+    },
+    {
+      "name": "registry-definition-partial",
+      "file": "registry-definition/partial-metadata-only.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": true,
+      "levels": ["PREX-D"]
+    },
+    {
+      "name": "registry-definition-cli-nix",
+      "file": "registry-definition/cli-only-nix.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-M"]
+    },
+    {
+      "name": "registry-definition-nuget-mapped",
+      "file": "registry-definition/nuget-mapped.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": true,
+      "levels": ["PREX-D", "PREX-E"]
+    },
+    {
+      "name": "registry-definition-empty-resources",
+      "file": "registry-definition/full-http.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/resources",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-definition-bad-version",
+      "file": "registry-definition/full-http.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/registryDefinitionVersion",
+          "value": "99"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
+      "valid": false,
+      "levels": ["PREX-I"]
     }
   ]
 }
