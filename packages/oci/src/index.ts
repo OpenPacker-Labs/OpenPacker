@@ -370,17 +370,52 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
   readonly #fetch: typeof fetch;
   readonly #credentials: { username: string; password: string } | undefined;
   readonly #now: () => number;
+  readonly #allowedTokenOrigins: ReadonlySet<string>;
+
+  /**
+   * Token endpoints that well-known registries legitimately delegate to.
+   *
+   * Curated here rather than learned from a response: the point of the check
+   * is that the list is not attacker-influenced. Anything else needs
+   * `allowedTokenOrigins`.
+   */
+  static readonly WELL_KNOWN_TOKEN_ORIGINS: Readonly<
+    Record<string, readonly string[]>
+  > = {
+    'https://registry-1.docker.io': ['https://auth.docker.io'],
+    'https://index.docker.io': ['https://auth.docker.io'],
+    'https://ghcr.io': ['https://ghcr.io'],
+    'https://quay.io': ['https://quay.io'],
+  };
 
   constructor(
     options: {
       fetch?: typeof fetch;
       credentials?: { username: string; password: string };
       now?: () => number;
+      /** Extra origins this caller authorizes to receive its credentials. */
+      allowedTokenOrigins?: readonly string[];
     } = {},
   ) {
     this.#fetch = options.fetch ?? fetch;
     this.#credentials = options.credentials;
     this.#now = options.now ?? (() => Date.now());
+    this.#allowedTokenOrigins = new Set(
+      (options.allowedTokenOrigins ?? []).map((value) => new URL(value).origin),
+    );
+  }
+
+  /** Where this registry's credentials may be sent. */
+  #credentialOrigins(requestUrl: URL): ReadonlySet<string> {
+    return new Set([
+      // A registry issuing its own tokens is the common case and is not a
+      // delegation at all.
+      requestUrl.origin,
+      ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[
+        requestUrl.origin
+      ] ?? []),
+      ...this.#allowedTokenOrigins,
+    ]);
   }
 
   async headers(
@@ -411,6 +446,13 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     const realm = field('realm');
     if (!realm) return {};
     const tokenUrl = new URL(realm);
+    // The realm is chosen by the server being talked to. Over plaintext it
+    // would put the issued token — and any credentials — on the wire.
+    if (tokenUrl.protocol !== 'https:')
+      throw new RegistryProtocolError(
+        'UNSAFE_REDIRECT',
+        `Registry ${requestUrl.origin} named a non-HTTPS token endpoint: ${tokenUrl.origin}`,
+      );
     const service = field('service');
     if (service) tokenUrl.searchParams.set('service', service);
     tokenUrl.searchParams.set('scope', field('scope') ?? scope);
@@ -418,10 +460,24 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     const requestHeaders: Record<string, string> = {
       accept: 'application/json',
     };
-    if (this.#credentials)
+    if (this.#credentials) {
+      // Credentials go only to a token endpoint the caller authorized, never
+      // to one the registry named for itself. A hostile, compromised, or
+      // typo-squatted registry can otherwise answer any request with
+      // `realm="https://attacker/token"` and be handed the user's password.
+      // The anonymous flow below still follows any HTTPS realm, because it
+      // discloses nothing.
+      if (!this.#credentialOrigins(requestUrl).has(tokenUrl.origin))
+        throw new RegistryProtocolError(
+          'UNAUTHORIZED',
+          `${requestUrl.origin} asked for credentials to be sent to ${tokenUrl.origin}, ` +
+            `which is not an authorized token endpoint for it. ` +
+            `Pass allowedTokenOrigins if this is intended.`,
+        );
       requestHeaders.authorization = `Basic ${Buffer.from(
         `${this.#credentials.username}:${this.#credentials.password}`,
       ).toString('base64')}`;
+    }
 
     const response = await this.#fetch(tokenUrl, {
       method: 'GET',

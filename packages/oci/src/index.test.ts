@@ -296,3 +296,103 @@ describe('tag listing and bearer authentication', () => {
     expect(tokenRequests).toBe(1);
   });
 });
+
+describe('credentials are not handed to a server-nominated endpoint', () => {
+  const challenge = (realm: string) =>
+    new Response('', {
+      status: 401,
+      headers: {
+        'www-authenticate': `Bearer realm="${realm}",service="registry.test"`,
+      },
+    });
+
+  it('refuses to send credentials to a token host the registry named for itself', async () => {
+    // The realm arrives in the registry's own response. A hostile,
+    // compromised or typo-squatted registry that answers every request with
+    // realm="https://attacker/token" would otherwise be handed the user's
+    // password in decodable form, and its reply trusted as a token.
+    const contacted: string[] = [];
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      if (href.startsWith('https://evil.example/')) {
+        contacted.push(new Headers(init?.headers).get('authorization') ?? '');
+        return new Response(JSON.stringify({ token: 'attacker-issued' }), {
+          status: 200,
+        });
+      }
+      return challenge('https://evil.example/token');
+    }) as unknown as typeof fetch;
+
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+    });
+    await expect(
+      auth.headers(
+        new URL('https://registry.test/v2/demo/tags/list'),
+        'repository:demo:pull',
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted, 'nothing may reach the attacker').toEqual([]);
+  });
+
+  it('allows a registry that issues its own tokens', async () => {
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      if (href.includes('/token'))
+        return new Response(JSON.stringify({ token: 'ok' }), { status: 200 });
+      if (new Headers(init?.headers).get('authorization') === 'Bearer ok')
+        return new Response(JSON.stringify({ tags: ['1.0'] }), { status: 200 });
+      return challenge('https://registry.test/token');
+    }) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer ok' });
+  });
+
+  it('allows a delegation the caller explicitly authorized', async () => {
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).startsWith('https://auth.internal/')
+        ? new Response(JSON.stringify({ token: 'ok' }), { status: 200 })
+        : challenge('https://auth.internal/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+      allowedTokenOrigins: ['https://auth.internal'],
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer ok' });
+  });
+
+  it('still performs the anonymous flow against any HTTPS realm', async () => {
+    // Anonymous discloses nothing, so compatibility is kept where it is free.
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).startsWith('https://auth.elsewhere/')
+        ? new Response(JSON.stringify({ token: 'anon' }), { status: 200 })
+        : challenge('https://auth.elsewhere/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer anon' });
+  });
+
+  it('refuses a plaintext token endpoint even anonymously', async () => {
+    const fetchImplementation = (async () =>
+      challenge('http://registry.test/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toMatchObject({ code: 'UNSAFE_REDIRECT' });
+  });
+});
