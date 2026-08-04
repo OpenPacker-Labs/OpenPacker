@@ -1,0 +1,83 @@
+# Native supply-chain capture and mitigation
+
+How OpenPacker **captures** supply-chain-relevant facts and **mitigates** common
+attacks without reimplementing every package manager. Lessons are taken from
+[pnpm’s supply-chain guidance](https://pnpm.io/supply-chain-security) and mapped
+onto PREX’s fact/decision split
+([ADR 0013](../adr/0013-separate-trust-layers.md),
+[ADR 0033](../adr/0033-native-supply-chain-capture-and-mitigation.md)).
+
+## Capture vs mitigate
+
+| Phase        | Question                                | OpenPacker surface                                                                                      |
+| ------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Capture**  | What is true about this package/source? | Catalog inspect, artifact digests, trust evidence, lifecycle events, materialize outcome, semantic loss |
+| **Mitigate** | Is that acceptable here?                | `@openpacker/policy` `evaluatePolicy`, bound as `policyDigest` on the receipt                           |
+
+Missing capture never becomes “valid.” A mitigation that needs a missing fact
+yields `not-provided` → aggregate **indeterminate** (or **deny** when the check
+is hard-denied), not a silent allow.
+
+## pnpm control → PREX mapping
+
+| pnpm                                           | PREX / OpenPacker                                                                    | Notes                                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Disable postinstall by default (`allowBuilds`) | Materialize never runs lifecycle scripts; policy `allowLifecycleScripts` / allowlist | Execution is a declared capability ([ADR 0031](../adr/0031-prex-is-a-plug-in-interface-for-package-managers.md)); default is refuse |
+| `minimumReleaseAge`                            | Policy `minimumReleaseAgeMinutes` + captured `publishedAt` vs `evaluationTime`       | Detection-window quarantine                                                                                                         |
+| `trustPolicy: no-downgrade`                    | Policy `trustPolicy: "no-downgrade"` + `trustLevel` / `priorTrustLevel` facts        | Ordered tiers, not a boolean “trusted”                                                                                              |
+| `blockExoticSubdeps`                           | Policy `blockExoticSources` + `sourceKind` / `dependencyDepth`                       | Registry vs git/tarball                                                                                                             |
+| Named registries in lockfile                   | Registry Definition `registryId`, lock source endpoint, policy expected registry     | Prevents same name/version from another authority                                                                                   |
+| Lockfile + frozen install                      | `opm.lock.json` / PREX lock + `requireExactSourceSnapshot`                           | Exact pins; no ambient float                                                                                                        |
+| Workspace committed config                     | Project policy + lock in VCS; no secret expansion in registry URLs                   | Governance                                                                                                                          |
+
+## Attack classes and native response
+
+| Attack                                     | Capture                                                              | Mitigate                                                             |
+| ------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Malicious publish in the first hours       | `publishedAt` from registry                                          | `minimumReleaseAgeMinutes` (e.g. 1440)                               |
+| Malicious `postinstall`                    | `lifecycleScriptsDeclared`; materialize records scripts not executed | Deny execution unless allowlisted; mise/opm refuse scripted installs |
+| Typosquat / unexpected registry            | `registryId`, provider id, source scheme                             | `allowedProviders`, `allowedSourceSchemes`, expected registry pin    |
+| Git/tarball dependency injection           | `sourceKind: git \| tarball`                                         | `blockExoticSources` for transitive (or all) deps                    |
+| Trust downgrade (was signed, now unsigned) | `trustLevel` vs `priorTrustLevel`                                    | `trustPolicy: "no-downgrade"`                                        |
+| Yank after compromise                      | Lifecycle events                                                     | Lifecycle reduction + `allowYanked: false`                           |
+| Digest substitution                        | Artifact digest/size on fetch                                        | Fail closed before extract; CAS content-addressed store              |
+| Host installer scripts (apt/choco)         | Semantic loss `SYSTEM_INSTALL_NOT_BYTE_VERIFIED`                     | Cannot claim `native-validated-v1`; elevation consent                |
+
+## Policy profile (recommended production)
+
+```json
+{
+  "allowYanked": false,
+  "allowQuarantined": false,
+  "requiredEvidence": [],
+  "semanticLossMaximum": "warning",
+  "requireExactSourceSnapshot": true,
+  "allowLifecycleScripts": false,
+  "minimumReleaseAgeMinutes": 1440,
+  "trustPolicy": "no-downgrade",
+  "blockExoticSources": { "transitive": true, "direct": false },
+  "allowedSourceSchemes": ["https", "file"]
+}
+```
+
+Tune excludes (`minimumReleaseAgeExclude`, `trustPolicyExclude`) only for
+packages you have reviewed — same spirit as pnpm’s exclude lists.
+
+## Adapter obligations
+
+When a Registry Definition advertises `package-metadata`, inspect SHOULD
+populate publish time when the native protocol has it. When provenance or
+trusted-publisher evidence exists, trust tier SHOULD be set from verified facts
+only. Exotic coordinates (git, direct URL) MUST set `sourceKind` accordingly so
+policy can block them.
+
+Host installers that only advertise `install` still participate: their plans
+emit irreversible / non-byte-verified loss, and policy can deny based on that
+loss (`deniedSemanticLossCodes` or severity caps).
+
+## Related
+
+- [Threat model](threat-model.md)
+- [Lifecycle and policy](lifecycle-policy.md)
+- [TUF / Sigstore / SLSA / SBOM](tuf-sigstore-slsa-sbom.md)
+- `@openpacker/policy` — `evaluatePolicy`

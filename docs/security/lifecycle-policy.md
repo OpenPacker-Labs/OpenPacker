@@ -15,3 +15,8 @@ Evidence facts retain `valid`, `invalid`, `not-provided`, `unknown`,
 invalid or denied evidence yields deny, required missing or unknown evidence
 yields indeterminate, and otherwise policy allows. The canonical policy digest
 is bound into every receipt.
+
+Supply-chain mitigations that need publish time, trust tier, exotic source kind,
+or lifecycle-script execution are evaluated in the same policy document — see
+[Native supply-chain capture and mitigation](supply-chain.md) and
+[ADR 0033](../adr/0033-native-supply-chain-capture-and-mitigation.md).

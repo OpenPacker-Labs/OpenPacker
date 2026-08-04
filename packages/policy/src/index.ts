@@ -9,6 +9,25 @@ import type {
   SemanticLoss,
 } from '@openpacker/contracts';
 
+/**
+ * Ordered trust tiers for supply-chain policy (higher = stronger).
+ * Aligns with pnpm-style trustPolicy without collapsing into a boolean.
+ */
+export type TrustTier =
+  | 'trusted-publisher'
+  | 'provenance'
+  | 'registry-attested'
+  | 'unsigned'
+  | 'unknown';
+
+export type SourceKind =
+  | 'registry'
+  | 'git'
+  | 'tarball'
+  | 'path'
+  | 'oci'
+  | 'exotic';
+
 export interface PolicyDocument {
   allowYanked: boolean;
   allowQuarantined: boolean;
@@ -26,6 +45,42 @@ export interface PolicyDocument {
   deniedSemanticLossCodes?: string[];
   requireExactSourceSnapshot?: boolean;
   permitForensicDigestMaterialization?: boolean;
+  /**
+   * pnpm minimumReleaseAge: minutes a version must age after publish before
+   * install is allowed. Detection-window quarantine.
+   */
+  minimumReleaseAgeMinutes?: number;
+  /** Package name / purl prefixes exempt from minimum release age. */
+  minimumReleaseAgeExclude?: string[];
+  /**
+   * When true, missing publishedAt under a minimum age policy is deny rather
+   * than indeterminate (pnpm minimumReleaseAgeStrict spirit).
+   */
+  minimumReleaseAgeStrict?: boolean;
+  /**
+   * Refuse candidates whose trust tier is lower than a prior selected release
+   * of the same package (pnpm trustPolicy: no-downgrade).
+   */
+  trustPolicy?: 'none' | 'no-downgrade';
+  /** Exact package ids / purl prefixes exempt from trustPolicy. */
+  trustPolicyExclude?: string[];
+  /**
+   * Block non-registry sources. When only `transitive` is true, direct deps
+   * may still use git/tarball (pnpm blockExoticSubdeps spirit).
+   */
+  blockExoticSources?: {
+    direct?: boolean;
+    transitive?: boolean;
+  };
+  /**
+   * Lifecycle scripts in dependencies. Default posture is refuse execution;
+   * allowlist package ids that may run scripts when an execution capability
+   * exists (pnpm allowBuilds).
+   */
+  allowLifecycleScripts?: boolean;
+  allowedLifecycleScriptPackages?: string[];
+  /** Expected Registry Definition registryId for this selection. */
+  expectedRegistryId?: string;
 }
 
 export interface PolicyFacts {
@@ -45,6 +100,47 @@ export interface PolicyFacts {
   semanticLoss?: SemanticLoss[];
   exactSourceSnapshot?: boolean;
   forensicDigestMaterialization?: boolean;
+  /** Package identity string used for exclude lists (purl or name). */
+  packageId?: string;
+  /** Registry-reported publish time (ISO-8601). */
+  publishedAt?: string;
+  /** Evaluation / decision time (ISO-8601). Defaults to now only if both age checks are off. */
+  evaluationTime?: string;
+  /** Captured trust tier for this candidate. */
+  trustLevel?: TrustTier;
+  /** Prior selected release trust tier (lock or previous solve). */
+  priorTrustLevel?: TrustTier;
+  /** How the package bytes/source were obtained. */
+  sourceKind?: SourceKind;
+  /** 0 = direct requirement; >0 = transitive. */
+  dependencyDepth?: number;
+  /** Whether package metadata declares install/lifecycle scripts. */
+  lifecycleScriptsDeclared?: boolean;
+  /** Whether any lifecycle script actually ran (must be false unless policy allows). */
+  lifecycleScriptsExecuted?: boolean;
+  /** Registry Definition registryId that supplied metadata/bytes. */
+  registryId?: string;
+}
+
+/** Numeric rank for trust tiers (higher is stronger). */
+export const TRUST_TIER_RANK: Readonly<Record<TrustTier, number>> = {
+  'trusted-publisher': 40,
+  provenance: 30,
+  'registry-attested': 20,
+  unsigned: 10,
+  unknown: 0,
+};
+
+const EXOTIC_KINDS = new Set<SourceKind>(['git', 'tarball', 'exotic']);
+
+function matchesExclude(
+  packageId: string | undefined,
+  excludes: readonly string[] | undefined,
+): boolean {
+  if (!packageId || !excludes?.length) return false;
+  return excludes.some(
+    (entry) => packageId === entry || packageId.startsWith(entry),
+  );
 }
 
 export interface PolicyCheck {
@@ -245,6 +341,120 @@ export async function evaluatePolicy(
       policy.permitForensicDigestMaterialization !== true,
       'Forensic digest materialization policy',
     );
+
+  // --- Supply-chain mitigations (pnpm-aligned; facts must be captured first) ---
+
+  if (
+    policy.minimumReleaseAgeMinutes !== undefined &&
+    policy.minimumReleaseAgeMinutes > 0 &&
+    !matchesExclude(facts.packageId, policy.minimumReleaseAgeExclude)
+  ) {
+    if (!facts.publishedAt || !facts.evaluationTime) {
+      checks.push({
+        code: 'supply-chain.release-age',
+        status: policy.minimumReleaseAgeStrict
+          ? 'policy-denied'
+          : 'not-provided',
+        message: policy.minimumReleaseAgeStrict
+          ? 'minimumReleaseAge is strict but publishedAt/evaluationTime was not captured'
+          : 'publishedAt/evaluationTime not captured for minimum release age',
+      });
+    } else {
+      const published = Date.parse(facts.publishedAt);
+      const evaluated = Date.parse(facts.evaluationTime);
+      const ageMs = evaluated - published;
+      const requiredMs = policy.minimumReleaseAgeMinutes * 60_000;
+      const tooNew =
+        !Number.isFinite(published) ||
+        !Number.isFinite(evaluated) ||
+        ageMs < requiredMs;
+      deny(
+        'supply-chain.release-age',
+        tooNew,
+        tooNew
+          ? `Release age ${Number.isFinite(ageMs) ? Math.floor(ageMs / 60_000) : '?'}m < minimum ${policy.minimumReleaseAgeMinutes}m`
+          : `Release age satisfies minimum ${policy.minimumReleaseAgeMinutes}m`,
+      );
+    }
+  }
+
+  if (
+    policy.trustPolicy === 'no-downgrade' &&
+    !matchesExclude(facts.packageId, policy.trustPolicyExclude)
+  ) {
+    if (facts.trustLevel === undefined || facts.priorTrustLevel === undefined) {
+      checks.push({
+        code: 'supply-chain.trust-no-downgrade',
+        status: 'not-provided',
+        message:
+          'trustPolicy no-downgrade needs trustLevel and priorTrustLevel facts',
+      });
+    } else {
+      const current = TRUST_TIER_RANK[facts.trustLevel];
+      const prior = TRUST_TIER_RANK[facts.priorTrustLevel];
+      deny(
+        'supply-chain.trust-no-downgrade',
+        current < prior,
+        current < prior
+          ? `Trust tier downgraded from ${facts.priorTrustLevel} to ${facts.trustLevel}`
+          : `Trust tier ${facts.trustLevel} does not downgrade from ${facts.priorTrustLevel}`,
+      );
+    }
+  }
+
+  if (policy.blockExoticSources && facts.sourceKind !== undefined) {
+    const depth = facts.dependencyDepth ?? 0;
+    const block =
+      (depth === 0 && policy.blockExoticSources.direct === true) ||
+      (depth > 0 && policy.blockExoticSources.transitive === true);
+    if (block && EXOTIC_KINDS.has(facts.sourceKind))
+      deny(
+        'supply-chain.exotic-source',
+        true,
+        `Exotic source kind "${facts.sourceKind}" blocked at dependency depth ${depth}`,
+      );
+    else if (block)
+      checks.push({
+        code: 'supply-chain.exotic-source',
+        status: 'valid',
+        message: `Source kind ${facts.sourceKind} allowed at depth ${depth}`,
+      });
+  }
+
+  if (facts.lifecycleScriptsExecuted === true) {
+    const allowed =
+      policy.allowLifecycleScripts === true ||
+      matchesExclude(facts.packageId, policy.allowedLifecycleScriptPackages);
+    deny(
+      'supply-chain.lifecycle-scripts-executed',
+      !allowed,
+      allowed
+        ? 'Lifecycle script execution allowlisted'
+        : 'Lifecycle scripts executed but not allowlisted (default deny)',
+    );
+  } else if (
+    facts.lifecycleScriptsDeclared === true &&
+    policy.allowLifecycleScripts === false
+  ) {
+    // Declared but not executed is fine — capture honesty, no deny.
+    checks.push({
+      code: 'supply-chain.lifecycle-scripts-declared',
+      status: 'valid',
+      message:
+        'Lifecycle scripts declared but not executed (safe materialize path)',
+    });
+  }
+
+  if (policy.expectedRegistryId !== undefined) {
+    requireValue(
+      'supply-chain.registry-pin',
+      facts.registryId !== undefined,
+      facts.registryId !== undefined &&
+        facts.registryId !== policy.expectedRegistryId,
+      `Registry pin expected ${policy.expectedRegistryId}`,
+    );
+  }
+
   const policyDigest = await canonicalDigest(
     policy as unknown as import('@openpacker/contracts').JsonValue,
   );

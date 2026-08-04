@@ -34,6 +34,7 @@ Accepted decisions:
 30. [Build versus buy for standard primitives](0030-build-versus-buy-for-primitives.md)
 31. [PREX is a plug-in interface; execution is a declared capability](0031-prex-is-a-plug-in-interface-for-package-managers.md)
 32. [WIT adapters and capability-discoverable registry definitions](0032-wit-adapters-and-registry-definition.md)
+33. [Native supply-chain capture and mitigation](0033-native-supply-chain-capture-and-mitigation.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.
