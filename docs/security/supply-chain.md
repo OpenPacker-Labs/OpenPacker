@@ -83,7 +83,9 @@ packages you have reviewed — same spirit as pnpm’s exclude lists.
 
 Prior trust tier is persisted on `opm.lock.json` packages as `trustLevel` so
 `trustPolicy: no-downgrade` can compare upgrades against the last selected
-release.
+release. **First install** (no prior tier in the lock) skips the no-downgrade
+check — there is nothing to compare — and allows the candidate when other checks
+pass.
 
 ## Adapter obligations
 
