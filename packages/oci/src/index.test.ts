@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectStream, streamFromBytes } from '@openpacker/artifact-model';
 import {
+  BearerTokenAuthentication,
   OCI_EMPTY_CONFIG_BYTES,
   OciImageLayout,
   OciRegistryClient,
@@ -192,5 +193,206 @@ describe('OCI Distribution client', () => {
     await expect(client.listReferrers(subject)).rejects.toMatchObject({
       code: 'PAGINATION_LOOP',
     });
+  });
+});
+
+describe('tag listing and bearer authentication', () => {
+  const jsonResponse = (body: unknown, headers: Record<string, string> = {}) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json', ...headers },
+    });
+
+  it('follows Link pagination and stops at the last page', async () => {
+    const calls: string[] = [];
+    const fetchImplementation = (async (url: URL | string) => {
+      const href = String(url);
+      calls.push(href);
+      if (href.endsWith('/tags/list'))
+        return jsonResponse(
+          { tags: ['1.0', '1.1'] },
+          { link: '</v2/demo/tags/list?last=1.1>; rel="next"' },
+        );
+      return jsonResponse({ tags: ['2.0'] });
+    }) as unknown as typeof fetch;
+
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: fetchImplementation,
+    });
+    expect(await client.listTags()).toEqual(['1.0', '1.1', '2.0']);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('refuses pagination that points at another origin', async () => {
+    const fetchImplementation = (async () =>
+      jsonResponse(
+        { tags: ['1.0'] },
+        { link: '<https://evil.example/v2/demo/tags/list>; rel="next"' },
+      )) as unknown as typeof fetch;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: fetchImplementation,
+    });
+    await expect(client.listTags()).rejects.toMatchObject({
+      code: 'UNSAFE_REDIRECT',
+    });
+  });
+
+  it('terminates when a registry keeps pointing at the same page', async () => {
+    // A self-referential next-link would otherwise loop forever.
+    const fetchImplementation = (async () =>
+      jsonResponse(
+        { tags: ['1.0'] },
+        { link: '</v2/demo/tags/list>; rel="next"' },
+      )) as unknown as typeof fetch;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: fetchImplementation,
+    });
+    expect(await client.listTags()).toEqual(['1.0']);
+  });
+
+  it('performs the anonymous bearer handshake and caches the token', async () => {
+    let tokenRequests = 0;
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      if (href.startsWith('https://auth.test/token')) {
+        tokenRequests += 1;
+        expect(new URL(href).searchParams.get('scope')).toBe(
+          'repository:demo:pull',
+        );
+        return jsonResponse({ token: 'issued', expires_in: 300 });
+      }
+      const authorization = new Headers(init?.headers).get('authorization');
+      if (authorization !== 'Bearer issued')
+        return new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate':
+              'Bearer realm="https://auth.test/token",service="registry.test",scope="repository:demo:pull"',
+          },
+        });
+      return jsonResponse({ tags: ['1.0'] });
+    }) as unknown as typeof fetch;
+
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: fetchImplementation,
+      authentication: new BearerTokenAuthentication({
+        fetch: fetchImplementation,
+      }),
+    });
+    expect(await client.listTags()).toEqual(['1.0']);
+    expect(await client.listTags()).toEqual(['1.0']);
+    // Second listing reuses the cached token rather than re-authenticating.
+    expect(tokenRequests).toBe(1);
+  });
+});
+
+describe('credentials are not handed to a server-nominated endpoint', () => {
+  const challenge = (realm: string) =>
+    new Response('', {
+      status: 401,
+      headers: {
+        'www-authenticate': `Bearer realm="${realm}",service="registry.test"`,
+      },
+    });
+
+  it('refuses to send credentials to a token host the registry named for itself', async () => {
+    // The realm arrives in the registry's own response. A hostile,
+    // compromised or typo-squatted registry that answers every request with
+    // realm="https://attacker/token" would otherwise be handed the user's
+    // password in decodable form, and its reply trusted as a token.
+    const contacted: string[] = [];
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      if (href.startsWith('https://evil.example/')) {
+        contacted.push(new Headers(init?.headers).get('authorization') ?? '');
+        return new Response(JSON.stringify({ token: 'attacker-issued' }), {
+          status: 200,
+        });
+      }
+      return challenge('https://evil.example/token');
+    }) as unknown as typeof fetch;
+
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+    });
+    await expect(
+      auth.headers(
+        new URL('https://registry.test/v2/demo/tags/list'),
+        'repository:demo:pull',
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted, 'nothing may reach the attacker').toEqual([]);
+  });
+
+  it('allows a registry that issues its own tokens', async () => {
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      if (href.includes('/token'))
+        return new Response(JSON.stringify({ token: 'ok' }), { status: 200 });
+      if (new Headers(init?.headers).get('authorization') === 'Bearer ok')
+        return new Response(JSON.stringify({ tags: ['1.0'] }), { status: 200 });
+      return challenge('https://registry.test/token');
+    }) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer ok' });
+  });
+
+  it('allows a delegation the caller explicitly authorized', async () => {
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).startsWith('https://auth.internal/')
+        ? new Response(JSON.stringify({ token: 'ok' }), { status: 200 })
+        : challenge('https://auth.internal/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      credentials: { username: 'alice', password: 'hunter2' },
+      allowedTokenOrigins: ['https://auth.internal'],
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer ok' });
+  });
+
+  it('still performs the anonymous flow against any HTTPS realm', async () => {
+    // Anonymous discloses nothing, so compatibility is kept where it is free.
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).startsWith('https://auth.elsewhere/')
+        ? new Response(JSON.stringify({ token: 'anon' }), { status: 200 })
+        : challenge('https://auth.elsewhere/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).resolves.toMatchObject({ authorization: 'Bearer anon' });
+  });
+
+  it('refuses a plaintext token endpoint even anonymously', async () => {
+    const fetchImplementation = (async () =>
+      challenge('http://registry.test/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toMatchObject({ code: 'UNSAFE_REDIRECT' });
   });
 });

@@ -353,6 +353,165 @@ export interface RegistryAuthentication {
   ): Promise<Readonly<Record<string, string>>>;
 }
 
+/**
+ * The token handshake every public OCI registry uses.
+ *
+ * A registry answers an unauthenticated request with 401 and a
+ * `WWW-Authenticate: Bearer realm=…,service=…` challenge; the realm issues a
+ * short-lived token for a named scope. ghcr.io and Docker Hub both require
+ * this even for public, anonymous pulls, so without it `opm` could not read a
+ * public image at all.
+ *
+ * Credentials are optional. When absent this performs the anonymous flow,
+ * which is what public repositories serve.
+ */
+export class BearerTokenAuthentication implements RegistryAuthentication {
+  readonly #tokens = new Map<string, { token: string; expiresAt: number }>();
+  readonly #fetch: typeof fetch;
+  readonly #credentials: { username: string; password: string } | undefined;
+  readonly #now: () => number;
+  readonly #allowedTokenOrigins: ReadonlySet<string>;
+
+  /**
+   * Token endpoints that well-known registries legitimately delegate to.
+   *
+   * Curated here rather than learned from a response: the point of the check
+   * is that the list is not attacker-influenced. Anything else needs
+   * `allowedTokenOrigins`.
+   */
+  static readonly WELL_KNOWN_TOKEN_ORIGINS: Readonly<
+    Record<string, readonly string[]>
+  > = {
+    'https://registry-1.docker.io': ['https://auth.docker.io'],
+    'https://index.docker.io': ['https://auth.docker.io'],
+    'https://ghcr.io': ['https://ghcr.io'],
+    'https://quay.io': ['https://quay.io'],
+  };
+
+  constructor(
+    options: {
+      fetch?: typeof fetch;
+      credentials?: { username: string; password: string };
+      now?: () => number;
+      /** Extra origins this caller authorizes to receive its credentials. */
+      allowedTokenOrigins?: readonly string[];
+    } = {},
+  ) {
+    this.#fetch = options.fetch ?? fetch;
+    this.#credentials = options.credentials;
+    this.#now = options.now ?? (() => Date.now());
+    this.#allowedTokenOrigins = new Set(
+      (options.allowedTokenOrigins ?? []).map((value) => new URL(value).origin),
+    );
+  }
+
+  /** Where this registry's credentials may be sent. */
+  #credentialOrigins(requestUrl: URL): ReadonlySet<string> {
+    return new Set([
+      // A registry issuing its own tokens is the common case and is not a
+      // delegation at all.
+      requestUrl.origin,
+      ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[
+        requestUrl.origin
+      ] ?? []),
+      ...this.#allowedTokenOrigins,
+    ]);
+  }
+
+  async headers(
+    requestUrl: URL,
+    scope: string,
+    signal?: AbortSignal,
+  ): Promise<Readonly<Record<string, string>>> {
+    const key = `${requestUrl.origin}|${scope}`;
+    const cached = this.#tokens.get(key);
+    if (cached && cached.expiresAt > this.#now())
+      return { authorization: `Bearer ${cached.token}` };
+
+    const probe = await this.#fetch(requestUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      ...(signal ? { signal } : {}),
+    });
+    if (probe.status !== 401) {
+      await probe.body?.cancel();
+      return {};
+    }
+    const challenge = probe.headers.get('www-authenticate') ?? '';
+    await probe.body?.cancel();
+    if (!/^bearer/iu.test(challenge)) return {};
+
+    const field = (name: string) =>
+      challenge.match(new RegExp(`${name}="([^"]+)"`, 'iu'))?.[1];
+    const realm = field('realm');
+    if (!realm) return {};
+    const tokenUrl = new URL(realm);
+    // The realm is chosen by the server being talked to. Over plaintext it
+    // would put the issued token — and any credentials — on the wire.
+    if (tokenUrl.protocol !== 'https:')
+      throw new RegistryProtocolError(
+        'UNSAFE_REDIRECT',
+        `Registry ${requestUrl.origin} named a non-HTTPS token endpoint: ${tokenUrl.origin}`,
+      );
+    const service = field('service');
+    if (service) tokenUrl.searchParams.set('service', service);
+    tokenUrl.searchParams.set('scope', field('scope') ?? scope);
+
+    const requestHeaders: Record<string, string> = {
+      accept: 'application/json',
+    };
+    if (this.#credentials) {
+      // Credentials go only to a token endpoint the caller authorized, never
+      // to one the registry named for itself. A hostile, compromised, or
+      // typo-squatted registry can otherwise answer any request with
+      // `realm="https://attacker/token"` and be handed the user's password.
+      // The anonymous flow below still follows any HTTPS realm, because it
+      // discloses nothing.
+      if (!this.#credentialOrigins(requestUrl).has(tokenUrl.origin))
+        throw new RegistryProtocolError(
+          'UNAUTHORIZED',
+          `${requestUrl.origin} asked for credentials to be sent to ${tokenUrl.origin}, ` +
+            `which is not an authorized token endpoint for it. ` +
+            `Pass allowedTokenOrigins if this is intended.`,
+        );
+      requestHeaders.authorization = `Basic ${Buffer.from(
+        `${this.#credentials.username}:${this.#credentials.password}`,
+      ).toString('base64')}`;
+    }
+
+    const response = await this.#fetch(tokenUrl, {
+      method: 'GET',
+      headers: requestHeaders,
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new RegistryProtocolError(
+        'UNAUTHORIZED',
+        `Token request to ${tokenUrl.origin} failed: HTTP ${response.status}`,
+      );
+    }
+    const body = (await response.json()) as {
+      token?: string;
+      access_token?: string;
+      expires_in?: number;
+    };
+    const token = body.token ?? body.access_token;
+    if (!token)
+      throw new RegistryProtocolError(
+        'UNAUTHORIZED',
+        `Token endpoint ${tokenUrl.origin} returned no token`,
+      );
+    // Expire early so a token cannot lapse mid-request.
+    const lifetime = Math.max(30, body.expires_in ?? 300) - 15;
+    this.#tokens.set(key, {
+      token,
+      expiresAt: this.#now() + lifetime * 1000,
+    });
+    return { authorization: `Bearer ${token}` };
+  }
+}
+
 export class OciRegistryClient {
   readonly registry: URL;
   readonly repository: string;
@@ -464,6 +623,57 @@ export class OciRegistryClient {
       await response.body?.cancel();
       await abortableDelay(this.retryDelayMilliseconds, signal);
     }
+  }
+
+  /**
+   * Every tag in the repository, in the order the registry returns them.
+   *
+   * Paginated through the `Link: <...>; rel="next"` header the distribution
+   * specification defines. Registries cap `n` server-side, so a repository
+   * with thousands of tags needs the follow rather than one large request.
+   */
+  async listTags(options: { signal?: AbortSignal } = {}): Promise<string[]> {
+    const tags: string[] = [];
+    let next: URL | undefined = this.endpoint('tags/list');
+    const seen = new Set<string>();
+    while (next) {
+      // A registry that keeps pointing at pages terminates here rather than
+      // looping forever.
+      if (seen.has(next.href)) break;
+      seen.add(next.href);
+      const response: Response = await this.retryableRequest(
+        next,
+        { method: 'GET', headers: { accept: 'application/json' } },
+        `repository:${this.repository}:pull`,
+        options.signal,
+      );
+      if (response.status === 404)
+        throw new RegistryProtocolError(
+          'NOT_FOUND',
+          `Repository ${this.repository} not found on ${this.registry.origin}`,
+        );
+      if (response.status < 200 || response.status >= 300)
+        throw new RegistryProtocolError(
+          'UNEXPECTED_STATUS',
+          `Listing tags failed: HTTP ${response.status}`,
+        );
+      const body = (await response.json()) as { tags?: unknown };
+      if (Array.isArray(body.tags))
+        for (const tag of body.tags)
+          if (typeof tag === 'string') tags.push(tag);
+
+      const link = response.headers.get('link');
+      const match = link?.match(/<([^>]+)>\s*;\s*rel="?next"?/iu);
+      next = match?.[1] ? new URL(match[1], this.registry) : undefined;
+      // Following a next-link to another host would take the listing
+      // somewhere the caller never authorized.
+      if (next && next.origin !== this.registry.origin)
+        throw new RegistryProtocolError(
+          'UNSAFE_REDIRECT',
+          'Tag pagination pointed at another origin',
+        );
+    }
+    return tags;
   }
 
   async blobExists(
