@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { NixStoreProvider } from '../src/index.js';
+import { installableFromPurl, NixStoreProvider } from '../src/index.js';
 
 /**
- * The `nix` CLI is injected, so these pin the decisions without needing Nix
- * installed. Nothing here has been run against a real Nix store — that is
- * stated rather than implied.
+ * Offline fixtures pin argv and shape decisions. Live Nix coverage lives in
+ * `provider.live.test.ts` and runs only when `nix` is on PATH.
  */
 
 // nixbase32 excludes e, o, u and t; this is the alphabet itself.
@@ -16,13 +15,34 @@ function nix(responses: Record<string, string>) {
   const execute = async (file: string, args: readonly string[]) => {
     calls.push([file, ...args]);
     const key = [file, ...args].join(' ');
+    // Prefer exact match, then a prefix key so `nix path-info …` and
+    // `nix build …` share fixtures without listing every flag.
     const matched =
       responses[key] ??
-      responses[Object.keys(responses).find((k) => key.startsWith(k)) ?? ''];
+      responses[
+        Object.keys(responses).find((candidate) => key.startsWith(candidate)) ??
+          ''
+      ];
     if (matched === undefined) throw new Error(`no response for ${key}`);
     return { stdout: matched, stderr: '' };
   };
   return { calls, execute };
+}
+
+const closureJson = JSON.stringify({
+  [`/nix/store/${OUT}-jq-1.7.1`]: {
+    references: [`/nix/store/${OUT}-jq-1.7.1`, `/nix/store/${LIBC}-glibc-2.39`],
+    narSize: 100,
+  },
+  [`/nix/store/${LIBC}-glibc-2.39`]: { references: [], narSize: 200 },
+});
+
+/** Responses for the build-then-path-info sequence. */
+function withRealise(pathInfo: string) {
+  return {
+    'nix build': '',
+    'nix path-info': pathInfo,
+  };
 }
 
 describe('availability', () => {
@@ -42,24 +62,31 @@ describe('availability', () => {
   });
 });
 
-describe('resolution is delegated to nix', () => {
-  const closureJson = JSON.stringify({
-    [`/nix/store/${OUT}-jq-1.7.1`]: {
-      references: [
-        `/nix/store/${OUT}-jq-1.7.1`,
-        `/nix/store/${LIBC}-glibc-2.39`,
-      ],
-      narSize: 100,
-    },
-    [`/nix/store/${LIBC}-glibc-2.39`]: { references: [], narSize: 200 },
+describe('installableFromPurl', () => {
+  it('passes flake installables through and maps PURLs', () => {
+    expect(installableFromPurl('nixpkgs#hello')).toBe('nixpkgs#hello');
+    expect(installableFromPurl('pkg:nix/hello')).toBe('nixpkgs#hello');
+    expect(installableFromPurl('pkg:nix/hello?flake=nixpkgs/nixos-24.05')).toBe(
+      'nixpkgs/nixos-24.05#hello',
+    );
+    expect(installableFromPurl('pkg:nix/x?installable=nixpkgs%23hello')).toBe(
+      'nixpkgs#hello',
+    );
   });
+});
 
-  it('reads the whole closure, not just the requested path', async () => {
+describe('resolution is delegated to nix', () => {
+  it('realises then reads the whole closure', async () => {
+    // Realisation first so path-info never sees an unrealised flake ref.
     // --recursive is what makes this dependency resolution: nix has already
     // computed the graph, and the useful thing is to record it.
-    const { calls, execute } = nix({ 'nix path-info': closureJson });
+    const { calls, execute } = nix(withRealise(closureJson));
     const closure = await new NixStoreProvider(execute).closure('nixpkgs#jq');
-    expect(calls[0]).toContain('--recursive');
+    expect(calls[0]?.[0]).toBe('nix');
+    expect(calls[0]).toContain('build');
+    expect(calls[0]).toContain('--no-link');
+    expect(calls[1]).toContain('path-info');
+    expect(calls[1]).toContain('--recursive');
     expect(closure.map((entry) => entry.path)).toEqual([
       `/nix/store/${OUT}-jq-1.7.1`,
       `/nix/store/${LIBC}-glibc-2.39`,
@@ -67,8 +94,14 @@ describe('resolution is delegated to nix', () => {
     expect(closure[0]?.references).toHaveLength(2);
   });
 
+  it('accepts a PURL and realises the mapped installable', async () => {
+    const { calls, execute } = nix(withRealise(closureJson));
+    await new NixStoreProvider(execute).closure('pkg:nix/jq');
+    expect(calls[0]).toContain('nixpkgs#jq');
+  });
+
   it('turns the closure into PREX instances', async () => {
-    const { execute } = nix({ 'nix path-info': closureJson });
+    const { execute } = nix(withRealise(closureJson));
     const { instances, semanticLoss } = await new NixStoreProvider(
       execute,
     ).resolve('nixpkgs#jq');
@@ -84,11 +117,13 @@ describe('resolution is delegated to nix', () => {
   });
 
   it('accepts the older array-shaped path-info output', async () => {
-    const { execute } = nix({
-      'nix path-info': JSON.stringify([
-        { path: `/nix/store/${OUT}-jq-1.7.1`, references: [], narSize: 1 },
-      ]),
-    });
+    const { execute } = nix(
+      withRealise(
+        JSON.stringify([
+          { path: `/nix/store/${OUT}-jq-1.7.1`, references: [], narSize: 1 },
+        ]),
+      ),
+    );
     expect(
       (await new NixStoreProvider(execute).closure('nixpkgs#jq')).length,
     ).toBe(1);
@@ -120,5 +155,13 @@ describe('argument safety', () => {
     const plan = await new NixStoreProvider(nix({}).execute).plan('nixpkgs#jq');
     expect(plan.requiresElevation).toBe(false);
     expect(plan.command.slice(0, 3)).toEqual(['nix', 'profile', 'install']);
+  });
+
+  it('plans from a PURL the same way', async () => {
+    const plan = await new NixStoreProvider(nix({}).execute).plan(
+      'pkg:nix/hello',
+    );
+    expect(plan.command).toContain('nixpkgs#hello');
+    expect(plan.exactPurl).toBe('pkg:nix/hello');
   });
 });

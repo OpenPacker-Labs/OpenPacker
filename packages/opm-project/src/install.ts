@@ -200,6 +200,13 @@ export async function installFromLock(input: {
     input.only ??
     Object.keys(input.lock.packages).sort((a, b) => a.localeCompare(b));
 
+  // Materialise every package first so Python shims can see the full set of
+  // store roots (transitive deps must be importable when a console script
+  // runs).
+  const materialised = new Map<
+    string,
+    { storePath: string; bins: BinDeclaration[]; pkg: LockPackage }
+  >();
   for (const alias of aliases) {
     const safeAlias = assertSafeSegment(alias, 'package alias');
     const pkg = input.lock.packages[alias];
@@ -211,8 +218,14 @@ export async function installFromLock(input: {
       pkg,
       offline: input.offline,
     });
+    materialised.set(safeAlias, { storePath, bins, pkg });
+  }
 
-    // refresh bins in .opm/bin
+  const pythonStoreRoots = [...materialised.values()]
+    .filter(({ pkg }) => pkg.ecosystem === 'pypi')
+    .map(({ storePath }) => storePath);
+
+  for (const [alias, { storePath, bins, pkg }] of materialised) {
     const previous = state.packages[alias];
     if (previous) {
       await removeBinShims(
@@ -225,12 +238,12 @@ export async function installFromLock(input: {
       binDir: paths.bin,
       storeRoot: storePath,
       bins,
+      ...(pkg.ecosystem === 'pypi' ? { pythonPath: pythonStoreRoots } : {}),
     });
 
-    // link record
     await writeFile(
-      resolveContained(paths.links, safeAlias),
-      `${JSON.stringify({ alias: safeAlias, purl: pkg.purl, storePath, digest: pkg.digest }, null, 2)}\n`,
+      resolveContained(paths.links, alias),
+      `${JSON.stringify({ alias, purl: pkg.purl, storePath, digest: pkg.digest }, null, 2)}\n`,
       'utf8',
     );
 

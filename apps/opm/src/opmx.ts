@@ -54,7 +54,14 @@ export async function runOpmx(
       io.stderr.write(
         `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
       );
-      return await spawnDeclared(bin, tool.storePath, passthrough, io, cwd);
+      return await spawnDeclared(
+        bin,
+        tool.storePath,
+        passthrough,
+        io,
+        cwd,
+        tool.runtimePaths,
+      );
     }
 
     const root = await requireOpmRoot(cwd);
@@ -114,6 +121,7 @@ async function spawnDeclared(
   args: readonly string[],
   io: CliIo,
   cwd: string,
+  runtimePaths: readonly string[] = [storePath],
 ): Promise<number> {
   if (bin.interpreter === 'python') {
     const [moduleName, callable] = (bin.entry ?? '').split(':');
@@ -122,12 +130,15 @@ async function spawnDeclared(
         'NOT_FOUND',
         `${bin.name} declares an unusable entry point: ${bin.entry ?? '(none)'}`,
       );
-    // The wheel is on sys.path and its console script is called the way the
-    // packaging specification says to. Only the store path and the entry point
-    // are interpolated, and both were validated when they were discovered.
+    // Every store root in the runtime closure goes on sys.path so transitive
+    // dependencies resolved into the tool cache are importable.
+    const roots = runtimePaths.length > 0 ? runtimePaths : [storePath];
+    const inserts = roots
+      .map((root) => `sys.path.insert(0, ${JSON.stringify(root)})`)
+      .join('\n');
     const program =
-      'import sys, runpy\n' +
-      `sys.path.insert(0, ${JSON.stringify(storePath)})\n` +
+      'import sys\n' +
+      `${inserts}\n` +
       `from ${moduleName} import ${callable} as _entry\n` +
       'sys.exit(_entry())\n';
     return spawnProcess(
@@ -135,9 +146,6 @@ async function spawnDeclared(
       ['-c', program, ...args],
       io,
       cwd,
-      // A wheel with dependencies needs them importable; nothing resolves a
-      // Python dependency graph yet, so an ImportError here is that gap
-      // surfacing rather than a broken package.
       `${bin.name} needs a Python interpreter on PATH`,
     );
   }

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   ProviderError,
+  parsePurl,
   type InstallOptions,
   type InstallOutcome,
   type InstallPlan,
@@ -65,6 +66,40 @@ function assertInstallable(value: string): string {
       `Not a usable Nix installable: ${value}`,
     );
   return value;
+}
+
+/**
+ * Resolve a PURL or raw flake installable into a Nix installable string.
+ *
+ * - `nixpkgs#hello` passes through
+ * - `pkg:nix/hello` becomes `nixpkgs#hello` (default flake)
+ * - `pkg:nix/hello?flake=nixpkgs/nixos-24.05` becomes `nixpkgs/nixos-24.05#hello`
+ * - `pkg:nix/x?installable=github:NixOS/nixpkgs#hello` uses that installable
+ */
+export function installableFromPurl(value: string): string {
+  if (!value.startsWith('pkg:')) return assertInstallable(value);
+  let parsed: ReturnType<typeof parsePurl>;
+  try {
+    parsed = parsePurl(value);
+  } catch {
+    throw new ProviderError('INVALID_PURL', `Not a usable Nix PURL: ${value}`);
+  }
+  if (parsed.type !== 'nix')
+    throw new ProviderError(
+      'INVALID_PURL',
+      `Not a nix PURL: ${value} (expected pkg:nix/...)`,
+    );
+  const installable = parsed.qualifiers.installable;
+  if (installable !== undefined && installable !== '')
+    return assertInstallable(installable);
+  const attribute = parsed.name;
+  if (!attribute)
+    throw new ProviderError(
+      'INVALID_PURL',
+      `nix PURL needs a package name: ${value}`,
+    );
+  const flake = parsed.qualifiers.flake || 'nixpkgs';
+  return assertInstallable(`${flake}#${attribute}`);
 }
 
 export class NixStoreProvider implements InstallerProvider {
@@ -140,25 +175,41 @@ export class NixStoreProvider implements InstallerProvider {
   /**
    * The store paths an installable resolves to, and its runtime closure.
    *
-   * `--recursive` is what makes this dependency resolution rather than a
-   * single lookup: Nix returns the whole closure it computed, which is the
-   * answer PREX wants to record.
+   * Realisation runs first: `path-info` on a flake installable that is not
+   * yet in the store fails with "path is not valid" on some Nix versions /
+   * portable runtimes. Building with `--no-link` puts the output in the store
+   * without touching a profile; path-info then records the closure Nix already
+   * computed.
    */
   async closure(
     installable: string,
     signal?: AbortSignal,
   ): Promise<{ path: string; references: string[]; narSize?: number }[]> {
+    const target = installableFromPurl(installable);
+    const opts = signal ? { signal } : {};
+    // Realise into the store (idempotent when already present).
+    await this.execute(
+      'nix',
+      [
+        'build',
+        target,
+        '--no-link',
+        '--extra-experimental-features',
+        'nix-command flakes',
+      ],
+      opts,
+    );
     const { stdout } = await this.execute(
       'nix',
       [
         'path-info',
-        assertInstallable(installable),
+        target,
         '--json',
         '--recursive',
         '--extra-experimental-features',
         'nix-command flakes',
       ],
-      signal ? { signal } : {},
+      opts,
     );
     const parsed = JSON.parse(stdout) as
       | Record<string, { references?: string[]; narSize?: number }>
@@ -174,7 +225,7 @@ export class NixStoreProvider implements InstallerProvider {
     }));
   }
 
-  /** PREX instances for an installable and everything it needs. */
+  /** PREX instances for an installable (or PURL) and everything it needs. */
   async resolve(
     installable: string,
     signal?: AbortSignal,
@@ -203,12 +254,12 @@ export class NixStoreProvider implements InstallerProvider {
   }
 
   async plan(
-    installable: string,
+    exactPurl: string,
     _options: InstallOptions = {},
   ): Promise<InstallPlan> {
-    const target = assertInstallable(installable);
+    const target = installableFromPurl(exactPurl);
     return {
-      exactPurl: installable,
+      exactPurl,
       command: [
         'nix',
         'profile',
@@ -228,10 +279,10 @@ export class NixStoreProvider implements InstallerProvider {
   }
 
   async install(
-    installable: string,
+    exactPurl: string,
     options: InstallOptions = {},
   ): Promise<InstallOutcome> {
-    const plan = await this.plan(installable, options);
+    const plan = await this.plan(exactPurl, options);
     const availability = await this.available(options.signal);
     if (!availability.available)
       throw new ProviderError(

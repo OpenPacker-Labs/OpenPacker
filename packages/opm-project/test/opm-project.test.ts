@@ -159,6 +159,62 @@ describe('path containment', () => {
       }),
     ).rejects.toBeInstanceOf(OpmError);
   });
+
+  it('writes a Python launcher that puts every store root on PYTHONPATH', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-py-shim-'));
+    temps.push(dir);
+    const storeRoot = join(dir, 'store-a');
+    const depRoot = join(dir, 'store-b');
+    await mkdir(storeRoot, { recursive: true });
+    await mkdir(depRoot, { recursive: true });
+    // Path is the dist-info entry_points file; the shim only needs a real path.
+    await writeFile(join(storeRoot, 'entry_points.txt'), '');
+    const [written] = await writeBinShims({
+      binDir: join(dir, 'bin'),
+      storeRoot,
+      pythonPath: [depRoot],
+      bins: [
+        {
+          name: 'tool',
+          path: 'entry_points.txt',
+          interpreter: 'python',
+          entry: 'pkg.mod:main',
+        },
+      ],
+    });
+    expect(written?.interpreter).toBe('python');
+    const body = await readFile(written!.shim, 'utf8');
+    expect(body).toContain('OPM_PYTHON');
+    expect(body).toContain(storeRoot);
+    expect(body).toContain(depRoot);
+    expect(body).toContain('from pkg.mod import main');
+  });
+
+  it('writes a .NET launcher that invokes the assembly with dotnet', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-dn-shim-'));
+    temps.push(dir);
+    const storeRoot = join(dir, 'store');
+    const toolDir = join(storeRoot, 'tools/net8.0/any');
+    await mkdir(toolDir, { recursive: true });
+    await writeFile(join(toolDir, 'tool.dll'), '');
+    const [written] = await writeBinShims({
+      binDir: join(dir, 'bin'),
+      storeRoot,
+      bins: [
+        {
+          name: 'tool',
+          path: 'tools/net8.0/any/tool.dll',
+          interpreter: 'dotnet',
+        },
+      ],
+    });
+    expect(written?.interpreter).toBe('dotnet');
+    const body = await readFile(written!.shim, 'utf8');
+    expect(body).toContain('OPM_DOTNET');
+    expect(body).toContain('tool.dll');
+    // Must not pretend the dll is a Node script.
+    expect(body).not.toMatch(/spawn\(process\.execPath,\s*\[target/u);
+  });
 });
 
 describe('fail-closed install paths', () => {
@@ -783,6 +839,27 @@ describe('.NET tool discovery', () => {
         interpreter: 'dotnet',
       },
     ]);
+  });
+
+  it('picks one TFM per command, not one entry per framework folder', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-nupkg-tfm-'));
+    temps.push(dir);
+    for (const tfm of ['net8.0', 'net9.0', 'net10.0']) {
+      const toolDir = join(dir, `tools/${tfm}/any`);
+      await mkdir(toolDir, { recursive: true });
+      await writeFile(
+        join(toolDir, 'DotnetToolSettings.xml'),
+        settings(
+          `<Command Name="tool" EntryPoint="tool.dll" Runner="dotnet" />`,
+        ),
+      );
+    }
+    const bins = await discoverBins(dir, 'nuget');
+    // One command, not three — multi-target tools used to look ambiguous.
+    expect(bins.map((bin) => bin.name)).toEqual(['tool']);
+    // Prefer the highest TFM the host can load (net8 on this machine when 8
+    // is installed; net10 only if the host has 10).
+    expect(bins[0]?.path).toMatch(/tools\/net\d+\.0\/any\/tool\.dll$/u);
   });
 
   it('skips a runner it cannot launch rather than emitting a command that fails later', async () => {
