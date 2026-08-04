@@ -113,3 +113,16 @@ export {
   type GenerationMember,
   type StoreReferences,
 } from './generations.js';
+
+export {
+  DEFAULT_REGISTRY_ENDPOINTS,
+  REGISTRY_ECOSYSTEMS,
+  allowedOriginsFor,
+  listRegistryVersions,
+  providerFor,
+  registryEndpoint,
+  resolveRegistryArtifact,
+  searchRegistry,
+  type RegistryArtifact,
+  type RegistryOptions,
+} from './registry.js';

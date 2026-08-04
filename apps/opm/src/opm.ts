@@ -11,11 +11,15 @@ import {
   installProject,
   listGenerations,
   listInstalled,
+  listRegistryVersions,
   projectPaths,
   readEnvironmentState,
   removePackage,
+  REGISTRY_ECOSYSTEMS,
   requireOpmRoot,
+  resolveRegistryArtifact,
   rollbackTarget,
+  searchRegistry,
   switchGeneration,
   syncProject,
   uninstallProject,
@@ -56,6 +60,9 @@ const COMMANDS = new Set([
   'update',
   'list',
   'why',
+  'search',
+  'versions',
+  'info',
   'generations',
   'rollback',
   'gc',
@@ -199,6 +206,55 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm why requires a package alias');
         io.stdout.write(`${await whyPackage(root, alias)}\n`);
+        return EXIT_CODES.success;
+      }
+      // Browsing does not need a project: looking up what a registry has is
+      // useful before you have decided to depend on it.
+      case 'search': {
+        const query = args.positionals[0];
+        if (!query) throw usage('opm search requires a query or PURL');
+        const ecosystem = registryEcosystem(args, query);
+        const found = await searchRegistry(ecosystem, query, {
+          offline: args.options.has('offline'),
+        });
+        if (found.length === 0) {
+          io.stdout.write('(no matches)\n');
+          return EXIT_CODES.success;
+        }
+        for (const item of found) io.stdout.write(`${item.canonicalPurl}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'versions': {
+        const target = args.positionals[0];
+        if (!target) throw usage('opm versions requires a package or PURL');
+        const ecosystem = registryEcosystem(args, target);
+        const versions = await listRegistryVersions(ecosystem, target, {
+          offline: args.options.has('offline'),
+        });
+        if (versions.length === 0) {
+          io.stdout.write('(no published versions)\n');
+          return EXIT_CODES.success;
+        }
+        // Newest last, matching the order the registry reports and the one
+        // `opm add` picks from when no version is given.
+        for (const version of versions) io.stdout.write(`${version}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'info': {
+        const target = args.positionals[0];
+        if (!target) throw usage('opm info requires an exact PURL');
+        const ecosystem = registryEcosystem(args, target);
+        const artifact = await resolveRegistryArtifact(ecosystem, target, {
+          offline: args.options.has('offline'),
+        });
+        io.stdout.write(
+          `${artifact.exactPurl}\n` +
+            `  version   ${artifact.version}\n` +
+            `  digest    ${artifact.digest}\n` +
+            `  size      ${artifact.size} bytes\n` +
+            `  mediaType ${artifact.mediaType}\n` +
+            `  source    ${artifact.uri}\n`,
+        );
         return EXIT_CODES.success;
       }
       case 'generations': {
@@ -407,6 +463,27 @@ function option(args: Parsed, name: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * Which registry a browse command should read.
+ *
+ * A PURL names its own ecosystem, so `opm versions pkg:cargo/serde` needs no
+ * flag. A bare name is ambiguous across registries and stays fail-closed, the
+ * same way `opm add lodash` does — guessing npm because it is popular is how
+ * you install the wrong package.
+ */
+function registryEcosystem(args: Parsed, target: string): string {
+  const explicit = option(args, 'ecosystem') ?? option(args, 'e');
+  if (explicit) return explicit;
+  if (target.startsWith('pkg:')) {
+    const type = target.slice(4).split('/')[0]?.toLowerCase();
+    if (type) return type;
+  }
+  throw usage(
+    `Cannot tell which registry "${target}" belongs to. ` +
+      `Pass a PURL (pkg:npm/${target}) or --ecosystem <${REGISTRY_ECOSYSTEMS.join('|')}>.`,
+  );
+}
+
 function help(): string {
   return `opm — Open Package Manager
 
@@ -421,10 +498,23 @@ Usage:
   opm list
   opm why <alias>
 
+Browse registries (no project needed):
+  opm search <query|purl> [--ecosystem|-e <eco>]
+  opm versions <purl> [--ecosystem|-e <eco>]
+  opm info <exact-purl> [--ecosystem|-e <eco>]
+
+Registries: ${REGISTRY_ECOSYSTEMS.join(', ')}
+  Override one with OPM_REGISTRY_<ECOSYSTEM>, e.g.
+  OPM_REGISTRY_NPM=https://npm.internal.example
+  --offline refuses every registry read.
+
 Specs:
   pkg:npm/@scope/name@1.2.3
   lodash@4.17.21 --ecosystem npm
   demo-tool --ecosystem npm --source ./vendor/demo-tool.tgz
+
+An add with no --source and no catalog entry resolves against the ecosystem's
+registry and verifies the download against the digest the registry published.
 
 Project files:
   opm.toml          requirements (edit or use opm add/remove)

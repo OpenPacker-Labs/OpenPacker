@@ -70,11 +70,15 @@ export async function writeBinShims(input: {
   const binDir = resolve(input.binDir);
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
-    const segments = bin.path.split(/[/\\]/).filter(Boolean);
-    if (
-      segments.length === 0 ||
-      segments.some((part) => part === '..' || part === '.')
-    ) {
+    // "." segments are dropped, not refused. npm bin paths are conventionally
+    // written "./lib/tool.js", so rejecting them made a large share of real
+    // packages uninstallable while protecting against nothing: only ".."
+    // leaves the directory, and `resolveContained` below is the actual
+    // containment check either way.
+    const segments = bin.path
+      .split(/[/\\]/)
+      .filter((part) => part !== '' && part !== '.');
+    if (segments.length === 0 || segments.includes('..')) {
       throw new OpmError('UNSAFE_BIN', `Bin path escapes store: ${bin.path}`);
     }
     const target = resolveContained(storeRoot, ...segments);

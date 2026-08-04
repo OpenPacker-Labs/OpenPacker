@@ -119,6 +119,34 @@ describe('path containment', () => {
     );
   });
 
+  it('accepts a "./" bin path but still refuses ".."', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-bin-'));
+    temps.push(dir);
+    const storeRoot = join(dir, 'store');
+    await mkdir(join(storeRoot, 'package/lib'), { recursive: true });
+    await writeFile(
+      join(storeRoot, 'package/lib/json.js'),
+      '#!/usr/bin/env node\n',
+    );
+
+    // "./lib/json.js" is how npm packages ordinarily declare a bin; refusing
+    // it made real packages uninstallable.
+    const written = await writeBinShims({
+      binDir: join(dir, 'bin'),
+      storeRoot,
+      bins: [{ name: 'json', path: 'package/./lib/json.js' }],
+    });
+    expect(written).toHaveLength(1);
+
+    await expect(
+      writeBinShims({
+        binDir: join(dir, 'bin'),
+        storeRoot,
+        bins: [{ name: 'escape', path: 'package/../../etc/passwd' }],
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_BIN' });
+  });
+
   it('rejects bin names that escape bin dir', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'opm-bin-'));
     temps.push(dir);

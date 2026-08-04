@@ -164,10 +164,68 @@ layout = "opm"
 Bare names are **fail-closed**: `opm add lodash` errors unless you pass
 `--ecosystem`.
 
-A spec names the package; it does not fetch it from a public registry. Every add
-resolves through a [resolution source](#resolution-sources) — an explicit
-`--source` (local file or URL you supply) or a catalog entry. Without one,
-`opm add` fails with `UNRESOLVABLE`.
+Resolution order is explicit `--source`, then a catalog entry, then the
+ecosystem's registry. A project that has pinned where a package comes from never
+starts reaching the network because a registry publishes the same name.
+
+---
+
+## Registries
+
+`opm add pkg:npm/lodash@4.17.21` resolves against the real registry and verifies
+the download before anything reaches the store.
+
+| Ecosystem | Default registry                      |
+| --------- | ------------------------------------- |
+| `npm`     | `https://registry.npmjs.org`          |
+| `cargo`   | `https://index.crates.io`             |
+| `pypi`    | `https://pypi.org/pypi`               |
+| `nuget`   | `https://api.nuget.org/v3/index.json` |
+| `maven`   | `https://repo1.maven.org/maven2`      |
+| `golang`  | `https://proxy.golang.org`            |
+
+Point any of them at a private mirror with `OPM_REGISTRY_<ECOSYSTEM>`:
+
+```sh
+OPM_REGISTRY_NPM=https://npm.internal.example opm add pkg:npm/internal-tool@1.0.0
+```
+
+### Browsing
+
+These need no project — looking up what a registry has is useful before you have
+decided to depend on it.
+
+```sh
+opm search lodash --ecosystem npm     # candidate identities
+opm versions pkg:cargo/serde          # every published version, oldest first
+opm info pkg:npm/lodash@4.17.21       # digest, size, media type, download URL
+```
+
+A bare name is fail-closed the same way `opm add` is: `opm versions lodash`
+errors rather than guessing npm because it is popular.
+
+### What is checked
+
+An install from a registry is verified three times over, and none of the checks
+trust the next layer:
+
+1. The provider checks the bytes against the registry's **own** integrity claim
+   — npm's SRI, NuGet's package hash — before anything downstream sees them.
+2. `opm` re-derives the sha256 from those same bytes and compares, so nothing
+   enters the store on a provider's say-so.
+3. The download location must be on an **allowlisted origin** for that
+   ecosystem. Registries legitimately serve metadata and artifacts from
+   different hosts, so those hosts are listed rather than taken from the
+   metadata response — a registry that starts handing back a new download host
+   is refused, not followed.
+
+The artifact is fetched **once**: the bytes travel with the descriptor. Fetching
+again to re-check would cost a second transfer and compare the new bytes against
+a digest taken from the old ones, which is a weaker statement rather than a
+stronger one.
+
+`--offline` refuses every registry read outright, so an offline build cannot
+quietly start depending on a registry being reachable.
 
 ---
 
@@ -184,6 +242,9 @@ resolves through a [resolution source](#resolution-sources) — an explicit
 | `opm update`              | Re-resolve from manifest (v1 = sync)                |
 | `opm list`                | Show aliases, PURLs, digests, install status        |
 | `opm why <alias>`         | Why a package is present                            |
+| `opm search <query>`      | Candidate packages in a registry                    |
+| `opm versions <purl>`     | Every published version, oldest first               |
+| `opm info <exact-purl>`   | Digest, size, media type, download URL              |
 | `opmx <bin\|pkg> [args…]` | Run an installed executable                         |
 | `opm generations`         | List the environment history; `*` marks current     |
 | `opm rollback [--to N]`   | Return to the previous generation, or a named one   |
