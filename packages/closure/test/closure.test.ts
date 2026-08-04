@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { canonicalProjectionDigest } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import {
   assembleClosure,
   closureDigest,
@@ -247,6 +249,61 @@ describe('closure assembly', () => {
     });
     expect((await closureDigest(reversed)).value).toBe(
       (await closureDigest(forward)).value,
+    );
+  });
+});
+
+describe('digests agree with the spec projections', () => {
+  const projectionFor = (id: string) => {
+    const projection = DIGEST_PROJECTIONS.projections.find(
+      (item) => item.id === id,
+    );
+    if (!projection) throw new Error(id);
+    return projection;
+  };
+
+  it('tree digests equal tree-manifest-v1, including unsorted loss entries', async () => {
+    // semanticLoss is an ordered set in the projection, so a manifest whose
+    // losses arrive out of order must still digest the same.
+    const manifest = treeManifestFromFiles(
+      [{ path: 'bin/greet', size: 1, digest: digest('a'), mode: 0o755 }],
+      {
+        symlinks: [
+          { path: 'zzz', target: 'greet' },
+          { path: 'aaa', target: 'greet' },
+        ],
+      },
+    );
+    expect(manifest.semanticLoss.length).toBe(2);
+    expect((await treeDigest(manifest)).value).toBe(
+      (
+        await canonicalProjectionDigest(
+          manifest as never,
+          projectionFor('tree-manifest-v1'),
+        )
+      ).value,
+    );
+  });
+
+  it('closure digests equal closure-v1', async () => {
+    const closure = assembleClosure({
+      rootNodeIds: [nodeId('2'), nodeId('1')],
+      members: [
+        { nodeId: nodeId('2'), artifactDigest: digest('2') },
+        { nodeId: nodeId('1'), artifactDigest: digest('1') },
+      ],
+      declaredEdges: [
+        { fromNodeId: nodeId('2'), toNodeId: nodeId('1') },
+        { fromNodeId: nodeId('1'), toNodeId: nodeId('2') },
+      ],
+    });
+    expect((await closureDigest(closure)).value).toBe(
+      (
+        await canonicalProjectionDigest(
+          closure as never,
+          projectionFor('closure-v1'),
+        )
+      ).value,
     );
   });
 });

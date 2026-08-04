@@ -7,7 +7,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   OpmError,
   type InstalledPackageRecord,
@@ -192,6 +192,15 @@ export async function recordGeneration(input: {
   const previous = state
     ? await readGeneration(input.root, state.currentGenerationDigest)
     : undefined;
+  // Sequence is monotonic across the whole ledger, not derived from the
+  // current pointer: after a rollback the current generation is an old one,
+  // and reusing its successor number would produce two records with the same
+  // sequence.
+  const existing = await listGenerations(input.root);
+  const highest = existing.reduce(
+    (maximum, generation) => Math.max(maximum, generation.sequence),
+    0,
+  );
 
   const members: GenerationMember[] = Object.values(input.packages)
     .map((record) => ({
@@ -205,7 +214,7 @@ export async function recordGeneration(input: {
   const body: Omit<Generation, 'generationDigest'> = {
     generationVersion: '1',
     environmentName,
-    sequence: (previous?.sequence ?? 0) + 1,
+    sequence: highest + 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
     ...(previous ? { parentGenerationDigest: previous.generationDigest } : {}),
     lockDigest: input.lockDigest,
@@ -280,6 +289,11 @@ export async function rollbackTarget(
   if (!state) return undefined;
   const current = await readGeneration(root, state.currentGenerationDigest);
   if (current.parentGenerationDigest === undefined) return undefined;
+  if (!state.retainedGenerationDigests.includes(current.parentGenerationDigest))
+    throw new OpmError(
+      'NOT_FOUND',
+      'The previous generation was collected and can no longer be restored',
+    );
   return readGeneration(root, current.parentGenerationDigest);
 }
 
@@ -426,6 +440,9 @@ export async function activateGeneration(input: {
     const alias = assertSafeSegment(member.alias, 'package alias');
     // The store path is content-addressed and immutable, so if it is gone the
     // generation is genuinely unrestorable — say so rather than half-restore.
+    // Every other generation field is validated; the store path must be too,
+    // even though the record is digest-verified.
+    resolveContained(paths.store, basename(member.storePath));
     const bins = await discoverNpmBins(member.storePath).catch(() => {
       throw new OpmError(
         'NOT_FOUND',

@@ -53,6 +53,7 @@ import type {
 } from '@openpacker/contracts';
 import {
   formatPurl,
+  isEcosystem,
   parsePurl,
   parseVers,
   type Ecosystem,
@@ -686,15 +687,35 @@ function normalizeItem(
 ): NormalizeResponse['results'][number] {
   if (item.type === 'purl') {
     const parsed = parsePurl(item.value);
-    const canonical = codecFor(parsed.type, codecs).canonicalizePurl(
-      item.value,
-    );
+    // Normalization is canonical encoding, which does not require knowing an
+    // ecosystem's naming rules. A registered codec applies its rules; an
+    // unregistered type still normalizes, and records that no codec refined
+    // it. Operations that genuinely need ecosystem semantics still fail with
+    // UNSUPPORTED_ECOSYSTEM.
+    const codec = codecs.get(parsed.type as Ecosystem);
+    const canonical = codec
+      ? codec.canonicalizePurl(item.value)
+      : formatPurl(parsed);
     return normalized(
       item.type,
       item.value,
       canonical,
       parsePurl(canonical) as unknown as JsonValue,
       parsed.type,
+      codec
+        ? []
+        : [
+            {
+              code: 'ECOSYSTEM_RULES_NOT_APPLIED',
+              severity: 'info',
+              sourceEcosystem: parsed.type,
+              sourcePath: '/',
+              originalMeaning: `no codec is registered for PURL type ${parsed.type}`,
+              representedMeaning:
+                'canonical encoding only; ecosystem naming and version rules were not applied',
+              blocksProfile: [],
+            },
+          ],
     );
   }
   if (item.type === 'vers') {
@@ -803,6 +824,10 @@ function normalized(
 }
 
 function codecFor(ecosystem: string, codecs: CodecMap): EcosystemCodec {
+  // The Ecosystem type accepts any string so codecs can be registered out of
+  // tree; the PURL-type shape is therefore checked here instead.
+  if (!isEcosystem(ecosystem))
+    throw operationError('INVALID_PURL', `Not a PURL type: ${ecosystem}`);
   const codec = codecs.get(ecosystem as Ecosystem);
   if (!codec)
     throw operationError(

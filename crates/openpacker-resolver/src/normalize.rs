@@ -274,7 +274,7 @@ fn purl_policy(kind: &str) -> PurlPolicy {
 }
 
 /// PEP 503 name normalization: runs of `-`, `_`, and `.` collapse to `-`.
-fn normalize_pypi_name(name: &str) -> String {
+fn normalize_pypi_name(name: &str) -> Result<String, ResolverError> {
     let mut output = String::with_capacity(name.len());
     let mut separator = false;
     for character in name.chars() {
@@ -282,13 +282,21 @@ fn normalize_pypi_name(name: &str) -> String {
             separator = true;
             continue;
         }
-        if separator && !output.is_empty() {
+        if separator {
             output.push('-');
         }
         separator = false;
         output.push(character.to_ascii_lowercase());
     }
-    output
+    if separator {
+        output.push('-');
+    }
+    if output.trim_matches('-').is_empty() {
+        return Err(invalid(format!(
+            "pypi name normalizes to an empty identifier: {name}"
+        )));
+    }
+    Ok(output)
 }
 
 pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
@@ -319,7 +327,7 @@ pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
         NamespacePolicy::Preserve => {}
     }
     if policy.pypi_name {
-        purl.name = normalize_pypi_name(&purl.name);
+        purl.name = normalize_pypi_name(&purl.name)?;
     } else if policy.lowercase_name {
         purl.name = purl.name.to_ascii_lowercase();
     }

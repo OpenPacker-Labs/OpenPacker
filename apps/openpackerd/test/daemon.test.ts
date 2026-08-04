@@ -495,6 +495,46 @@ describe('openpackerd', () => {
     await app.close();
   });
 
+  it('normalizes an unregistered PURL type instead of rejecting it', async () => {
+    const meta = {
+      protocolVersion: '1.0-draft',
+      provider: {
+        id: 'fixture',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    } as const;
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta,
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations, meta });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      payload: {
+        items: [{ type: 'purl', value: 'pkg:deb/debian/openssl@3.0.11' }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().results[0];
+    expect(result.canonical).toBe('pkg:deb/debian/openssl@3.0.11');
+    // Canonical encoding happened; ecosystem rules did not, and it says so.
+    expect(result.semanticLoss[0].code).toBe('ECOSYSTEM_RULES_NOT_APPLIED');
+    expect(result.reversibility).toBe('lossy');
+    await app.close();
+  });
+
   it('advertises a registered out-of-tree codec', async () => {
     const meta = {
       protocolVersion: '1.0-draft',

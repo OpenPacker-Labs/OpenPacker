@@ -271,10 +271,9 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
     Ok(())
 }
 
-/// Amendments the policy admits, and those present but ignored. Amendment
-/// compilation is not yet implemented, so an admitted amendment is an error
-/// rather than a silently dropped instruction; ignoring is only correct when
-/// policy declined it.
+/// Amendments the policy admits, and those present but ignored. Admitted
+/// amendments are compiled into a derived universe; ignored ones contribute
+/// nothing but are still recorded in the explanation.
 pub fn partition_amendments(input: &SolveInput) -> (Vec<usize>, Vec<usize>) {
     let accepted = &input.request.policy.accepted_amendment_authorities;
     let (admitted, ignored): (Vec<_>, Vec<_>) = input
@@ -435,7 +434,7 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
             let best = if crate::resolvo_engine::supports(input) {
                 let selected = crate::resolvo_engine::resolve(input)?;
                 if input.universe.packages.len() <= MAX_COMPANION_NODES {
-                    let oracle = crate::brute_force_oracle(input)?;
+                    let oracle = crate::oracle::brute_force_oracle_amended(input)?;
                     let ids = node_ids(input, &selected);
                     if ids != oracle.selected_node_ids {
                         return Err(ResolverError::InvalidProof(format!(

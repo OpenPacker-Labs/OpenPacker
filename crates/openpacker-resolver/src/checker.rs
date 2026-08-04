@@ -8,7 +8,7 @@ use crate::semantics::{
 };
 use crate::{
     Digest, PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
-    SolveOutput, TargetPredicate, brute_force_oracle, digest_json,
+    SolveOutput, TargetPredicate, digest_json,
     engine::{
         MAX_COMPANION_NODES, build_native_output, build_output, captured_indices,
         objectives_require_optimization, validate_solve_request,
@@ -163,7 +163,7 @@ pub(crate) fn check_amended(
                 "objective optimality is not independently provable above {MAX_COMPANION_NODES} nodes"
             ));
         } else {
-            match brute_force_oracle(input) {
+            match crate::oracle::brute_force_oracle_amended(input) {
                 Ok(oracle) if oracle.selected_node_ids != output.solution.selected_node_ids => {
                     diagnostics.push("selected assignment is not the bounded optimum".into());
                 }

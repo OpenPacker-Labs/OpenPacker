@@ -93,9 +93,12 @@ Everything originally deferred has landed on this branch:
    `supersedeRequirement`, `retractRequirement`, and `redirectPackage` are
    implemented with `NATIVE_FACT_SUPERSEDED` loss, proof and receipt binding,
    and independent re-derivation so a forged claim is rejected.
-3. **`adapter-nix`** — a real codec: store-path parsing, Nix version ordering
-   (not semver), `nix path-info` translation, closure capture, and narinfo
-   digests, registered in the daemon so `pkg:nix` normalizes end to end.
+3. **`adapter-nix`** — a real codec: store-path parsing matching Nix's
+   `parseDrvName`, `compareVersions` ordering (not semver), `nix path-info`
+   translation, closure capture, and nixbase32/SRI/hex hash decoding, registered
+   in the daemon so `pkg:nix` normalizes end to end. References are recorded as
+   the store paths they are; resolving them to node identities is the closure
+   assembler's job.
 4. **Closures** — `RuntimeClosure` in the schema plus `@openpacker/closure`:
    tree manifests from materialized files, byte-level reference scanning, and
    assembly that keeps declared and observed edges distinguishable.

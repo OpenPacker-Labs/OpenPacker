@@ -35,6 +35,16 @@ describe('nix store paths', () => {
     });
     // A hyphenated word is part of the name, not a version.
     expect(splitDerivationName('nix-info')).toEqual({ name: 'nix-info' });
+    // Nix breaks at a non-letter, not a non-lowercase-letter, so a capitalised
+    // segment stays part of the name. This shape is everywhere in nixpkgs.
+    expect(splitDerivationName('python3.11-PyYAML-6.0')).toEqual({
+      name: 'python3.11-PyYAML',
+      version: '6.0',
+    });
+    expect(splitDerivationName('perl5.36.0-XML-Parser-2.46')).toEqual({
+      name: 'perl5.36.0-XML-Parser',
+      version: '2.46',
+    });
     expect(splitDerivationName('gcc-wrapper-13.2.0')).toEqual({
       name: 'gcc-wrapper',
       version: '13.2.0',
@@ -94,8 +104,13 @@ describe('nix versions', () => {
     expect(codec.compareNativeVersions('2405', '2311')).toBe(1);
     // A numeric component outranks an alphabetic one.
     expect(codec.compareNativeVersions('1.1', '1.a')).toBe(1);
-    // Pre-release markers sort before the bare release.
+    // Nix special-cases exactly one component: `pre` sorts before nothing.
     expect(codec.compareNativeVersions('1.0pre1', '1.0')).toBe(-1);
+    // Everything else, including rc and alpha, follows the ordinary rule that
+    // a present string component sorts after a missing one.
+    expect(codec.compareNativeVersions('1.0rc1', '1.0')).toBe(1);
+    expect(codec.compareNativeVersions('1.0alpha1', '1.0')).toBe(1);
+    expect(codec.compareNativeVersions('1.0beta1', '1.0')).toBe(1);
   });
 
   it('accepts versions semver would reject', () => {
@@ -110,7 +125,8 @@ describe('nix versions', () => {
 
   it('represents requirements as exact versions and says when it lost meaning', () => {
     const exact = codec.parseNativeRange('1.0');
-    expect(exact.vers).toBe('vers:nix/1.0');
+    // A VERS body needs a comparator, or every parser in the project rejects it.
+    expect(exact.vers).toBe('vers:nix/=1.0');
     expect(exact.reversible).toBe(true);
     expect(exact.semanticLoss).toEqual([]);
     expect(codec.satisfies('1.0', exact)).toBe(true);
@@ -152,6 +168,20 @@ describe('nix path-info translation', () => {
     const codes = instance.semanticLoss.map((item) => item.code);
     expect(codes).toContain('NIX_STORE_PATH_HASH_OPAQUE');
     expect(codes).toContain('NIX_EXPRESSION_NOT_EVALUATED');
+  });
+
+  it('records references as the store paths they are, never invented ids', async () => {
+    const { instance } = await codec.translateMetadata(entry, provenance);
+    const artifact = instance.artifacts[0];
+    expect(artifact).toBeDefined();
+    // Resolving a reference to a node identity needs the whole closure, so
+    // this layer must not guess one.
+    expect(artifact?.runtimeReferences ?? []).toEqual([]);
+    expect(artifact?.producedBy).toBeUndefined();
+    // The locator is the real store path, version included.
+    expect(artifact?.externalRefs.map((ref) => ref.locator)).toEqual([
+      `/nix/store/${LIBC_HASH}-glibc-2.39`,
+    ]);
   });
 
   it('turns references into requirements and drops the self reference', async () => {
@@ -205,13 +235,28 @@ describe('nix path-info translation', () => {
 });
 
 describe('nar hashes', () => {
-  it('accepts both spellings sha256 can take', () => {
+  it('accepts every spelling sha256 can take', () => {
     expect(parseNarHash(`sha256:${'a'.repeat(64)}`)).toEqual({
       algorithm: 'sha256',
       value: 'a'.repeat(64),
     });
     const base64 = Buffer.from('b'.repeat(32), 'binary').toString('base64');
     expect(parseNarHash(`sha256-${base64}`)?.algorithm).toBe('sha256');
+
+    // What nix path-info and narinfo actually emit is nixbase32, so a codec
+    // that only read hex and base64 would find no artifacts on a real store.
+    const nixbase32 =
+      'sha256:0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f';
+    const decoded = parseNarHash(nixbase32);
+    expect(decoded?.algorithm).toBe('sha256');
+    expect(decoded?.value).toMatch(/^[0-9a-f]{64}$/u);
+    // Decoding is deterministic and distinguishes different hashes.
+    expect(parseNarHash(nixbase32)?.value).toBe(decoded?.value);
+    expect(
+      parseNarHash(
+        'sha256:1f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f',
+      )?.value,
+    ).not.toBe(decoded?.value);
   });
 
   it('refuses algorithms PREX cannot represent', () => {

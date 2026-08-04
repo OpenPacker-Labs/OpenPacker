@@ -126,9 +126,15 @@ extra configuration.
 It consumes `nix path-info --json` entries: `path` becomes the exact PURL and
 native coordinate, `deriver` becomes the `plan` qualifier, `references` become
 runtime requirements on exact sibling paths (the self-reference is dropped),
-`narHash` becomes the output artifact digest when it is sha256 — other
-algorithms record `CONTENT_ADDRESS_UNSUPPORTED` rather than being coerced — and
-`output` becomes the declared package output.
+`narHash` becomes the output artifact digest when it is a sha256 in any of the
+spellings Nix uses — nixbase32, SRI base64, or hex — while other algorithms
+record `CONTENT_ADDRESS_UNSUPPORTED` rather than being coerced, and `output`
+becomes the declared package output.
+
+Reference store paths are recorded verbatim as artifact external references. The
+codec does not resolve them to node identities: that needs the rest of the
+closure, so it belongs to `@openpacker/closure` rather than to a per-package
+translation that would have to invent one.
 
 Version comparison follows Nix rather than semver: components split on `.`, `-`,
 and digit/non-digit boundaries, numeric components compare numerically, and a

@@ -56,9 +56,10 @@ const loss = (
   );
 
 /**
- * Split a Nix derivation name into name and version the way `parseDrvName`
- * does: the version begins at the first `-` followed by a character that is
- * not a lowercase letter.
+ * Split a Nix derivation name the way `parseDrvName` does: the version begins
+ * at the first `-` followed by a character that is not a letter. Matching
+ * Nix's `isalpha` rather than lowercase-only matters for the many nixpkgs
+ * names of the form `python3.11-PyYAML-6.0`.
  */
 export function splitDerivationName(value: string): {
   name: string;
@@ -68,7 +69,7 @@ export function splitDerivationName(value: string): {
     if (value[index] !== '-') continue;
     const next = value[index + 1];
     if (next === undefined) break;
-    if (!/[a-z]/u.test(next)) {
+    if (!/[A-Za-z]/u.test(next)) {
       return { name: value.slice(0, index), version: value.slice(index + 1) };
     }
   }
@@ -193,7 +194,7 @@ export class NixCodec implements EcosystemCodec {
       original,
       normalized: `=${exact}`,
       ast: { type: 'comparison', operator: '=', version: exact },
-      vers: `vers:${NIX_PURL_TYPE}/${exact}`,
+      vers: `vers:${NIX_PURL_TYPE}/=${exact}`,
       reversible: isExact,
       semanticLoss: isExact
         ? []
@@ -311,9 +312,17 @@ export class NixCodec implements EcosystemCodec {
 
     const references = (record.references ?? [])
       .filter((reference) => reference !== record.path)
-      .map((reference) => parseStorePath(reference))
+      .map((reference) => ({
+        // Keep the original path: a store path is the locator, and
+        // reconstructing one from the split name would drop the version.
+        storePath: reference,
+        ...parseStorePath(reference),
+      }))
       .sort((left, right) => compareCodePoints(left.hash, right.hash));
 
+    // References are recorded as the store paths they are. Resolving them to
+    // node identities needs the rest of the closure, so that is the closure
+    // assembler's job — inventing an identity here would fabricate one.
     const artifacts = narDigest
       ? [
           {
@@ -323,22 +332,11 @@ export class NixCodec implements EcosystemCodec {
             mediaType: 'application/x-nix-nar',
             artifactType: 'nix-output',
             nativeRole: 'nix-output-nar',
-            ...(plan === undefined
-              ? {}
-              : {
-                  producedBy: { recipeDigest: narDigest, outputName: output },
-                }),
-            runtimeReferences: references.map((reference) => ({
-              nodeId: undefined as never,
-              outputName: 'out',
-              artifactDigest: narDigest,
-              ...{},
-            })),
             locations: [],
             referrers: [],
             externalRefs: references.map((reference) => ({
               type: 'nix-reference',
-              locator: `/nix/store/${reference.hash}-${reference.name}`,
+              locator: reference.storePath,
             })),
           },
         ]
@@ -513,8 +511,13 @@ function compareComponent(left?: string, right?: string): number {
   return compareCodePoints(left, right);
 }
 
+/**
+ * Nix's `compareVersions` special-cases exactly one component: `pre` sorts
+ * before a missing component. Everything else, including `rc` and `alpha`,
+ * follows the ordinary rule that a string component sorts before nothing.
+ */
 function isPreRelease(component: string): boolean {
-  return component === 'pre' || component === 'rc' || component === 'alpha';
+  return component === 'pre';
 }
 
 function versionSortKey(version: string): string {
@@ -525,20 +528,64 @@ function versionSortKey(version: string): string {
     .join('.');
 }
 
-/** `sha256-<base64>` and `sha256:<hex>` are representable; nothing else is. */
+const NIXBASE32 = '0123456789abdfghijklmnpqrsvwxyz';
+
+/**
+ * Decode Nix's base32, which reads least-significant character first and is
+ * what `nix path-info` and narinfo actually emit for a sha256.
+ */
+export function decodeNixBase32(value: string): Uint8Array | undefined {
+  const length = Math.floor((value.length * 5) / 8);
+  const output = new Uint8Array(length);
+  for (let index = 0; index < value.length; index += 1) {
+    const digit = NIXBASE32.indexOf(value[value.length - index - 1]!);
+    if (digit < 0) return undefined;
+    const bit = index * 5;
+    const byte = bit >> 3;
+    const offset = bit & 7;
+    output[byte]! |= (digit << offset) & 0xff;
+    const carry = digit >> (8 - offset);
+    if (carry !== 0) {
+      if (byte + 1 >= length) return undefined;
+      output[byte + 1]! |= carry;
+    }
+  }
+  return output;
+}
+
+const hex = (bytes: Uint8Array): string =>
+  [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+
+/**
+ * Representable spellings of a sha256: hex, SRI base64, and Nix base32.
+ * Anything else — a different algorithm — is not coerced; callers record
+ * `CONTENT_ADDRESS_UNSUPPORTED` instead.
+ */
 export function parseNarHash(
   value: string | undefined,
 ): { algorithm: 'sha256'; value: string } | undefined {
   if (value === undefined) return undefined;
-  const hex = /^sha256:([0-9a-f]{64})$/u.exec(value);
-  if (hex?.[1]) return { algorithm: 'sha256', value: hex[1] };
-  const base64 = /^sha256-([A-Za-z0-9+/]{43}=)$/u.exec(value);
-  if (!base64?.[1]) return undefined;
-  const binary = atob(base64[1]);
-  let output = '';
-  for (let index = 0; index < binary.length; index += 1)
-    output += binary.charCodeAt(index).toString(16).padStart(2, '0');
-  return /^[0-9a-f]{64}$/u.test(output)
-    ? { algorithm: 'sha256', value: output }
-    : undefined;
+  const body = value.startsWith('sha256:')
+    ? value.slice(7)
+    : value.startsWith('sha256-')
+      ? value.slice(7)
+      : undefined;
+  if (body === undefined) return undefined;
+  if (/^[0-9a-f]{64}$/u.test(body)) return { algorithm: 'sha256', value: body };
+  if (/^[0-9abdfghijklmnpqrsvwxyz]{52}$/u.test(body)) {
+    const bytes = decodeNixBase32(body);
+    return bytes && bytes.length >= 32
+      ? { algorithm: 'sha256', value: hex(bytes.slice(0, 32)) }
+      : undefined;
+  }
+  if (/^[A-Za-z0-9+/]{43}=$/u.test(body)) {
+    const binary = atob(body);
+    let output = '';
+    for (let index = 0; index < binary.length; index += 1)
+      output += binary.charCodeAt(index).toString(16).padStart(2, '0');
+    return /^[0-9a-f]{64}$/u.test(output)
+      ? { algorithm: 'sha256', value: output }
+      : undefined;
+  }
+  return undefined;
 }

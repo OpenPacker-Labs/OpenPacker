@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1",
+  "initiative": "nix-versatility",
+  "branch": "feat/open-ecosystems",
+  "status": "ready-for-review",
+  "summary": "Implements the follow-on work PR #7 deferred: open PURL types, amendment compilation, the nix codec, closures, and opm generations.",
+  "gates": {
+    "verify": "green",
+    "cargoTest": "21 passed",
+    "conformanceVectors": 110,
+    "goldens": "19 unchanged"
+  },
+  "reviewFindingsAddressed": 16,
+  "residuals": [
+    "Universe composition remains out of scope.",
+    "PREX captures and verifies; it does not build or evaluate."
+  ]
+}

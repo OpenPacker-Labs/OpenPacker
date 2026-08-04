@@ -236,7 +236,16 @@ export async function installFromLock(input: {
     root: input.root,
     packages: state.packages,
     lockDigest: digestOf(
-      new TextEncoder().encode(JSON.stringify(input.lock.packages)),
+      new TextEncoder().encode(
+        JSON.stringify(
+          Object.fromEntries(
+            Object.entries(state.packages).map(([alias, record]) => [
+              alias,
+              record.digest,
+            ]),
+          ),
+        ),
+      ),
     ),
   });
   return state;
@@ -275,7 +284,16 @@ export async function uninstallPackages(input: {
     root: input.root,
     packages: state.packages,
     lockDigest: digestOf(
-      new TextEncoder().encode(JSON.stringify(Object.keys(state.packages))),
+      new TextEncoder().encode(
+        JSON.stringify(
+          Object.fromEntries(
+            Object.entries(state.packages).map(([alias, record]) => [
+              alias,
+              record.digest,
+            ]),
+          ),
+        ),
+      ),
     ),
   });
   return state;

@@ -1207,6 +1207,25 @@ fn normalization_covers_every_purl_type() {
         "pkg:deb/Debian/OpenSSL@3.0.11"
     );
 
+    // PEP 503 collapses runs of separators; it does not delete them at the
+    // edges, and a name that normalizes to nothing is an error rather than a
+    // PURL that cannot be re-parsed.
+    assert_eq!(
+        normalize_purl("pkg:pypi/_Demo__Tool_@1.0").unwrap(),
+        "pkg:pypi/-demo-tool-@1.0"
+    );
+    assert!(normalize_purl("pkg:pypi/___@1.0").is_err());
+    // Normalization is idempotent for every type it accepts.
+    for purl in [
+        "pkg:npm/%40openpacker/demo-tool@1.0.0",
+        "pkg:pypi/demo-tool@2024.1rc1",
+        "pkg:maven/org.Example/DemoTool@1.0.0-RC1",
+        "pkg:deb/Debian/OpenSSL@3.0.11",
+    ] {
+        let once = normalize_purl(purl).unwrap();
+        assert_eq!(normalize_purl(&once).unwrap(), once, "{purl}");
+    }
+
     // Namespace rules still hold where the ecosystem has none.
     assert!(normalize_purl("pkg:cargo/scope/demo@1.0.0").is_err());
     assert!(normalize_purl("pkg:npm/demo@not-a-version").is_err());
