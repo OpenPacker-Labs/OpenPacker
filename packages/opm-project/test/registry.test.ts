@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
+import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
 import {
   DEFAULT_REGISTRY_ENDPOINTS,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
+  inferFormat,
   listRegistryVersions,
+  materializeLockPackage,
   providerFor,
   registryEndpoint,
   resolveRegistryArtifact,
@@ -13,6 +18,7 @@ import {
   selectToolBin,
   fetchTool,
   OpmError,
+  storeKeyFromDigest,
 } from '../src/index.js';
 
 /**
@@ -245,6 +251,110 @@ describe('artifact resolution', () => {
         now: () => '2026-08-04T00:00:00Z',
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+});
+
+describe('OCI image materialisation', () => {
+  const configBytes = new TextEncoder().encode(
+    '{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}',
+  );
+  const layerBytes = new TextEncoder().encode('layer-bytes');
+  const configDigest =
+    'sha256:c5b1d63604f273462ef36fadac3182d43ae6a6138731cf594b314835cf1c034f';
+  const layerDigest =
+    'sha256:d50fdce899b75695aa4d7bfb84396fbe2fdee1c92f0dd621d245156cad6f51c0';
+  const manifest = {
+    schemaVersion: 2,
+    mediaType: 'application/vnd.oci.image.manifest.v1+json',
+    config: {
+      mediaType: 'application/vnd.oci.image.config.v1+json',
+      digest: configDigest,
+      size: configBytes.byteLength,
+    },
+    layers: [
+      {
+        mediaType: 'application/vnd.oci.image.layer.v1.tar',
+        digest: layerDigest,
+        size: layerBytes.byteLength,
+      },
+    ],
+  };
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+
+  function ociFetch(): typeof fetch {
+    return (async (url: URL | string) => {
+      const href = String(url);
+      if (href.includes('/manifests/'))
+        return new Response(manifestBytes, {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.oci.image.manifest.v1+json',
+          },
+        });
+      if (href.includes(`/blobs/${encodeURIComponent(configDigest)}`))
+        return new Response(configBytes, { status: 200 });
+      if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
+        return new Response(layerBytes, { status: 200 });
+      return new Response('missing', { status: 404 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('classifies an OCI layout media type as plain tar, not gzip', () => {
+    expect(
+      inferFormat(
+        'https://registry-1.docker.io/v2/library/demo/manifests/sha256:abc',
+        'application/vnd.oci.image.layout.v1.tar',
+      ),
+    ).toBe('tar');
+  });
+
+  it('resolves and materialises a layout into the project store', async () => {
+    const artifact = await resolveRegistryArtifact(
+      'oci',
+      'pkg:oci/library/demo?tag=1.0',
+      { fetch: ociFetch(), now: () => '2026-08-04T00:00:00Z' },
+    );
+    expect(artifact.mediaType).toBe('application/vnd.oci.image.layout.v1.tar');
+    expect(artifact.digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(artifact.bytes.byteLength).toBeGreaterThan(0);
+    // Image identity (PURL version) is the manifest digest; store digest is
+    // over the layout tar and must not be silently conflated.
+    expect(artifact.version).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(artifact.digest).not.toBe(artifact.version);
+
+    const root = await mkdtemp(join(tmpdir(), 'opm-oci-'));
+    const storeKey = storeKeyFromDigest(artifact.digest);
+    const { storePath } = await materializeLockPackage({
+      root,
+      offline: true,
+      pkg: {
+        alias: 'demo',
+        purl: artifact.exactPurl,
+        version: artifact.version,
+        digest: artifact.digest,
+        size: artifact.bytes.byteLength,
+        format: 'tar',
+        mediaType: artifact.mediaType,
+        source: artifact.uri,
+        storeKey,
+        bins: [],
+        reason: 'direct',
+        ecosystem: 'oci',
+      },
+      bytes: artifact.bytes,
+    });
+
+    const layout = JSON.parse(
+      await readFile(join(storePath, 'oci-layout'), 'utf8'),
+    ) as { imageLayoutVersion: string };
+    expect(layout.imageLayoutVersion).toBe('1.0.0');
+    const blobs = await readdir(join(storePath, 'blobs', 'sha256'));
+    expect(blobs).toEqual(
+      expect.arrayContaining([
+        configDigest.slice('sha256:'.length),
+        layerDigest.slice('sha256:'.length),
+      ]),
+    );
   });
 });
 

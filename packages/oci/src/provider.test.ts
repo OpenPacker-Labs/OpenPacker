@@ -135,3 +135,124 @@ describe('browsing and pinning', () => {
     );
   });
 });
+
+describe('materialise image layout', () => {
+  const configBytes = new TextEncoder().encode(
+    '{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}',
+  );
+  const layerBytes = new TextEncoder().encode('layer-bytes');
+  // Digests pinned so a fixture drift fails loudly rather than silently.
+  const configDigest =
+    'sha256:c5b1d63604f273462ef36fadac3182d43ae6a6138731cf594b314835cf1c034f';
+  const layerDigest =
+    'sha256:d50fdce899b75695aa4d7bfb84396fbe2fdee1c92f0dd621d245156cad6f51c0';
+  const manifest = {
+    schemaVersion: 2,
+    mediaType: 'application/vnd.oci.image.manifest.v1+json',
+    config: {
+      mediaType: 'application/vnd.oci.image.config.v1+json',
+      digest: configDigest,
+      size: configBytes.byteLength,
+    },
+    layers: [
+      {
+        mediaType: 'application/vnd.oci.image.layer.v1.tar',
+        digest: layerDigest,
+        size: layerBytes.byteLength,
+      },
+    ],
+  };
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+
+  function materializeFetch(): typeof fetch {
+    return (async (url: URL | string) => {
+      const href = String(url);
+      if (href.includes('/manifests/'))
+        return new Response(manifestBytes, {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.oci.image.manifest.v1+json',
+          },
+        });
+      if (href.includes(`/blobs/${encodeURIComponent(configDigest)}`))
+        return new Response(configBytes, { status: 200 });
+      if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
+        return new Response(layerBytes, { status: 200 });
+      return new Response('missing', { status: 404 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('pulls config and layers into a digest-verified OCI layout tar', async () => {
+    const provider = new OciRegistryProvider({ fetch: materializeFetch() });
+    const record = await provider.fetchArtifactRecord(
+      'pkg:oci/library/demo?tag=1.0',
+    );
+    const body = record.body as {
+      digest: { algorithm: string; value: string };
+      mediaType: string;
+      imageDigest: string;
+      size: number;
+    };
+    expect(body.mediaType).toBe('application/vnd.oci.image.layout.v1.tar');
+    expect(body.digest.algorithm).toBe('sha256');
+    expect(body.size).toBe(record.rawBody.byteLength);
+    // Layout tar digest is over the packed bytes, not the image digest.
+    expect(body.imageDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(body.digest.value).not.toBe(
+      body.imageDigest.slice('sha256:'.length),
+    );
+
+    // The tar must contain the layout markers and every blob by digest.
+    const text = new TextDecoder().decode(record.rawBody);
+    expect(text).toContain('oci-layout');
+    expect(text).toContain('index.json');
+    expect(text).toContain(configDigest.slice('sha256:'.length));
+    expect(text).toContain(layerDigest.slice('sha256:'.length));
+  });
+
+  it('selects the host platform from a multi-arch index', async () => {
+    const { selectPlatformManifest, hostPlatform } = await import(
+      './provider.js'
+    );
+    const host = hostPlatform();
+    const otherOs = host.os === 'linux' ? 'windows' : 'linux';
+    const chosen = selectPlatformManifest([
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: `sha256:${'1'.repeat(64)}`,
+        size: 1,
+        platform: { os: otherOs, architecture: host.architecture },
+      },
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: `sha256:${'2'.repeat(64)}`,
+        size: 1,
+        platform: {
+          os: host.os,
+          architecture: host.architecture,
+        },
+      },
+    ]);
+    expect(chosen?.digest).toBe(`sha256:${'2'.repeat(64)}`);
+  });
+
+  it('refuses an index with no matching platform when several are published', async () => {
+    const { selectPlatformManifest } = await import('./provider.js');
+    expect(
+      selectPlatformManifest([
+        {
+          mediaType: 'application/vnd.oci.image.manifest.v1+json',
+          digest: `sha256:${'1'.repeat(64)}`,
+          size: 1,
+          platform: { os: 'windows', architecture: 'amd64' },
+        },
+        {
+          mediaType: 'application/vnd.oci.image.manifest.v1+json',
+          digest: `sha256:${'2'.repeat(64)}`,
+          size: 1,
+          platform: { os: 'windows', architecture: 'arm64' },
+        },
+      ]),
+    ).toBeUndefined();
+  });
+});
