@@ -114,12 +114,81 @@ export async function discoverPythonBins(
   return bins.sort((left, right) => (left.name < right.name ? -1 : 1));
 }
 
+/**
+ * Commands declared by a .NET tool package.
+ *
+ * A tool nupkg carries `tools/<framework>/<rid>/DotnetToolSettings.xml`, whose
+ * `<Command>` elements name the command, the managed assembly to run, and the
+ * runner. There is no native executable to point at — `dotnet` runs the dll —
+ * which is why this needs its own discovery rather than a file lookup.
+ */
+export async function discoverDotnetBins(
+  extractRoot: string,
+): Promise<BinDeclaration[]> {
+  const settings = await findToolSettings(join(extractRoot, 'tools'));
+  const bins: BinDeclaration[] = [];
+  for (const file of settings) {
+    let xml: string;
+    try {
+      xml = await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const match of xml.matchAll(/<Command\b([^>]*)\/?>/giu)) {
+      const attributes = match[1] ?? '';
+      const name = /\bName\s*=\s*"([^"]+)"/iu.exec(attributes)?.[1];
+      const entryPoint = /\bEntryPoint\s*=\s*"([^"]+)"/iu.exec(attributes)?.[1];
+      const runner = /\bRunner\s*=\s*"([^"]+)"/iu.exec(attributes)?.[1];
+      if (!name || !entryPoint) continue;
+      // Only the `dotnet` runner is understood; anything else would need a
+      // launcher this cannot generate, and guessing would produce a command
+      // that fails at run time instead of here.
+      if (runner !== undefined && runner.toLowerCase() !== 'dotnet') continue;
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)) continue;
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.dll$/iu.test(entryPoint)) continue;
+      const directory = dirname(file);
+      bins.push({
+        name,
+        path: `${relative(extractRoot, directory).split(sep).join('/')}/${entryPoint}`,
+        interpreter: 'dotnet',
+      });
+    }
+  }
+  return bins.sort((left, right) => (left.name < right.name ? -1 : 1));
+}
+
+/** `DotnetToolSettings.xml` files under a tools directory. */
+async function findToolSettings(
+  directory: string,
+  depth = 0,
+): Promise<string[]> {
+  // The layout is tools/<framework>/<rid>/, so three levels is the shape;
+  // bounding it keeps a hostile archive from driving an unbounded walk.
+  if (depth > 3) return [];
+  let entries: { name: string; isDirectory(): boolean }[];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found: string[] = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory())
+      found.push(...(await findToolSettings(path, depth + 1)));
+    else if (entry.name.toLowerCase() === 'dotnettoolsettings.xml')
+      found.push(path);
+  }
+  return found;
+}
+
 /** Executables an extracted package declares, however its ecosystem does it. */
 export async function discoverBins(
   extractRoot: string,
   ecosystem: string,
 ): Promise<BinDeclaration[]> {
   if (ecosystem === 'pypi') return discoverPythonBins(extractRoot);
+  if (ecosystem === 'nuget') return discoverDotnetBins(extractRoot);
   if (ecosystem === 'npm') return discoverNpmBins(extractRoot);
   // Other ecosystems have no convention this understands yet. Returning
   // nothing is honest; the runner turns it into a message that says which

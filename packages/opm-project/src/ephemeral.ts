@@ -141,7 +141,8 @@ export function selectToolBin(
     // real answer is that this ecosystem's entry-point convention is not
     // implemented — those are different problems with different fixes.
     const ecosystem = tool.exactPurl.slice('pkg:'.length).split('/')[0];
-    const understood = ecosystem === 'npm' || ecosystem === 'pypi';
+    const understood =
+      ecosystem === 'npm' || ecosystem === 'pypi' || ecosystem === 'nuget';
     throw new OpmError(
       understood ? 'NOT_FOUND' : 'UNSUPPORTED_ECOSYSTEM',
       understood

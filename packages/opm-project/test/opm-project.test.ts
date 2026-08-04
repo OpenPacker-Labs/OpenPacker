@@ -760,3 +760,62 @@ describe('cross-ecosystem executable discovery', () => {
     expect(bins[0]?.interpreter).toBeUndefined();
   });
 });
+
+describe('.NET tool discovery', () => {
+  const settings = (commands: string) =>
+    `<?xml version="1.0" encoding="utf-8"?>\n<DotNetCliTool Version="1">\n<Commands>\n${commands}\n</Commands>\n</DotNetCliTool>\n`;
+
+  it('reads commands from DotnetToolSettings.xml', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-nupkg-'));
+    temps.push(dir);
+    const toolDir = join(dir, 'tools/netcoreapp2.1/any');
+    await mkdir(toolDir, { recursive: true });
+    await writeFile(
+      join(toolDir, 'DotnetToolSettings.xml'),
+      settings(
+        '<Command Name="dotnetsay" EntryPoint="dotnetsay.dll" Runner="dotnet" />',
+      ),
+    );
+    expect(await discoverBins(dir, 'nuget')).toEqual([
+      {
+        name: 'dotnetsay',
+        path: 'tools/netcoreapp2.1/any/dotnetsay.dll',
+        interpreter: 'dotnet',
+      },
+    ]);
+  });
+
+  it('skips a runner it cannot launch rather than emitting a command that fails later', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-nupkg-'));
+    temps.push(dir);
+    const toolDir = join(dir, 'tools/net8.0/any');
+    await mkdir(toolDir, { recursive: true });
+    await writeFile(
+      join(toolDir, 'DotnetToolSettings.xml'),
+      settings(
+        '<Command Name="native" EntryPoint="native.dll" Runner="executable" />',
+      ),
+    );
+    expect(await discoverBins(dir, 'nuget')).toEqual([]);
+  });
+
+  it('refuses names and entry points that are not what they claim to be', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-nupkg-'));
+    temps.push(dir);
+    const toolDir = join(dir, 'tools/net8.0/any');
+    await mkdir(toolDir, { recursive: true });
+    await writeFile(
+      join(toolDir, 'DotnetToolSettings.xml'),
+      settings(
+        [
+          '<Command Name="../escape" EntryPoint="x.dll" Runner="dotnet" />',
+          '<Command Name="ok" EntryPoint="../../etc/passwd" Runner="dotnet" />',
+          '<Command Name="good" EntryPoint="good.dll" Runner="dotnet" />',
+        ].join('\n'),
+      ),
+    );
+    expect((await discoverBins(dir, 'nuget')).map((bin) => bin.name)).toEqual([
+      'good',
+    ]);
+  });
+});
