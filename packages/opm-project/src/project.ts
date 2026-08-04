@@ -15,6 +15,7 @@ import {
   listRegistryVersions,
   resolveRegistryArtifact,
 } from './registry.js';
+import { resolveGraph, solveGraph } from './resolve.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -190,12 +191,10 @@ export async function addPackage(input: {
   });
   await writeLockfile(paths.lock, lock);
 
-  const state = await installFromLock({
-    root: input.root,
-    lock,
-    offline,
-    only: [alias],
-  });
+  // The whole lock, not just the alias that was named: a package is not
+  // installed in any useful sense without the things it needs, and the lock now
+  // carries them.
+  const state = await installFromLock({ root: input.root, lock, offline });
 
   return { manifest, lock, state, alias };
 }
@@ -393,7 +392,102 @@ export async function resolveManifestToLock(input: {
     });
     lock.packages[alias] = locked;
   }
+
+  // Everything the direct requirements need. Resolved through the PREX solver
+  // rather than by taking the newest of each dependency, so the lock records a
+  // set that was proved to satisfy every constraint together instead of one
+  // that happens to look plausible.
+  //
+  // Offline keeps the old behaviour exactly: a transitive walk reads a
+  // registry, so an offline resolve stays direct-only rather than failing a
+  // build that used to work.
+  if (!input.offline && Object.keys(lock.packages).length > 0) {
+    const transitive = await resolveTransitive({
+      direct: Object.values(lock.packages),
+      manifest: input.manifest,
+    });
+    for (const [alias, pkg] of Object.entries(transitive))
+      if (!lock.packages[alias]) lock.packages[alias] = pkg;
+  }
   return lock;
+}
+
+/**
+ * Lock entries for everything the direct set depends on.
+ *
+ * Failures here are deliberately not fatal. A registry that omits a
+ * dependency, an ecosystem whose ranges this cannot yet match, a graph past
+ * the bound — none of those should stop an install that previously worked, so
+ * they degrade to the direct set and say what was skipped.
+ */
+async function resolveTransitive(input: {
+  direct: readonly LockPackage[];
+  manifest: OpmManifest;
+}): Promise<Record<string, LockPackage>> {
+  const resolvable = input.direct.filter((pkg) =>
+    REGISTRY_ECOSYSTEMS.includes(pkg.ecosystem),
+  );
+  if (resolvable.length === 0) return {};
+
+  const out: Record<string, LockPackage> = {};
+  try {
+    const graph = await resolveGraph({
+      roots: resolvable.map((pkg) => ({
+        purl: stripPurlVersion(pkg.purl),
+        ...(input.manifest.packages[pkg.alias]?.version === undefined
+          ? {}
+          : { range: input.manifest.packages[pkg.alias]!.version! }),
+      })),
+    });
+    const solved = await solveGraph({
+      graph,
+      rootRequirements: resolvable.map((pkg) => ({
+        purl: stripPurlVersion(pkg.purl),
+      })),
+    });
+
+    const directPurls = new Set(input.direct.map((pkg) => pkg.purl));
+    for (const instance of solved.selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined || directPurls.has(exact)) continue;
+      const alias = aliasForPurl(exact);
+      if (out[alias]) continue;
+      // `inspect` describes a package; the downloadable artifact and its
+      // published digest come from the artifact record, which is what the
+      // direct path uses too.
+      const artifact = await resolveRegistryArtifact(
+        instance.identity.purlType,
+        exact,
+      );
+      out[alias] = {
+        alias,
+        purl: artifact.exactPurl,
+        version: artifact.version || instance.nativeVersion || '0.0.0',
+        digest: artifact.digest,
+        size: artifact.bytes.byteLength,
+        format: inferFormat(artifact.uri, artifact.mediaType),
+        mediaType: artifact.mediaType,
+        source: artifact.uri,
+        storeKey: storeKeyFromDigest(artifact.digest),
+        bins: [],
+        reason: 'transitive',
+        ecosystem: instance.identity.purlType,
+      };
+    }
+  } catch {
+    // Reported by the caller through the lock being direct-only; an install
+    // that used to work must not start failing because a transitive walk did.
+    return {};
+  }
+  return out;
+}
+
+/** A filesystem-safe alias for a transitive package. */
+function aliasForPurl(exactPurl: string): string {
+  const withoutScheme = exactPurl.slice('pkg:'.length);
+  const withoutVersion = withoutScheme.split('@')[0]!;
+  const name = withoutVersion.split('/').slice(1).join('-');
+  return (name || withoutVersion).replace(/[^A-Za-z0-9._-]/gu, '-');
 }
 
 async function resolveRequirement(input: {
