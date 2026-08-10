@@ -328,6 +328,32 @@ export interface ProjectFormat {
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
   ): Promise<ProjectionResult>;
+
+  /**
+   * Build the archive this ecosystem publishes — an npm `.tgz`, a NuGet
+   * `.nupkg`. Advertised via `prex.registry.package-build/1`.
+   */
+  pack?(
+    project: DetectedProject,
+    options?: PackProjectOptions,
+  ): Promise<PackedArtifact>;
+}
+
+export interface PackProjectOptions {
+  /** Directory the archive is written to. Defaults to the project root. */
+  outputDirectory?: string;
+}
+
+export interface PackedArtifact {
+  /** Absolute path of the archive written. */
+  path: string;
+  /** `pkg:npm/name@version` for what was packed. */
+  exactPurl: string;
+  mediaType: string;
+  size: number;
+  /** sha256 over the archive bytes, the same identity any other artifact has. */
+  digest: string;
+  semanticLoss: readonly SemanticLoss[];
 }
 
 export interface WriteManifestOptions {

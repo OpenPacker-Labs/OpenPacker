@@ -192,7 +192,10 @@ export {
 } from './toml.js';
 
 export {
+  collectFiles,
   materialiseTree,
   removeTree,
   type MaterialiseResult,
 } from './layout.js';
+
+export { packTarGzip, packZip, type ArchiveEntry } from './archive.js';

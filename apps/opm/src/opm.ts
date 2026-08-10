@@ -16,6 +16,7 @@ import {
   listInstalled,
   installSystemPackage,
   listRegistryVersions,
+  packNativeProject,
   listSystemInstallers,
   parsePackageSpec,
   planSystemInstall,
@@ -74,6 +75,7 @@ const COMMANDS = new Set([
   'versions',
   'info',
   'resolve',
+  'pack',
   'system',
   'generations',
   'rollback',
@@ -333,6 +335,26 @@ export async function runOpm(
       // Host installers change the machine through a native tool. They are
       // deliberately not the project store path: apt/nix/winget run vendor
       // scripts and are not covered by generation rollback.
+      case 'pack': {
+        const root = await requireOpmRoot(cwd);
+        const ecosystem =
+          option(args, 'ecosystem') ?? option(args, 'e') ?? args.positionals[0];
+        if (!ecosystem)
+          throw usage(
+            'opm pack requires an ecosystem: opm pack npm | opm pack nuget',
+          );
+        const output = option(args, 'output');
+        const artifact = await packNativeProject({
+          root,
+          ecosystem,
+          ...(output === undefined ? {} : { outputDirectory: output }),
+        });
+        io.stdout.write(`${artifact.path}\n`);
+        io.stdout.write(`  ${artifact.digest}  ${artifact.size} bytes\n`);
+        for (const loss of artifact.semanticLoss)
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+        return EXIT_CODES.success;
+      }
       case 'system': {
         return runSystemCommand(args, io);
       }

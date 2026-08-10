@@ -187,3 +187,52 @@ describe('materialiseTree', () => {
     });
   });
 });
+
+describe('archives', () => {
+  it('produces a tar the materializer can read back', async () => {
+    const { packTarGzip } = await import('./archive.js');
+    const { inspectArchive } = await import('@openpacker/materializer');
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode('{"name":"demo"}'),
+      },
+      {
+        path: 'package/bin/cli.js',
+        contents: new TextEncoder().encode('#!/usr/bin/env node\n'),
+        executable: true,
+      },
+    ]);
+    // Round-tripped through the reader the store already uses, so the header
+    // fields and checksum are checked by something that did not write them.
+    const entriesRead = await inspectArchive(bytes, 'tar+gzip');
+    expect(entriesRead.map((file) => file.path).sort()).toEqual([
+      'package/bin/cli.js',
+      'package/package.json',
+    ]);
+  });
+
+  it('is deterministic — the same input gives the same bytes', async () => {
+    const { packTarGzip, packZip } = await import('./archive.js');
+    const entries = [
+      { path: 'b.txt', contents: new TextEncoder().encode('b') },
+      { path: 'a.txt', contents: new TextEncoder().encode('a') },
+    ];
+    // Reversed input order too: archive order must not depend on the caller.
+    expect(packTarGzip(entries)).toEqual(packTarGzip([...entries].reverse()));
+    expect(packZip(entries)).toEqual(packZip([...entries].reverse()));
+  });
+
+  it('uses the ustar prefix rather than truncating a long path', async () => {
+    const { packTarGzip } = await import('./archive.js');
+    const { inspectArchive } = await import('@openpacker/materializer');
+    const deep = `package/${'nested/'.repeat(20)}file.js`;
+    expect(deep.length).toBeGreaterThan(100);
+    const read = await inspectArchive(
+      packTarGzip([{ path: deep, contents: new TextEncoder().encode('x') }]),
+      'tar+gzip',
+    );
+    // Truncation here would silently produce a different file.
+    expect(read[0]?.path).toBe(deep);
+  });
+});

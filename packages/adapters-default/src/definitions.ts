@@ -15,7 +15,12 @@ export function httpRegistryDefinition(input: {
    * Advertise the project-format levels this adapter can honour. Only levels
    * whose exports exist may be listed — the host checks.
    */
-  project?: { manifest?: boolean; lock?: boolean; layout?: boolean };
+  project?: {
+    manifest?: boolean;
+    lock?: boolean;
+    layout?: boolean;
+    build?: boolean;
+  };
   features?: RegistryDefinition['features'];
 }): RegistryDefinition {
   type Resource = RegistryDefinition['resources'][number];
@@ -52,6 +57,7 @@ export function httpRegistryDefinition(input: {
     const types: string[] = ['prex.registry.project-manifest/1'];
     if (input.project.lock) types.push('prex.registry.project-lock/1');
     if (input.project.layout) types.push('prex.registry.project-layout/1');
+    if (input.project.build) types.push('prex.registry.package-build/1');
     resources.push({
       // The project file lives in the working tree, not at a registry URL.
       '@id': 'project:workspace',

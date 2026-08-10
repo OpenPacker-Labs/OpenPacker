@@ -99,3 +99,35 @@ export async function removeTree(path: string): Promise<void> {
   }
   await rm(path, { recursive: true, force: true });
 }
+
+/** Every file under `root`, as archive entries with forward-slash paths. */
+export async function collectFiles(
+  root: string,
+  prefix = '',
+): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
+  const out: {
+    path: string;
+    contents: Uint8Array;
+    executable: boolean;
+  }[] = [];
+  const { readFile } = await import('node:fs/promises');
+  const walkOne = async (directory: string, at: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const from = join(directory, entry.name);
+      const path = at === '' ? entry.name : `${at}/${entry.name}`;
+      if (entry.isDirectory()) {
+        await walkOne(from, path);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const info = await stat(from);
+      out.push({
+        path: prefix === '' ? path : `${prefix}/${path}`,
+        contents: new Uint8Array(await readFile(from)),
+        executable: (info.mode & 0o111) !== 0,
+      });
+    }
+  };
+  await walkOne(root, '');
+  return out;
+}

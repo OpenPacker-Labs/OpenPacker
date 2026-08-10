@@ -25,9 +25,11 @@
   },
   "dependencies": {
     "@openpacker/adapter-core": "0.1.0",
+    "fflate": "^0.8.3",
     "smol-toml": "^1.7.1"
   },
   "devDependencies": {
+    "@openpacker/materializer": "0.1.0",
     "@types/node": "24.2.1"
   }
 }

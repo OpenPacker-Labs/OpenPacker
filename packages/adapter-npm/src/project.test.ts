@@ -225,3 +225,50 @@ describe('NpmProjectFormat — package-lock.json', () => {
     }
   });
 });
+
+describe('NpmProjectFormat — pack', () => {
+  it('builds a tarball with the package/ prefix and honours files', async () => {
+    const fixture = await project(
+      '{\n  "name": "@scope/demo",\n  "version": "2.1.0",\n  "files": ["lib"]\n}\n',
+    );
+    try {
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(join(fixture.dir, 'lib'), { recursive: true });
+      await writeFile(join(fixture.dir, 'lib', 'index.js'), 'export {};\n');
+      await writeFile(join(fixture.dir, 'secret.txt'), 'not published\n');
+
+      const artifact = await fixture.format.pack!(fixture.detected);
+      expect(artifact.path.endsWith('scope-demo-2.1.0.tgz')).toBe(true);
+      expect(artifact.exactPurl).toBe('pkg:npm/%40scope/demo@2.1.0');
+      expect(artifact.digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+
+      const { inspectArchive } = await import('@openpacker/materializer');
+      const { readFile: read } = await import('node:fs/promises');
+      const entries = await inspectArchive(
+        new Uint8Array(await read(artifact.path)),
+        'tar+gzip',
+      );
+      const paths = entries.map((entry) => entry.path).sort();
+      expect(paths).toContain('package/lib/index.js');
+      // package.json is always published; secret.txt is outside `files`.
+      expect(paths).toContain('package/package.json');
+      expect(paths).not.toContain('package/secret.txt');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('says plainly that npm pack was not run', async () => {
+    const fixture = await project(
+      '{\n  "name": "demo",\n  "version": "1.0.0"\n}\n',
+    );
+    try {
+      const artifact = await fixture.format.pack!(fixture.detected);
+      expect(artifact.semanticLoss[0]?.code).toBe(
+        'NATIVE_PACK_NOT_TOOL_EQUIVALENT',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

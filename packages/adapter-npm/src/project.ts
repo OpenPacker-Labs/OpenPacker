@@ -6,12 +6,15 @@
  * the rest of the toolchain disagree about what the project needs.
  */
 
-import { access } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DetectedProject,
   NativeLockEntry,
   NativeRequirement,
+  PackProjectOptions,
+  PackedArtifact,
   ProjectFormat,
   ProjectionResult,
   RequirementScope,
@@ -19,8 +22,10 @@ import type {
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
+  collectFiles,
   editJsonFile,
   materialiseTree,
+  packTarGzip,
   writeFileAtomic,
 } from '@openpacker/project-io';
 
@@ -73,7 +78,6 @@ export class NpmProjectFormat implements ProjectFormat {
   async readRequirements(
     project: DetectedProject,
   ): Promise<readonly NativeRequirement[]> {
-    const { readFile } = await import('node:fs/promises');
     const parsed = JSON.parse(
       await readFile(project.manifestPath, 'utf8'),
     ) as PackageJson;
@@ -269,6 +273,55 @@ export class NpmProjectFormat implements ProjectFormat {
       semanticLoss: written.length > 0 ? [layoutLoss(root, copied)] : [],
     };
   }
+
+  /**
+   * Build the `.tgz` npm publishes.
+   *
+   * npm's `files`/`.npmignore` rules decide what ships. They are honoured here
+   * for the parts that are data — the `files` allowlist and npm's always-
+   * include and always-exclude sets — and a project relying on `.npmignore`
+   * gets that read too. What is not attempted is npm's full precedence
+   * behaviour; where this differs it says so rather than quietly shipping a
+   * different set of files.
+   */
+  async pack(
+    project: DetectedProject,
+    options: PackProjectOptions = {},
+  ): Promise<PackedArtifact> {
+    const manifest = JSON.parse(
+      await readFile(project.manifestPath, 'utf8'),
+    ) as PackageJson & { files?: string[] };
+    const name = manifest.name ?? 'package';
+    const version = manifest.version ?? '0.0.0';
+
+    const ignore = await readIgnoreFile(project.root);
+    const all = await collectFiles(project.root);
+    const included = all.filter((file) =>
+      shouldPublish(file.path, manifest.files, ignore),
+    );
+
+    // npm archives put everything under `package/`.
+    const bytes = packTarGzip(
+      included.map((file) => ({
+        path: `package/${file.path}`,
+        contents: file.contents,
+        executable: file.executable,
+      })),
+    );
+
+    const fileName = `${name.replace('@', '').replace('/', '-')}-${version}.tgz`;
+    const outputPath = join(options.outputDirectory ?? project.root, fileName);
+    await writeFileAtomic(outputPath, bytes);
+
+    return {
+      path: outputPath,
+      exactPurl: `${purlForName(name)}@${version}`,
+      mediaType: 'application/vnd.npm.install-v1+json',
+      size: bytes.length,
+      digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+      semanticLoss: [packLoss()],
+    };
+  }
 }
 
 function scopeOfField(
@@ -312,7 +365,6 @@ function scopeLoss(requirement: NativeRequirement): SemanticLoss {
 }
 
 async function manifestName(manifestPath: string): Promise<string> {
-  const { readFile } = await import('node:fs/promises');
   const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     name?: string;
   };
@@ -359,6 +411,78 @@ function layoutLoss(root: string, copied: boolean): SemanticLoss {
       'npm was not run: no lifecycle scripts, no bin links npm would have made, and no npm-specific hoisting',
     mitigation:
       'Run npm install if a package needs its install scripts, or keep native_projection at "lock".',
+    blocksProfile: [],
+  };
+}
+
+/** Paths npm never publishes, whatever the manifest says. */
+const NEVER_PUBLISH = new Set([
+  '.git',
+  '.npmrc',
+  'node_modules',
+  'package-lock.json',
+  '.opm',
+]);
+
+/** Paths npm always publishes, whatever `files` says. */
+const ALWAYS_PUBLISH = [
+  /^package\.json$/u,
+  /^readme(\.|$)/iu,
+  /^licen[cs]e(\.|$)/iu,
+  /^changelog(\.|$)/iu,
+];
+
+async function readIgnoreFile(root: string): Promise<string[]> {
+  const { readFile: read } = await import('node:fs/promises');
+  for (const name of ['.npmignore', '.gitignore']) {
+    try {
+      return (await read(join(root, name), 'utf8'))
+        .split(/\r?\n/u)
+        .map((line) => line.split('#')[0]!.trim())
+        .filter((line) => line !== '');
+    } catch {
+      // try the next one
+    }
+  }
+  return [];
+}
+
+function shouldPublish(
+  path: string,
+  files: readonly string[] | undefined,
+  ignore: readonly string[],
+): boolean {
+  const first = path.split('/')[0]!;
+  if (NEVER_PUBLISH.has(first)) return false;
+  if (ALWAYS_PUBLISH.some((pattern) => pattern.test(path))) return true;
+  if (files && files.length > 0)
+    return files.some(
+      (entry) =>
+        path === entry ||
+        path.startsWith(`${entry.replace(/\/$/u, '')}/`) ||
+        first === entry,
+    );
+  return !ignore.some(
+    (entry) =>
+      path === entry ||
+      first === entry.replace(/\/$/u, '') ||
+      path.startsWith(`${entry.replace(/\/$/u, '')}/`),
+  );
+}
+
+function packLoss(): SemanticLoss {
+  return {
+    code: 'NATIVE_PACK_NOT_TOOL_EQUIVALENT',
+    severity: 'info',
+    sourceEcosystem: 'npm',
+    sourcePath: '/pack',
+    originalMeaning: 'A publishable npm tarball was built from the project',
+    representedMeaning:
+      'A deterministic gzipped tar with the package/ prefix, honouring files, .npmignore and npm always-include rules',
+    omittedMeaning:
+      'npm pack was not run: prepack and prepare scripts did not execute, and npm ignore precedence is approximated rather than reimplemented',
+    mitigation:
+      'Run npm pack when a package depends on its prepack scripts to produce publishable output.',
     blocksProfile: [],
   };
 }

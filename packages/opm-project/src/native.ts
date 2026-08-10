@@ -17,6 +17,7 @@ import type {
   DetectedProject,
   NativeLockEntry,
   NativeRequirement,
+  PackedArtifact,
   ProjectFormat,
   ProjectionResult,
 } from '@openpacker/adapter-core';
@@ -24,6 +25,7 @@ import type { SemanticLoss } from '@openpacker/contracts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { writeFileAtomic } from '@openpacker/project-io';
+import { hasResource } from '@openpacker/adapter-host';
 import { requireAdapterRegistry } from './adapters.js';
 import { OPM_DIR, storePathForDigest } from './paths.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
@@ -33,6 +35,7 @@ import type {
   OpmLockfile,
   OpmManifest,
 } from './types.js';
+import { OpmError } from './types.js';
 
 export interface NativeProjectionReport {
   /** One entry per ecosystem that had a project to write. */
@@ -228,6 +231,44 @@ export async function projectNativeFormats(input: {
     });
 
   return { projections, unprojected };
+}
+
+/**
+ * Build the vendor archive for one ecosystem in this project.
+ *
+ * Separate from projectNativeFormats because packing is something a user asks
+ * for, not something that happens because a dependency changed.
+ */
+export async function packNativeProject(input: {
+  root: string;
+  ecosystem: string;
+  outputDirectory?: string;
+}): Promise<PackedArtifact> {
+  const registry = requireAdapterRegistry();
+  const definition = await registry.definitionFor(input.ecosystem);
+  if (!hasResource(definition, 'prex.registry.package-build/1'))
+    throw new OpmError(
+      'UNSUPPORTED_OPERATION',
+      `The ${input.ecosystem} adapter does not advertise prex.registry.package-build/1, ` +
+        'so it cannot build a package for this project.',
+    );
+  const format = await registry.projectFormatFor(input.ecosystem);
+  if (!format?.pack)
+    throw new OpmError(
+      'UNSUPPORTED_OPERATION',
+      `The ${input.ecosystem} adapter has no project packer.`,
+    );
+  const detected = await format.detect(input.root);
+  if (!detected)
+    throw new OpmError(
+      'NOT_FOUND',
+      `No ${input.ecosystem} project file in ${input.root}.`,
+    );
+  return format.pack(detected, {
+    ...(input.outputDirectory === undefined
+      ? {}
+      : { outputDirectory: input.outputDirectory }),
+  });
 }
 
 function collect(

@@ -13,12 +13,15 @@
  */
 
 import { access, readdir, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type {
   DetectedProject,
   NativeLockEntry,
   NativeRequirement,
+  PackProjectOptions,
+  PackedArtifact,
   ProjectFormat,
   ProjectionResult,
   RequirementScope,
@@ -27,7 +30,9 @@ import type {
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   applySpanEdits,
+  collectFiles,
   matchFileStyle,
+  packZip,
   ProjectIoError,
   readTextFile,
   writeFileAtomic,
@@ -243,6 +248,84 @@ export class NugetProjectFormat implements ProjectFormat {
       written: [assetsPath],
       ...(skipped.length > 0 ? { skipped } : {}),
       semanticLoss: [layoutLoss(assetsPath)],
+    };
+  }
+
+  /**
+   * Build the `.nupkg` NuGet publishes.
+   *
+   * A `.nupkg` is an OPC zip: the `.nuspec` describing the package, a
+   * `[Content_Types].xml`, and the payload under `lib/<tfm>/`. The nuspec is
+   * generated from the project rather than assumed to exist, which is what
+   * `dotnet pack` does for SDK-style projects.
+   */
+  async pack(
+    project: DetectedProject,
+    options: PackProjectOptions = {},
+  ): Promise<PackedArtifact> {
+    const text = await readFile(project.manifestPath, 'utf8');
+    const id =
+      property(text, 'PackageId') ??
+      basename(project.manifestPath).replace(/\.[^.]+$/u, '');
+    const version = property(text, 'Version') ?? '1.0.0';
+    const framework = targetFramework(project) ?? 'net8.0';
+    const authors = property(text, 'Authors') ?? id;
+    const description = property(text, 'Description') ?? id;
+
+    const nuspec = [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">',
+      '  <metadata>',
+      `    <id>${escapeXml(id)}</id>`,
+      `    <version>${escapeXml(version)}</version>`,
+      `    <authors>${escapeXml(authors)}</authors>`,
+      `    <description>${escapeXml(description)}</description>`,
+      '    <dependencies>',
+      `      <group targetFramework="${escapeXml(framework)}">`,
+      ...(await this.readRequirements(project)).map(
+        (requirement) =>
+          `        <dependency id="${escapeXml(requirement.name)}" version="${escapeXml(
+            requirement.range ?? '0.0.0',
+          )}" />`,
+      ),
+      '      </group>',
+      '    </dependencies>',
+      '  </metadata>',
+      '</package>',
+      '',
+    ].join('\n');
+
+    const encoder = new TextEncoder();
+    const entries: { path: string; contents: Uint8Array }[] = [
+      { path: `${id}.nuspec`, contents: encoder.encode(nuspec) },
+      {
+        path: '[Content_Types].xml',
+        contents: encoder.encode(CONTENT_TYPES),
+      },
+    ];
+
+    // Whatever the build already produced for this framework. Nothing is
+    // compiled here — opm does not run msbuild.
+    const output = join(project.root, 'bin', 'Release', framework);
+    const built = await collectFilesIfPresent(output);
+    for (const file of built)
+      entries.push({
+        path: `lib/${framework}/${file.path}`,
+        contents: file.contents,
+      });
+
+    const bytes = packZip(entries);
+    const fileName = `${id}.${version}.nupkg`;
+    const outputPath = join(options.outputDirectory ?? project.root, fileName);
+    await writeFileAtomic(outputPath, bytes);
+
+    return {
+      path: outputPath,
+      exactPurl: `pkg:nuget/${encodeURIComponent(id)}@${version}`,
+      mediaType: 'application/vnd.nuget.package',
+      size: bytes.length,
+      digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+      semanticLoss: [packLoss(built.length === 0)],
     };
   }
 }
@@ -507,6 +590,14 @@ function lineEnd(text: string, offset: number): number {
   return next === -1 ? text.length : next + 1;
 }
 
+/** Escape for element text; attributes additionally need the quote escaped. */
+function escapeXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function escapeAttribute(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -636,6 +727,47 @@ function layoutLoss(path: string): SemanticLoss {
       'dotnet restore was not run: no NuGet targets or props imports were generated, and no runtime graph was computed',
     mitigation:
       'Run dotnet restore when the build needs generated MSBuild imports, or keep native_projection at "lock".',
+    blocksProfile: [],
+  };
+}
+
+const CONTENT_TYPES = `<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="nuspec" ContentType="application/octet" />
+  <Default Extension="dll" ContentType="application/octet" />
+  <Default Extension="xml" ContentType="text/xml" />
+</Types>
+`;
+
+/** An MSBuild property's value, when the project sets it literally. */
+function property(text: string, name: string): string | undefined {
+  return new RegExp(`<${name}>\\s*([^<]+?)\\s*</${name}>`, 'u').exec(text)?.[1];
+}
+
+async function collectFilesIfPresent(
+  directory: string,
+): Promise<{ path: string; contents: Uint8Array }[]> {
+  try {
+    return await collectFiles(directory);
+  } catch {
+    return [];
+  }
+}
+
+function packLoss(empty: boolean): SemanticLoss {
+  return {
+    code: 'NATIVE_PACK_NOT_TOOL_EQUIVALENT',
+    severity: empty ? 'warning' : 'info',
+    sourceEcosystem: 'nuget',
+    sourcePath: '/pack',
+    originalMeaning: 'A .nupkg was built from the project',
+    representedMeaning: empty
+      ? 'A .nupkg containing the generated nuspec and no assemblies, because bin/Release held nothing'
+      : 'A deterministic OPC zip with a generated nuspec and the already-built assemblies',
+    omittedMeaning:
+      'dotnet pack was not run: nothing was compiled, no targets or props were included, and no symbol package was produced',
+    mitigation:
+      'Build the project first, or run dotnet pack when the package needs MSBuild to assemble it.',
     blocksProfile: [],
   };
 }
