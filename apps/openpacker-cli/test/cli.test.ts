@@ -58,6 +58,52 @@ describe('openpacker CLI', () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
+  it('treats the whole loopback range as local for --offline', async () => {
+    // 127.0.0.0/8 never leaves the machine, so --offline has no reason to
+    // refuse it; anything outside the range still does.
+    for (const base of [
+      'http://127.0.0.1:7337',
+      'http://127.0.0.2:7337',
+      'http://127.1.2.3:7337',
+      'http://[::1]:7337',
+      'http://[::ffff:127.0.0.1]:7337',
+      'http://localhost:7337',
+    ]) {
+      vi.stubGlobal('fetch', async () =>
+        Response.json({
+          meta: {
+            protocolVersion: '1.0-draft',
+            provider: { id: 'f', implementation: 't', version: '1' },
+          },
+          results: [],
+        }),
+      );
+      const local = io();
+      expect(
+        await runCli(
+          ['normalize', 'pkg:npm/demo', '--offline', '--base-url', base],
+          local,
+        ),
+        `${base}: ${local.err}`,
+      ).toBe(EXIT_CODES.success);
+    }
+    for (const base of [
+      'http://128.0.0.1:7337',
+      'http://10.0.0.1:7337',
+      'http://127.0.0.1.example.com:7337',
+      'https://packages.example',
+    ]) {
+      const remote = io();
+      expect(
+        await runCli(
+          ['normalize', 'pkg:npm/demo', '--offline', '--base-url', base],
+          remote,
+        ),
+      ).toBe(EXIT_CODES.usage);
+      expect(remote.err).toContain('loopback');
+    }
+  });
+
   it('uses stable usage and protocol exit codes', async () => {
     const remote = io();
     expect(

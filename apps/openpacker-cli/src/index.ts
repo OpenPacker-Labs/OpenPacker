@@ -742,10 +742,42 @@ function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {
   );
 }
 
+/**
+ * Whether a service URL stays on this machine.
+ *
+ * Loopback is `127.0.0.0/8`, not the single address `127.0.0.1` — a daemon on
+ * `127.0.0.2` is every bit as local, and refusing it made `--offline` reject
+ * setups that never leave the host. Everything outside the range still fails,
+ * so the guarantee `--offline` makes is unchanged.
+ */
 function isLoopback(value: string): boolean {
   try {
-    const url = new URL(value);
-    return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname);
+    const { hostname } = new URL(value);
+    if (hostname === 'localhost') return true;
+    const host =
+      hostname.startsWith('[') && hostname.endsWith(']')
+        ? hostname.slice(1, -1)
+        : hostname;
+    if (host === '::1') return true;
+    // IPv4-mapped IPv6 reaches the same v4 stack. WHATWG URL rewrites
+    // `::ffff:127.0.0.1` to the hex form `::ffff:7f00:1`, so read that.
+    const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(host);
+    const mapped = hex
+      ? [
+          parseInt(hex[1]!, 16) >> 8,
+          parseInt(hex[1]!, 16) & 0xff,
+          parseInt(hex[2]!, 16) >> 8,
+          parseInt(hex[2]!, 16) & 0xff,
+        ].join('.')
+      : /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/iu.exec(host)?.[1];
+    const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(
+      mapped ?? host,
+    );
+    if (!octets) return false;
+    return (
+      octets.slice(1).every((octet) => Number(octet) <= 255) &&
+      Number(octets[1]) === 127
+    );
   } catch {
     return false;
   }

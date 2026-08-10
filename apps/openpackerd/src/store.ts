@@ -28,15 +28,23 @@ export interface OpenPackerStateStore {
   getSnapshot(algorithm: string, digest: string): Uint8Array | undefined;
   appendEvent(event: OpenPackerCloudEvent): number;
   eventsAfter(cursor: number, limit: number): StoredEvent[];
+  /**
+   * Cached response for an idempotency key.
+   *
+   * `request` is the fingerprint of the request that produced it, so a caller
+   * can tell "same request again" from "same key, different request" — those
+   * are opposite answers and only the first may be served from cache.
+   */
   getIdempotent(
     method: string,
     path: string,
     key: string,
-  ): Uint8Array | undefined;
+  ): { bytes: Uint8Array; request: string } | undefined;
   putIdempotent(
     method: string,
     path: string,
     key: string,
+    request: string,
     bytes: Uint8Array,
   ): void;
   close(): void;
@@ -68,10 +76,29 @@ export class SqliteStateStore implements OpenPackerStateStore {
         method TEXT NOT NULL,
         path TEXT NOT NULL,
         key TEXT NOT NULL,
+        request TEXT NOT NULL DEFAULT '',
         bytes BLOB NOT NULL,
         PRIMARY KEY (method, path, key)
       ) STRICT;
     `);
+    this.#addIdempotencyRequestColumn();
+  }
+
+  /**
+   * Bring a database written before request fingerprinting up to date.
+   *
+   * Rows created then carry an empty fingerprint, which never equals a real
+   * one — so they read as a miss and are replaced rather than being served to
+   * a request nobody proved they match.
+   */
+  #addIdempotencyRequestColumn(): void {
+    const columns = this.#database
+      .prepare('PRAGMA table_info(idempotency)')
+      .all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === 'request')) return;
+    this.#database.exec(
+      "ALTER TABLE idempotency ADD COLUMN request TEXT NOT NULL DEFAULT ''",
+    );
   }
 
   ready(): boolean {
@@ -148,28 +175,33 @@ export class SqliteStateStore implements OpenPackerStateStore {
     method: string,
     path: string,
     key: string,
-  ): Uint8Array | undefined {
+  ): { bytes: Uint8Array; request: string } | undefined {
     const row = this.#database
       .prepare(
-        'SELECT bytes FROM idempotency WHERE method = ? AND path = ? AND key = ?',
+        'SELECT bytes, request FROM idempotency WHERE method = ? AND path = ? AND key = ?',
       )
-      .get(method, path, key) as { bytes: Uint8Array } | undefined;
-    return row ? Uint8Array.from(row.bytes) : undefined;
+      .get(method, path, key) as
+      | { bytes: Uint8Array; request: string }
+      | undefined;
+    if (!row || row.request === '') return undefined;
+    return { bytes: Uint8Array.from(row.bytes), request: row.request };
   }
 
   putIdempotent(
     method: string,
     path: string,
     key: string,
+    request: string,
     bytes: Uint8Array,
   ): void {
     this.#database
       .prepare(
-        'INSERT OR IGNORE INTO idempotency(method, path, key, bytes) VALUES (?, ?, ?, ?)',
+        'INSERT INTO idempotency(method, path, key, request, bytes) VALUES (?, ?, ?, ?, ?) ' +
+          "ON CONFLICT(method, path, key) DO UPDATE SET request = excluded.request, bytes = excluded.bytes WHERE request = ''",
       )
-      .run(method, path, key, bytes);
+      .run(method, path, key, request, bytes);
     const existing = this.getIdempotent(method, path, key);
-    if (!existing || !equalBytes(existing, bytes))
+    if (!existing || !equalBytes(existing.bytes, bytes))
       throw new Error('Idempotency key was reused for a different result');
   }
 

@@ -735,6 +735,149 @@ describe('openpackerd HTTP surface hardening', () => {
     await app.close();
   });
 
+  /**
+   * A normalize that answers differently per input, so a wrong cache hit is
+   * visible in the body rather than only in principle.
+   */
+  function echoNormalizeApp() {
+    const operations = new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          if (property === 'capabilities') return undefined;
+          if (property === 'normalize')
+            return async (input: {
+              items: Array<{ value: string }>;
+            }): Promise<JsonValue> => ({
+              meta: {
+                protocolVersion: '1.0-draft',
+                provider: {
+                  id: 'fixture',
+                  implementation: 'fixture',
+                  version: '0.0.0',
+                },
+              },
+              results: [
+                {
+                  type: 'native-coordinate',
+                  original: input.items[0]!.value,
+                  canonical: `pkg:npm/${input.items[0]!.value}`,
+                  parsed: {},
+                  reversibility: 'exact',
+                  warnings: [],
+                  semanticLoss: [],
+                },
+              ],
+            });
+          return async () => {
+            throw new Error('operation must not run');
+          };
+        },
+      },
+    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    return createOpenPackerDaemon({ operations });
+  }
+
+  const normalizePayload = (value: string) => ({
+    items: [{ type: 'native-coordinate', ecosystem: 'npm', value }],
+  });
+
+  it('replays a cached response only for the request that produced it', async () => {
+    const app = echoNormalizeApp();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'idempotency-key': 'k1' },
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().results[0].canonical).toBe('pkg:npm/alpha@1.0.0');
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'idempotency-key': 'k1' },
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().results[0].canonical).toBe('pkg:npm/alpha@1.0.0');
+    await app.close();
+  });
+
+  it('refuses an idempotency key reused for a different request body', async () => {
+    // Serving the first answer here would hand the caller a result for a
+    // request they did not make.
+    const app = echoNormalizeApp();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'idempotency-key': 'k1' },
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    const reused = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'idempotency-key': 'k1' },
+      payload: normalizePayload('beta@2.0.0'),
+    });
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json().code).toBe('INVALID_REQUEST');
+    expect(reused.json().detail).toMatch(/different request body/);
+    await app.close();
+  });
+
+  it('keys the cache per route, not per key alone', async () => {
+    const app = echoNormalizeApp();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      headers: { 'idempotency-key': 'shared' },
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    expect(first.statusCode).toBe(200);
+    const other = await app.inject({
+      method: 'POST',
+      url: '/v1/identify',
+      headers: { 'idempotency-key': 'shared' },
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    // Different route: no cross-route replay, so it reaches the operation.
+    expect(other.statusCode).not.toBe(200);
+    await app.close();
+  });
+
+  it('does not put a non-PREX error code or its message on the wire', async () => {
+    // Node attaches codes like ENOENT and puts a local path in the message.
+    // Passing that through emits a Problem outside the normative enum and
+    // tells an unauthenticated caller where the store lives.
+    const leak = Object.assign(
+      new Error("ENOENT: no such file or directory, open '/home/op/.opm/db'"),
+      { code: 'ENOENT' },
+    );
+    const operations = new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          if (property === 'capabilities') return undefined;
+          return async () => {
+            throw leak;
+          };
+        },
+      },
+    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    const app = createOpenPackerDaemon({ operations });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/normalize',
+      payload: normalizePayload('alpha@1.0.0'),
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('/home/op/.opm/db');
+    expect(response.body).not.toContain('ENOENT');
+    await app.close();
+  });
+
   it('advertises authenticationSchemes none so callers do not invent auth', async () => {
     const app = minimalApp();
     const response = await app.inject({
