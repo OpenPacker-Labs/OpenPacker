@@ -63,7 +63,16 @@ async function file(value: unknown, version: number) {
   };
 }
 
-async function tufFixture() {
+async function tufFixture(
+  options: {
+    /** Target path the delegated role actually signs for. */
+    targetPath?: string;
+    /** Delegation scope declared on the role in targets.json. */
+    paths?: string[];
+    pathHashPrefixes?: string[];
+  } = {},
+) {
+  const targetPath = options.targetPath ?? 'tools/demo.bin';
   const targetBytes = new TextEncoder().encode('fixture artifact\n');
   const targetDigest = await sha256(targetBytes);
   const delegated = await signed<TargetsMetadata>({
@@ -72,7 +81,7 @@ async function tufFixture() {
     version: 1,
     expires: '2027-01-01T00:00:00Z',
     targets: {
-      'tools/demo.bin': {
+      [targetPath]: {
         length: targetBytes.length,
         hashes: { sha256: targetDigest.value },
       },
@@ -92,7 +101,9 @@ async function tufFixture() {
           name: 'tools',
           keyids: ['root'],
           threshold: 1,
-          paths: ['tools/*'],
+          ...(options.pathHashPrefixes
+            ? { path_hash_prefixes: options.pathHashPrefixes }
+            : { paths: options.paths ?? ['tools/*'] }),
           terminating: true,
         },
       ],
@@ -138,6 +149,7 @@ async function tufFixture() {
       snapshotVersion: 0,
       metadataVersions: {},
     },
+    targetPath,
     targetBytes,
     files: {
       timestamp: encode(timestamp),
@@ -149,6 +161,76 @@ async function tufFixture() {
     },
   };
 }
+
+describe('TUF delegation scope', () => {
+  test('a role scoped to tools/* cannot sign for a nested path', async () => {
+    // TUF matches path patterns per segment with equal segment counts, so
+    // `tools/*` delegates the tools directory and not everything under it.
+    // Prefix matching would hand this role authority it was never granted.
+    const fixture = await tufFixture({
+      targetPath: 'tools/vendor/backdoor.bin',
+    });
+    await expect(
+      verifyTufTarget(
+        fixture.trusted,
+        fixture.files,
+        fixture.targetPath,
+        fixture.targetBytes,
+        '2026-01-01T00:00:00Z',
+      ),
+    ).rejects.toMatchObject({ code: 'target' });
+  });
+
+  test('honours a wildcard pattern that is not a trailing /*', async () => {
+    for (const paths of [['*'], ['tools/*.bin'], ['tools/demo.?in']]) {
+      const fixture = await tufFixture({
+        targetPath: paths[0] === '*' ? 'demo.bin' : 'tools/demo.bin',
+        paths,
+      });
+      await expect(
+        verifyTufTarget(
+          fixture.trusted,
+          fixture.files,
+          fixture.targetPath,
+          fixture.targetBytes,
+          '2026-01-01T00:00:00Z',
+        ),
+      ).resolves.toMatchObject({ role: 'tools' });
+    }
+  });
+
+  test('resolves a delegation declared by path hash prefix', async () => {
+    const targetPath = 'tools/demo.bin';
+    const hash = (await sha256(new TextEncoder().encode(targetPath))).value;
+    const fixture = await tufFixture({
+      targetPath,
+      pathHashPrefixes: [hash.slice(0, 4)],
+    });
+    await expect(
+      verifyTufTarget(
+        fixture.trusted,
+        fixture.files,
+        targetPath,
+        fixture.targetBytes,
+        '2026-01-01T00:00:00Z',
+      ),
+    ).resolves.toMatchObject({ role: 'tools' });
+
+    const missed = await tufFixture({
+      targetPath,
+      pathHashPrefixes: [hash.slice(0, 3) === 'ffff' ? '0000' : 'ffff'],
+    });
+    await expect(
+      verifyTufTarget(
+        missed.trusted,
+        missed.files,
+        targetPath,
+        missed.targetBytes,
+        '2026-01-01T00:00:00Z',
+      ),
+    ).rejects.toMatchObject({ code: 'target' });
+  });
+});
 
 describe('TUF', () => {
   test('verifies delegated consistent snapshots and rejects attacks', async () => {
