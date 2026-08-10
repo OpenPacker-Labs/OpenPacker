@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.1.0",
+    "minimatch": "^10.2.6"
   }
 }

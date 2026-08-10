@@ -3,6 +3,7 @@ import {
   parseCanonicalJson,
   sha256,
 } from '@openpacker/canonical';
+import { minimatch } from 'minimatch';
 import type { Digest, JsonValue } from '@openpacker/contracts';
 import { Ed25519Verifier, type Verifier } from './signatures.js';
 
@@ -55,7 +56,10 @@ export interface TargetFile {
 }
 export interface DelegatedRole extends TufRole {
   name: string;
-  paths: string[];
+  /** Path patterns this role may sign for. Exclusive with pathHashPrefixes. */
+  paths?: string[];
+  /** Hex prefixes of sha256(targetPath). Exclusive with paths. */
+  path_hash_prefixes?: string[];
   terminating: boolean;
 }
 export interface TargetsMetadata extends TufSigned {
@@ -93,6 +97,41 @@ export class TufVerificationError extends Error {
 async function digest(bytes: Uint8Array): Promise<Digest> {
   return sha256(bytes);
 }
+/**
+ * Whether a delegated role is authorised for a target path.
+ *
+ * TUF path patterns are matched per path segment, with an equal segment count
+ * required (tuf-js `isTargetInPathPattern`, python-tuf `is_delegated_path`).
+ * That is the whole point of the rule: `tools/*` delegates the `tools`
+ * directory, not everything beneath it, so a role scoped to `tools/*` must not
+ * gain authority over `tools/vendor/backdoor.bin`. Matching is delegated to
+ * minimatch — the same matcher the reference client uses — rather than
+ * re-derived here.
+ *
+ * `paths` and `path_hash_prefixes` are mutually exclusive; a role that
+ * declares neither is authorised for nothing.
+ */
+async function isDelegatedPath(
+  role: DelegatedRole,
+  targetPath: string,
+): Promise<boolean> {
+  if (role.paths) {
+    const targetParts = targetPath.split('/');
+    return role.paths.some((pattern) => {
+      const patternParts = pattern.split('/');
+      if (patternParts.length !== targetParts.length) return false;
+      return patternParts.every((part, index) =>
+        minimatch(targetParts[index]!, part, { dot: true }),
+      );
+    });
+  }
+  if (role.path_hash_prefixes) {
+    const hash = (await digest(new TextEncoder().encode(targetPath))).value;
+    return role.path_hash_prefixes.some((prefix) => hash.startsWith(prefix));
+  }
+  return false;
+}
+
 async function verifyMetaFile(
   file: MetaFile,
   bytes: Uint8Array,
@@ -349,14 +388,7 @@ export async function verifyTufTarget(
   let roleName = 'targets';
   if (!target && targets.signed.delegations) {
     for (const delegatedRole of targets.signed.delegations.roles) {
-      if (
-        !delegatedRole.paths.some((path) =>
-          path.endsWith('/*')
-            ? targetPath.startsWith(path.slice(0, -1))
-            : targetPath === path,
-        )
-      )
-        continue;
+      if (!(await isDelegatedPath(delegatedRole, targetPath))) continue;
       const name = `${delegatedRole.name}.json`;
       const snapshotDelegated = snapshot.signed.meta[name];
       const delegatedBytes = files.delegated?.[delegatedRole.name];
