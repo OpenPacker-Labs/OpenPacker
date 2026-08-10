@@ -142,6 +142,12 @@ export {
 } from './ephemeral.js';
 
 export {
+  buildPackageManifest,
+  withPackedArtifact,
+  type BuiltPackageManifest,
+} from './manifest.js';
+
+export {
   nativeName,
   packNativeProject,
   projectNativeFormats,

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
@@ -14,9 +15,12 @@ import {
   installProject,
   listGenerations,
   listInstalled,
+  buildPackageManifest,
   installSystemPackage,
   listRegistryVersions,
   packNativeProject,
+  readLockfile,
+  readManifestFile,
   listSystemInstallers,
   parsePackageSpec,
   planSystemInstall,
@@ -61,6 +65,9 @@ interface Parsed {
   options: Map<string, string | true>;
 }
 
+/** Reported as the producer of any manifest opm writes. */
+const OPM_VERSION = '0.1.0';
+
 const COMMANDS = new Set([
   'init',
   'add',
@@ -75,6 +82,7 @@ const COMMANDS = new Set([
   'versions',
   'info',
   'resolve',
+  'manifest',
   'pack',
   'system',
   'generations',
@@ -335,6 +343,42 @@ export async function runOpm(
       // Host installers change the machine through a native tool. They are
       // deliberately not the project store path: apt/nix/winget run vendor
       // scripts and are not covered by generation rollback.
+      case 'manifest': {
+        const root = await requireOpmRoot(cwd);
+        const paths = projectPaths(root);
+        const projectManifest = await readManifestFile(paths.manifest);
+        const lock = (await readLockfile(paths.lock)) ?? {
+          schemaVersion: 1 as const,
+          generatedBy: 'opm' as const,
+          packages: {},
+        };
+        const built = await buildPackageManifest({
+          root,
+          manifest: projectManifest,
+          lock,
+          producedAt: new Date().toISOString(),
+          producer: { id: 'org.openpacker.opm', version: OPM_VERSION },
+          ...(option(args, 'name') === undefined
+            ? {}
+            : { name: option(args, 'name')! }),
+          ...(option(args, 'package-version') === undefined
+            ? {}
+            : { version: option(args, 'package-version')! }),
+        });
+        const destination = option(args, 'output');
+        if (destination) {
+          await writeFile(destination, built.bytes);
+          io.stdout.write(`${destination}\n`);
+          io.stdout.write(
+            `  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
+          );
+        } else {
+          io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
+        }
+        for (const loss of built.manifest.semanticLoss ?? [])
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+        return EXIT_CODES.success;
+      }
       case 'pack': {
         const root = await requireOpmRoot(cwd);
         const ecosystem =

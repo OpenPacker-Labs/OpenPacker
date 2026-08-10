@@ -1365,6 +1365,76 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition",
       "valid": false,
       "levels": ["PREX-I"]
+    },
+    {
+      "name": "package-manifest-multi-ecosystem",
+      "file": "package-manifest/multi-ecosystem.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-D"]
+    },
+    {
+      "name": "package-manifest-minimal",
+      "file": "package-manifest/minimal.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "package-manifest-version-range",
+      "file": "package-manifest/minimal.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/version",
+          "value": "latest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "package-manifest-no-distributions",
+      "file": "package-manifest/minimal.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/distributions",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "package-manifest-bare-digest",
+      "file": "package-manifest/multi-ecosystem.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/distributions/0/digest",
+          "value": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "package-manifest-unknown-verified-claim",
+      "file": "package-manifest/multi-ecosystem.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/provenance/verified",
+          "value": ["everything"]
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
     }
   ]
 }

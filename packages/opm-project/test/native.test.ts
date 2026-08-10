@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   addPackage,
+  buildPackageManifest,
   initProject,
   nativeName,
   projectNativeFormats,
@@ -13,6 +14,7 @@ import {
   removePackage,
   parseManifest,
   serializeManifest,
+  withPackedArtifact,
   type OpmManifest,
 } from '../src/index.js';
 
@@ -378,5 +380,141 @@ describe('projection helpers', () => {
     expect(nativeName('pkg:npm/%40scope/name')).toBe('@scope/name');
     expect(nativeName('pkg:nuget/Newtonsoft.Json')).toBe('Newtonsoft.Json');
     expect(nativeName('pkg:npm/chalk?arch=any')).toBe('chalk');
+  });
+});
+
+describe('package manifest', () => {
+  it('describes the package and every ecosystem it ships to', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const lock = JSON.parse(
+      await readFile(join(root, 'opm.lock.json'), 'utf8'),
+    ) as Parameters<typeof buildPackageManifest>[0]['lock'];
+
+    const built = await buildPackageManifest({
+      root,
+      manifest: parseManifest(await readFile(join(root, 'opm.toml'), 'utf8')),
+      lock,
+      name: 'test-app',
+      version: '1.2.3',
+      producedAt: '2026-08-10T00:00:00.000Z',
+      producer: { id: 'org.openpacker.opm', version: '0.1.0' },
+    });
+
+    expect(built.manifest.packageManifestVersion).toBe('1');
+    expect(built.manifest.version).toBe('1.2.3');
+
+    const npm = built.manifest.distributions.find(
+      (entry) => entry.purlType === 'npm',
+    );
+    expect(npm?.exactPurl).toBe('pkg:npm/test-app@1.2.3');
+    // The runtime hint is how server.json says "you can npx this".
+    expect(npm?.runtimeHint).toBe('npx');
+    // A registryId, not just a URL: a policy can pin who answered.
+    expect(npm?.registryId).toBe('urn:openpacker:registry:npmjs-org');
+    expect(npm?.requirements).toContainEqual({
+      identifier: '@openpacker/demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool',
+      range: '1.1.0',
+      scope: 'runtime',
+    });
+
+    // External registry providers are described, with the definition they were
+    // built against pinned by digest.
+    const registry = built.manifest.registries?.[0];
+    expect(registry?.registryId).toBe('urn:openpacker:registry:npmjs-org');
+    expect(registry?.definitionDigest?.value).toMatch(/^[0-9a-f]{64}$/u);
+  });
+
+  it('claims nothing verified until something is actually checked', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    const built = await buildPackageManifest({
+      root,
+      manifest: parseManifest(await readFile(join(root, 'opm.toml'), 'utf8')),
+      lock: {
+        schemaVersion: 1,
+        generatedBy: 'opm',
+        packages: {
+          demo: {
+            alias: 'demo',
+            purl: 'pkg:npm/demo@1.0.0',
+            version: '1.0.0',
+            digest: `sha256:${'0'.repeat(64)}`,
+            size: 1,
+            format: 'tar+gzip',
+            mediaType: 'application/octet-stream',
+            source: 'file:///demo',
+            storeKey: `sha256-${'0'.repeat(64)}`,
+            bins: [],
+            reason: 'direct',
+            ecosystem: 'npm',
+          },
+        },
+      },
+      producedAt: '2026-08-10T00:00:00.000Z',
+      producer: { id: 'org.openpacker.opm', version: '0.1.0' },
+    });
+    // Writing a document does not verify anything, and saying otherwise is the
+    // failure a provenance block exists to prevent.
+    expect(built.manifest.provenance?.verified).toEqual([]);
+
+    const withArtifact = withPackedArtifact(built.manifest, 'npm', {
+      digest: `sha256:${'a'.repeat(64)}`,
+      size: 42,
+      mediaType: 'application/vnd.npm.install-v1+json',
+    });
+    // The bytes were hashed to produce that, so that much is now claimable.
+    expect(withArtifact.provenance?.verified).toEqual(['artifact-digest']);
+    expect(
+      withArtifact.distributions.find((entry) => entry.purlType === 'npm')
+        ?.digest?.value,
+    ).toBe('a'.repeat(64));
+  });
+
+  it('canonicalises, so the same inputs give the same digest', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    const build = async () =>
+      buildPackageManifest({
+        root,
+        manifest: parseManifest(await readFile(join(root, 'opm.toml'), 'utf8')),
+        lock: {
+          schemaVersion: 1,
+          generatedBy: 'opm',
+          packages: {
+            demo: {
+              alias: 'demo',
+              purl: 'pkg:npm/demo@1.0.0',
+              version: '1.0.0',
+              digest: `sha256:${'0'.repeat(64)}`,
+              size: 1,
+              format: 'tar+gzip',
+              mediaType: 'application/octet-stream',
+              source: 'file:///demo',
+              storeKey: `sha256-${'0'.repeat(64)}`,
+              bins: [],
+              reason: 'direct',
+              ecosystem: 'npm',
+            },
+          },
+        },
+        producedAt: '2026-08-10T00:00:00.000Z',
+        producer: { id: 'org.openpacker.opm', version: '0.1.0' },
+      });
+    const first = await build();
+    const second = await build();
+    // A manifest is an artifact: publishable, pinnable, and verifiable later
+    // as the same document.
+    expect(second.digest).toEqual(first.digest);
+    expect(second.bytes).toEqual(first.bytes);
   });
 });

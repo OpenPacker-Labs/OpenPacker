@@ -1,0 +1,12 @@
+{
+  "packageManifestVersion": "1",
+  "name": "minimal",
+  "version": "0.1.0",
+  "distributions": [
+    {
+      "purlType": "npm",
+      "identifier": "minimal",
+      "version": "0.1.0"
+    }
+  ]
+}
