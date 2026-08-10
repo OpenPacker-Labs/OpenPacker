@@ -35,6 +35,7 @@ Accepted decisions:
 31. [PREX is a plug-in interface; execution is a declared capability](0031-prex-is-a-plug-in-interface-for-package-managers.md)
 32. [WIT adapters and capability-discoverable registry definitions](0032-wit-adapters-and-registry-definition.md)
 33. [Native supply-chain capture and mitigation](0033-native-supply-chain-capture-and-mitigation.md)
+34. [opm maintains the ecosystem's own project files](0034-opm-projects-into-native-project-formats.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

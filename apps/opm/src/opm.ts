@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
@@ -14,8 +15,12 @@ import {
   installProject,
   listGenerations,
   listInstalled,
+  buildPackageManifest,
   installSystemPackage,
   listRegistryVersions,
+  packNativeProject,
+  readLockfile,
+  readManifestFile,
   listSystemInstallers,
   parsePackageSpec,
   planSystemInstall,
@@ -60,6 +65,9 @@ interface Parsed {
   options: Map<string, string | true>;
 }
 
+/** Reported as the producer of any manifest opm writes. */
+const OPM_VERSION = '0.1.0';
+
 const COMMANDS = new Set([
   'init',
   'add',
@@ -74,6 +82,8 @@ const COMMANDS = new Set([
   'versions',
   'info',
   'resolve',
+  'manifest',
+  'pack',
   'system',
   'generations',
   'rollback',
@@ -162,6 +172,7 @@ export async function runOpm(
         io.stdout.write(
           `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}\n`,
         );
+        writeNativeProjection(result.native, io);
         io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
         return EXIT_CODES.success;
       }
@@ -187,6 +198,7 @@ export async function runOpm(
         io.stdout.write(
           `Installed ${count} package(s) into ${projectPaths(root).opmDir}\n`,
         );
+        writeNativeProjection(result.native, io);
         io.stdout.write(
           `Bins: ${projectPaths(root).bin}  (export PATH="$PWD/.opm/bin:$PATH")\n`,
         );
@@ -218,6 +230,7 @@ export async function runOpm(
         io.stdout.write(
           `Synced ${count} package(s); lock and .opm/ store updated\n`,
         );
+        writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
       }
       case 'list': {
@@ -330,6 +343,62 @@ export async function runOpm(
       // Host installers change the machine through a native tool. They are
       // deliberately not the project store path: apt/nix/winget run vendor
       // scripts and are not covered by generation rollback.
+      case 'manifest': {
+        const root = await requireOpmRoot(cwd);
+        const paths = projectPaths(root);
+        const projectManifest = await readManifestFile(paths.manifest);
+        const lock = (await readLockfile(paths.lock)) ?? {
+          schemaVersion: 1 as const,
+          generatedBy: 'opm' as const,
+          packages: {},
+        };
+        const built = await buildPackageManifest({
+          root,
+          manifest: projectManifest,
+          lock,
+          producedAt: new Date().toISOString(),
+          producer: { id: 'org.openpacker.opm', version: OPM_VERSION },
+          ...(option(args, 'name') === undefined
+            ? {}
+            : { name: option(args, 'name')! }),
+          ...(option(args, 'package-version') === undefined
+            ? {}
+            : { version: option(args, 'package-version')! }),
+        });
+        const destination = option(args, 'output');
+        if (destination) {
+          await writeFile(destination, built.bytes);
+          io.stdout.write(`${destination}\n`);
+          io.stdout.write(
+            `  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
+          );
+        } else {
+          io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
+        }
+        for (const loss of built.manifest.semanticLoss ?? [])
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+        return EXIT_CODES.success;
+      }
+      case 'pack': {
+        const root = await requireOpmRoot(cwd);
+        const ecosystem =
+          option(args, 'ecosystem') ?? option(args, 'e') ?? args.positionals[0];
+        if (!ecosystem)
+          throw usage(
+            'opm pack requires an ecosystem: opm pack npm | opm pack nuget',
+          );
+        const output = option(args, 'output');
+        const artifact = await packNativeProject({
+          root,
+          ecosystem,
+          ...(output === undefined ? {} : { outputDirectory: output }),
+        });
+        io.stdout.write(`${artifact.path}\n`);
+        io.stdout.write(`  ${artifact.digest}  ${artifact.size} bytes\n`);
+        for (const loss of artifact.semanticLoss)
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+        return EXIT_CODES.success;
+      }
       case 'system': {
         return runSystemCommand(args, io);
       }
@@ -565,6 +634,40 @@ async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
+}
+
+/**
+ * Report the ecosystem project files opm maintained, and anything it could not
+ * promise about them. Silence here would hide edits to files the user tracks
+ * in version control.
+ */
+function writeNativeProjection(
+  report:
+    | {
+        projections: readonly {
+          ecosystem: string;
+          written: readonly string[];
+          skipped?: readonly { path: string; reason: string }[];
+          semanticLoss: readonly {
+            code: string;
+            representedMeaning?: string;
+          }[];
+        }[];
+      }
+    | undefined,
+  io: CliIo,
+): void {
+  if (!report) return;
+  for (const projection of report.projections) {
+    for (const path of projection.written)
+      io.stdout.write(`  updated ${path}\n`);
+    for (const entry of projection.skipped ?? [])
+      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    for (const loss of projection.semanticLoss)
+      io.stderr.write(
+        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+      );
+  }
 }
 
 async function runHostInstall(

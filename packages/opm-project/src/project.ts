@@ -26,9 +26,11 @@ import {
 } from './lock.js';
 import { installSystemPackage, planSystemInstall } from './system.js';
 import type { InstallOutcome, InstallPlan } from '@openpacker/adapter-core';
+import type { NativeProjectionReport } from './native.js';
 import {
   digestOf,
   fetchArtifactBytes,
+  nativeIntegrityOf,
   inferFormat,
   installFromLock,
   lockPackageFromSource,
@@ -62,6 +64,7 @@ import {
   projectPolicyDocument,
 } from './supply-chain.js';
 import { providerFor } from './registry.js';
+import { projectNativeFormats } from './native.js';
 import { defaultManifest, parseManifest, serializeManifest } from './toml.js';
 import { discoverNpmBins } from './bins.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -166,6 +169,8 @@ export async function addPackage(input: {
   lock: OpmLockfile;
   state: ProjectState;
   alias: string;
+  /** What was written into the ecosystem's own project files. */
+  native?: NativeProjectionReport;
   /** When the adapter prefers host install, the plan/outcome is returned. */
   hostInstall?: {
     plan: InstallPlan;
@@ -268,14 +273,28 @@ export async function addPackage(input: {
   // carries them.
   const state = await installFromLock({ root: input.root, lock, offline });
 
-  return { manifest, lock, state, alias };
+  // Last, and only after the store is real: a native manifest that names a
+  // package the resolve never produced would send the native tool looking for
+  // something opm does not have.
+  const native = await projectNativeFormats({
+    root: input.root,
+    manifest,
+    lock,
+  });
+
+  return { manifest, lock, state, alias, native };
 }
 
 export async function removePackage(input: {
   root: string;
   alias: string;
   offline?: boolean;
-}): Promise<{ manifest: OpmManifest; lock: OpmLockfile; state: ProjectState }> {
+}): Promise<{
+  manifest: OpmManifest;
+  lock: OpmLockfile;
+  state: ProjectState;
+  native?: NativeProjectionReport;
+}> {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
   if (!manifest.packages[input.alias]) {
@@ -296,7 +315,15 @@ export async function removePackage(input: {
     aliases: [input.alias],
   });
 
-  return { manifest, lock, state };
+  // Removing from opm.toml and leaving the entry in package.json would let the
+  // native tool reinstall what opm just took out.
+  const native = await projectNativeFormats({
+    root: input.root,
+    manifest,
+    lock,
+  });
+
+  return { manifest, lock, state, native };
 }
 
 export async function syncProject(input: {
@@ -307,6 +334,7 @@ export async function syncProject(input: {
   manifest: OpmManifest;
   lock: OpmLockfile;
   state: ProjectState;
+  native?: NativeProjectionReport;
 }> {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
@@ -337,13 +365,22 @@ export async function syncProject(input: {
     lock,
     offline,
   });
-  return { manifest, lock, state };
+  const native = await projectNativeFormats({
+    root: input.root,
+    manifest,
+    lock,
+  });
+  return { manifest, lock, state, native };
 }
 
 export async function installProject(input: {
   root: string;
   offline?: boolean;
-}): Promise<{ lock: OpmLockfile; state: ProjectState }> {
+}): Promise<{
+  lock: OpmLockfile;
+  state: ProjectState;
+  native?: NativeProjectionReport;
+}> {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const lock = await readLockfile(paths.lock);
@@ -353,7 +390,11 @@ export async function installProject(input: {
       root: input.root,
       offline: input.offline ?? manifest.options.offline,
     });
-    return { lock: synced.lock, state: synced.state };
+    return {
+      lock: synced.lock,
+      state: synced.state,
+      ...(synced.native === undefined ? {} : { native: synced.native }),
+    };
   }
   const offline = input.offline ?? manifest.options.offline;
   const state = await installFromLock({
@@ -361,7 +402,12 @@ export async function installProject(input: {
     lock,
     offline,
   });
-  return { lock, state };
+  const native = await projectNativeFormats({
+    root: input.root,
+    manifest,
+    lock,
+  });
+  return { lock, state, native };
 }
 
 export async function uninstallProject(input: {
@@ -621,6 +667,10 @@ async function resolveTransitive(input: {
       );
       await assertSupplyChainAllowed(policy, facts);
 
+      const transitiveIntegrity = nativeIntegrityOf(
+        instance.identity.purlType,
+        artifact.bytes,
+      );
       out[alias] = {
         alias,
         purl: artifact.exactPurl,
@@ -634,6 +684,9 @@ async function resolveTransitive(input: {
         bins: [],
         reason: 'transitive',
         ecosystem: instance.identity.purlType,
+        ...(transitiveIntegrity === undefined
+          ? {}
+          : { nativeIntegrity: transitiveIntegrity }),
         ...lockPackageSupplyChainFields(facts),
       };
     }
@@ -742,7 +795,14 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
     });
-    return { ...locked, ...lockPackageSupplyChainFields(facts) };
+    const sourceIntegrity = nativeIntegrityOf(ecosystem, bytes);
+    return {
+      ...locked,
+      ...(sourceIntegrity === undefined
+        ? {}
+        : { nativeIntegrity: sourceIntegrity }),
+      ...lockPackageSupplyChainFields(facts),
+    };
   }
 
   // 2) Catalog lookup by exact purl or base+version
@@ -818,6 +878,7 @@ async function resolveRequirement(input: {
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
+    const catalogIntegrity = nativeIntegrityOf(ecosystem, bytes);
     return {
       alias: input.alias,
       purl: entryPurl,
@@ -831,6 +892,9 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
+      ...(catalogIntegrity === undefined
+        ? {}
+        : { nativeIntegrity: catalogIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
   }
@@ -944,6 +1008,7 @@ async function resolveRequirement(input: {
       supplyFields = lockPackageSupplyChainFields(facts);
     }
 
+    const nativeIntegrity = nativeIntegrityOf(ecosystem, bytes);
     return {
       alias: input.alias,
       purl: artifact.exactPurl,
@@ -957,6 +1022,7 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
+      ...(nativeIntegrity === undefined ? {} : { nativeIntegrity }),
       ...supplyFields,
     };
   }

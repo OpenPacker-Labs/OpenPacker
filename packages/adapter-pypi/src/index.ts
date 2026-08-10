@@ -1667,3 +1667,5 @@ export class PypiJsonProvider implements CatalogProvider {
 
 /** Alias matching the Simple Index naming used in the design brief. */
 export { PypiJsonProvider as PypiSimpleProvider };
+
+export { PypiProjectFormat } from './project.js';

@@ -273,6 +273,172 @@ export interface InstallOutcome extends InstallPlan {
   installedVersion?: string;
 }
 
+/**
+ * Read and write the project files an ecosystem's own tooling reads.
+ *
+ * `opm.toml` is what opm decides from, but nothing else in a project reads it:
+ * an IDE, a CI job and `dotnet build` all read `package.json` or the `.csproj`.
+ * A `ProjectFormat` projects opm's decisions into those files so using opm
+ * leaves a project the native toolchain still understands.
+ *
+ * This is ecosystem knowledge, so it lives in the adapter — core never learns
+ * what a `.csproj` is. Which levels an adapter implements is discoverable from
+ * its Registry Definition (`prex.registry.project-manifest/1` and siblings);
+ * an absent level means the projection does not happen, not that it silently
+ * half-happens.
+ */
+export interface ProjectFormat {
+  readonly providerId: string;
+  /** PURL type whose requirements this format carries. */
+  readonly purlType: Ecosystem;
+
+  /**
+   * The files in `root` this format owns, or undefined when `root` is not a
+   * project of this kind. Detection is a filesystem question, so it is asked
+   * rather than assumed from the manifest's ecosystem list.
+   */
+  detect(root: string): Promise<DetectedProject | undefined>;
+
+  /**
+   * Requirements the native manifest declares.
+   *
+   * Not used to decide anything yet — `opm.toml` is authoritative — but it is
+   * what a later `opm import --native` and any drift report need, and writing
+   * a format without being able to read it back is how round-trip bugs hide.
+   */
+  readRequirements(
+    project: DetectedProject,
+  ): Promise<readonly NativeRequirement[]>;
+
+  /** Project opm's requirement set into the native manifest. */
+  writeManifest(
+    project: DetectedProject,
+    requirements: readonly NativeRequirement[],
+    options?: WriteManifestOptions,
+  ): Promise<ProjectionResult>;
+
+  /** Project the resolved closure into the native lockfile. */
+  writeLockfile?(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult>;
+
+  /** Project the content-addressed store into the native install layout. */
+  writeLayout?(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult>;
+
+  /**
+   * Build the archive this ecosystem publishes — an npm `.tgz`, a NuGet
+   * `.nupkg`. Advertised via `prex.registry.package-build/1`.
+   */
+  pack?(
+    project: DetectedProject,
+    options?: PackProjectOptions,
+  ): Promise<PackedArtifact>;
+}
+
+export interface PackProjectOptions {
+  /** Directory the archive is written to. Defaults to the project root. */
+  outputDirectory?: string;
+}
+
+export interface PackedArtifact {
+  /** Absolute path of the archive written. */
+  path: string;
+  /** `pkg:npm/name@version` for what was packed. */
+  exactPurl: string;
+  mediaType: string;
+  size: number;
+  /** sha256 over the archive bytes, the same identity any other artifact has. */
+  digest: string;
+  semanticLoss: readonly SemanticLoss[];
+}
+
+export interface WriteManifestOptions {
+  /**
+   * Native names to remove if present.
+   *
+   * A projection cannot simply delete everything it did not write: a project
+   * may hold dependencies a person added by hand, and treating the requirement
+   * set as an allowlist would silently delete them. The host tracks what it
+   * previously wrote and names it here, so removal is limited to what opm
+   * itself put there.
+   */
+  retire?: readonly string[];
+}
+
+export interface DetectedProject {
+  /** Project root as given. */
+  root: string;
+  /**
+   * The manifest this format writes, absolute.
+   *
+   * One path, not a set: a format that finds two candidates has to choose, and
+   * choosing is ecosystem knowledge (a `.csproj` next to a `Directory.Build.props`
+   * is not ambiguous to NuGet).
+   */
+  manifestPath: string;
+  /** Other files the format reads or writes, absolute. */
+  relatedPaths?: Readonly<Record<string, string>>;
+  /** Free-form facts the format needs between calls (target frameworks, CPM). */
+  metadata?: Readonly<Record<string, unknown>>;
+}
+
+export type RequirementScope =
+  | 'runtime'
+  | 'development'
+  | 'optional'
+  | 'peer'
+  | 'build';
+
+export interface NativeRequirement {
+  /** Base PURL, no version. */
+  purl: string;
+  /** Native name as this ecosystem spells it (`@scope/name`, `Newtonsoft.Json`). */
+  name: string;
+  /** Native range or exact pin, in the ecosystem's own grammar. */
+  range?: string;
+  scope: RequirementScope;
+}
+
+export interface NativeLockEntry extends NativeRequirement {
+  exactPurl: string;
+  version: string;
+  /** Where the bytes came from. */
+  source: string;
+  /** PREX digest of the archive, always sha256. */
+  digest: string;
+  size: number;
+  /**
+   * The ecosystem's own integrity value over the same bytes, when it was
+   * captured. npm wants SRI, NuGet wants base64 sha512, Cargo wants sha256
+   * hex — a native lockfile written with the wrong one is worse than no
+   * lockfile, so its absence has to be visible here.
+   */
+  nativeIntegrity?: { algorithm: string; value: string; encoding: string };
+  /** Absolute path of the extracted tree in the opm store, when materialised. */
+  storePath?: string;
+  /** True for a package no requirement named directly. */
+  transitive: boolean;
+}
+
+/**
+ * What a projection did, and what it could not promise.
+ *
+ * `semanticLoss` is the honest half: a format that cannot express a scope, or
+ * cannot write a build DSL, says so here instead of producing a file that
+ * differs from what the native tool would have written without telling anyone.
+ */
+export interface ProjectionResult {
+  /** Absolute paths written, in the order they were written. */
+  written: readonly string[];
+  /** Paths deliberately left alone, with why. */
+  skipped?: readonly { path: string; reason: string }[];
+  semanticLoss: readonly SemanticLoss[];
+}
+
 export interface EnrichmentProvider {
   readonly providerId: string;
   readonly capabilities: ProviderCapabilities;

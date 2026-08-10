@@ -2,6 +2,7 @@ import type {
   CatalogProvider,
   EcosystemCodec,
   InstallerProvider,
+  ProjectFormat,
 } from '@openpacker/adapter-core';
 import type {
   AdapterContext,
@@ -125,6 +126,39 @@ export class AdapterRegistry {
       (!hasResource(definition, 'prex.registry.artifact/1') &&
         hasResource(definition, 'prex.registry.install/1'))
     );
+  }
+
+  /**
+   * Project format for a purl type, or undefined when this ecosystem does not
+   * offer one. Undefined rather than throwing: a project with no native
+   * manifest to maintain is the ordinary case, not an error.
+   */
+  async projectFormatFor(
+    purlType: string,
+    context: AdapterContext = {},
+  ): Promise<ProjectFormat | undefined> {
+    if (!this.has(purlType)) return undefined;
+    const module = this.moduleFor(purlType);
+    if (!module.project) return undefined;
+    const definition = await module.registryDefinition(context);
+    if (!hasResource(definition, 'prex.registry.project-manifest/1'))
+      return undefined;
+    return module.project(context);
+  }
+
+  /** Which projection levels this ecosystem advertises. */
+  async projectionLevels(
+    purlType: string,
+    context: AdapterContext = {},
+  ): Promise<{ manifest: boolean; lock: boolean; layout: boolean }> {
+    if (!this.has(purlType))
+      return { manifest: false, lock: false, layout: false };
+    const definition = await this.definitionFor(purlType, context);
+    return {
+      manifest: hasResource(definition, 'prex.registry.project-manifest/1'),
+      lock: hasResource(definition, 'prex.registry.project-lock/1'),
+      layout: hasResource(definition, 'prex.registry.project-layout/1'),
+    };
   }
 
   async supportsSearch(

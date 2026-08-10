@@ -1,0 +1,35 @@
+{
+  "name": "@openpacker/project-io",
+  "version": "0.1.0",
+  "description": "Safe edits to hand-maintained project files for PREX project formats",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
+    "fflate": "^0.8.3",
+    "smol-toml": "^1.7.1"
+  },
+  "devDependencies": {
+    "@openpacker/materializer": "0.1.0",
+    "@types/node": "24.2.1"
+  }
+}

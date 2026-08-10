@@ -1,5 +1,10 @@
 import type { PolicyInput } from '@openpacker/contracts';
-import type { OpmManifest, PackageRequirement } from './types.js';
+import type {
+  NativeProjectionLevel,
+  OpmManifest,
+  PackageRequirement,
+  RequirementScope,
+} from './types.js';
 import { OpmError } from './types.js';
 
 /**
@@ -47,6 +52,8 @@ export function serializeManifest(manifest: OpmManifest): string {
         lines.push(`version = ${tomlString(pkg.version)}`);
       if (pkg.source !== undefined)
         lines.push(`source = ${tomlString(pkg.source)}`);
+      if (pkg.scope !== undefined && pkg.scope !== 'runtime')
+        lines.push(`scope = ${tomlString(pkg.scope)}`);
       if (pkg.bins !== undefined && pkg.bins.length > 0) {
         // bins expressed as parallel arrays for simple TOML subset
         lines.push(
@@ -63,6 +70,10 @@ export function serializeManifest(manifest: OpmManifest): string {
   lines.push('[options]');
   lines.push(`offline = ${manifest.options.offline ? 'true' : 'false'}`);
   lines.push(`layout = ${tomlString(manifest.options.layout)}`);
+  if (manifest.options.nativeProjection !== undefined)
+    lines.push(
+      `native_projection = ${tomlString(manifest.options.nativeProjection)}`,
+    );
   lines.push('');
 
   if (manifest.policy) {
@@ -138,6 +149,7 @@ export function parseManifest(text: string): OpmManifest {
       source?: string;
       bin_names?: string[];
       bin_paths?: string[];
+      scope?: RequirementScope;
     }
   >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
@@ -200,7 +212,14 @@ export function parseManifest(text: string): OpmManifest {
         manifest.options.offline = value;
       else if (key === 'layout' && value === 'opm')
         manifest.options.layout = 'opm';
-      else if (key === 'layout')
+      else if (key === 'native_projection') {
+        if (!isProjectionLevel(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `options.native_projection must be off|manifest|lock|layout (line ${i + 1})`,
+          );
+        manifest.options.nativeProjection = value;
+      } else if (key === 'layout')
         throw new OpmError(
           'INVALID_MANIFEST',
           `Unsupported layout "${String(value)}" (v1 only supports "opm")`,
@@ -237,7 +256,14 @@ export function parseManifest(text: string): OpmManifest {
         scratch.bin_names = value;
       else if (key === 'bin_paths' && Array.isArray(value))
         scratch.bin_paths = value;
-      else if (key === 'alias' && typeof value === 'string') {
+      else if (key === 'scope') {
+        if (!isRequirementScope(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `packages.${packageAlias}.scope must be runtime|development|optional|peer|build (line ${i + 1})`,
+          );
+        scratch.scope = value;
+      } else if (key === 'alias' && typeof value === 'string') {
         // ignore explicit alias; section key wins
       } else
         throw new OpmError(
@@ -266,6 +292,7 @@ export function parseManifest(text: string): OpmManifest {
     };
     if (scratch.version !== undefined) requirement.version = scratch.version;
     if (scratch.source !== undefined) requirement.source = scratch.source;
+    if (scratch.scope !== undefined) requirement.scope = scratch.scope;
     if (scratch.bin_names !== undefined || scratch.bin_paths !== undefined) {
       const names = scratch.bin_names ?? [];
       const paths = scratch.bin_paths ?? [];
@@ -403,6 +430,25 @@ function policyFromScratch(
     policy.expectedRegistryId = registryId;
   }
   return policy;
+}
+
+function isRequirementScope(value: unknown): value is RequirementScope {
+  return (
+    value === 'runtime' ||
+    value === 'development' ||
+    value === 'optional' ||
+    value === 'peer' ||
+    value === 'build'
+  );
+}
+
+function isProjectionLevel(value: unknown): value is NativeProjectionLevel {
+  return (
+    value === 'off' ||
+    value === 'manifest' ||
+    value === 'lock' ||
+    value === 'layout'
+  );
 }
 
 function stripComment(line: string): string {

@@ -3,15 +3,39 @@ import {
   type HttpTransport,
 } from '@openpacker/adapter-core';
 import { AptSystemProvider } from '@openpacker/adapter-apt';
-import { CargoCodec, CargoSparseProvider } from '@openpacker/adapter-cargo';
+import {
+  CargoCodec,
+  CargoProjectFormat,
+  CargoSparseProvider,
+} from '@openpacker/adapter-cargo';
 import { ChocolateyProvider } from '@openpacker/adapter-chocolatey';
-import { GolangCodec, GolangProxyProvider } from '@openpacker/adapter-golang';
+import {
+  GolangCodec,
+  GolangProjectFormat,
+  GolangProxyProvider,
+} from '@openpacker/adapter-golang';
 import type { AdapterContext, AdapterModule } from '@openpacker/adapter-host';
-import { MavenCodec, MavenRepositoryProvider } from '@openpacker/adapter-maven';
+import {
+  MavenCodec,
+  MavenProjectFormat,
+  MavenRepositoryProvider,
+} from '@openpacker/adapter-maven';
 import { NixCodec, NixStoreProvider } from '@openpacker/adapter-nix';
-import { NpmCodec, NpmRegistryProvider } from '@openpacker/adapter-npm';
-import { NugetCodec, NugetV3Provider } from '@openpacker/adapter-nuget';
-import { PypiCodec, PypiJsonProvider } from '@openpacker/adapter-pypi';
+import {
+  NpmCodec,
+  NpmProjectFormat,
+  NpmRegistryProvider,
+} from '@openpacker/adapter-npm';
+import {
+  NugetCodec,
+  NugetProjectFormat,
+  NugetV3Provider,
+} from '@openpacker/adapter-nuget';
+import {
+  PypiCodec,
+  PypiJsonProvider,
+  PypiProjectFormat,
+} from '@openpacker/adapter-pypi';
 import { WingetSystemProvider } from '@openpacker/adapter-winget';
 import { OciRegistryProvider } from '@openpacker/oci';
 import {
@@ -80,8 +104,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           baseUrl: endpointFor('npm', context) || 'https://registry.npmjs.org',
           searchUrl: `${(endpointFor('npm', context) || 'https://registry.npmjs.org').replace(/\/$/, '')}/-/v1/search`,
           includeDeps: true,
+          project: { manifest: true, lock: true, layout: true, build: true },
         }),
       codec: () => new NpmCodec(),
+      project: () => new NpmProjectFormat(),
       catalog: (context) =>
         new NpmRegistryProvider(
           transportFor('npm', context),
@@ -100,8 +126,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'cargo-sparse-v1',
           baseUrl: endpointFor('cargo', context) || 'https://index.crates.io',
           includeDeps: true,
+          project: { manifest: true, lock: true },
         }),
       codec: () => new CargoCodec(),
+      project: () => new CargoProjectFormat(),
       catalog: (context) =>
         new CargoSparseProvider(
           transportFor('cargo', context),
@@ -120,8 +148,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'pypi-json-v1',
           baseUrl: endpointFor('pypi', context) || 'https://pypi.org/pypi',
           includeDeps: true,
+          project: { manifest: true },
         }),
       codec: () => new PypiCodec(),
+      project: () => new PypiProjectFormat(),
       catalog: (context) =>
         new PypiJsonProvider(
           transportFor('pypi', context),
@@ -191,6 +221,17 @@ export function defaultAdapterModules(): AdapterModule[] {
                   '@type': 'prex.registry.service-index/1' as const,
                 },
                 ...resources,
+                // The service index describes nuget.org; the project format
+                // describes the working tree, so it is added either way.
+                {
+                  '@id': 'project:workspace',
+                  '@type': [
+                    'prex.registry.project-manifest/1',
+                    'prex.registry.project-lock/1',
+                    'prex.registry.project-layout/1',
+                    'prex.registry.package-build/1',
+                  ] as const,
+                },
               ],
               features: {
                 offlineReplay: false,
@@ -209,9 +250,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'nuget-v3',
           baseUrl: endpoint,
           includeArtifact: true,
+          project: { manifest: true, lock: true, layout: true, build: true },
         });
       },
       codec: () => new NugetCodec(),
+      project: () => new NugetProjectFormat(),
       catalog: (context) =>
         new NugetV3Provider(
           transportFor('nuget', context),
@@ -230,8 +273,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'maven-repo-v1',
           baseUrl:
             endpointFor('maven', context) || 'https://repo1.maven.org/maven2',
+          project: { manifest: true },
         }),
       codec: () => new MavenCodec(),
+      project: () => new MavenProjectFormat(),
       catalog: (context) =>
         new MavenRepositoryProvider(
           transportFor('maven', context),
@@ -249,8 +294,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['golang'],
           native: 'golang-proxy-v1',
           baseUrl: endpointFor('golang', context) || 'https://proxy.golang.org',
+          project: { manifest: true },
         }),
       codec: () => new GolangCodec(),
+      project: () => new GolangProjectFormat(),
       catalog: (context) =>
         new GolangProxyProvider(
           transportFor('golang', context),

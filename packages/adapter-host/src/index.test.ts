@@ -202,8 +202,11 @@ describe('WIT-shaped bridge', () => {
     });
   });
 
-  it('rejects unknown types in the reserved prex namespace', async () => {
-    const squatter = fixtureModule({
+  it('loads an adapter advertising a resource type this host predates', async () => {
+    // registry-resource-types.md: "Unknown types MUST be ignored by v1
+    // clients." Refusing them would make every new vocabulary entry a
+    // breaking change for hosts built before it.
+    const future = fixtureModule({
       registryDefinition: () =>
         definition([
           {
@@ -216,9 +219,32 @@ describe('WIT-shaped bridge', () => {
         ]),
       catalog: () => ({}) as never,
     });
-    await expect(assertWitShapedModule(squatter)).rejects.toMatchObject({
-      code: 'INVALID_REGISTRY_DEFINITION',
-    });
+    await expect(assertWitShapedModule(future)).resolves.toBeUndefined();
+  });
+
+  it('rejects a malformed type in the reserved prex namespace', async () => {
+    // Unrecognised is fine; unversioned is not — `prex.` claims the PREX
+    // vocabulary, so a member of it has to be shaped like one.
+    for (const bad of [
+      'prex.registry.attestation',
+      'prex.registry.Attestation/1',
+      'prex.attestation/1',
+      'prex.registry.attestation/0',
+    ]) {
+      const malformed = fixtureModule({
+        registryDefinition: () =>
+          definition([
+            {
+              '@id': 'https://fixtures.openpacker.invalid/',
+              '@type': ['prex.registry.enumerate-versions/1', bad],
+            },
+          ]),
+        catalog: () => ({}) as never,
+      });
+      await expect(assertWitShapedModule(malformed), bad).rejects.toMatchObject(
+        { code: 'INVALID_REGISTRY_DEFINITION' },
+      );
+    }
   });
 
   it('carries vendor-namespaced resource types without objecting', async () => {

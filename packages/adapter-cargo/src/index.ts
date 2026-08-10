@@ -757,3 +757,5 @@ export class CargoSparseProvider implements CatalogProvider {
     return record;
   }
 }
+
+export { CargoProjectFormat } from './project.js';

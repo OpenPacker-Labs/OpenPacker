@@ -24,6 +24,11 @@
   "dependencies": {
     "@openpacker/adapter-core": "0.1.0",
     "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/project-io": "0.1.0",
+    "fast-xml-parser": "^5.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
   }
 }

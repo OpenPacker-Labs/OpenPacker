@@ -264,6 +264,28 @@ export type DigestProjection = {
   orderedSetPaths: Array<string>;
 };
 export type DigestString = string;
+export type Distribution = {
+  purlType: PurlType;
+  identifier: string;
+  version: string;
+  exactPurl?: string;
+  registryId?: RegistryId;
+  registryBaseUrl?: string;
+  digest?: Digest;
+  nativeIntegrity?: NativeIntegrity;
+  size?: number;
+  mediaType?: string;
+  locations?: Array<string>;
+  runtimeHint?: string;
+  requirements?: Array<DistributionRequirement>;
+  extensions?: Extensions;
+};
+export type DistributionRequirement = {
+  identifier: string;
+  purl?: string;
+  range?: string;
+  scope: 'runtime' | 'development' | 'optional' | 'peer' | 'build';
+};
 export type EnumerateRequest = {
   canonicalPurl: string;
   vers?: string;
@@ -662,6 +684,11 @@ export type MaterializeResponse = {
   tufTargetMetadataRef?: ExternalRef;
   restrictions: Array<string>;
 };
+export type NativeIntegrity = {
+  algorithm: string;
+  value: string;
+  encoding: 'hex' | 'base64' | 'sri';
+};
 export type NormalizeInput =
   | { type: 'purl'; value: string }
   | { type: 'vers'; value: string }
@@ -818,6 +845,22 @@ export type PackageInstance = {
   semanticLoss: Array<SemanticLoss>;
   extensions?: Extensions;
 };
+export type PackageManifest = {
+  packageManifestVersion: PackageManifestVersion;
+  name: string;
+  title?: string;
+  description?: string;
+  version: string;
+  websiteUrl?: string;
+  licenses?: Array<string>;
+  repository?: RepositoryRef;
+  registries?: Array<RegistryRef>;
+  distributions: Array<Distribution>;
+  provenance?: Provenance;
+  semanticLoss?: Array<SemanticLoss>;
+  extensions?: Extensions;
+};
+export type PackageManifestVersion = '1';
 export type PackageOutput = {
   name: OutputName;
   default?: boolean;
@@ -933,6 +976,28 @@ export type ProtocolMeta = {
   warnings?: Array<Warning>;
   extensions?: Extensions;
 };
+export type Provenance = {
+  producedBy?: { id: string; version: string };
+  producedAt?: string;
+  sourceRefs?: Array<SourceRef>;
+  snapshotDigest?: Digest;
+  receiptDigest?: Digest;
+  policyDigest?: Digest;
+  trustLevel?:
+    | 'trusted-publisher'
+    | 'provenance'
+    | 'registry-attested'
+    | 'unsigned'
+    | 'unknown';
+  evidence?: Array<ExternalRef>;
+  verified?: Array<
+    | 'artifact-digest'
+    | 'native-integrity'
+    | 'registry-identity'
+    | 'receipt-signature'
+    | 'supply-chain-policy'
+  >;
+};
 export type PublishRequest = {
   descriptor: ArtifactDescriptor;
   location: ArtifactLocation;
@@ -975,6 +1040,13 @@ export type RegistryProtocol = {
   native?: string;
   transport?: Array<Transport>;
 };
+export type RegistryRef = {
+  registryId: RegistryId;
+  displayName?: string;
+  purlTypes?: Array<PurlType>;
+  serviceIndex?: string;
+  definitionDigest?: Digest;
+};
 export type RegistryResource = {
   '@id': ResourceId;
   '@type': ResourceTypeName | Array<ResourceTypeName>;
@@ -982,6 +1054,12 @@ export type RegistryResource = {
   mediaTypes?: Array<string>;
   clientVersion?: string;
   extensions?: Extensions;
+};
+export type RepositoryRef = {
+  url: string;
+  source?: string;
+  revision?: string;
+  subfolder?: string;
 };
 export type RequestContext = {
   correlationId?: string;
@@ -6227,6 +6305,370 @@ export const schemaCatalog: Record<string, JsonValue> = {
           'CANCELLED',
           'INTERNAL_ERROR',
         ],
+      },
+    },
+  },
+  'https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json': {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json',
+    title: 'PREX package manifest (one package, every ecosystem it ships to)',
+    $comment:
+      "Shaped after the MCP registry's server.json, which solved the same problem for MCP servers: one document naming a thing plus the several package managers it can be obtained from. Three deliberate differences. Integrity is a PREX Digest, not a bare sha256 hex string, so the algorithm is stated rather than assumed. A distribution names a registryId from a Registry Definition, not just a base URL, so an external registry provider is identified rather than located. And provenance is evidence PREX already produces — snapshot, receipt, trust tier, semantic loss — not a publisher-supplied blob nobody checked.",
+    $ref: '#/$defs/PackageManifest',
+    $defs: {
+      PackageManifestVersion: {
+        const: '1',
+      },
+      PackageManifest: {
+        type: 'object',
+        required: [
+          'packageManifestVersion',
+          'name',
+          'version',
+          'distributions',
+        ],
+        properties: {
+          packageManifestVersion: {
+            $ref: '#/$defs/PackageManifestVersion',
+          },
+          name: {
+            $comment:
+              "The name a human uses. Ecosystem-specific spellings live on each distribution, because npm's @scope/name and NuGet's Scope.Name are the same package under different rules.",
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          title: {
+            type: 'string',
+            maxLength: 512,
+          },
+          description: {
+            type: 'string',
+            maxLength: 8192,
+          },
+          version: {
+            $comment:
+              'The release this manifest describes. Exact: a manifest naming a range describes no particular thing, and could not be pinned or verified.',
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            not: {
+              const: 'latest',
+            },
+          },
+          websiteUrl: {
+            type: 'string',
+            format: 'uri',
+            maxLength: 8192,
+          },
+          licenses: {
+            type: 'array',
+            maxItems: 32,
+            items: {
+              type: 'string',
+              maxLength: 255,
+            },
+          },
+          repository: {
+            $ref: '#/$defs/RepositoryRef',
+          },
+          registries: {
+            $comment:
+              "Registry Definitions this manifest's distributions refer to, carried inline so a consumer can resolve registryId without a second lookup. External registry providers are first class here.",
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/RegistryRef',
+            },
+          },
+          distributions: {
+            $comment:
+              'server.json calls these `packages`. One entry per ecosystem this release ships to.',
+            type: 'array',
+            minItems: 1,
+            maxItems: 256,
+            items: {
+              $ref: '#/$defs/Distribution',
+            },
+          },
+          provenance: {
+            $ref: '#/$defs/Provenance',
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 256,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      Distribution: {
+        type: 'object',
+        required: ['purlType', 'identifier', 'version'],
+        properties: {
+          purlType: {
+            $comment:
+              "The PURL type, which PREX already uses as the ecosystem's identity everywhere else. server.json's registryType is the same idea with a private vocabulary; reusing purl means no second naming scheme to keep in step.",
+            $ref: 'registry-definition.schema.json#/$defs/PurlType',
+          },
+          identifier: {
+            $comment:
+              "The name this ecosystem knows the package by, spelled the ecosystem's way.",
+            type: 'string',
+            minLength: 1,
+            maxLength: 8192,
+          },
+          version: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            not: {
+              const: 'latest',
+            },
+          },
+          exactPurl: {
+            $comment:
+              'The canonical PREX identity. Derivable from purlType/identifier/version, and stated so a consumer never has to re-derive it and get the encoding rules wrong.',
+            type: 'string',
+            pattern: '^pkg:.*@',
+            maxLength: 8192,
+          },
+          registryId: {
+            $comment:
+              'Which authority publishes it. A base URL says where to look; this says who is answering, which is what a policy can pin.',
+            $ref: 'registry-definition.schema.json#/$defs/RegistryId',
+          },
+          registryBaseUrl: {
+            type: 'string',
+            format: 'uri',
+            maxLength: 8192,
+          },
+          digest: {
+            $comment:
+              'sha256 over the archive bytes — PREX identity, algorithm stated.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          nativeIntegrity: {
+            $ref: '#/$defs/NativeIntegrity',
+          },
+          size: {
+            type: 'integer',
+            minimum: 0,
+          },
+          mediaType: {
+            type: 'string',
+            maxLength: 255,
+          },
+          locations: {
+            type: 'array',
+            maxItems: 32,
+            items: {
+              type: 'string',
+              format: 'uri',
+              maxLength: 8192,
+            },
+          },
+          runtimeHint: {
+            $comment:
+              'How this is ordinarily run without installing it, as server.json spells it: npx, uvx, dnx, docker.',
+            type: 'string',
+            maxLength: 64,
+          },
+          requirements: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              $ref: '#/$defs/DistributionRequirement',
+            },
+          },
+          extensions: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+        },
+        additionalProperties: false,
+      },
+      DistributionRequirement: {
+        type: 'object',
+        required: ['identifier', 'scope'],
+        properties: {
+          identifier: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 8192,
+          },
+          purl: {
+            type: 'string',
+            maxLength: 8192,
+          },
+          range: {
+            type: 'string',
+            maxLength: 4096,
+          },
+          scope: {
+            enum: ['runtime', 'development', 'optional', 'peer', 'build'],
+          },
+        },
+        additionalProperties: false,
+      },
+      NativeIntegrity: {
+        $comment:
+          "The value the ecosystem's own lockfile pins with, kept beside the PREX digest rather than instead of it: npm SRI, NuGet base64 sha512, Cargo sha256 hex. A consumer writing a native lockfile needs this exact form; a consumer verifying identity needs the digest.",
+        type: 'object',
+        required: ['algorithm', 'value', 'encoding'],
+        properties: {
+          algorithm: {
+            type: 'string',
+            maxLength: 32,
+          },
+          value: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+          encoding: {
+            enum: ['hex', 'base64', 'sri'],
+          },
+        },
+        additionalProperties: false,
+      },
+      RegistryRef: {
+        type: 'object',
+        required: ['registryId'],
+        properties: {
+          registryId: {
+            $ref: 'registry-definition.schema.json#/$defs/RegistryId',
+          },
+          displayName: {
+            type: 'string',
+            maxLength: 255,
+          },
+          purlTypes: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: 'registry-definition.schema.json#/$defs/PurlType',
+            },
+          },
+          serviceIndex: {
+            $comment:
+              'Where the Registry Definition itself can be fetched, so an external provider is discoverable rather than hardcoded.',
+            type: 'string',
+            maxLength: 8192,
+          },
+          definitionDigest: {
+            $comment:
+              'The Registry Definition this manifest was built against. A registry that later advertises different capabilities is a different answer, and this is what makes that visible.',
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
+      },
+      RepositoryRef: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: {
+            type: 'string',
+            format: 'uri',
+            maxLength: 8192,
+          },
+          source: {
+            type: 'string',
+            maxLength: 128,
+          },
+          revision: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          subfolder: {
+            type: 'string',
+            maxLength: 4096,
+          },
+        },
+        additionalProperties: false,
+      },
+      Provenance: {
+        $comment:
+          'What is known about where this came from, and what was actually checked. server.json carries publisher-provided metadata; this carries the artefacts PREX itself produced, so a consumer can tell a claim from a verification.',
+        type: 'object',
+        properties: {
+          producedBy: {
+            type: 'object',
+            required: ['id', 'version'],
+            properties: {
+              id: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+              },
+              version: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 128,
+              },
+            },
+            additionalProperties: false,
+          },
+          producedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          sourceRefs: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: 'common.schema.json#/$defs/SourceRef',
+            },
+          },
+          snapshotDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          receiptDigest: {
+            $comment:
+              "The resolution receipt this manifest's versions came from. Without it the versions are an assertion; with it they are checkable.",
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          policyDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          trustLevel: {
+            enum: [
+              'trusted-publisher',
+              'provenance',
+              'registry-attested',
+              'unsigned',
+              'unknown',
+            ],
+          },
+          evidence: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: 'common.schema.json#/$defs/ExternalRef',
+            },
+          },
+          verified: {
+            $comment:
+              'Which claims were checked when this was produced, rather than merely recorded. An empty list is an honest answer.',
+            type: 'array',
+            maxItems: 32,
+            items: {
+              enum: [
+                'artifact-digest',
+                'native-integrity',
+                'registry-identity',
+                'receipt-signature',
+                'supply-chain-policy',
+              ],
+            },
+          },
+        },
+        additionalProperties: false,
       },
     },
   },
