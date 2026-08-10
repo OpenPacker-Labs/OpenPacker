@@ -11,6 +11,7 @@
 import type { AdapterModule } from './types.js';
 import { AdapterHostError } from './types.js';
 import { AdapterRegistry } from './registry.js';
+import { assertWitShapedModule } from './bridge.js';
 
 export interface AdapterDiscoveryConfig {
   /** Explicit in-process modules. */
@@ -20,6 +21,13 @@ export interface AdapterDiscoveryConfig {
    * `adapterModule` or `default` as AdapterModule | AdapterModule[].
    */
   imports?: readonly string[];
+  /**
+   * Skip the WIT-shape check on imported modules.
+   *
+   * Only for hosts that validate elsewhere; the check is what stops an
+   * imported module from advertising operations it cannot perform.
+   */
+  skipValidation?: boolean;
 }
 
 /** Resolve modules from a discovery config (dynamic imports optional). */
@@ -65,8 +73,30 @@ export async function discoverAdapterModules(
         'INVALID_ADAPTER',
         `Module "${spec}" does not export adapterModule or default AdapterModule`,
       );
-    if (Array.isArray(candidate)) out.push(...candidate);
-    else out.push(candidate);
+    const imported = Array.isArray(candidate) ? candidate : [candidate];
+    // An imported module is the untrusted edge of the host: its Registry
+    // Definition is a claim about what it can do, and nothing else has checked
+    // it. Prove the claim against the exports before it can serve a purl type,
+    // so a lie fails at load rather than half-way through a resolve.
+    //
+    // In-process `modules` are not re-checked here: the caller constructed
+    // them, and some definitions (NuGet's service index) reach the network,
+    // which is not something process start-up should do for its own pack.
+    if (!config.skipValidation)
+      for (const module of imported) {
+        try {
+          await assertWitShapedModule(module);
+        } catch (error) {
+          if (error instanceof AdapterHostError) throw error;
+          throw new AdapterHostError(
+            'INVALID_ADAPTER',
+            `Adapter module from "${spec}" failed validation: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    out.push(...imported);
   }
   return out;
 }

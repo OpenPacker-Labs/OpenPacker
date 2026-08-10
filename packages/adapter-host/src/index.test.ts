@@ -201,19 +201,58 @@ describe('WIT-shaped bridge', () => {
       code: 'INVALID_ADAPTER',
     });
   });
+
+  it('rejects unknown types in the reserved prex namespace', async () => {
+    const squatter = fixtureModule({
+      registryDefinition: () =>
+        definition([
+          {
+            '@id': 'https://fixtures.openpacker.invalid/',
+            '@type': [
+              'prex.registry.enumerate-versions/1',
+              'prex.registry.attestation/1',
+            ],
+          },
+        ]),
+      catalog: () => ({}) as never,
+    });
+    await expect(assertWitShapedModule(squatter)).rejects.toMatchObject({
+      code: 'INVALID_REGISTRY_DEFINITION',
+    });
+  });
+
+  it('carries vendor-namespaced resource types without objecting', async () => {
+    const extended = fixtureModule({
+      registryDefinition: () =>
+        definition([
+          {
+            '@id': 'https://fixtures.openpacker.invalid/',
+            '@type': [
+              'prex.registry.enumerate-versions/1',
+              'com.example.mirror-status/1',
+            ],
+          },
+        ]),
+      catalog: () => ({}) as never,
+    });
+    await expect(assertWitShapedModule(extended)).resolves.toBeUndefined();
+  });
 });
 
 describe('config discovery without core import tables', () => {
-  it('loads an external fixture adapter via imports only', async () => {
-    const { createRegistryFromDiscovery } = await import('./discovery.js');
+  const fixturePath = async () => {
     const { fileURLToPath } = await import('node:url');
     const { dirname, join } = await import('node:path');
-    const root = join(
+    return join(
       dirname(fileURLToPath(import.meta.url)),
       '../../../fixtures/adapters/external-fixture/index.js',
     );
+  };
+
+  it('loads an external fixture adapter via imports only', async () => {
+    const { createRegistryFromDiscovery } = await import('./discovery.js');
     const registry = await createRegistryFromDiscovery({
-      imports: [root],
+      imports: [await fixturePath()],
     });
     expect(registry.has('external-fixture')).toBe(true);
     expect(registry.codecFor('external-fixture').purlType).toBe(
@@ -224,5 +263,16 @@ describe('config discovery without core import tables', () => {
     await expect(
       registry.installerFor('external-fixture'),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+  });
+
+  it('refuses to register an imported module whose definition outruns its exports', async () => {
+    const { createRegistryFromDiscovery } = await import('./discovery.js');
+    const dishonest = (await fixturePath()).replace(
+      'external-fixture',
+      'dishonest-fixture',
+    );
+    await expect(
+      createRegistryFromDiscovery({ imports: [dishonest] }),
+    ).rejects.toMatchObject({ code: 'INVALID_ADAPTER' });
   });
 });
