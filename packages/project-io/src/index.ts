@@ -183,3 +183,10 @@ export function applySpanEdits(
   }
   return text;
 }
+
+export {
+  editTomlArray,
+  editTomlTable,
+  type TomlArrayEdit,
+  type TomlTableEdit,
+} from './toml.js';

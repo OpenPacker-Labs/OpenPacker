@@ -24,7 +24,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0"
+    "@openpacker/adapter-core": "0.1.0",
+    "smol-toml": "^1.7.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

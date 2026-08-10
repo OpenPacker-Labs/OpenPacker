@@ -1410,3 +1410,5 @@ export class MavenRepositoryProvider implements CatalogProvider {
     return record;
   }
 }
+
+export { MavenProjectFormat } from './project.js';

@@ -3,11 +3,23 @@ import {
   type HttpTransport,
 } from '@openpacker/adapter-core';
 import { AptSystemProvider } from '@openpacker/adapter-apt';
-import { CargoCodec, CargoSparseProvider } from '@openpacker/adapter-cargo';
+import {
+  CargoCodec,
+  CargoProjectFormat,
+  CargoSparseProvider,
+} from '@openpacker/adapter-cargo';
 import { ChocolateyProvider } from '@openpacker/adapter-chocolatey';
-import { GolangCodec, GolangProxyProvider } from '@openpacker/adapter-golang';
+import {
+  GolangCodec,
+  GolangProjectFormat,
+  GolangProxyProvider,
+} from '@openpacker/adapter-golang';
 import type { AdapterContext, AdapterModule } from '@openpacker/adapter-host';
-import { MavenCodec, MavenRepositoryProvider } from '@openpacker/adapter-maven';
+import {
+  MavenCodec,
+  MavenProjectFormat,
+  MavenRepositoryProvider,
+} from '@openpacker/adapter-maven';
 import { NixCodec, NixStoreProvider } from '@openpacker/adapter-nix';
 import {
   NpmCodec,
@@ -19,7 +31,11 @@ import {
   NugetProjectFormat,
   NugetV3Provider,
 } from '@openpacker/adapter-nuget';
-import { PypiCodec, PypiJsonProvider } from '@openpacker/adapter-pypi';
+import {
+  PypiCodec,
+  PypiJsonProvider,
+  PypiProjectFormat,
+} from '@openpacker/adapter-pypi';
 import { WingetSystemProvider } from '@openpacker/adapter-winget';
 import { OciRegistryProvider } from '@openpacker/oci';
 import {
@@ -110,8 +126,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'cargo-sparse-v1',
           baseUrl: endpointFor('cargo', context) || 'https://index.crates.io',
           includeDeps: true,
+          project: { manifest: true },
         }),
       codec: () => new CargoCodec(),
+      project: () => new CargoProjectFormat(),
       catalog: (context) =>
         new CargoSparseProvider(
           transportFor('cargo', context),
@@ -130,8 +148,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'pypi-json-v1',
           baseUrl: endpointFor('pypi', context) || 'https://pypi.org/pypi',
           includeDeps: true,
+          project: { manifest: true },
         }),
       codec: () => new PypiCodec(),
+      project: () => new PypiProjectFormat(),
       catalog: (context) =>
         new PypiJsonProvider(
           transportFor('pypi', context),
@@ -248,8 +268,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'maven-repo-v1',
           baseUrl:
             endpointFor('maven', context) || 'https://repo1.maven.org/maven2',
+          project: { manifest: true },
         }),
       codec: () => new MavenCodec(),
+      project: () => new MavenProjectFormat(),
       catalog: (context) =>
         new MavenRepositoryProvider(
           transportFor('maven', context),
@@ -267,8 +289,10 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['golang'],
           native: 'golang-proxy-v1',
           baseUrl: endpointFor('golang', context) || 'https://proxy.golang.org',
+          project: { manifest: true },
         }),
       codec: () => new GolangCodec(),
+      project: () => new GolangProjectFormat(),
       catalog: (context) =>
         new GolangProxyProvider(
           transportFor('golang', context),

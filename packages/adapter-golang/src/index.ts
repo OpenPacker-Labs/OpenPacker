@@ -1272,3 +1272,5 @@ export class GolangProxyProvider implements CatalogProvider {
     return record;
   }
 }
+
+export { GolangProjectFormat } from './project.js';
