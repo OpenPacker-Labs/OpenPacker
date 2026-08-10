@@ -36,7 +36,8 @@
     "@openpacker/adapter-nuget": "0.1.0",
     "@openpacker/adapter-pypi": "0.1.0",
     "@openpacker/adapter-winget": "0.1.0",
-    "@openpacker/oci": "0.1.0"
+    "@openpacker/oci": "0.1.0",
+    "@openpacker/project-io": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

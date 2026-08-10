@@ -11,6 +11,11 @@ export function httpRegistryDefinition(input: {
   includeArtifact?: boolean;
   includeDeps?: boolean;
   includeInstall?: boolean;
+  /**
+   * Advertise the project-format levels this adapter can honour. Only levels
+   * whose exports exist may be listed — the host checks.
+   */
+  project?: { manifest?: boolean; lock?: boolean; layout?: boolean };
   features?: RegistryDefinition['features'];
 }): RegistryDefinition {
   type Resource = RegistryDefinition['resources'][number];
@@ -43,6 +48,16 @@ export function httpRegistryDefinition(input: {
       '@id': input.baseUrl,
       '@type': 'prex.registry.install/1',
     });
+  if (input.project?.manifest) {
+    const types: string[] = ['prex.registry.project-manifest/1'];
+    if (input.project.lock) types.push('prex.registry.project-lock/1');
+    if (input.project.layout) types.push('prex.registry.project-layout/1');
+    resources.push({
+      // The project file lives in the working tree, not at a registry URL.
+      '@id': 'project:workspace',
+      '@type': types.length === 1 ? types[0]! : types,
+    });
+  }
   return {
     registryDefinitionVersion: '1',
     registryId: input.registryId,

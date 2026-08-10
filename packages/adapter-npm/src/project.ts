@@ -1,0 +1,194 @@
+/**
+ * `package.json` as a PREX project format.
+ *
+ * Everything else in a Node project — the IDE, `node`, CI, every other tool —
+ * reads `package.json`. If `opm add` does not put the dependency there, opm and
+ * the rest of the toolchain disagree about what the project needs.
+ */
+
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+import type {
+  DetectedProject,
+  NativeRequirement,
+  ProjectFormat,
+  ProjectionResult,
+  RequirementScope,
+  WriteManifestOptions,
+} from '@openpacker/adapter-core';
+import type { SemanticLoss } from '@openpacker/contracts';
+import { editJsonFile } from '@openpacker/project-io';
+
+/** Where each scope lives in package.json. */
+const SCOPE_FIELD: Readonly<Record<RequirementScope, string | undefined>> = {
+  runtime: 'dependencies',
+  development: 'devDependencies',
+  optional: 'optionalDependencies',
+  peer: 'peerDependencies',
+  // npm has no build-time dependency class distinct from devDependencies, and
+  // pretending otherwise would silently move a requirement.
+  build: undefined,
+};
+
+const DEPENDENCY_FIELDS = [
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+] as const;
+
+interface PackageJson {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export class NpmProjectFormat implements ProjectFormat {
+  readonly providerId = 'org.openpacker.project.npm';
+  readonly purlType = 'npm' as const;
+
+  async detect(root: string): Promise<DetectedProject | undefined> {
+    const manifestPath = join(root, 'package.json');
+    try {
+      await access(manifestPath);
+    } catch {
+      return undefined;
+    }
+    return {
+      root,
+      manifestPath,
+      relatedPaths: { lock: join(root, 'package-lock.json') },
+    };
+  }
+
+  async readRequirements(
+    project: DetectedProject,
+  ): Promise<readonly NativeRequirement[]> {
+    const { readFile } = await import('node:fs/promises');
+    const parsed = JSON.parse(
+      await readFile(project.manifestPath, 'utf8'),
+    ) as PackageJson;
+    const out: NativeRequirement[] = [];
+    for (const field of DEPENDENCY_FIELDS) {
+      const scope = scopeOfField(field);
+      for (const [name, range] of Object.entries(parsed[field] ?? {})) {
+        out.push({
+          purl: purlForName(name),
+          name,
+          ...(typeof range === 'string' && range !== '' ? { range } : {}),
+          scope,
+        });
+      }
+    }
+    return out;
+  }
+
+  async writeManifest(
+    project: DetectedProject,
+    requirements: readonly NativeRequirement[],
+    options: WriteManifestOptions = {},
+  ): Promise<ProjectionResult> {
+    const semanticLoss: SemanticLoss[] = [];
+    const retire = new Set(options.retire ?? []);
+    const managed = new Map<string, { field: string; range: string }>();
+
+    for (const requirement of requirements) {
+      const field = SCOPE_FIELD[requirement.scope];
+      if (field === undefined) {
+        semanticLoss.push(scopeLoss(requirement));
+        continue;
+      }
+      managed.set(requirement.name, {
+        field,
+        // npm accepts `*` for "any version". Writing an empty string produces
+        // a manifest npm rejects, so absence becomes the range npm spells.
+        range: requirement.range ?? '*',
+      });
+    }
+
+    const { changed } = await editJsonFile<PackageJson>(
+      project.manifestPath,
+      (manifest) => {
+        // A dependency opm manages must appear once, in the field its scope
+        // maps to. Leaving a stale copy in another field would let npm install
+        // a version opm never chose.
+        for (const field of DEPENDENCY_FIELDS) {
+          const block = manifest[field];
+          if (!block) continue;
+          for (const name of Object.keys(block)) {
+            const entry = managed.get(name);
+            if (entry && entry.field !== field) delete block[name];
+            // Retired names are ones opm wrote and no longer declares. Only
+            // those: a dependency someone added by hand is theirs to keep.
+            else if (!entry && retire.has(name)) delete block[name];
+          }
+          if (Object.keys(block).length === 0) delete manifest[field];
+        }
+        for (const [name, { field, range }] of managed) {
+          const block = (manifest[field] ??= {}) as Record<string, string>;
+          block[name] = range;
+        }
+        // Sort each managed field so two projects with the same requirements
+        // produce the same file, which is what makes the write idempotent.
+        for (const field of DEPENDENCY_FIELDS) {
+          const block = manifest[field];
+          if (!block) continue;
+          manifest[field] = Object.fromEntries(
+            Object.entries(block).sort(([left], [right]) =>
+              left < right ? -1 : left > right ? 1 : 0,
+            ),
+          );
+        }
+      },
+    );
+
+    return {
+      written: changed ? [project.manifestPath] : [],
+      semanticLoss,
+    };
+  }
+}
+
+function scopeOfField(
+  field: (typeof DEPENDENCY_FIELDS)[number],
+): RequirementScope {
+  switch (field) {
+    case 'devDependencies':
+      return 'development';
+    case 'optionalDependencies':
+      return 'optional';
+    case 'peerDependencies':
+      return 'peer';
+    default:
+      return 'runtime';
+  }
+}
+
+/** `@scope/name` → `pkg:npm/%40scope/name`, per the PURL npm rules. */
+function purlForName(name: string): string {
+  if (!name.startsWith('@')) return `pkg:npm/${encodeURIComponent(name)}`;
+  const slash = name.indexOf('/');
+  if (slash === -1) return `pkg:npm/${encodeURIComponent(name)}`;
+  return `pkg:npm/%40${encodeURIComponent(name.slice(1, slash))}/${encodeURIComponent(
+    name.slice(slash + 1),
+  )}`;
+}
+
+function scopeLoss(requirement: NativeRequirement): SemanticLoss {
+  return {
+    code: 'NATIVE_SCOPE_UNSUPPORTED',
+    severity: 'warning',
+    sourceEcosystem: 'npm',
+    sourcePath: `/packages/${requirement.name}/scope`,
+    originalMeaning: `${requirement.name} is declared with scope "${requirement.scope}"`,
+    representedMeaning: 'The requirement was not written to package.json',
+    omittedMeaning: `npm has no dependency field for the "${requirement.scope}" scope`,
+    mitigation:
+      'Declare the package with a scope npm expresses: runtime, development, optional, or peer.',
+    blocksProfile: ['native-validated-v1'],
+  };
+}

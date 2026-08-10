@@ -15,7 +15,30 @@ export interface PackageRequirement {
   source?: string;
   /** Optional bin overrides (name → relative path) */
   bins?: readonly BinDeclaration[];
+  /**
+   * What kind of dependency this is.
+   *
+   * Absent means runtime, so every existing manifest keeps its meaning. It
+   * exists because every native manifest separates production from development
+   * dependencies, and a projection with nowhere to read that from would have to
+   * guess — putting test tooling into what ships.
+   */
+  scope?: RequirementScope;
 }
+
+export type RequirementScope =
+  | 'runtime'
+  | 'development'
+  | 'optional'
+  | 'peer'
+  | 'build';
+
+/**
+ * How far opm projects its decisions into the ecosystem's own project files.
+ *
+ * Levels are cumulative: `lock` implies `manifest`, `layout` implies both.
+ */
+export type NativeProjectionLevel = 'off' | 'manifest' | 'lock' | 'layout';
 
 export interface BinDeclaration {
   name: string;
@@ -45,6 +68,12 @@ export interface OpmManifest {
   options: {
     offline: boolean;
     layout: 'opm';
+    /**
+     * Whether opm maintains the ecosystem's own project files. Defaults to
+     * `manifest`: a project that has a package.json expects its dependencies
+     * to be in it, and leaving them out is what made opm and npm disagree.
+     */
+    nativeProjection?: NativeProjectionLevel;
   };
   /**
    * Committed supply-chain / PREX policy profile (PolicyInput subset).
@@ -74,6 +103,23 @@ export interface LockPackage {
   registryId?: string;
   /** How the package source was obtained. */
   sourceKind?: SourceKind;
+  /**
+   * The ecosystem's own integrity value over the same archive bytes.
+   *
+   * PREX pins with sha256, but every native lockfile pins with its own scheme
+   * — npm SRI, NuGet base64 sha512, Cargo sha256 hex. It is captured at
+   * resolve time because the archive is not kept after extraction, and a
+   * native lockfile written with an invented value is worse than none.
+   */
+  nativeIntegrity?: NativeIntegrity;
+}
+
+export interface NativeIntegrity {
+  /** `sha256`, `sha512`. */
+  algorithm: string;
+  value: string;
+  /** `hex`, `base64`, `sri`. */
+  encoding: string;
 }
 
 export interface OpmLockfile {

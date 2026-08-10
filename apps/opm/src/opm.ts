@@ -162,6 +162,7 @@ export async function runOpm(
         io.stdout.write(
           `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}\n`,
         );
+        writeNativeProjection(result.native, io);
         io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
         return EXIT_CODES.success;
       }
@@ -187,6 +188,7 @@ export async function runOpm(
         io.stdout.write(
           `Installed ${count} package(s) into ${projectPaths(root).opmDir}\n`,
         );
+        writeNativeProjection(result.native, io);
         io.stdout.write(
           `Bins: ${projectPaths(root).bin}  (export PATH="$PWD/.opm/bin:$PATH")\n`,
         );
@@ -218,6 +220,7 @@ export async function runOpm(
         io.stdout.write(
           `Synced ${count} package(s); lock and .opm/ store updated\n`,
         );
+        writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
       }
       case 'list': {
@@ -565,6 +568,40 @@ async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
+}
+
+/**
+ * Report the ecosystem project files opm maintained, and anything it could not
+ * promise about them. Silence here would hide edits to files the user tracks
+ * in version control.
+ */
+function writeNativeProjection(
+  report:
+    | {
+        projections: readonly {
+          ecosystem: string;
+          written: readonly string[];
+          skipped?: readonly { path: string; reason: string }[];
+          semanticLoss: readonly {
+            code: string;
+            representedMeaning?: string;
+          }[];
+        }[];
+      }
+    | undefined,
+  io: CliIo,
+): void {
+  if (!report) return;
+  for (const projection of report.projections) {
+    for (const path of projection.written)
+      io.stdout.write(`  updated ${path}\n`);
+    for (const entry of projection.skipped ?? [])
+      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    for (const loss of projection.semanticLoss)
+      io.stderr.write(
+        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+      );
+  }
 }
 
 async function runHostInstall(

@@ -54,6 +54,13 @@ const INSTALL_RESOURCES = [
   'prex.registry.uninstall/1',
 ] as const;
 
+/** Resource types that require a `project` export on the module. */
+const PROJECT_RESOURCES = [
+  'prex.registry.project-manifest/1',
+  'prex.registry.project-lock/1',
+  'prex.registry.project-layout/1',
+] as const;
+
 /**
  * Shape every reserved resource type must have, per
  * `spec/prex/v1/registry-resource-types.md`: `prex.registry.<name>/<major>`.
@@ -148,6 +155,39 @@ export async function assertWitShapedModule(
       'INVALID_ADAPTER',
       `Adapter ${module.id} advertises prex.registry.environment/1 but does not export environment`,
     );
+
+  // Project-format levels are nested: writing a lockfile or a layout without
+  // being able to write the manifest they belong to is not a thing a project
+  // format can honestly claim.
+  for (const type of PROJECT_RESOURCES) {
+    if (hasResource(definition, type) && !module.project)
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        `Adapter ${module.id} advertises ${type} but does not export project`,
+      );
+  }
+  if (module.project) {
+    const format = module.project() as {
+      writeLockfile?: unknown;
+      writeLayout?: unknown;
+    };
+    if (
+      hasResource(definition, 'prex.registry.project-lock/1') &&
+      typeof format.writeLockfile !== 'function'
+    )
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        `Adapter ${module.id} advertises prex.registry.project-lock/1 but its project format has no writeLockfile()`,
+      );
+    if (
+      hasResource(definition, 'prex.registry.project-layout/1') &&
+      typeof format.writeLayout !== 'function'
+    )
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        `Adapter ${module.id} advertises prex.registry.project-layout/1 but its project format has no writeLayout()`,
+      );
+  }
 
   // A resource type this host does not know is not a lie — it is a newer
   // vocabulary entry, and registry-resource-types.md requires v1 clients to

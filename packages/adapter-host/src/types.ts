@@ -2,6 +2,7 @@ import type {
   CatalogProvider,
   EcosystemCodec,
   InstallerProvider,
+  ProjectFormat,
 } from '@openpacker/adapter-core';
 
 /**
@@ -26,6 +27,10 @@ export type RegistryResourceType =
   | 'prex.registry.uninstall/1'
   | 'prex.registry.environment/1'
   | 'prex.registry.lifecycle/1'
+  | 'prex.registry.project-manifest/1'
+  | 'prex.registry.project-lock/1'
+  | 'prex.registry.project-layout/1'
+  | 'prex.registry.package-build/1'
   | (string & {});
 
 export interface RegistryResource {
@@ -97,6 +102,12 @@ export interface AdapterModule {
   codec?(): EcosystemCodec;
   catalog?(context: AdapterContext): CatalogProvider;
   installer?(context?: AdapterContext): InstallerProvider;
+  /**
+   * Read/write the project files this ecosystem's own tooling reads
+   * (`package.json`, `*.csproj`, `pyproject.toml`). Advertised via
+   * `prex.registry.project-manifest/1` and its siblings.
+   */
+  project?(context?: AdapterContext): ProjectFormat;
   /**
    * Optional environment projection (mise/nix). Returns canonical JSON bytes
    * or a plain object for PATH/env.

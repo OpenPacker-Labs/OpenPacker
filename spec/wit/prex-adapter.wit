@@ -106,6 +106,38 @@ interface environment {
     exec-env: func(exact-purl: string) -> result<list<u8>, error>;
 }
 
+/// Read and write the project files the ecosystem's own tooling reads —
+/// package.json, *.csproj, pyproject.toml. Optional export; each function
+/// requires the matching `prex.registry.project-*` resource on the service
+/// index, and `project-manifest/1` is a prerequisite for the others.
+///
+/// Projections carry decisions PREX already made into a native file. They
+/// never make a decision, and a projection that cannot be faithful reports
+/// semantic loss in its JSON result rather than writing something the native
+/// tool would not have written.
+interface project {
+    use types.{error};
+
+    /// Project root → JSON DetectedProject, or none when the root is not a
+    /// project of this kind.
+    detect: func(root: string) -> result<option<list<u8>>, error>;
+
+    /// JSON DetectedProject → JSON array of NativeRequirement.
+    read-requirements: func(project: list<u8>) -> result<list<u8>, error>;
+
+    /// (DetectedProject, NativeRequirement[]) → JSON ProjectionResult.
+    write-manifest: func(project: list<u8>, requirements: list<u8>) -> result<list<u8>, error>;
+
+    /// (DetectedProject, NativeLockEntry[]) → JSON ProjectionResult.
+    write-lock: func(project: list<u8>, packages: list<u8>) -> result<list<u8>, error>;
+
+    /// (DetectedProject, NativeLockEntry[]) → JSON ProjectionResult.
+    write-layout: func(project: list<u8>, packages: list<u8>) -> result<list<u8>, error>;
+
+    /// (DetectedProject, JSON PackOptions) → JSON PackedArtifact descriptor.
+    pack: func(project: list<u8>, options: list<u8>) -> result<list<u8>, error>;
+}
+
 /// Full adapter world. Components may export a subset; hosts probe exports.
 world adapter {
     /// Wall clock for provenance timestamps when the host permits it.
@@ -116,4 +148,5 @@ world adapter {
     export codec;
     export install;
     export environment;
+    export project;
 }

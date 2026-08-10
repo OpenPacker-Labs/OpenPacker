@@ -1167,3 +1167,5 @@ export class NugetV3Provider implements CatalogProvider {
     return record;
   }
 }
+
+export { NugetProjectFormat } from './project.js';

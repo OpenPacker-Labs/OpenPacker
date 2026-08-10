@@ -814,3 +814,5 @@ export class NpmRegistryProvider implements CatalogProvider {
     return record;
   }
 }
+
+export { NpmProjectFormat } from './project.js';

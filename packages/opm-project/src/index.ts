@@ -6,10 +6,13 @@ export type {
   LockPackage,
   OpmCatalog,
   OpmLockfile,
+  NativeIntegrity,
+  NativeProjectionLevel,
   OpmManifest,
   PackageRequirement,
   ParsedPackageSpec,
   ProjectState,
+  RequirementScope,
 } from './types.js';
 export { OpmError } from './types.js';
 
@@ -136,6 +139,13 @@ export {
   toolCacheRoot,
   type EphemeralTool,
 } from './ephemeral.js';
+
+export {
+  nativeName,
+  projectNativeFormats,
+  projectionLevel,
+  type NativeProjectionReport,
+} from './native.js';
 
 export { codecFor } from './codecs.js';
 export {

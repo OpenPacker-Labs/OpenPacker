@@ -1,0 +1,160 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { NativeRequirement } from '@openpacker/adapter-core';
+import { NpmProjectFormat } from './project.js';
+
+async function project(contents: string) {
+  const dir = await mkdtemp(join(tmpdir(), 'npm-project-'));
+  await writeFile(join(dir, 'package.json'), contents);
+  const format = new NpmProjectFormat();
+  const detected = await format.detect(dir);
+  if (!detected) throw new Error('fixture was not detected as an npm project');
+  return {
+    dir,
+    format,
+    detected,
+    read: () => readFile(join(dir, 'package.json'), 'utf8'),
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+const requirement = (
+  name: string,
+  range: string,
+  scope: NativeRequirement['scope'] = 'runtime',
+): NativeRequirement => ({
+  purl: name.startsWith('@')
+    ? `pkg:npm/%40${name.slice(1).replace('/', '/')}`
+    : `pkg:npm/${name}`,
+  name,
+  range,
+  scope,
+});
+
+describe('NpmProjectFormat', () => {
+  it('does not detect a directory with no package.json', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'npm-project-'));
+    try {
+      expect(await new NpmProjectFormat().detect(dir)).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds a dependency without reformatting the rest of the file', async () => {
+    const original = [
+      '{',
+      '\t"name": "demo",',
+      '\t"version": "1.0.0",',
+      '\t"scripts": {',
+      '\t\t"build": "tsc"',
+      '\t},',
+      '\t"dependencies": {',
+      '\t\t"zod": "^3.0.0"',
+      '\t}',
+      '}',
+      '',
+    ].join('\n');
+    const fixture = await project(original);
+    try {
+      const result = await fixture.format.writeManifest(fixture.detected, [
+        requirement('zod', '^3.0.0'),
+        requirement('chalk', '^4.1.2'),
+      ]);
+      expect(result.written).toEqual([fixture.detected.manifestPath]);
+      const text = await fixture.read();
+      // Tabs kept, unrelated keys untouched, new entry sorted in.
+      expect(text).toContain('\t"scripts": {\n\t\t"build": "tsc"\n\t},');
+      expect(text).toContain('\t\t"chalk": "^4.1.2",\n\t\t"zod": "^3.0.0"');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('moves a dependency when its scope changes instead of leaving two copies', async () => {
+    const fixture = await project(
+      '{\n  "name": "demo",\n  "dependencies": {\n    "vitest": "^1.0.0"\n  }\n}\n',
+    );
+    try {
+      await fixture.format.writeManifest(fixture.detected, [
+        requirement('vitest', '^1.0.0', 'development'),
+      ]);
+      const parsed = JSON.parse(await fixture.read()) as Record<
+        string,
+        Record<string, string>
+      >;
+      expect(parsed.devDependencies).toEqual({ vitest: '^1.0.0' });
+      // A leftover copy in `dependencies` would let npm install it as runtime.
+      expect(parsed.dependencies).toBeUndefined();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('is idempotent — a second write changes nothing', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      const reqs = [
+        requirement('chalk', '^4.1.2'),
+        requirement('@scope/pkg', '~2.0.0', 'development'),
+      ];
+      await fixture.format.writeManifest(fixture.detected, reqs);
+      const first = await fixture.read();
+      const second = await fixture.format.writeManifest(fixture.detected, reqs);
+      expect(second.written).toEqual([]);
+      expect(await fixture.read()).toBe(first);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('round-trips scoped names through PURL and back', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      await fixture.format.writeManifest(fixture.detected, [
+        requirement('@scope/pkg', '^1.2.3'),
+      ]);
+      const read = await fixture.format.readRequirements(fixture.detected);
+      expect(read).toEqual([
+        {
+          purl: 'pkg:npm/%40scope/pkg',
+          name: '@scope/pkg',
+          range: '^1.2.3',
+          scope: 'runtime',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes * rather than an empty range npm would reject', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      await fixture.format.writeManifest(fixture.detected, [
+        { purl: 'pkg:npm/chalk', name: 'chalk', scope: 'runtime' },
+      ]);
+      expect(JSON.parse(await fixture.read()).dependencies).toEqual({
+        chalk: '*',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports loss for a scope npm cannot express, and writes nothing for it', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      const result = await fixture.format.writeManifest(fixture.detected, [
+        requirement('cmake-js', '^7.0.0', 'build'),
+      ]);
+      expect(result.semanticLoss).toHaveLength(1);
+      expect(result.semanticLoss[0]?.code).toBe('NATIVE_SCOPE_UNSUPPORTED');
+      expect(await fixture.read()).toBe('{\n  "name": "demo"\n}\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
