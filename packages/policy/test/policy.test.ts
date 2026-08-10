@@ -351,3 +351,76 @@ test('policyDocumentFromPolicyInput promotes normative schema knobs', async () =
   expect(document.expectedRegistryId).toBe('urn:openpacker:registry:npmjs-org');
   expect(document.requiredEvidence).toEqual(['tuf']);
 });
+
+test('exclude lists stop at a coordinate boundary instead of matching siblings', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    minimumReleaseAgeMinutes: 1440,
+    minimumReleaseAgeExclude: ['pkg:npm/left-pad'],
+  };
+  const facts = (packageId: string) => ({
+    evidence: [],
+    lifecycle: eligible,
+    packageId,
+    publishedAt: '2026-08-04T12:00:00Z',
+    evaluationTime: '2026-08-04T18:00:00Z', // 6h < 24h
+  });
+
+  // The reviewed package is exempt, exact match and versioned form alike.
+  expect(
+    (await evaluatePolicy(policy, facts('pkg:npm/left-pad'))).decision,
+  ).toBe('allow');
+  expect(
+    (await evaluatePolicy(policy, facts('pkg:npm/left-pad@1.3.0'))).decision,
+  ).toBe('allow');
+
+  // A package that merely starts with the same characters is a different
+  // package and never got reviewed — the exemption must not reach it.
+  expect(
+    (await evaluatePolicy(policy, facts('pkg:npm/left-pad-installer')))
+      .decision,
+  ).toBe('deny');
+});
+
+test('an exclude entry ending on a boundary exempts the whole scope', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    minimumReleaseAgeMinutes: 1440,
+    minimumReleaseAgeExclude: ['pkg:npm/@acme/'],
+  };
+  const facts = (packageId: string) => ({
+    evidence: [],
+    lifecycle: eligible,
+    packageId,
+    publishedAt: '2026-08-04T12:00:00Z',
+    evaluationTime: '2026-08-04T18:00:00Z',
+  });
+  expect(
+    (await evaluatePolicy(policy, facts('pkg:npm/@acme/widget@2.0.0')))
+      .decision,
+  ).toBe('allow');
+  expect(
+    (await evaluatePolicy(policy, facts('pkg:npm/@acme-evil/widget@2.0.0')))
+      .decision,
+  ).toBe('deny');
+});
+
+test('a lifecycle-script allowlist does not extend to look-alike names', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    allowLifecycleScripts: false,
+    allowedLifecycleScriptPackages: ['pkg:npm/esbuild'],
+  };
+  const ran = (packageId: string) => ({
+    evidence: [],
+    lifecycle: eligible,
+    packageId,
+    lifecycleScriptsExecuted: true,
+  });
+  expect((await evaluatePolicy(policy, ran('pkg:npm/esbuild'))).decision).toBe(
+    'allow',
+  );
+  expect(
+    (await evaluatePolicy(policy, ran('pkg:npm/esbuild-postinstall'))).decision,
+  ).toBe('deny');
+});

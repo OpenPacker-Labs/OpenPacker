@@ -79,7 +79,27 @@ Equivalent JSON `PolicyInput`:
 ```
 
 Tune excludes (`minimumReleaseAgeExclude`, `trustPolicyExclude`) only for
-packages you have reviewed — same spirit as pnpm’s exclude lists.
+packages you have reviewed — same spirit as pnpm’s exclude lists. An exclude
+entry matches the package id exactly, or as a prefix that ends on a PURL
+coordinate boundary (`@`, `/`, `?`, `#`): `pkg:npm/left-pad` does **not** exempt
+`pkg:npm/left-pad-installer`, and `pkg:npm/@acme/` exempts that scope.
+
+An unknown or wrong-typed key under `[policy]` is a manifest error, not a
+silently weaker policy — a project never runs with less governance than
+`opm.toml` reads as.
+
+### Where policy is evaluated
+
+Every selection that reaches `opm.lock.json` is evaluated: direct requirements
+at `dependencyDepth` 0 and each member of the resolved closure at depth ≥ 1,
+which is what makes `blockExoticSources.transitive` real rather than
+aspirational. A policy refusal fails the resolve; it is never absorbed by the
+soft-fail that keeps an unresolvable closure from breaking a direct install.
+
+`sourceKind: registry` is claimed only when the URI came from a registry’s own
+artifact record whose origin was checked against that ecosystem’s allowlist. Any
+other URL that merely parses is `tarball` — an authority has to stand behind a
+source before it counts as one.
 
 Prior trust tier is persisted on `opm.lock.json` packages as `trustLevel` so
 `trustPolicy: no-downgrade` can compare upgrades against the last selected

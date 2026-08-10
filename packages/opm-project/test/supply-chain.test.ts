@@ -11,6 +11,7 @@ import {
   captureFactsFromCatalog,
   captureFactsFromInspection,
   captureFactsFromSourceUri,
+  defaultSupplyChainPolicyInput,
   emptyLockfile,
   parseLockfile,
   parseManifest,
@@ -173,6 +174,37 @@ allowed_lifecycle_script_packages = ["pkg:npm/esbuild"]
     const document = projectPolicyDocument(manifest);
     expect(document.minimumReleaseAgeMinutes).toBe(1440);
     expect(document.trustPolicy).toBe('no-downgrade');
+  });
+
+  const manifestWithPolicy = (body: string) => `
+[project]
+name = "x"
+ecosystems = ["npm"]
+[options]
+offline = false
+layout = "opm"
+[policy]
+allow_yanked = false
+allow_quarantined = false
+semantic_loss_maximum = "warning"
+${body}
+`;
+
+  it('refuses a misspelled policy field rather than running weaker than the file reads', () => {
+    // Silently dropping this leaves the project with no no-downgrade check
+    // while opm.toml says it has one.
+    expect(() =>
+      parseManifest(manifestWithPolicy('trust_polcy = "no-downgrade"')),
+    ).toThrow(/Unknown policy field "trust_polcy"/);
+  });
+
+  it('refuses a policy value of the wrong type', () => {
+    expect(() =>
+      parseManifest(manifestWithPolicy('minimum_release_age_minutes = "1440"')),
+    ).toThrow(/must be number, got string/);
+    expect(() =>
+      parseManifest(manifestWithPolicy('block_exotic_transitive = "true"')),
+    ).toThrow(/must be boolean, got string/);
   });
 
   it('refuses ${ENV} expansion in expected_registry_id', () => {
@@ -465,5 +497,73 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
       lifecycleScriptsExecuted: false,
     });
     expect(ok.decision).toBe('allow');
+  });
+});
+
+describe('source classification and prior trust lookup', () => {
+  const at = '2026-08-04T18:00:00.000Z';
+
+  it('does not call an arbitrary https URL a registry', () => {
+    // `registry` is the one kind blockExoticSources never blocks, so treating
+    // it as the fallback would make an attacker-controlled host the safest
+    // thing in the model.
+    const facts = captureFactsFromSourceUri(
+      'pkg:npm/demo@1.0.0',
+      'https://cdn.example.invalid/demo/1.0.0',
+      { evaluationTime: at },
+    );
+    expect(facts.sourceKind).toBe('tarball');
+    expect(facts.trustLevel).toBe('unknown');
+  });
+
+  it('accepts registry classification only when the caller vouches for the origin', () => {
+    const facts = captureFactsFromSourceUri(
+      'pkg:pypi/demo@1.0.0',
+      'https://files.pythonhosted.org/packages/fixture/demo-1.0.0.whl',
+      { evaluationTime: at, fromRegistryArtifactRecord: true },
+    );
+    expect(facts.sourceKind).toBe('registry');
+  });
+
+  it('blocks an exotic transitive source under the default posture', async () => {
+    const policy = policyDocumentFromPolicyInput(
+      defaultSupplyChainPolicyInput(),
+    );
+    const facts = captureFactsFromSourceUri(
+      'pkg:npm/sneaky@1.0.0',
+      'https://cdn.example.invalid/sneaky.tgz',
+      { evaluationTime: at, dependencyDepth: 1 },
+    );
+    await expect(assertSupplyChainAllowed(policy, facts)).rejects.toMatchObject(
+      { code: 'POLICY_DENIED' },
+    );
+  });
+
+  it('does not carry one scoped package trust tier onto another', () => {
+    const lock = {
+      schemaVersion: 1 as const,
+      generatedBy: 'opm' as const,
+      packages: {
+        widget: {
+          alias: 'widget',
+          purl: 'pkg:npm/%40acme/widget@1.0.0',
+          version: '1.0.0',
+          digest: 'sha256:00',
+          size: 1,
+          format: 'tar+gzip' as const,
+          mediaType: 'application/octet-stream',
+          source: 'https://registry.npmjs.org/x',
+          storeKey: 'k',
+          bins: [],
+          reason: 'direct' as const,
+          ecosystem: 'npm',
+          trustLevel: 'provenance' as const,
+        },
+      },
+    };
+    expect(priorTrustFromLock(lock, 'pkg:npm/%40acme/widget')).toBe(
+      'provenance',
+    );
+    expect(priorTrustFromLock(lock, 'pkg:npm/%40acme/gadget')).toBeUndefined();
   });
 });

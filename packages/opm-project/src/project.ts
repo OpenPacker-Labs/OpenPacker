@@ -10,7 +10,12 @@ import type {
 } from './types.js';
 import { OpmError } from './types.js';
 import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
-import { listRegistryVersions, resolveRegistryArtifact } from './registry.js';
+import { codecFor } from './codecs.js';
+import {
+  listRegistryVersions,
+  resolveRegistryArtifact,
+  type RegistryOptions,
+} from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveGraph, solveGraph } from './resolve.js';
 import {
@@ -433,6 +438,8 @@ export async function resolveManifestToLock(input: {
   manifest: OpmManifest;
   offline: boolean;
   catalogPaths?: readonly string[];
+  /** Transport / endpoint overrides for the transitive walk (tests, hosts). */
+  registryOptions?: RegistryOptions;
 }): Promise<OpmLockfile> {
   const paths = projectPaths(input.root);
   const catalogPaths = [
@@ -459,6 +466,9 @@ export async function resolveManifestToLock(input: {
       catalog,
       manifest: input.manifest,
       ...(priorLock === undefined ? {} : { priorLock }),
+      ...(input.registryOptions === undefined
+        ? {}
+        : { registryOptions: input.registryOptions }),
     });
     lock.packages[alias] = locked;
   }
@@ -475,6 +485,10 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
+      ...(priorLock === undefined ? {} : { priorLock }),
+      ...(input.registryOptions === undefined
+        ? {}
+        : { registryOptions: input.registryOptions }),
     });
     for (const [alias, pkg] of Object.entries(transitive))
       if (!lock.packages[alias]) lock.packages[alias] = pkg;
@@ -493,31 +507,66 @@ export async function resolveManifestToLock(input: {
  * `specifier`), and marker-gated edges are evaluated against the host rather
  * than dropped wholesale.
  */
+/**
+ * The manifest constraint for a package, when its ecosystem can read it.
+ *
+ * `version` in opm.toml is whatever the user wrote, and an exact pin is not
+ * always a valid range: PyPI wants `==1.0.0`, so a bare `1.0.0` fails to parse
+ * and the whole closure comes back empty. Probe the codec and drop a range it
+ * cannot read — candidate enumeration is bounded either way, and the solver is
+ * pinned to the locked version regardless.
+ */
+function nativeRangeFor(
+  pkg: LockPackage,
+  manifest: OpmManifest,
+): string | undefined {
+  const declared = manifest.packages[pkg.alias]?.version;
+  if (declared === undefined) return undefined;
+  try {
+    codecFor(pkg.ecosystem).parseNativeRange(declared);
+    return declared;
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
+  priorLock?: OpmLockfile | undefined;
+  registryOptions?: RegistryOptions | undefined;
 }): Promise<Record<string, LockPackage>> {
   const resolvable = input.direct.filter((pkg) =>
     requireAdapterRegistry().has(pkg.ecosystem),
   );
   if (resolvable.length === 0) return {};
 
+  const policy = projectPolicyDocument(input.manifest);
+  const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
   try {
     const graph = await resolveGraph({
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
-        ...(input.manifest.packages[pkg.alias]?.version === undefined
+        ...(nativeRangeFor(pkg, input.manifest) === undefined
           ? {}
-          : { range: input.manifest.packages[pkg.alias]!.version! }),
+          : { range: nativeRangeFor(pkg, input.manifest)! }),
       })),
+      ...(input.registryOptions === undefined
+        ? {}
+        : { options: input.registryOptions }),
     });
     if (graph.packages.length === 0) return {};
 
     const solved = await solveGraph({
       graph,
+      // Pin each root to the version the direct pass already locked. Left
+      // unpinned, the closure can select a different release of a package the
+      // lock has already decided, and that second copy lands as a transitive
+      // entry beside the direct one.
       rootRequirements: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
+        vers: `vers:${pkg.ecosystem}/${pkg.version}`,
       })),
     });
 
@@ -533,7 +582,45 @@ async function resolveTransitive(input: {
       const artifact = await resolveRegistryArtifact(
         instance.identity.purlType,
         exact,
+        input.registryOptions ?? {},
       );
+      // Same standard as the direct path: the digest that goes in the lock is
+      // re-derived from the bytes in hand, not copied from what the provider
+      // said about them.
+      const actual = digestOf(artifact.bytes);
+      if (actual !== artifact.digest)
+        throw new OpmError(
+          'DIGEST_MISMATCH',
+          `Registry digest mismatch for ${artifact.exactPurl}: ` +
+            `the ${instance.identity.purlType} provider reported ${artifact.digest}, ` +
+            `the bytes hash to ${actual}`,
+        );
+      if (artifact.size > 0 && artifact.bytes.byteLength !== artifact.size)
+        throw new OpmError(
+          'SIZE_MISMATCH',
+          `Registry size mismatch for ${artifact.exactPurl}: ` +
+            `expected ${artifact.size} bytes, got ${artifact.bytes.byteLength}`,
+        );
+
+      // A dependency nobody asked for directly is the case blockExoticSources
+      // exists for, so it is evaluated at its real depth rather than skipped.
+      const priorTrust = priorTrustFromLock(
+        input.priorLock,
+        artifact.exactPurl,
+      );
+      const facts = captureFactsFromSourceUri(
+        artifact.exactPurl,
+        artifact.uri,
+        {
+          evaluationTime,
+          dependencyDepth: 1,
+          fromRegistryArtifactRecord: true,
+          lifecycleScriptsExecuted: false,
+          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+        },
+      );
+      await assertSupplyChainAllowed(policy, facts);
+
       out[alias] = {
         alias,
         purl: artifact.exactPurl,
@@ -547,12 +634,24 @@ async function resolveTransitive(input: {
         bins: [],
         reason: 'transitive',
         ecosystem: instance.identity.purlType,
+        ...lockPackageSupplyChainFields(facts),
       };
     }
-  } catch {
+  } catch (error) {
     // Soft-fail at the project boundary: a transitive walk must not make a
     // previously installable direct set unusable. Unit tests exercise the
     // walk itself through `resolveGraph` where failures surface.
+    //
+    // A policy refusal or a digest that does not match is not that kind of
+    // failure — swallowing it would turn every mitigation below into advice.
+    if (
+      error instanceof OpmError &&
+      (error.code === 'POLICY_DENIED' ||
+        error.code === 'POLICY_INDETERMINATE' ||
+        error.code === 'DIGEST_MISMATCH' ||
+        error.code === 'SIZE_MISMATCH')
+    )
+      throw error;
     return {};
   }
   return out;
@@ -587,6 +686,7 @@ async function resolveRequirement(input: {
   >;
   manifest: OpmManifest;
   priorLock?: OpmLockfile | undefined;
+  registryOptions?: RegistryOptions | undefined;
 }): Promise<LockPackage> {
   const ecosystem = ecosystemFromPurl(input.req.purl);
   const versionHint = input.req.version;
@@ -741,6 +841,7 @@ async function resolveRequirement(input: {
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
   if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
+    const registryOptions = input.registryOptions ?? {};
     const target =
       candidateExact ??
       (await (async () => {
@@ -749,6 +850,7 @@ async function resolveRequirement(input: {
         const versions = await listRegistryVersions(
           ecosystem,
           stripPurlVersion(input.req.purl),
+          registryOptions,
         );
         const newest = versions[versions.length - 1];
         if (!newest)
@@ -759,7 +861,11 @@ async function resolveRequirement(input: {
         return newest;
       })());
 
-    const artifact = await resolveRegistryArtifact(ecosystem, target);
+    const artifact = await resolveRegistryArtifact(
+      ecosystem,
+      target,
+      registryOptions,
+    );
     // The provider fetched these bytes and checked them against the registry's
     // own integrity claim; this re-derives the digest from the same bytes so
     // nothing enters the store on a provider's say-so.
@@ -786,7 +892,10 @@ async function resolveRequirement(input: {
     // Capture supply-chain facts from the real inspect path when available.
     let supplyFields: ReturnType<typeof lockPackageSupplyChainFields> = {};
     try {
-      const catalog = await providerFor(ecosystem, { offline: input.offline });
+      const catalog = await providerFor(ecosystem, {
+        ...registryOptions,
+        offline: input.offline,
+      });
       const registryId = (
         await requireAdapterRegistry().definitionFor(ecosystem)
       ).registryId;
@@ -803,6 +912,7 @@ async function resolveRequirement(input: {
           captureFactsFromSourceUri(artifact.exactPurl, artifact.uri, {
             evaluationTime,
             dependencyDepth: 0,
+            fromRegistryArtifactRecord: true,
           }),
         );
       }
@@ -822,6 +932,10 @@ async function resolveRequirement(input: {
         {
           evaluationTime,
           dependencyDepth: 0,
+          // The URI came out of the artifact record, whose origin
+          // resolveRegistryArtifact already checked against this ecosystem's
+          // allowlist — that, not the URI's shape, is what makes it a registry.
+          fromRegistryArtifactRecord: true,
           ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
           lifecycleScriptsExecuted: false,
         },

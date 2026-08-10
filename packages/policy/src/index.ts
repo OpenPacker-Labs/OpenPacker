@@ -134,14 +134,31 @@ export const TRUST_TIER_RANK: Readonly<Record<TrustTier, number>> = {
 
 const EXOTIC_KINDS = new Set<SourceKind>(['git', 'tarball', 'exotic']);
 
+/** Characters that end one PURL coordinate and begin the next. */
+const COORDINATE_BOUNDARY = new Set(['@', '/', '?', '#']);
+
+/**
+ * Whether an exclude list exempts this package.
+ *
+ * Exclude lists relax a mitigation, so a loose match hands the exemption to
+ * packages nobody reviewed: a bare `startsWith` would let `pkg:npm/left-pad`
+ * also exempt `pkg:npm/left-pad-installer`. A prefix therefore has to stop on
+ * a coordinate boundary — or already end on one, which is how a caller
+ * exempts a whole scope (`pkg:npm/@acme/`).
+ */
 function matchesExclude(
   packageId: string | undefined,
   excludes: readonly string[] | undefined,
 ): boolean {
   if (!packageId || !excludes?.length) return false;
-  return excludes.some(
-    (entry) => packageId === entry || packageId.startsWith(entry),
-  );
+  return excludes.some((entry) => {
+    if (entry === '') return false;
+    if (packageId === entry) return true;
+    if (!packageId.startsWith(entry)) return false;
+    const last = entry.charAt(entry.length - 1);
+    if (COORDINATE_BOUNDARY.has(last)) return true;
+    return COORDINATE_BOUNDARY.has(packageId.charAt(entry.length));
+  });
 }
 
 export interface PolicyCheck {

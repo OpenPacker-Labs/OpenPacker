@@ -21,6 +21,7 @@ import {
   type SourceKind,
   type TrustTier,
 } from '@openpacker/policy';
+import { stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
 
@@ -46,13 +47,9 @@ export function defaultSupplyChainPolicyInput(): PolicyInput {
 
 /** Map committed project policy onto evaluatePolicy document. */
 export function projectPolicyDocument(manifest: OpmManifest): PolicyDocument {
-  const input = manifest.policy ?? defaultSupplyChainPolicyInput();
-  const document = policyDocumentFromPolicyInput(input);
-  // Project may set requireExactSourceSnapshot via options-like field on policy.
-  if (manifest.policy?.requiredSourceSnapshotDigests === undefined) {
-    // keep mapper default
-  }
-  return document;
+  return policyDocumentFromPolicyInput(
+    manifest.policy ?? defaultSupplyChainPolicyInput(),
+  );
 }
 
 /**
@@ -69,22 +66,12 @@ export function priorTrustFromLock(
     if (pkg.purl === packageId && pkg.trustLevel !== undefined)
       return pkg.trustLevel;
   }
-  const base = stripVersion(packageId);
+  const base = stripPurlVersion(packageId);
   for (const pkg of Object.values(direct)) {
-    if (stripVersion(pkg.purl) === base && pkg.trustLevel !== undefined)
+    if (stripPurlVersion(pkg.purl) === base && pkg.trustLevel !== undefined)
       return pkg.trustLevel;
   }
   return undefined;
-}
-
-function stripVersion(purl: string): string {
-  const at = purl.lastIndexOf('@');
-  if (at <= 0) return purl;
-  // avoid treating scoped names incorrectly: version follows last @ after type/
-  const afterType = purl.indexOf('/');
-  if (afterType === -1) return purl;
-  if (at > afterType) return purl.slice(0, at);
-  return purl;
 }
 
 /**
@@ -173,21 +160,23 @@ export function captureFactsFromInspection(
           Object.assign(facts, sourceFactsFromUri(tarball));
       }
     }
-
-    // npm provenance / trusted publisher are not always present; do not invent.
-    // Registry HTTPS tarball without signatures → unsigned (honest default for npm).
-    if (facts.trustLevel === undefined) {
-      facts.trustLevel =
-        facts.sourceKind === 'registry' || facts.sourceKind === undefined
-          ? 'unsigned'
-          : 'unknown';
-    }
   }
 
+  // An explicit source overrides whatever the packument's dist pointed at, so
+  // it lands before the trust default below — otherwise a git source inherits
+  // the "registry tarball ⇒ unsigned" tier it never earned.
   if (options.sourceUri)
     Object.assign(facts, sourceFactsFromUri(options.sourceUri));
   if (facts.sourceKind === undefined && !options.sourceUri)
     facts.sourceKind = 'registry';
+
+  // npm provenance / trusted publisher are not always present; do not invent.
+  // Registry HTTPS tarball without signatures → unsigned (honest default for
+  // npm). Only claimable when a metadata document was actually read: with no
+  // body there is nothing to have inspected, and the tier stays absent so
+  // no-downgrade reports not-provided instead of a tier nobody observed.
+  if (facts.trustLevel === undefined && body && typeof body === 'object')
+    facts.trustLevel = facts.sourceKind === 'registry' ? 'unsigned' : 'unknown';
   if (facts.sourceScheme === undefined && inspection.record.endpoint) {
     try {
       facts.sourceScheme = new URL(inspection.record.endpoint).protocol.replace(
@@ -211,6 +200,12 @@ export function captureFactsFromSourceUri(
     dependencyDepth?: number;
     priorTrustLevel?: TrustTier;
     lifecycleScriptsExecuted?: boolean;
+    /**
+     * Set when the URI came from a registry's own artifact record and its
+     * origin was checked against that ecosystem's allowlist. Only the caller
+     * knows that; the URI alone cannot prove it.
+     */
+    fromRegistryArtifactRecord?: boolean;
   },
 ): PolicyFacts {
   const facts: PolicyFacts = {
@@ -223,11 +218,22 @@ export function captureFactsFromSourceUri(
     trustLevel: 'unknown',
     ...sourceFactsFromUri(sourceUri),
   };
+  if (options.fromRegistryArtifactRecord === true)
+    facts.sourceKind = 'registry';
   if (options.priorTrustLevel !== undefined)
     facts.priorTrustLevel = options.priorTrustLevel;
   return facts;
 }
 
+/**
+ * Classify a source URI.
+ *
+ * `registry` is the one kind `blockExoticSources` never blocks, so it is not
+ * the fallback: a URI that merely parses tells you nothing about whether an
+ * authority stands behind it. Anything that is not recognisably a registry
+ * artifact is `tarball`, and callers that know an origin-checked registry
+ * produced the URI say so explicitly.
+ */
 function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
   const lower = uri.toLowerCase();
   const scheme = uriScheme(uri);
@@ -255,17 +261,14 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
   try {
     const url = new URL(uri);
     const protocol = url.protocol.replace(':', '');
-    if (url.pathname.endsWith('.tgz') || url.pathname.endsWith('.tar.gz')) {
-      const host = url.hostname;
-      if (
-        host === 'registry.npmjs.org' ||
-        host.endsWith('.npmjs.org') ||
-        host === 'registry.yarnpkg.com'
-      )
-        return { sourceKind: 'registry', sourceScheme: protocol };
-      return { sourceKind: 'tarball', sourceScheme: protocol };
-    }
-    return { sourceKind: 'registry', sourceScheme: protocol };
+    const host = url.hostname;
+    if (
+      host === 'registry.npmjs.org' ||
+      host.endsWith('.npmjs.org') ||
+      host === 'registry.yarnpkg.com'
+    )
+      return { sourceKind: 'registry', sourceScheme: protocol };
+    return { sourceKind: 'tarball', sourceScheme: protocol };
   } catch {
     return { sourceKind: 'exotic' };
   }

@@ -211,6 +211,15 @@ export function parseManifest(text: string): OpmManifest {
           `Unknown options field "${key}" at line ${i + 1}`,
         );
     } else if (section === 'policy') {
+      // A misspelled policy key must not be a silently weaker policy. Every
+      // other section rejects unknown fields; the governance section is the
+      // last place to make an exception.
+      if (!POLICY_KEYS.has(key))
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown policy field "${key}" at line ${i + 1}. Known fields: ` +
+            `${[...POLICY_KEYS].sort().join(', ')}`,
+        );
       policyScratch[key] = value as string | boolean | number | string[];
     } else if (section === 'packages') {
       if (packageAlias === undefined)
@@ -279,9 +288,46 @@ export function parseManifest(text: string): OpmManifest {
   return manifest;
 }
 
+/** Every field accepted under [policy], with the type it must have. */
+const POLICY_FIELD_TYPES: Readonly<
+  Record<string, 'boolean' | 'string' | 'number' | 'string[]'>
+> = {
+  allow_yanked: 'boolean',
+  allow_quarantined: 'boolean',
+  semantic_loss_maximum: 'string',
+  required_evidence: 'string[]',
+  minimum_release_age_minutes: 'number',
+  minimum_release_age_strict: 'boolean',
+  minimum_release_age_exclude: 'string[]',
+  trust_policy: 'string',
+  trust_policy_exclude: 'string[]',
+  block_exotic_transitive: 'boolean',
+  block_exotic_direct: 'boolean',
+  allow_lifecycle_scripts: 'boolean',
+  allowed_lifecycle_script_packages: 'string[]',
+  expected_registry_id: 'string',
+};
+
+const POLICY_KEYS = new Set(Object.keys(POLICY_FIELD_TYPES));
+
 function policyFromScratch(
   scratch: Record<string, string | boolean | number | string[]>,
 ): PolicyInput {
+  // A wrong-typed policy value is refused rather than dropped: silently
+  // ignoring `minimum_release_age_minutes = "1440"` leaves the project running
+  // with no release-age window while opm.toml says it has one.
+  for (const [key, value] of Object.entries(scratch)) {
+    const expected = POLICY_FIELD_TYPES[key];
+    if (expected === undefined)
+      throw new OpmError('INVALID_MANIFEST', `Unknown policy field "${key}"`);
+    const actual = Array.isArray(value) ? 'string[]' : typeof value;
+    if (expected !== actual)
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        `policy.${key} must be ${expected}, got ${actual}`,
+      );
+  }
+
   const bool = (key: string, fallback: boolean): boolean => {
     const value = scratch[key];
     return typeof value === 'boolean' ? value : fallback;
