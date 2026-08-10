@@ -42,3 +42,15 @@ Clients MUST treat an absent type as **unsupported**.
 
 New types MUST use `prex.registry.<name>/<major>` and be documented before hosts
 depend on them. Unknown types MUST be ignored by v1 clients.
+
+“Ignored” is literal: a host that does not recognise a reserved type MUST load
+the adapter and drop the type, because refusing it would make every new
+vocabulary entry a breaking change for hosts that predate it. Ignoring is also
+what keeps this safe — an unrecognised type is never honoured, so an adapter
+cannot acquire a capability by inventing a name.
+
+A host MAY refuse a **malformed** reserved type. `prex.` claims this namespace,
+so a member of it has to be shaped like one: lowercase `name`, a major version
+of 1 or more. `prex.registry.attestation` (unversioned) and `prex.attestation/1`
+(wrong namespace) are malformed; `prex.registry.attestation/1` is simply newer
+than the host.

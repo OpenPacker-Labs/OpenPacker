@@ -55,6 +55,12 @@ const INSTALL_RESOURCES = [
 ] as const;
 
 /**
+ * Shape every reserved resource type must have, per
+ * `spec/prex/v1/registry-resource-types.md`: `prex.registry.<name>/<major>`.
+ */
+const RESERVED_TYPE = /^prex\.registry\.[a-z][a-z0-9-]*\/[1-9][0-9]*$/u;
+
+/**
  * Contract check used when a full wasmtime/jco host is unavailable: prove the
  * module satisfies the WIT-shaped surface the host will call.
  *
@@ -143,28 +149,24 @@ export async function assertWitShapedModule(
       `Adapter ${module.id} advertises prex.registry.environment/1 but does not export environment`,
     );
 
-  // `prex.registry.` is the reserved vocabulary: every type in it has a
-  // meaning the host is expected to act on, so an unrecognised one is a claim
-  // nobody can check — reject it. Types outside the namespace are vendor
-  // extensions, which the host ignores rather than honors, so they are safe to
-  // carry. (The reverse — accepting unknown reserved types and rejecting
-  // vendor ones — lets an adapter squat the namespace it is lying about.)
-  const known = new Set<string>([
-    ...CATALOG_RESOURCES,
-    ...INSTALL_RESOURCES,
-    'prex.registry.service-index/1',
-    'prex.registry.package-config/1',
-    'prex.registry.lifecycle/1',
-    'prex.registry.environment/1',
-  ]);
+  // A resource type this host does not know is not a lie — it is a newer
+  // vocabulary entry, and registry-resource-types.md requires v1 clients to
+  // ignore what they do not recognise. Rejecting them would mean every new
+  // `prex.registry.<name>/<major>` breaks adapters on hosts that predate it,
+  // which is the opposite of what a versioned vocabulary is for.
+  //
+  // What is still refused is a malformed reserved type: `prex.` claims the
+  // PREX namespace, so anything in it has to be shaped like the vocabulary it
+  // claims to belong to. Unrecognised types are dropped, never honoured, so an
+  // adapter cannot gain a capability by inventing a name.
   for (const resource of definition.resources) {
     for (const type of resourceTypesOf(resource['@type'])) {
-      if (type.startsWith('prex.') && !known.has(type))
+      if (type.startsWith('prex.') && !RESERVED_TYPE.test(type))
         throw new AdapterHostError(
           'INVALID_REGISTRY_DEFINITION',
-          `Adapter ${module.id} advertises unknown reserved resource type ${type}. ` +
-            'Types under "prex." are the versioned PREX vocabulary; use a vendor ' +
-            'namespace for extensions.',
+          `Adapter ${module.id} advertises malformed reserved resource type ${type}. ` +
+            'Types under "prex." must be "prex.registry.<name>/<major>"; use a ' +
+            'vendor namespace for extensions.',
         );
     }
   }
