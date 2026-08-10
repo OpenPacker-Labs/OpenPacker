@@ -17,6 +17,7 @@ import {
   type EventDataByType,
   type EventType,
 } from '@openpacker/events';
+import { schemaCatalog } from '@openpacker/contracts';
 import type {
   Capabilities,
   ArtifactDescriptor,
@@ -615,8 +616,26 @@ function post<Input extends JsonValue, Output extends JsonValue>(
           'Idempotency keys are limited to 256 characters',
           400,
         );
+      // The key alone does not identify the request. Replaying the first
+      // response for a *different* body would hand back a receipt for a solve
+      // the caller never asked for, so the body is fingerprinted and a reused
+      // key with new content is a conflict rather than a cache hit.
+      const fingerprint = key
+        ? formatDigest(await canonicalDigest(body))
+        : undefined;
       const cached = key ? store.getIdempotent('POST', path, key) : undefined;
-      if (cached) return sendBytes(reply, cached);
+      if (cached) {
+        if (cached.request !== fingerprint)
+          throw new OperationError(
+            // The PREX ErrorCode vocabulary is normative and has no
+            // idempotency member; minting one is a spec change, not a daemon
+            // change. INVALID_REQUEST with 409 says what happened.
+            'INVALID_REQUEST',
+            `Idempotency-Key "${key}" was already used for a different request body on ${path}`,
+            409,
+          );
+        return sendBytes(reply, cached.bytes);
+      }
       const requestContract = validateContract(requestSchema, body, validator);
       if (!requestContract.valid)
         throw new OperationError(
@@ -648,7 +667,8 @@ function post<Input extends JsonValue, Output extends JsonValue>(
             500,
           );
         const bytes = canonicalBytes(result);
-        if (key) store.putIdempotent('POST', path, key, bytes);
+        if (key && fingerprint)
+          store.putIdempotent('POST', path, key, fingerprint, bytes);
         return sendBytes(reply, bytes);
       } finally {
         prepared.dispose();
@@ -753,6 +773,18 @@ function sendBytes(
   return reply.send(Buffer.from(bytes));
 }
 
+/**
+ * The normative ErrorCode vocabulary, read from the shipped schema so the
+ * daemon cannot drift from `spec/prex/v1`.
+ */
+const PREX_ERROR_CODES: ReadonlySet<string> = new Set(
+  ((
+    schemaCatalog[
+      'https://openpacker.dev/spec/prex/v1/schemas/operations.schema.json'
+    ] as { $defs?: { ErrorCode?: { enum?: readonly string[] } } } | undefined
+  )?.$defs?.ErrorCode?.enum ?? []) as readonly string[],
+);
+
 function handleError(
   reply: import('fastify').FastifyReply,
   error: unknown,
@@ -783,12 +815,20 @@ function handleError(
     );
   const message =
     error instanceof Error ? error.message : 'Internal OpenPacker error';
-  const explicitCode =
+  // A thrown value's `code` is only an error code if PREX says so. Node puts
+  // ENOENT / SQLITE_CONSTRAINT there, and passing those through both emits a
+  // Problem outside the normative enum and leaks the raw message — which for a
+  // filesystem error is a local path.
+  const candidate =
     typeof error === 'object' &&
     error !== null &&
     'code' in error &&
     typeof error.code === 'string'
       ? error.code
+      : undefined;
+  const explicitCode =
+    candidate !== undefined && PREX_ERROR_CODES.has(candidate)
+      ? candidate
       : undefined;
   const code =
     explicitCode ??
