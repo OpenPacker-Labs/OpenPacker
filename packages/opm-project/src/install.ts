@@ -12,6 +12,7 @@ import type {
   BinDeclaration,
   InstalledPackageRecord,
   LockPackage,
+  NativeIntegrity,
   OpmLockfile,
   ProjectState,
 } from './types.js';
@@ -92,6 +93,53 @@ export async function fetchArtifactBytes(
 
 export function digestOf(bytes: Uint8Array): string {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+}
+
+/**
+ * The integrity value this ecosystem's own lockfile pins with.
+ *
+ * PREX pins with sha256 hex, but no native lockfile uses that: npm writes an
+ * SRI string, NuGet a base64 sha512, Cargo a sha256 hex, Go a dirhash. It is
+ * computed here, where the archive bytes are in hand, because materialize
+ * extracts the archive and does not keep it — after that there is nothing left
+ * to hash, and a lockfile written from an invented value is worse than none.
+ *
+ * An ecosystem with no scheme this can produce returns undefined, and the
+ * lockfile projection refuses to write rather than guessing.
+ */
+export function nativeIntegrityOf(
+  ecosystem: string,
+  bytes: Uint8Array,
+): NativeIntegrity | undefined {
+  switch (ecosystem) {
+    case 'npm':
+      // package-lock.json `integrity` is Subresource Integrity. npm writes
+      // sha512 and verifies whatever algorithm the string names.
+      return {
+        algorithm: 'sha512',
+        value: createHash('sha512').update(bytes).digest('base64'),
+        encoding: 'sri',
+      };
+    case 'nuget':
+      // packages.lock.json `contentHash` is base64 sha512 of the .nupkg.
+      return {
+        algorithm: 'sha512',
+        value: createHash('sha512').update(bytes).digest('base64'),
+        encoding: 'base64',
+      };
+    case 'cargo':
+      // Cargo.lock `checksum` is lowercase sha256 hex of the .crate.
+      return {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(bytes).digest('hex'),
+        encoding: 'hex',
+      };
+    default:
+      // golang's h1: is a hash over a directory listing rather than the
+      // archive, and maven/pypi lockfiles are not written by this yet. Absent
+      // is the honest answer.
+      return undefined;
+  }
 }
 
 function bytesSource(bytes: Uint8Array): ArtifactSource {

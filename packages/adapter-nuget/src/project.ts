@@ -17,6 +17,7 @@ import { basename, join } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type {
   DetectedProject,
+  NativeLockEntry,
   NativeRequirement,
   ProjectFormat,
   ProjectionResult,
@@ -49,6 +50,9 @@ export class NugetProjectFormat implements ProjectFormat {
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = await findProjectFile(root);
     if (!manifestPath) return undefined;
+    const framework = firstTargetFramework(
+      await readFile(manifestPath, 'utf8'),
+    );
 
     const centralPath = join(root, CENTRAL_PROPS);
     const central = (await exists(centralPath))
@@ -59,7 +63,10 @@ export class NugetProjectFormat implements ProjectFormat {
       root,
       manifestPath,
       ...(central ? { relatedPaths: { central: centralPath } } : {}),
-      metadata: { centralPackageManagement: central },
+      metadata: {
+        centralPackageManagement: central,
+        ...(framework === undefined ? {} : { targetFramework: framework }),
+      },
     };
   }
 
@@ -124,6 +131,56 @@ export class NugetProjectFormat implements ProjectFormat {
       written.push(project.manifestPath);
 
     return { written, semanticLoss };
+  }
+
+  /**
+   * Write `packages.lock.json`.
+   *
+   * `dotnet restore --locked-mode` compares `contentHash` against the .nupkg it
+   * downloads, so an entry without one is refused rather than written blank.
+   */
+  async writeLockfile(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult> {
+    const lockPath = join(project.root, 'packages.lock.json');
+    const semanticLoss: SemanticLoss[] = [];
+    const dependencies: Record<string, unknown> = {};
+
+    for (const entry of packages) {
+      if (
+        !entry.nativeIntegrity ||
+        entry.nativeIntegrity.encoding !== 'base64'
+      ) {
+        semanticLoss.push(integrityLoss(entry));
+        continue;
+      }
+      dependencies[entry.name] = {
+        type: entry.transitive ? 'Transitive' : 'Direct',
+        ...(entry.transitive ? {} : { requested: `[${entry.version}, )` }),
+        resolved: entry.version,
+        contentHash: entry.nativeIntegrity.value,
+      };
+    }
+    if (semanticLoss.length > 0)
+      return {
+        written: [],
+        skipped: [
+          {
+            path: lockPath,
+            reason: 'not every package carried a NuGet contentHash',
+          },
+        ],
+        semanticLoss,
+      };
+
+    const framework = targetFramework(project) ?? 'net8.0';
+    const body = {
+      version: 1,
+      dependencies: { [framework]: dependencies },
+    };
+    await writeFileAtomic(lockPath, `${JSON.stringify(body, undefined, 2)}\n`);
+    return { written: [lockPath], semanticLoss: [] };
   }
 }
 
@@ -465,6 +522,39 @@ function scopeLoss(requirement: NativeRequirement): SemanticLoss {
     omittedMeaning: `MSBuild PackageReference has no equivalent of the "${requirement.scope}" scope`,
     mitigation:
       'Declare the package as runtime or development, which map to PackageReference and PrivateAssets="all".',
+    blocksProfile: ['native-validated-v1'],
+  };
+}
+
+/** The first target framework a project declares, for the lockfile's key. */
+function firstTargetFramework(text: string): string | undefined {
+  const single = /<TargetFramework>\s*([^<\s]+)\s*<\/TargetFramework>/u.exec(
+    text,
+  );
+  if (single) return single[1];
+  const many = /<TargetFrameworks>\s*([^<]+?)\s*<\/TargetFrameworks>/u.exec(
+    text,
+  );
+  return many?.[1]?.split(';')[0]?.trim();
+}
+
+function targetFramework(project: DetectedProject): string | undefined {
+  const value = project.metadata?.targetFramework;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function integrityLoss(entry: NativeLockEntry): SemanticLoss {
+  return {
+    code: 'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+    severity: 'warning',
+    sourceEcosystem: 'nuget',
+    sourcePath: `/packages/${entry.name}`,
+    originalMeaning: `${entry.name} ${entry.version} was resolved and pinned by digest`,
+    representedMeaning: 'No packages.lock.json was written',
+    omittedMeaning:
+      'NuGet pins with a base64 sha512 contentHash over the .nupkg, which was not captured for this package',
+    mitigation:
+      'Re-resolve so the contentHash is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
   };
 }

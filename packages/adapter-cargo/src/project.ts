@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import type {
   DetectedProject,
+  NativeLockEntry,
   NativeRequirement,
   ProjectFormat,
   ProjectionResult,
@@ -18,7 +19,7 @@ import type {
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
-import { editTomlTable } from '@openpacker/project-io';
+import { editTomlTable, writeFileAtomic } from '@openpacker/project-io';
 
 const SCOPE_TABLE: Readonly<Record<RequirementScope, string | undefined>> = {
   runtime: 'dependencies',
@@ -133,6 +134,59 @@ export class CargoProjectFormat implements ProjectFormat {
 
     return { written, semanticLoss };
   }
+
+  /**
+   * Write `Cargo.lock`.
+   *
+   * Cargo's `checksum` is the sha256 hex of the .crate, which is the same
+   * algorithm PREX pins with — so unlike npm and NuGet this can usually be
+   * written, and an entry missing it is still refused rather than guessed.
+   */
+  async writeLockfile(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult> {
+    const lockPath = project.relatedPaths?.lock;
+    if (!lockPath) return { written: [], semanticLoss: [] };
+
+    const semanticLoss: SemanticLoss[] = [];
+    const blocks: string[] = [];
+    for (const entry of packages) {
+      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'hex') {
+        semanticLoss.push(integrityLoss(entry));
+        continue;
+      }
+      blocks.push(
+        [
+          '[[package]]',
+          `name = ${JSON.stringify(entry.name)}`,
+          `version = ${JSON.stringify(entry.version)}`,
+          'source = "registry+https://github.com/rust-lang/crates.io-index"',
+          `checksum = ${JSON.stringify(entry.nativeIntegrity.value)}`,
+        ].join('\n'),
+      );
+    }
+    if (semanticLoss.length > 0)
+      return {
+        written: [],
+        skipped: [
+          {
+            path: lockPath,
+            reason: 'not every package carried a Cargo checksum',
+          },
+        ],
+        semanticLoss,
+      };
+
+    const body = [
+      '# This file is maintained by opm. Do not edit by hand.',
+      'version = 3',
+      '',
+      ...blocks.map((block) => `${block}\n`),
+    ].join('\n');
+    await writeFileAtomic(lockPath, body);
+    return { written: [lockPath], semanticLoss: [] };
+  }
 }
 
 function scopeOfTable(table: (typeof TABLES)[number]): RequirementScope {
@@ -154,6 +208,22 @@ function scopeLoss(requirement: NativeRequirement): SemanticLoss {
     omittedMeaning: `Cargo has no dependency table for the "${requirement.scope}" scope`,
     mitigation:
       'Declare the package as runtime, development, or build, which map to Cargo dependency tables.',
+    blocksProfile: ['native-validated-v1'],
+  };
+}
+
+function integrityLoss(entry: NativeLockEntry): SemanticLoss {
+  return {
+    code: 'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+    severity: 'warning',
+    sourceEcosystem: 'cargo',
+    sourcePath: `/packages/${entry.name}`,
+    originalMeaning: `${entry.name} ${entry.version} was resolved and pinned by digest`,
+    representedMeaning: 'No Cargo.lock was written',
+    omittedMeaning:
+      'Cargo pins with a sha256 checksum over the .crate, which was not captured for this package',
+    mitigation:
+      'Re-resolve so the checksum is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
   };
 }

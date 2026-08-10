@@ -188,3 +188,63 @@ describe('NugetProjectFormat', () => {
     }
   });
 });
+
+describe('NugetProjectFormat — packages.lock.json', () => {
+  const entry = (name: string, version: string, hash?: string) => ({
+    purl: `pkg:nuget/${name}`,
+    exactPurl: `pkg:nuget/${name}@${version}`,
+    name,
+    version,
+    scope: 'runtime' as const,
+    source: `https://api.nuget.org/v3-flatcontainer/${name}`,
+    digest: `sha256:${'0'.repeat(64)}`,
+    size: 10,
+    transitive: false,
+    ...(hash
+      ? {
+          nativeIntegrity: {
+            algorithm: 'sha512',
+            value: hash,
+            encoding: 'base64',
+          },
+        }
+      : {}),
+  });
+
+  it('keys the lock by the project target framework', async () => {
+    const fixture = await project({ 'app.csproj': CSPROJ });
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('Serilog', '4.0.0', 'BASE64HASH=='),
+      ]);
+      expect(result.written).toHaveLength(1);
+      const lock = JSON.parse(await fixture.read('packages.lock.json')) as {
+        version: number;
+        dependencies: Record<string, Record<string, { contentHash: string }>>;
+      };
+      // The fixture declares net9.0; guessing a framework here would make
+      // `dotnet restore --locked-mode` reject the file.
+      expect(Object.keys(lock.dependencies)).toEqual(['net9.0']);
+      expect(lock.dependencies['net9.0']?.Serilog?.contentHash).toBe(
+        'BASE64HASH==',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('refuses rather than writing a package with no contentHash', async () => {
+    const fixture = await project({ 'app.csproj': CSPROJ });
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('Serilog', '4.0.0'),
+      ]);
+      expect(result.written).toEqual([]);
+      expect(result.semanticLoss[0]?.code).toBe(
+        'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

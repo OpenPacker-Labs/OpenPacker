@@ -10,6 +10,7 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DetectedProject,
+  NativeLockEntry,
   NativeRequirement,
   ProjectFormat,
   ProjectionResult,
@@ -17,7 +18,7 @@ import type {
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
-import { editJsonFile } from '@openpacker/project-io';
+import { editJsonFile, writeFileAtomic } from '@openpacker/project-io';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD: Readonly<Record<RequirementScope, string | undefined>> = {
@@ -151,6 +152,73 @@ export class NpmProjectFormat implements ProjectFormat {
       semanticLoss,
     };
   }
+
+  /**
+   * Write `package-lock.json` (lockfileVersion 3).
+   *
+   * npm verifies `integrity` against the tarball it downloads, so an entry
+   * whose SRI opm never captured is refused rather than written without one —
+   * a lockfile npm rejects, or worse accepts without checking, is not an
+   * improvement over having none.
+   */
+  async writeLockfile(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult> {
+    const lockPath = project.relatedPaths?.lock;
+    if (!lockPath) return { written: [], semanticLoss: [] };
+
+    const semanticLoss: SemanticLoss[] = [];
+    const entries: Record<string, unknown> = {};
+    for (const entry of packages) {
+      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'sri') {
+        semanticLoss.push(integrityLoss(entry));
+        continue;
+      }
+      entries[`node_modules/${entry.name}`] = {
+        version: entry.version,
+        resolved: entry.source,
+        integrity: `${entry.nativeIntegrity.algorithm}-${entry.nativeIntegrity.value}`,
+        ...(entry.transitive ? {} : {}),
+        ...(entry.scope === 'development' ? { dev: true } : {}),
+      };
+    }
+    if (semanticLoss.length > 0)
+      // Partial lockfiles are how a build silently installs something nobody
+      // pinned. All or nothing.
+      return {
+        written: [],
+        skipped: [
+          {
+            path: lockPath,
+            reason: 'not every package carried an npm integrity value',
+          },
+        ],
+        semanticLoss,
+      };
+
+    const name = await manifestName(project.manifestPath);
+    const body = {
+      name,
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        '': {
+          name,
+          dependencies: Object.fromEntries(
+            packages
+              .filter(
+                (entry) => !entry.transitive && entry.scope !== 'development',
+              )
+              .map((entry) => [entry.name, entry.range ?? entry.version]),
+          ),
+        },
+        ...entries,
+      },
+    };
+    await writeFileAtomic(lockPath, `${JSON.stringify(body, undefined, 2)}\n`);
+    return { written: [lockPath], semanticLoss: [] };
+  }
 }
 
 function scopeOfField(
@@ -189,6 +257,30 @@ function scopeLoss(requirement: NativeRequirement): SemanticLoss {
     omittedMeaning: `npm has no dependency field for the "${requirement.scope}" scope`,
     mitigation:
       'Declare the package with a scope npm expresses: runtime, development, optional, or peer.',
+    blocksProfile: ['native-validated-v1'],
+  };
+}
+
+async function manifestName(manifestPath: string): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    name?: string;
+  };
+  return parsed.name ?? 'project';
+}
+
+function integrityLoss(entry: NativeLockEntry): SemanticLoss {
+  return {
+    code: 'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+    severity: 'warning',
+    sourceEcosystem: 'npm',
+    sourcePath: `/packages/${entry.name}`,
+    originalMeaning: `${entry.name}@${entry.version} was resolved and pinned by digest`,
+    representedMeaning: 'No package-lock.json was written',
+    omittedMeaning:
+      'npm pins with Subresource Integrity over the tarball, which was not captured for this package',
+    mitigation:
+      'Re-resolve so the integrity value is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
   };
 }

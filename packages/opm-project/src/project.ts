@@ -30,6 +30,7 @@ import type { NativeProjectionReport } from './native.js';
 import {
   digestOf,
   fetchArtifactBytes,
+  nativeIntegrityOf,
   inferFormat,
   installFromLock,
   lockPackageFromSource,
@@ -666,6 +667,10 @@ async function resolveTransitive(input: {
       );
       await assertSupplyChainAllowed(policy, facts);
 
+      const transitiveIntegrity = nativeIntegrityOf(
+        instance.identity.purlType,
+        artifact.bytes,
+      );
       out[alias] = {
         alias,
         purl: artifact.exactPurl,
@@ -679,6 +684,9 @@ async function resolveTransitive(input: {
         bins: [],
         reason: 'transitive',
         ecosystem: instance.identity.purlType,
+        ...(transitiveIntegrity === undefined
+          ? {}
+          : { nativeIntegrity: transitiveIntegrity }),
         ...lockPackageSupplyChainFields(facts),
       };
     }
@@ -787,7 +795,14 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
     });
-    return { ...locked, ...lockPackageSupplyChainFields(facts) };
+    const sourceIntegrity = nativeIntegrityOf(ecosystem, bytes);
+    return {
+      ...locked,
+      ...(sourceIntegrity === undefined
+        ? {}
+        : { nativeIntegrity: sourceIntegrity }),
+      ...lockPackageSupplyChainFields(facts),
+    };
   }
 
   // 2) Catalog lookup by exact purl or base+version
@@ -863,6 +878,7 @@ async function resolveRequirement(input: {
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
+    const catalogIntegrity = nativeIntegrityOf(ecosystem, bytes);
     return {
       alias: input.alias,
       purl: entryPurl,
@@ -876,6 +892,9 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
+      ...(catalogIntegrity === undefined
+        ? {}
+        : { nativeIntegrity: catalogIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
   }
@@ -989,6 +1008,7 @@ async function resolveRequirement(input: {
       supplyFields = lockPackageSupplyChainFields(facts);
     }
 
+    const nativeIntegrity = nativeIntegrityOf(ecosystem, bytes);
     return {
       alias: input.alias,
       purl: artifact.exactPurl,
@@ -1002,6 +1022,7 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
+      ...(nativeIntegrity === undefined ? {} : { nativeIntegrity }),
       ...supplyFields,
     };
   }

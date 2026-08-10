@@ -71,6 +71,7 @@ export {
   installFromLock,
   lockPackageFromSource,
   mediaTypeForEcosystem,
+  nativeIntegrityOf,
   materializeLockPackage,
   readProjectState,
   uninstallAll,

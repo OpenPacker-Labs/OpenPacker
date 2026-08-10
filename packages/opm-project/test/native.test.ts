@@ -249,6 +249,51 @@ describe('native projection through opm commands', () => {
   });
 });
 
+describe('native lockfile projection', () => {
+  it('writes package-lock.json with the integrity captured at resolve time', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    const manifestPath = join(root, 'opm.toml');
+    const manifest = parseManifest(await readFile(manifestPath, 'utf8'));
+    manifest.options.nativeProjection = 'lock';
+    await writeFile(manifestPath, serializeManifest(manifest));
+
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const lock = JSON.parse(
+      await readFile(join(root, 'package-lock.json'), 'utf8'),
+    ) as {
+      lockfileVersion: number;
+      packages: Record<string, { integrity?: string; version?: string }>;
+    };
+    expect(lock.lockfileVersion).toBe(3);
+    const entry = lock.packages['node_modules/@openpacker/demo-tool'];
+    expect(entry?.version).toBe('1.1.0');
+    // SRI over the same bytes opm hashed to sha256 — captured at resolve time
+    // because materialize extracts the archive and does not keep it.
+    expect(entry?.integrity).toMatch(/^sha512-/u);
+  });
+
+  it('leaves the native lockfile alone at the manifest level', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    await expect(
+      readFile(join(root, 'package-lock.json'), 'utf8'),
+    ).rejects.toThrow();
+  });
+});
+
 describe('projection helpers', () => {
   it('defaults to writing the manifest', () => {
     expect(

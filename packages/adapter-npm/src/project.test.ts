@@ -158,3 +158,70 @@ describe('NpmProjectFormat', () => {
     }
   });
 });
+
+describe('NpmProjectFormat — package-lock.json', () => {
+  const entry = (
+    name: string,
+    version: string,
+    integrity?: { algorithm: string; value: string; encoding: string },
+  ) => ({
+    purl: `pkg:npm/${name}`,
+    exactPurl: `pkg:npm/${name}@${version}`,
+    name,
+    version,
+    range: `^${version}`,
+    scope: 'runtime' as const,
+    source: `https://registry.npmjs.org/${name}/-/${name}-${version}.tgz`,
+    digest: `sha256:${'0'.repeat(64)}`,
+    size: 10,
+    transitive: false,
+    ...(integrity ? { nativeIntegrity: integrity } : {}),
+  });
+  const sri = { algorithm: 'sha512', value: 'AAAA', encoding: 'sri' };
+
+  it('writes lockfileVersion 3 with the integrity npm verifies', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('chalk', '4.1.2', sri),
+      ]);
+      expect(result.written).toHaveLength(1);
+      const lock = JSON.parse(
+        await readFile(join(fixture.dir, 'package-lock.json'), 'utf8'),
+      ) as {
+        lockfileVersion: number;
+        packages: Record<string, { integrity?: string; resolved?: string }>;
+      };
+      expect(lock.lockfileVersion).toBe(3);
+      expect(lock.packages['node_modules/chalk']?.integrity).toBe(
+        'sha512-AAAA',
+      );
+      expect(lock.packages['node_modules/chalk']?.resolved).toContain(
+        'registry.npmjs.org',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes no lockfile at all when one package has no integrity', async () => {
+    const fixture = await project('{\n  "name": "demo"\n}\n');
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('chalk', '4.1.2', sri),
+        entry('mystery', '1.0.0'),
+      ]);
+      // A partial lockfile is how a build silently installs something nobody
+      // pinned, so it is all or nothing.
+      expect(result.written).toEqual([]);
+      expect(result.semanticLoss[0]?.code).toBe(
+        'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+      );
+      await expect(
+        readFile(join(fixture.dir, 'package-lock.json'), 'utf8'),
+      ).rejects.toThrow();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

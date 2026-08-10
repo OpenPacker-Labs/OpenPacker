@@ -104,7 +104,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           baseUrl: endpointFor('npm', context) || 'https://registry.npmjs.org',
           searchUrl: `${(endpointFor('npm', context) || 'https://registry.npmjs.org').replace(/\/$/, '')}/-/v1/search`,
           includeDeps: true,
-          project: { manifest: true },
+          project: { manifest: true, lock: true },
         }),
       codec: () => new NpmCodec(),
       project: () => new NpmProjectFormat(),
@@ -126,7 +126,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'cargo-sparse-v1',
           baseUrl: endpointFor('cargo', context) || 'https://index.crates.io',
           includeDeps: true,
-          project: { manifest: true },
+          project: { manifest: true, lock: true },
         }),
       codec: () => new CargoCodec(),
       project: () => new CargoProjectFormat(),
@@ -225,7 +225,10 @@ export function defaultAdapterModules(): AdapterModule[] {
                 // describes the working tree, so it is added either way.
                 {
                   '@id': 'project:workspace',
-                  '@type': 'prex.registry.project-manifest/1' as const,
+                  '@type': [
+                    'prex.registry.project-manifest/1',
+                    'prex.registry.project-lock/1',
+                  ] as const,
                 },
               ],
               features: {
@@ -245,7 +248,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'nuget-v3',
           baseUrl: endpoint,
           includeArtifact: true,
-          project: { manifest: true },
+          project: { manifest: true, lock: true },
         });
       },
       codec: () => new NugetCodec(),

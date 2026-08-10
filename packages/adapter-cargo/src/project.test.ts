@@ -24,6 +24,7 @@ async function project(contents: string) {
   const detected = await format.detect(dir);
   if (!detected) throw new Error('fixture was not detected');
   return {
+    dir,
     format,
     detected,
     read: () => readFile(join(dir, 'Cargo.toml'), 'utf8'),
@@ -115,6 +116,55 @@ describe('CargoProjectFormat', () => {
         requirement('react', '18', 'peer'),
       ]);
       expect(result.semanticLoss[0]?.code).toBe('NATIVE_SCOPE_UNSUPPORTED');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('CargoProjectFormat — Cargo.lock', () => {
+  const entry = (name: string, version: string, hex?: string) => ({
+    purl: `pkg:cargo/${name}`,
+    exactPurl: `pkg:cargo/${name}@${version}`,
+    name,
+    version,
+    scope: 'runtime' as const,
+    source: `https://static.crates.io/crates/${name}`,
+    digest: `sha256:${'0'.repeat(64)}`,
+    size: 10,
+    transitive: false,
+    ...(hex
+      ? {
+          nativeIntegrity: { algorithm: 'sha256', value: hex, encoding: 'hex' },
+        }
+      : {}),
+  });
+
+  it('writes checksums Cargo can verify', async () => {
+    const fixture = await project(CARGO_TOML);
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('serde', '1.0.200', 'a'.repeat(64)),
+      ]);
+      expect(result.written).toHaveLength(1);
+      const lock = await readFile(join(fixture.dir, 'Cargo.lock'), 'utf8');
+      expect(lock).toContain('name = "serde"');
+      expect(lock).toContain(`checksum = "${'a'.repeat(64)}"`);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('refuses rather than writing a crate with no checksum', async () => {
+    const fixture = await project(CARGO_TOML);
+    try {
+      const result = await fixture.format.writeLockfile!(fixture.detected, [
+        entry('serde', '1.0.200'),
+      ]);
+      expect(result.written).toEqual([]);
+      expect(result.semanticLoss[0]?.code).toBe(
+        'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
+      );
     } finally {
       await fixture.cleanup();
     }
