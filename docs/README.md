@@ -63,6 +63,7 @@ API detail.
 | [Storage and deployment](operations/storage-deployment.md)         | CAS, SQLite, binding          |
 | [Trust and policy](operations/trust-lifecycle-policy.md)           | Evidence vs decisions         |
 | [Threat model](security/threat-model.md)                           | Security assumptions          |
+| [Supply chain](security/supply-chain.md)                           | Capture + mitigate attacks    |
 | [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates      |
 | [ADRs](adr/README.md)                                              | Stable architecture decisions |
 

@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
+import type { PolicyInput } from '@openpacker/contracts';
 import {
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
   nativeRange,
   resolveGraph,
+  resolveManifestToLock,
   resolveRegistryArtifact,
   shouldFollowRequirement,
   solveGraph,
+  type OpmManifest,
 } from '../src/index.js';
 
 /**
@@ -278,6 +283,91 @@ describe('PyPI transitive resolution', () => {
         expect(artifact.bytes.byteLength).toBe(wheel.byteLength);
       }
     });
+  });
+});
+
+/**
+ * The transitive walk is where blockExoticSources / minimumReleaseAge earn
+ * their keep — a dependency nobody named is exactly the one an attacker adds.
+ * Before this, every evaluated selection was hardcoded to depth 0 and the
+ * transitive walk evaluated nothing at all, so the shipped default posture was
+ * unreachable.
+ */
+describe('supply-chain policy over the transitive closure', () => {
+  const manifest = (policy?: PolicyInput): OpmManifest => ({
+    project: { name: 'closure', ecosystems: ['pypi'] },
+    packages: {
+      'demo-tool': {
+        alias: 'demo-tool',
+        purl: 'pkg:pypi/demo-tool',
+        version: '1.0.0',
+      },
+    },
+    options: { offline: false, layout: 'opm' },
+    ...(policy === undefined ? {} : { policy }),
+  });
+
+  const permissive: PolicyInput = {
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'warning',
+    requiredEvidence: [],
+  };
+
+  it('locks the closure when policy permits it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
+    try {
+      await withPypiFixtures(async () => {
+        const lock = await resolveManifestToLock({
+          root,
+          manifest: manifest(permissive),
+          offline: false,
+          registryOptions: options(),
+        });
+        const purls = Object.values(lock.packages).map((pkg) => pkg.purl);
+        expect(purls).toContain('pkg:pypi/demo-tool@1.0.0');
+        expect(purls).toContain('pkg:pypi/alpha@1.5.0');
+        // The closure is pinned to what the direct pass locked. Unpinned, the
+        // solver prefers the highest version and demo-tool@1.1.0 lands beside
+        // demo-tool@1.0.0 as a transitive entry of the same package.
+        expect(
+          purls.filter((purl) => purl.startsWith('pkg:pypi/demo-tool@')),
+        ).toEqual(['pkg:pypi/demo-tool@1.0.0']);
+        // Transitive entries carry the captured facts, not a blank record.
+        const alpha = Object.values(lock.packages).find(
+          (pkg) => pkg.purl === 'pkg:pypi/alpha@1.5.0',
+        );
+        expect(alpha?.reason).toBe('transitive');
+        expect(alpha?.sourceKind).toBe('registry');
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses the resolve when a transitive selection fails policy', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
+    try {
+      await withPypiFixtures(async () => {
+        // Strict release age with no captured publishedAt denies — but the
+        // direct package is excluded, so only the closure can trip it.
+        await expect(
+          resolveManifestToLock({
+            root,
+            manifest: manifest({
+              ...permissive,
+              minimumReleaseAgeMinutes: 1440,
+              minimumReleaseAgeStrict: true,
+              minimumReleaseAgeExclude: ['pkg:pypi/demo-tool'],
+            }),
+            offline: false,
+            registryOptions: options(),
+          }),
+        ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -171,3 +171,19 @@ export {
   type AdapterModule,
 } from './adapters.js';
 export { providerForWithDiscovery, registryEcosystems } from './registry.js';
+
+export {
+  assertSupplyChainAllowed,
+  captureFactsFromCatalog,
+  captureFactsFromInspection,
+  captureFactsFromSourceUri,
+  defaultSupplyChainPolicyInput,
+  lockPackageSupplyChainFields,
+  priorTrustFromLock,
+  projectPolicyDocument,
+  type PolicyDocument,
+  type PolicyFacts,
+  type PolicyResult,
+  type SourceKind,
+  type TrustTier,
+} from './supply-chain.js';
