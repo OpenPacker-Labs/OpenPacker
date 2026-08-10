@@ -143,8 +143,12 @@ export async function assertWitShapedModule(
       `Adapter ${module.id} advertises prex.registry.environment/1 but does not export environment`,
     );
 
-  // Every advertised type must be known to the agreement rules above or
-  // service-index / package-config / lifecycle (honesty-only).
+  // `prex.registry.` is the reserved vocabulary: every type in it has a
+  // meaning the host is expected to act on, so an unrecognised one is a claim
+  // nobody can check — reject it. Types outside the namespace are vendor
+  // extensions, which the host ignores rather than honors, so they are safe to
+  // carry. (The reverse — accepting unknown reserved types and rejecting
+  // vendor ones — lets an adapter squat the namespace it is lying about.)
   const known = new Set<string>([
     ...CATALOG_RESOURCES,
     ...INSTALL_RESOURCES,
@@ -155,10 +159,12 @@ export async function assertWitShapedModule(
   ]);
   for (const resource of definition.resources) {
     for (const type of resourceTypesOf(resource['@type'])) {
-      if (!known.has(type) && !type.startsWith('prex.registry.'))
+      if (type.startsWith('prex.') && !known.has(type))
         throw new AdapterHostError(
           'INVALID_REGISTRY_DEFINITION',
-          `Adapter ${module.id} advertises unknown resource type ${type}`,
+          `Adapter ${module.id} advertises unknown reserved resource type ${type}. ` +
+            'Types under "prex." are the versioned PREX vocabulary; use a vendor ' +
+            'namespace for extensions.',
         );
     }
   }

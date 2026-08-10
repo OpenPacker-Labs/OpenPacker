@@ -31,6 +31,20 @@ export const adapterModule = {
       },
     };
   },
+  // Advertising package-metadata / enumerate-versions obliges the module to
+  // export a catalog; discovery rejects the definition otherwise.
+  catalog() {
+    const unimplemented = () => {
+      throw new Error('not implemented');
+    };
+    return {
+      identify: unimplemented,
+      enumerate: unimplemented,
+      inspect: unimplemented,
+      fetchArtifactRecord: unimplemented,
+      snapshot: unimplemented,
+    };
+  },
   codec() {
     return {
       purlType: 'external-fixture',
