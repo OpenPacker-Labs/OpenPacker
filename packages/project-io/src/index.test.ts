@@ -147,3 +147,43 @@ describe('applySpanEdits', () => {
     ).toThrow(/out of bounds/u);
   });
 });
+
+describe('materialiseTree', () => {
+  it('refuses a destination outside its root', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const root = join(dir, 'node_modules');
+      // A package name is registry-controlled and this path is followed by a
+      // recursive delete.
+      await expect(
+        materialiseTree(dir, join(root, '..', '..', 'escaped'), root),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    });
+  });
+
+  it('replaces the destination instead of merging into it', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const { mkdir } = await import('node:fs/promises');
+      const source = join(dir, 'src');
+      const destination = join(dir, 'out', 'pkg');
+      await mkdir(join(source, 'lib'), { recursive: true });
+      await writeFile(join(source, 'lib', 'a.js'), 'a');
+      await mkdir(destination, { recursive: true });
+      await writeFile(join(destination, 'stale.js'), 'stale');
+
+      const result = await materialiseTree(
+        source,
+        destination,
+        join(dir, 'out'),
+      );
+      expect(result.files).toBe(1);
+      expect(await readFile(join(destination, 'lib', 'a.js'), 'utf8')).toBe(
+        'a',
+      );
+      await expect(
+        readFile(join(destination, 'stale.js'), 'utf8'),
+      ).rejects.toThrow();
+    });
+  });
+});

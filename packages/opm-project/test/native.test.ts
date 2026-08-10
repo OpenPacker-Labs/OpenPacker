@@ -294,6 +294,75 @@ describe('native lockfile projection', () => {
   });
 });
 
+describe('native layout projection', () => {
+  it('materialises node_modules from the store, unwrapping the tarball prefix', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    const manifestPath = join(root, 'opm.toml');
+    const manifest = parseManifest(await readFile(manifestPath, 'utf8'));
+    manifest.options.nativeProjection = 'layout';
+    await writeFile(manifestPath, serializeManifest(manifest));
+
+    const result = await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    // npm tarballs wrap everything in package/; node_modules wants what is
+    // inside it, or nothing can resolve the package's main.
+    const installed = join(
+      root,
+      'node_modules',
+      '@openpacker',
+      'demo-tool',
+      'package.json',
+    );
+    const manifestOfInstalled = JSON.parse(
+      await readFile(installed, 'utf8'),
+    ) as { name?: string };
+    expect(manifestOfInstalled.name).toBe('@openpacker/demo-tool');
+
+    // The layout is equivalent to what npm produces, not produced by npm, and
+    // it says so rather than letting a project assume install scripts ran.
+    const loss = result.native?.projections[0]?.semanticLoss ?? [];
+    expect(loss.map((entry) => entry.code)).toContain(
+      'NATIVE_LAYOUT_NOT_TOOL_EQUIVALENT',
+    );
+  });
+
+  it('replaces the layout rather than accumulating a previous resolution', async () => {
+    const root = await tempProject({
+      'package.json': '{\n  "name": "test-app"\n}\n',
+    });
+    const manifestPath = join(root, 'opm.toml');
+    const manifest = parseManifest(await readFile(manifestPath, 'utf8'));
+    manifest.options.nativeProjection = 'layout';
+    await writeFile(manifestPath, serializeManifest(manifest));
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    const stray = join(
+      root,
+      'node_modules',
+      '@openpacker',
+      'demo-tool',
+      'stale.txt',
+    );
+    await writeFile(stray, 'left over from a previous resolution');
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    await expect(readFile(stray, 'utf8')).rejects.toThrow();
+  });
+});
+
 describe('projection helpers', () => {
   it('defaults to writing the manifest', () => {
     expect(

@@ -25,7 +25,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { writeFileAtomic } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
-import { OPM_DIR } from './paths.js';
+import { OPM_DIR, storePathForDigest } from './paths.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import type {
   LockPackage,
@@ -186,7 +186,7 @@ export async function projectNativeFormats(input: {
         collect(
           await format.writeLockfile(
             detected,
-            lockEntriesFor(ecosystem, input.manifest, input.lock),
+            lockEntriesFor(ecosystem, input.manifest, input.lock, input.root),
           ),
           written,
           skipped,
@@ -204,7 +204,7 @@ export async function projectNativeFormats(input: {
         collect(
           await format.writeLayout(
             detected,
-            lockEntriesFor(ecosystem, input.manifest, input.lock),
+            lockEntriesFor(ecosystem, input.manifest, input.lock, input.root),
           ),
           written,
           skipped,
@@ -320,6 +320,7 @@ function lockEntriesFor(
   ecosystem: string,
   manifest: OpmManifest,
   lock: OpmLockfile,
+  root?: string,
 ): readonly NativeLockEntry[] {
   const direct = new Set(
     Object.values(manifest.packages)
@@ -349,6 +350,12 @@ function lockEntriesFor(
       ...(pkg.nativeIntegrity === undefined
         ? {}
         : { nativeIntegrity: pkg.nativeIntegrity }),
+      // Where the extracted tree already is. A layout projection copies from
+      // here rather than re-downloading, so what lands in node_modules is the
+      // same digest-verified bytes the store holds.
+      ...(root === undefined
+        ? {}
+        : { storePath: storePathForDigest(root, pkg.digest) }),
       transitive: pkg.reason === 'transitive' || !direct.has(base),
     });
   }

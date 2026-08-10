@@ -104,7 +104,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           baseUrl: endpointFor('npm', context) || 'https://registry.npmjs.org',
           searchUrl: `${(endpointFor('npm', context) || 'https://registry.npmjs.org').replace(/\/$/, '')}/-/v1/search`,
           includeDeps: true,
-          project: { manifest: true, lock: true },
+          project: { manifest: true, lock: true, layout: true },
         }),
       codec: () => new NpmCodec(),
       project: () => new NpmProjectFormat(),
@@ -228,6 +228,7 @@ export function defaultAdapterModules(): AdapterModule[] {
                   '@type': [
                     'prex.registry.project-manifest/1',
                     'prex.registry.project-lock/1',
+                    'prex.registry.project-layout/1',
                   ] as const,
                 },
               ],
@@ -248,7 +249,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'nuget-v3',
           baseUrl: endpoint,
           includeArtifact: true,
-          project: { manifest: true, lock: true },
+          project: { manifest: true, lock: true, layout: true },
         });
       },
       codec: () => new NugetCodec(),

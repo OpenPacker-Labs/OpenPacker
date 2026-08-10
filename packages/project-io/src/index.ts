@@ -190,3 +190,9 @@ export {
   type TomlArrayEdit,
   type TomlTableEdit,
 } from './toml.js';
+
+export {
+  materialiseTree,
+  removeTree,
+  type MaterialiseResult,
+} from './layout.js';

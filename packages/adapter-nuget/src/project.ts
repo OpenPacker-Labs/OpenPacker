@@ -182,6 +182,69 @@ export class NugetProjectFormat implements ProjectFormat {
     await writeFileAtomic(lockPath, `${JSON.stringify(body, undefined, 2)}\n`);
     return { written: [lockPath], semanticLoss: [] };
   }
+
+  /**
+   * Write `obj/project.assets.json`.
+   *
+   * NuGet's "layout" is not a directory of packages — restore leaves the
+   * extracted packages in the global packages folder and writes an assets file
+   * describing where the build should look. So this writes the assets file and
+   * points it at the opm store.
+   */
+  async writeLayout(
+    project: DetectedProject,
+    packages: readonly NativeLockEntry[],
+  ): Promise<ProjectionResult> {
+    const assetsPath = join(project.root, 'obj', 'project.assets.json');
+    const framework = targetFramework(project) ?? 'net8.0';
+    const skipped: { path: string; reason: string }[] = [];
+
+    const libraries: Record<string, unknown> = {};
+    const targets: Record<string, unknown> = {};
+    for (const entry of packages) {
+      if (!entry.storePath) {
+        skipped.push({
+          path: assetsPath,
+          reason: `${entry.name} is not materialised in the opm store`,
+        });
+        continue;
+      }
+      const key = `${entry.name}/${entry.version}`;
+      libraries[key] = {
+        type: 'package',
+        ...(entry.nativeIntegrity?.encoding === 'base64'
+          ? { sha512: entry.nativeIntegrity.value }
+          : {}),
+        path: `${entry.name.toLowerCase()}/${entry.version}`,
+      };
+      targets[key] = { type: 'package' };
+    }
+
+    const body = {
+      version: 3,
+      targets: { [framework]: targets },
+      libraries,
+      projectFileDependencyGroups: {
+        [framework]: packages
+          .filter((entry) => !entry.transitive)
+          .map((entry) => `${entry.name} >= ${entry.version}`),
+      },
+      packageFolders: Object.fromEntries(
+        [
+          ...new Set(packages.map((entry) => entry.storePath).filter(Boolean)),
+        ].map((path) => [path as string, {}]),
+      ),
+    };
+    await writeFileAtomic(
+      assetsPath,
+      `${JSON.stringify(body, undefined, 2)}\n`,
+    );
+    return {
+      written: [assetsPath],
+      ...(skipped.length > 0 ? { skipped } : {}),
+      semanticLoss: [layoutLoss(assetsPath)],
+    };
+  }
 }
 
 interface ParsedReference {
@@ -556,5 +619,23 @@ function integrityLoss(entry: NativeLockEntry): SemanticLoss {
     mitigation:
       'Re-resolve so the contentHash is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
+  };
+}
+
+function layoutLoss(path: string): SemanticLoss {
+  return {
+    code: 'NATIVE_LAYOUT_NOT_TOOL_EQUIVALENT',
+    severity: 'info',
+    sourceEcosystem: 'nuget',
+    sourcePath: path,
+    originalMeaning:
+      'project.assets.json was written from the digest-verified opm store',
+    representedMeaning:
+      'An assets file the build can read, pointing at the opm store as its package folder',
+    omittedMeaning:
+      'dotnet restore was not run: no NuGet targets or props imports were generated, and no runtime graph was computed',
+    mitigation:
+      'Run dotnet restore when the build needs generated MSBuild imports, or keep native_projection at "lock".',
+    blocksProfile: [],
   };
 }
