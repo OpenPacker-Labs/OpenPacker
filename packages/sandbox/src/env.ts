@@ -2,11 +2,31 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Env keys that may pass into a jail without an explicit grant. */
-const ALLOWLIST_PREFIXES = [
-  'npm_config_',
-  'npm_package_',
-  'npm_lifecycle_',
-] as const;
+const ALLOWLIST_PREFIXES = ['npm_package_', 'npm_lifecycle_'] as const;
+
+/**
+ * npm_config_* is *not* fully allowlisted: auth/token keys hide in this
+ * prefix (e.g. registry auth). Only non-credential npm_config_ keys pass.
+ */
+const NPM_CONFIG_SAFE = new Set([
+  'npm_config_user_agent',
+  'npm_config_cache',
+  'npm_config_prefix',
+  'npm_config_global',
+  'npm_config_node_gyp',
+  'npm_config_arch',
+  'npm_config_platform',
+  'npm_config_target_arch',
+  'npm_config_target_platform',
+  'npm_config_runtime',
+  'npm_config_nodedir',
+  'npm_config_disturl',
+  'npm_config_python',
+  'npm_config_msvs_version',
+  'npm_config_build_from_source',
+  'npm_config_unsafe_perm',
+  'npm_config_loglevel',
+]);
 
 const ALLOWLIST_EXACT = new Set([
   'PATH',
@@ -49,7 +69,19 @@ const DENY_EXACT = new Set([
   'AUBE_AUTH_TOKEN',
   'GITHUB_TOKEN',
   'GH_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
   'OPENPACKER_TOKEN',
+  'GIT_ASKPASS',
+  'SSH_ASKPASS',
+  'DOCKER_AUTH_CONFIG',
+  'KUBECONFIG',
+  'PGPASSWORD',
+  'MYSQL_PWD',
+  'COMPOSER_AUTH',
+  'BUN_AUTH_TOKEN',
+  'PYPI_TOKEN',
+  'TWINE_PASSWORD',
+  'CARGO_REGISTRY_TOKEN',
 ]);
 
 const DENY_PREFIXES = [
@@ -59,25 +91,56 @@ const DENY_PREFIXES = [
   'GCP_',
   'NPX_',
   'DOCKER_',
+  'GITHUB_',
+  'GH_',
+  'GITLAB_',
+  'CIRCLE_',
+  'TRAVIS_',
+  'NETLIFY_',
+  'VERCEL_',
+  'HEROKU_',
+  'CF_',
+  'VAULT_',
+  'CONSUL_',
+  'DIGITALOCEAN_',
+  'LINODE_',
+  'TF_VAR_',
+  'OP_',
 ] as const;
 
 const DENY_SUBSTRING = [
   '_TOKEN',
   '_SECRET',
   '_PASSWORD',
+  '_PASSWD',
   '_API_KEY',
   'APIKEY',
+  '_AUTH',
+  '_CREDENTIAL',
+  '_PRIVATE_KEY',
+  'PRIVATEKEY',
 ] as const;
 
 export function isDeniedCredential(name: string): boolean {
   if (DENY_EXACT.has(name)) return true;
   if (DENY_PREFIXES.some((p) => name.startsWith(p))) return true;
   const upper = name.toUpperCase();
+  // npm_config registry auth keys: "//registry…/:_authToken"
+  if (
+    name.startsWith('npm_config_') &&
+    /auth|token|password|secret|_pass/i.test(name)
+  )
+    return true;
   return DENY_SUBSTRING.some((s) => upper.includes(s));
 }
 
 export function isAllowlistedEnv(name: string): boolean {
   if (ALLOWLIST_EXACT.has(name)) return true;
+  if (NPM_CONFIG_SAFE.has(name)) return true;
+  if (name.startsWith('npm_config_')) {
+    // Only the safe list above; other npm_config_* stay out unless granted.
+    return false;
+  }
   return ALLOWLIST_PREFIXES.some((p) => name.startsWith(p));
 }
 

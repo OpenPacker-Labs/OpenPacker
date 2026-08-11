@@ -120,7 +120,7 @@ export async function runLifecycleScript(input: {
     | PackageGrants
     | undefined;
 
-  return runInSandbox({
+  const outcome = await runInSandbox({
     argv: [...shell, input.script],
     cwd: input.packageDir,
     env: {
@@ -131,9 +131,27 @@ export async function runLifecycleScript(input: {
     policy: sandboxPolicy,
     packageId: input.packageId,
     ...(grants === undefined ? {} : { grants }),
+    // Package tree only — never the whole host (host installers use a
+    // separate funnel with broader grants).
     readwritePaths: [input.packageDir],
     readonlyPaths: [],
+    network: grants?.network === true,
   });
+
+  // Fail-closed: a script that ran without an OS jail is ambient code
+  // execution and must not look successful.
+  const mode = sandboxPolicy.mode ?? 'fail-closed';
+  if (
+    !outcome.enforced &&
+    (mode === 'fail-closed' || sandboxPolicy.required !== false)
+  ) {
+    throw new OpmError(
+      'SANDBOX_UNAVAILABLE',
+      `Cannot run ${input.event} for ${input.packageId}: sandbox was not enforced ` +
+        `(backend=${outcome.backend})`,
+    );
+  }
+  return outcome;
 }
 
 /**
@@ -169,12 +187,6 @@ export async function runDeclaredLifecycleScripts(input: {
         'LIFECYCLE_FAILED',
         `${event} for ${input.packageId} exited ${outcome.exitCode}` +
           (outcome.stderr ? `: ${outcome.stderr.trim()}` : ''),
-      );
-    }
-    if (!outcome.enforced && outcome.backend === 'none') {
-      throw new OpmError(
-        'SANDBOX_UNAVAILABLE',
-        `Cannot run ${event} for ${input.packageId}: sandbox unavailable (fail-closed)`,
       );
     }
   }

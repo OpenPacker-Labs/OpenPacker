@@ -8,6 +8,7 @@ import {
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
+import { normalizeJailPaths } from './paths.js';
 import {
   backendLosses,
   digestSandboxPolicy,
@@ -77,6 +78,8 @@ export async function runInSandbox(
     matchPackageGrant(input.packageId, input.policy.packages),
     input.grants,
   );
+  const grantedWrite = normalizeJailPaths(packageGrants.write, 'write grant');
+  const grantedRead = normalizeJailPaths(packageGrants.read, 'read grant');
   const network = Boolean(input.network || packageGrants.network);
 
   if (!resolved.enabled || resolved.mode === 'off') {
@@ -142,12 +145,14 @@ export async function runInSandbox(
         : { grantEnv: packageGrants.env }),
       jailHome,
     });
-    const readwrite = [
-      ...input.readwritePaths,
-      jailHome,
-      ...(packageGrants.write ?? []),
-    ];
-    const readonly = [...input.readonlyPaths, ...(packageGrants.read ?? [])];
+    const readwrite = normalizeJailPaths(
+      [...input.readwritePaths, jailHome, ...grantedWrite],
+      'readwrite path',
+    );
+    const readonly = normalizeJailPaths(
+      [...input.readonlyPaths, ...grantedRead],
+      'readonly path',
+    );
 
     try {
       let active = backend;
