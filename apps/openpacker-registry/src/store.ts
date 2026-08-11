@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue, PackageManifest } from '@openpacker/contracts';
+import type { ServiceabilityRecord } from './serviceability.js';
 
 export type EntryStatus = 'active' | 'deprecated' | 'deleted';
 
@@ -71,6 +72,15 @@ export class RegistryStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS entries_updated ON entries(updated_at, sequence);
       CREATE INDEX IF NOT EXISTS entries_name ON entries(name);
+      CREATE TABLE IF NOT EXISTS serviceability (
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        state TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        method TEXT NOT NULL,
+        detail TEXT,
+        PRIMARY KEY (name, version)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS namespace_keys (
         namespace TEXT NOT NULL,
         key_id TEXT NOT NULL,
@@ -216,6 +226,69 @@ export class RegistryStore {
       .run(status, now, name, version);
     this.#recomputeLatest(name);
     return this.get(name, version)!;
+  }
+
+  serviceability(
+    name: string,
+    version: string,
+  ): ServiceabilityRecord | undefined {
+    const row = this.#database
+      .prepare(
+        'SELECT state, checked_at, method, detail FROM serviceability WHERE name = ? AND version = ?',
+      )
+      .get(name, version) as
+      | {
+          state: string;
+          checked_at: string;
+          method: string;
+          detail: string | null;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      state: row.state as ServiceabilityRecord['state'],
+      checkedAt: row.checked_at,
+      method: row.method as ServiceabilityRecord['method'],
+      ...(row.detail === null ? {} : { detail: row.detail }),
+    };
+  }
+
+  recordServiceability(
+    name: string,
+    version: string,
+    record: ServiceabilityRecord,
+  ): void {
+    this.#database
+      .prepare(
+        `INSERT INTO serviceability(name, version, state, checked_at, method, detail)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name, version) DO UPDATE SET
+           state = excluded.state, checked_at = excluded.checked_at,
+           method = excluded.method, detail = excluded.detail`,
+      )
+      .run(
+        name,
+        version,
+        record.state,
+        record.checkedAt,
+        record.method,
+        record.detail ?? null,
+      );
+  }
+
+  /**
+   * Mark a record for re-check on the next read.
+   *
+   * How a client-reported observation is honoured: it moves the check earlier,
+   * and nothing more. A report can never set state, or "report a competitor
+   * unreachable" becomes a feature of the registry.
+   */
+  expireServiceability(name: string, version: string): void {
+    this.#database
+      .prepare(
+        "UPDATE serviceability SET checked_at = '1970-01-01T00:00:00.000Z' WHERE name = ? AND version = ?",
+      )
+      .run(name, version);
   }
 
   /** Bind a signing key to a namespace, as an operator decision. */

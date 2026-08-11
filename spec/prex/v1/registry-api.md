@@ -100,12 +100,18 @@ POST /v1/publish
 A `RegistryPublishRequest` carries the manifest, its digest, at least one
 signature, and optionally a namespace proof. The registry MUST:
 
-1. Re-derive the manifest digest from canonical bytes and compare it to
+1. **Validate the request against `RegistryPublishRequest` and refuse what does
+   not conform, storing nothing.** A registry is the last party that can cheaply
+   refuse a document it cannot honour. Everything downstream — a mirror, a
+   resolver, an install — meets it with no way to say no, so a document stored
+   here becomes every consumer's problem. The reported error SHOULD name the
+   failing instance path, because a publisher fixes these one at a time.
+2. Re-derive the manifest digest from canonical bytes and compare it to
    `manifestDigest`. A caller-supplied digest is never taken on trust.
-2. Verify every signature over `formatDigest(manifestDigest)` — the same
+3. Verify every signature over `formatDigest(manifestDigest)` — the same
    construction `SignedReceipt` uses, so one verifier serves both.
-3. Establish that a signing key may publish under this name (below).
-4. Reject a re-publish of an existing `(name, version)` whose digest differs.
+4. Establish that a signing key may publish under this name (below).
+5. Reject a re-publish of an existing `(name, version)` whose digest differs.
    Immutability is what makes a lockfile mean anything.
 
 The registry then counter-signs with `role: "registry"` and stores. Publisher
@@ -136,6 +142,49 @@ clients can be written against it. **A registry that does not advertise
 `prex.registry.artifact/1` does not serve bytes**, and its manifests'
 `locations` point upstream instead. A metadata-only registry is a complete and
 useful registry; the MCP registry is one.
+
+## Serviceability
+
+A registry entry is a claim. The MCP registry was measured with **11.2% of
+advertised endpoints not speaking MCP at the URL given** — roughly 1,177 URLs
+where a client follows the registry and reaches something else. Not dead hosts:
+live hosts serving a page where the server used to be. Nobody had re-checked.
+
+A registry SHOULD therefore re-verify what its manifests advertise, and MAY
+report the result as `registryMetadata.serviceability`.
+
+**Checks SHOULD be driven by reads rather than by a schedule.** A sweep spends
+the same egress on every entry whether or not anyone wants it; requests are a
+better sampler, because the packages people resolve are the ones whose rot
+matters and the long tail costs nothing until someone asks. A read MUST NOT
+block on the check — a registry whose latency is a function of every publisher's
+uptime has made someone else's outage its own.
+
+Three classifications, and two of them are where implementations go wrong:
+
+- **`gated` is healthy.** 26.5% of the endpoints in that survey answer
+  401/402/403 because they are commercial services wanting a token. An
+  implementation that reads non-200 as failure condemns a quarter of a registry.
+  The surveyor's own false positive was a **402 Payment Required** — enumerating
+  the auth statuses from memory rather than from the spec cost them a wrong
+  answer.
+- **A timeout or 5xx MUST stay `unchecked`.** It is evidence about the network
+  between the registry and the origin. Recording it as failure exports the
+  registry's weather as a fact about somebody else's software.
+- **`unreachable` needs a definite answer** — a 404, a 410, or bytes that
+  contradict the manifest.
+
+`method` states what was actually done, because "something answered" and "these
+are the right bytes" are different claims and a consumer's policy may need the
+stronger one.
+
+### Consumer observations
+
+`POST /v1/packages/{name}/versions/{version}/observations` lets a consumer
+report that something did not work. A registry MUST treat this as
+**corroboration only**: it MAY bring the next first-party check forward, and
+MUST NOT let it set state. A registry that let anonymous reports mark a package
+unreachable would be offering "report a competitor" as a feature.
 
 ## Federation
 

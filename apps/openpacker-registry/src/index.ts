@@ -14,6 +14,10 @@
 
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import {
+  BoundedFetchTransport,
+  type HttpTransport,
+} from '@openpacker/adapter-core';
+import {
   canonicalBytes,
   canonicalDigest,
   formatDigest,
@@ -26,6 +30,7 @@ import type {
   Problem,
   RegistryEntry,
 } from '@openpacker/contracts';
+import { createPrexValidator, validateContract } from '@openpacker/conformance';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import {
   RegistryStore,
@@ -33,12 +38,19 @@ import {
   type StoredEntry,
 } from './store.js';
 import {
+  checkServiceability,
+  isStale,
+  type ServiceabilityRecord,
+} from './serviceability.js';
+import {
   Federation,
   type ConfiguredSource,
   type FederationOptions,
 } from './sources.js';
 
 export const WELL_KNOWN = '/.well-known/prex-registry';
+const PUBLISH_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest';
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
 
@@ -73,6 +85,13 @@ export interface RegistryOptions {
   sources?: readonly ConfiguredSource[];
   /** How upstream registries are reached. See FederationOptions. */
   registryClientFactory?: FederationOptions['clientFactory'];
+  /**
+   * How long a serviceability record is trusted before the next read triggers
+   * a re-check. Zero disables checking entirely.
+   */
+  serviceabilityTtlMilliseconds?: number;
+  /** Transport for reaching what a manifest advertises. */
+  serviceabilityTransport?: HttpTransport;
   logger?: boolean;
   bodyLimit?: number;
 }
@@ -80,6 +99,13 @@ export interface RegistryOptions {
 export function createRegistry(options: RegistryOptions): FastifyInstance {
   const store = options.store ?? new RegistryStore(options.databasePath);
   const clock = options.clock ?? { now: () => new Date().toISOString() };
+  const validator = createPrexValidator();
+  const serviceabilityTtl = options.serviceabilityTtlMilliseconds ?? 86_400_000;
+  // Checks are triggered by reads, so at most one is in flight per package —
+  // otherwise a popular package under load would fan out one request per
+  // reader to somebody else's origin, which is a denial of service the
+  // registry would be conducting on a publisher's behalf.
+  const inFlight = new Set<string>();
   const federation =
     options.sources && options.sources.length > 0
       ? new Federation({
@@ -116,6 +142,55 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     reply.header('x-openpacker-registry-id', options.registryId);
     return payload;
   });
+
+  /**
+   * Re-check what a manifest advertises, if nobody has recently.
+   *
+   * Deliberately fire-and-forget: a read that waited on somebody else's origin
+   * would make this registry's latency a function of every publisher's uptime.
+   */
+  function scheduleCheck(
+    entry: StoredEntry,
+    known: ServiceabilityRecord | undefined,
+  ): void {
+    if (serviceabilityTtl <= 0) return;
+    const key = `${entry.name}@${entry.version}`;
+    if (inFlight.has(key)) return;
+    if (!isStale(known, serviceabilityTtl, Date.parse(clock.now()))) return;
+
+    const distribution = entry.manifest.distributions?.[0];
+    if (!distribution?.locations?.length) return;
+
+    inFlight.add(key);
+    void (async () => {
+      try {
+        const record = await checkServiceability({
+          locations: distribution.locations!,
+          ...(distribution.digest === undefined
+            ? {}
+            : { digest: distribution.digest }),
+          ...(distribution.size === undefined
+            ? {}
+            : { size: distribution.size }),
+          transport:
+            options.serviceabilityTransport ??
+            new BoundedFetchTransport({
+              allowedOrigins: [
+                ...new Set(
+                  distribution.locations!.map((uri) => new URL(uri).origin),
+                ),
+              ],
+            }),
+          now: clock.now,
+        });
+        store.recordServiceability(entry.name, entry.version, record);
+      } catch {
+        // A failure to run the check is not a fact about the package.
+      } finally {
+        inFlight.delete(key);
+      }
+    })();
+  }
 
   const advertised = [
     'prex.registry.search/1',
@@ -251,11 +326,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // holding a lockfile needs to learn a version was pulled, and a 404
       // tells it nothing.
       const entry = store.get(name, version);
-      if (entry)
+      if (entry) {
+        const known = store.serviceability(name, version);
+        // Never block the read. The answer goes out with whatever is known;
+        // the next reader sees the fresher result.
+        scheduleCheck(entry, known);
         return sendJson(
           reply,
-          toRegistryEntry(entry, options) as unknown as JsonValue,
+          toRegistryEntry(entry, options, known) as unknown as JsonValue,
         );
+      }
       // Local wins; only then is an upstream asked. An upstream that starts
       // publishing a name this registry already serves must not take it over.
       const relayed = await federation?.find(name, version);
@@ -287,6 +367,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           400,
           'A manifest is required',
         );
+
+      // Validate before anything is stored. A registry that keeps a document
+      // it cannot honour has moved the cost onto every client that later reads
+      // it — and unlike the registry, a client meets it at install time with no
+      // way to refuse.
+      //
+      // One check, not two: RegistryPublishRequest embeds PackageManifest, so
+      // validating the envelope validates the manifest, and the reported path
+      // (/manifest/distributions/0/purlType) says more than a second pass
+      // would.
+      assertValid(PUBLISH_SCHEMA, body as unknown as JsonValue, validator);
 
       // Re-derive rather than trust. A caller-supplied digest is a claim about
       // bytes the registry is holding, and it is holding them.
@@ -387,6 +478,32 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     },
   );
 
+  /**
+   * Accept a consumer's report that something did not work.
+   *
+   * Corroboration only: it brings the next first-party check forward and
+   * cannot set state. A registry that let anonymous reports mark a package
+   * unreachable would be offering "report a competitor" as a feature.
+   */
+  app.post<{ Params: { name: string; version: string } }>(
+    '/v1/packages/:name/versions/:version/observations',
+    async (request, reply) => {
+      const name = decodeURIComponent(request.params.name);
+      const version = decodeURIComponent(request.params.version);
+      if (!store.get(name, version))
+        return sendProblem(
+          reply,
+          problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
+        );
+      store.expireServiceability(name, version);
+      reply.code(202);
+      return sendJson(reply, {
+        accepted: true,
+        effect: 'The next read will re-check this package first-hand.',
+      } as unknown as JsonValue);
+    },
+  );
+
   app.setNotFoundHandler(async (_request, reply) =>
     sendProblem(reply, problem('PACKAGE_NOT_FOUND', 404, 'Route not found')),
   );
@@ -461,6 +578,7 @@ function namespacesOf(name: string): string[] {
 function toRegistryEntry(
   entry: StoredEntry,
   options: RegistryOptions,
+  serviceability?: ServiceabilityRecord,
 ): RegistryEntry {
   const [algorithm, value] = entry.manifestDigest.split(':');
   return {
@@ -473,6 +591,9 @@ function toRegistryEntry(
       updatedAt: entry.updatedAt,
       isLatest: entry.isLatest,
       manifestDigest: { algorithm, value } as Digest,
+      // Absent means nobody has looked yet, which is a different thing from
+      // "we looked and it was fine".
+      ...(serviceability === undefined ? {} : { serviceability }),
     },
     ...(entry.signatures.length > 0
       ? { signatures: entry.signatures as never }
@@ -523,6 +644,33 @@ function assertTimestamp(value: string): string {
       'updatedSince must be an RFC 3339 timestamp',
     );
   return value;
+}
+
+/**
+ * Refuse a document that does not validate, naming where it failed.
+ *
+ * The first error only: a publisher fixes them one at a time, and a wall of
+ * paths is harder to act on than the first thing that is wrong.
+ */
+function assertValid(
+  schema: string,
+  value: JsonValue,
+  validator: ReturnType<typeof createPrexValidator>,
+): void {
+  const result = validateContract(schema, value, validator);
+  if (result.valid) return;
+  const first = result.errors[0];
+  const where =
+    first && 'instancePath' in first && first.instancePath
+      ? first.instancePath
+      : '/';
+  const why =
+    first && 'message' in first && first.message ? first.message : 'is invalid';
+  throw new PublishError(
+    'INVALID_REQUEST',
+    400,
+    `This is not a publishable document: ${where} ${why}`,
+  );
 }
 
 class PublishError extends Error {
