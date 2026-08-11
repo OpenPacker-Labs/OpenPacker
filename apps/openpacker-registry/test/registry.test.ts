@@ -693,3 +693,163 @@ describe('serviceability through the registry', () => {
     await app.close();
   });
 });
+
+describe('key lifecycle', () => {
+  /** A registry that signs, so its revocation list is verifiable. */
+  async function signing() {
+    const signer = await Ed25519Signer.fromJwk('test-registry', keys.root!);
+    return registry({ signer, store: new RegistryStore() });
+  }
+
+  it('serves a signed revocation list even when nothing is revoked', async () => {
+    const app = await signing();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/revocations',
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    // Empty-and-signed is a different claim from absent: it says this registry
+    // does revocation and currently revokes nothing.
+    expect(body.list.revoked).toEqual([]);
+    expect(body.signatures).toHaveLength(1);
+    expect(body.signatures[0].role).toBe('registry');
+    await app.close();
+  });
+
+  it('advertises key-lifecycle so a client knows revocation exists here', async () => {
+    const app = await signing();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/.well-known/prex-registry',
+    });
+    expect(response.json().resources[0]['@type']).toContain(
+      'prex.registry.key-lifecycle/1',
+    );
+    await app.close();
+  });
+
+  it('rotates a key, keeping what it already signed verifiable', async () => {
+    const app = await signing();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+
+    // Rotate publisher-1 to a successor it attests.
+    const rotation = await rotationTo('publisher-2', keys.log!);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: rotation,
+    });
+    expect(response.statusCode).toBe(201);
+
+    const list = (
+      await app.inject({ method: 'GET', url: '/v1/revocations' })
+    ).json();
+    const entry = list.list.revoked[0];
+    // from-now, not retroactive: a routine rotation that disowned every past
+    // signature would break every lockfile pinning something this key signed.
+    expect(entry.keyId).toBe('publisher-1');
+    expect(entry.effective).toBe('from-now');
+    expect(entry.replacedBy).toBe('publisher-2');
+    await app.close();
+  });
+
+  it('refuses a rotation not attested by the key it claims to succeed', async () => {
+    const app = await signing();
+    const rotation = await rotationTo('publisher-2', keys.log!);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      // Anyone could otherwise nominate a successor to someone else's key.
+      payload: { ...rotation, signature: 'AAAAAAAAAAAAAAAAAAAAAA==' },
+    });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('stops a revoked key publishing, both effects', async () => {
+    const app = await signing();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationTo('publisher-2', keys.log!),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest('com.example.after', '1.0.0')),
+    });
+    // Retiring a key means it stops being used going forward; only whether its
+    // past work still counts depends on the effect.
+    expect(response.statusCode).toBe(403);
+    expect(response.json().detail).toMatch(/revoked/);
+    await app.close();
+  });
+
+  it('lets the successor key publish', async () => {
+    const app = await signing();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationTo('publisher-2', keys.log!),
+    });
+    // The successor is usable without an operator round-trip, or nobody rotates.
+    const body = await signedWith('publisher-2', keys.log!, manifest());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: body,
+    });
+    expect(response.statusCode).toBe(201);
+    await app.close();
+  });
+});
+
+/** A rotation from publisher-1 to `nextKeyId`, signed by publisher-1. */
+async function rotationTo(nextKeyId: string, nextJwk: JsonWebKey) {
+  const { rotationMessage } = await import('../src/keys.js');
+  const unsigned = {
+    previousKeyId: 'publisher-1',
+    nextKeyId,
+    nextPublicKey: { kty: 'OKP', crv: 'Ed25519', x: nextJwk.x! },
+    rotatedAt: '2026-08-11T00:00:00.000Z',
+  };
+  const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+  return {
+    ...unsigned,
+    signature: await signer.sign(await rotationMessage(unsigned)),
+  };
+}
+
+/** Sign a manifest with an arbitrary key id and JWK. */
+async function signedWith(
+  keyId: string,
+  jwk: JsonWebKey,
+  value: PackageManifest,
+) {
+  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const signer = await Ed25519Signer.fromJwk(keyId, jwk);
+  return {
+    manifest: value,
+    manifestDigest: digest,
+    signatures: [
+      {
+        algorithm: 'ed25519' as const,
+        keyId,
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(digest)),
+        ),
+        role: 'publisher' as const,
+      },
+    ],
+    namespaceProof: {
+      namespace: 'com.example',
+      method: 'registry-configured' as const,
+      keyId,
+    },
+  };
+}

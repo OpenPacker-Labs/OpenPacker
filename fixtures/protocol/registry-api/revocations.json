@@ -1,0 +1,36 @@
+{
+  "list": {
+    "revocationListVersion": "1",
+    "registryId": "urn:openpacker:registry:acme",
+    "serial": 4,
+    "issuedAt": "2026-08-11T00:00:00.000Z",
+    "revoked": [
+      {
+        "keyId": "publisher-1",
+        "revokedAt": "2026-08-01T00:00:00.000Z",
+        "effective": "from-now",
+        "reason": "rotated",
+        "replacedBy": "publisher-2"
+      },
+      {
+        "keyId": "stolen-1",
+        "revokedAt": "2026-08-05T00:00:00.000Z",
+        "effective": "retroactive",
+        "reason": "compromised",
+        "detail": "Private key disclosed in a public build log"
+      }
+    ]
+  },
+  "listDigest": {
+    "algorithm": "sha256",
+    "value": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "signatures": [
+    {
+      "algorithm": "ed25519",
+      "keyId": "acme-registry",
+      "signature": "cmV2b2NhdGlvbg==",
+      "role": "registry"
+    }
+  ]
+}

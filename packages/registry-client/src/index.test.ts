@@ -360,3 +360,195 @@ describe('PrexRegistryProvider as an opm source', () => {
     ).rejects.toMatchObject({ code: 'PACKAGE_NOT_FOUND' });
   });
 });
+
+describe('RegistryClient revocation', () => {
+  const withRevocation = async (
+    revoked: unknown[],
+    publishedAt = '2026-08-10T00:00:00.000Z',
+    serial = 1,
+  ) => {
+    const entry = await entryFor(manifest(), { sign: true });
+    const dated = {
+      ...entry,
+      registryMetadata: { ...entry.registryMetadata, publishedAt },
+    };
+    return fixtureTransport({
+      '/.well-known/prex-registry': definition([
+        ...ALL_RESOURCES,
+        'prex.registry.key-lifecycle/1',
+      ]),
+      '/v1/packages/demo-tool/versions/1.2.3': dated,
+      '/v1/revocations': {
+        list: {
+          revocationListVersion: '1',
+          registryId: 'urn:openpacker:registry:example',
+          serial,
+          issuedAt: '2026-08-11T00:00:00.000Z',
+          revoked,
+        },
+        listDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
+        signatures: [],
+      },
+    });
+  };
+
+  it('reports revoked, not invalid, for a signature the key no longer backs', async () => {
+    const { transport } = await withRevocation([
+      {
+        keyId: 'publisher-1',
+        revokedAt: '2026-08-01T00:00:00.000Z',
+        effective: 'retroactive',
+        reason: 'compromised',
+      },
+    ]);
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      keys: { 'publisher-1': keys.leaf! },
+    });
+    const result = await client.verifyEntry(
+      await client.entry('demo-tool', '1.2.3'),
+    );
+    // "Forged" and "was good, key since withdrawn" are different facts, and a
+    // consumer's policy may accept one and not the other.
+    expect(result.signatures[0]?.status).toBe('revoked');
+  });
+
+  it('keeps a signature made before a from-now revocation', async () => {
+    const { transport } = await withRevocation(
+      [
+        {
+          keyId: 'publisher-1',
+          revokedAt: '2026-08-11T00:00:00.000Z',
+          effective: 'from-now',
+          reason: 'rotated',
+        },
+      ],
+      '2026-08-10T00:00:00.000Z',
+    );
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      keys: { 'publisher-1': keys.leaf! },
+    });
+    const result = await client.verifyEntry(
+      await client.entry('demo-tool', '1.2.3'),
+    );
+    // A routine rotation must not break every lockfile pinning what this key
+    // signed before it was retired.
+    expect(result.signatures[0]?.status).toBe('valid');
+  });
+
+  it('revokes a signature made after a from-now revocation', async () => {
+    const { transport } = await withRevocation(
+      [
+        {
+          keyId: 'publisher-1',
+          revokedAt: '2026-08-01T00:00:00.000Z',
+          effective: 'from-now',
+        },
+      ],
+      '2026-08-10T00:00:00.000Z',
+    );
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      keys: { 'publisher-1': keys.leaf! },
+    });
+    const result = await client.verifyEntry(
+      await client.entry('demo-tool', '1.2.3'),
+    );
+    expect(result.signatures[0]?.status).toBe('revoked');
+  });
+
+  it('reports whether the registry does revocation at all', async () => {
+    const { transport } = fixtureTransport({
+      '/.well-known/prex-registry': definition(),
+    });
+    const client = new RegistryClient({ baseUrl: BASE, transport });
+    const result = await client.revocations();
+    // "No list" is not "nothing is revoked", and a consumer may reasonably
+    // decline to trust a registry that cannot say.
+    expect(result).toEqual({ entries: [], known: false });
+  });
+
+  it('re-reads the revocation list rather than caching it forever', async () => {
+    let revoked: unknown[] = [];
+    let serial = 1;
+    let now = 0;
+    const transport = revocationTransport(() => ({ serial, revoked }));
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      revocationTtlMilliseconds: 1000,
+      clock: () => now,
+    });
+    expect((await client.revocations()).entries).toEqual([]);
+
+    revoked = [
+      {
+        keyId: 'publisher-1',
+        revokedAt: '2026-08-11T00:00:00.000Z',
+        effective: 'retroactive',
+      },
+    ];
+    serial = 2;
+    // Still cached: within the TTL.
+    expect((await client.revocations()).entries).toEqual([]);
+    now = 1000;
+    // A client that cached forever would never learn about a compromise, which
+    // is the entire point of revocation.
+    expect((await client.revocations()).entries).toHaveLength(1);
+  });
+
+  it('refuses a revocation list older than one it has already seen', async () => {
+    let serial = 7;
+    let now = 0;
+    const transport = revocationTransport(() => ({ serial, revoked: [] }));
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      revocationTtlMilliseconds: 1000,
+      clock: () => now,
+    });
+    expect((await client.revocations()).known).toBe(true);
+
+    serial = 3;
+    now = 1000;
+    // A replayed older list would pin a consumer to the state of the world
+    // from before a compromise.
+    await expect(client.revocations()).rejects.toMatchObject({
+      code: 'STALE_METADATA',
+    });
+  });
+});
+
+/** A transport whose revocation list is produced fresh on every read. */
+function revocationTransport(
+  current: () => { serial: number; revoked: unknown[] },
+) {
+  return {
+    async request(request: HttpRequest): Promise<HttpResponse> {
+      const state = current();
+      const body = request.url.endsWith('/v1/revocations')
+        ? {
+            list: {
+              revocationListVersion: '1',
+              registryId: 'urn:openpacker:registry:example',
+              serial: state.serial,
+              issuedAt: '2026-08-11T00:00:00.000Z',
+              revoked: state.revoked,
+            },
+            listDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
+            signatures: [],
+          }
+        : definition([...ALL_RESOURCES, 'prex.registry.key-lifecycle/1']);
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: new TextEncoder().encode(JSON.stringify(body)),
+        url: request.url,
+      } as HttpResponse;
+    },
+  };
+}

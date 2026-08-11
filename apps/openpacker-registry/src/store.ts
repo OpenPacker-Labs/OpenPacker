@@ -16,6 +16,7 @@ import { dirname } from 'node:path';
 import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue, PackageManifest } from '@openpacker/contracts';
 import type { ServiceabilityRecord } from './serviceability.js';
+import type { KeyRotation, RevocationEntry } from './keys.js';
 
 export type EntryStatus = 'active' | 'deprecated' | 'deleted';
 
@@ -80,6 +81,25 @@ export class RegistryStore {
         method TEXT NOT NULL,
         detail TEXT,
         PRIMARY KEY (name, version)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS revocations (
+        key_id TEXT PRIMARY KEY,
+        revoked_at TEXT NOT NULL,
+        effective TEXT NOT NULL,
+        reason TEXT,
+        detail TEXT,
+        replaced_by TEXT
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS revocation_serial (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        serial INTEGER NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS key_rotations (
+        next_key_id TEXT PRIMARY KEY,
+        previous_key_id TEXT NOT NULL,
+        next_public_key TEXT NOT NULL,
+        rotated_at TEXT NOT NULL,
+        signature TEXT NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS namespace_keys (
         namespace TEXT NOT NULL,
@@ -289,6 +309,112 @@ export class RegistryStore {
         "UPDATE serviceability SET checked_at = '1970-01-01T00:00:00.000Z' WHERE name = ? AND version = ?",
       )
       .run(name, version);
+  }
+
+  revocations(): readonly RevocationEntry[] {
+    return (
+      this.#database
+        .prepare('SELECT * FROM revocations ORDER BY key_id')
+        .all() as unknown as {
+        key_id: string;
+        revoked_at: string;
+        effective: string;
+        reason: string | null;
+        detail: string | null;
+        replaced_by: string | null;
+      }[]
+    ).map(
+      (row): RevocationEntry => ({
+        keyId: row.key_id,
+        revokedAt: row.revoked_at,
+        effective: row.effective as RevocationEntry['effective'],
+        ...(row.reason === null
+          ? {}
+          : { reason: row.reason as RevocationEntry['reason'] }),
+        ...(row.detail === null ? {} : { detail: row.detail }),
+        ...(row.replaced_by === null ? {} : { replacedBy: row.replaced_by }),
+      }),
+    );
+  }
+
+  /**
+   * Record a revocation and bump the serial.
+   *
+   * The serial moves on every change so a client can tell a current list from
+   * a stale one — a mirror that quietly stopped updating would otherwise pin
+   * its consumers to the state of the world before a compromise.
+   */
+  revoke(entry: RevocationEntry): number {
+    this.#database
+      .prepare(
+        `INSERT INTO revocations(key_id, revoked_at, effective, reason, detail, replaced_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key_id) DO UPDATE SET
+           revoked_at = excluded.revoked_at, effective = excluded.effective,
+           reason = excluded.reason, detail = excluded.detail,
+           replaced_by = excluded.replaced_by`,
+      )
+      .run(
+        entry.keyId,
+        entry.revokedAt,
+        entry.effective,
+        entry.reason ?? null,
+        entry.detail ?? null,
+        entry.replacedBy ?? null,
+      );
+    return this.#bumpSerial();
+  }
+
+  revocationSerial(): number {
+    const row = this.#database
+      .prepare('SELECT serial FROM revocation_serial WHERE id = 1')
+      .get() as { serial: number } | undefined;
+    return row?.serial ?? 0;
+  }
+
+  #bumpSerial(): number {
+    const next = this.revocationSerial() + 1;
+    this.#database
+      .prepare(
+        'INSERT INTO revocation_serial(id, serial) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET serial = excluded.serial',
+      )
+      .run(next);
+    return next;
+  }
+
+  rotations(): readonly KeyRotation[] {
+    return (
+      this.#database
+        .prepare('SELECT * FROM key_rotations ORDER BY rotated_at')
+        .all() as unknown as {
+        next_key_id: string;
+        previous_key_id: string;
+        next_public_key: string;
+        rotated_at: string;
+        signature: string;
+      }[]
+    ).map((row) => ({
+      nextKeyId: row.next_key_id,
+      previousKeyId: row.previous_key_id,
+      nextPublicKey: JSON.parse(row.next_public_key) as JsonWebKey,
+      rotatedAt: row.rotated_at,
+      signature: row.signature,
+    }));
+  }
+
+  recordRotation(rotation: KeyRotation): void {
+    this.#database
+      .prepare(
+        `INSERT INTO key_rotations(next_key_id, previous_key_id, next_public_key, rotated_at, signature)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        rotation.nextKeyId,
+        rotation.previousKeyId,
+        JSON.stringify(rotation.nextPublicKey),
+        rotation.rotatedAt,
+        rotation.signature,
+      );
   }
 
   /** Bind a signing key to a namespace, as an operator decision. */

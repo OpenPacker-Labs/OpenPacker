@@ -1567,6 +1567,75 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/SignedPackageManifest",
       "valid": false,
       "levels": ["PREX-I"]
+    },
+    {
+      "name": "revocation-list",
+      "file": "registry-api/revocations.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-D"]
+    },
+    {
+      "name": "revocation-list-unsigned",
+      "file": "registry-api/revocations.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "revocation-unknown-effect",
+      "file": "registry-api/revocations.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/list/revoked/0/effective",
+          "value": "maybe"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "revocation-negative-serial",
+      "file": "registry-api/revocations.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/list/serial",
+          "value": -1
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "key-rotation",
+      "file": "registry-api/key-rotation.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/KeyRotation",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "key-rotation-unattested",
+      "file": "registry-api/key-rotation.json",
+      "mutations": [
+        {
+          "operation": "remove",
+          "path": "/signature"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/KeyRotation",
+      "valid": false,
+      "levels": ["PREX-I"]
     }
   ]
 }

@@ -143,6 +143,56 @@ clients can be written against it. **A registry that does not advertise
 `locations` point upstream instead. A metadata-only registry is a complete and
 useful registry; the MCP registry is one.
 
+## Key lifecycle
+
+Signing without revocation is a hole that signing creates. Before signatures, a
+compromised publisher was something a registry could fix by deleting their
+entries. Once consumers verify offline, deletion is not enough: a mirror still
+holds a document that still verifies against a key the attacker still controls.
+
+```http
+GET /v1/revocations
+```
+
+Returns a `SignedRevocationList`. **It MUST be signed** — a revocation a client
+cannot verify is a rumour, and an attacker who can forge or strip one has undone
+the signing scheme. A registry MUST serve the list even when empty, so a client
+can tell "this registry revokes nothing" from "this registry does not do
+revocation"; the second is a reason to trust it less.
+
+`serial` is monotonic. A client that has seen a higher serial MUST refuse a
+lower one, or a replay pins it to the state of the world from before a
+compromise. A client MUST NOT cache the list indefinitely, for the same reason:
+one that never re-reads never learns.
+
+### Two effects, and why both exist
+
+- **`from-now`** — signatures made before `revokedAt` stay valid; the key can no
+  longer publish. This is a routine retirement.
+- **`retroactive`** — every signature that key ever made is disowned. This is a
+  theft.
+
+Collapsing them into one forces an operator to choose between an unusable
+registry and an unrevoked compromise, and they will choose not to revoke. A
+client MUST report a revoked-but-otherwise-valid signature **distinctly from a
+forged one**: "this is not a real signature" and "this was real and the key has
+since been withdrawn" are different facts about a package, and a consumer's
+policy may accept one and not the other.
+
+### Rotation
+
+```http
+POST /v1/keys/rotations
+```
+
+A `KeyRotation` is a new key attested by its predecessor, signed over the
+canonical digest of the document with `signature` removed. The registry MUST
+verify that attestation — otherwise anyone can nominate a successor to somebody
+else's key — and SHOULD then record a `from-now` revocation of the old key.
+
+Continuity is the point. Without it, rotating a key means re-signing every
+version you ever published, which is why people do not rotate.
+
 ## Serviceability
 
 A registry entry is a claim. The MCP registry was measured with **11.2% of

@@ -63,7 +63,28 @@ A PREX registry **is** a Registry Definition, with the endpoints pinned down.
    document from a key with no claim to the name is a valid signature on a
    squatted name.
 
-6. **A metadata-only registry is a complete registry.** The blob route is
+6. **Signing obliges revocation, and revocation has two meanings.** Deleting an
+   entry used to be a sufficient answer to a compromised publisher. Once
+   consumers verify offline it is not: a mirror still holds a document that
+   still verifies against a key the attacker still holds. So
+   `GET /v1/revocations` serves a **signed** list — a revocation a client cannot
+   verify is a rumour — carrying a monotonic `serial` a client refuses to see go
+   backwards.
+
+   The list distinguishes `from-now` from `retroactive` because a routine
+   retirement and a theft are not the same event. Collapsing them makes an
+   operator choose between breaking every lockfile that pinned something the key
+   signed and leaving a compromise unrevoked, and they will choose the second.
+   For the same reason a client reports `revoked` distinctly from `invalid`:
+   "this signature is forged" and "this signature was real and the key has since
+   been withdrawn" are different facts, and a consumer's policy may accept one.
+
+   Rotation carries continuity — a new key attested by its predecessor, verified
+   by the registry so nobody can nominate a successor to a key they do not hold.
+   Without it, rotating means re-signing everything you ever published, which is
+   why people do not rotate.
+
+7. **A metadata-only registry is a complete registry.** The blob route is
    specified and reserved so clients can be written against it, but a source
    that does not advertise `prex.registry.artifact/1` does not serve bytes and
    its manifests point upstream. The MCP registry works this way and is useful.
