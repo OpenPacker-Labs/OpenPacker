@@ -206,5 +206,16 @@ test('sandbox package exists and defaults to fail-closed', async () => {
   assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.required, true);
   assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.prefer, 'auto');
   assert.equal(typeof sandbox.runInSandbox, 'function');
+  assert.equal(typeof sandbox.runHostInstaller, 'function');
+  assert.equal(typeof sandbox.assertSafeJailPath, 'function');
   assert.equal(sandbox.SANDBOX_LOSS.UNAVAILABLE, 'SANDBOX_UNAVAILABLE');
+  assert.equal(
+    sandbox.SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
+    'SYSTEM_INSTALL_NOT_SANDBOXED',
+  );
+  // Credential dirs/files must be listed for native mask overlays (not all of /home —
+  // toolchains often live under the user home).
+  const masks = sandbox.sensitiveMaskDirectories();
+  assert.ok(masks.some((p) => p.endsWith('/.ssh') || p.includes('/.ssh')));
+  assert.ok(sandbox.sensitiveMaskFiles().includes('/etc/shadow'));
 });

@@ -1,7 +1,8 @@
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { platform } from 'node:os';
 import { resolve } from 'node:path';
 import { SandboxBackendError, spawnCapture } from './mock.js';
+import { sensitiveMaskDirectories, sensitiveMaskFiles } from '../paths.js';
 import type { BackendProbe, SandboxBackend } from '../types.js';
 
 function which(bin: string): string | undefined {
@@ -94,22 +95,45 @@ export function buildBwrapArgv(input: {
   readonlyPaths: readonly string[];
   network: boolean;
 }): string[] {
-  // Minimal profile: unshare net unless granted; bind RO root-ish paths the
-  // process needs; RW only for declared paths. We do not claim a full
-  // chroot — this is defense-in-depth for package scripts.
+  // Defense-in-depth profile (Aube-aligned):
+  // - unshare net unless granted
+  // - host root RO
+  // - mask home / secret dirs so RO root cannot leak credentials
+  // - RW only for declared package / temp paths (re-bound after masks)
   const args: string[] = [
     input.bwrap,
     '--die-with-parent',
     '--new-session',
     '--unshare-pid',
+    '--unshare-ipc',
   ];
   if (!input.network) args.push('--unshare-net');
 
-  // Provide a minimal filesystem: host paths RO except explicit RW.
   args.push('--ro-bind', '/', '/');
   args.push('--dev', '/dev');
   args.push('--proc', '/proc');
   args.push('--tmpfs', '/tmp');
+  args.push('--tmpfs', '/var/tmp');
+
+  // Mask credential-bearing directories after the RO root bind. Package RW
+  // binds below re-expose only the granted trees.
+  for (const dir of sensitiveMaskDirectories()) {
+    if (existsSync(dir)) args.push('--tmpfs', dir);
+  }
+  for (const file of sensitiveMaskFiles()) {
+    if (existsSync(file)) args.push('--ro-bind', '/dev/null', file);
+  }
+
+  // Re-expose the executable after masks (nvm/mise node lives under $HOME).
+  const command0 = input.command[0];
+  if (command0 && command0.includes('/')) {
+    try {
+      const execPath = resolve(command0);
+      if (existsSync(execPath)) args.push('--ro-bind', execPath, execPath);
+    } catch {
+      // ignore
+    }
+  }
 
   const rw = new Set(
     [...input.readwritePaths, input.cwd].map((p) => resolve(p)),
@@ -167,8 +191,25 @@ export function buildSeatbeltProfile(input: {
   const writes = input.readwritePaths
     .map((p) => `(allow file-write* (subpath ${JSON.stringify(resolve(p))}))`)
     .join('\n  ');
-  const reads = input.readonlyPaths
-    .map((p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`)
+  // Prefer explicit RO trees when provided; otherwise allow reading system
+  // paths but still deny the home/secret subpaths below.
+  const reads =
+    input.readonlyPaths.length > 0
+      ? input.readonlyPaths
+          .map(
+            (p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`,
+          )
+          .join('\n  ')
+      : `(allow file-read-data file-read-metadata
+    (regex #"^/(usr|bin|sbin|lib|lib64|System|Library|Applications|opt|private/etc|etc|dev|tmp|var/folders)/")
+    (literal "/")
+    (literal "/private")
+  )`;
+  const deniedHomes = sensitiveMaskDirectories()
+    .map(
+      (p) =>
+        `(deny file-read* file-write* (subpath ${JSON.stringify(resolve(p))}))`,
+    )
     .join('\n  ');
   const net = input.network ? '(allow network*)' : '(deny network*)';
   return `
@@ -179,8 +220,8 @@ export function buildSeatbeltProfile(input: {
 (allow signal)
 (allow sysctl-read)
 (allow mach-lookup)
-(allow file-read*)
 ${reads}
+${deniedHomes}
 ${writes}
 ${net}
 `.trim();

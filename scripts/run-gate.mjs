@@ -36,6 +36,7 @@ const vitestTargets = {
     'packages/trust',
     'packages/policy',
     'packages/receipts',
+    'packages/sandbox',
     'packages/opm-project',
     'apps/openpackerd',
     'apps/opm',

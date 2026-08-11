@@ -35,6 +35,15 @@ export {
 } from './env.js';
 
 export {
+  assertSafeJailPath,
+  isPathInside,
+  JailPathError,
+  normalizeJailPaths,
+  sensitiveMaskDirectories,
+  sensitiveMaskFiles,
+} from './paths.js';
+
+export {
   createMockBackend,
   SandboxBackendError,
   spawnCapture,
