@@ -13,6 +13,11 @@ import {
   type ProviderCapabilities,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
+import {
+  HostInstallerSandboxError,
+  planSandboxSummary,
+  runHostInstaller,
+} from '@openpacker/sandbox';
 
 /**
  * Windows applications, through the real `winget` CLI.
@@ -158,6 +163,7 @@ export class WingetSystemProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallPlan> {
     const { id, version } = wingetId(exactPurl);
+    const summary = planSandboxSummary(options.sandbox);
     return {
       exactPurl,
       command: [
@@ -184,6 +190,11 @@ export class WingetSystemProvider implements InstallerProvider {
       requiresElevation: options.allowElevation === true,
       irreversible: true,
       semanticLoss: WINGET_LOSS,
+      sandbox: {
+        mode: summary.mode,
+        prefer: summary.prefer,
+        willEnforce: summary.willEnforce,
+      },
     };
   }
 
@@ -201,15 +212,35 @@ export class WingetSystemProvider implements InstallerProvider {
     if (options.dryRun)
       return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
 
-    const [file, ...args] = plan.command;
     try {
-      const { stdout, stderr } = await this.execute(
-        file!,
-        args,
-        options.signal ? { signal: options.signal } : {},
-      );
-      return { ...plan, performed: true, exitCode: 0, stdout, stderr };
+      const result = await runHostInstaller({
+        argv: plan.command,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ecosystem: 'winget',
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ambientExecute: async () => {
+          const [file, ...args] = plan.command;
+          return this.execute(
+            file!,
+            args,
+            options.signal ? { signal: options.signal } : {},
+          );
+        },
+      });
+      return {
+        ...plan,
+        performed: true,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        sandboxEnforced: result.sandboxEnforced,
+        sandboxBackend: result.sandboxBackend,
+        semanticLoss: [...plan.semanticLoss, ...result.extraLosses],
+      };
     } catch (error) {
+      if (error instanceof HostInstallerSandboxError)
+        throw new ProviderError('POLICY_DENIED', error.message);
       const failure = error as {
         code?: number;
         stdout?: string;

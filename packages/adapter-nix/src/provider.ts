@@ -11,6 +11,11 @@ import {
   type ProviderCapabilities,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
+import {
+  HostInstallerSandboxError,
+  planSandboxSummary,
+  runHostInstaller,
+} from '@openpacker/sandbox';
 import { NixCodec } from './index.js';
 
 /**
@@ -255,9 +260,10 @@ export class NixStoreProvider implements InstallerProvider {
 
   async plan(
     exactPurl: string,
-    _options: InstallOptions = {},
+    options: InstallOptions = {},
   ): Promise<InstallPlan> {
     const target = installableFromPurl(exactPurl);
+    const summary = planSandboxSummary(options.sandbox);
     return {
       exactPurl,
       command: [
@@ -275,6 +281,11 @@ export class NixStoreProvider implements InstallerProvider {
       // generation ledger does not cover it either way.
       irreversible: false,
       semanticLoss: NIX_LOSS,
+      sandbox: {
+        mode: summary.mode,
+        prefer: summary.prefer,
+        willEnforce: summary.willEnforce,
+      },
     };
   }
 
@@ -291,15 +302,35 @@ export class NixStoreProvider implements InstallerProvider {
       );
     if (options.dryRun)
       return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
-    const [file, ...args] = plan.command;
     try {
-      const { stdout, stderr } = await this.execute(
-        file!,
-        args,
-        options.signal ? { signal: options.signal } : {},
-      );
-      return { ...plan, performed: true, exitCode: 0, stdout, stderr };
+      const result = await runHostInstaller({
+        argv: plan.command,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ecosystem: 'nix',
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ambientExecute: async () => {
+          const [file, ...args] = plan.command;
+          return this.execute(
+            file!,
+            args,
+            options.signal ? { signal: options.signal } : {},
+          );
+        },
+      });
+      return {
+        ...plan,
+        performed: true,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        sandboxEnforced: result.sandboxEnforced,
+        sandboxBackend: result.sandboxBackend,
+        semanticLoss: [...plan.semanticLoss, ...result.extraLosses],
+      };
     } catch (error) {
+      if (error instanceof HostInstallerSandboxError)
+        throw new ProviderError('POLICY_DENIED', error.message);
       const failure = error as {
         code?: number;
         stdout?: string;

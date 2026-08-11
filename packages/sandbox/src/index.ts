@@ -52,3 +52,15 @@ export {
 export { createMxcBackend, probeMxc } from './backends/mxc.js';
 
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
+
+export {
+  HostInstallerSandboxError,
+  notSandboxedLoss,
+  planSandboxSummary,
+  runHostInstaller,
+  sandboxPolicyFromInstallOptions,
+  sandboxedSystemLoss,
+  type HostInstallerRunInput,
+  type HostInstallerRunResult,
+  type HostInstallerSandboxOptions,
+} from './host-install.js';

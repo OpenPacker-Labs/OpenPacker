@@ -123,7 +123,10 @@ describe('installing', () => {
         stderr: 'No package found matching input criteria.',
       });
     }, windows);
-    const outcome = await provider.install('pkg:winget/Nope/Nope');
+    // Ambient path so unit tests hit the injected execute mock (not live bwrap).
+    const outcome = await provider.install('pkg:winget/Nope/Nope', {
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
     expect(outcome.exitCode).toBe(1);
     expect(outcome.stderr).toMatch(/No package found/u);
   });

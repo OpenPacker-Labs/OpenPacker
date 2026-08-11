@@ -161,6 +161,15 @@ export interface InstalledPackageRecord {
     target: string;
   }[];
   installedAt: string;
+  /**
+   * Whether lifecycle scripts ran for this package during install.
+   * Absent means not recorded (pre-sandbox installs).
+   */
+  lifecycleScriptsExecuted?: boolean;
+  /** Sandbox backend id when install-time execution was sandboxed. */
+  sandboxBackend?: string;
+  /** Whether a jail was enforced for install-time execution. */
+  sandboxEnforced?: boolean;
 }
 
 export interface ProjectState {

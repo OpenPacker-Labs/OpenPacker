@@ -48,6 +48,20 @@ export interface Generation {
   lockDigest: string;
   members: GenerationMember[];
   generationDigest: string;
+  /**
+   * Sandbox posture observed when this generation was installed (ADR 0036).
+   * Optional for pre-sandbox ledgers.
+   */
+  sandbox?: {
+    /** Policy digest when available. */
+    policyDigest?: string;
+    /** True when any member ran lifecycle scripts under a jail. */
+    lifecycleScriptsExecuted?: boolean;
+    /** Backend ids seen during install-time execution (unique, sorted). */
+    backends?: string[];
+    /** False when any install-time execution was ambient / degraded. */
+    enforced?: boolean;
+  };
 }
 
 /**
@@ -312,6 +326,8 @@ export async function recordGeneration(input: {
    * that is how a chain deeper than one hop is expressed.
    */
   references?: Readonly<Record<string, readonly string[]>>;
+  /** Optional sandbox summary for this install generation. */
+  sandbox?: Generation['sandbox'];
 }): Promise<Generation> {
   const paths = environmentPaths(input.root);
   const state = await readEnvironmentState(input.root);
@@ -356,6 +372,7 @@ export async function recordGeneration(input: {
     ...(previous ? { parentGenerationDigest: previous.generationDigest } : {}),
     lockDigest: input.lockDigest,
     members,
+    ...(input.sandbox === undefined ? {} : { sandbox: input.sandbox }),
   };
   const generation: Generation = {
     ...body,

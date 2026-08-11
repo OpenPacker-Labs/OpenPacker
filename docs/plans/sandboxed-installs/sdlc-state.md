@@ -1,8 +1,10 @@
 # sdlc state — sandboxed installs
 
 - Initiative: Aube-style jails + MXC-first sandboxed installs/execution
-- Phase: **dispatch** — contracts frozen; parallel work packages WP-A…WP-I
+- Phase: **implementation** — foundation on main (`0c70e85` / #59); follow-up
+  installers + generation sandbox fields
 - Trunk at start: `fb23980`
+- Foundation merged: `0c70e85` (#59)
 - Plan: one-shot parallel swarm (no sequential phases); merge order bottom-up
   only for git hygiene
 
