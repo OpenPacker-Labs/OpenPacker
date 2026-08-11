@@ -29,6 +29,27 @@
               "type": "null"
             }
           ]
+        },
+        "unavailable": {
+          "$comment": "Sources that did not answer. Present so a caller can tell 'nothing matched' from 'a source was down' \u2014 a mirror that reads an outage as an empty result concludes it has caught up.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["sourceId", "reason"],
+            "properties": {
+              "sourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

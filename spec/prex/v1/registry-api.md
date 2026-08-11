@@ -137,6 +137,36 @@ clients can be written against it. **A registry that does not advertise
 `locations` point upstream instead. A metadata-only registry is a complete and
 useful registry; the MCP registry is one.
 
+## Federation
+
+A registry MAY serve packages it does not hold, fronting upstream sources — an
+ecosystem registry through an adapter, or another PREX registry through this
+same binding. No new mechanism is involved: the plug-in that lets a client reach
+npm is what lets a registry reach npm.
+
+Three rules make a relayed answer honest:
+
+1. **A relayed entry carries `registryMetadata.sourceId`.** The `registryId` is
+   the registry that answered — it did answer — but `sourceId` records who
+   actually holds it. A consumer can always tell what a registry holds from what
+   it is passing along.
+2. **Upstream signatures pass through untouched.** A relay MUST NOT re-sign an
+   upstream's manifest as its own. Re-signing makes a relay indistinguishable
+   from an original, and the upstream's key is the one a consumer wants to
+   check. A relay MAY add its own signature alongside.
+3. **Local wins.** A package the registry itself publishes MUST take precedence
+   over any upstream of the same name, or an upstream that starts publishing a
+   name you already publish silently takes it over.
+
+A registry that queries an upstream and does not get an answer MUST distinguish
+"nothing matched" from "a source did not respond", by naming unreachable sources
+in the page metadata. A mirror that reads an outage as an empty result will
+conclude it has caught up.
+
+Sync (`updatedSince`) applies to what the registry holds, not to what it relays:
+an upstream's changes are the upstream's to replay, and a mirror should follow
+the source rather than a chain of relays.
+
 ## Errors
 
 Problem documents per [errors.md](errors.md), with `code` drawn from the

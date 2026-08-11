@@ -887,7 +887,11 @@ export type PackagePage = {
   packages: Array<RegistryEntry>;
   metadata: PageMetadata;
 };
-export type PageMetadata = { count: number; nextCursor?: Cursor | null };
+export type PageMetadata = {
+  count: number;
+  nextCursor?: Cursor | null;
+  unavailable?: Array<{ sourceId: string; reason: string }>;
+};
 export type PlatformContexts = {
   build?: TargetContext;
   host?: TargetContext;
@@ -6923,6 +6927,28 @@ export const schemaCatalog: Record<string, JsonValue> = {
                 type: 'null',
               },
             ],
+          },
+          unavailable: {
+            $comment:
+              "Sources that did not answer. Present so a caller can tell 'nothing matched' from 'a source was down' — a mirror that reads an outage as an empty result concludes it has caught up.",
+            type: 'array',
+            maxItems: 64,
+            items: {
+              type: 'object',
+              required: ['sourceId', 'reason'],
+              properties: {
+                sourceId: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 128,
+                },
+                reason: {
+                  type: 'string',
+                  maxLength: 4096,
+                },
+              },
+              additionalProperties: false,
+            },
           },
         },
         additionalProperties: false,

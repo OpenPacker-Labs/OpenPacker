@@ -32,6 +32,11 @@ import {
   RegistryStoreError,
   type StoredEntry,
 } from './store.js';
+import {
+  Federation,
+  type ConfiguredSource,
+  type FederationOptions,
+} from './sources.js';
 
 export const WELL_KNOWN = '/.well-known/prex-registry';
 const DEFAULT_LIMIT = 50;
@@ -61,6 +66,13 @@ export interface RegistryOptions {
    * deliberately rather than inherit.
    */
   anonymousPublish?: boolean;
+  /**
+   * Upstream sources this registry fronts. Configuration order is precedence,
+   * and what this registry itself publishes always wins over all of them.
+   */
+  sources?: readonly ConfiguredSource[];
+  /** How upstream registries are reached. See FederationOptions. */
+  registryClientFactory?: FederationOptions['clientFactory'];
   logger?: boolean;
   bodyLimit?: number;
 }
@@ -68,6 +80,16 @@ export interface RegistryOptions {
 export function createRegistry(options: RegistryOptions): FastifyInstance {
   const store = options.store ?? new RegistryStore(options.databasePath);
   const clock = options.clock ?? { now: () => new Date().toISOString() };
+  const federation =
+    options.sources && options.sources.length > 0
+      ? new Federation({
+          sources: options.sources,
+          registryId: options.registryId,
+          ...(options.registryClientFactory === undefined
+            ? {}
+            : { clientFactory: options.registryClientFactory }),
+        })
+      : undefined;
   const app = Fastify({
     logger: options.logger ?? false,
     bodyLimit: options.bodyLimit ?? 4 * 1024 * 1024,
@@ -157,12 +179,40 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // filtering happens after the page is taken, and using the filtered tail
       // would replay rows that were already skipped.
       const lastRead = entries.at(-1)?.sequence ?? after;
+      const local = entries.map((entry) => toRegistryEntry(entry, options));
+
+      // Upstreams are consulted only once the local pages are exhausted, so a
+      // mirror walking this registry replays its own records in a stable
+      // sequence before anything relayed shows up.
+      let relayed: RegistryEntry[] = [];
+      let unavailable: { sourceId: string; reason: string }[] = [];
+      if (
+        federation &&
+        !hasMore &&
+        request.query.updatedSince === undefined &&
+        request.query.search !== undefined
+      ) {
+        const found = await federation.search(
+          request.query.search,
+          limit - local.length,
+        );
+        const held = new Set(local.map((entry) => entry.manifest.name));
+        relayed = found.entries.filter(
+          (entry) => !held.has(entry.manifest.name),
+        );
+        unavailable = found.unavailable;
+      }
+
       return sendJson(reply, {
-        packages: entries.map((entry) => toRegistryEntry(entry, options)),
+        packages: [...local, ...relayed],
         metadata: {
-          count: entries.length,
+          count: local.length + relayed.length,
           nextCursor:
             hasMore && lastRead !== undefined ? encodeCursor(lastRead) : null,
+          // Naming what did not answer is the difference between "no results"
+          // and "some sources were down"; a mirror must not read one as the
+          // other.
+          ...(unavailable.length > 0 ? { unavailable } : {}),
         },
       } as unknown as JsonValue);
     } catch (error) {
@@ -201,14 +251,19 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // holding a lockfile needs to learn a version was pulled, and a 404
       // tells it nothing.
       const entry = store.get(name, version);
-      if (!entry)
-        return sendProblem(
+      if (entry)
+        return sendJson(
           reply,
-          problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
+          toRegistryEntry(entry, options) as unknown as JsonValue,
         );
-      return sendJson(
+      // Local wins; only then is an upstream asked. An upstream that starts
+      // publishing a name this registry already serves must not take it over.
+      const relayed = await federation?.find(name, version);
+      if (relayed)
+        return sendJson(reply, relayed.entry as unknown as JsonValue);
+      return sendProblem(
         reply,
-        toRegistryEntry(entry, options) as unknown as JsonValue,
+        problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
       );
     },
   );

@@ -344,3 +344,137 @@ describe('reading, through the real client', () => {
     await app.close();
   });
 });
+
+describe('federation over external sources', () => {
+  /** An upstream registry holding something the local one does not. */
+  async function upstream(name = 'com.example.upstream-only') {
+    const app = registry({
+      registryId: 'urn:openpacker:registry:upstream',
+      store: new RegistryStore(),
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest(name, '2.0.0')),
+    });
+    return app;
+  }
+
+  /** A local registry fronting that upstream, wired in-process. */
+  function fronting(up: ReturnType<typeof registry>) {
+    return registry({
+      store: new RegistryStore(),
+      sources: [
+        { id: 'published', spec: { kind: 'published' } },
+        { id: 'upstream', spec: { kind: 'prex', url: BASE } },
+      ],
+      registryClientFactory: () => clientFor(up),
+    });
+  }
+
+  it('relays a package it does not hold, tagged with its source', async () => {
+    const up = await upstream();
+    const local = fronting(up);
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.upstream-only/versions/2.0.0',
+    });
+    expect(response.statusCode).toBe(200);
+    const metadata = response.json().registryMetadata;
+    // The registry answering says so, and records that it is relaying — the
+    // difference between what it holds and what it fronts.
+    expect(metadata.registryId).toBe('urn:openpacker:registry:test');
+    expect(metadata.sourceId).toBe('upstream');
+    await up.close();
+    await local.close();
+  });
+
+  it('carries upstream signatures through rather than re-signing', async () => {
+    const up = await upstream();
+    const local = fronting(up);
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.upstream-only/versions/2.0.0',
+    });
+    // Re-signing would make a relay indistinguishable from an original, and
+    // the upstream's key is the one a consumer wants to check.
+    expect(
+      response.json().signatures.map((s: { keyId: string }) => s.keyId),
+    ).toEqual(['publisher-1']);
+    await up.close();
+    await local.close();
+  });
+
+  it('lets what the registry publishes win over an upstream of the same name', async () => {
+    const up = await upstream('com.example.demo');
+    const local = fronting(up);
+    await local.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest('com.example.demo', '2.0.0')),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/2.0.0',
+    });
+    // An upstream publishing a name you already publish must not take it over.
+    expect(response.json().registryMetadata.sourceId).toBeUndefined();
+    await up.close();
+    await local.close();
+  });
+
+  it('still 404s for something no source holds', async () => {
+    const up = await upstream();
+    const local = fronting(up);
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.nowhere/versions/1.0.0',
+    });
+    expect(response.statusCode).toBe(404);
+    await up.close();
+    await local.close();
+  });
+
+  it('names a source that did not answer rather than reporting no results', async () => {
+    const local = registry({
+      store: new RegistryStore(),
+      sources: [{ id: 'down', spec: { kind: 'prex', url: BASE } }],
+      registryClientFactory: () =>
+        new RegistryClient({
+          baseUrl: BASE,
+          transport: {
+            async request() {
+              throw new Error('connect ECONNREFUSED');
+            },
+          },
+        }),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages?search=anything',
+    });
+    expect(response.statusCode).toBe(200);
+    // "No results" and "a source was down" must not read the same to a mirror.
+    expect(response.json().metadata.unavailable).toEqual([
+      { sourceId: 'down', reason: expect.stringContaining('ECONNREFUSED') },
+    ]);
+    await local.close();
+  });
+
+  it('merges an upstream search result the local store did not have', async () => {
+    const up = await upstream();
+    const local = fronting(up);
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages?search=upstream-only',
+    });
+    const names = response
+      .json()
+      .packages.map(
+        (entry: { manifest: { name: string } }) => entry.manifest.name,
+      );
+    expect(names).toEqual(['com.example.upstream-only']);
+    await up.close();
+    await local.close();
+  });
+});
