@@ -143,6 +143,81 @@ clients can be written against it. **A registry that does not advertise
 `locations` point upstream instead. A metadata-only registry is a complete and
 useful registry; the MCP registry is one.
 
+## Holders, quotas, and moving a name
+
+A namespace proof binds a _key_ to a name prefix. That is the wrong unit for two
+questions a registry has to answer, and getting the unit wrong is why both have
+gone unanswered elsewhere.
+
+A survey of the MCP registry found a single domain behind **75 namespaces**, 62
+of which served a marketing page rather than a server. Nothing was hidden; the
+data simply only ever existed as a scatter of individual proofs, so seeing the
+pattern took a research project. So a proof is attributed to a **holder** — the
+DNS name, the forge account, or the operator decision it actually rests on — and
+
+```http
+GET /v1/holders
+GET /v1/holders/{holderId}
+```
+
+make that a lookup. Holders are listed most-namespaces-first, because a list
+sorted by name buries what the route is for. Each namespace carries a package
+count: 75 namespaces holding one package each is a different thing from 75
+holding none.
+
+A holder's authority stops where its proof does. `io.github.acme` rests on the
+account, not on the forge — collapsing it to `github` would let one account
+speak for every other.
+
+### Quotas
+
+Publishing is charged **per holder, never per namespace**. A per-namespace
+budget is not a budget: the way around it is to take out another namespace,
+which costs one DNS record and is precisely the behaviour the holder identity
+exists to make visible. Over the allowance, a registry MUST answer `429` with
+`Retry-After` set to when the oldest publish in the window ages out — the only
+moment the answer changes. A client sent back earlier is refused twice, and a
+client refused twice retries harder.
+
+The window slides. A fixed bucket lets a publisher spend a full allowance at
+`:59` and another at `:00`, which is twice the limit at the moment it matters.
+
+A registry MUST NOT charge a publish it refused; otherwise exhausting a rival's
+allowance is as cheap as publishing rubbish under their name and being told no.
+A retried publish of identical bytes is idempotent and is charged once.
+
+### Rename and transfer
+
+```http
+POST /v1/packages/{name}/rename
+GET  /v1/packages/{name}/redirect
+```
+
+A publisher moving from a forge namespace to their own domain should not have to
+ask a maintainer, and everything pinned to the old name should keep resolving.
+The request body is a `SignedPackageRedirect`, and the registry MUST refuse it
+unless one signing key is permitted to publish **both** names. A key holding
+only the source could redirect its users to somebody else's package; a key
+holding only the destination could claim any package it liked.
+
+The move is a **document**, not an HTTP 308. A mirror sees only bytes, and a
+redirect it cannot verify is a redirect it has to trust. `reason` distinguishes
+a `rename` (same holder) from a `transfer` (a new one), because who holds a
+package afterwards is a fact consumers may have policy about.
+
+Reads at the old name resolve through the chain and MUST say so — an
+`x-openpacker-renamed-from` header and `redirectedFrom` in the response. A
+client that silently receives a different package than it asked for has no way
+to notice. Chains are bounded and cycle-guarded: a loop is refused rather than
+followed. Publishing at a name that has moved is refused with `409`, because the
+redirect told everyone otherwise and two live copies of a package is how a
+lockfile stops meaning one thing.
+
+**Typosquatting is deliberately out of scope.** Names here are
+namespace-qualified and a namespace needs a proof, so the cheap attack is not
+one name a character away from a popular one — it is many namespaces, which is
+what holders make visible.
+
 ## Key lifecycle
 
 Signing without revocation is a hole that signing creates. Before signatures, a

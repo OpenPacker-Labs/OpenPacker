@@ -53,6 +53,16 @@ import {
   type ServiceabilityRecord,
 } from './serviceability.js';
 import {
+  holderOf,
+  quotaState,
+  redirectDigest,
+  redirectMessage,
+  resolveRedirect,
+  retryAfterSeconds,
+  type PackageRedirect,
+  type QuotaPolicy,
+} from './holders.js';
+import {
   Federation,
   type ConfiguredSource,
   type FederationOptions,
@@ -61,6 +71,18 @@ import {
 export const WELL_KNOWN = '/.well-known/prex-registry';
 const PUBLISH_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest';
+const REDIRECT_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedPackageRedirect';
+/**
+ * Publishes per holder per hour, by default.
+ *
+ * MCP closed daily publish limits as unnecessary and later measured what
+ * unlimited publishing produced. A default has to exist, because a limit an
+ * operator must opt into is a limit almost nobody runs with — and it is charged
+ * per holder, since a per-namespace budget is defeated by taking out another
+ * namespace, which costs one DNS record.
+ */
+const DEFAULT_QUOTA: QuotaPolicy = { limit: 120, windowSeconds: 3600 };
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
 
@@ -102,6 +124,8 @@ export interface RegistryOptions {
   serviceabilityTtlMilliseconds?: number;
   /** Transport for reaching what a manifest advertises. */
   serviceabilityTransport?: HttpTransport;
+  /** Publish allowance, charged per namespace holder. See DEFAULT_QUOTA. */
+  quota?: QuotaPolicy;
   logger?: boolean;
   bodyLimit?: number;
 }
@@ -111,6 +135,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   const clock = options.clock ?? { now: () => new Date().toISOString() };
   const validator = createPrexValidator();
   const serviceabilityTtl = options.serviceabilityTtlMilliseconds ?? 86_400_000;
+  const quota = options.quota ?? DEFAULT_QUOTA;
   // Checks are triggered by reads, so at most one is in flight per package —
   // otherwise a popular package under load would fan out one request per
   // reader to somebody else's origin, which is a denial of service the
@@ -331,6 +356,160 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     }
   });
 
+  /**
+   * Who holds what.
+   *
+   * The MCP survey that found one domain behind 75 namespaces had to go and
+   * look; the data existed only as a scatter of individual proofs. Ordering by
+   * namespace count puts the concentrated holders first, because a list sorted
+   * by name buries exactly what this route is for.
+   */
+  app.get('/v1/holders', async (_request, reply) =>
+    sendJson(reply, {
+      holders: store.holders(),
+    } as unknown as JsonValue),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/v1/holders/:id',
+    async (request, reply) => {
+      const id = decodeURIComponent(request.params.id);
+      const holder = store.holder(id);
+      if (!holder)
+        return sendProblem(
+          reply,
+          problem('PACKAGE_NOT_FOUND', 404, `No holder ${id} here`),
+        );
+      const state = quotaState(
+        store.recentPublishes(
+          id,
+          Date.parse(clock.now()) - quota.windowSeconds * 1000,
+        ),
+        quota,
+        Date.parse(clock.now()),
+      );
+      return sendJson(reply, {
+        ...holder,
+        quota: state,
+      } as unknown as JsonValue);
+    },
+  );
+
+  /**
+   * Move a name, keeping the old one resolvable.
+   *
+   * MCP has no answer here: a publisher moving from a forge namespace to their
+   * own domain has to ask a maintainer, and everything pinned to the old name
+   * is their problem. The redirect is a signed document rather than an HTTP
+   * 308 so that a mirror — which sees only bytes — can check the move came from
+   * the party that actually held both names.
+   */
+  app.post<{ Params: { name: string } }>(
+    '/v1/packages/:name/rename',
+    async (request, reply) => {
+      try {
+        const from = decodeURIComponent(request.params.name);
+        const body = request.body as {
+          redirect?: PackageRedirect;
+          signatures?: { keyId: string; signature: string }[];
+        };
+        assertValid(REDIRECT_SCHEMA, body as unknown as JsonValue, validator);
+        const redirect = body.redirect as PackageRedirect;
+        if (redirect.from !== from)
+          throw new PublishError(
+            'INVALID_REQUEST',
+            400,
+            `The redirect renames ${redirect.from}, but this route is ${from}`,
+          );
+        if (store.versions(from).length === 0)
+          throw new PublishError(
+            'PACKAGE_NOT_FOUND',
+            404,
+            `No package named ${from}`,
+          );
+        if (store.versions(redirect.to).length > 0)
+          // Otherwise a rename is a way to shadow a name somebody else is
+          // already publishing under.
+          throw new PublishError(
+            'POLICY_DENIED',
+            409,
+            `${redirect.to} already exists here`,
+          );
+
+        const message = await redirectMessage(redirect);
+        const signatures = body.signatures ?? [];
+        let holdsBoth = false;
+        for (const signature of signatures) {
+          const jwk = publisherKeyFor(signature.keyId);
+          if (!jwk)
+            throw new PublishError(
+              'INVALID_SIGNATURE',
+              403,
+              `Key ${signature.keyId} is not known to this registry`,
+            );
+          if (!mayPublish(signature.keyId, store.revocations()))
+            throw new PublishError(
+              'POLICY_DENIED',
+              403,
+              `Key ${signature.keyId} is revoked`,
+            );
+          const verifier = await Ed25519Verifier.fromJwk(signature.keyId, jwk);
+          if (!(await verifier.verify(message, signature.signature)))
+            throw new PublishError(
+              'INVALID_SIGNATURE',
+              400,
+              `Signature from ${signature.keyId} does not verify`,
+            );
+          // One key must hold *both* names. A key holding only the source could
+          // point its users at someone else's package; a key holding only the
+          // destination could claim any package it liked.
+          if (
+            holdsName(store, from, signature.keyId) &&
+            holdsName(store, redirect.to, signature.keyId)
+          )
+            holdsBoth = true;
+        }
+        if (!holdsBoth)
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `A rename must be signed by one key permitted to publish both ${from} and ${redirect.to}`,
+          );
+
+        const digest = await redirectDigest(redirect);
+        store.rename(from, redirect.to, clock.now());
+        store.recordRedirect(redirect, formatDigest(digest), signatures);
+        reply.code(201);
+        return sendJson(reply, {
+          redirect,
+          redirectDigest: digest,
+          signatures,
+        } as unknown as JsonValue);
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Params: { name: string } }>(
+    '/v1/packages/:name/redirect',
+    async (request, reply) => {
+      const from = decodeURIComponent(request.params.name);
+      const moved = store.redirect(from);
+      if (!moved)
+        return sendProblem(
+          reply,
+          problem('PACKAGE_NOT_FOUND', 404, `${from} has not moved`),
+        );
+      const [algorithm, value] = moved.digest.split(':');
+      return sendJson(reply, {
+        redirect: moved.redirect,
+        redirectDigest: { algorithm, value },
+        signatures: moved.signatures,
+      } as unknown as JsonValue);
+    },
+  );
+
   app.get('/v1/health', async (_request, reply) =>
     sendJson(reply, { status: store.ready() ? 'ok' : 'unavailable' }),
   );
@@ -408,15 +587,34 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   app.get<{ Params: { name: string } }>(
     '/v1/packages/:name/versions',
     async (request, reply) => {
-      const name = decodeURIComponent(request.params.name);
+      const asked = decodeURIComponent(request.params.name);
+      const followed = follow(store, asked);
+      if ('cycle' in followed)
+        return sendProblem(
+          reply,
+          problem(
+            'INTERNAL_ERROR',
+            500,
+            `The redirects for ${asked} loop; this registry will not follow them`,
+          ),
+        );
+      const name = followed.name;
       const versions = store.versions(name);
       if (versions.length === 0)
         return sendProblem(
           reply,
-          problem('PACKAGE_NOT_FOUND', 404, `No package named ${name}`),
+          problem('PACKAGE_NOT_FOUND', 404, `No package named ${asked}`),
         );
+      // Say plainly that the name moved. A client that silently gets a
+      // different package back than the one it asked for has no way to notice,
+      // and a lockfile should record what it actually resolved.
+      if (followed.hops.length > 0)
+        reply.header('x-openpacker-renamed-from', asked);
       return sendJson(reply, {
         name,
+        ...(followed.hops.length > 0
+          ? { redirectedFrom: asked, redirects: followed.hops }
+          : {}),
         versions: versions.map((entry) => ({
           version: entry.version,
           status: entry.status,
@@ -430,8 +628,20 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   app.get<{ Params: { name: string; version: string } }>(
     '/v1/packages/:name/versions/:version',
     async (request, reply) => {
-      const name = decodeURIComponent(request.params.name);
+      const asked = decodeURIComponent(request.params.name);
       const version = decodeURIComponent(request.params.version);
+      const followed = follow(store, asked);
+      if ('cycle' in followed)
+        return sendProblem(
+          reply,
+          problem(
+            'INTERNAL_ERROR',
+            500,
+            `The redirects for ${asked} loop; this registry will not follow them`,
+          ),
+        );
+      const name = followed.name;
+      if (name !== asked) reply.header('x-openpacker-renamed-from', asked);
       // Withdrawn versions stay retrievable by exact version: a consumer
       // holding a lockfile needs to learn a version was pulled, and a 404
       // tells it nothing.
@@ -543,13 +753,31 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
 
       // A valid signature says the document was not altered. It says nothing
       // about who may use this name, which is a separate question.
-      if (signatures.length > 0)
-        assertNamespace(
-          store,
-          body.manifest.name,
-          signatures,
-          body.namespaceProof,
+      //
+      // Anonymous publishes share one budget deliberately: with nobody to
+      // attribute them to there is nothing else to charge, and a per-request
+      // allowance would be no allowance at all.
+      const holder =
+        signatures.length > 0
+          ? assertNamespace(
+              store,
+              body.manifest.name,
+              signatures,
+              body.namespaceProof,
+            )
+          : 'operator:anonymous';
+
+      // A name that has moved cannot be published to at the old name; that is
+      // what the redirect promised everyone reading it.
+      const moved = store.redirect(body.manifest.name);
+      if (moved)
+        throw new PublishError(
+          'POLICY_DENIED',
+          409,
+          `${body.manifest.name} was ${moved.redirect.reason}d to ${moved.redirect.to}; publish there`,
         );
+
+      assertQuota(store, holder, quota, clock);
 
       const stored = store.publish({
         manifest: body.manifest,
@@ -557,6 +785,10 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         signatures: await counterSign(signatures, message, options.signer),
         now: clock.now(),
       });
+      // Charged only once the publish actually happened. Charging on the way in
+      // would let a rejected request — a bad signature, a name someone else
+      // holds — spend the allowance of the publisher whose name was borrowed.
+      if (stored.created) store.recordPublish(holder, Date.parse(clock.now()));
       reply.code(stored.created ? 201 : 200);
       return sendJson(reply, {
         entry: toRegistryEntry(stored.entry, options),
@@ -669,19 +901,84 @@ function assertNamespace(
   store: RegistryStore,
   packageName: string,
   signatures: readonly { keyId: string }[],
-  proof?: { namespace: string; keyId: string; method: string },
-): void {
-  if (proof) store.trustKey(proof.namespace, proof.keyId, proof.method);
+  proof?: {
+    namespace: string;
+    keyId: string;
+    method: string;
+    verifiedAt?: string;
+  },
+): string {
+  if (proof)
+    store.trustKey(
+      proof.namespace,
+      proof.keyId,
+      proof.method,
+      proof.verifiedAt ?? '',
+    );
   const candidates = namespacesOf(packageName);
   for (const namespace of candidates) {
     const permitted = new Set(store.keysFor(namespace));
-    if (signatures.some((signature) => permitted.has(signature.keyId))) return;
+    if (signatures.some((signature) => permitted.has(signature.keyId)))
+      // The most specific matching namespace is the one that governs, and its
+      // holder is who the publish is charged to.
+      return (
+        store.holderForNamespace(namespace) ?? holderOf(namespace, 'dns-txt')
+      );
   }
   throw new PublishError(
     'POLICY_DENIED',
     403,
     `No signing key on this request is permitted to publish "${packageName}". ` +
       `Provide a namespace proof for one of: ${candidates.join(', ') || '(none)'}.`,
+  );
+}
+
+/** Where a name resolves today, after any renames. */
+function follow(
+  store: RegistryStore,
+  name: string,
+): { name: string; hops: readonly PackageRedirect[] } | { cycle: true } {
+  // Cheap path: most names have never moved, and building the whole redirect
+  // map on every read would make a rename tax every request in the registry.
+  if (!store.redirect(name)) return { name, hops: [] };
+  return resolveRedirect(name, store.redirects());
+}
+
+/** Whether a key is permitted to publish under any namespace governing a name. */
+function holdsName(
+  store: RegistryStore,
+  packageName: string,
+  keyId: string,
+): boolean {
+  return namespacesOf(packageName).some((namespace) =>
+    store.keysFor(namespace).includes(keyId),
+  );
+}
+
+/**
+ * Refuse a publish that would exceed the holder's allowance.
+ *
+ * `Retry-After` is the moment the oldest publish in the window ages out, which
+ * is the only time the answer actually changes. Any other number sends a client
+ * back to be refused again, and a client refused twice retries harder.
+ */
+function assertQuota(
+  store: RegistryStore,
+  holderId: string,
+  policy: QuotaPolicy,
+  clock: { now: () => string },
+): void {
+  const now = Date.parse(clock.now());
+  const state = quotaState(
+    store.recentPublishes(holderId, now - policy.windowSeconds * 1000),
+    policy,
+    now,
+  );
+  if (state.remaining > 0) return;
+  throw new QuotaError(
+    `${holderId} has published ${policy.limit} times in the last ` +
+      `${policy.windowSeconds} seconds`,
+    retryAfterSeconds(state, now),
   );
 }
 
@@ -803,7 +1100,25 @@ class PublishError extends Error {
   }
 }
 
+/** Over the allowance. Carries the wait, because a 429 without one is a guess. */
+class QuotaError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message);
+    this.name = 'QuotaError';
+  }
+}
+
 function fail(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof QuotaError) {
+    reply.header('retry-after', String(error.retryAfterSeconds));
+    return sendProblem(
+      reply,
+      problem('RATE_LIMITED', 429, 'Publish quota exhausted', error.message),
+    );
+  }
   if (error instanceof PublishError)
     return sendProblem(
       reply,

@@ -475,6 +475,7 @@ export type ExternalRef = {
   annotations?: { [key: string]: string };
   extensions?: Extensions;
 };
+export type HolderId = string;
 export type IdentifyRequest = {
   query: {
     purl?: string;
@@ -704,6 +705,18 @@ export type MaterializeResponse = {
   tufTargetMetadataRef?: ExternalRef;
   restrictions: Array<string>;
 };
+export type NamespaceHolder = {
+  holderId: HolderId;
+  namespaces: Array<{
+    namespace: string;
+    method: 'dns-txt' | 'https-well-known' | 'registry-configured';
+    keyIds?: Array<string>;
+    verifiedAt?: string;
+    packageCount?: number;
+  }>;
+  firstSeen?: string;
+  quota?: PublishQuota;
+};
 export type NamespaceProof = {
   namespace: string;
   method: 'dns-txt' | 'https-well-known' | 'registry-configured';
@@ -899,6 +912,15 @@ export type PackagePage = {
   packages: Array<RegistryEntry>;
   metadata: PageMetadata;
 };
+export type PackageRedirect = {
+  redirectVersion: '1';
+  from: string;
+  to: string;
+  effectiveAt: string;
+  reason: 'rename' | 'transfer';
+  previousHolder?: HolderId;
+  nextHolder?: HolderId;
+};
 export type PageMetadata = {
   count: number;
   nextCursor?: Cursor | null;
@@ -1033,6 +1055,12 @@ export type Provenance = {
     | 'receipt-signature'
     | 'supply-chain-policy'
   >;
+};
+export type PublishQuota = {
+  limit: number;
+  windowSeconds: number;
+  remaining: number;
+  resetAt?: string;
 };
 export type PublishRequest = {
   descriptor: ArtifactDescriptor;
@@ -1372,6 +1400,11 @@ export type SignedPackageManifest = {
   manifestDigest: Digest;
   signatures: Array<ManifestSignature>;
 };
+export type SignedPackageRedirect = {
+  redirect: PackageRedirect;
+  redirectDigest: Digest;
+  signatures: Array<ManifestSignature>;
+};
 export type SignedReceipt = {
   receipt: ResolutionReceipt;
   receiptDigest: Digest;
@@ -1600,6 +1633,8 @@ export type VersionList = {
     isLatest: boolean;
     publishedAt?: string;
   }>;
+  redirectedFrom?: string;
+  redirects?: Array<PackageRedirect>;
 };
 export type Warning = {
   code: string;
@@ -7108,6 +7143,22 @@ export const schemaCatalog: Record<string, JsonValue> = {
               additionalProperties: false,
             },
           },
+          redirectedFrom: {
+            $comment:
+              'The name the client actually asked for, when it has moved. Stated rather than silently substituted: a client that gets back a different package than it requested has no way to notice, and a lockfile should record what it resolved.',
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          redirects: {
+            $comment:
+              "The chain that was followed, so a client can fetch and verify each signed redirect rather than take the registry's word that the move happened.",
+            type: 'array',
+            items: {
+              $ref: '#/$defs/PackageRedirect',
+            },
+            maxItems: 8,
+          },
         },
         additionalProperties: false,
       },
@@ -7370,6 +7421,153 @@ export const schemaCatalog: Record<string, JsonValue> = {
             type: 'string',
             contentEncoding: 'base64',
             maxLength: 256,
+          },
+        },
+        additionalProperties: false,
+      },
+      HolderId: {
+        $comment:
+          'Who holds a namespace, not merely which key signed for it. A survey of the MCP registry found one domain behind 75 namespaces, 62 of them serving a marketing page — visible only to somebody who went and looked. Recording the holder at proof time makes that a query instead of a research project, and it is what a quota can be charged against: 75 namespaces under one domain are one publisher and must share one budget.',
+        type: 'string',
+        pattern: '^(dns|github|operator):[A-Za-z0-9][A-Za-z0-9._/-]*$',
+        maxLength: 512,
+      },
+      NamespaceHolder: {
+        type: 'object',
+        required: ['holderId', 'namespaces'],
+        properties: {
+          holderId: {
+            $ref: '#/$defs/HolderId',
+          },
+          namespaces: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['namespace', 'method'],
+              properties: {
+                namespace: {
+                  $comment:
+                    'Reverse-DNS name prefix, e.g. com.example or io.github.someone.',
+                  type: 'string',
+                  pattern:
+                    '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+                  maxLength: 512,
+                },
+                method: {
+                  enum: ['dns-txt', 'https-well-known', 'registry-configured'],
+                },
+                keyIds: {
+                  type: 'array',
+                  items: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: 1024,
+                  },
+                },
+                verifiedAt: {
+                  type: 'string',
+                  format: 'date-time',
+                },
+                packageCount: {
+                  type: 'integer',
+                  minimum: 0,
+                },
+              },
+              additionalProperties: false,
+            },
+            maxItems: 4096,
+          },
+          firstSeen: {
+            type: 'string',
+            format: 'date-time',
+          },
+          quota: {
+            $ref: '#/$defs/PublishQuota',
+          },
+        },
+        additionalProperties: false,
+      },
+      PublishQuota: {
+        $comment:
+          'Charged per holder, never per namespace. A limit per namespace is not a limit: registering another namespace is exactly the cheap move the holder identity exists to make visible.',
+        type: 'object',
+        required: ['limit', 'windowSeconds', 'remaining'],
+        properties: {
+          limit: {
+            type: 'integer',
+            minimum: 0,
+          },
+          windowSeconds: {
+            type: 'integer',
+            minimum: 1,
+          },
+          remaining: {
+            type: 'integer',
+            minimum: 0,
+          },
+          resetAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+        },
+        additionalProperties: false,
+      },
+      PackageRedirect: {
+        $comment:
+          'A name that moved. A publisher migrating from io.github.someone to com.their-company should not have to ask a maintainer, and the packages that pinned the old name should not stop resolving. Kept as a document rather than an HTTP 308 so a mirror can verify the move actually came from the party that held both names.',
+        type: 'object',
+        required: ['redirectVersion', 'from', 'to', 'effectiveAt', 'reason'],
+        properties: {
+          redirectVersion: {
+            const: '1',
+          },
+          from: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          to: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          effectiveAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          reason: {
+            $comment:
+              "A rename keeps the same holder; a transfer changes it. Both need the outgoing holder's signature, and recording which happened is the difference between 'we moved' and 'we handed it over'.",
+            enum: ['rename', 'transfer'],
+          },
+          previousHolder: {
+            $ref: '#/$defs/HolderId',
+          },
+          nextHolder: {
+            $ref: '#/$defs/HolderId',
+          },
+        },
+        additionalProperties: false,
+      },
+      SignedPackageRedirect: {
+        type: 'object',
+        required: ['redirect', 'redirectDigest', 'signatures'],
+        properties: {
+          redirect: {
+            $ref: '#/$defs/PackageRedirect',
+          },
+          redirectDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          signatures: {
+            $comment:
+              "The publisher signature must come from a key holding BOTH names. One name is not enough: a key that holds only the destination could otherwise claim any package it liked, and a key that holds only the source could redirect its users to somebody else's package.",
+            type: 'array',
+            minItems: 1,
+            items: {
+              $ref: 'package-manifest.schema.json#/$defs/ManifestSignature',
+            },
+            maxItems: 16,
           },
         },
         additionalProperties: false,
