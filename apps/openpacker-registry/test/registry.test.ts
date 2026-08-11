@@ -548,3 +548,148 @@ describe('federation over external sources', () => {
     await local.close();
   });
 });
+
+describe('serviceability through the registry', () => {
+  /** Count probes so "a read triggered a check" is observable. */
+  function probing(status = 200) {
+    const probes: string[] = [];
+    return {
+      probes,
+      transport: {
+        async request(request: HttpRequest): Promise<HttpResponse> {
+          probes.push(request.url);
+          return {
+            status,
+            headers: {},
+            body: new Uint8Array(),
+            url: request.url,
+          } as HttpResponse;
+        },
+      },
+    };
+  }
+
+  /** Let the fire-and-forget check settle before asserting. */
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  it('checks what a manifest advertises because someone asked for it', async () => {
+    const { probes, transport } = probing();
+    const app = registry({ serviceabilityTransport: transport });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+
+    // Nothing has been checked yet, so the first read says so rather than
+    // implying it was fine.
+    const first = await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    expect(first.json().registryMetadata.serviceability).toBeUndefined();
+    await settle();
+
+    expect(probes).toEqual([
+      'https://registry.npmjs.org/demo/-/demo-1.2.3.tgz',
+    ]);
+    const second = await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    expect(second.json().registryMetadata.serviceability.state).toBe(
+      'verified',
+    );
+    await app.close();
+  });
+
+  it('does not re-probe while the record is fresh', async () => {
+    const { probes, transport } = probing();
+    const app = registry({ serviceabilityTransport: transport });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    for (let index = 0; index < 5; index += 1) {
+      await app.inject({
+        method: 'GET',
+        url: '/v1/packages/com.example.demo/versions/1.2.3',
+      });
+      await settle();
+    }
+    // Five readers must not become five requests to somebody else's origin.
+    expect(probes).toHaveLength(1);
+    await app.close();
+  });
+
+  it('never blocks the read on an origin it does not control', async () => {
+    const app = registry({
+      serviceabilityTransport: {
+        async request(): Promise<HttpResponse> {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          throw new Error('slow origin');
+        },
+      },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    const started = Date.now();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    // This registry's latency must not be a function of every publisher's.
+    expect(response.statusCode).toBe(200);
+    expect(Date.now() - started).toBeLessThan(60);
+    await app.close();
+  });
+
+  it('lets a report bring the next check forward, and nothing more', async () => {
+    const { probes, transport } = probing();
+    const app = registry({ serviceabilityTransport: transport });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    await settle();
+
+    const reported = await app.inject({
+      method: 'POST',
+      url: '/v1/packages/com.example.demo/versions/1.2.3/observations',
+      payload: { state: 'unreachable' },
+    });
+    expect(reported.statusCode).toBe(202);
+
+    // The report did not set state — otherwise "report a competitor
+    // unreachable" is a feature of the registry.
+    const after = await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    expect(after.json().registryMetadata.serviceability.state).toBe('verified');
+    await settle();
+    // It did bring the first-party check forward.
+    expect(probes).toHaveLength(2);
+    await app.close();
+  });
+
+  it('refuses an observation for something it does not serve', async () => {
+    const app = registry();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/packages/com.example.nothing/versions/1.0.0/observations',
+      payload: {},
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+});

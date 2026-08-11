@@ -1073,6 +1073,7 @@ export type RegistryMetadata = {
   updatedAt?: string;
   isLatest: boolean;
   manifestDigest?: Digest;
+  serviceability?: Serviceability;
 };
 export type RegistryProtocol = {
   native?: string;
@@ -1331,6 +1332,12 @@ export type SemanticsInput = {
     | 'prex-calculus-subset-v1';
   nativeCompatibility: Array<string>;
   extensions?: Extensions;
+};
+export type Serviceability = {
+  state: 'verified' | 'gated' | 'unreachable' | 'unchecked';
+  checkedAt: string;
+  method: 'digest-match' | 'head' | 'status' | 'none';
+  detail?: string;
 };
 export type SignedPackageManifest = {
   manifest: PackageManifest;
@@ -7010,6 +7017,9 @@ export const schemaCatalog: Record<string, JsonValue> = {
           manifestDigest: {
             $ref: 'common.schema.json#/$defs/Digest',
           },
+          serviceability: {
+            $ref: '#/$defs/Serviceability',
+          },
         },
         additionalProperties: false,
       },
@@ -7149,6 +7159,33 @@ export const schemaCatalog: Record<string, JsonValue> = {
         properties: {
           entry: {
             $ref: '#/$defs/RegistryEntry',
+          },
+        },
+        additionalProperties: false,
+      },
+      Serviceability: {
+        $comment:
+          'Whether what a manifest advertises still answers. Absent means nobody has looked, which is a different claim from having looked and found it fine.',
+        type: 'object',
+        required: ['state', 'checkedAt', 'method'],
+        properties: {
+          state: {
+            $comment:
+              '`gated` is healthy: a service answering 401/402/403 is running and wants credentials the registry does not have. `unchecked` covers timeouts and 5xx, which are evidence about the network between the registry and the origin, not about the package.',
+            enum: ['verified', 'gated', 'unreachable', 'unchecked'],
+          },
+          checkedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          method: {
+            $comment:
+              "What was actually done. Reachable is not the same claim as 'these are the right bytes'.",
+            enum: ['digest-match', 'head', 'status', 'none'],
+          },
+          detail: {
+            type: 'string',
+            maxLength: 4096,
           },
         },
         additionalProperties: false,
