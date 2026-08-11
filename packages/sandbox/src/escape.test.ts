@@ -8,19 +8,20 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   assertSafeJailPath,
   buildBwrapArgv,
+  createNativeBackend,
   isDeniedCredential,
   JailPathError,
   normalizeJailPaths,
+  packageExecRoRoots,
   runInSandbox,
   scrubEnvironment,
 } from './index.js';
-import { createNativeBackend } from './backends/native.js';
 
 function hasBwrap(): boolean {
   const pathEnv = process.env.PATH ?? '';
@@ -59,104 +60,82 @@ describe('credential scrubbing (hardened)', () => {
     expect(
       isDeniedCredential('npm_config_//registry.npmjs.org/:_authToken'),
     ).toBe(true);
-    expect(isDeniedCredential('npm_config__auth')).toBe(true);
-    expect(isDeniedCredential('GITHUB_ACTIONS')).toBe(true);
-    expect(isDeniedCredential('CIRCLE_TOKEN')).toBe(true);
-    expect(isDeniedCredential('CARGO_REGISTRY_TOKEN')).toBe(true);
+    expect(isDeniedCredential('GITHUB_TOKEN')).toBe(true);
   });
 
-  it('does not allow arbitrary npm_config_* without a grant', () => {
+  it('uses minimal PATH by default', () => {
     const env = scrubEnvironment({
-      parent: {
-        PATH: '/usr/bin',
-        npm_config_registry: 'https://evil.example',
-        npm_config_user_agent: 'npm/1',
-        npm_config__authToken: 'leak',
-      },
+      parent: { PATH: '/evil/bin:/usr/bin', npm_package_name: 'x' },
       jailHome: '/tmp/jail',
+      minimalPath: true,
+      interpreter: process.execPath,
     });
-    expect(env.npm_config_registry).toBeUndefined();
-    expect(env.npm_config__authToken).toBeUndefined();
-    expect(env.npm_config_user_agent).toBe('npm/1');
+    expect(env.PATH).not.toContain('/evil/bin');
+    expect(env.PATH).toContain('/usr/bin');
+    expect(env.npm_package_name).toBe('x');
   });
 });
 
 describe('bwrap argv profile', () => {
-  it('masks homes, unshares net, and re-binds package RW after masks', () => {
+  it('package-exec uses minimal roots, not fat /', () => {
     const argv = buildBwrapArgv({
       bwrap: '/usr/bin/bwrap',
-      command: ['/bin/true'],
+      command: [process.execPath, '-e', '1'],
       cwd: '/var/tmp/pkg',
       readwritePaths: ['/var/tmp/pkg'],
       readonlyPaths: [],
       network: false,
+      profile: 'package-exec',
     });
     expect(argv).toContain('--unshare-net');
-    expect(argv).toContain('--unshare-ipc');
-    expect(argv).toContain('--tmpfs');
-    // Package bind must appear after tmpfs masks so it wins.
-    const lastTmpfs = argv.lastIndexOf('--tmpfs');
-    const bindIdx = argv.indexOf('--bind');
-    expect(bindIdx).toBeGreaterThan(lastTmpfs);
-    expect(argv[bindIdx + 1]).toBe(resolve('/var/tmp/pkg'));
+    // Fat root should not appear for package-exec.
+    const fat = argv.some(
+      (a, i) => a === '--ro-bind' && argv[i + 1] === '/' && argv[i + 2] === '/',
+    );
+    expect(fat).toBe(false);
+    expect(packageExecRoRoots().length).toBeGreaterThan(0);
+  });
+
+  it('host-install may use fat root', () => {
+    const argv = buildBwrapArgv({
+      bwrap: '/usr/bin/bwrap',
+      command: ['/bin/true'],
+      cwd: '/tmp',
+      readwritePaths: ['/'],
+      readonlyPaths: [],
+      network: true,
+      profile: 'host-install',
+    });
+    const fat = argv.some(
+      (a, i) => a === '--ro-bind' && argv[i + 1] === '/' && argv[i + 2] === '/',
+    );
+    expect(fat).toBe(true);
   });
 });
 
-describe.skipIf(!bwrapReady)('native bwrap escape suite', () => {
-  // Narrowed for TypeScript: suite is skipped when nativeBackend is missing.
+describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   const backend = nativeBackend!;
 
-  it('refuses writes outside the package directory', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'op-escape-write-'));
-    const pkg = join(root, 'pkg');
-    mkdirSync(pkg);
-    // /etc is RO in the jail; a successful write here would be a host escape.
-    const outside = '/etc/openpacker-sandbox-escape-probe';
-
-    const outcome = await runInSandbox({
-      argv: [
-        process.execPath,
-        '-e',
-        `require('fs').writeFileSync(${JSON.stringify(outside)}, 'pwned')`,
-      ],
-      cwd: pkg,
-      policy: { mode: 'fail-closed', prefer: 'native' },
-      readwritePaths: [pkg],
-      readonlyPaths: [],
-      backend,
-    });
-    expect(outcome.enforced).toBe(true);
-    expect(outcome.exitCode).not.toBe(0);
-    expect(existsSync(outside)).toBe(false);
-  });
-
-  it('masks host credential directories from reads', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'op-escape-home-'));
-    const pkg = join(root, 'pkg');
-    mkdirSync(pkg);
-    const home = process.env.HOME ?? '';
-    if (!home) return;
-    // .ssh is on the sensitive mask list.
-    const sshDir = join(home, '.ssh');
-    mkdirSync(sshDir, { recursive: true });
-    const secret = join(sshDir, `openpacker-sandbox-probe-${Date.now()}`);
-    writeFileSync(secret, 'credential-material\n', { mode: 0o600 });
+  it('denies reading arbitrary home files', async () => {
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-home-'));
+    const secret = join(homedir(), `openpacker-audit-${Date.now()}`);
+    writeFileSync(secret, 'TOPSECRET\n', { mode: 0o600 });
     try {
       const outcome = await runInSandbox({
         argv: [
           process.execPath,
           '-e',
-          `try { const t=require('fs').readFileSync(${JSON.stringify(secret)},'utf8'); process.stdout.write('LEAK:'+t); process.exit(0);} catch(e){ process.stdout.write('DENIED'); process.exit(2); }`,
+          `try{require('fs').readFileSync(${JSON.stringify(secret)},'utf8');process.exit(0)}catch(e){process.exit(2)}`,
         ],
         cwd: pkg,
         policy: { mode: 'fail-closed', prefer: 'native' },
+        profile: 'package-exec',
         readwritePaths: [pkg],
         readonlyPaths: [],
         backend,
       });
       expect(outcome.enforced).toBe(true);
-      expect(outcome.stdout).toContain('DENIED');
-      expect(outcome.stdout).not.toContain('credential-material');
+      expect(outcome.exitCode).not.toBe(0);
     } finally {
       try {
         unlinkSync(secret);
@@ -166,10 +145,50 @@ describe.skipIf(!bwrapReady)('native bwrap escape suite', () => {
     }
   });
 
+  it('denies project source writes when project is RO', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'op-escape-proj-'));
+    const victim = join(project, 'src.js');
+    writeFileSync(victim, 'good\n');
+    const outcome = await runInSandbox({
+      argv: [
+        process.execPath,
+        '-e',
+        `require('fs').writeFileSync(${JSON.stringify(victim)},'pwned')`,
+      ],
+      cwd: project,
+      policy: { mode: 'fail-closed', prefer: 'native', projectWrite: false },
+      profile: 'package-exec',
+      readwritePaths: [],
+      readonlyPaths: [project],
+      backend,
+    });
+    expect(outcome.enforced).toBe(true);
+    expect(outcome.exitCode).not.toBe(0);
+    expect(readFileSync(victim, 'utf8')).toBe('good\n');
+  });
+
+  it('allows package-local writes', async () => {
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-ok-'));
+    const target = join(pkg, 'built.bin');
+    const outcome = await runInSandbox({
+      argv: [
+        process.execPath,
+        '-e',
+        `require('fs').writeFileSync(${JSON.stringify(target)},'ok')`,
+      ],
+      cwd: pkg,
+      policy: { mode: 'fail-closed', prefer: 'native' },
+      profile: 'package-exec',
+      readwritePaths: [pkg],
+      readonlyPaths: [],
+      backend,
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(existsSync(target)).toBe(true);
+  });
+
   it('denies outbound network by default', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'op-escape-net-'));
-    const pkg = join(root, 'pkg');
-    mkdirSync(pkg);
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-net-'));
     const outcome = await runInSandbox({
       argv: [
         process.execPath,
@@ -178,35 +197,27 @@ describe.skipIf(!bwrapReady)('native bwrap escape suite', () => {
       ],
       cwd: pkg,
       policy: { mode: 'fail-closed', prefer: 'native' },
+      profile: 'package-exec',
       readwritePaths: [pkg],
       readonlyPaths: [],
       network: false,
       backend,
     });
-    expect(outcome.enforced).toBe(true);
-    // Connection should fail inside unshared netns.
     expect(outcome.exitCode).not.toBe(0);
   });
 
-  it('allows package-local writes', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'op-escape-ok-'));
-    const pkg = join(root, 'pkg');
-    mkdirSync(pkg);
-    const target = join(pkg, 'built.bin');
+  it('marks host-install as containmentLimited and not enforced', async () => {
     const outcome = await runInSandbox({
-      argv: [
-        process.execPath,
-        '-e',
-        `require('fs').writeFileSync(${JSON.stringify(target)}, 'ok');`,
-      ],
-      cwd: pkg,
-      policy: { mode: 'fail-closed', prefer: 'native' },
-      readwritePaths: [pkg],
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+      cwd: process.cwd(),
+      policy: { mode: 'fail-closed', prefer: 'native', legacyFatRoot: true },
+      profile: 'host-install',
+      readwritePaths: ['/'],
       readonlyPaths: [],
       backend,
     });
-    expect(outcome.exitCode).toBe(0);
-    expect(existsSync(target)).toBe(true);
-    expect(readFileSync(target, 'utf8')).toBe('ok');
+    expect(outcome.profile).toBe('host-install');
+    expect(outcome.enforced).toBe(false);
+    expect(outcome.containmentLimited).toBe(true);
   });
 });

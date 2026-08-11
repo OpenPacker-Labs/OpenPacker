@@ -37,7 +37,10 @@ describe('@openpacker/sandbox', () => {
       grantEnv: [],
       jailHome: '/tmp/jail-home',
     });
-    expect(env.PATH).toBe('/usr/bin');
+    // minimalPath defaults on when scrubbing for package-exec callers
+    expect(env.PATH?.split(':')).toEqual(
+      expect.arrayContaining(['/usr/bin', '/bin']),
+    );
     expect(env.HOME).toBe('/tmp/jail-home');
     expect(env.NPM_TOKEN).toBeUndefined();
     expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
@@ -176,10 +179,26 @@ describe('@openpacker/sandbox', () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.sandboxEnforced).toBe(false);
+    expect(result.containmentLimited).toBe(true);
     expect(
       result.extraLosses.some(
         (l) => l.code === SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
       ),
     ).toBe(true);
+  });
+
+  it('mock package-exec is not enforced (honesty)', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const outcome = await runInSandbox({
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+      cwd,
+      policy: { mode: 'fail-closed' },
+      profile: 'package-exec',
+      readwritePaths: [cwd],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(outcome.enforced).toBe(false);
+    expect(outcome.profile).toBe('package-exec');
   });
 });

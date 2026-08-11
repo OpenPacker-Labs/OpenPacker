@@ -184,13 +184,15 @@ describe('path containment', () => {
     });
     expect(written?.interpreter).toBe('python');
     const body = await readFile(written!.shim, 'utf8');
-    expect(body).toContain('OPM_PYTHON');
+    // Shims re-enter via opmx by default (sandbox); ambient only with hatch.
+    expect(body).toContain('opmx');
+    expect(body).toContain('OPENPACKER_ALLOW_AMBIENT_SHIMS');
+    expect(body).toContain('from pkg.mod import main');
     expect(body).toContain(storeRoot);
     expect(body).toContain(depRoot);
-    expect(body).toContain('from pkg.mod import main');
   });
 
-  it('writes a .NET launcher that invokes the assembly with dotnet', async () => {
+  it('writes a .NET launcher that re-enters via opmx', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'opm-dn-shim-'));
     temps.push(dir);
     const storeRoot = join(dir, 'store');
@@ -210,10 +212,9 @@ describe('path containment', () => {
     });
     expect(written?.interpreter).toBe('dotnet');
     const body = await readFile(written!.shim, 'utf8');
-    expect(body).toContain('OPM_DOTNET');
+    expect(body).toContain('opmx');
     expect(body).toContain('tool.dll');
-    // Must not pretend the dll is a Node script.
-    expect(body).not.toMatch(/spawn\(process\.execPath,\s*\[target/u);
+    expect(body).toContain('OPENPACKER_ALLOW_AMBIENT_SHIMS');
   });
 });
 

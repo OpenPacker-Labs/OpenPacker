@@ -64,19 +64,15 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           'MXC SDK missing createConfigFromPolicy',
         );
       }
-      const tools =
-        typeof mod.getAvailableToolsPolicy === 'function'
-          ? mod.getAvailableToolsPolicy(process.env)
-          : { readonlyPaths: [] as string[] };
+      // Do not pull getAvailableToolsPolicy for package-exec — it widens the
+      // readable world to the whole host toolchain discovery set.
       const temp =
+        input.profile === 'host-install' &&
         typeof mod.getTemporaryFilesPolicy === 'function'
           ? mod.getTemporaryFilesPolicy()
           : { readwritePaths: [] as string[] };
 
-      const readonlyPaths = [
-        ...(tools.readonlyPaths ?? []),
-        ...input.readonlyPaths,
-      ];
+      const readonlyPaths = [...input.readonlyPaths];
       const readwritePaths = [
         ...(temp.readwritePaths ?? []),
         ...input.readwritePaths,

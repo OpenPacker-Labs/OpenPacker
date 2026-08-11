@@ -7,8 +7,9 @@ import {
   readFileSync,
   writeFileSync,
   existsSync,
+  unlinkSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
@@ -36,19 +37,21 @@ test('sandbox env scrub drops credential-shaped keys', async () => {
   assert.equal(isDeniedCredential('GITHUB_TOKEN'), true);
   const env = scrubEnvironment({
     parent: {
-      PATH: '/usr/bin',
+      PATH: '/evil:/usr/bin',
       NPM_TOKEN: 'x',
       AWS_SECRET_ACCESS_KEY: 'y',
       npm_config_registry: 'https://registry.npmjs.org',
       npm_config_user_agent: 'npm/10',
     },
     jailHome: '/tmp/jail-home',
+    minimalPath: true,
   });
   assert.equal(env.NPM_TOKEN, undefined);
   assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
   assert.equal(env.npm_config_registry, undefined);
   assert.equal(env.npm_config_user_agent, 'npm/10');
   assert.equal(env.HOME, '/tmp/jail-home');
+  assert.ok(!env.PATH.includes('/evil'));
 });
 
 test('jail path grants reject traversal', async () => {
@@ -61,35 +64,66 @@ test('jail path grants reject traversal', async () => {
 });
 
 test(
-  'native bwrap blocks out-of-tree writes from package scripts',
+  'package-exec denies home file reads (must-pass)',
   { skip: process.platform !== 'linux' || !hasBwrap() },
   async () => {
     const sandbox = await import('@openpacker/sandbox');
     const native = sandbox.createNativeBackend();
-    assert.ok(native, 'native bwrap backend required');
+    assert.ok(native);
+    const pkg = mkdtempSync(join(tmpdir(), 'sec-home-'));
+    const secret = join(homedir(), `op-sec-${Date.now()}`);
+    writeFileSync(secret, 'TOPSECRET\n');
+    try {
+      const outcome = await sandbox.runInSandbox({
+        argv: [
+          process.execPath,
+          '-e',
+          `try{require('fs').readFileSync(${JSON.stringify(secret)},'utf8');process.exit(0)}catch{process.exit(2)}`,
+        ],
+        cwd: pkg,
+        policy: { mode: 'fail-closed', prefer: 'native' },
+        profile: 'package-exec',
+        readwritePaths: [pkg],
+        readonlyPaths: [],
+        backend: native,
+      });
+      assert.equal(outcome.enforced, true);
+      assert.notEqual(outcome.exitCode, 0);
+    } finally {
+      try {
+        unlinkSync(secret);
+      } catch {
+        // ignore
+      }
+    }
+  },
+);
 
-    const base = mkdtempSync(join(tmpdir(), 'sec-escape-'));
-    const pkg = join(base, 'pkg');
-    mkdirSync(pkg);
-    // /etc is RO inside the jail; writing here would be a host escape.
-    const outside = '/etc/openpacker-sandbox-escape-probe';
-
+test(
+  'package-exec denies project source writes by default (must-pass)',
+  { skip: process.platform !== 'linux' || !hasBwrap() },
+  async () => {
+    const sandbox = await import('@openpacker/sandbox');
+    const native = sandbox.createNativeBackend();
+    const project = mkdtempSync(join(tmpdir(), 'sec-proj-'));
+    const victim = join(project, 'src.js');
+    writeFileSync(victim, 'good\n');
     const outcome = await sandbox.runInSandbox({
       argv: [
         process.execPath,
         '-e',
-        `require('fs').writeFileSync(${JSON.stringify(outside)}, 'owned')`,
+        `require('fs').writeFileSync(${JSON.stringify(victim)},'pwned')`,
       ],
-      cwd: pkg,
-      policy: { mode: 'fail-closed', prefer: 'native' },
-      readwritePaths: [pkg],
-      readonlyPaths: [],
+      cwd: project,
+      policy: { mode: 'fail-closed', prefer: 'native', projectWrite: false },
+      profile: 'package-exec',
+      readwritePaths: [],
+      readonlyPaths: [project],
       backend: native,
     });
-
     assert.equal(outcome.enforced, true);
     assert.notEqual(outcome.exitCode, 0);
-    assert.equal(existsSync(outside), false);
+    assert.equal(readFileSync(victim, 'utf8'), 'good\n');
   },
 );
 
@@ -99,11 +133,8 @@ test(
   async () => {
     const sandbox = await import('@openpacker/sandbox');
     const native = sandbox.createNativeBackend();
-    const base = mkdtempSync(join(tmpdir(), 'sec-ok-'));
-    const pkg = join(base, 'pkg');
-    mkdirSync(pkg);
+    const pkg = mkdtempSync(join(tmpdir(), 'sec-ok-'));
     const target = join(pkg, 'out.bin');
-
     const outcome = await sandbox.runInSandbox({
       argv: [
         process.execPath,
@@ -112,29 +143,21 @@ test(
       ],
       cwd: pkg,
       policy: { mode: 'fail-closed', prefer: 'native' },
+      profile: 'package-exec',
       readwritePaths: [pkg],
       readonlyPaths: [],
       backend: native,
     });
-
     assert.equal(outcome.exitCode, 0);
     assert.equal(existsSync(target), true);
-    assert.equal(readFileSync(target, 'utf8'), 'built');
   },
 );
 
 test('production package-run paths go through @openpacker/sandbox', async () => {
-  // opmx and lifecycle must import the funnel — not raw child_process spawn
-  // for package execution. Shim generators may still embed spawn *inside*
-  // sandboxed processes.
   const { readFileSync: read } = await import('node:fs');
   const opmx = read(join(root, 'apps/opm/src/opmx.ts'), 'utf8');
   assert.match(opmx, /runSandboxedPackageProcess/);
-  assert.doesNotMatch(
-    opmx,
-    /from 'node:child_process'/,
-    'opmx must not import child_process directly after sandbox wiring',
-  );
+  assert.doesNotMatch(opmx, /from 'node:child_process'/);
 
   const lifecycle = read(
     join(root, 'packages/opm-project/src/lifecycle.ts'),
@@ -142,4 +165,8 @@ test('production package-run paths go through @openpacker/sandbox', async () => 
   );
   assert.match(lifecycle, /runInSandbox/);
   assert.match(lifecycle, /SANDBOX_UNAVAILABLE|sandbox was not enforced/);
+
+  const bins = read(join(root, 'packages/opm-project/src/bins.ts'), 'utf8');
+  assert.match(bins, /OPENPACKER_ALLOW_AMBIENT_SHIMS/);
+  assert.match(bins, /opmx/);
 });

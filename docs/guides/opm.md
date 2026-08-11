@@ -363,30 +363,29 @@ Missing artifacts fail closed with a clear error (no silent network when
 
 ### Sandbox configuration
 
-Defaults when `[sandbox]` is omitted: enabled, `fail-closed`, prefer `auto` (MXC
-then native).
+Defaults when `[sandbox]` is omitted: enabled, `fail-closed`, prefer `auto`
+(native jail when present, else MXC), **project write off**, **minimal PATH**.
 
 ```toml
 [sandbox]
 enabled = true
 mode = "fail-closed"   # fail-closed | degrade-warn | off
 prefer = "auto"        # auto | mxc | native
+project_write = false  # opmx cannot rewrite project source unless true
+minimal_path = true
 
-# Narrow grants for a reviewed package that may build inside the jail:
-# [sandbox.packages."pkg:npm/sharp"]
-# network = true
-# write = ["~/.cache/sharp"]
-# env = ["SHARP_DIST_BASE_URL"]
+# Prefer allowlists (strict mode rejects allow_lifecycle_scripts alone):
+# [policy]
+# allowed_lifecycle_script_packages = ["pkg:npm/esbuild"]
 ```
 
-`allow_lifecycle_scripts = true` (or an allowlist) still only means scripts may
-run **inside** the jail — not that they inherit tokens, home, or unrestricted
-network. Host installers that cannot be jailed are refused unless the project
-explicitly allows unsandboxed host install (and then emit
-`SYSTEM_INSTALL_NOT_SANDBOXED`).
+**Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
+`OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
 
-MXC is early preview; receipts record which backend enforced the profile rather
-than claiming a finished OS security product.
+Lifecycle scripts are deny-by-default; an allowlist entry is required under
+strict mode. Host installers only get **limited user-capability** containment.
+
+This is **defense-in-depth**, not a microVM.
 
 ---
 

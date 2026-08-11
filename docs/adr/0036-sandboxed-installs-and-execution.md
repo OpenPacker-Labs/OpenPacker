@@ -76,3 +76,20 @@ Inspiration:
 [Microsoft MXC](https://github.com/microsoft/mxc). Neither is vendored
 wholesale; PREX remains the authority on identity, receipts, and what was
 verified.
+
+## Amendment (2026-08-11) — post-audit hardening
+
+Live probes showed fat `--ro-bind / /` left the home tree readable and `opmx`
+mounted the project read-write. Profiles now distinguish:
+
+| Profile        | Meaning                                                      |
+| -------------- | ------------------------------------------------------------ |
+| `package-exec` | Minimal RO toolchain + explicit trees; project RO by default |
+| `host-install` | User-capability limited containment only                     |
+| `ambient`      | Intentionally unsandboxed                                    |
+
+`enforced` is true only for successful `package-exec` jails. Host installers
+emit `SYSTEM_INSTALL_CONTAINMENT_LIMITED`. Bin shims re-enter via `opmx` (or
+refuse ambient without `OPENPACKER_ALLOW_AMBIENT_SHIMS=1`).
+
+**Defense-in-depth, not a microVM or finished OS security product.**
