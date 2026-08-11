@@ -347,6 +347,13 @@ export async function writeBinShims(input: {
   return written;
 }
 
+/**
+ * Generate a bin shim.
+ *
+ * Direct ambient spawn is a sandbox bypass (audit H3). Default behaviour:
+ * re-enter via `opmx <name>` when available, otherwise refuse unless
+ * OPENPACKER_ALLOW_AMBIENT_SHIMS=1 (loud escape hatch).
+ */
 function shimScriptFor(
   bin: BinDeclaration,
   context: {
@@ -355,6 +362,9 @@ function shimScriptFor(
     pythonRoots: readonly string[];
   },
 ): string {
+  const binName = JSON.stringify(bin.name);
+  // Ambient body kept for the explicit escape hatch only.
+  let ambientBody: string;
   if (bin.interpreter === 'python') {
     const [moduleName, callable] = (bin.entry ?? '').split(':');
     if (!moduleName || !callable)
@@ -363,74 +373,70 @@ function shimScriptFor(
         `${bin.name} declares an unusable Python entry point: ${bin.entry ?? '(none)'}`,
       );
     const pathLiteral = JSON.stringify(context.pythonRoots);
-    return `#!/usr/bin/env node
-import { spawn } from 'node:child_process';
+    ambientBody = `
 const roots = ${pathLiteral};
 const env = { ...process.env };
 const existing = env.PYTHONPATH ? env.PYTHONPATH.split(/[:;]/) : [];
 env.PYTHONPATH = [...roots, ...existing].join(process.platform === 'win32' ? ';' : ':');
-const program =
-  'import sys\\n' +
-  ${JSON.stringify(`from ${moduleName} import ${callable} as _entry\\nsys.exit(_entry())\\n`)};
+const program = 'import sys\\n' + ${JSON.stringify(`from ${moduleName} import ${callable} as _entry\\nsys.exit(_entry())\\n`)};
 const python = process.env.OPM_PYTHON?.trim() || 'python3';
-const child = spawn(python, ['-c', program, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  env,
-});
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 1);
-});
-child.on('error', (error) => {
-  console.error(error);
-  process.exit(1);
-});
+return spawn(python, ['-c', program, ...process.argv.slice(2)], { stdio: 'inherit', env });
 `;
-  }
-
-  if (bin.interpreter === 'dotnet') {
+  } else if (bin.interpreter === 'dotnet') {
     const relTarget = relative(context.binDir, context.target);
-    return `#!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-const here = dirname(fileURLToPath(import.meta.url));
+    ambientBody = `
 const assembly = resolve(here, ${JSON.stringify(relTarget)});
 const dotnet = process.env.OPM_DOTNET?.trim() || 'dotnet';
-const child = spawn(dotnet, [assembly, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  env: process.env,
-});
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 1);
-});
-child.on('error', (error) => {
-  console.error(error);
-  process.exit(1);
-});
+return spawn(dotnet, [assembly, ...process.argv.slice(2)], { stdio: 'inherit', env: process.env });
+`;
+  } else {
+    const relTarget = relative(context.binDir, context.target);
+    ambientBody = `
+const target = resolve(here, ${JSON.stringify(relTarget)});
+return spawn(process.execPath, [target, ...process.argv.slice(2)], { stdio: 'inherit', env: process.env });
 `;
   }
 
-  // Default / node: the package ships a script Node executes.
-  const relTarget = relative(context.binDir, context.target);
   return `#!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
-const target = resolve(here, ${JSON.stringify(relTarget)});
-const child = spawn(process.execPath, [target, ...process.argv.slice(2)], {
+const args = process.argv.slice(2);
+function run(child) {
+  child.on('exit', (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    process.exit(code ?? 1);
+  });
+  child.on('error', (error) => {
+    console.error(error.message || error);
+    process.exit(1);
+  });
+}
+// Prefer re-entry through opmx (sandboxed). Direct ambient spawn is a bypass.
+const opmx = process.env.OPM_OPMX?.trim() || 'opmx';
+const viaOpmx = spawn(opmx, [${binName}, ...args], {
   stdio: 'inherit',
   env: process.env,
+  shell: false,
 });
-child.on('exit', (code, signal) => {
+viaOpmx.on('error', (error) => {
+  if (process.env.OPENPACKER_ALLOW_AMBIENT_SHIMS === '1') {
+    console.error('opm: opmx unavailable; ambient shim allowed by OPENPACKER_ALLOW_AMBIENT_SHIMS=1');
+    run((() => { ${ambientBody}
+    })());
+    return;
+  }
+  console.error(
+    'opm: refuse ambient bin shim (sandbox). Use: opmx ' + ${binName} +
+    ' …  or set OPENPACKER_ALLOW_AMBIENT_SHIMS=1 (insecure).',
+  );
+  console.error(String(error.message || error));
+  process.exit(78);
+});
+viaOpmx.on('exit', (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   process.exit(code ?? 1);
-});
-child.on('error', (error) => {
-  console.error(error);
-  process.exit(1);
 });
 `;
 }

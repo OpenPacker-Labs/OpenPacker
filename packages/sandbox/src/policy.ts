@@ -1,5 +1,7 @@
 import { canonicalDigest } from '@openpacker/canonical';
 import type { Digest, SemanticLoss } from '@openpacker/contracts';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import {
   DEFAULT_SANDBOX_POLICY,
   type PackageGrants,
@@ -7,15 +9,13 @@ import {
   type SandboxMode,
   type SandboxPolicy,
   type SandboxPrefer,
+  type SandboxProfile,
   SANDBOX_LOSS,
 } from './types.js';
+import { JailPathError } from './paths.js';
 
 const COORDINATE_BOUNDARY = new Set(['@', '/', '?', '#', '*']);
 
-/**
- * Match package grants with the same boundary discipline as policy excludes:
- * prefix matches must stop on a coordinate boundary (or end with one / `*`).
- */
 export function matchPackageGrant(
   packageId: string | undefined,
   packages: Readonly<Record<string, PackageGrants>> | undefined,
@@ -44,6 +44,12 @@ export function resolvePolicy(policy: SandboxPolicy): {
   prefer: SandboxPrefer;
   required: boolean;
   allowHostUnsandboxedInstall: boolean;
+  projectWrite: boolean;
+  minimalPath: boolean;
+  strictLifecycleAllowlist: boolean;
+  allowDangerousGrants: boolean;
+  legacyFatRoot: boolean;
+  timeoutMs: number;
 } {
   const mode = policy.mode ?? DEFAULT_SANDBOX_POLICY.mode;
   const enabled =
@@ -59,13 +65,22 @@ export function resolvePolicy(policy: SandboxPolicy): {
     allowHostUnsandboxedInstall:
       policy.allowHostUnsandboxedInstall ??
       DEFAULT_SANDBOX_POLICY.allowHostUnsandboxedInstall,
+    projectWrite: policy.projectWrite ?? DEFAULT_SANDBOX_POLICY.projectWrite,
+    minimalPath: policy.minimalPath ?? DEFAULT_SANDBOX_POLICY.minimalPath,
+    strictLifecycleAllowlist:
+      policy.strictLifecycleAllowlist ??
+      DEFAULT_SANDBOX_POLICY.strictLifecycleAllowlist,
+    allowDangerousGrants:
+      policy.allowDangerousGrants ??
+      DEFAULT_SANDBOX_POLICY.allowDangerousGrants,
+    legacyFatRoot: policy.legacyFatRoot ?? DEFAULT_SANDBOX_POLICY.legacyFatRoot,
+    timeoutMs: policy.timeoutMs ?? DEFAULT_SANDBOX_POLICY.timeoutMs,
   };
 }
 
 export async function digestSandboxPolicy(
   policy: SandboxPolicy,
 ): Promise<Digest> {
-  // Stable projection: only fields that affect enforcement.
   const resolved = resolvePolicy(policy);
   const packages = policy.packages
     ? Object.fromEntries(
@@ -75,12 +90,18 @@ export async function digestSandboxPolicy(
       )
     : {};
   return canonicalDigest({
-    sandboxPolicyVersion: 1,
+    sandboxPolicyVersion: 2,
     enabled: resolved.enabled,
     mode: resolved.mode,
     prefer: resolved.prefer,
     required: resolved.required,
     allowHostUnsandboxedInstall: resolved.allowHostUnsandboxedInstall,
+    projectWrite: resolved.projectWrite,
+    minimalPath: resolved.minimalPath,
+    strictLifecycleAllowlist: resolved.strictLifecycleAllowlist,
+    allowDangerousGrants: resolved.allowDangerousGrants,
+    legacyFatRoot: resolved.legacyFatRoot,
+    timeoutMs: resolved.timeoutMs,
     packages: packages as Record<string, Record<string, unknown>>,
   } as import('@openpacker/contracts').JsonValue);
 }
@@ -107,6 +128,35 @@ export function mergeGrants(
   };
 }
 
+/** Reject write grants that cover `/` or the user home unless allowed. */
+export function assertGrantsNotDangerous(
+  writePaths: readonly string[],
+  allowDangerous: boolean,
+): void {
+  if (allowDangerous) return;
+  let home: string | undefined;
+  try {
+    home = resolve(homedir());
+  } catch {
+    home = undefined;
+  }
+  for (const raw of writePaths) {
+    const p = resolve(raw);
+    if (p === '/' || p === resolve('/')) {
+      throw new JailPathError(
+        'write grant',
+        'refusing write grant for filesystem root; set sandbox.allow_dangerous_grants = true',
+      );
+    }
+    if (home && (p === home || p.startsWith(home + '/'))) {
+      throw new JailPathError(
+        'write grant',
+        `refusing write grant under home (${home}); set sandbox.allow_dangerous_grants = true`,
+      );
+    }
+  }
+}
+
 export function loss(
   code: string,
   severity: SemanticLoss['severity'],
@@ -127,17 +177,18 @@ export function loss(
 
 export function backendLosses(
   backend: SandboxBackendId,
+  profile: SandboxProfile,
   enforced: boolean,
   degraded: boolean,
 ): SemanticLoss[] {
   const losses: SemanticLoss[] = [];
-  if (enforced) {
+  if (enforced && profile === 'package-exec') {
     losses.push(
       loss(
         SANDBOX_LOSS.ENFORCED,
         'info',
-        'the process ran inside an OS-enforced jail',
-        `OpenPacker enforced a sandbox via backend ${backend}`,
+        'package-exec ran inside an OS jail with a minimal bind profile',
+        `backend=${backend}; defense-in-depth, not a microVM`,
       ),
     );
   }
@@ -147,7 +198,7 @@ export function backendLosses(
         SANDBOX_LOSS.BACKEND_MXC,
         'info',
         'containment used Microsoft MXC',
-        'MXC is early preview; treat as defense-in-depth, not a finished boundary',
+        'MXC is early preview; not a finished security boundary',
       ),
     );
   } else if (backend.startsWith('native-') || backend === 'mock') {
@@ -160,14 +211,24 @@ export function backendLosses(
       ),
     );
   }
+  if (profile === 'host-install') {
+    losses.push(
+      loss(
+        SANDBOX_LOSS.SYSTEM_LIMITED,
+        'warning',
+        'host installer runs with user-capability containment only',
+        'not root isolation; system package managers may still mutate the host as the user',
+        ['native-validated-v1'],
+      ),
+    );
+  }
   if (degraded) {
     losses.push(
       loss(
         SANDBOX_LOSS.DEGRADED,
         'warning',
         'the process ran without full jail enforcement',
-        'sandbox mode allowed degraded execution',
-        [],
+        'sandbox mode allowed degraded or ambient execution',
       ),
     );
   }

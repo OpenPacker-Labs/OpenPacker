@@ -3,7 +3,6 @@ import { runInSandbox } from './run.js';
 import { SANDBOX_LOSS, type SandboxPolicy } from './types.js';
 import { loss } from './policy.js';
 
-/** InstallOptions.sandbox shape from adapter-core (kept structural). */
 export interface HostInstallerSandboxOptions {
   mode?: 'fail-closed' | 'degrade-warn' | 'off';
   prefer?: 'auto' | 'mxc' | 'native';
@@ -19,10 +18,14 @@ export function sandboxPolicyFromInstallOptions(
     prefer: sandbox?.prefer ?? 'auto',
     allowHostUnsandboxedInstall: sandbox?.allowHostUnsandboxedInstall ?? false,
     required: mode === 'fail-closed',
+    // Host installers need broader FS; never claim package-exec strength.
+    minimalPath: false,
+    projectWrite: true,
+    legacyFatRoot: true,
   };
 }
 
-export function notSandboxedLoss(ecosystem: string): SemanticLoss {
+export function notSandboxedLoss(_ecosystem: string): SemanticLoss {
   return loss(
     SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
     'warning',
@@ -32,14 +35,19 @@ export function notSandboxedLoss(ecosystem: string): SemanticLoss {
   );
 }
 
-export function sandboxedSystemLoss(ecosystem: string): SemanticLoss {
+export function limitedContainmentLoss(_ecosystem: string): SemanticLoss {
   return loss(
-    SANDBOX_LOSS.SYSTEM_SANDBOXED,
-    'info',
-    'the install process ran inside a containment backend',
-    `argv was launched via runInSandbox for ${ecosystem}`,
-    [],
+    SANDBOX_LOSS.SYSTEM_LIMITED,
+    'warning',
+    'host installer ran under a user-capability jail only',
+    'not root isolation; the process can still mutate anything the user can',
+    ['native-validated-v1'],
   );
+}
+
+/** @deprecated use limitedContainmentLoss */
+export function sandboxedSystemLoss(ecosystem: string): SemanticLoss {
+  return limitedContainmentLoss(ecosystem);
 }
 
 export interface HostInstallerRunInput {
@@ -49,10 +57,6 @@ export interface HostInstallerRunInput {
   offline?: boolean;
   signal?: AbortSignal;
   ecosystem: string;
-  /**
-   * Ambient execute path used when unsandboxed is allowed (also the unit-test
-   * injection point for adapters).
-   */
   ambientExecute: () => Promise<{
     stdout: string;
     stderr: string;
@@ -66,8 +70,9 @@ export interface HostInstallerRunResult {
   exitCode: number;
   sandboxEnforced: boolean;
   sandboxBackend: string;
+  containmentLimited: boolean;
+  profile: 'host-install' | 'ambient';
   extraLosses: SemanticLoss[];
-  /** Plan-time sandbox summary. */
   willEnforce: boolean;
 }
 
@@ -88,10 +93,6 @@ export function planSandboxSummary(sandbox?: HostInstallerSandboxOptions): {
   };
 }
 
-/**
- * Run a host installer argv under the sandbox funnel, or ambient when
- * explicitly allowed.
- */
 export async function runHostInstaller(
   input: HostInstallerRunInput,
 ): Promise<HostInstallerRunResult> {
@@ -105,6 +106,8 @@ export async function runHostInstaller(
         exitCode: result.exitCode ?? 0,
         sandboxEnforced: false,
         sandboxBackend: 'off',
+        containmentLimited: true,
+        profile: 'ambient',
         extraLosses: [notSandboxedLoss(input.ecosystem)],
         willEnforce: false,
       };
@@ -121,6 +124,8 @@ export async function runHostInstaller(
         exitCode: failure.code ?? 1,
         sandboxEnforced: false,
         sandboxBackend: 'off',
+        containmentLimited: true,
+        profile: 'ambient',
         extraLosses: [notSandboxedLoss(input.ecosystem)],
         willEnforce: false,
       };
@@ -136,6 +141,8 @@ export async function runHostInstaller(
       exitCode: 1,
       sandboxEnforced: false,
       sandboxBackend: 'none',
+      containmentLimited: true,
+      profile: 'host-install',
       extraLosses: [],
       willEnforce: true,
     };
@@ -145,6 +152,8 @@ export async function runHostInstaller(
     argv: [file, ...args],
     cwd: input.cwd ?? process.cwd(),
     policy,
+    profile: 'host-install',
+    // Broad user-visible FS — limited containment only.
     readwritePaths: ['/'],
     readonlyPaths: [],
     network: !input.offline,
@@ -152,8 +161,11 @@ export async function runHostInstaller(
   });
 
   if (!outcome.enforced && outcome.backend === 'none') {
+    // host-install never sets enforced true; check backend for availability
+  }
+  if (outcome.backend === 'none') {
     throw new HostInstallerSandboxError(
-      `Install requires a sandbox jail and none is available. ` +
+      `Install requires a sandbox backend and none is available. ` +
         `Set sandbox.allowHostUnsandboxedInstall to run ambient ` +
         `(records ${SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED}).`,
     );
@@ -163,12 +175,12 @@ export async function runHostInstaller(
     stdout: outcome.stdout,
     stderr: outcome.stderr,
     exitCode: outcome.exitCode,
-    sandboxEnforced: outcome.enforced,
+    // Honesty: host-install is never fully "enforced" package-exec style.
+    sandboxEnforced: false,
     sandboxBackend: outcome.backend,
-    extraLosses: [
-      ...(outcome.enforced ? [sandboxedSystemLoss(input.ecosystem)] : []),
-      ...outcome.losses,
-    ],
+    containmentLimited: true,
+    profile: 'host-install',
+    extraLosses: [limitedContainmentLoss(input.ecosystem), ...outcome.losses],
     willEnforce: true,
   };
 }

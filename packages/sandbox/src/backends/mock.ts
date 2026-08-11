@@ -3,12 +3,8 @@ import type { SandboxBackend } from '../types.js';
 
 /**
  * Test backend: runs the process with scrubbed env but no OS isolation.
- *
- * Production code never selects this unless injected. Offline unit tests use
- * it to exercise fail-closed / policy wiring without MXC or bwrap.
  */
 export function createMockBackend(options?: {
-  /** When true, refuse to run (simulates unavailable host jail). */
   unavailable?: boolean;
   id?: 'mock';
 }): SandboxBackend {
@@ -51,6 +47,7 @@ export async function spawnCapture(input: {
   cwd: string;
   env: Readonly<Record<string, string>>;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   if (input.argv.length === 0) {
     throw new SandboxBackendError('EMPTY_ARGV', 'argv must not be empty');
@@ -59,26 +56,60 @@ export async function spawnCapture(input: {
   if (!command) {
     throw new SandboxBackendError('EMPTY_ARGV', 'argv[0] is required');
   }
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: input.cwd,
-      env: { ...input.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      signal: input.signal,
+
+  const timeoutMs = input.timeoutMs ?? 0;
+  let timeoutSignal: AbortSignal | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ac = new AbortController();
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => ac.abort(), timeoutMs);
+    timeoutSignal = ac.signal;
+  }
+
+  const signals = [input.signal, timeoutSignal].filter(
+    (s): s is AbortSignal => s !== undefined,
+  );
+  const signal =
+    signals.length === 0
+      ? undefined
+      : signals.length === 1
+        ? signals[0]
+        : AbortSignal.any(signals);
+
+  try {
+    return await new Promise((resolvePromise, reject) => {
+      const child = spawn(command, args, {
+        cwd: input.cwd,
+        env: { ...input.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        ...(signal === undefined ? {} : { signal }),
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout?.setEncoding('utf8');
+      child.stderr?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr?.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+      child.on('error', (err) => {
+        if ((err as NodeJS.ErrnoException).name === 'AbortError') {
+          resolvePromise({
+            exitCode: 124,
+            stdout,
+            stderr: stderr + '\nopenpacker sandbox: process timed out\n',
+          });
+          return;
+        }
+        reject(err);
+      });
+      child.on('close', (code) => {
+        resolvePromise({ exitCode: code ?? 1, stdout, stderr });
+      });
     });
-    let stdout = '';
-    let stderr = '';
-    child.stdout?.setEncoding('utf8');
-    child.stderr?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr?.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      resolve({ exitCode: code ?? 1, stdout, stderr });
-    });
-  });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

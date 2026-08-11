@@ -16,9 +16,11 @@ export {
   type SandboxOutcome,
   type SandboxPolicy,
   type SandboxPrefer,
+  type SandboxProfile,
 } from './types.js';
 
 export {
+  assertGrantsNotDangerous,
   backendLosses,
   digestSandboxPolicy,
   loss,
@@ -26,6 +28,10 @@ export {
   mergeGrants,
   resolvePolicy,
 } from './policy.js';
+
+export { packageExecRoRoots } from './backends/native.js';
+
+export { minimalPathValue } from './env.js';
 
 export {
   isAllowlistedEnv,
@@ -64,6 +70,7 @@ export { probeBackends, resolveBackend, runInSandbox } from './run.js';
 
 export {
   HostInstallerSandboxError,
+  limitedContainmentLoss,
   notSandboxedLoss,
   planSandboxSummary,
   runHostInstaller,

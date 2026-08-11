@@ -60,9 +60,15 @@ export function lifecycleScriptsAllowed(
   policy: PolicyInput | undefined,
   packageId: string,
 ): boolean {
-  if (policy?.allowLifecycleScripts === true) return true;
   const list = policy?.allowedLifecycleScriptPackages ?? [];
-  return list.some((entry) => packageGrantMatches(packageId, entry));
+  if (list.some((entry) => packageGrantMatches(packageId, entry))) return true;
+  // Global allow is insecure. Strict mode (default) requires an allowlist hit.
+  const ext = policy as
+    | (PolicyInput & { strictLifecycleAllowlist?: boolean })
+    | undefined;
+  const isStrict = ext?.strictLifecycleAllowlist !== false;
+  if (policy?.allowLifecycleScripts === true && !isStrict) return true;
+  return false;
 }
 
 function packageGrantMatches(packageId: string, entry: string): boolean {
@@ -82,6 +88,16 @@ export function sandboxPolicyFromProject(
   const packages = policy?.sandboxPackageGrants as
     | Readonly<Record<string, PackageGrants>>
     | undefined;
+  // Extended knobs may live on PolicyInput once schema is regenerated, or on
+  // a nested object written by toml.
+  const ext = (policy ?? {}) as PolicyInput & {
+    projectWrite?: boolean;
+    minimalPath?: boolean;
+    strictLifecycleAllowlist?: boolean;
+    allowDangerousGrants?: boolean;
+    legacyFatRoot?: boolean;
+    timeoutMs?: number;
+  };
   return {
     enabled: policy?.sandboxMode !== 'off',
     mode: policy?.sandboxMode ?? 'fail-closed',
@@ -91,6 +107,12 @@ export function sandboxPolicyFromProject(
       (policy?.sandboxMode === undefined ||
         policy.sandboxMode === 'fail-closed'),
     allowHostUnsandboxedInstall: policy?.allowHostUnsandboxedInstall ?? false,
+    projectWrite: ext.projectWrite ?? false,
+    minimalPath: ext.minimalPath ?? true,
+    strictLifecycleAllowlist: ext.strictLifecycleAllowlist ?? true,
+    allowDangerousGrants: ext.allowDangerousGrants ?? false,
+    legacyFatRoot: ext.legacyFatRoot ?? false,
+    ...(ext.timeoutMs === undefined ? {} : { timeoutMs: ext.timeoutMs }),
     ...(packages === undefined ? {} : { packages }),
   };
 }
@@ -129,6 +151,7 @@ export async function runLifecycleScript(input: {
       INIT_CWD: input.packageDir,
     },
     policy: sandboxPolicy,
+    profile: 'package-exec',
     packageId: input.packageId,
     ...(grants === undefined ? {} : { grants }),
     // Package tree only — never the whole host (host installers use a

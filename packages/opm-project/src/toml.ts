@@ -166,6 +166,29 @@ export function serializeManifest(manifest: OpmManifest): string {
       lines.push(
         `allow_host_unsandboxed_install = ${p.allowHostUnsandboxedInstall ? 'true' : 'false'}`,
       );
+    const pe = p as PolicyInput & {
+      projectWrite?: boolean;
+      minimalPath?: boolean;
+      strictLifecycleAllowlist?: boolean;
+      allowDangerousGrants?: boolean;
+      legacyFatRoot?: boolean;
+      timeoutMs?: number;
+    };
+    if (pe.projectWrite !== undefined)
+      lines.push(`project_write = ${pe.projectWrite ? 'true' : 'false'}`);
+    if (pe.minimalPath !== undefined)
+      lines.push(`minimal_path = ${pe.minimalPath ? 'true' : 'false'}`);
+    if (pe.strictLifecycleAllowlist !== undefined)
+      lines.push(
+        `strict_lifecycle_allowlist = ${pe.strictLifecycleAllowlist ? 'true' : 'false'}`,
+      );
+    if (pe.allowDangerousGrants !== undefined)
+      lines.push(
+        `allow_dangerous_grants = ${pe.allowDangerousGrants ? 'true' : 'false'}`,
+      );
+    if (pe.legacyFatRoot !== undefined)
+      lines.push(`legacy_fat_root = ${pe.legacyFatRoot ? 'true' : 'false'}`);
+    if (pe.timeoutMs !== undefined) lines.push(`timeout_ms = ${pe.timeoutMs}`);
     lines.push('');
     for (const id of Object.keys(p.sandboxPackageGrants ?? {}).sort()) {
       const grant = p.sandboxPackageGrants![id]!;
@@ -509,6 +532,12 @@ const SANDBOX_FIELD_TYPES: Readonly<
   mode: 'string',
   prefer: 'string',
   allow_host_unsandboxed_install: 'boolean',
+  project_write: 'boolean',
+  minimal_path: 'boolean',
+  strict_lifecycle_allowlist: 'boolean',
+  allow_dangerous_grants: 'boolean',
+  legacy_fat_root: 'boolean',
+  timeout_ms: 'number',
 };
 
 const SANDBOX_KEYS = new Set(Object.keys(SANDBOX_FIELD_TYPES));
@@ -568,6 +597,21 @@ function sandboxFromScratch(
   if (out.sandboxMode === 'fail-closed') out.sandboxRequired = true;
   else if (out.sandboxMode === 'degrade-warn' || out.sandboxMode === 'off')
     out.sandboxRequired = false;
+
+  // Extended knobs stored on PolicyInput via index signature until schema lands.
+  const ext = out as Partial<PolicyInput> & Record<string, unknown>;
+  if (typeof scratch.project_write === 'boolean')
+    ext.projectWrite = scratch.project_write;
+  if (typeof scratch.minimal_path === 'boolean')
+    ext.minimalPath = scratch.minimal_path;
+  if (typeof scratch.strict_lifecycle_allowlist === 'boolean')
+    ext.strictLifecycleAllowlist = scratch.strict_lifecycle_allowlist;
+  if (typeof scratch.allow_dangerous_grants === 'boolean')
+    ext.allowDangerousGrants = scratch.allow_dangerous_grants;
+  if (typeof scratch.legacy_fat_root === 'boolean')
+    ext.legacyFatRoot = scratch.legacy_fat_root;
+  if (typeof scratch.timeout_ms === 'number')
+    ext.timeoutMs = scratch.timeout_ms;
 
   if (packages.size > 0) {
     const grants: NonNullable<PolicyInput['sandboxPackageGrants']> = {};

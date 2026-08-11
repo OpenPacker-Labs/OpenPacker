@@ -1,13 +1,10 @@
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Env keys that may pass into a jail without an explicit grant. */
 const ALLOWLIST_PREFIXES = ['npm_package_', 'npm_lifecycle_'] as const;
 
-/**
- * npm_config_* is *not* fully allowlisted: auth/token keys hide in this
- * prefix (e.g. registry auth). Only non-credential npm_config_ keys pass.
- */
 const NPM_CONFIG_SAFE = new Set([
   'npm_config_user_agent',
   'npm_config_cache',
@@ -57,10 +54,6 @@ const ALLOWLIST_EXACT = new Set([
   'npm_package_version',
 ]);
 
-/**
- * Credential-shaped names never inherit unless an exact grant lists them.
- * Patterns cover common CI and cloud secrets.
- */
 const DENY_EXACT = new Set([
   'SSH_AUTH_SOCK',
   'SSH_AGENT_PID',
@@ -125,7 +118,6 @@ export function isDeniedCredential(name: string): boolean {
   if (DENY_EXACT.has(name)) return true;
   if (DENY_PREFIXES.some((p) => name.startsWith(p))) return true;
   const upper = name.toUpperCase();
-  // npm_config registry auth keys: "//registry…/:_authToken"
   if (
     name.startsWith('npm_config_') &&
     /auth|token|password|secret|_pass/i.test(name)
@@ -137,25 +129,31 @@ export function isDeniedCredential(name: string): boolean {
 export function isAllowlistedEnv(name: string): boolean {
   if (ALLOWLIST_EXACT.has(name)) return true;
   if (NPM_CONFIG_SAFE.has(name)) return true;
-  if (name.startsWith('npm_config_')) {
-    // Only the safe list above; other npm_config_* stay out unless granted.
-    return false;
-  }
+  if (name.startsWith('npm_config_')) return false;
   return ALLOWLIST_PREFIXES.some((p) => name.startsWith(p));
+}
+
+/** Minimal PATH for package-exec (audit H1). */
+export function minimalPathValue(interpreter?: string): string {
+  const parts = ['/usr/bin', '/bin'];
+  if (interpreter && interpreter.includes('/')) {
+    parts.unshift(dirname(interpreter));
+  }
+  return [...new Set(parts)].join(':');
 }
 
 /**
  * Build a scrubbed environment for jail execution.
- *
- * Parent process env is the source for allowlisted keys; `extra` overlays;
- * `grantEnv` names may be copied from the parent even if credential-shaped
- * (reviewed package grant).
  */
 export function scrubEnvironment(input: {
   parent?: NodeJS.ProcessEnv;
   extra?: Readonly<Record<string, string>>;
   grantEnv?: readonly string[];
   jailHome: string;
+  /** When true (default for package-exec), replace PATH with a minimal set. */
+  minimalPath?: boolean;
+  /** Argv[0] used to include interpreter dir on PATH. */
+  interpreter?: string;
 }): Record<string, string> {
   const parent = input.parent ?? process.env;
   const granted = new Set(input.grantEnv ?? []);
@@ -180,10 +178,14 @@ export function scrubEnvironment(input: {
 
   out.HOME = input.jailHome;
   out.USERPROFILE = input.jailHome;
-  // Avoid leaking the real temp as a second home-like surface without grant.
   out.TMPDIR = join(input.jailHome, 'tmp');
   out.TEMP = out.TMPDIR;
   out.TMP = out.TMPDIR;
+
+  if (input.minimalPath !== false && !granted.has('PATH')) {
+    out.PATH = minimalPathValue(input.interpreter);
+  }
+
   return out;
 }
 

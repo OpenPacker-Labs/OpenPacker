@@ -17,10 +17,16 @@ const allowPolicy: PolicyInput = {
   semanticLossMaximum: 'warning',
   requiredEvidence: [],
   allowLifecycleScripts: true,
+  allowedLifecycleScriptPackages: [
+    'pkg:npm/malicious-postinstall',
+    'pkg:npm/esbuild',
+  ],
   sandboxMode: 'fail-closed',
   sandboxRequired: true,
   sandboxPrefer: 'native',
-};
+  // @ts-expect-error extended knobs until schema lands
+  strictLifecycleAllowlist: true,
+} as PolicyInput;
 
 describe('lifecycle policy gates', () => {
   it('refuses scripts unless allowlisted', () => {
@@ -77,7 +83,11 @@ describe('lifecycle jail execution', () => {
         script: 'echo hi',
         packageDir: dir,
         packageId: 'pkg:npm/evil',
-        policy: { ...allowPolicy, allowLifecycleScripts: false },
+        policy: {
+          ...allowPolicy,
+          allowLifecycleScripts: false,
+          allowedLifecycleScriptPackages: [],
+        },
       }),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
   });

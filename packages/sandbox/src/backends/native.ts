@@ -1,9 +1,9 @@
 import { accessSync, constants, existsSync } from 'node:fs';
 import { platform } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { SandboxBackendError, spawnCapture } from './mock.js';
 import { sensitiveMaskDirectories, sensitiveMaskFiles } from '../paths.js';
-import type { BackendProbe, SandboxBackend } from '../types.js';
+import type { BackendProbe, SandboxBackend, SandboxProfile } from '../types.js';
 
 function which(bin: string): string | undefined {
   const pathEnv = process.env.PATH ?? '';
@@ -46,7 +46,6 @@ export function probeNativeBackends(): BackendProbe[] {
           },
     );
   } else if (platform() === 'win32') {
-    // Without MXC, Windows has no lightweight native jail in this package yet.
     probes.push({
       id: 'native-process',
       available: false,
@@ -57,9 +56,31 @@ export function probeNativeBackends(): BackendProbe[] {
   return probes;
 }
 
+/** Directories bind-mounted RO for minimal package-exec profiles. */
+export function packageExecRoRoots(): string[] {
+  const candidates = [
+    '/usr',
+    '/lib',
+    '/lib64',
+    '/lib32',
+    '/bin',
+    '/sbin',
+    '/opt',
+    // Node/OpenSSL certs and resolver basics (not full /etc).
+    '/etc/ssl',
+    '/etc/pki',
+    '/etc/resolv.conf',
+    '/etc/hosts',
+    '/etc/nsswitch.conf',
+    '/etc/passwd',
+    '/etc/group',
+    '/etc/localtime',
+  ];
+  return candidates.filter((p) => existsSync(p));
+}
+
 /**
- * Bubblewrap backend (Linux). Read-only bind of `/` with RW overlays for
- * granted paths; network denied unless requested.
+ * Bubblewrap backend (Linux).
  */
 export function createBwrapBackend(): SandboxBackend {
   const bwrap = which('bwrap');
@@ -76,6 +97,8 @@ export function createBwrapBackend(): SandboxBackend {
         readwritePaths: input.readwritePaths,
         readonlyPaths: input.readonlyPaths,
         network: input.network,
+        profile: input.profile,
+        legacyFatRoot: input.legacyFatRoot === true,
       });
       return spawnCapture({
         argv,
@@ -94,12 +117,9 @@ export function buildBwrapArgv(input: {
   readwritePaths: readonly string[];
   readonlyPaths: readonly string[];
   network: boolean;
+  profile: SandboxProfile;
+  legacyFatRoot?: boolean;
 }): string[] {
-  // Defense-in-depth profile (Aube-aligned):
-  // - unshare net unless granted
-  // - host root RO
-  // - mask home / secret dirs so RO root cannot leak credentials
-  // - RW only for declared package / temp paths (re-bound after masks)
   const args: string[] = [
     input.bwrap,
     '--die-with-parent',
@@ -109,14 +129,29 @@ export function buildBwrapArgv(input: {
   ];
   if (!input.network) args.push('--unshare-net');
 
-  args.push('--ro-bind', '/', '/');
+  const fat =
+    input.profile === 'host-install' ||
+    input.profile === 'ambient' ||
+    input.legacyFatRoot === true;
+
+  if (fat) {
+    // Host-install / legacy: full RO root then RW overlays. Not a strong
+    // confidentiality boundary — caller must set containmentLimited.
+    args.push('--ro-bind', '/', '/');
+  } else {
+    // package-exec minimal: only toolchain + explicit trees (audit C1).
+    for (const root of packageExecRoRoots()) {
+      if (!existsSync(root)) continue;
+      // Files vs directories: bwrap needs --ro-bind for both.
+      args.push('--ro-bind', root, root);
+    }
+  }
+
   args.push('--dev', '/dev');
   args.push('--proc', '/proc');
   args.push('--tmpfs', '/tmp');
   args.push('--tmpfs', '/var/tmp');
 
-  // Mask credential-bearing directories after the RO root bind. Package RW
-  // binds below re-expose only the granted trees.
   for (const dir of sensitiveMaskDirectories()) {
     if (existsSync(dir)) args.push('--tmpfs', dir);
   }
@@ -124,38 +159,44 @@ export function buildBwrapArgv(input: {
     if (existsSync(file)) args.push('--ro-bind', '/dev/null', file);
   }
 
-  // Re-expose the executable after masks (nvm/mise node lives under $HOME).
   const command0 = input.command[0];
   if (command0 && command0.includes('/')) {
     try {
       const execPath = resolve(command0);
-      if (existsSync(execPath)) args.push('--ro-bind', execPath, execPath);
+      if (existsSync(execPath)) {
+        args.push('--ro-bind', execPath, execPath);
+        // Also expose the interpreter's install prefix when under $HOME (nvm).
+        const dir = dirname(execPath);
+        if (existsSync(dir)) args.push('--ro-bind', dir, dir);
+      }
     } catch {
       // ignore
     }
   }
 
-  const rw = new Set(
-    [...input.readwritePaths, input.cwd].map((p) => resolve(p)),
-  );
+  // Do not auto-RW cwd: package-exec often uses project as cwd with RO only.
+  const rw = new Set(input.readwritePaths.map((p) => resolve(p)));
+  const ro = new Set(input.readonlyPaths.map((p) => resolve(p)));
+  // Ensure cwd is visible (RO if not granted RW).
+  const cwdPath = resolve(input.cwd);
+  if (!rw.has(cwdPath) && !ro.has(cwdPath)) ro.add(cwdPath);
+
   for (const path of rw) {
+    if (!existsSync(path)) continue;
     args.push('--bind', path, path);
   }
-  for (const path of input.readonlyPaths.map((p) => resolve(p))) {
+  for (const path of ro) {
     if (rw.has(path)) continue;
+    if (!existsSync(path)) continue;
     args.push('--ro-bind', path, path);
   }
 
-  args.push('--chdir', resolve(input.cwd));
+  args.push('--chdir', cwdPath);
   args.push('--');
   args.push(...input.command);
   return args;
 }
 
-/**
- * Seatbelt backend (macOS): generate a narrow profile and run via sandbox-exec.
- * Network deny + write only to granted paths when possible.
- */
 export function createSeatbeltBackend(): SandboxBackend {
   const se = which('sandbox-exec');
   if (!se) {
@@ -167,12 +208,17 @@ export function createSeatbeltBackend(): SandboxBackend {
   return {
     id: 'native-seatbelt',
     async run(input) {
+      const cwdPath = resolve(input.cwd);
+      const rw = [...input.readwritePaths];
+      const ro = [...input.readonlyPaths];
+      if (!rw.map((p) => resolve(p)).includes(cwdPath)) ro.push(cwdPath);
       const profile = buildSeatbeltProfile({
-        readwritePaths: [...input.readwritePaths, input.cwd],
-        readonlyPaths: input.readonlyPaths,
+        readwritePaths: rw,
+        readonlyPaths: ro,
         network: input.network,
+        profile: input.profile,
+        legacyFatRoot: input.legacyFatRoot === true,
       });
-      // sandbox-exec -p PROFILE command...
       return spawnCapture({
         argv: [se, '-p', profile, ...input.argv],
         cwd: input.cwd,
@@ -187,24 +233,35 @@ export function buildSeatbeltProfile(input: {
   readwritePaths: readonly string[];
   readonlyPaths: readonly string[];
   network: boolean;
+  profile: SandboxProfile;
+  legacyFatRoot?: boolean;
 }): string {
   const writes = input.readwritePaths
     .map((p) => `(allow file-write* (subpath ${JSON.stringify(resolve(p))}))`)
     .join('\n  ');
-  // Prefer explicit RO trees when provided; otherwise allow reading system
-  // paths but still deny the home/secret subpaths below.
-  const reads =
-    input.readonlyPaths.length > 0
-      ? input.readonlyPaths
-          .map(
-            (p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`,
-          )
-          .join('\n  ')
-      : `(allow file-read-data file-read-metadata
-    (regex #"^/(usr|bin|sbin|lib|lib64|System|Library|Applications|opt|private/etc|etc|dev|tmp|var/folders)/")
-    (literal "/")
-    (literal "/private")
-  )`;
+  const fat =
+    input.profile === 'host-install' ||
+    input.profile === 'ambient' ||
+    input.legacyFatRoot === true;
+
+  let reads: string;
+  if (fat) {
+    reads = '(allow file-read*)';
+  } else if (input.readonlyPaths.length > 0) {
+    reads = [
+      ...packageExecRoRoots().map(
+        (p) => `(allow file-read* (subpath ${JSON.stringify(p)}))`,
+      ),
+      ...input.readonlyPaths.map(
+        (p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`,
+      ),
+    ].join('\n  ');
+  } else {
+    reads = packageExecRoRoots()
+      .map((p) => `(allow file-read* (subpath ${JSON.stringify(p)}))`)
+      .join('\n  ');
+  }
+
   const deniedHomes = sensitiveMaskDirectories()
     .map(
       (p) =>

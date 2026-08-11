@@ -213,8 +213,12 @@ test('sandbox package exists and defaults to fail-closed', async () => {
     sandbox.SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
     'SYSTEM_INSTALL_NOT_SANDBOXED',
   );
-  // Credential dirs/files must be listed for native mask overlays (not all of /home —
-  // toolchains often live under the user home).
+  assert.equal(
+    sandbox.SANDBOX_LOSS.SYSTEM_LIMITED,
+    'SYSTEM_INSTALL_CONTAINMENT_LIMITED',
+  );
+  assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.projectWrite, false);
+  assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.minimalPath, true);
   const masks = sandbox.sensitiveMaskDirectories();
   assert.ok(masks.some((p) => p.endsWith('/.ssh') || p.includes('/.ssh')));
   assert.ok(sandbox.sensitiveMaskFiles().includes('/etc/shadow'));

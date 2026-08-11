@@ -6,6 +6,14 @@ export type SandboxMode = 'fail-closed' | 'degrade-warn' | 'off';
 /** Preferred containment ladder entry. */
 export type SandboxPrefer = 'auto' | 'mxc' | 'native';
 
+/**
+ * What kind of work is running. Determines bind profile and honesty flags.
+ * - package-exec: opmx / lifecycle / ephemeral (minimal FS)
+ * - host-install: apt/winget/… (limited user-capability jail)
+ * - ambient: intentionally unsandboxed
+ */
+export type SandboxProfile = 'package-exec' | 'host-install' | 'ambient';
+
 /** Backend that actually ran (or was selected). */
 export type SandboxBackendId =
   | 'mxc'
@@ -27,7 +35,7 @@ export interface PackageGrants {
 /**
  * Project / PREX sandbox policy.
  *
- * Defaults match ADR 0036: enabled, fail-closed, prefer auto (MXC then native).
+ * Defaults: enabled, fail-closed, prefer auto, project RO, minimal PATH.
  */
 export interface SandboxPolicy {
   enabled?: boolean;
@@ -38,10 +46,34 @@ export interface SandboxPolicy {
   /** Permit host installers without a jail (explicit ambient system install). */
   allowHostUnsandboxedInstall?: boolean;
   /**
-   * Package id / purl / glob → grants. Matching uses the same coordinate-
-   * boundary rules as policy trust excludes.
+   * When true, package-exec may write the project tree (opmx). Default false.
+   */
+  projectWrite?: boolean;
+  /**
+   * When true (default), scrub PATH to /usr/bin:/bin + interpreter dir.
+   */
+  minimalPath?: boolean;
+  /**
+   * When true (default), refuse allowLifecycleScripts=true without an allowlist.
+   * Enforced by opm-project lifecycle, not the sandbox package alone.
+   */
+  strictLifecycleAllowlist?: boolean;
+  /**
+   * When true, allow write grants that cover `/` or the user home.
+   * Default false — dangerous grants are rejected.
+   */
+  allowDangerousGrants?: boolean;
+  /**
+   * Escape hatch: fat `--ro-bind / /` package-exec profile (insecure reads).
+   * Default false.
+   */
+  legacyFatRoot?: boolean;
+  /**
+   * Package id / purl / glob → grants.
    */
   packages?: Readonly<Record<string, PackageGrants>>;
+  /** Max wall-clock ms for a sandboxed process (default 600_000). 0 = none. */
+  timeoutMs?: number;
 }
 
 export interface RunInSandboxInput {
@@ -57,6 +89,8 @@ export interface RunInSandboxInput {
   readonlyPaths: readonly string[];
   /** Allow network even without package grant (opmx flag / host install). */
   network?: boolean;
+  /** Defaults to package-exec. */
+  profile?: SandboxProfile;
   /**
    * Inject a backend for tests. Production callers omit this and use the
    * ladder from {@link resolveBackend}.
@@ -70,7 +104,14 @@ export interface SandboxOutcome {
   stdout: string;
   stderr: string;
   backend: SandboxBackendId;
+  profile: SandboxProfile;
+  /**
+   * True only for package-exec when a non-ambient backend ran.
+   * Host-install and ambient never set this true for honesty.
+   */
   enforced: boolean;
+  /** Incomplete containment by design (host-install or ambient). */
+  containmentLimited: boolean;
   policyDigest: Digest;
   losses: SemanticLoss[];
   /** True when mode was off or degrade-warn ran without a jail. */
@@ -92,6 +133,9 @@ export interface SandboxBackend {
     readwritePaths: readonly string[];
     readonlyPaths: readonly string[];
     network: boolean;
+    /** package-exec uses minimal binds; host-install uses broader. */
+    profile: SandboxProfile;
+    legacyFatRoot?: boolean;
     signal?: AbortSignal;
   }): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 }
@@ -100,7 +144,17 @@ export const DEFAULT_SANDBOX_POLICY: Readonly<
   Required<
     Pick<
       SandboxPolicy,
-      'enabled' | 'mode' | 'prefer' | 'required' | 'allowHostUnsandboxedInstall'
+      | 'enabled'
+      | 'mode'
+      | 'prefer'
+      | 'required'
+      | 'allowHostUnsandboxedInstall'
+      | 'projectWrite'
+      | 'minimalPath'
+      | 'strictLifecycleAllowlist'
+      | 'allowDangerousGrants'
+      | 'legacyFatRoot'
+      | 'timeoutMs'
     >
   >
 > = {
@@ -109,15 +163,24 @@ export const DEFAULT_SANDBOX_POLICY: Readonly<
   prefer: 'auto',
   required: true,
   allowHostUnsandboxedInstall: false,
+  projectWrite: false,
+  minimalPath: true,
+  strictLifecycleAllowlist: true,
+  allowDangerousGrants: false,
+  legacyFatRoot: false,
+  timeoutMs: 600_000,
 };
 
-/** Semantic loss codes from ADR 0036 / plan contracts. */
+/** Semantic loss codes from ADR 0036 / hardening contracts. */
 export const SANDBOX_LOSS = {
   ENFORCED: 'SANDBOX_ENFORCED',
   BACKEND_MXC: 'SANDBOX_BACKEND_MXC',
   BACKEND_NATIVE: 'SANDBOX_BACKEND_NATIVE',
   UNAVAILABLE: 'SANDBOX_UNAVAILABLE',
   DEGRADED: 'SANDBOX_DEGRADED',
-  SYSTEM_SANDBOXED: 'SYSTEM_INSTALL_SANDBOXED',
+  /** Limited user-capability containment for host installers — not a full jail. */
+  SYSTEM_LIMITED: 'SYSTEM_INSTALL_CONTAINMENT_LIMITED',
   SYSTEM_NOT_SANDBOXED: 'SYSTEM_INSTALL_NOT_SANDBOXED',
+  /** @deprecated Prefer SYSTEM_LIMITED — kept for older readers. */
+  SYSTEM_SANDBOXED: 'SYSTEM_INSTALL_SANDBOXED',
 } as const;
