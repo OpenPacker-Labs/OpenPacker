@@ -144,7 +144,8 @@ export async function runInSandbox(
     const readonly = [...input.readonlyPaths, ...(packageGrants.read ?? [])];
 
     try {
-      const result = await backend.run({
+      let active = backend;
+      let result = await active.run({
         argv: input.argv,
         cwd: input.cwd,
         env,
@@ -153,15 +154,39 @@ export async function runInSandbox(
         network,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
+
+      // MXC is preferred but early preview. When it returns a containment
+      // launch failure and native is available under auto, fall through once.
+      if (
+        result.exitCode !== 0 &&
+        active.id === 'mxc' &&
+        resolved.prefer === 'auto' &&
+        !input.backend
+      ) {
+        const native = createNativeBackend();
+        if (native) {
+          active = native;
+          result = await active.run({
+            argv: input.argv,
+            cwd: input.cwd,
+            env,
+            readwritePaths: readwrite,
+            readonlyPaths: readonly,
+            network,
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+          });
+        }
+      }
+
       return {
         ...result,
-        backend: backend.id,
-        enforced: backend.id !== 'mock' && backend.id !== 'off',
+        backend: active.id,
+        enforced: active.id !== 'mock' && active.id !== 'off',
         policyDigest,
         degraded: false,
         losses: backendLosses(
-          backend.id,
-          backend.id !== 'mock' && backend.id !== 'off',
+          active.id,
+          active.id !== 'mock' && active.id !== 'off',
           false,
         ),
       };
@@ -170,6 +195,33 @@ export async function runInSandbox(
         error instanceof SandboxBackendError &&
         error.code === 'UNAVAILABLE'
       ) {
+        // Prefer native when MXC claimed support then could not start.
+        if (
+          backend.id === 'mxc' &&
+          resolved.prefer === 'auto' &&
+          !input.backend
+        ) {
+          const native = createNativeBackend();
+          if (native) {
+            const result = await native.run({
+              argv: input.argv,
+              cwd: input.cwd,
+              env,
+              readwritePaths: readwrite,
+              readonlyPaths: readonly,
+              network,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
+            });
+            return {
+              ...result,
+              backend: native.id,
+              enforced: true,
+              policyDigest,
+              degraded: false,
+              losses: backendLosses(native.id, true, false),
+            };
+          }
+        }
         if (resolved.mode === 'fail-closed' || resolved.required) {
           return {
             exitCode: 78,

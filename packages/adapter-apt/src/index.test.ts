@@ -165,10 +165,15 @@ describe('installing', () => {
       },
     });
     const apt = new AptSystemProvider(execute, linux, () => false);
-    const outcome = await apt.install('pkg:deb/curl', { allowElevation: true });
+    const outcome = await apt.install('pkg:deb/curl', {
+      allowElevation: true,
+      // Unit tests inject execute(); ambient opt-in exercises that path.
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
     expect(outcome.performed).toBe(true);
     expect(outcome.exitCode).toBe(0);
     expect(outcome.installedVersion).toBe('8.5.0-2ubuntu10.11');
+    expect(outcome.sandboxEnforced).toBe(false);
     expect(calls).toContainEqual([
       'sudo',
       'apt-get',
@@ -189,7 +194,10 @@ describe('installing', () => {
       },
     });
     const apt = new AptSystemProvider(execute, linux, () => false);
-    const outcome = await apt.install('pkg:deb/nope', { allowElevation: true });
+    const outcome = await apt.install('pkg:deb/nope', {
+      allowElevation: true,
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
     expect(outcome.exitCode).toBe(100);
     expect(outcome.stderr).toMatch(/Unable to locate/u);
   });

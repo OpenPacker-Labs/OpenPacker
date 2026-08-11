@@ -244,6 +244,16 @@ export interface InstallOptions {
   signal?: AbortSignal;
   /** Where a provider that can install without root should put things. */
   prefix?: string;
+  /**
+   * Sandbox policy for the install process (ADR 0036).
+   * When omitted, implementations should fail closed unless
+   * allowHostUnsandboxedInstall is true.
+   */
+  sandbox?: {
+    mode?: 'fail-closed' | 'degrade-warn' | 'off';
+    prefer?: 'auto' | 'mxc' | 'native';
+    allowHostUnsandboxedInstall?: boolean;
+  };
 }
 
 export interface InstallPlan {
@@ -262,6 +272,15 @@ export interface InstallPlan {
    * so is the difference between a plug-in point and an overclaim.
    */
   semanticLoss: readonly SemanticLoss[];
+  /**
+   * How the install would be sandboxed, when known.
+   * Absent means the provider has not yet adopted the sandbox funnel.
+   */
+  sandbox?: {
+    mode: 'fail-closed' | 'degrade-warn' | 'off';
+    prefer: 'auto' | 'mxc' | 'native';
+    willEnforce: boolean;
+  };
 }
 
 export interface InstallOutcome extends InstallPlan {
@@ -271,6 +290,9 @@ export interface InstallOutcome extends InstallPlan {
   stderr: string;
   /** When the native tool reports what it settled on, the resolved version. */
   installedVersion?: string;
+  /** Backend that enforced (or failed to enforce) the install jail. */
+  sandboxBackend?: string;
+  sandboxEnforced?: boolean;
 }
 
 /**

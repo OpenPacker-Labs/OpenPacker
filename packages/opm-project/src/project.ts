@@ -271,7 +271,12 @@ export async function addPackage(input: {
   // The whole lock, not just the alias that was named: a package is not
   // installed in any useful sense without the things it needs, and the lock now
   // carries them.
-  const state = await installFromLock({ root: input.root, lock, offline });
+  const state = await installFromLock({
+    root: input.root,
+    lock,
+    offline,
+    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+  });
 
   // Last, and only after the store is real: a native manifest that names a
   // package the resolve never produced would send the native tool looking for
@@ -364,6 +369,7 @@ export async function syncProject(input: {
     root: input.root,
     lock,
     offline,
+    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,
@@ -401,6 +407,7 @@ export async function installProject(input: {
     root: input.root,
     lock,
     offline,
+    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,

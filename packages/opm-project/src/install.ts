@@ -32,6 +32,13 @@ import {
   storeKeyFromDigest,
   storePathForDigest,
 } from './paths.js';
+import {
+  detectNpmLifecycleScripts,
+  hasLifecycleScripts,
+  lifecycleScriptsAllowed,
+  runDeclaredLifecycleScripts,
+} from './lifecycle.js';
+import type { PolicyInput } from '@openpacker/contracts';
 
 export async function emptyProjectState(): Promise<ProjectState> {
   return { schemaVersion: 1, packages: {} };
@@ -171,7 +178,14 @@ export async function materializeLockPackage(input: {
    * way, so this is a transfer saving and not a trust shortcut.
    */
   bytes?: Uint8Array;
-}): Promise<{ storePath: string; bins: BinDeclaration[]; cached: boolean }> {
+  /** Project policy for lifecycle jail decisions. */
+  policy?: PolicyInput;
+}): Promise<{
+  storePath: string;
+  bins: BinDeclaration[];
+  cached: boolean;
+  lifecycleScriptsExecuted: boolean;
+}> {
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
@@ -182,7 +196,12 @@ export async function materializeLockPackage(input: {
       input.pkg.bins.length > 0
         ? [...input.pkg.bins]
         : await discoverBins(storePath, input.pkg.ecosystem);
-    return { storePath, bins, cached: true };
+    return {
+      storePath,
+      bins,
+      cached: true,
+      lifecycleScriptsExecuted: false,
+    };
   }
   if (already && input.force) {
     await rm(storePath, { recursive: true, force: true });
@@ -221,11 +240,30 @@ export async function materializeLockPackage(input: {
     managedDestination: true,
   });
 
+  // Lifecycle scripts: default never run. When allowlisted, run only in jail.
+  let lifecycleScriptsExecuted = false;
+  if (input.pkg.ecosystem === 'npm') {
+    const declared = await detectNpmLifecycleScripts(storePath);
+    if (
+      hasLifecycleScripts(declared) &&
+      lifecycleScriptsAllowed(input.policy, input.pkg.purl)
+    ) {
+      const packageDir = storePath;
+      const result = await runDeclaredLifecycleScripts({
+        declared,
+        packageDir,
+        packageId: input.pkg.purl,
+        policy: input.policy,
+      });
+      lifecycleScriptsExecuted = result.executed;
+    }
+  }
+
   let bins: BinDeclaration[] =
     input.pkg.bins.length > 0
       ? [...input.pkg.bins]
       : await discoverBins(storePath, input.pkg.ecosystem);
-  return { storePath, bins, cached: false };
+  return { storePath, bins, cached: false, lifecycleScriptsExecuted };
 }
 
 export async function installFromLock(input: {
@@ -233,6 +271,7 @@ export async function installFromLock(input: {
   lock: OpmLockfile;
   offline: boolean;
   only?: readonly string[];
+  policy?: PolicyInput;
 }): Promise<ProjectState> {
   const paths = projectPaths(input.root);
   await mkdir(paths.opmDir, { recursive: true });
@@ -265,6 +304,7 @@ export async function installFromLock(input: {
       root: input.root,
       pkg,
       offline: input.offline,
+      ...(input.policy === undefined ? {} : { policy: input.policy }),
     });
     materialised.set(safeAlias, { storePath, bins, pkg });
   }
