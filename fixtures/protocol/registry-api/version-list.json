@@ -1,0 +1,16 @@
+{
+  "name": "demo-tool",
+  "versions": [
+    {
+      "version": "1.2.3",
+      "status": "active",
+      "isLatest": true,
+      "publishedAt": "2026-08-10T00:00:00.000Z"
+    },
+    {
+      "version": "1.2.2",
+      "status": "deprecated",
+      "isLatest": false
+    }
+  ]
+}

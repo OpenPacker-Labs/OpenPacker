@@ -237,6 +237,42 @@
         }
       },
       "additionalProperties": false
+    },
+    "ManifestSignature": {
+      "$comment": "Same construction as SignedReceipt: ed25519 over the ASCII formatDigest(manifestDigest), so one verifier serves both and a manifest cannot be re-signed as a receipt.",
+      "type": "object",
+      "required": ["algorithm", "keyId", "signature"],
+      "properties": {
+        "algorithm": { "const": "ed25519" },
+        "keyId": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "signature": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 256
+        },
+        "identity": { "type": "string", "maxLength": 1024 },
+        "role": {
+          "$comment": "Who this signature speaks for. A registry counter-signing what a publisher signed is a different claim from the publisher's own, and collapsing them loses the ability to say which one a consumer trusts.",
+          "enum": ["publisher", "registry"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "SignedPackageManifest": {
+      "$comment": "Mirrors SignedReceipt (resolution.schema.json). The digest is carried beside the document so a verifier checks the signature against a stated digest and then the digest against the bytes, rather than trusting one derivation.",
+      "type": "object",
+      "required": ["manifest", "manifestDigest", "signatures"],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/PackageManifest" },
+        "manifestDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/ManifestSignature" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

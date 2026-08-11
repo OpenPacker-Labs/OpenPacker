@@ -1,0 +1,143 @@
+{
+  "packages": [
+    {
+      "manifest": {
+        "packageManifestVersion": "1",
+        "name": "demo-tool",
+        "title": "Demo Tool",
+        "description": "A package published to several ecosystems from one project.",
+        "version": "1.2.3",
+        "licenses": ["Apache-2.0"],
+        "repository": {
+          "url": "https://github.com/openpacker/demo-tool",
+          "source": "github",
+          "revision": "9f2c1b8e4a6d0c3f5e7a9b1d3f5a7c9e1b3d5f79"
+        },
+        "registries": [
+          {
+            "registryId": "urn:openpacker:registry:npmjs-org",
+            "displayName": "npmjs.org",
+            "purlTypes": ["npm"],
+            "serviceIndex": "https://registry.npmjs.org",
+            "definitionDigest": {
+              "algorithm": "sha256",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          },
+          {
+            "registryId": "urn:openpacker:registry:nuget-org",
+            "displayName": "nuget.org",
+            "purlTypes": ["nuget"],
+            "serviceIndex": "https://api.nuget.org/v3/index.json",
+            "definitionDigest": {
+              "algorithm": "sha256",
+              "value": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          }
+        ],
+        "distributions": [
+          {
+            "purlType": "npm",
+            "identifier": "@openpacker/demo-tool",
+            "version": "1.2.3",
+            "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.2.3",
+            "registryId": "urn:openpacker:registry:npmjs-org",
+            "registryBaseUrl": "https://registry.npmjs.org",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "nativeIntegrity": {
+              "algorithm": "sha512",
+              "value": "Xkq8oXn1ZmM3xEwvS1qk1pTAnVXW0S2gGZ4rQeCq0Q==",
+              "encoding": "sri"
+            },
+            "size": 4096,
+            "mediaType": "application/vnd.npm.install-v1+json",
+            "locations": [
+              "https://registry.npmjs.org/@openpacker/demo-tool/-/demo-tool-1.2.3.tgz"
+            ],
+            "runtimeHint": "npx",
+            "requirements": [
+              {
+                "identifier": "chalk",
+                "purl": "pkg:npm/chalk",
+                "range": "^4.1.2",
+                "scope": "runtime"
+              }
+            ]
+          },
+          {
+            "purlType": "nuget",
+            "identifier": "OpenPacker.DemoTool",
+            "version": "1.2.3",
+            "exactPurl": "pkg:nuget/OpenPacker.DemoTool@1.2.3",
+            "registryId": "urn:openpacker:registry:nuget-org",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "4444444444444444444444444444444444444444444444444444444444444444"
+            },
+            "nativeIntegrity": {
+              "algorithm": "sha512",
+              "value": "T3BlblBhY2tlckRlbW9Ub29sQ29udGVudEhhc2hCYXNlNjQ=",
+              "encoding": "base64"
+            },
+            "size": 8192,
+            "mediaType": "application/vnd.nuget.package",
+            "runtimeHint": "dnx",
+            "requirements": []
+          }
+        ],
+        "provenance": {
+          "producedBy": {
+            "id": "org.openpacker.opm",
+            "version": "0.1.0"
+          },
+          "producedAt": "2026-08-10T00:00:00.000Z",
+          "sourceRefs": [
+            {
+              "type": "repository",
+              "uri": "https://github.com/openpacker/demo-tool",
+              "revision": "9f2c1b8e4a6d0c3f5e7a9b1d3f5a7c9e1b3d5f79"
+            }
+          ],
+          "receiptDigest": {
+            "algorithm": "sha256",
+            "value": "5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          "trustLevel": "unsigned",
+          "verified": ["artifact-digest", "native-integrity"]
+        }
+      },
+      "registryMetadata": {
+        "registryId": "urn:openpacker:registry:acme",
+        "status": "active",
+        "publishedAt": "2026-08-10T00:00:00.000Z",
+        "updatedAt": "2026-08-10T00:00:00.000Z",
+        "isLatest": true,
+        "manifestDigest": {
+          "algorithm": "sha256",
+          "value": "6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      },
+      "signatures": [
+        {
+          "algorithm": "ed25519",
+          "keyId": "publisher-1",
+          "signature": "c2lnbmF0dXJl",
+          "role": "publisher"
+        },
+        {
+          "algorithm": "ed25519",
+          "keyId": "acme-registry",
+          "signature": "cmVnaXN0cnk=",
+          "role": "registry"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "count": 1,
+    "nextCursor": null
+  }
+}

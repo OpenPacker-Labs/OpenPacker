@@ -1435,6 +1435,138 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/PackageManifest",
       "valid": false,
       "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-page",
+      "file": "registry-api/package-page.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-D"]
+    },
+    {
+      "name": "registry-page-last",
+      "file": "registry-api/package-page-last.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-page-bad-cursor",
+      "file": "registry-api/package-page.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/metadata/nextCursor",
+          "value": 7
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-page-unknown-status",
+      "file": "registry-api/package-page.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/packages/0/registryMetadata/status",
+          "value": "hidden"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-version-list",
+      "file": "registry-api/version-list.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/VersionList",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-version-list-no-status",
+      "file": "registry-api/version-list.json",
+      "mutations": [
+        {
+          "operation": "remove",
+          "path": "/versions/0/status"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/VersionList",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-publish-request",
+      "file": "registry-api/publish-request.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-publish-unsigned",
+      "file": "registry-api/publish-request.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-publish-bad-namespace",
+      "file": "registry-api/publish-request.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/namespaceProof/namespace",
+          "value": "Example"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "signed-package-manifest",
+      "file": "package-manifest/signed.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/SignedPackageManifest",
+      "valid": true,
+      "levels": ["PREX-I", "PREX-D"]
+    },
+    {
+      "name": "signed-package-manifest-no-signature",
+      "file": "package-manifest/signed.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/SignedPackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "signed-package-manifest-wrong-algorithm",
+      "file": "package-manifest/signed.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures/0/algorithm",
+          "value": "rsa"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/package-manifest.schema.json#/$defs/SignedPackageManifest",
+      "valid": false,
+      "levels": ["PREX-I"]
     }
   ]
 }

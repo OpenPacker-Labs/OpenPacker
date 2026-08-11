@@ -230,6 +230,7 @@ export type ConformanceLevel =
   | 'PREX-X'
   | 'PREX-R'
   | 'PREX-C';
+export type Cursor = string;
 export type DependencyEdge = {
   requirementId: string;
   fromNodeId: string;
@@ -648,6 +649,13 @@ export type LockImportResponse = {
   };
   semanticLoss: Array<SemanticLoss>;
 };
+export type ManifestSignature = {
+  algorithm: 'ed25519';
+  keyId: string;
+  signature: string;
+  identity?: string;
+  role?: 'publisher' | 'registry';
+};
 export type MaterializeRequest = {
   subject:
     | { type: 'purl'; exactPurl: string }
@@ -683,6 +691,13 @@ export type MaterializeResponse = {
   ocmReference?: ExternalRef;
   tufTargetMetadataRef?: ExternalRef;
   restrictions: Array<string>;
+};
+export type NamespaceProof = {
+  namespace: string;
+  method: 'dns-txt' | 'https-well-known' | 'registry-configured';
+  keyId: string;
+  evidence?: string;
+  verifiedAt?: string;
 };
 export type NativeIntegrity = {
   algorithm: string;
@@ -868,6 +883,11 @@ export type PackageOutput = {
   artifactDescriptorIds?: Array<string>;
   recipeOutputId?: Digest;
 };
+export type PackagePage = {
+  packages: Array<RegistryEntry>;
+  metadata: PageMetadata;
+};
+export type PageMetadata = { count: number; nextCursor?: Cursor | null };
 export type PlatformContexts = {
   build?: TargetContext;
   host?: TargetContext;
@@ -1023,6 +1043,11 @@ export type RegistryDefinition = {
   extensions?: Extensions;
 };
 export type RegistryDefinitionVersion = '1';
+export type RegistryEntry = {
+  manifest: PackageManifest;
+  registryMetadata: RegistryMetadata;
+  signatures?: Array<ManifestSignature>;
+};
 export type RegistryFeatures = {
   offlineReplay?: boolean;
   signedMetadata?: boolean;
@@ -1036,10 +1061,26 @@ export type RegistryLimits = {
   maxSearchResults?: number;
   maxArtifactBytes?: number;
 };
+export type RegistryMetadata = {
+  registryId: RegistryId;
+  sourceId?: string;
+  status: 'active' | 'deprecated' | 'deleted';
+  publishedAt: string;
+  updatedAt?: string;
+  isLatest: boolean;
+  manifestDigest?: Digest;
+};
 export type RegistryProtocol = {
   native?: string;
   transport?: Array<Transport>;
 };
+export type RegistryPublishRequest = {
+  manifest: PackageManifest;
+  manifestDigest: Digest;
+  signatures?: Array<ManifestSignature>;
+  namespaceProof?: NamespaceProof;
+};
+export type RegistryPublishResponse = { entry: RegistryEntry };
 export type RegistryRef = {
   registryId: RegistryId;
   displayName?: string;
@@ -1287,6 +1328,11 @@ export type SemanticsInput = {
   nativeCompatibility: Array<string>;
   extensions?: Extensions;
 };
+export type SignedPackageManifest = {
+  manifest: PackageManifest;
+  manifestDigest: Digest;
+  signatures: Array<ManifestSignature>;
+};
 export type SignedReceipt = {
   receipt: ResolutionReceipt;
   receiptDigest: Digest;
@@ -1364,6 +1410,10 @@ export type SourceSnapshot = {
   authenticationScopeRef?: string;
   evidenceRefs: Array<ExternalRef>;
   extensions?: Extensions;
+};
+export type StatusUpdate = {
+  status: 'active' | 'deprecated' | 'deleted';
+  reason?: string;
 };
 export type StringSet = Array<string>;
 export type SubstituteDescriptor = {
@@ -1498,6 +1548,15 @@ export type VersionConstraintAst =
   | { type: 'and' | 'or'; items: Array<VersionConstraintAst> }
   | { type: 'not'; item: VersionConstraintAst }
   | { type: 'any' };
+export type VersionList = {
+  name: string;
+  versions: Array<{
+    version: string;
+    status: 'active' | 'deprecated' | 'deleted';
+    isLatest: boolean;
+    publishedAt?: string;
+  }>;
+};
 export type Warning = {
   code: string;
   message: string;
@@ -6670,6 +6729,60 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         additionalProperties: false,
       },
+      ManifestSignature: {
+        $comment:
+          'Same construction as SignedReceipt: ed25519 over the ASCII formatDigest(manifestDigest), so one verifier serves both and a manifest cannot be re-signed as a receipt.',
+        type: 'object',
+        required: ['algorithm', 'keyId', 'signature'],
+        properties: {
+          algorithm: {
+            const: 'ed25519',
+          },
+          keyId: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+          signature: {
+            type: 'string',
+            contentEncoding: 'base64',
+            maxLength: 256,
+          },
+          identity: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          role: {
+            $comment:
+              "Who this signature speaks for. A registry counter-signing what a publisher signed is a different claim from the publisher's own, and collapsing them loses the ability to say which one a consumer trusts.",
+            enum: ['publisher', 'registry'],
+          },
+        },
+        additionalProperties: false,
+      },
+      SignedPackageManifest: {
+        $comment:
+          'Mirrors SignedReceipt (resolution.schema.json). The digest is carried beside the document so a verifier checks the signature against a stated digest and then the digest against the bytes, rather than trusting one derivation.',
+        type: 'object',
+        required: ['manifest', 'manifestDigest', 'signatures'],
+        properties: {
+          manifest: {
+            $ref: '#/$defs/PackageManifest',
+          },
+          manifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          signatures: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 32,
+            items: {
+              $ref: '#/$defs/ManifestSignature',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
     },
   },
   'https://openpacker.dev/spec/prex/v1/schemas/prex.schema.json': {
@@ -6774,6 +6887,247 @@ export const schemaCatalog: Record<string, JsonValue> = {
         $ref: 'resolution.schema.json#/$defs/RuntimeClosure',
       },
     ],
+  },
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json': {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json',
+    title: 'PREX registry HTTP binding',
+    $comment:
+      "Wire shapes for a registry that serves package manifests. Endpoint and pagination shapes follow the MCP registry's generic contract deliberately: cursor plus updatedSince is a complete mirror protocol, and there is no reason to invent a second one. What differs is that a PREX registry publishes a Registry Definition, so which of these endpoints exist is discoverable rather than described in prose, and that published documents are signed, so a mirror verifies rather than trusts.",
+    $defs: {
+      Cursor: {
+        $comment:
+          'Opaque to clients. A registry may encode a key and a watermark; a client that parses one has coupled itself to an implementation.',
+        type: 'string',
+        minLength: 1,
+        maxLength: 4096,
+      },
+      PageMetadata: {
+        type: 'object',
+        required: ['count'],
+        properties: {
+          count: {
+            $comment:
+              'Entries in this page, not the total. A total would force a registry to count a federated result set it is streaming.',
+            type: 'integer',
+            minimum: 0,
+          },
+          nextCursor: {
+            $comment:
+              'Absent or null means this page was the last one. A client MUST NOT treat an empty page as the end while a cursor is still present.',
+            oneOf: [
+              {
+                $ref: '#/$defs/Cursor',
+              },
+              {
+                type: 'null',
+              },
+            ],
+          },
+        },
+        additionalProperties: false,
+      },
+      RegistryEntry: {
+        $comment:
+          "One package version as a registry serves it: the publisher's manifest, plus what the registry itself asserts about it.",
+        type: 'object',
+        required: ['manifest', 'registryMetadata'],
+        properties: {
+          manifest: {
+            $ref: 'package-manifest.schema.json#/$defs/PackageManifest',
+          },
+          registryMetadata: {
+            $ref: '#/$defs/RegistryMetadata',
+          },
+          signatures: {
+            $comment:
+              'Over formatDigest(manifestDigest), as SignedReceipt does it. Present when the registry or the publisher signed; absent is a registry that offers nothing to verify.',
+            type: 'array',
+            maxItems: 32,
+            items: {
+              $ref: 'package-manifest.schema.json#/$defs/ManifestSignature',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      RegistryMetadata: {
+        $comment:
+          "What the registry asserts, kept apart from what the publisher wrote. The MCP registry stamps this into _meta under a reserved key; PREX puts it in a named field because mixing registry assertions into a publisher's document is how provenance stops being attributable.",
+        type: 'object',
+        required: ['registryId', 'status', 'publishedAt', 'isLatest'],
+        properties: {
+          registryId: {
+            $ref: 'registry-definition.schema.json#/$defs/RegistryId',
+          },
+          sourceId: {
+            $comment:
+              "Which of the registry's configured sources produced this. Present when the registry is relaying rather than serving something published to it — the difference between what it holds and what it fronts.",
+            type: 'string',
+            minLength: 1,
+            maxLength: 128,
+          },
+          status: {
+            enum: ['active', 'deprecated', 'deleted'],
+          },
+          publishedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+          isLatest: {
+            type: 'boolean',
+          },
+          manifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+        },
+        additionalProperties: false,
+      },
+      PackagePage: {
+        type: 'object',
+        required: ['packages', 'metadata'],
+        properties: {
+          packages: {
+            type: 'array',
+            maxItems: 1000,
+            items: {
+              $ref: '#/$defs/RegistryEntry',
+            },
+          },
+          metadata: {
+            $ref: '#/$defs/PageMetadata',
+          },
+        },
+        additionalProperties: false,
+      },
+      VersionList: {
+        type: 'object',
+        required: ['name', 'versions'],
+        properties: {
+          name: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          versions: {
+            type: 'array',
+            maxItems: 10000,
+            items: {
+              type: 'object',
+              required: ['version', 'status', 'isLatest'],
+              properties: {
+                version: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 255,
+                },
+                status: {
+                  enum: ['active', 'deprecated', 'deleted'],
+                },
+                isLatest: {
+                  type: 'boolean',
+                },
+                publishedAt: {
+                  type: 'string',
+                  format: 'date-time',
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      NamespaceProof: {
+        $comment:
+          'A signature proves a document was not altered; it says nothing about who may use a name. This binds a signing key to a name prefix. The two are independent and neither substitutes for the other.',
+        type: 'object',
+        required: ['namespace', 'method', 'keyId'],
+        properties: {
+          namespace: {
+            $comment:
+              'Reverse-DNS name prefix, e.g. com.example or io.github.someone.',
+            type: 'string',
+            pattern:
+              '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+            maxLength: 512,
+          },
+          method: {
+            enum: ['dns-txt', 'https-well-known', 'registry-configured'],
+          },
+          keyId: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+          evidence: {
+            $comment:
+              'What the registry read to satisfy itself: the TXT record, or the URL fetched. Recorded so the decision is auditable after the fact.',
+            type: 'string',
+            maxLength: 8192,
+          },
+          verifiedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+        },
+        additionalProperties: false,
+      },
+      StatusUpdate: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {
+            enum: ['active', 'deprecated', 'deleted'],
+          },
+          reason: {
+            type: 'string',
+            maxLength: 4096,
+          },
+        },
+        additionalProperties: false,
+      },
+      RegistryPublishRequest: {
+        $comment:
+          'Named RegistryPublishRequest, not PublishRequest: the extensions schema already has one for pushing an artifact descriptor to OCI, and the two are different operations. The publisher signs; the registry verifies before it stores. A registry that accepts an unsigned manifest is choosing to be the only thing anyone can check.',
+        type: 'object',
+        required: ['manifest', 'manifestDigest'],
+        properties: {
+          manifest: {
+            $ref: 'package-manifest.schema.json#/$defs/PackageManifest',
+          },
+          manifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          signatures: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 32,
+            items: {
+              $ref: 'package-manifest.schema.json#/$defs/ManifestSignature',
+            },
+          },
+          namespaceProof: {
+            $ref: '#/$defs/NamespaceProof',
+          },
+        },
+        additionalProperties: false,
+      },
+      RegistryPublishResponse: {
+        type: 'object',
+        required: ['entry'],
+        properties: {
+          entry: {
+            $ref: '#/$defs/RegistryEntry',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
   },
   'https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json':
     {
