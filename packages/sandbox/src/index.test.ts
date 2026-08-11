@@ -7,7 +7,9 @@ import {
   digestSandboxPolicy,
   isDeniedCredential,
   matchPackageGrant,
+  planSandboxSummary,
   resolvePolicy,
+  runHostInstaller,
   runInSandbox,
   scrubEnvironment,
   SANDBOX_LOSS,
@@ -159,5 +161,25 @@ describe('@openpacker/sandbox', () => {
     expect(outcome.backend).toBe('off');
     expect(outcome.degraded).toBe(true);
     expect(outcome.enforced).toBe(false);
+  });
+
+  it('host installer helper records ambient loss when unsandboxed is allowed', async () => {
+    const summary = planSandboxSummary({
+      allowHostUnsandboxedInstall: true,
+    });
+    expect(summary.willEnforce).toBe(false);
+    const result = await runHostInstaller({
+      argv: [process.execPath, '-e', 'process.stdout.write("apt")'],
+      ecosystem: 'deb',
+      sandbox: { allowHostUnsandboxedInstall: true },
+      ambientExecute: async () => ({ stdout: 'ok', stderr: '' }),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.sandboxEnforced).toBe(false);
+    expect(
+      result.extraLosses.some(
+        (l) => l.code === SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
+      ),
+    ).toBe(true);
   });
 });

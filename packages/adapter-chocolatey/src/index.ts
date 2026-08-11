@@ -12,6 +12,11 @@ import {
   type ProviderCapabilities,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
+import {
+  HostInstallerSandboxError,
+  planSandboxSummary,
+  runHostInstaller,
+} from '@openpacker/sandbox';
 
 /**
  * Chocolatey packages through the real `choco` CLI.
@@ -116,6 +121,7 @@ export class ChocolateyProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallPlan> {
     const { id, version } = chocolateyId(exactPurl);
+    const summary = planSandboxSummary(options.sandbox);
     const command = [
       'choco',
       'install',
@@ -130,6 +136,11 @@ export class ChocolateyProvider implements InstallerProvider {
       requiresElevation: true,
       irreversible: true,
       semanticLoss: CHOCO_LOSS,
+      sandbox: {
+        mode: summary.mode,
+        prefer: summary.prefer,
+        willEnforce: summary.willEnforce,
+      },
     };
   }
 
@@ -152,15 +163,35 @@ export class ChocolateyProvider implements InstallerProvider {
         `Installing ${exactPurl} needs elevation. Re-run with elevation allowed; ` +
           `the command would be: ${plan.command.join(' ')}`,
       );
-    const [file, ...args] = plan.command;
     try {
-      const { stdout, stderr } = await this.execute(
-        file!,
-        args,
-        options.signal ? { signal: options.signal } : {},
-      );
-      return { ...plan, performed: true, exitCode: 0, stdout, stderr };
+      const result = await runHostInstaller({
+        argv: plan.command,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ecosystem: 'chocolatey',
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ambientExecute: async () => {
+          const [file, ...args] = plan.command;
+          return this.execute(
+            file!,
+            args,
+            options.signal ? { signal: options.signal } : {},
+          );
+        },
+      });
+      return {
+        ...plan,
+        performed: true,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        sandboxEnforced: result.sandboxEnforced,
+        sandboxBackend: result.sandboxBackend,
+        semanticLoss: [...plan.semanticLoss, ...result.extraLosses],
+      };
     } catch (error) {
+      if (error instanceof HostInstallerSandboxError)
+        throw new ProviderError('POLICY_DENIED', error.message);
       const failure = error as {
         code?: number;
         stdout?: string;

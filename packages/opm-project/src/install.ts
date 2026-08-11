@@ -292,7 +292,12 @@ export async function installFromLock(input: {
   // runs).
   const materialised = new Map<
     string,
-    { storePath: string; bins: BinDeclaration[]; pkg: LockPackage }
+    {
+      storePath: string;
+      bins: BinDeclaration[];
+      pkg: LockPackage;
+      lifecycleScriptsExecuted: boolean;
+    }
   >();
   for (const alias of aliases) {
     const safeAlias = assertSafeSegment(alias, 'package alias');
@@ -300,20 +305,30 @@ export async function installFromLock(input: {
     if (!pkg) {
       throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
     }
-    const { storePath, bins } = await materializeLockPackage({
-      root: input.root,
+    const { storePath, bins, lifecycleScriptsExecuted } =
+      await materializeLockPackage({
+        root: input.root,
+        pkg,
+        offline: input.offline,
+        ...(input.policy === undefined ? {} : { policy: input.policy }),
+      });
+    materialised.set(safeAlias, {
+      storePath,
+      bins,
       pkg,
-      offline: input.offline,
-      ...(input.policy === undefined ? {} : { policy: input.policy }),
+      lifecycleScriptsExecuted,
     });
-    materialised.set(safeAlias, { storePath, bins, pkg });
   }
 
   const pythonStoreRoots = [...materialised.values()]
     .filter(({ pkg }) => pkg.ecosystem === 'pypi')
     .map(({ storePath }) => storePath);
 
-  for (const [alias, { storePath, bins, pkg }] of materialised) {
+  let anyLifecycle = false;
+  for (const [
+    alias,
+    { storePath, bins, pkg, lifecycleScriptsExecuted },
+  ] of materialised) {
     const previous = state.packages[alias];
     if (previous) {
       await removeBinShims(
@@ -335,6 +350,7 @@ export async function installFromLock(input: {
       'utf8',
     );
 
+    if (lifecycleScriptsExecuted) anyLifecycle = true;
     const record: InstalledPackageRecord = {
       alias,
       purl: pkg.purl,
@@ -342,6 +358,7 @@ export async function installFromLock(input: {
       storePath,
       bins: shims,
       installedAt: new Date().toISOString(),
+      lifecycleScriptsExecuted,
     };
     state.packages[alias] = record;
   }
@@ -366,6 +383,12 @@ export async function installFromLock(input: {
         ),
       ),
     ),
+    // Pure extract installs record that scripts did not run. When scripts
+    // ran, they did so under the jail (fail-closed refuse otherwise).
+    sandbox: {
+      lifecycleScriptsExecuted: anyLifecycle,
+      ...(anyLifecycle ? { enforced: true } : {}),
+    },
   });
   return state;
 }
