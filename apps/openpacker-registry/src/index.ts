@@ -26,6 +26,7 @@ import type {
   Problem,
   RegistryEntry,
 } from '@openpacker/contracts';
+import { createPrexValidator, validateContract } from '@openpacker/conformance';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import {
   RegistryStore,
@@ -39,6 +40,8 @@ import {
 } from './sources.js';
 
 export const WELL_KNOWN = '/.well-known/prex-registry';
+const PUBLISH_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest';
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
 
@@ -80,6 +83,7 @@ export interface RegistryOptions {
 export function createRegistry(options: RegistryOptions): FastifyInstance {
   const store = options.store ?? new RegistryStore(options.databasePath);
   const clock = options.clock ?? { now: () => new Date().toISOString() };
+  const validator = createPrexValidator();
   const federation =
     options.sources && options.sources.length > 0
       ? new Federation({
@@ -287,6 +291,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           400,
           'A manifest is required',
         );
+
+      // Validate before anything is stored. A registry that keeps a document
+      // it cannot honour has moved the cost onto every client that later reads
+      // it — and unlike the registry, a client meets it at install time with no
+      // way to refuse.
+      //
+      // One check, not two: RegistryPublishRequest embeds PackageManifest, so
+      // validating the envelope validates the manifest, and the reported path
+      // (/manifest/distributions/0/purlType) says more than a second pass
+      // would.
+      assertValid(PUBLISH_SCHEMA, body as unknown as JsonValue, validator);
 
       // Re-derive rather than trust. A caller-supplied digest is a claim about
       // bytes the registry is holding, and it is holding them.
@@ -523,6 +538,33 @@ function assertTimestamp(value: string): string {
       'updatedSince must be an RFC 3339 timestamp',
     );
   return value;
+}
+
+/**
+ * Refuse a document that does not validate, naming where it failed.
+ *
+ * The first error only: a publisher fixes them one at a time, and a wall of
+ * paths is harder to act on than the first thing that is wrong.
+ */
+function assertValid(
+  schema: string,
+  value: JsonValue,
+  validator: ReturnType<typeof createPrexValidator>,
+): void {
+  const result = validateContract(schema, value, validator);
+  if (result.valid) return;
+  const first = result.errors[0];
+  const where =
+    first && 'instancePath' in first && first.instancePath
+      ? first.instancePath
+      : '/';
+  const why =
+    first && 'message' in first && first.message ? first.message : 'is invalid';
+  throw new PublishError(
+    'INVALID_REQUEST',
+    400,
+    `This is not a publishable document: ${where} ${why}`,
+  );
 }
 
 class PublishError extends Error {

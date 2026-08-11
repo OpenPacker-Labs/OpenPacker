@@ -100,12 +100,18 @@ POST /v1/publish
 A `RegistryPublishRequest` carries the manifest, its digest, at least one
 signature, and optionally a namespace proof. The registry MUST:
 
-1. Re-derive the manifest digest from canonical bytes and compare it to
+1. **Validate the request against `RegistryPublishRequest` and refuse what does
+   not conform, storing nothing.** A registry is the last party that can cheaply
+   refuse a document it cannot honour. Everything downstream — a mirror, a
+   resolver, an install — meets it with no way to say no, so a document stored
+   here becomes every consumer's problem. The reported error SHOULD name the
+   failing instance path, because a publisher fixes these one at a time.
+2. Re-derive the manifest digest from canonical bytes and compare it to
    `manifestDigest`. A caller-supplied digest is never taken on trust.
-2. Verify every signature over `formatDigest(manifestDigest)` — the same
+3. Verify every signature over `formatDigest(manifestDigest)` — the same
    construction `SignedReceipt` uses, so one verifier serves both.
-3. Establish that a signing key may publish under this name (below).
-4. Reject a re-publish of an existing `(name, version)` whose digest differs.
+4. Establish that a signing key may publish under this name (below).
+5. Reject a re-publish of an existing `(name, version)` whose digest differs.
    Immutability is what makes a lockfile mean anything.
 
 The registry then counter-signs with `role: "registry"` and stores. Publisher

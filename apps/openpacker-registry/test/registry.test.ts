@@ -134,10 +134,14 @@ describe('publish', () => {
 
   it('refuses an unsigned manifest unless the operator opted in', async () => {
     const app = registry();
+    const unsigned = {
+      manifest: manifest(),
+      manifestDigest: await canonicalDigest(manifest() as unknown as JsonValue),
+    };
     const closed = await app.inject({
       method: 'POST',
       url: '/v1/publish',
-      payload: { manifest: manifest() },
+      payload: unsigned,
     });
     expect(closed.statusCode).toBe(401);
     await app.close();
@@ -146,10 +150,76 @@ describe('publish', () => {
     const allowed = await open.inject({
       method: 'POST',
       url: '/v1/publish',
-      payload: { manifest: manifest() },
+      payload: unsigned,
     });
     expect(allowed.statusCode).toBe(201);
     await open.close();
+  });
+
+  it('refuses a manifest that does not validate, storing nothing', async () => {
+    const app = registry({ anonymousPublish: true });
+    // MCP issue #783: a registry that stores what it cannot honour moves the
+    // cost onto every client, which meets the document at install time with no
+    // way to refuse.
+    const broken = await signed(manifest());
+    (broken as unknown as { manifest: unknown }).manifest = {
+      ...manifest(),
+      distributions: 'oops',
+    };
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: broken,
+    });
+    expect(response.statusCode).toBe(400);
+    // The reported path is what a publisher acts on.
+    expect(response.json().detail).toMatch(/\/manifest\/distributions/);
+
+    // Nothing was stored, so a reader never meets it.
+    const read = await app.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/1.2.3',
+    });
+    expect(read.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('refuses a version that names no particular release', async () => {
+    const app = registry({ anonymousPublish: true });
+    // Sign the document actually being sent, so this isolates the schema
+    // refusal rather than passing on a digest mismatch.
+    const body = await signed({
+      ...manifest(),
+      version: 'latest',
+    } as PackageManifest);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: body,
+    });
+    // `latest` moves, so a manifest naming it describes no particular thing
+    // and could not be pinned or verified.
+    expect(response.statusCode).toBe(400);
+    expect(response.json().detail).toMatch(/not a publishable document/);
+    await app.close();
+  });
+
+  it('refuses a malformed envelope around a valid manifest', async () => {
+    const app = registry({ anonymousPublish: true });
+    const body = await signed(manifest());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: {
+        ...body,
+        // A well-formed manifest inside a request this registry cannot act on
+        // is still a request it cannot act on.
+        namespaceProof: { namespace: 'Example', method: 'dns-txt', keyId: 'k' },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().detail).toMatch(/\/namespaceProof\/namespace/);
+    await app.close();
   });
 
   it('refuses a digest the manifest does not hash to', async () => {
