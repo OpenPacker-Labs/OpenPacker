@@ -302,3 +302,88 @@ describe('config discovery without core import tables', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ADAPTER' });
   });
 });
+
+describe('named sources', () => {
+  const mirror = (purlTypes: readonly string[]) =>
+    fixtureModule({
+      id: 'org.openpacker.adapter.mirror',
+      purlTypes: [...purlTypes],
+      registryDefinition: () => ({
+        ...definition([
+          {
+            '@id': 'https://mirror.invalid/',
+            '@type': 'prex.registry.package-metadata/1',
+          },
+        ]),
+        registryId: 'urn:openpacker:registry:mirror',
+        purlTypes: [...purlTypes],
+      }),
+      catalog: () => ({ inspect: async () => ({}) }) as never,
+    });
+
+  it('does not let a source displace an ecosystem default', async () => {
+    const registry = new AdapterRegistry();
+    registry.register(
+      fixtureModule({
+        purlTypes: ['npm'],
+        registryDefinition: () => ({
+          ...definition([
+            {
+              '@id': 'https://registry.npmjs.org',
+              '@type': 'prex.registry.package-metadata/1',
+            },
+          ]),
+          registryId: 'urn:openpacker:registry:npmjs-org',
+          purlTypes: ['npm'],
+        }),
+        catalog: () => ({ inspect: async () => ({}) }) as never,
+      }),
+    );
+    // A registry serving npm, PyPI and NuGet at once would silently take over
+    // all three if it registered the ordinary way.
+    registry.registerSource('mirror', mirror(['npm', 'pypi', 'nuget']));
+
+    expect((await registry.definitionFor('npm')).registryId).toBe(
+      'urn:openpacker:registry:npmjs-org',
+    );
+    expect(
+      (await registry.definitionFor('npm', { sourceId: 'mirror' })).registryId,
+    ).toBe('urn:openpacker:registry:mirror');
+    // The source is not reachable as a default for a type nobody registered.
+    expect(registry.has('pypi')).toBe(false);
+    expect(registry.sourceIds()).toEqual(['mirror']);
+  });
+
+  it('refuses a source that does not serve the purl type', async () => {
+    const registry = new AdapterRegistry();
+    registry.registerSource('mirror', mirror(['npm']));
+    // Falling back to the ecosystem default here would fetch from somewhere
+    // the caller did not ask for.
+    await expect(
+      registry.definitionFor('cargo', { sourceId: 'mirror' }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_ECOSYSTEM' });
+  });
+
+  it('reports an unknown source by name', async () => {
+    const registry = new AdapterRegistry();
+    registry.registerSource('mirror', mirror(['npm']));
+    await expect(
+      registry.definitionFor('npm', { sourceId: 'typo' }),
+    ).rejects.toMatchObject({ code: 'UNKNOWN_SOURCE' });
+  });
+
+  it('routes catalogFor through the named source', async () => {
+    const registry = new AdapterRegistry();
+    registry.registerSource('mirror', mirror(['npm']));
+    await expect(
+      registry.catalogFor('npm', { sourceId: 'mirror' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('refuses an empty source id', () => {
+    const registry = new AdapterRegistry();
+    expect(() => registry.registerSource('  ', mirror(['npm']))).toThrow(
+      AdapterHostError,
+    );
+  });
+});

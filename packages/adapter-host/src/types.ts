@@ -84,6 +84,14 @@ export interface RegistryDefinition {
  */
 export interface AdapterContext {
   offline?: boolean;
+  /**
+   * Named source to answer from, instead of the purl type's default adapter.
+   *
+   * A package source is not an ecosystem: one PREX registry may serve npm,
+   * PyPI and NuGet at once, so which *source* answers has to be selectable
+   * separately from which ecosystem's rules apply.
+   */
+  sourceId?: string;
   endpoint?: string;
   transport?: unknown;
   fetch?: typeof fetch;
