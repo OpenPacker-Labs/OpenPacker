@@ -1,0 +1,23 @@
+{
+  "redirect": {
+    "redirectVersion": "1",
+    "from": "io.github.acme.tool",
+    "to": "com.acme.tool",
+    "effectiveAt": "2026-08-11T00:00:00.000Z",
+    "reason": "rename",
+    "previousHolder": "github:acme",
+    "nextHolder": "dns:acme.com"
+  },
+  "redirectDigest": {
+    "algorithm": "sha256",
+    "value": "5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "signatures": [
+    {
+      "algorithm": "ed25519",
+      "keyId": "publisher-1",
+      "signature": "cmVkaXJlY3Q=",
+      "role": "publisher"
+    }
+  ]
+}
