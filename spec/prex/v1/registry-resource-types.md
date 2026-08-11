@@ -8,28 +8,29 @@ Clients MUST treat an absent type as **unsupported**.
 
 ## Core types (v1)
 
-| `@type`                              | PREX / WIT operation                      | Purpose                                                   |
-| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------- |
-| `prex.registry.service-index/1`      | `registry.service-index`                  | Refresh or locate the index itself                        |
-| `prex.registry.search/1`             | catalog identify / search                 | Free-text or structured package search                    |
-| `prex.registry.enumerate-versions/1` | `catalog.enumerate`                       | List versions for a base PURL                             |
-| `prex.registry.package-metadata/1`   | `catalog.inspect`                         | Package metadata for an exact PURL                        |
-| `prex.registry.package-config/1`     | package options                           | Configurable package parameters / extras / outputs        |
-| `prex.registry.artifact/1`           | `catalog.fetch-artifact` / materialize    | Immutable bytes location                                  |
-| `prex.registry.dependency-graph/1`   | graph edges / native deps                 | Declared dependency edges for solve or capture            |
-| `prex.registry.install/1`            | `install.install`                         | Make a package present (store, profile, or system)        |
-| `prex.registry.update/1`             | `install.update`                          | Move to a newer version under policy                      |
-| `prex.registry.uninstall/1`          | `install.uninstall`                       | Remove a package (adapter-defined reverse)                |
-| `prex.registry.environment/1`        | `environment.exec-env`                    | PATH / env vars for execution (mise, nix shell)           |
-| `prex.registry.lifecycle/1`          | honesty only                              | Declares whether lifecycle scripts exist or are forbidden |
-| `prex.registry.project-manifest/1`   | `project.read` / `project.write-manifest` | Read and write the ecosystem's project manifest           |
-| `prex.registry.project-lock/1`       | `project.write-lock`                      | Write the ecosystem's native lockfile                     |
-| `prex.registry.project-layout/1`     | `project.write-layout`                    | Materialise the ecosystem's native install layout         |
-| `prex.registry.package-build/1`      | `project.pack`                            | Build a vendor artifact from a project                    |
-| `prex.registry.publish/1`            | `POST /v1/publish`                        | Accept a signed package manifest                          |
-| `prex.registry.package-manifest/1`   | `GET /v1/packages/{name}/versions/{v}`    | Serve PREX package manifests over HTTP                    |
-| `prex.registry.sync/1`               | `GET /v1/packages?updatedSince=`          | Incremental replication for mirrors and subregistries     |
-| `prex.registry.namespace-proof/1`    | publish-time check                        | Verifies a signing key may publish under a name prefix    |
+| `@type`                              | PREX / WIT operation                             | Purpose                                                   |
+| ------------------------------------ | ------------------------------------------------ | --------------------------------------------------------- |
+| `prex.registry.service-index/1`      | `registry.service-index`                         | Refresh or locate the index itself                        |
+| `prex.registry.search/1`             | catalog identify / search                        | Free-text or structured package search                    |
+| `prex.registry.enumerate-versions/1` | `catalog.enumerate`                              | List versions for a base PURL                             |
+| `prex.registry.package-metadata/1`   | `catalog.inspect`                                | Package metadata for an exact PURL                        |
+| `prex.registry.package-config/1`     | package options                                  | Configurable package parameters / extras / outputs        |
+| `prex.registry.artifact/1`           | `catalog.fetch-artifact` / materialize           | Immutable bytes location                                  |
+| `prex.registry.dependency-graph/1`   | graph edges / native deps                        | Declared dependency edges for solve or capture            |
+| `prex.registry.install/1`            | `install.install`                                | Make a package present (store, profile, or system)        |
+| `prex.registry.update/1`             | `install.update`                                 | Move to a newer version under policy                      |
+| `prex.registry.uninstall/1`          | `install.uninstall`                              | Remove a package (adapter-defined reverse)                |
+| `prex.registry.environment/1`        | `environment.exec-env`                           | PATH / env vars for execution (mise, nix shell)           |
+| `prex.registry.lifecycle/1`          | honesty only                                     | Declares whether lifecycle scripts exist or are forbidden |
+| `prex.registry.project-manifest/1`   | `project.read` / `project.write-manifest`        | Read and write the ecosystem's project manifest           |
+| `prex.registry.project-lock/1`       | `project.write-lock`                             | Write the ecosystem's native lockfile                     |
+| `prex.registry.project-layout/1`     | `project.write-layout`                           | Materialise the ecosystem's native install layout         |
+| `prex.registry.package-build/1`      | `project.pack`                                   | Build a vendor artifact from a project                    |
+| `prex.registry.publish/1`            | `POST /v1/publish`                               | Accept a signed package manifest                          |
+| `prex.registry.package-manifest/1`   | `GET /v1/packages/{name}/versions/{v}`           | Serve PREX package manifests over HTTP                    |
+| `prex.registry.sync/1`               | `GET /v1/packages?updatedSince=`                 | Incremental replication for mirrors and subregistries     |
+| `prex.registry.namespace-proof/1`    | publish-time check                               | Verifies a signing key may publish under a name prefix    |
+| `prex.registry.key-lifecycle/1`      | `GET /v1/revocations`, `POST /v1/keys/rotations` | Signed revocation list and attested key rotation          |
 
 ## Ecosystem mapping (informative)
 

@@ -1,0 +1,11 @@
+{
+  "previousKeyId": "publisher-1",
+  "nextKeyId": "publisher-2",
+  "nextPublicKey": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+  },
+  "rotatedAt": "2026-08-11T00:00:00.000Z",
+  "signature": "cm90YXRpb24="
+}

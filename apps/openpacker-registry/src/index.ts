@@ -38,6 +38,16 @@ import {
   type StoredEntry,
 } from './store.js';
 import {
+  keyHistory,
+  mayPublish,
+  revocationListDigest,
+  rotationMessage,
+  signatureStatus,
+  verifyRotation,
+  type KeyRotation,
+  type RevocationList,
+} from './keys.js';
+import {
   checkServiceability,
   isStale,
   type ServiceabilityRecord,
@@ -192,12 +202,27 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     })();
   }
 
+  /**
+   * A key's public JWK, following rotation chains.
+   *
+   * A key introduced by a rotation is as usable as one the operator
+   * configured, or rotating would require an operator round-trip and nobody
+   * would rotate.
+   */
+  function publisherKeyFor(keyId: string): JsonWebKey | undefined {
+    const configured = options.publisherKeys?.[keyId];
+    if (configured) return configured;
+    return store.rotations().find((rotation) => rotation.nextKeyId === keyId)
+      ?.nextPublicKey;
+  }
+
   const advertised = [
     'prex.registry.search/1',
     'prex.registry.enumerate-versions/1',
     'prex.registry.package-manifest/1',
     'prex.registry.sync/1',
     'prex.registry.publish/1',
+    'prex.registry.key-lifecycle/1',
   ];
 
   app.get(WELL_KNOWN, async (_request, reply) =>
@@ -220,6 +245,91 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       },
     } as unknown as JsonValue),
   );
+
+  /**
+   * The revocation list, signed.
+   *
+   * A revocation a client cannot verify is a rumour, and an attacker able to
+   * forge or strip one has undone the signing scheme entirely. Served even when
+   * empty, so a client can tell "this registry revokes nothing" from "this
+   * registry does not do revocation" — the second is a reason to distrust it.
+   */
+  app.get('/v1/revocations', async (_request, reply) => {
+    const list: RevocationList = {
+      revocationListVersion: '1',
+      registryId: options.registryId,
+      serial: store.revocationSerial(),
+      issuedAt: clock.now(),
+      revoked: store.revocations(),
+    };
+    const listDigest = await revocationListDigest(list);
+    const signatures = options.signer
+      ? [
+          {
+            algorithm: options.signer.algorithm,
+            keyId: options.signer.keyId,
+            signature: await options.signer.sign(
+              new TextEncoder().encode(formatDigest(listDigest)),
+            ),
+            role: 'registry' as const,
+          },
+        ]
+      : [];
+    return sendJson(reply, {
+      list,
+      listDigest,
+      signatures,
+    } as unknown as JsonValue);
+  });
+
+  /**
+   * Rotate a key, attested by its predecessor.
+   *
+   * The old key is revoked `from-now`, so everything it signed before this
+   * moment keeps verifying and it can no longer publish. That continuity is
+   * the reason anyone rotates at all.
+   */
+  app.post('/v1/keys/rotations', async (request, reply) => {
+    try {
+      const rotation = request.body as KeyRotation;
+      if (!rotation?.previousKeyId || !rotation.nextKeyId)
+        throw new PublishError(
+          'INVALID_REQUEST',
+          400,
+          'A rotation names the key it succeeds and the key taking over',
+        );
+      const previous = publisherKeyFor(rotation.previousKeyId);
+      if (!previous)
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          403,
+          `Key ${rotation.previousKeyId} is not known to this registry`,
+        );
+      if (!(await verifyRotation(rotation, previous)))
+        // Anyone could otherwise nominate a successor to someone else's key.
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          400,
+          `The rotation is not signed by ${rotation.previousKeyId}`,
+        );
+
+      store.recordRotation(rotation);
+      store.revoke({
+        keyId: rotation.previousKeyId,
+        revokedAt: rotation.rotatedAt,
+        effective: 'from-now',
+        reason: 'rotated',
+        replacedBy: rotation.nextKeyId,
+      });
+      reply.code(201);
+      return sendJson(reply, {
+        rotated: rotation.previousKeyId,
+        to: rotation.nextKeyId,
+      } as unknown as JsonValue);
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
 
   app.get('/v1/health', async (_request, reply) =>
     sendJson(reply, { status: store.ready() ? 'ok' : 'unavailable' }),
@@ -406,12 +516,21 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
 
       const message = new TextEncoder().encode(formatDigest(digest));
       for (const signature of signatures) {
-        const jwk = options.publisherKeys?.[signature.keyId];
+        const jwk = publisherKeyFor(signature.keyId);
         if (!jwk)
           throw new PublishError(
             'INVALID_SIGNATURE',
             403,
             `Key ${signature.keyId} is not known to this registry`,
+          );
+        // Both effects stop a key publishing. Retiring a key means it stops
+        // being used going forward; only whether its past work still counts
+        // depends on which effect was recorded.
+        if (!mayPublish(signature.keyId, store.revocations()))
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `Key ${signature.keyId} is revoked and can no longer publish`,
           );
         const verifier = await Ed25519Verifier.fromJwk(signature.keyId, jwk);
         if (!(await verifier.verify(message, signature.signature)))

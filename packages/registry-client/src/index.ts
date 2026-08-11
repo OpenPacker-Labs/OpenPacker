@@ -52,6 +52,14 @@ export interface RegistryClientOptions {
    * `verifyEntry` reports rather than silently treating as verified.
    */
   keys?: Readonly<Record<string, JsonWebKey>>;
+  /**
+   * How long a fetched revocation list is reused. A client that cached one
+   * forever would never learn about a revocation, so this is a TTL rather than
+   * a one-shot.
+   */
+  revocationTtlMilliseconds?: number;
+  /** Injectable clock, so TTL behaviour is testable without waiting. */
+  clock?: () => number;
 }
 
 export interface ListOptions {
@@ -68,6 +76,11 @@ export class RegistryClient {
   readonly #transport: HttpTransport;
   readonly #keys: Readonly<Record<string, JsonWebKey>>;
   #definition: RegistryDefinitionLike | undefined;
+  #revocations: { entries: RevocationEntryLike[]; known: boolean } | undefined;
+  #revocationsFetchedAt = 0;
+  #revocationSerial = 0;
+  readonly #revocationTtl: number;
+  readonly #clock: () => number;
 
   constructor(options: RegistryClientOptions) {
     const url = new URL(options.baseUrl);
@@ -90,6 +103,53 @@ export class RegistryClient {
         ...(options.fetch ? { fetch: options.fetch } : {}),
       });
     this.#keys = options.keys ?? {};
+    // Caching a revocation list forever means a long-lived client never learns
+    // about a revocation — which is the entire thing revocation is for. Five
+    // minutes by default; a caller running a long process can shorten it.
+    this.#revocationTtl = options.revocationTtlMilliseconds ?? 300_000;
+    this.#clock = options.clock ?? (() => Date.now());
+  }
+
+  /**
+   * The registry's revocation list, fetched once and reused.
+   *
+   * A registry that does not serve one yields an empty list rather than an
+   * error: not every registry does revocation, and a client that refused to
+   * talk to those would be unable to read most of them. What it must not do is
+   * treat "no list" as "nothing is revoked" *silently* — `revocationsKnown`
+   * reports which it was.
+   */
+  async revocations(
+    signal?: AbortSignal,
+  ): Promise<{ entries: RevocationEntryLike[]; known: boolean }> {
+    if (
+      this.#revocations &&
+      this.#clock() - this.#revocationsFetchedAt < this.#revocationTtl
+    )
+      return this.#revocations;
+    if (!(await this.supports('prex.registry.key-lifecycle/1', signal))) {
+      this.#revocations = { entries: [], known: false };
+      this.#revocationsFetchedAt = this.#clock();
+      return this.#revocations;
+    }
+    const body = (await this.#json(
+      `${this.#baseUrl}/v1/revocations`,
+      signal,
+    )) as unknown as {
+      list?: { serial?: number; revoked?: RevocationEntryLike[] };
+    };
+    const serial = body.list?.serial ?? 0;
+    // A replayed older list would pin a client to the state of the world from
+    // before a compromise, which is the attack a serial exists to stop.
+    if (serial < this.#revocationSerial)
+      throw new ProviderError(
+        'STALE_METADATA',
+        `Registry served revocation serial ${serial} after ${this.#revocationSerial}; refusing to go backwards.`,
+      );
+    this.#revocationSerial = serial;
+    this.#revocations = { entries: body.list?.revoked ?? [], known: true };
+    this.#revocationsFetchedAt = this.#clock();
+    return this.#revocations;
   }
 
   /** The registry's service index, fetched once and reused. */
@@ -238,11 +298,12 @@ export class RegistryClient {
           `${formatDigest(stated!)} but its manifest hashes to ${formatDigest(digest)}`,
       );
 
+    const { entries: revocations } = await this.revocations();
     const message = new TextEncoder().encode(formatDigest(digest));
     const verified: {
       keyId: string;
       role?: 'publisher' | 'registry';
-      status: 'valid' | 'invalid' | 'unknown-key';
+      status: 'valid' | 'invalid' | 'unknown-key' | 'revoked';
     }[] = [];
     for (const signature of entry.signatures ?? []) {
       const jwk = this.#keys[signature.keyId];
@@ -255,12 +316,23 @@ export class RegistryClient {
         continue;
       }
       const verifier = await Ed25519Verifier.fromJwk(signature.keyId, jwk);
+      const holds = await verifier.verify(message, signature.signature);
+      // "This signature is forged" and "this signature was good and the key has
+      // since been withdrawn" are different facts about a package, and a
+      // consumer's policy may accept one and not the other.
+      const status = !holds
+        ? 'invalid'
+        : revoked(
+              signature.keyId,
+              entry.registryMetadata.publishedAt,
+              revocations,
+            )
+          ? 'revoked'
+          : 'valid';
       verified.push({
         keyId: signature.keyId,
         ...(signature.role === undefined ? {} : { role: signature.role }),
-        status: (await verifier.verify(message, signature.signature))
-          ? 'valid'
-          : 'invalid',
+        status,
       });
     }
     // An invalid signature is worse than an absent one: something signed this
@@ -306,6 +378,13 @@ export class RegistryClient {
   }
 }
 
+export interface RevocationEntryLike {
+  keyId: string;
+  revokedAt: string;
+  effective: 'from-now' | 'retroactive';
+  reason?: string;
+}
+
 export interface EntryVerification {
   digest: Digest;
   /** False when the entry stated no digest to check against. */
@@ -313,7 +392,7 @@ export interface EntryVerification {
   signatures: readonly {
     keyId: string;
     role?: 'publisher' | 'registry';
-    status: 'valid' | 'invalid' | 'unknown-key';
+    status: 'valid' | 'invalid' | 'unknown-key' | 'revoked';
   }[];
 }
 
@@ -339,3 +418,26 @@ function isLoopback(url: URL): boolean {
 }
 
 export { prexRegistryModule, PrexRegistryProvider } from './adapter.js';
+
+/**
+ * Whether a revocation applies to a signature made at `signedAt`.
+ *
+ * `retroactive` disowns everything the key ever signed; `from-now` keeps what
+ * it signed before the revocation. A routine rotation that invalidated every
+ * past signature would break every lockfile pinning something that key signed,
+ * which is why the two are distinguished rather than collapsed.
+ */
+function revoked(
+  keyId: string,
+  signedAt: string | undefined,
+  revocations: readonly RevocationEntryLike[],
+): boolean {
+  const entry = revocations.find((candidate) => candidate.keyId === keyId);
+  if (!entry) return false;
+  if (entry.effective === 'retroactive') return true;
+  if (signedAt === undefined) return true;
+  const signed = Date.parse(signedAt);
+  const at = Date.parse(entry.revokedAt);
+  if (!Number.isFinite(signed) || !Number.isFinite(at)) return true;
+  return signed >= at;
+}

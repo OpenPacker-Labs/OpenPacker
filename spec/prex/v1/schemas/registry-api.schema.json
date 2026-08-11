@@ -271,6 +271,152 @@
         }
       },
       "additionalProperties": false
+    },
+    "RevocationEntry": {
+      "type": "object",
+      "required": ["keyId", "revokedAt", "effective"],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "effective": {
+          "$comment": "A routine rotation must not invalidate everything a key ever signed, and a theft must. `from-now` keeps signatures made before revokedAt valid and stops the key publishing; `retroactive` invalidates every signature it ever made. Collapsing the two forces an operator to choose between an unusable registry and an unrevoked compromise.",
+          "enum": ["from-now", "retroactive"]
+        },
+        "reason": {
+          "enum": ["rotated", "compromised", "retired", "unspecified"]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "replacedBy": {
+          "$comment": "The key that took over, when this was a rotation.",
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "additionalProperties": false
+    },
+    "RevocationList": {
+      "$comment": "Signed, because a revocation a client cannot verify is a rumour \u2014 and an attacker who can strip or forge one has undone the signing scheme. `serial` and `expiresAt` exist so a client can tell a stale copy from a current one and refuse to be pinned to an old list by a mirror that stopped updating.",
+      "type": "object",
+      "required": [
+        "revocationListVersion",
+        "registryId",
+        "serial",
+        "issuedAt",
+        "revoked"
+      ],
+      "properties": {
+        "revocationListVersion": {
+          "const": "1"
+        },
+        "registryId": {
+          "$ref": "registry-definition.schema.json#/$defs/RegistryId"
+        },
+        "serial": {
+          "$comment": "Monotonic. A client that has seen a higher serial must refuse a lower one, or a replay pins it to a list from before a compromise.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revoked": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/RevocationEntry"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SignedRevocationList": {
+      "type": "object",
+      "required": ["list", "listDigest", "signatures"],
+      "properties": {
+        "list": {
+          "$ref": "#/$defs/RevocationList"
+        },
+        "listDigest": {
+          "$ref": "common.schema.json#/$defs/Digest"
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "package-manifest.schema.json#/$defs/ManifestSignature"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "KeyRotation": {
+      "$comment": "A new key attested by its predecessor. Continuity is the point: signatures made before the rotation still verify against the old key, while the old key can no longer publish. Without this a publisher rotating a key must re-sign every version they ever published, which is what makes people not rotate.",
+      "type": "object",
+      "required": [
+        "previousKeyId",
+        "nextKeyId",
+        "nextPublicKey",
+        "rotatedAt",
+        "signature"
+      ],
+      "properties": {
+        "previousKeyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "nextKeyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "nextPublicKey": {
+          "$comment": "Ed25519 public JWK for the incoming key.",
+          "type": "object",
+          "required": ["kty", "crv", "x"],
+          "properties": {
+            "kty": {
+              "const": "OKP"
+            },
+            "crv": {
+              "const": "Ed25519"
+            },
+            "x": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          "additionalProperties": true
+        },
+        "rotatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "$comment": "By the previous key, over the canonical digest of this document with the signature field absent.",
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
