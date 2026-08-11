@@ -80,6 +80,29 @@ export interface PolicyDocument {
    */
   allowLifecycleScripts?: boolean;
   allowedLifecycleScriptPackages?: string[];
+  /**
+   * Sandbox posture for package install/execution (ADR 0036).
+   * fail-closed refuses when no jail is available.
+   */
+  sandboxMode?: 'fail-closed' | 'degrade-warn' | 'off';
+  /** When true, SANDBOX_UNAVAILABLE is deny. Defaults true under fail-closed. */
+  sandboxRequired?: boolean;
+  sandboxPrefer?: 'auto' | 'mxc' | 'native';
+  /** Permit host installers without a jail (ambient system install). */
+  allowHostUnsandboxedInstall?: boolean;
+  /**
+   * Per-package jail grants. Keys use the same exclude-list boundary rules as
+   * trust / release-age exemptions.
+   */
+  sandboxPackageGrants?: Record<
+    string,
+    {
+      network?: boolean;
+      write?: string[];
+      read?: string[];
+      env?: string[];
+    }
+  >;
   /** Expected Registry Definition registryId for this selection. */
   expectedRegistryId?: string;
 }
@@ -121,6 +144,15 @@ export interface PolicyFacts {
   lifecycleScriptsExecuted?: boolean;
   /** Registry Definition registryId that supplied metadata/bytes. */
   registryId?: string;
+  /**
+   * Whether a sandbox jail was enforced for install/run (when execution happened).
+   * Absent means not applicable (pure metadata path).
+   */
+  sandboxEnforced?: boolean;
+  /** Backend id that ran, when known (mxc, native-bwrap, none, off, …). */
+  sandboxBackend?: string;
+  /** True when execution was ambient under degrade-warn / off. */
+  sandboxDegraded?: boolean;
 }
 
 /** Numeric rank for trust tiers (higher is stronger). */
@@ -471,6 +503,43 @@ export async function evaluatePolicy(
     });
   }
 
+  // Sandbox: when execution happened (scripts or install), enforce jail policy.
+  const sandboxMode = policy.sandboxMode ?? 'fail-closed';
+  const sandboxRequired =
+    policy.sandboxRequired ?? sandboxMode === 'fail-closed';
+  if (
+    facts.sandboxEnforced === false &&
+    (facts.lifecycleScriptsExecuted === true ||
+      facts.sandboxBackend === 'none' ||
+      facts.sandboxDegraded === true)
+  ) {
+    if (sandboxMode === 'off') {
+      checks.push({
+        code: 'sandbox.disabled',
+        status: 'valid',
+        message: 'Sandbox disabled by policy (ambient execution)',
+      });
+    } else if (sandboxRequired || sandboxMode === 'fail-closed') {
+      deny(
+        'sandbox.unavailable',
+        true,
+        'Sandbox jail was required but not enforced (fail-closed)',
+      );
+    } else {
+      checks.push({
+        code: 'sandbox.degraded',
+        status: 'valid',
+        message: 'Sandbox unavailable; degraded ambient execution allowed',
+      });
+    }
+  } else if (facts.sandboxEnforced === true) {
+    checks.push({
+      code: 'sandbox.enforced',
+      status: 'valid',
+      message: `Sandbox enforced via ${facts.sandboxBackend ?? 'unknown'}`,
+    });
+  }
+
   if (policy.expectedRegistryId !== undefined) {
     requireValue(
       'supply-chain.registry-pin',
@@ -574,6 +643,16 @@ export function policyDocumentFromPolicyInput(
     document.allowedLifecycleScriptPackages = [
       ...input.allowedLifecycleScriptPackages,
     ];
+  if (input.sandboxMode !== undefined) document.sandboxMode = input.sandboxMode;
+  if (input.sandboxRequired !== undefined)
+    document.sandboxRequired = input.sandboxRequired;
+  if (input.sandboxPrefer !== undefined)
+    document.sandboxPrefer = input.sandboxPrefer;
+  if (input.allowHostUnsandboxedInstall !== undefined)
+    document.allowHostUnsandboxedInstall = input.allowHostUnsandboxedInstall;
+  if (input.sandboxPackageGrants !== undefined) {
+    document.sandboxPackageGrants = { ...input.sandboxPackageGrants };
+  }
   if (input.expectedRegistryId !== undefined)
     document.expectedRegistryId = input.expectedRegistryId;
   if (input.requiredSourceSnapshotDigests !== undefined)

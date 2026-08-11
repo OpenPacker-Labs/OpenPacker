@@ -1,0 +1,194 @@
+import { accessSync, constants } from 'node:fs';
+import { platform } from 'node:os';
+import { resolve } from 'node:path';
+import { SandboxBackendError, spawnCapture } from './mock.js';
+import type { BackendProbe, SandboxBackend } from '../types.js';
+
+function which(bin: string): string | undefined {
+  const pathEnv = process.env.PATH ?? '';
+  const sep = platform() === 'win32' ? ';' : ':';
+  for (const dir of pathEnv.split(sep)) {
+    if (!dir) continue;
+    const candidate = resolve(dir, bin);
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
+}
+
+export function probeNativeBackends(): BackendProbe[] {
+  const probes: BackendProbe[] = [];
+  if (platform() === 'linux') {
+    const bwrap = which('bwrap');
+    probes.push(
+      bwrap
+        ? { id: 'native-bwrap', available: true }
+        : {
+            id: 'native-bwrap',
+            available: false,
+            reason: 'bwrap not found on PATH',
+          },
+    );
+  } else if (platform() === 'darwin') {
+    const se = which('sandbox-exec');
+    probes.push(
+      se
+        ? { id: 'native-seatbelt', available: true }
+        : {
+            id: 'native-seatbelt',
+            available: false,
+            reason: 'sandbox-exec not found',
+          },
+    );
+  } else if (platform() === 'win32') {
+    // Without MXC, Windows has no lightweight native jail in this package yet.
+    probes.push({
+      id: 'native-process',
+      available: false,
+      reason:
+        'native Windows process isolation requires MXC or a future native helper',
+    });
+  }
+  return probes;
+}
+
+/**
+ * Bubblewrap backend (Linux). Read-only bind of `/` with RW overlays for
+ * granted paths; network denied unless requested.
+ */
+export function createBwrapBackend(): SandboxBackend {
+  const bwrap = which('bwrap');
+  if (!bwrap) {
+    throw new SandboxBackendError('UNAVAILABLE', 'bwrap not found on PATH');
+  }
+  return {
+    id: 'native-bwrap',
+    async run(input) {
+      const argv = buildBwrapArgv({
+        bwrap,
+        command: input.argv,
+        cwd: input.cwd,
+        readwritePaths: input.readwritePaths,
+        readonlyPaths: input.readonlyPaths,
+        network: input.network,
+      });
+      return spawnCapture({
+        argv,
+        cwd: input.cwd,
+        env: input.env,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+    },
+  };
+}
+
+export function buildBwrapArgv(input: {
+  bwrap: string;
+  command: readonly string[];
+  cwd: string;
+  readwritePaths: readonly string[];
+  readonlyPaths: readonly string[];
+  network: boolean;
+}): string[] {
+  // Minimal profile: unshare net unless granted; bind RO root-ish paths the
+  // process needs; RW only for declared paths. We do not claim a full
+  // chroot — this is defense-in-depth for package scripts.
+  const args: string[] = [
+    input.bwrap,
+    '--die-with-parent',
+    '--new-session',
+    '--unshare-pid',
+  ];
+  if (!input.network) args.push('--unshare-net');
+
+  // Provide a minimal filesystem: host paths RO except explicit RW.
+  args.push('--ro-bind', '/', '/');
+  args.push('--dev', '/dev');
+  args.push('--proc', '/proc');
+  args.push('--tmpfs', '/tmp');
+
+  const rw = new Set(
+    [...input.readwritePaths, input.cwd].map((p) => resolve(p)),
+  );
+  for (const path of rw) {
+    args.push('--bind', path, path);
+  }
+  for (const path of input.readonlyPaths.map((p) => resolve(p))) {
+    if (rw.has(path)) continue;
+    args.push('--ro-bind', path, path);
+  }
+
+  args.push('--chdir', resolve(input.cwd));
+  args.push('--');
+  args.push(...input.command);
+  return args;
+}
+
+/**
+ * Seatbelt backend (macOS): generate a narrow profile and run via sandbox-exec.
+ * Network deny + write only to granted paths when possible.
+ */
+export function createSeatbeltBackend(): SandboxBackend {
+  const se = which('sandbox-exec');
+  if (!se) {
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'sandbox-exec not found on PATH',
+    );
+  }
+  return {
+    id: 'native-seatbelt',
+    async run(input) {
+      const profile = buildSeatbeltProfile({
+        readwritePaths: [...input.readwritePaths, input.cwd],
+        readonlyPaths: input.readonlyPaths,
+        network: input.network,
+      });
+      // sandbox-exec -p PROFILE command...
+      return spawnCapture({
+        argv: [se, '-p', profile, ...input.argv],
+        cwd: input.cwd,
+        env: input.env,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+    },
+  };
+}
+
+export function buildSeatbeltProfile(input: {
+  readwritePaths: readonly string[];
+  readonlyPaths: readonly string[];
+  network: boolean;
+}): string {
+  const writes = input.readwritePaths
+    .map((p) => `(allow file-write* (subpath ${JSON.stringify(resolve(p))}))`)
+    .join('\n  ');
+  const reads = input.readonlyPaths
+    .map((p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`)
+    .join('\n  ');
+  const net = input.network ? '(allow network*)' : '(deny network*)';
+  return `
+(version 1)
+(deny default)
+(allow process-exec)
+(allow process-fork)
+(allow signal)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow file-read*)
+${reads}
+${writes}
+${net}
+`.trim();
+}
+
+export function createNativeBackend(): SandboxBackend | undefined {
+  if (platform() === 'linux' && which('bwrap')) return createBwrapBackend();
+  if (platform() === 'darwin' && which('sandbox-exec'))
+    return createSeatbeltBackend();
+  return undefined;
+}

@@ -24,7 +24,8 @@
   "dependencies": {
     "@openpacker/adapter-core": "0.1.0",
     "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/sandbox": "0.1.0"
   },
   "description": "Debian/Ubuntu system packages via apt-get"
 }

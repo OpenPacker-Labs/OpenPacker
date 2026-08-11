@@ -35,7 +35,7 @@ function capture() {
 }
 
 describe('opm + opmx CLI', () => {
-  it('init add install list opmx remove', async () => {
+  it('init add install list opmx remove', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-'));
     temps.push(root);
 

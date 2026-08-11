@@ -81,6 +81,17 @@ export {
 } from './install.js';
 
 export {
+  detectNpmLifecycleScripts,
+  hasLifecycleScripts,
+  lifecycleScriptsAllowed,
+  runDeclaredLifecycleScripts,
+  runLifecycleScript,
+  sandboxPolicyFromProject,
+} from './lifecycle.js';
+
+export { runSandboxedPackageProcess } from './sandbox-run.js';
+
+export {
   addPackage,
   findOpmRoot,
   initProject,

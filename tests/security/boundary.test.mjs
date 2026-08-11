@@ -199,3 +199,12 @@ test('mandatory scripts cannot execute package lifecycle hooks', () => {
     );
   }
 });
+
+test('sandbox package exists and defaults to fail-closed', async () => {
+  const sandbox = await import('@openpacker/sandbox');
+  assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.mode, 'fail-closed');
+  assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.required, true);
+  assert.equal(sandbox.DEFAULT_SANDBOX_POLICY.prefer, 'auto');
+  assert.equal(typeof sandbox.runInSandbox, 'function');
+  assert.equal(sandbox.SANDBOX_LOSS.UNAVAILABLE, 'SANDBOX_UNAVAILABLE');
+});

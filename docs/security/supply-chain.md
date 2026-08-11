@@ -23,6 +23,7 @@ is hard-denied), not a silent allow.
 | pnpm                                           | PREX / OpenPacker                                                                    | Notes                                                                                                                               |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Disable postinstall by default (`allowBuilds`) | Materialize never runs lifecycle scripts; policy `allowLifecycleScripts` / allowlist | Execution is a declared capability ([ADR 0031](../adr/0031-prex-is-a-plug-in-interface-for-package-managers.md)); default is refuse |
+| Jailed builds (`jailBuilds`)                   | `@openpacker/sandbox` + policy `sandboxMode` / package grants                        | Aube-style jail; MXC preferred, native fallback ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md))                       |
 | `minimumReleaseAge`                            | Policy `minimumReleaseAgeMinutes` + captured `publishedAt` vs `evaluationTime`       | Detection-window quarantine                                                                                                         |
 | `trustPolicy: no-downgrade`                    | Policy `trustPolicy: "no-downgrade"` + `trustLevel` / `priorTrustLevel` facts        | Ordered tiers, not a boolean “trusted”                                                                                              |
 | `blockExoticSubdeps`                           | Policy `blockExoticSources` + `sourceKind` / `dependencyDepth`                       | Registry vs git/tarball                                                                                                             |
@@ -32,16 +33,18 @@ is hard-denied), not a silent allow.
 
 ## Attack classes and native response
 
-| Attack                                     | Capture                                                              | Mitigate                                                             |
-| ------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Malicious publish in the first hours       | `publishedAt` from registry                                          | `minimumReleaseAgeMinutes` (e.g. 1440)                               |
-| Malicious `postinstall`                    | `lifecycleScriptsDeclared`; materialize records scripts not executed | Deny execution unless allowlisted; mise/opm refuse scripted installs |
-| Typosquat / unexpected registry            | `registryId`, provider id, source scheme                             | `allowedProviders`, `allowedSourceSchemes`, expected registry pin    |
-| Git/tarball dependency injection           | `sourceKind: git \| tarball`                                         | `blockExoticSources` for transitive (or all) deps                    |
-| Trust downgrade (was signed, now unsigned) | `trustLevel` vs `priorTrustLevel`                                    | `trustPolicy: "no-downgrade"`                                        |
-| Yank after compromise                      | Lifecycle events                                                     | Lifecycle reduction + `allowYanked: false`                           |
-| Digest substitution                        | Artifact digest/size on fetch                                        | Fail closed before extract; CAS content-addressed store              |
-| Host installer scripts (apt/choco)         | Semantic loss `SYSTEM_INSTALL_NOT_BYTE_VERIFIED`                     | Cannot claim `native-validated-v1`; elevation consent                |
+| Attack                                     | Capture                                                              | Mitigate                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Malicious publish in the first hours       | `publishedAt` from registry                                          | `minimumReleaseAgeMinutes` (e.g. 1440)                              |
+| Malicious `postinstall`                    | `lifecycleScriptsDeclared`; materialize records scripts not executed | Deny execution unless allowlisted; when allowed, run only in jail   |
+| Jail escape / ambient install              | sandbox backend + `SANDBOX_*` losses                                 | fail-closed default; MXC preferred; native fallback; record backend |
+| Typosquat / unexpected registry            | `registryId`, provider id, source scheme                             | `allowedProviders`, `allowedSourceSchemes`, expected registry pin   |
+| Git/tarball dependency injection           | `sourceKind: git \| tarball`                                         | `blockExoticSources` for transitive (or all) deps                   |
+| Trust downgrade (was signed, now unsigned) | `trustLevel` vs `priorTrustLevel`                                    | `trustPolicy: "no-downgrade"`                                       |
+| Yank after compromise                      | Lifecycle events                                                     | Lifecycle reduction + `allowYanked: false`                          |
+| Digest substitution                        | Artifact digest/size on fetch                                        | Fail closed before extract; CAS content-addressed store             |
+| Host installer scripts (apt/choco)         | Semantic loss `SYSTEM_INSTALL_NOT_BYTE_VERIFIED`                     | Cannot claim `native-validated-v1`; elevation consent               |
+| Unsandboxed host install                   | `SYSTEM_INSTALL_NOT_SANDBOXED` when ambient                          | Default refuse; `allowHostUnsandboxedInstall` or `sandbox.mode=off` |
 
 ## Policy profile (recommended production)
 
@@ -61,6 +64,11 @@ block_exotic_transitive = true
 block_exotic_direct = false
 allow_lifecycle_scripts = false
 expected_registry_id = "urn:openpacker:registry:npmjs-org"
+
+[sandbox]
+enabled = true
+mode = "fail-closed"
+prefer = "auto"
 ```
 
 Equivalent JSON `PolicyInput`:
@@ -74,7 +82,11 @@ Equivalent JSON `PolicyInput`:
   "allowLifecycleScripts": false,
   "minimumReleaseAgeMinutes": 1440,
   "trustPolicy": "no-downgrade",
-  "blockExoticSources": { "transitive": true, "direct": false }
+  "blockExoticSources": { "transitive": true, "direct": false },
+  "sandboxMode": "fail-closed",
+  "sandboxRequired": true,
+  "sandboxPrefer": "auto",
+  "allowHostUnsandboxedInstall": false
 }
 ```
 

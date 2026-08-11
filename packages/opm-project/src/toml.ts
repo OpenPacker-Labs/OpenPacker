@@ -144,6 +144,43 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push('');
   }
 
+  if (
+    manifest.policy?.sandboxMode !== undefined ||
+    manifest.policy?.sandboxPrefer !== undefined ||
+    manifest.policy?.sandboxRequired !== undefined ||
+    manifest.policy?.allowHostUnsandboxedInstall !== undefined ||
+    (manifest.policy?.sandboxPackageGrants &&
+      Object.keys(manifest.policy.sandboxPackageGrants).length > 0)
+  ) {
+    lines.push('# Package install/execution jail (ADR 0036)');
+    lines.push('[sandbox]');
+    const p = manifest.policy;
+    if (p.sandboxMode === 'off') lines.push('enabled = false');
+    else if (p.sandboxMode !== undefined) {
+      lines.push('enabled = true');
+      lines.push(`mode = ${tomlString(p.sandboxMode)}`);
+    }
+    if (p.sandboxPrefer !== undefined)
+      lines.push(`prefer = ${tomlString(p.sandboxPrefer)}`);
+    if (p.allowHostUnsandboxedInstall !== undefined)
+      lines.push(
+        `allow_host_unsandboxed_install = ${p.allowHostUnsandboxedInstall ? 'true' : 'false'}`,
+      );
+    lines.push('');
+    for (const id of Object.keys(p.sandboxPackageGrants ?? {}).sort()) {
+      const grant = p.sandboxPackageGrants![id]!;
+      lines.push(`[sandbox.packages.${escapeKey(id)}]`);
+      if (grant.network !== undefined)
+        lines.push(`network = ${grant.network ? 'true' : 'false'}`);
+      if (grant.write?.length)
+        lines.push(`write = ${tomlStringArray(grant.write)}`);
+      if (grant.read?.length)
+        lines.push(`read = ${tomlStringArray(grant.read)}`);
+      if (grant.env?.length) lines.push(`env = ${tomlStringArray(grant.env)}`);
+      lines.push('');
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -170,6 +207,19 @@ export function parseManifest(text: string): OpmManifest {
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
+  const sandboxScratch: Record<string, string | boolean | number | string[]> =
+    {};
+  let hasSandbox = false;
+  let sandboxPackageId: string | undefined;
+  const sandboxPackageScratch = new Map<
+    string,
+    {
+      network?: boolean;
+      write?: string[];
+      read?: string[];
+      env?: string[];
+    }
+  >();
 
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
@@ -183,21 +233,38 @@ export function parseManifest(text: string): OpmManifest {
       if (name === 'project' || name === 'options' || name === 'policy') {
         section = name;
         packageAlias = undefined;
+        sandboxPackageId = undefined;
         if (name === 'policy') hasPolicy = true;
+      } else if (name === 'sandbox') {
+        section = 'sandbox';
+        packageAlias = undefined;
+        sandboxPackageId = undefined;
+        hasSandbox = true;
+      } else if (name.startsWith('sandbox.packages.')) {
+        section = 'sandbox-packages';
+        packageAlias = undefined;
+        // Keys may be quoted purls: sandbox.packages."pkg:npm/sharp"
+        const rawKey = name.slice('sandbox.packages.'.length);
+        sandboxPackageId = rawKey.replace(/^"(.*)"$/u, '$1');
+        if (!sandboxPackageScratch.has(sandboxPackageId))
+          sandboxPackageScratch.set(sandboxPackageId, {});
       } else if (name.startsWith('registries.')) {
         section = 'registries';
         registryId = name.slice('registries.'.length);
         packageAlias = undefined;
+        sandboxPackageId = undefined;
         if (!registryScratch.has(registryId))
           registryScratch.set(registryId, {});
       } else if (name.startsWith('packages.')) {
         section = 'packages';
         packageAlias = name.slice('packages.'.length);
+        sandboxPackageId = undefined;
         if (!packageScratch.has(packageAlias))
           packageScratch.set(packageAlias, {});
       } else if (name === 'packages') {
         section = 'packages';
         packageAlias = undefined;
+        sandboxPackageId = undefined;
       } else {
         throw new OpmError(
           'INVALID_MANIFEST',
@@ -277,6 +344,32 @@ export function parseManifest(text: string): OpmManifest {
             `${[...POLICY_KEYS].sort().join(', ')}`,
         );
       policyScratch[key] = value as string | boolean | number | string[];
+    } else if (section === 'sandbox') {
+      if (!SANDBOX_KEYS.has(key))
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown sandbox field "${key}" at line ${i + 1}. Known fields: ` +
+            `${[...SANDBOX_KEYS].sort().join(', ')}`,
+        );
+      sandboxScratch[key] = value as string | boolean | number | string[];
+    } else if (section === 'sandbox-packages') {
+      if (sandboxPackageId === undefined)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Sandbox package field outside [sandbox.packages.<id>] at line ${i + 1}`,
+        );
+      const scratch = sandboxPackageScratch.get(sandboxPackageId) ?? {};
+      if (key === 'network' && typeof value === 'boolean')
+        scratch.network = value;
+      else if (key === 'write' && Array.isArray(value)) scratch.write = value;
+      else if (key === 'read' && Array.isArray(value)) scratch.read = value;
+      else if (key === 'env' && Array.isArray(value)) scratch.env = value;
+      else
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown sandbox package field "${key}" at line ${i + 1}`,
+        );
+      sandboxPackageScratch.set(sandboxPackageId, scratch);
     } else if (section === 'packages') {
       if (packageAlias === undefined)
         throw new OpmError(
@@ -368,6 +461,22 @@ export function parseManifest(text: string): OpmManifest {
 
   if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
 
+  if (hasSandbox || sandboxPackageScratch.size > 0) {
+    const sandboxPolicy = sandboxFromScratch(
+      sandboxScratch,
+      sandboxPackageScratch,
+    );
+    manifest.policy = {
+      ...(manifest.policy ?? {
+        allowYanked: false,
+        allowQuarantined: false,
+        semanticLossMaximum: 'warning' as const,
+        requiredEvidence: [],
+      }),
+      ...sandboxPolicy,
+    };
+  }
+
   return manifest;
 }
 
@@ -392,6 +501,88 @@ const POLICY_FIELD_TYPES: Readonly<
 };
 
 const POLICY_KEYS = new Set(Object.keys(POLICY_FIELD_TYPES));
+
+const SANDBOX_FIELD_TYPES: Readonly<
+  Record<string, 'boolean' | 'string' | 'number' | 'string[]'>
+> = {
+  enabled: 'boolean',
+  mode: 'string',
+  prefer: 'string',
+  allow_host_unsandboxed_install: 'boolean',
+};
+
+const SANDBOX_KEYS = new Set(Object.keys(SANDBOX_FIELD_TYPES));
+
+function sandboxFromScratch(
+  scratch: Record<string, string | boolean | number | string[]>,
+  packages: Map<
+    string,
+    {
+      network?: boolean;
+      write?: string[];
+      read?: string[];
+      env?: string[];
+    }
+  >,
+): Partial<PolicyInput> {
+  for (const [key, value] of Object.entries(scratch)) {
+    const expected = SANDBOX_FIELD_TYPES[key];
+    if (expected === undefined)
+      throw new OpmError('INVALID_MANIFEST', `Unknown sandbox field "${key}"`);
+    const actual = Array.isArray(value) ? 'string[]' : typeof value;
+    if (expected !== actual)
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        `sandbox.${key} must be ${expected}, got ${actual}`,
+      );
+  }
+
+  const out: Partial<PolicyInput> = {};
+  const enabled = scratch.enabled;
+  const mode = scratch.mode;
+  if (enabled === false) out.sandboxMode = 'off';
+  else if (typeof mode === 'string') {
+    if (mode !== 'fail-closed' && mode !== 'degrade-warn' && mode !== 'off')
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'sandbox.mode must be fail-closed|degrade-warn|off',
+      );
+    out.sandboxMode = mode;
+  } else if (enabled === true) {
+    out.sandboxMode = 'fail-closed';
+  }
+
+  const prefer = scratch.prefer;
+  if (typeof prefer === 'string') {
+    if (prefer !== 'auto' && prefer !== 'mxc' && prefer !== 'native')
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'sandbox.prefer must be auto|mxc|native',
+      );
+    out.sandboxPrefer = prefer;
+  }
+
+  if (typeof scratch.allow_host_unsandboxed_install === 'boolean')
+    out.allowHostUnsandboxedInstall = scratch.allow_host_unsandboxed_install;
+
+  if (out.sandboxMode === 'fail-closed') out.sandboxRequired = true;
+  else if (out.sandboxMode === 'degrade-warn' || out.sandboxMode === 'off')
+    out.sandboxRequired = false;
+
+  if (packages.size > 0) {
+    const grants: NonNullable<PolicyInput['sandboxPackageGrants']> = {};
+    for (const [id, g] of packages) {
+      grants[id] = {
+        ...(g.network === undefined ? {} : { network: g.network }),
+        ...(g.write === undefined ? {} : { write: g.write }),
+        ...(g.read === undefined ? {} : { read: g.read }),
+        ...(g.env === undefined ? {} : { env: g.env }),
+      };
+    }
+    out.sandboxPackageGrants = grants;
+  }
+  return out;
+}
 
 function policyFromScratch(
   scratch: Record<string, string | boolean | number | string[]>,

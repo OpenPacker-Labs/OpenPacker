@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -10,7 +9,10 @@ import {
   resolveExecutable,
   fetchTool,
   selectToolBin,
+  runSandboxedPackageProcess,
+  readManifestFile,
 } from '@openpacker/opm-project';
+import type { PolicyInput } from '@openpacker/contracts';
 
 export const EXIT_CODES = {
   success: 0,
@@ -61,11 +63,18 @@ export async function runOpmx(
         io,
         cwd,
         tool.runtimePaths,
+        tool.exactPurl,
       );
     }
 
     const root = await requireOpmRoot(cwd);
     const paths = projectPaths(root);
+    let projectPolicy: PolicyInput | undefined;
+    try {
+      projectPolicy = (await readManifestFile(paths.manifest)).policy;
+    } catch {
+      projectPolicy = undefined;
+    }
     const state = await readProjectState(paths.projectState);
     if (!state || Object.keys(state.packages).length === 0) {
       throw new OpmError(
@@ -92,13 +101,26 @@ export async function runOpmx(
       ...(positionals[0] !== undefined ? { positional: positionals[0] } : {}),
     });
 
-    return await spawnTool(resolved.target, passthrough, io, cwd);
+    const pkgId = resolved.packageAlias
+      ? state.packages[resolved.packageAlias]?.purl
+      : undefined;
+    return await spawnTool(resolved.target, passthrough, io, cwd, {
+      projectRoot: root,
+      storePaths: Object.values(state.packages).map((p) => p.storePath),
+      ...(pkgId === undefined ? {} : { packageId: pkgId }),
+      ...(projectPolicy === undefined ? {} : { policy: projectPolicy }),
+    });
   } catch (error) {
     if (error instanceof OpmError) {
       io.stderr.write(`opmx: ${error.message}\n`);
       if (error.code === 'NOT_FOUND' || error.code === 'NO_PROJECT')
         return EXIT_CODES.notFound;
       if (error.code === 'USAGE') return EXIT_CODES.usage;
+      if (
+        error.code === 'SANDBOX_UNAVAILABLE' ||
+        error.code === 'POLICY_DENIED'
+      )
+        return EXIT_CODES.policyDenied;
       return EXIT_CODES.internal;
     }
     io.stderr.write(
@@ -122,7 +144,14 @@ async function spawnDeclared(
   io: CliIo,
   cwd: string,
   runtimePaths: readonly string[] = [storePath],
+  packageId?: string,
+  policy?: PolicyInput,
 ): Promise<number> {
+  const sandboxCtx = {
+    storePaths: runtimePaths.length > 0 ? runtimePaths : [storePath],
+    ...(packageId === undefined ? {} : { packageId }),
+    ...(policy === undefined ? {} : { policy }),
+  };
   if (bin.interpreter === 'python') {
     const [moduleName, callable] = (bin.entry ?? '').split(':');
     if (!moduleName || !callable)
@@ -146,6 +175,7 @@ async function spawnDeclared(
       ['-c', program, ...args],
       io,
       cwd,
+      sandboxCtx,
       `${bin.name} needs a Python interpreter on PATH`,
     );
   }
@@ -158,11 +188,12 @@ async function spawnDeclared(
       [assembly, ...args],
       io,
       cwd,
+      sandboxCtx,
       `${bin.name} needs the .NET runtime on PATH`,
     );
   }
   const target = join(storePath, ...bin.path.split('/').filter(Boolean));
-  return spawnTool(target, args, io, cwd);
+  return spawnTool(target, args, io, cwd, sandboxCtx);
 }
 
 /** The Python to run console scripts with. */
@@ -174,56 +205,76 @@ function pythonExecutable(): string {
  * Run a resolved executable and forward its exit status.
  *
  * Shared by both paths so an ephemeral tool behaves exactly like an installed
- * one: same stdio, same signal handling, same exit code.
+ * one: same stdio, same signal handling, same exit code. Execution goes
+ * through the project sandbox funnel (ADR 0036).
  */
 async function spawnTool(
   target: string,
   args: readonly string[],
   io: CliIo,
   cwd: string,
+  sandbox?: {
+    projectRoot?: string;
+    storePaths?: readonly string[];
+    packageId?: string;
+    policy?: PolicyInput;
+  },
 ): Promise<number> {
-  return spawnProcess(process.execPath, [target, ...args], io, cwd);
+  return spawnProcess(process.execPath, [target, ...args], io, cwd, sandbox);
 }
 
-function spawnProcess(
+async function spawnProcess(
   command: string,
   argv: readonly string[],
   io: CliIo,
   cwd: string,
+  sandbox?: {
+    projectRoot?: string;
+    storePaths?: readonly string[];
+    packageId?: string;
+    policy?: PolicyInput;
+  },
   missingHint?: string,
 ): Promise<number> {
-  const useInherit = io.stdout === process.stdout;
-  return new Promise<number>((resolvePromise) => {
-    const child = spawn(command, [...argv], {
-      stdio: useInherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-      env: process.env,
+  try {
+    const outcome = await runSandboxedPackageProcess({
+      argv: [command, ...argv],
       cwd,
+      ...(sandbox?.projectRoot === undefined
+        ? {}
+        : { projectRoot: sandbox.projectRoot }),
+      ...(sandbox?.storePaths === undefined
+        ? {}
+        : { storePaths: sandbox.storePaths }),
+      ...(sandbox?.packageId === undefined
+        ? {}
+        : { packageId: sandbox.packageId }),
+      ...(sandbox?.policy === undefined ? {} : { policy: sandbox.policy }),
     });
-    if (!useInherit) {
-      child.stdout?.on('data', (chunk: Buffer | string) => {
-        io.stdout.write(String(chunk));
-      });
-      child.stderr?.on('data', (chunk: Buffer | string) => {
-        io.stderr.write(String(chunk));
-      });
+    if (outcome.stdout) io.stdout.write(outcome.stdout);
+    if (outcome.stderr) io.stderr.write(outcome.stderr);
+    if (
+      outcome.exitCode !== 0 &&
+      outcome.backend === 'none' &&
+      !outcome.enforced
+    ) {
+      // fail-closed already threw SANDBOX_UNAVAILABLE for required mode;
+      // degraded path still returns exit codes.
     }
-    child.on('error', (error) => {
-      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
-      io.stderr.write(
-        `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : error.message}\n`,
-      );
-      resolvePromise(
-        missing && missingHint ? EXIT_CODES.unavailable : EXIT_CODES.internal,
-      );
-    });
-    child.on('exit', (code, signal) => {
-      if (signal) {
-        resolvePromise(1);
-        return;
-      }
-      resolvePromise(code ?? 1);
-    });
-  });
+    return outcome.exitCode;
+  } catch (error) {
+    if (error instanceof OpmError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    const missing =
+      error instanceof Error &&
+      (error as NodeJS.ErrnoException).code === 'ENOENT';
+    io.stderr.write(
+      `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
+    );
+    return missing && missingHint
+      ? EXIT_CODES.unavailable
+      : EXIT_CODES.internal;
+  }
 }
 
 export const parseForTest = (argv: string[]) => parse(argv);

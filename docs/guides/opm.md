@@ -356,6 +356,37 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Installs are content-addressed under `.opm/store/sha256-…`.
 - Digests are verified before materialize.
 - Default layout is **`.opm/`**, not a silent rewrite of `node_modules`.
+- Package execution (approved lifecycle scripts, `opmx`, host installers) goes
+  through `@openpacker/sandbox` — MXC preferred, native jail fallback,
+  **fail-closed** when a jail cannot be enforced
+  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
+
+### Sandbox configuration
+
+Defaults when `[sandbox]` is omitted: enabled, `fail-closed`, prefer `auto` (MXC
+then native).
+
+```toml
+[sandbox]
+enabled = true
+mode = "fail-closed"   # fail-closed | degrade-warn | off
+prefer = "auto"        # auto | mxc | native
+
+# Narrow grants for a reviewed package that may build inside the jail:
+# [sandbox.packages."pkg:npm/sharp"]
+# network = true
+# write = ["~/.cache/sharp"]
+# env = ["SHARP_DIST_BASE_URL"]
+```
+
+`allow_lifecycle_scripts = true` (or an allowlist) still only means scripts may
+run **inside** the jail — not that they inherit tokens, home, or unrestricted
+network. Host installers that cannot be jailed are refused unless the project
+explicitly allows unsandboxed host install (and then emit
+`SYSTEM_INSTALL_NOT_SANDBOXED`).
+
+MXC is early preview; receipts record which backend enforced the profile rather
+than claiming a finished OS security product.
 
 ---
 

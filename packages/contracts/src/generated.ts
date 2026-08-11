@@ -990,6 +990,18 @@ export type PolicyInput = {
   blockExoticSources?: { direct?: boolean; transitive?: boolean };
   allowLifecycleScripts?: boolean;
   allowedLifecycleScriptPackages?: Array<string>;
+  sandboxMode?: 'fail-closed' | 'degrade-warn' | 'off';
+  sandboxRequired?: boolean;
+  sandboxPrefer?: 'auto' | 'mxc' | 'native';
+  allowHostUnsandboxedInstall?: boolean;
+  sandboxPackageGrants?: {
+    [key: string]: {
+      network?: boolean;
+      write?: Array<string>;
+      read?: Array<string>;
+      env?: Array<string>;
+    };
+  };
   expectedRegistryId?: string;
   extensions?: Extensions;
   acceptedAmendmentAuthorities?: Array<
@@ -8515,6 +8527,69 @@ export const schemaCatalog: Record<string, JsonValue> = {
               type: 'string',
               minLength: 1,
               maxLength: 2048,
+            },
+          },
+          sandboxMode: {
+            $comment:
+              'fail-closed refuses when a jail cannot be enforced; degrade-warn continues with SANDBOX_DEGRADED; off is ambient execution (explicit opt-in).',
+            enum: ['fail-closed', 'degrade-warn', 'off'],
+          },
+          sandboxRequired: {
+            $comment:
+              'When true (default under fail-closed), SANDBOX_UNAVAILABLE is deny rather than informational.',
+            type: 'boolean',
+          },
+          sandboxPrefer: {
+            $comment:
+              'Backend preference: auto prefers MXC then native; mxc/native force that ladder entry.',
+            enum: ['auto', 'mxc', 'native'],
+          },
+          allowHostUnsandboxedInstall: {
+            $comment:
+              'Permit host installers (apt/winget/…) to run without a jail. Emits SYSTEM_INSTALL_NOT_SANDBOXED. Default false.',
+            type: 'boolean',
+          },
+          sandboxPackageGrants: {
+            $comment:
+              'Per-package jail grants keyed by package id / purl / glob. Approval still required separately for lifecycle scripts.',
+            type: 'object',
+            maxProperties: 1024,
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                network: {
+                  type: 'boolean',
+                },
+                write: {
+                  type: 'array',
+                  maxItems: 256,
+                  items: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: 4096,
+                  },
+                },
+                read: {
+                  type: 'array',
+                  maxItems: 256,
+                  items: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: 4096,
+                  },
+                },
+                env: {
+                  type: 'array',
+                  maxItems: 256,
+                  items: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: 256,
+                    pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
+                  },
+                },
+              },
+              additionalProperties: false,
             },
           },
           expectedRegistryId: {
