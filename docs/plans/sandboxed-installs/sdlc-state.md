@@ -1,8 +1,8 @@
 # sdlc state — sandboxed installs
 
 - Initiative: Aube-style jails + MXC-first sandboxed installs/execution
-- Phase: **implementation** — foundation on main (`0c70e85` / #59); follow-up
-  installers + generation sandbox fields
+- Phase: **complete for planned WPs** — #59 + #60 on main; optional deeper
+  security fixtures can continue later
 - Trunk at start: `fb23980`
 - Foundation merged: `0c70e85` (#59)
 - Plan: one-shot parallel swarm (no sequential phases); merge order bottom-up
