@@ -1,0 +1,78 @@
+# ADR 0036: Install and package execution run under a declared sandbox policy
+
+- Status: Accepted
+- Date: 2026-08-11
+- Relates: [ADR 0030](0030-build-versus-buy-for-primitives.md),
+  [ADR 0031](0031-prex-is-a-plug-in-interface-for-package-managers.md),
+  [ADR 0033](0033-native-supply-chain-capture-and-mitigation.md)
+
+## Context
+
+OpenPacker already materializes packages into a project-local content-addressed
+store and refuses dependency lifecycle scripts by default. That closes the
+common “malicious postinstall on install” path only by **never running** the
+code. It does not:
+
+- give a safe path when a project must allow scripts (native addons),
+- isolate `opmx` / ephemeral tool runs from the ambient host,
+- contain host installers (`apt`, `winget`, `chocolatey`, `nix`) after elevation
+  consent.
+
+Aube’s model (deny scripts by default; approved builds in a narrow jail with FS
+write limits, network deny, scrubbed env, and a temporary home) and Microsoft’s
+MXC (cross-platform policy-driven containment with multiple backends) describe
+the missing boundary. ADR 0030 says buy standard primitives unless there is a
+stated reason not to; containment is a standard OS concern with a published
+TypeScript SDK (`@microsoft/mxc-sdk`).
+
+MXC is early preview. Microsoft documents that current profiles should not be
+treated as a finished security boundary. OpenPacker must therefore compose
+deny-by-default scripts **and** a jail, and must record which backend enforced
+policy rather than claim “MXC-secure” as a product fact.
+
+## Decision
+
+1. **Execution that is not pure metadata runs under a declared sandbox policy.**
+   The policy is project-config (`opm.toml` `[sandbox]`) and PREX `PolicyInput`
+   fields, bound into receipts via `policyDigest`.
+2. **Default mode is fail-closed.** If the requested jail cannot be enforced,
+   refuse rather than silently unsandbox. Projects may opt into `degrade-warn`
+   or `off`; those choices are noisy in logs and receipts.
+3. **Backend ladder:** prefer MXC when available and able to enforce the
+   profile; else native jails (Bubblewrap on Linux, Seatbelt on macOS, process
+   isolation on Windows when available); else fail per mode.
+4. **Single enforcement funnel** — `@openpacker/sandbox` `runInSandbox`.
+   Lifecycle scripts, `opmx`/ephemeral runs, and `InstallerProvider.install` all
+   go through it. No second ad-hoc spawn for package execution.
+5. **Approval ≠ ambient trust.** `allowLifecycleScripts` / allowlists only mean
+   scripts may run **inside** the jail (optionally with per-package grants for
+   network, write paths, env). They do not inherit credentials or home by
+   default.
+6. **Host installers stay capability-honest (ADR 0031).** Plans expose argv and
+   the sandbox profile. Unsandboxed system install requires explicit opt-in and
+   emits `SYSTEM_INSTALL_NOT_SANDBOXED` in addition to existing
+   `SYSTEM_INSTALL_NOT_BYTE_VERIFIED` / irreversible losses.
+7. **Adopt MXC as preferred primitive (ADR 0030 outcome 1);** OpenPacker owns
+   policy semantics and PREX honesty. Native backends are first-class fallbacks,
+   not afterthoughts.
+
+## Consequences
+
+- Pure extract-only installs still never run scripts; they evaluate sandbox
+  policy and record that scripts did not execute.
+- Scripted installs use a quarantine tree, run scripts in the jail, then
+  atomically publish into `.opm/store`.
+- Offline `npm run verify` must not require MXC or Bubblewrap: unit tests use a
+  mock backend; fail-closed is tested without host tools.
+- Semantic loss / evidence codes for sandbox outcomes are first-class:
+  `SANDBOX_ENFORCED`, `SANDBOX_BACKEND_MXC`, `SANDBOX_BACKEND_NATIVE`,
+  `SANDBOX_UNAVAILABLE`, `SANDBOX_DEGRADED`, `SYSTEM_INSTALL_SANDBOXED`,
+  `SYSTEM_INSTALL_NOT_SANDBOXED`.
+
+## Notes
+
+Inspiration:
+[aube jailed builds](https://aube.jdx.dev/package-manager/jailed-builds.html),
+[Microsoft MXC](https://github.com/microsoft/mxc). Neither is vendored
+wholesale; PREX remains the authority on identity, receipts, and what was
+verified.

@@ -42,6 +42,10 @@ export function defaultSupplyChainPolicyInput(): PolicyInput {
     requiredEvidence: [],
     allowLifecycleScripts: false,
     blockExoticSources: { transitive: true, direct: false },
+    sandboxMode: 'fail-closed',
+    sandboxRequired: true,
+    sandboxPrefer: 'auto',
+    allowHostUnsandboxedInstall: false,
   };
 }
 

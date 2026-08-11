@@ -424,3 +424,39 @@ test('a lifecycle-script allowlist does not extend to look-alike names', async (
     (await evaluatePolicy(policy, ran('pkg:npm/esbuild-postinstall'))).decision,
   ).toBe('deny');
 });
+
+test('sandbox fail-closed denies when scripts ran without an enforced jail', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    allowLifecycleScripts: true,
+    sandboxMode: 'fail-closed',
+    sandboxRequired: true,
+  };
+  const denied = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/esbuild',
+    lifecycleScriptsExecuted: true,
+    sandboxEnforced: false,
+    sandboxBackend: 'none',
+  });
+  expect(denied.decision).toBe('deny');
+  expect(denied.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'sandbox.unavailable',
+        status: 'policy-denied',
+      }),
+    ]),
+  );
+
+  const allowed = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/esbuild',
+    lifecycleScriptsExecuted: true,
+    sandboxEnforced: true,
+    sandboxBackend: 'native-bwrap',
+  });
+  expect(allowed.decision).toBe('allow');
+});

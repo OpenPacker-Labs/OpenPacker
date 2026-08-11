@@ -1,0 +1,44 @@
+{
+  "name": "@openpacker/sandbox",
+  "version": "0.1.0",
+  "description": "Policy-driven package install/execution jail (MXC preferred, native fallback)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:security": "vitest run",
+    "test:integration": "vitest run",
+    "test:conformance": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/contracts": "0.1.0"
+  },
+  "optionalDependencies": {
+    "@microsoft/mxc-sdk": "0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1"
+  }
+}
