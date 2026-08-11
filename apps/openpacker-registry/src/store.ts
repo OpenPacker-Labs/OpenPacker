@@ -64,6 +64,7 @@ export interface ListQuery {
 export class RegistryStore {
   readonly #database: DatabaseSync;
   #closed = false;
+  #searchable = false;
 
   constructor(path = ':memory:') {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -83,6 +84,8 @@ export class RegistryStore {
         manifest_digest TEXT NOT NULL,
         manifest BLOB NOT NULL,
         signatures BLOB NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
         UNIQUE (name, version)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS entries_updated ON entries(updated_at, sequence);
@@ -145,6 +148,58 @@ export class RegistryStore {
     // Backfilling on open keeps `GET /v1/holders` honest about history rather
     // than reporting an empty world until somebody publishes again.
     this.#migrateNamespaceKeys();
+    this.#searchable = this.#createSearchIndex();
+  }
+
+  /**
+   * Build the search index over `entries`, or report that this build cannot.
+   *
+   * External-content FTS5: the index stores no copy of the text, it reads
+   * `entries`. That is deliberate — a search index maintained as a second store
+   * is a second store that can disagree with the first, and a registry whose
+   * search and reads disagree has two answers to the same question.
+   *
+   * FTS5 is compiled into most SQLite builds but not required to be. When it is
+   * missing the registry still works, on `LIKE`, and says which it used rather
+   * than quietly serving slower answers.
+   */
+  #createSearchIndex(): boolean {
+    try {
+      this.#database.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+          name, title, description,
+          content='entries', content_rowid='sequence', tokenize='unicode61'
+        );
+        CREATE TRIGGER IF NOT EXISTS entries_fts_insert AFTER INSERT ON entries BEGIN
+          INSERT INTO entries_fts(rowid, name, title, description)
+          VALUES (new.sequence, new.name, new.title, new.description);
+        END;
+        CREATE TRIGGER IF NOT EXISTS entries_fts_delete AFTER DELETE ON entries BEGIN
+          INSERT INTO entries_fts(entries_fts, rowid, name, title, description)
+          VALUES ('delete', old.sequence, old.name, old.title, old.description);
+        END;
+        CREATE TRIGGER IF NOT EXISTS entries_fts_update AFTER UPDATE ON entries BEGIN
+          INSERT INTO entries_fts(entries_fts, rowid, name, title, description)
+          VALUES ('delete', old.sequence, old.name, old.title, old.description);
+          INSERT INTO entries_fts(rowid, name, title, description)
+          VALUES (new.sequence, new.name, new.title, new.description);
+        END;
+      `);
+      // Rebuild from `entries` on open: a database written by a build without
+      // FTS5, or one whose triggers were added after the fact, would otherwise
+      // have an index that silently omits everything published before now.
+      this.#database.exec(
+        `INSERT INTO entries_fts(entries_fts) VALUES ('rebuild')`,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Whether searches use the index or fall back to a scan. */
+  get searchIndexed(): boolean {
+    return this.#searchable;
   }
 
   ready(): boolean {
@@ -180,8 +235,8 @@ export class RegistryStore {
       .prepare(
         `INSERT INTO entries
            (name, version, status, published_at, updated_at, is_latest,
-            source_id, manifest_digest, manifest, signatures)
-         VALUES (?, ?, 'active', ?, ?, 0, ?, ?, ?, ?)`,
+            source_id, manifest_digest, manifest, signatures, title, description)
+         VALUES (?, ?, 'active', ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.manifest.name,
@@ -192,6 +247,10 @@ export class RegistryStore {
         input.manifestDigest,
         canonicalBytes(input.manifest as unknown as JsonValue),
         new TextEncoder().encode(JSON.stringify(input.signatures)),
+        // Projected from the manifest, not stored beside it: manifests are
+        // immutable, so these cannot come to disagree with what they summarise.
+        input.manifest.title ?? '',
+        input.manifest.description ?? '',
       );
     this.#recomputeLatest(input.manifest.name);
     const entry = this.get(input.manifest.name, input.manifest.version)!;
@@ -239,8 +298,20 @@ export class RegistryStore {
       parameters.push(query.updatedSince);
     }
     if (query.search !== undefined && query.search !== '') {
-      where.push('lower(name) LIKE ?');
-      parameters.push(`%${query.search.toLowerCase()}%`);
+      // `LIKE '%x%'` cannot use an index: every search is a full scan, which is
+      // the shape behind the MCP registry's 20–25 second reads. The index is
+      // built from `entries` rather than maintained alongside it, so there is
+      // no second copy of the corpus to drift out of step with the first.
+      const match = this.#searchable ? ftsQuery(query.search) : undefined;
+      if (match !== undefined) {
+        where.push(
+          'sequence IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?)',
+        );
+        parameters.push(match);
+      } else {
+        where.push('lower(name) LIKE ?');
+        parameters.push(`%${query.search.toLowerCase()}%`);
+      }
     }
     const rows = this.#database
       .prepare(
@@ -749,6 +820,27 @@ function toRedirect(row: RedirectRow): {
       new TextDecoder().decode(row.signatures),
     ) as unknown[],
   };
+}
+
+/**
+ * Turn a user's words into an FTS5 query, or `undefined` if nothing is left.
+ *
+ * Every term is quoted and a prefix match appended, because FTS5's query
+ * language is a language: an unescaped `NOT`, `*` or `"` from a search box is
+ * either a syntax error or a query the user did not write. Quoting turns the
+ * whole thing back into terms.
+ *
+ * Package names are dotted, and `unicode61` splits on the dots, so searching
+ * `example` finds `com.example.tool` — which is what someone typing a word into
+ * a search box meant.
+ */
+function ftsQuery(search: string): string | undefined {
+  const terms = search
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((term) => term.length > 0)
+    .map((term) => `"${term}"*`);
+  return terms.length > 0 ? terms.join(' AND ') : undefined;
 }
 
 /** A namespace is dotted, and `_` is a LIKE wildcard. Escape before matching. */

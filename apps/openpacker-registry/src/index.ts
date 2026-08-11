@@ -63,6 +63,12 @@ import {
   type QuotaPolicy,
 } from './holders.js';
 import {
+  acceptedVersions,
+  normalise,
+  representableVersions,
+  type ManifestMigration,
+} from './normalise.js';
+import {
   Federation,
   type ConfiguredSource,
   type FederationOptions,
@@ -126,6 +132,14 @@ export interface RegistryOptions {
   serviceabilityTransport?: HttpTransport;
   /** Publish allowance, charged per namespace holder. See DEFAULT_QUOTA. */
   quota?: QuotaPolicy;
+  /**
+   * Conversions between manifest versions, for read-time negotiation.
+   *
+   * There is one version today, so this is empty by default. It is an option
+   * rather than a constant because the registry that needs a migration is the
+   * one already holding documents written before anyone wrote it.
+   */
+  manifestMigrations?: readonly ManifestMigration[];
   logger?: boolean;
   bodyLimit?: number;
 }
@@ -136,6 +150,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   const validator = createPrexValidator();
   const serviceabilityTtl = options.serviceabilityTtlMilliseconds ?? 86_400_000;
   const quota = options.quota ?? DEFAULT_QUOTA;
+  const migrations = options.manifestMigrations ?? [];
   // Checks are triggered by reads, so at most one is in flight per package —
   // otherwise a popular package under load would fan out one request per
   // reader to somebody else's origin, which is a denial of service the
@@ -573,6 +588,15 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           count: local.length + relayed.length,
           nextCursor:
             hasMore && lastRead !== undefined ? encodeCursor(lastRead) : null,
+          // Which search actually ran. A registry silently falling back to a
+          // full scan looks identical to one that is fast until it is not.
+          ...(request.query.search === undefined
+            ? {}
+            : {
+                searchMode: store.searchIndexed
+                  ? ('indexed' as const)
+                  : ('scan' as const),
+              }),
           // Naming what did not answer is the difference between "no results"
           // and "some sources were down"; a mirror must not read one as the
           // other.
@@ -651,9 +675,36 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         // Never block the read. The answer goes out with whatever is known;
         // the next reader sees the fresher result.
         scheduleCheck(entry, known);
+
+        // Meet the client where it is, or say plainly that it cannot be met.
+        // Handing over a document in a version the client cannot parse moves
+        // the failure to install time, where nobody can do anything about it.
+        const accepted = acceptedVersions(request.headers.accept);
+        const served = normalise(entry.manifest, accepted, migrations);
+        if (!served) {
+          const stored = Number(entry.manifest.packageManifestVersion);
+          return sendProblem(
+            reply,
+            problem(
+              'UNSUPPORTED_SEMANTICS_PROFILE',
+              406,
+              'No acceptable manifest version',
+              `This document is version ${stored} and can be served as ` +
+                `${representableVersions(stored, migrations).join(', ')}; ` +
+                `you asked for ${accepted.join(', ')}.`,
+            ),
+          );
+        }
         return sendJson(
           reply,
-          toRegistryEntry(entry, options, known) as unknown as JsonValue,
+          toRegistryEntry(
+            { ...entry, manifest: served },
+            options,
+            known,
+          ) as unknown as JsonValue,
+          // Name the version in the response, so a client that negotiated one
+          // does not have to read the body to find out what it got.
+          `application/vnd.prex.manifest.v${served.packageManifestVersion}+json`,
         );
       }
       // Local wins; only then is an upstream asked. An upstream that starts
@@ -1153,8 +1204,12 @@ function fail(reply: FastifyReply, error: unknown): FastifyReply {
   );
 }
 
-function sendJson(reply: FastifyReply, value: JsonValue): FastifyReply {
-  reply.header('content-type', 'application/json; charset=utf-8');
+function sendJson(
+  reply: FastifyReply,
+  value: JsonValue,
+  mediaType = 'application/json',
+): FastifyReply {
+  reply.header('content-type', `${mediaType}; charset=utf-8`);
   return reply.send(Buffer.from(canonicalBytes(value)));
 }
 

@@ -143,6 +143,55 @@ clients can be written against it. **A registry that does not advertise
 `locations` point upstream instead. A metadata-only registry is a complete and
 useful registry; the MCP registry is one.
 
+## Reading a document you can parse
+
+Validating on publish stops a registry storing something no client can read. It
+does nothing for the client that meets a document published under **last
+year's** schema — which is the failure MCP shipped: entries carry whatever
+version they were published under, and a consumer that cannot deserialise one
+simply fails. The cost lands at install time, on the party least able to do
+anything about it.
+
+A client states what it can read:
+
+```http
+Accept: application/vnd.prex.manifest.v1+json
+```
+
+and the registry either serves that version — migrating the stored document
+through a registered chain, shortest route first, since every hop is a chance to
+lose something — or answers **`406`** naming what the document is and what it
+could be served as. `406` is a better answer than a document the client will
+mis-parse, because a mis-parse is silent.
+
+An absent `Accept`, `*/*`, or plain `application/json` means **no preference**,
+not "nothing is acceptable"; those get the stored version. The response's
+`Content-Type` names the version served, so a client that negotiated one does
+not have to read the body to learn what it got. A `q=0` is a refusal, and is
+honoured as one.
+
+## Search
+
+Search MUST NOT be the only thing a registry is slow at. `LIKE '%term%'` cannot
+use an index — every search is a full scan, and that is the shape behind the MCP
+registry's 20–25 second reads.
+
+There is exactly **one** index, and it is derived from the stored entries rather
+than maintained beside them. A search index kept as a second copy of the corpus
+is a second copy that can disagree with the first, and a registry whose search
+and reads disagree has two answers to the same question. A rename, a withdrawal,
+or a rebuild after an import must not be able to produce a divergence, because
+there is nothing to diverge.
+
+A registry that cannot build an index MUST still serve search, and MUST report
+which it used in `metadata.searchMode` (`indexed` or `scan`). One quietly
+falling back to a full scan is indistinguishable from one that is fast until it
+is not.
+
+Query text is treated as **terms, not syntax**. A search box that passes `NOT`,
+`*` or an unbalanced quote through to a query language turns some searches into
+errors and others into queries the user did not write.
+
 ## Holders, quotas, and moving a name
 
 A namespace proof binds a _key_ to a name prefix. That is the wrong unit for two

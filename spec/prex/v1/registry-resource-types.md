@@ -30,6 +30,7 @@ Clients MUST treat an absent type as **unsupported**.
 | `prex.registry.package-manifest/1`   | `GET /v1/packages/{name}/versions/{v}`                                       | Serve PREX package manifests over HTTP                    |
 | `prex.registry.sync/1`               | `GET /v1/packages?updatedSince=`                                             | Incremental replication for mirrors and subregistries     |
 | `prex.registry.namespace-proof/1`    | publish-time check                                                           | Verifies a signing key may publish under a name prefix    |
+| `prex.registry.manifest-versions/1`  | `Accept:` on any manifest read                                               | Read-time version negotiation; 406 when unrepresentable   |
 | `prex.registry.holders/1`            | `GET /v1/holders`, `GET /v1/holders/{id}`, `POST /v1/packages/{name}/rename` | Namespace ownership, quotas, and signed renames           |
 | `prex.registry.key-lifecycle/1`      | `GET /v1/revocations`, `POST /v1/keys/rotations`                             | Signed revocation list and attested key rotation          |
 

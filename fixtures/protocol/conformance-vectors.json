@@ -1704,6 +1704,34 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedPackageRedirect",
       "valid": false,
       "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-page-search-mode",
+      "file": "registry-api/package-page.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/metadata/searchMode",
+          "value": "indexed"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-page-unknown-search-mode",
+      "file": "registry-api/package-page.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/metadata/searchMode",
+          "value": "fast"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
+      "valid": false,
+      "levels": ["PREX-I"]
     }
   ]
 }

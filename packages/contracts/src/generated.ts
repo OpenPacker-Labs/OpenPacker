@@ -925,6 +925,7 @@ export type PageMetadata = {
   count: number;
   nextCursor?: Cursor | null;
   unavailable?: Array<{ sourceId: string; reason: string }>;
+  searchMode?: 'indexed' | 'scan';
 };
 export type PlatformContexts = {
   build?: TargetContext;
@@ -7024,6 +7025,11 @@ export const schemaCatalog: Record<string, JsonValue> = {
               },
               additionalProperties: false,
             },
+          },
+          searchMode: {
+            $comment:
+              "Which search ran. A registry quietly falling back to a full scan is indistinguishable from one that is fast until it is not, and `LIKE '%x%'` cannot use an index — the shape behind the MCP registry's 20-25 second reads.",
+            enum: ['indexed', 'scan'],
           },
         },
         additionalProperties: false,
