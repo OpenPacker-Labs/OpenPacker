@@ -17,6 +17,20 @@ import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue, PackageManifest } from '@openpacker/contracts';
 import type { ServiceabilityRecord } from './serviceability.js';
 import type { KeyRotation, RevocationEntry } from './keys.js';
+import { holderOf, type PackageRedirect, type ProofMethod } from './holders.js';
+
+export interface HolderNamespace {
+  namespace: string;
+  method: string;
+  keyIds: string[];
+  verifiedAt?: string;
+  packageCount: number;
+}
+
+export interface HolderSummary {
+  holderId: string;
+  namespaces: HolderNamespace[];
+}
 
 export type EntryStatus = 'active' | 'deprecated' | 'deleted';
 
@@ -105,9 +119,32 @@ export class RegistryStore {
         namespace TEXT NOT NULL,
         key_id TEXT NOT NULL,
         method TEXT NOT NULL,
+        holder_id TEXT NOT NULL DEFAULT '',
+        verified_at TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (namespace, key_id)
       ) STRICT;
+      CREATE INDEX IF NOT EXISTS namespace_keys_holder ON namespace_keys(holder_id);
+      CREATE TABLE IF NOT EXISTS publish_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        holder_id TEXT NOT NULL,
+        at INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS publish_events_holder ON publish_events(holder_id, at);
+      CREATE TABLE IF NOT EXISTS redirects (
+        from_name TEXT PRIMARY KEY,
+        to_name TEXT NOT NULL,
+        effective_at TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        previous_holder TEXT,
+        next_holder TEXT,
+        redirect_digest TEXT NOT NULL,
+        signatures BLOB NOT NULL
+      ) STRICT;
     `);
+    // A registry that predates holder attribution has proofs with no holder.
+    // Backfilling on open keeps `GET /v1/holders` honest about history rather
+    // than reporting an empty world until somebody publishes again.
+    this.#migrateNamespaceKeys();
   }
 
   ready(): boolean {
@@ -417,13 +454,25 @@ export class RegistryStore {
       );
   }
 
-  /** Bind a signing key to a namespace, as an operator decision. */
-  trustKey(namespace: string, keyId: string, method: string): void {
+  /** Bind a signing key to a namespace, attributed to the holder it rests on. */
+  trustKey(
+    namespace: string,
+    keyId: string,
+    method: string,
+    verifiedAt = '',
+  ): void {
     this.#database
       .prepare(
-        'INSERT OR REPLACE INTO namespace_keys(namespace, key_id, method) VALUES (?, ?, ?)',
+        `INSERT OR REPLACE INTO namespace_keys(namespace, key_id, method, holder_id, verified_at)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(namespace, keyId, method);
+      .run(
+        namespace,
+        keyId,
+        method,
+        holderOf(namespace, method as ProofMethod),
+        verifiedAt,
+      );
   }
 
   /** Key ids permitted to publish under a namespace. */
@@ -433,6 +482,154 @@ export class RegistryStore {
         .prepare('SELECT key_id FROM namespace_keys WHERE namespace = ?')
         .all(namespace) as { key_id: string }[]
     ).map((row) => row.key_id);
+  }
+
+  /** Every holder with a namespace here, most namespaces first. */
+  holders(): readonly HolderSummary[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT holder_id, COUNT(DISTINCT namespace) AS n
+         FROM namespace_keys WHERE holder_id != ''
+         GROUP BY holder_id ORDER BY n DESC, holder_id ASC`,
+      )
+      .all() as { holder_id: string; n: number }[];
+    return rows
+      .map((row) => this.holder(row.holder_id))
+      .filter((h) => h !== undefined);
+  }
+
+  /**
+   * One holder's namespaces, with how many packages sit under each.
+   *
+   * The package count is the whole reason this route exists: 75 namespaces is a
+   * different thing when they hold one package each than when they hold none.
+   */
+  holder(holderId: string): HolderSummary | undefined {
+    const rows = this.#database
+      .prepare(
+        `SELECT namespace, method, key_id, verified_at
+         FROM namespace_keys WHERE holder_id = ? ORDER BY namespace ASC`,
+      )
+      .all(holderId) as {
+      namespace: string;
+      method: string;
+      key_id: string;
+      verified_at: string;
+    }[];
+    if (rows.length === 0) return undefined;
+
+    const byNamespace = new Map<string, HolderNamespace>();
+    for (const row of rows) {
+      const existing = byNamespace.get(row.namespace);
+      if (existing) {
+        existing.keyIds.push(row.key_id);
+        continue;
+      }
+      byNamespace.set(row.namespace, {
+        namespace: row.namespace,
+        method: row.method,
+        keyIds: [row.key_id],
+        ...(row.verified_at === '' ? {} : { verifiedAt: row.verified_at }),
+        packageCount: this.#packagesUnder(row.namespace),
+      });
+    }
+    return { holderId, namespaces: [...byNamespace.values()] };
+  }
+
+  /** Which holder, if any, a namespace is attributed to. */
+  holderForNamespace(namespace: string): string | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT holder_id FROM namespace_keys WHERE namespace = ? AND holder_id != '' LIMIT 1`,
+      )
+      .get(namespace) as { holder_id: string } | undefined;
+    return row?.holder_id;
+  }
+
+  /** Millisecond timestamps of a holder's publishes inside a window. */
+  recentPublishes(holderId: string, sinceEpochMs: number): readonly number[] {
+    return (
+      this.#database
+        .prepare(
+          'SELECT at FROM publish_events WHERE holder_id = ? AND at > ? ORDER BY at ASC',
+        )
+        .all(holderId, sinceEpochMs) as { at: number }[]
+    ).map((row) => row.at);
+  }
+
+  recordPublish(holderId: string, atEpochMs: number): void {
+    this.#database
+      .prepare('INSERT INTO publish_events(holder_id, at) VALUES (?, ?)')
+      .run(holderId, atEpochMs);
+  }
+
+  /** Drop publish events older than the longest window anyone will ask about. */
+  prunePublishEvents(beforeEpochMs: number): void {
+    this.#database
+      .prepare('DELETE FROM publish_events WHERE at < ?')
+      .run(beforeEpochMs);
+  }
+
+  /**
+   * Move every version of a name.
+   *
+   * The entries move rather than being copied: two live copies of a package
+   * under different names would each accept publishes, and the day they
+   * diverge is the day a lockfile means two different things.
+   */
+  rename(from: string, to: string, now: string): void {
+    this.#database
+      .prepare('UPDATE entries SET name = ?, updated_at = ? WHERE name = ?')
+      .run(to, now, from);
+    this.#database
+      .prepare('UPDATE serviceability SET name = ? WHERE name = ?')
+      .run(to, from);
+    this.#recomputeLatest(to);
+  }
+
+  /** Record a signed move of a name. */
+  recordRedirect(
+    redirect: PackageRedirect,
+    redirectDigest: string,
+    signatures: readonly unknown[],
+  ): void {
+    this.#database
+      .prepare(
+        `INSERT OR REPLACE INTO redirects(from_name, to_name, effective_at, reason,
+           previous_holder, next_holder, redirect_digest, signatures)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        redirect.from,
+        redirect.to,
+        redirect.effectiveAt,
+        redirect.reason,
+        redirect.previousHolder ?? null,
+        redirect.nextHolder ?? null,
+        redirectDigest,
+        canonicalBytes(signatures as unknown as JsonValue),
+      );
+  }
+
+  redirect(
+    from: string,
+  ):
+    | { redirect: PackageRedirect; digest: string; signatures: unknown[] }
+    | undefined {
+    const row = this.#database
+      .prepare('SELECT * FROM redirects WHERE from_name = ?')
+      .get(from) as RedirectRow | undefined;
+    return row ? toRedirect(row) : undefined;
+  }
+
+  /** Every redirect, for chain resolution. */
+  redirects(): ReadonlyMap<string, PackageRedirect> {
+    const rows = this.#database
+      .prepare('SELECT * FROM redirects')
+      .all() as unknown as RedirectRow[];
+    return new Map(
+      rows.map((row) => [row.from_name, toRedirect(row).redirect]),
+    );
   }
 
   close(): void {
@@ -448,6 +645,36 @@ export class RegistryStore {
    * every one's ordering rules, and guessing them would make `latest` mean
    * something different depending on the package.
    */
+  /** Packages (not versions) whose name sits under a namespace. */
+  #packagesUnder(namespace: string): number {
+    const row = this.#database
+      .prepare(
+        `SELECT COUNT(DISTINCT name) AS n FROM entries
+         WHERE name = ? OR name LIKE ? ESCAPE '\\'`,
+      )
+      .get(namespace, `${escapeLike(namespace)}.%`) as { n: number };
+    return row.n;
+  }
+
+  /** Give pre-holder rows a holder, so history is not silently invisible. */
+  #migrateNamespaceKeys(): void {
+    const rows = this.#database
+      .prepare(
+        `SELECT namespace, key_id, method FROM namespace_keys WHERE holder_id = ''`,
+      )
+      .all() as { namespace: string; key_id: string; method: string }[];
+    for (const row of rows)
+      this.#database
+        .prepare(
+          'UPDATE namespace_keys SET holder_id = ? WHERE namespace = ? AND key_id = ?',
+        )
+        .run(
+          holderOf(row.namespace, row.method as ProofMethod),
+          row.namespace,
+          row.key_id,
+        );
+  }
+
   #recomputeLatest(name: string): void {
     this.#database
       .prepare('UPDATE entries SET is_latest = 0 WHERE name = ?')
@@ -487,6 +714,46 @@ interface Row {
   manifest_digest: string;
   manifest: Uint8Array;
   signatures: Uint8Array;
+}
+
+interface RedirectRow {
+  from_name: string;
+  to_name: string;
+  effective_at: string;
+  reason: string;
+  previous_holder: string | null;
+  next_holder: string | null;
+  redirect_digest: string;
+  signatures: Uint8Array;
+}
+
+function toRedirect(row: RedirectRow): {
+  redirect: PackageRedirect;
+  digest: string;
+  signatures: unknown[];
+} {
+  return {
+    redirect: {
+      redirectVersion: '1',
+      from: row.from_name,
+      to: row.to_name,
+      effectiveAt: row.effective_at,
+      reason: row.reason as 'rename' | 'transfer',
+      ...(row.previous_holder === null
+        ? {}
+        : { previousHolder: row.previous_holder }),
+      ...(row.next_holder === null ? {} : { nextHolder: row.next_holder }),
+    },
+    digest: row.redirect_digest,
+    signatures: JSON.parse(
+      new TextDecoder().decode(row.signatures),
+    ) as unknown[],
+  };
+}
+
+/** A namespace is dotted, and `_` is a LIKE wildcard. Escape before matching. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/gu, (character) => `\\${character}`);
 }
 
 function toEntry(row: Row): StoredEntry {

@@ -1,0 +1,25 @@
+{
+  "holderId": "dns:example.com",
+  "namespaces": [
+    {
+      "namespace": "com.example",
+      "method": "dns-txt",
+      "keyIds": ["publisher-1"],
+      "verifiedAt": "2026-08-01T00:00:00.000Z",
+      "packageCount": 12
+    },
+    {
+      "namespace": "com.example.labs",
+      "method": "dns-txt",
+      "keyIds": ["publisher-2"],
+      "packageCount": 0
+    }
+  ],
+  "firstSeen": "2026-08-01T00:00:00.000Z",
+  "quota": {
+    "limit": 120,
+    "windowSeconds": 3600,
+    "remaining": 118,
+    "resetAt": "2026-08-11T01:00:00.000Z"
+  }
+}
