@@ -34,6 +34,11 @@ export async function probeBackends(): Promise<BackendProbe[]> {
 /**
  * Select a backend for the preferred ladder. Does not include mock unless
  * nothing else exists and the caller is in tests (mock is inject-only).
+ *
+ * Under `auto`, prefer a working native jail when one is present (Linux bwrap /
+ * macOS seatbelt). MXC is still preferred when native is missing (typical
+ * Windows) or when the caller forces `prefer: "mxc"`. MXC remains early
+ * preview — native-first on capable hosts avoids hung MXC launches.
  */
 export async function resolveBackend(
   prefer: SandboxPrefer = 'auto',
@@ -48,13 +53,14 @@ export async function resolveBackend(
   if (prefer === 'native') {
     return createNativeBackend();
   }
-  // auto: MXC then native
+  // auto: native when available, else MXC
+  const native = createNativeBackend();
+  if (native) return native;
   try {
     return await createMxcBackend();
   } catch {
-    // fall through
+    return undefined;
   }
-  return createNativeBackend();
 }
 
 /**
