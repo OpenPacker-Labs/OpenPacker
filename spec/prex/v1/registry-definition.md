@@ -34,6 +34,30 @@ Related:
 Hosts merge both for negotiation. A control plane may expose install while a
 given registry resource set does not (or the reverse).
 
+## Sources and ecosystems are different axes
+
+A Registry Definition describes one **source**. A source is not an ecosystem:
+one source may serve several PURL types (a PREX registry holding npm, PyPI and
+NuGet packages), and one PURL type may be served by several sources (npmjs.org
+and an internal mirror).
+
+Hosts MUST therefore select a source separately from a PURL type. A host that
+keys only on PURL type cannot express "our npm packages come from the mirror"
+without one source displacing another, and which one wins becomes a function of
+load order.
+
+Selection precedence, highest first:
+
+1. A source named explicitly by the caller.
+2. A source the project pinned for that PURL type.
+3. The host's default for that PURL type.
+
+A named source that does not advertise the requested PURL type in its
+`purlTypes` MUST be an error. Falling back to the default would read from a
+source the caller did not choose, which is the failure naming a source exists to
+prevent. Two project-level sources claiming the same PURL type MUST likewise be
+an error rather than a silent choice.
+
 ## Document requirements
 
 A document that claims `registryDefinitionVersion: "1"` MUST validate against

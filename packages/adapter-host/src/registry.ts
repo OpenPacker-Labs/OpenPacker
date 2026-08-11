@@ -21,8 +21,15 @@ import { hasResource, requireResource } from './resources.js';
 export class AdapterRegistry {
   readonly #byId = new Map<string, AdapterModule>();
   readonly #byPurlType = new Map<string, AdapterModule>();
+  readonly #bySource = new Map<string, AdapterModule>();
 
-  /** Register a module. Later registration for the same purl type wins. */
+  /**
+   * Register a module as the default for the purl types it declares.
+   *
+   * Later registration for the same purl type wins, which is how a
+   * distribution pack is overridden. A module registered this way answers when
+   * no source was named.
+   */
   register(module: AdapterModule): void {
     this.#byId.set(module.id, module);
     for (const purlType of module.purlTypes)
@@ -33,6 +40,26 @@ export class AdapterRegistry {
     for (const module of modules) this.register(module);
   }
 
+  /**
+   * Register a module under a name, without claiming a purl type's default.
+   *
+   * A package source is not the same thing as an ecosystem. One PREX registry
+   * may serve npm, PyPI and NuGet packages at once, and registering it the
+   * ordinary way would silently displace the adapter that talks to npmjs.org —
+   * or be displaced by it, depending on which pack loaded last. A named source
+   * is reachable only when a caller asks for it.
+   */
+  registerSource(sourceId: string, module: AdapterModule): void {
+    const key = sourceId.trim().toLowerCase();
+    if (key === '')
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        'A named source needs a non-empty id',
+      );
+    this.#byId.set(module.id, module);
+    this.#bySource.set(key, module);
+  }
+
   list(): readonly AdapterModule[] {
     return [...this.#byId.values()];
   }
@@ -41,7 +68,19 @@ export class AdapterRegistry {
     return [...this.#byPurlType.keys()].sort();
   }
 
-  moduleFor(purlType: string): AdapterModule {
+  sourceIds(): readonly string[] {
+    return [...this.#bySource.keys()].sort();
+  }
+
+  /**
+   * The module that answers for a purl type, honouring a named source.
+   *
+   * Whether the named source can actually serve this purl type is settled
+   * against its Registry Definition in `definitionFor`, not here — the
+   * definition is the authority on that, and it may need I/O to read.
+   */
+  moduleFor(purlType: string, sourceId?: string): AdapterModule {
+    if (sourceId !== undefined) return this.moduleForSource(sourceId);
     const module = this.#byPurlType.get(purlType.toLowerCase());
     if (!module)
       throw new AdapterHostError(
@@ -52,6 +91,21 @@ export class AdapterRegistry {
     return module;
   }
 
+  moduleForSource(sourceId: string): AdapterModule {
+    const module = this.#bySource.get(sourceId.trim().toLowerCase());
+    if (!module)
+      throw new AdapterHostError(
+        'UNKNOWN_SOURCE',
+        `No source named "${sourceId}" is registered. ` +
+          `Registered: ${this.sourceIds().join(', ') || '(none)'}.`,
+      );
+    return module;
+  }
+
+  hasSource(sourceId: string): boolean {
+    return this.#bySource.has(sourceId.trim().toLowerCase());
+  }
+
   has(purlType: string): boolean {
     return this.#byPurlType.has(purlType.toLowerCase());
   }
@@ -60,9 +114,31 @@ export class AdapterRegistry {
     purlType: string,
     context: AdapterContext = {},
   ): Promise<RegistryDefinition> {
-    return this.moduleFor(purlType).registryDefinition(context);
+    const module = this.moduleFor(purlType, context.sourceId);
+    const definition = await module.registryDefinition(context);
+    // A named source is used for this purl type only if it says it serves it.
+    // Falling back to the ecosystem default here would quietly fetch from
+    // somewhere the caller did not ask for, which is the opposite of what
+    // naming a source is for.
+    if (
+      context.sourceId !== undefined &&
+      !definition.purlTypes.some(
+        (type) => type.toLowerCase() === purlType.toLowerCase(),
+      )
+    )
+      throw new AdapterHostError(
+        'UNSUPPORTED_ECOSYSTEM',
+        `Source "${context.sourceId}" does not serve purl type "${purlType}". ` +
+          `It serves: ${definition.purlTypes.join(', ') || '(none)'}.`,
+      );
+    return definition;
   }
 
+  /**
+   * Codec for a purl type. Deliberately not source-aware: a codec is the
+   * ecosystem's own version and range semantics, and those do not change
+   * because the bytes came from a mirror.
+   */
   codecFor(purlType: string): EcosystemCodec {
     const module = this.moduleFor(purlType);
     if (!module.codec)
@@ -76,14 +152,17 @@ export class AdapterRegistry {
   /**
    * Catalog provider for a purl type, fail-closed when the registry definition
    * does not advertise package-metadata (inspect) or enumerate as required.
+   *
+   * Honours `context.sourceId`, so this is where "get chalk from our mirror
+   * rather than from npmjs.org" is decided.
    */
   async catalogFor(
     purlType: string,
     context: AdapterContext = {},
     required: readonly string[] = ['prex.registry.package-metadata/1'],
   ): Promise<CatalogProvider> {
-    const module = this.moduleFor(purlType);
-    const definition = await module.registryDefinition(context);
+    const module = this.moduleFor(purlType, context.sourceId);
+    const definition = await this.definitionFor(purlType, context);
     for (const type of required) requireResource(definition, type);
     if (!module.catalog)
       throw new AdapterHostError(

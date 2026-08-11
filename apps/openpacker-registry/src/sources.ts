@@ -1,0 +1,189 @@
+/**
+ * Federation: serve packages this registry does not hold.
+ *
+ * An operator wants one index over sources they do not own — npm, an internal
+ * feed, another PREX registry. That needs no new machinery, because the
+ * plug-in that lets `opm` reach npm is the same one a registry uses. This is
+ * the existing abstraction pointed the other way.
+ *
+ * Two rules keep it honest. A relayed entry is tagged with the `sourceId` it
+ * came from, so a consumer can always tell what the registry holds from what
+ * it is passing along. And the local store wins on a name collision — an
+ * upstream that starts publishing a name you already publish must not
+ * silently take it over.
+ */
+
+import type { PackageManifest, RegistryEntry } from '@openpacker/contracts';
+import { RegistryClient } from '@openpacker/registry-client';
+import type { CatalogProvider } from '@openpacker/adapter-core';
+
+export type SourceSpec =
+  /** Packages published to this registry. Always present, always first. */
+  | { kind: 'published' }
+  /** Another PREX registry, read through the ordinary client. */
+  | { kind: 'prex'; url: string }
+  /**
+   * An upstream ecosystem through an adapter's CatalogProvider — the same
+   * object `opm` uses to reach npmjs.org.
+   */
+  | { kind: 'adapter'; purlType: string; provider: CatalogProvider };
+
+export interface ConfiguredSource {
+  id: string;
+  spec: SourceSpec;
+}
+
+export interface FederationOptions {
+  sources: readonly ConfiguredSource[];
+  registryId: string;
+  /**
+   * How to reach an upstream registry.
+   *
+   * Injectable because a deployment wants one shared transport with its own
+   * timeouts and credentials, and because a federation that can only build its
+   * own client cannot be driven against an in-process instance — which would
+   * mean the relay path is only ever tested by a stand-in for itself.
+   */
+  clientFactory?: (source: { id: string; url: string }) => RegistryClient;
+}
+
+/**
+ * Query configured sources for entries the local store did not answer.
+ *
+ * Failures are per-source and reported, not thrown: one upstream being down
+ * should degrade the index, not take it offline. What is *not* done is
+ * pretending the result is complete — `unavailable` names every source that
+ * did not answer so a caller can tell a miss from an outage.
+ */
+export class Federation {
+  readonly #sources: readonly ConfiguredSource[];
+  readonly #clients = new Map<string, RegistryClient>();
+
+  constructor(private readonly options: FederationOptions) {
+    this.#sources = options.sources.filter(
+      (source) => source.spec.kind !== 'published',
+    );
+  }
+
+  get sourceIds(): readonly string[] {
+    return this.#sources.map((source) => source.id);
+  }
+
+  /** Every purl type the configured sources say they serve. */
+  async purlTypes(): Promise<readonly string[]> {
+    const out = new Set<string>();
+    for (const source of this.#sources) {
+      if (source.spec.kind === 'adapter') {
+        out.add(source.spec.purlType);
+        continue;
+      }
+      if (source.spec.kind !== 'prex') continue;
+      const url = source.spec.url;
+      try {
+        for (const type of (await this.#client(source.id, url)).purlTypes ?? [])
+          out.add(type);
+      } catch {
+        // A source that cannot be reached at start-up contributes nothing to
+        // the advertised set rather than blocking the index from starting.
+      }
+    }
+    return [...out].sort();
+  }
+
+  /**
+   * Find one package version upstream.
+   *
+   * First answer wins, in configuration order, so precedence is something the
+   * operator wrote down rather than a race.
+   */
+  async find(
+    name: string,
+    version: string,
+  ): Promise<{ entry: RegistryEntry; sourceId: string } | undefined> {
+    for (const source of this.#sources) {
+      if (source.spec.kind !== 'prex') continue;
+      try {
+        const client = await this.#clientFor(source.id, source.spec.url);
+        const entry = await client.entry(name, version);
+        // Verify before relaying. Passing along something whose digest does
+        // not match would launder an upstream's contradiction into this
+        // registry's own answer.
+        await client.verifyEntry(entry);
+        return { entry: this.#tag(entry, source.id), sourceId: source.id };
+      } catch {
+        // Not here, or not reachable. Try the next source.
+      }
+    }
+    return undefined;
+  }
+
+  /** Search every source, tagging each result with where it came from. */
+  async search(
+    query: string,
+    limit: number,
+  ): Promise<{
+    entries: RegistryEntry[];
+    unavailable: { sourceId: string; reason: string }[];
+  }> {
+    const entries: RegistryEntry[] = [];
+    const unavailable: { sourceId: string; reason: string }[] = [];
+    for (const source of this.#sources) {
+      if (source.spec.kind !== 'prex') continue;
+      try {
+        const client = await this.#clientFor(source.id, source.spec.url);
+        for await (const entry of client.listAll({ search: query, limit })) {
+          entries.push(this.#tag(entry, source.id));
+          if (entries.length >= limit) break;
+        }
+      } catch (error) {
+        unavailable.push({
+          sourceId: source.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+      if (entries.length >= limit) break;
+    }
+    return { entries, unavailable };
+  }
+
+  /**
+   * Restate a relayed entry as this registry's answer, without laundering it.
+   *
+   * `registryId` becomes this registry — it is the one answering — but
+   * `sourceId` records who actually holds it, and the upstream's signatures
+   * are carried through untouched so they still verify against the upstream's
+   * key rather than this one's.
+   */
+  #tag(entry: RegistryEntry, sourceId: string): RegistryEntry {
+    return {
+      ...entry,
+      registryMetadata: {
+        ...entry.registryMetadata,
+        registryId: this.options.registryId,
+        sourceId,
+      },
+    };
+  }
+
+  async #clientFor(id: string, url: string): Promise<RegistryClient> {
+    const existing = this.#clients.get(id);
+    if (existing) return existing;
+    const client =
+      this.options.clientFactory?.({ id, url }) ??
+      new RegistryClient({ baseUrl: url });
+    this.#clients.set(id, client);
+    return client;
+  }
+
+  async #client(id: string, url: string) {
+    return (await this.#clientFor(id, url)).definition();
+  }
+}
+
+/** True when a manifest names something this registry itself publishes. */
+export function isLocal(
+  local: (name: string, version: string) => unknown,
+  manifest: Pick<PackageManifest, 'name' | 'version'>,
+): boolean {
+  return local(manifest.name, manifest.version) !== undefined;
+}

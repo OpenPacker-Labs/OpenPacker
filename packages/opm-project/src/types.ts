@@ -26,6 +26,19 @@ export interface PackageRequirement {
   scope?: RequirementScope;
 }
 
+export interface RegistrySource {
+  /** Source id, matching its key. */
+  id: string;
+  /** Base URL of a PREX registry, or an adapter-defined locator. */
+  url: string;
+  /**
+   * Purl types this source answers for by default, so a project can say "our
+   * npm packages come from the mirror" without repeating it per requirement.
+   * Empty means the source is available but never chosen automatically.
+   */
+  defaultFor?: readonly string[];
+}
+
 export type RequirementScope =
   | 'runtime'
   | 'development'
@@ -65,6 +78,14 @@ export interface OpmManifest {
     ecosystems: readonly string[];
   };
   packages: Record<string, PackageRequirement>;
+  /**
+   * Named package sources this project may read from, keyed by source id.
+   *
+   * A source is not an ecosystem — one PREX registry can serve npm, PyPI and
+   * NuGet at once — so it is configured separately from `project.ecosystems`
+   * and selected per purl type by `defaultFor`.
+   */
+  registries?: Record<string, RegistrySource>;
   options: {
     offline: boolean;
     layout: 'opm';

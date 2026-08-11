@@ -5,6 +5,8 @@ import {
 } from '@openpacker/adapter-core';
 import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
+import type { OpmManifest } from './types.js';
+import { MANIFEST_NAME } from './paths.js';
 import { requireAdapterRegistry } from './adapters.js';
 
 /**
@@ -93,6 +95,16 @@ export function allowedOriginsFor(ecosystem: string): string[] {
 
 export interface RegistryOptions {
   offline?: boolean;
+  /**
+   * Answer from a named source instead of the ecosystem's default adapter.
+   *
+   * Resolution precedence, highest first: this field (an explicit `--registry`
+   * or a call-site choice), the source a project pinned in `opm.toml`, then the
+   * ecosystem default. A named source that does not serve the purl type is an
+   * error, not a fallback — falling back would fetch from somewhere nobody
+   * asked for.
+   */
+  sourceId?: string;
   transport?: HttpTransport;
   fetch?: typeof fetch;
   now?: () => string;
@@ -111,6 +123,44 @@ function mapHostError(error: unknown): never {
   if (error instanceof AdapterHostError)
     throw new OpmError(error.code, error.message);
   throw error;
+}
+
+/**
+ * Which named source should answer for a purl type.
+ *
+ * Precedence, highest first:
+ *
+ * 1. `requested` — an explicit `--registry`, or a call site that already knows.
+ * 2. The project's own pin: a `[registries.<id>]` whose `default_for` lists
+ *    this purl type.
+ * 3. Nothing, meaning the ecosystem's default adapter answers.
+ *
+ * Two project sources claiming the same purl type is a configuration error
+ * rather than a coin flip — picking one silently is how a build starts reading
+ * from a registry nobody chose.
+ */
+export function sourceForEcosystem(
+  ecosystem: string,
+  manifest: Pick<OpmManifest, 'registries'> | undefined,
+  requested?: string,
+): string | undefined {
+  if (requested !== undefined && requested !== '') return requested;
+  const claimants = Object.values(manifest?.registries ?? {}).filter((source) =>
+    source.defaultFor?.some(
+      (type) => type.toLowerCase() === ecosystem.toLowerCase(),
+    ),
+  );
+  if (claimants.length > 1)
+    throw new OpmError(
+      'AMBIGUOUS_SOURCE',
+      `More than one registry claims "${ecosystem}" in ${MANIFEST_NAME}: ` +
+        `${claimants
+          .map((source) => source.id)
+          .sort()
+          .join(', ')}. ` +
+        'Give default_for to one of them, and select the other explicitly.',
+    );
+  return claimants[0]?.id;
 }
 
 /**
@@ -138,8 +188,12 @@ export async function providerForWithDiscovery(
 ): Promise<CatalogProvider> {
   assertOnline(ecosystem, options.offline);
   const registry = requireAdapterRegistry();
+  // A named source owns its own endpoint and origin allowlist; applying the
+  // ecosystem's would point a mirror at npmjs.org, or refuse the mirror's own
+  // origin as unsafe.
+  const named = options.sourceId !== undefined;
   const endpoint =
-    DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+    named || DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
       ? undefined
       : registryEndpoint(ecosystem);
   const transport =
@@ -154,6 +208,9 @@ export async function providerForWithDiscovery(
       ecosystem,
       {
         ...(options.offline !== undefined ? { offline: options.offline } : {}),
+        ...(options.sourceId === undefined
+          ? {}
+          : { sourceId: options.sourceId }),
         ...(endpoint === undefined ? {} : { endpoint }),
         ...(transport === undefined ? {} : { transport }),
         ...(options.fetch ? { fetch: options.fetch } : {}),

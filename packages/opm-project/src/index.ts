@@ -10,6 +10,7 @@ export type {
   NativeProjectionLevel,
   OpmManifest,
   PackageRequirement,
+  RegistrySource,
   ParsedPackageSpec,
   ProjectState,
   RequirementScope,
@@ -130,6 +131,7 @@ export {
   registryEndpoint,
   resolveRegistryArtifact,
   searchRegistry,
+  sourceForEcosystem,
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';

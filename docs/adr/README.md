@@ -36,6 +36,7 @@ Accepted decisions:
 32. [WIT adapters and capability-discoverable registry definitions](0032-wit-adapters-and-registry-definition.md)
 33. [Native supply-chain capture and mitigation](0033-native-supply-chain-capture-and-mitigation.md)
 34. [opm maintains the ecosystem's own project files](0034-opm-projects-into-native-project-formats.md)
+35. [A PREX registry is a Registry Definition with an HTTP binding](0035-a-registry-is-a-registry-definition-with-an-http-binding.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

@@ -14,6 +14,7 @@ import {
   removePackage,
   parseManifest,
   serializeManifest,
+  sourceForEcosystem,
   withPackedArtifact,
   type OpmManifest,
 } from '../src/index.js';
@@ -516,5 +517,75 @@ describe('package manifest', () => {
     // as the same document.
     expect(second.digest).toEqual(first.digest);
     expect(second.bytes).toEqual(first.bytes);
+  });
+});
+
+describe('named registry sources in opm.toml', () => {
+  const manifestText = (body: string) => `
+[project]
+name = "app"
+ecosystems = ["npm"]
+
+${body}
+[options]
+offline = false
+layout = "opm"
+`;
+
+  it('round-trips a named registry through parse and serialize', () => {
+    const parsed = parseManifest(
+      manifestText(
+        '[registries.mirror]\nurl = "https://reg.corp.example/"\ndefault_for = ["npm", "pypi"]\n',
+      ),
+    );
+    expect(parsed.registries?.mirror).toEqual({
+      id: 'mirror',
+      url: 'https://reg.corp.example/',
+      defaultFor: ['npm', 'pypi'],
+    });
+    expect(parseManifest(serializeManifest(parsed)).registries).toEqual(
+      parsed.registries,
+    );
+  });
+
+  it('refuses a registry with no url, and an unknown field', () => {
+    expect(() =>
+      parseManifest(
+        manifestText('[registries.mirror]\ndefault_for = ["npm"]\n'),
+      ),
+    ).toThrow(/missing required url/);
+    expect(() =>
+      parseManifest(
+        manifestText(
+          '[registries.mirror]\nurl = "https://x/"\nmirror = true\n',
+        ),
+      ),
+    ).toThrow(/Unknown registry field "mirror"/);
+  });
+
+  it('picks the project pin, and an explicit request beats it', () => {
+    const manifest = parseManifest(
+      manifestText(
+        '[registries.mirror]\nurl = "https://reg.corp.example/"\ndefault_for = ["npm"]\n',
+      ),
+    );
+    expect(sourceForEcosystem('npm', manifest)).toBe('mirror');
+    expect(sourceForEcosystem('npm', manifest, 'other')).toBe('other');
+    // Nothing claims cargo, so the ecosystem default answers.
+    expect(sourceForEcosystem('cargo', manifest)).toBeUndefined();
+    expect(sourceForEcosystem('npm', undefined)).toBeUndefined();
+  });
+
+  it('refuses to guess when two sources claim the same ecosystem', () => {
+    const manifest = parseManifest(
+      manifestText(
+        '[registries.one]\nurl = "https://one/"\ndefault_for = ["npm"]\n\n[registries.two]\nurl = "https://two/"\ndefault_for = ["npm"]\n',
+      ),
+    );
+    // Picking one silently is how a build starts reading from a registry
+    // nobody chose.
+    expect(() => sourceForEcosystem('npm', manifest)).toThrow(
+      /More than one registry claims "npm"/,
+    );
   });
 });

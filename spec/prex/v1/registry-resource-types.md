@@ -26,6 +26,10 @@ Clients MUST treat an absent type as **unsupported**.
 | `prex.registry.project-lock/1`       | `project.write-lock`                      | Write the ecosystem's native lockfile                     |
 | `prex.registry.project-layout/1`     | `project.write-layout`                    | Materialise the ecosystem's native install layout         |
 | `prex.registry.package-build/1`      | `project.pack`                            | Build a vendor artifact from a project                    |
+| `prex.registry.publish/1`            | `POST /v1/publish`                        | Accept a signed package manifest                          |
+| `prex.registry.package-manifest/1`   | `GET /v1/packages/{name}/versions/{v}`    | Serve PREX package manifests over HTTP                    |
+| `prex.registry.sync/1`               | `GET /v1/packages?updatedSince=`          | Incremental replication for mirrors and subregistries     |
+| `prex.registry.namespace-proof/1`    | publish-time check                        | Verifies a signing key may publish under a name prefix    |
 
 ## Ecosystem mapping (informative)
 

@@ -3,6 +3,7 @@ import type {
   NativeProjectionLevel,
   OpmManifest,
   PackageRequirement,
+  RegistrySource,
   RequirementScope,
 } from './types.js';
 import { OpmError } from './types.js';
@@ -65,6 +66,15 @@ export function serializeManifest(manifest: OpmManifest): string {
       }
       lines.push('');
     }
+  }
+
+  for (const id of Object.keys(manifest.registries ?? {}).sort()) {
+    const source = manifest.registries![id]!;
+    lines.push(`[registries.${escapeKey(id)}]`);
+    lines.push(`url = ${tomlString(source.url)}`);
+    if (source.defaultFor !== undefined && source.defaultFor.length > 0)
+      lines.push(`default_for = ${tomlStringArray(source.defaultFor)}`);
+    lines.push('');
   }
 
   lines.push('[options]');
@@ -152,6 +162,11 @@ export function parseManifest(text: string): OpmManifest {
       scope?: RequirementScope;
     }
   >();
+  let registryId: string | undefined;
+  const registryScratch = new Map<
+    string,
+    { url?: string; default_for?: string[] }
+  >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -169,6 +184,12 @@ export function parseManifest(text: string): OpmManifest {
         section = name;
         packageAlias = undefined;
         if (name === 'policy') hasPolicy = true;
+      } else if (name.startsWith('registries.')) {
+        section = 'registries';
+        registryId = name.slice('registries.'.length);
+        packageAlias = undefined;
+        if (!registryScratch.has(registryId))
+          registryScratch.set(registryId, {});
       } else if (name.startsWith('packages.')) {
         section = 'packages';
         packageAlias = name.slice('packages.'.length);
@@ -229,6 +250,22 @@ export function parseManifest(text: string): OpmManifest {
           'INVALID_MANIFEST',
           `Unknown options field "${key}" at line ${i + 1}`,
         );
+    } else if (section === 'registries') {
+      if (registryId === undefined)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Registry field outside [registries.<id>] at line ${i + 1}`,
+        );
+      const scratch = registryScratch.get(registryId) ?? {};
+      if (key === 'url' && typeof value === 'string') scratch.url = value;
+      else if (key === 'default_for' && Array.isArray(value))
+        scratch.default_for = value;
+      else
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown registry field "${key}" at line ${i + 1}`,
+        );
+      registryScratch.set(registryId, scratch);
     } else if (section === 'policy') {
       // A misspelled policy key must not be a silently weaker policy. Every
       // other section rejects unknown fields; the governance section is the
@@ -308,6 +345,25 @@ export function parseManifest(text: string): OpmManifest {
       }));
     }
     manifest.packages[alias] = requirement;
+  }
+
+  if (registryScratch.size > 0) {
+    const registries: Record<string, RegistrySource> = {};
+    for (const [id, scratch] of registryScratch) {
+      if (!scratch.url)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Registry "${id}" is missing required url`,
+        );
+      registries[id] = {
+        id,
+        url: scratch.url,
+        ...(scratch.default_for === undefined
+          ? {}
+          : { defaultFor: scratch.default_for }),
+      };
+    }
+    manifest.registries = registries;
   }
 
   if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
