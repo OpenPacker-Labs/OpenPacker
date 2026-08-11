@@ -1,0 +1,32 @@
+{
+  "name": "@openpacker/openpacker-registry",
+  "version": "0.1.0",
+  "description": "A PREX registry: serves package manifests over the registry HTTP binding",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "openpacker-registry": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "check:contracts": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-host": "0.1.0",
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/registry-client": "0.1.0",
+    "@openpacker/trust": "0.1.0",
+    "fastify": "5.11.2"
+  },
+  "devDependencies": {
+    "@openpacker/adapter-core": "0.1.0",
+    "@types/node": "24.2.1"
+  }
+}
