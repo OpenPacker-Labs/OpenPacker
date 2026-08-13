@@ -192,6 +192,12 @@ describe('installing', () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.installedVersion).toBe('8.5.0-2ubuntu10.11');
     expect(outcome.sandboxEnforced).toBe(false);
+    expect(outcome.semanticLoss.map((loss) => loss.code)).toContain(
+      'SYSTEM_INSTALL_NOT_SANDBOXED',
+    );
+    expect(outcome.semanticLoss.map((loss) => loss.code)).not.toContain(
+      'SYSTEM_INSTALL_SANDBOXED',
+    );
     expect(calls).toContainEqual([
       'sudo',
       'apt-get',

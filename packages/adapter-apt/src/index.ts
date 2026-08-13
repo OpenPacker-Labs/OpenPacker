@@ -214,7 +214,7 @@ export class AptSystemProvider implements InstallerProvider {
       const result = await runHostInstaller({
         argv: plan.command,
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-        ...(options.offline === undefined ? { offline: options.offline } : {}),
+        ...(options.offline === undefined ? {} : { offline: options.offline }),
         ecosystem: 'deb',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ambientExecute: async () => {
