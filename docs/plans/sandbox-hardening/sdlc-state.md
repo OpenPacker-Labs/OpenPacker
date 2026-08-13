@@ -1,9 +1,9 @@
 # sdlc state — sandbox security hardening
 
 - Initiative: close audit gaps (C1/C2/H1–H4/M1–M4) as one-shot swarm
-- Phase: **complete** — #73 on main; gap-close follow-up on this session
+- Phase: **complete** — #73 + #74 on main
 - Trunk base: `9c71d2b`
-- Shipped: `e6f5504` (#73)
+- Shipped: `e6f5504` (#73); gap-close `e3ec252` (#74)
 - Issues: #63–#72 closed via #73
 
 ## Delivered
