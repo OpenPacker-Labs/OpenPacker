@@ -17,6 +17,7 @@ import {
   HostInstallerSandboxError,
   planSandboxSummary,
   runHostInstaller,
+  type HostInstallerRunInput,
 } from '@openpacker/sandbox';
 
 /**
@@ -59,6 +60,28 @@ const APT_LOSS: readonly SemanticLoss[] = [
     blocksProfile: [],
   },
 ];
+
+/**
+ * Build the `runHostInstaller` input.
+ *
+ * Isolated so a unit test can fail the inverted optional-spread
+ * (`undefined ? { offline: undefined } : {}`), which drops `offline: true`
+ * and grants the jail network on an offline install.
+ */
+export function hostInstallerInput(
+  options: InstallOptions,
+  argv: readonly string[],
+  ambientExecute: HostInstallerRunInput['ambientExecute'],
+): HostInstallerRunInput {
+  return {
+    argv,
+    ecosystem: 'deb',
+    ambientExecute,
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+    ...(options.offline === undefined ? {} : { offline: options.offline }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  };
+}
 
 /** `pkg:deb/debian/curl@7.88.1` → the name apt knows. */
 function aptName(exactPurl: string): { name: string; version?: string } {
@@ -211,21 +234,16 @@ export class AptSystemProvider implements InstallerProvider {
       );
 
     try {
-      const result = await runHostInstaller({
-        argv: plan.command,
-        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-        ...(options.offline === undefined ? {} : { offline: options.offline }),
-        ecosystem: 'deb',
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ambientExecute: async () => {
+      const result = await runHostInstaller(
+        hostInstallerInput(options, plan.command, async () => {
           const [file, ...args] = plan.command;
           return this.execute(
             file!,
             args,
             options.signal ? { signal: options.signal } : {},
           );
-        },
-      });
+        }),
+      );
       const { installed } = await this.versions(
         aptName(exactPurl).name,
         options.signal,

@@ -172,13 +172,7 @@ test('production package-run paths go through @openpacker/sandbox', async () => 
 
   const apt = read(join(root, 'packages/adapter-apt/src/index.ts'), 'utf8');
   assert.match(apt, /runHostInstaller/);
+  assert.match(apt, /hostInstallerInput\(options,/);
   assert.doesNotMatch(apt, /SYSTEM_INSTALL_SANDBOXED/);
   assert.doesNotMatch(apt, /profile: 'package-exec'/);
-  // Same optional-spread as winget/choco: omit when unset, pass when set.
-  // The inverted form (`undefined ? { offline: undefined }`) would grant
-  // network on an offline jailed install.
-  assert.match(
-    apt,
-    /options\.offline === undefined \? \{\} : \{ offline: options\.offline \}/,
-  );
 });
