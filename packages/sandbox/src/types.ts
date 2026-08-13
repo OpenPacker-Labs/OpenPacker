@@ -136,6 +136,7 @@ export interface SandboxBackend {
     /** package-exec uses minimal binds; host-install uses broader. */
     profile: SandboxProfile;
     legacyFatRoot?: boolean;
+    timeoutMs?: number;
     signal?: AbortSignal;
   }): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 }

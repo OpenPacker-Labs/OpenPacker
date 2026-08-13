@@ -72,12 +72,14 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           ? mod.getTemporaryFilesPolicy()
           : { readwritePaths: [] as string[] };
 
-      const readonlyPaths = [...input.readonlyPaths];
-      const readwritePaths = [
-        ...(temp.readwritePaths ?? []),
-        ...input.readwritePaths,
-        input.cwd,
-      ];
+      const { readonlyPaths, readwritePaths } = mxcFilesystemPaths({
+        readonlyPaths: input.readonlyPaths,
+        readwritePaths: [
+          ...(temp.readwritePaths ?? []),
+          ...input.readwritePaths,
+        ],
+        cwd: input.cwd,
+      });
 
       const config = mod.createConfigFromPolicy({
         version: '0.7.0-alpha',
@@ -88,7 +90,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
         network: {
           allowOutbound: input.network,
         },
-        timeoutMs: 600_000,
+        timeoutMs: input.timeoutMs ?? 600_000,
       });
 
       // commandLine as joined argv — MXC expects a command line string on
@@ -169,6 +171,24 @@ async function collectChild(
       });
     });
   });
+}
+
+/**
+ * MXC filesystem grants. cwd is visible RO unless the caller already granted
+ * write — auto-RW cwd would reopen project-write (audit C2).
+ */
+export function mxcFilesystemPaths(input: {
+  readonlyPaths: readonly string[];
+  readwritePaths: readonly string[];
+  cwd: string;
+}): { readonlyPaths: string[]; readwritePaths: string[] } {
+  const readwritePaths = [...input.readwritePaths];
+  const readonlyPaths = [...input.readonlyPaths];
+  const rw = new Set(readwritePaths);
+  if (!rw.has(input.cwd) && !readonlyPaths.includes(input.cwd)) {
+    readonlyPaths.push(input.cwd);
+  }
+  return { readonlyPaths, readwritePaths };
 }
 
 /** Used only when tests force ambient degraded execution. */

@@ -26,17 +26,17 @@
 
 ## Work packages
 
-| WP  | Title                        | Branch / tip                          | Issue | Status                 |
-| --- | ---------------------------- | ------------------------------------- | ----- | ---------------------- |
-| A   | Spec, ADR, docs (contracts)  | `sdlc/sandbox-01-contracts` `c54ac67` | #50   | landed on branch       |
-| B   | `@openpacker/sandbox` core   | same                                  | #51   | landed on branch       |
-| C   | Policy + contracts plumbing  | same                                  | #52   | landed on branch       |
-| D   | Materialize + lifecycle jail | same `2275c99`                        | #53   | landed on branch       |
-| E   | opmx + ephemeral sandbox     | same `2275c99`                        | #54   | landed on branch       |
-| F   | Host installers              | same `2275c99`                        | #55   | **partial** — apt only |
-| G   | Receipts / generations       | open                                  | #56   | open                   |
-| H   | Security tests + gates       | boundary test only                    | #57   | partial                |
-| I   | Wiring + example project     | open                                  | #58   | open                   |
+| WP  | Title                        | Branch / tip                          | Issue | Status                                                                 |
+| --- | ---------------------------- | ------------------------------------- | ----- | ---------------------------------------------------------------------- |
+| A   | Spec, ADR, docs (contracts)  | `sdlc/sandbox-01-contracts` `c54ac67` | #50   | landed on branch                                                       |
+| B   | `@openpacker/sandbox` core   | same                                  | #51   | landed on branch                                                       |
+| C   | Policy + contracts plumbing  | same                                  | #52   | landed on branch                                                       |
+| D   | Materialize + lifecycle jail | same `2275c99`                        | #53   | landed on branch                                                       |
+| E   | opmx + ephemeral sandbox     | same `2275c99`                        | #54   | landed on branch                                                       |
+| F   | Host installers              | #55 + later funnel fix                | #55   | landed — all four on `runHostInstaller`                                |
+| G   | Receipts / generations       | generation `policyDigest` + backends  | #56   | landed (host installs still irreversible, not generation-rollbackable) |
+| H   | Security tests + gates       | #57 + #62 + #73 + gap-close           | #57   | landed                                                                 |
+| I   | Wiring + example project     | `examples/opm-project`                | #58   | landed                                                                 |
 
 ## Merge order (stack hygiene only)
 

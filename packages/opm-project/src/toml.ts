@@ -144,17 +144,34 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push('');
   }
 
+  const pePreview = manifest.policy as
+    | (PolicyInput & {
+        projectWrite?: boolean;
+        minimalPath?: boolean;
+        strictLifecycleAllowlist?: boolean;
+        allowDangerousGrants?: boolean;
+        legacyFatRoot?: boolean;
+        timeoutMs?: number;
+      })
+    | undefined;
   if (
     manifest.policy?.sandboxMode !== undefined ||
     manifest.policy?.sandboxPrefer !== undefined ||
     manifest.policy?.sandboxRequired !== undefined ||
     manifest.policy?.allowHostUnsandboxedInstall !== undefined ||
+    pePreview?.projectWrite !== undefined ||
+    pePreview?.minimalPath !== undefined ||
+    pePreview?.strictLifecycleAllowlist !== undefined ||
+    pePreview?.allowDangerousGrants !== undefined ||
+    pePreview?.legacyFatRoot !== undefined ||
+    pePreview?.timeoutMs !== undefined ||
     (manifest.policy?.sandboxPackageGrants &&
       Object.keys(manifest.policy.sandboxPackageGrants).length > 0)
   ) {
+    const p = manifest.policy;
+    if (!p) return lines.join('\n');
     lines.push('# Package install/execution jail (ADR 0036)');
     lines.push('[sandbox]');
-    const p = manifest.policy;
     if (p.sandboxMode === 'off') lines.push('enabled = false');
     else if (p.sandboxMode !== undefined) {
       lines.push('enabled = true');

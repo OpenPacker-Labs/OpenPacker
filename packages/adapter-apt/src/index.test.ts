@@ -94,6 +94,24 @@ describe('planning', () => {
         loss.blocksProfile.includes('native-validated-v1'),
       ),
     ).toBe(true);
+    expect(plan.sandbox).toEqual({
+      mode: 'fail-closed',
+      prefer: 'auto',
+      willEnforce: true,
+    });
+  });
+
+  it('does not claim full jail enforcement for host-install', async () => {
+    const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
+    const jailed = await apt.plan('pkg:deb/curl');
+    expect(jailed.sandbox?.willEnforce).toBe(true);
+    const ambient = await apt.plan('pkg:deb/curl', {
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
+    expect(ambient.sandbox?.willEnforce).toBe(false);
+    expect(ambient.semanticLoss.map((loss) => loss.code)).not.toContain(
+      'SYSTEM_INSTALL_SANDBOXED',
+    );
   });
 
   it('refuses anything that is not a Debian package name', async () => {
@@ -174,6 +192,12 @@ describe('installing', () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.installedVersion).toBe('8.5.0-2ubuntu10.11');
     expect(outcome.sandboxEnforced).toBe(false);
+    expect(outcome.semanticLoss.map((loss) => loss.code)).toContain(
+      'SYSTEM_INSTALL_NOT_SANDBOXED',
+    );
+    expect(outcome.semanticLoss.map((loss) => loss.code)).not.toContain(
+      'SYSTEM_INSTALL_SANDBOXED',
+    );
     expect(calls).toContainEqual([
       'sudo',
       'apt-get',

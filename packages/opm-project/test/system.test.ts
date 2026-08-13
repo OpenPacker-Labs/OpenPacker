@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hostSandboxFromPolicy,
   listSystemInstallers,
   planSystemInstall,
   systemInstallerIdFor,
@@ -40,6 +41,29 @@ describe('system installer routing via adapter registry', () => {
     await expect(
       planSystemInstall('pkg:npm/lodash@1.0.0'),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+  });
+
+  it('maps project [sandbox] onto host-installer options', () => {
+    expect(hostSandboxFromPolicy()).toEqual({
+      mode: 'fail-closed',
+      prefer: 'auto',
+      allowHostUnsandboxedInstall: false,
+    });
+    expect(
+      hostSandboxFromPolicy({
+        allowYanked: false,
+        allowQuarantined: false,
+        semanticLossMaximum: 'warning',
+        requiredEvidence: [],
+        sandboxMode: 'off',
+        sandboxPrefer: 'mxc',
+        allowHostUnsandboxedInstall: true,
+      }),
+    ).toEqual({
+      mode: 'off',
+      prefer: 'mxc',
+      allowHostUnsandboxedInstall: true,
+    });
   });
 
   it('refuses search on install-only host adapters (no capability lie)', async () => {

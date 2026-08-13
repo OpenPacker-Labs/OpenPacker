@@ -311,19 +311,21 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 
 ## Resolution sources
 
-These are the **only** ways `opm` resolves a package — online or offline. `opm`
-never contacts npm, crates.io, PyPI, NuGet, Maven, or the Go proxy;
-registry-backed resolution is a control-plane (`openpacker`) concern. In order:
+`opm add` / `opm resolve` pick a source in this order. The first hit wins.
 
 1. `source = "file:…"` (or an explicit `https:` URL) on the package in
    `opm.toml`
 2. `.opm/catalog.json` in the project
 3. `OPM_CATALOG` env path
-4. Walk-up `fixtures/opm/catalog.json` (repo demos)
+4. A named `[registries.<id>]` in `opm.toml`
+5. The default registry for that PURL type (`registry.npmjs.org`,
+   `index.crates.io`, `pypi.org`, …) — see [Registries](#registries)
 
-Locks record **direct requirements only** — `opm` performs no transitive
-dependency resolution or version-range solving; a `^`/`~` range is a hint, not a
-constraint the resolver satisfies.
+`--offline` refuses every network step. A miss after the local sources is a hard
+error, not a silent empty lock.
+
+Locks record the **proof-checked closure**, not just the direct requirement. A
+range is solved; it is not stored as a hint.
 
 Catalog entry shape (see `fixtures/opm/catalog.json`):
 

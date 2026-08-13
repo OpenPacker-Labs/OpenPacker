@@ -18,12 +18,11 @@ multi-ecosystem package identity, locks, proofs, and digests.
 This is the product surface for **add / remove / sync / install / uninstall**
 and **running** installed package binaries.
 
-> **Scope:** `opm` installs from explicit local/URL sources and project catalogs
-> (`catalog.json`) — it does not contact npm, crates.io, PyPI, or any other
-> public registry, and it locks direct requirements without transitive
-> dependency resolution. See
-> [docs/guides/opm.md](docs/guides/opm.md#resolution-sources) for what resolves
-> and how.
+> **Scope:** `opm add pkg:npm/lodash@4.17.21` resolves against the real
+> registry, verifies the bytes, and locks the proof-checked closure. `--offline`
+> refuses the network. Explicit `source =` / catalog entries win when present.
+> See [docs/guides/opm.md](docs/guides/opm.md#resolution-sources) for the full
+> order.
 
 ```sh
 npm ci

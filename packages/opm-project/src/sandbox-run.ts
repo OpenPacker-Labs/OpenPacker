@@ -1,5 +1,6 @@
 import {
   runInSandbox,
+  type SandboxBackend,
   type SandboxOutcome,
   type SandboxPolicy,
 } from '@openpacker/sandbox';
@@ -22,6 +23,8 @@ export async function runSandboxedPackageProcess(input: {
   policy?: PolicyInput;
   network?: boolean;
   env?: Readonly<Record<string, string>>;
+  /** Test seam: inject a backend. Production callers omit this. */
+  backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
   if (input.argv.length === 0) {
     throw new OpmError('USAGE', 'runSandboxedPackageProcess requires argv');
@@ -53,6 +56,7 @@ export async function runSandboxedPackageProcess(input: {
     readwritePaths,
     readonlyPaths,
     ...(input.network === undefined ? {} : { network: input.network }),
+    ...(input.backend === undefined ? {} : { backend: input.backend }),
   });
 
   const mode = policy.mode ?? 'fail-closed';

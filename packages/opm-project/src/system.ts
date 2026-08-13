@@ -5,9 +5,26 @@ import {
   type InstallerAvailability,
 } from '@openpacker/adapter-core';
 import { AdapterHostError } from '@openpacker/adapter-host';
+import type { PolicyInput } from '@openpacker/contracts';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl } from './spec.js';
 import { requireAdapterRegistry } from './adapters.js';
+
+/**
+ * Map a project PolicyInput onto host-installer sandbox options.
+ *
+ * [sandbox] in opm.toml is load-bearing for apt/winget/choco/nix — without
+ * this, those adapters only see their own defaults.
+ */
+export function hostSandboxFromPolicy(
+  policy?: PolicyInput,
+): NonNullable<InstallOptions['sandbox']> {
+  return {
+    mode: policy?.sandboxMode ?? 'fail-closed',
+    prefer: policy?.sandboxPrefer ?? 'auto',
+    allowHostUnsandboxedInstall: policy?.allowHostUnsandboxedInstall ?? false,
+  };
+}
 
 /**
  * Host / profile installers discovered through the adapter registry.

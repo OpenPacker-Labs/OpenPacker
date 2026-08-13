@@ -39,6 +39,8 @@ import {
   runDeclaredLifecycleScripts,
 } from './lifecycle.js';
 import type { PolicyInput } from '@openpacker/contracts';
+import { digestSandboxPolicy, type SandboxOutcome } from '@openpacker/sandbox';
+import { sandboxPolicyFromProject } from './lifecycle.js';
 
 export async function emptyProjectState(): Promise<ProjectState> {
   return { schemaVersion: 1, packages: {} };
@@ -185,6 +187,7 @@ export async function materializeLockPackage(input: {
   bins: BinDeclaration[];
   cached: boolean;
   lifecycleScriptsExecuted: boolean;
+  sandboxOutcomes: SandboxOutcome[];
 }> {
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
@@ -201,6 +204,7 @@ export async function materializeLockPackage(input: {
       bins,
       cached: true,
       lifecycleScriptsExecuted: false,
+      sandboxOutcomes: [],
     };
   }
   if (already && input.force) {
@@ -242,6 +246,7 @@ export async function materializeLockPackage(input: {
 
   // Lifecycle scripts: default never run. When allowlisted, run only in jail.
   let lifecycleScriptsExecuted = false;
+  let sandboxOutcomes: SandboxOutcome[] = [];
   if (input.pkg.ecosystem === 'npm') {
     const declared = await detectNpmLifecycleScripts(storePath);
     if (
@@ -256,6 +261,7 @@ export async function materializeLockPackage(input: {
         policy: input.policy,
       });
       lifecycleScriptsExecuted = result.executed;
+      sandboxOutcomes = result.outcomes;
     }
   }
 
@@ -263,7 +269,13 @@ export async function materializeLockPackage(input: {
     input.pkg.bins.length > 0
       ? [...input.pkg.bins]
       : await discoverBins(storePath, input.pkg.ecosystem);
-  return { storePath, bins, cached: false, lifecycleScriptsExecuted };
+  return {
+    storePath,
+    bins,
+    cached: false,
+    lifecycleScriptsExecuted,
+    sandboxOutcomes,
+  };
 }
 
 export async function installFromLock(input: {
@@ -297,6 +309,7 @@ export async function installFromLock(input: {
       bins: BinDeclaration[];
       pkg: LockPackage;
       lifecycleScriptsExecuted: boolean;
+      sandboxOutcomes: SandboxOutcome[];
     }
   >();
   for (const alias of aliases) {
@@ -305,7 +318,7 @@ export async function installFromLock(input: {
     if (!pkg) {
       throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
     }
-    const { storePath, bins, lifecycleScriptsExecuted } =
+    const { storePath, bins, lifecycleScriptsExecuted, sandboxOutcomes } =
       await materializeLockPackage({
         root: input.root,
         pkg,
@@ -317,6 +330,7 @@ export async function installFromLock(input: {
       bins,
       pkg,
       lifecycleScriptsExecuted,
+      sandboxOutcomes,
     });
   }
 
@@ -325,10 +339,18 @@ export async function installFromLock(input: {
     .map(({ storePath }) => storePath);
 
   let anyLifecycle = false;
+  const sandboxOutcomes: SandboxOutcome[] = [];
   for (const [
     alias,
-    { storePath, bins, pkg, lifecycleScriptsExecuted },
+    {
+      storePath,
+      bins,
+      pkg,
+      lifecycleScriptsExecuted,
+      sandboxOutcomes: observed,
+    },
   ] of materialised) {
+    sandboxOutcomes.push(...observed);
     const previous = state.packages[alias];
     if (previous) {
       await removeBinShims(
@@ -383,12 +405,11 @@ export async function installFromLock(input: {
         ),
       ),
     ),
-    // Pure extract installs record that scripts did not run. When scripts
-    // ran, they did so under the jail (fail-closed refuse otherwise).
-    sandbox: {
+    sandbox: await observedSandboxForGeneration({
+      ...(input.policy === undefined ? {} : { policy: input.policy }),
       lifecycleScriptsExecuted: anyLifecycle,
-      ...(anyLifecycle ? { enforced: true } : {}),
-    },
+      outcomes: sandboxOutcomes,
+    }),
   });
   return state;
 }
@@ -441,6 +462,36 @@ export async function uninstallPackages(input: {
     ),
   });
   return state;
+}
+
+export async function observedSandboxForGeneration(input: {
+  policy?: PolicyInput;
+  lifecycleScriptsExecuted: boolean;
+  outcomes: readonly SandboxOutcome[];
+}): Promise<{
+  policyDigest: string;
+  lifecycleScriptsExecuted: boolean;
+  backends?: string[];
+  enforced?: boolean;
+}> {
+  const digest = await digestSandboxPolicy(
+    sandboxPolicyFromProject(input.policy),
+  );
+  const backends = [
+    ...new Set(input.outcomes.map((outcome) => outcome.backend)),
+  ].sort();
+  return {
+    policyDigest: `${digest.algorithm}:${digest.value}`,
+    lifecycleScriptsExecuted: input.lifecycleScriptsExecuted,
+    ...(backends.length > 0 ? { backends } : {}),
+    ...(input.lifecycleScriptsExecuted
+      ? {
+          enforced:
+            input.outcomes.length > 0 &&
+            input.outcomes.every((outcome) => outcome.enforced),
+        }
+      : {}),
+  };
 }
 
 export async function uninstallAll(root: string): Promise<void> {

@@ -3,10 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assertGrantsNotDangerous,
   createMockBackend,
   digestSandboxPolicy,
   isDeniedCredential,
+  JailPathError,
   matchPackageGrant,
+  mxcFilesystemPaths,
   planSandboxSummary,
   resolvePolicy,
   runHostInstaller,
@@ -185,6 +188,56 @@ describe('@openpacker/sandbox', () => {
         (l) => l.code === SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
       ),
     ).toBe(true);
+  });
+
+  it('does not auto-grant MXC write on cwd (C2)', () => {
+    const paths = mxcFilesystemPaths({
+      readonlyPaths: ['/proj'],
+      readwritePaths: ['/tmp/jail'],
+      cwd: '/proj',
+    });
+    expect(paths.readwritePaths).not.toContain('/proj');
+    expect(paths.readonlyPaths).toContain('/proj');
+    const writable = mxcFilesystemPaths({
+      readonlyPaths: [],
+      readwritePaths: ['/proj'],
+      cwd: '/proj',
+    });
+    expect(writable.readwritePaths).toContain('/proj');
+  });
+
+  it('refuses dangerous write grants unless allowed', () => {
+    expect(() => assertGrantsNotDangerous(['/'], false)).toThrow(JailPathError);
+    expect(() => assertGrantsNotDangerous(['/'], true)).not.toThrow();
+  });
+
+  it('refuses package-exec binds of / or the user home', async () => {
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+        cwd: '/',
+        policy: { mode: 'fail-closed' },
+        profile: 'package-exec',
+        readwritePaths: ['/'],
+        readonlyPaths: [],
+        backend: createMockBackend(),
+      }),
+    ).rejects.toBeInstanceOf(JailPathError);
+  });
+
+  it('kills hung package-exec after timeout', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
+    const started = Date.now();
+    const outcome = await runInSandbox({
+      argv: [process.execPath, '-e', 'setTimeout(() => {}, 30_000)'],
+      cwd,
+      policy: { mode: 'fail-closed', timeoutMs: 250 },
+      readwritePaths: [cwd],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(outcome.exitCode).not.toBe(0);
   });
 
   it('mock package-exec is not enforced (honesty)', async () => {
