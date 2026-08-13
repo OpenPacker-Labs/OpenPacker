@@ -4,6 +4,7 @@ import { canonicalBytes, sha256 } from '@openpacker/canonical';
 import {
   Ed25519Signer,
   Ed25519Verifier,
+  cycloneDxEvidenceStatus,
   extractCycloneDxEvidence,
   verifyCanonical,
   verifyOfflineSigstoreBundle,
@@ -509,4 +510,23 @@ test('binds SLSA subjects and extracts CycloneDX license evidence', async () => 
       components: [],
     }),
   ).toThrow('Unsupported');
+  expect(
+    cycloneDxEvidenceStatus({
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      components: [],
+    }),
+  ).toBe('invalid');
+  expect(
+    cycloneDxEvidenceStatus({
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      components: [
+        {
+          purl: 'pkg:npm/demo@1.0.0',
+          hashes: [{ alg: 'SHA-256', content: subject.value }],
+        },
+      ],
+    }),
+  ).toBe('valid');
 });

@@ -41,6 +41,8 @@ export function defaultSupplyChainPolicyInput(): PolicyInput {
     semanticLossMaximum: 'warning',
     requiredEvidence: [],
     allowLifecycleScripts: false,
+    minimumReleaseAgeMinutes: 1440,
+    trustPolicy: 'no-downgrade',
     blockExoticSources: { transitive: true, direct: false },
     sandboxMode: 'fail-closed',
     sandboxRequired: true,

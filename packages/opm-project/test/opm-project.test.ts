@@ -73,6 +73,20 @@ async function tempProject(): Promise<string> {
 }
 
 describe('manifest TOML', () => {
+  it('writes allow_lifecycle_scripts = false on a new project', async () => {
+    const root = await tempProject();
+    const text = await readFile(join(root, 'opm.toml'), 'utf8');
+    expect(text).toMatch(/allow_lifecycle_scripts = false/);
+    expect(text).toMatch(/block_exotic_transitive = true/);
+    expect(text).toMatch(/minimum_release_age_minutes = 1440/);
+    expect(text).toMatch(/trust_policy = "no-downgrade"/);
+    const policy = parseManifest(text).policy;
+    expect(policy?.allowLifecycleScripts).toBe(false);
+    expect(policy?.blockExoticSources?.transitive).toBe(true);
+    expect(policy?.minimumReleaseAgeMinutes).toBe(1440);
+    expect(policy?.trustPolicy).toBe('no-downgrade');
+  });
+
   it('round-trips', () => {
     const text = serializeManifest({
       project: { name: 'demo', ecosystems: ['npm', 'cargo'] },
@@ -186,6 +200,7 @@ describe('path containment', () => {
     const body = await readFile(written!.shim, 'utf8');
     // Shims re-enter via opmx by default (sandbox); ambient only with hatch.
     expect(body).toContain('opmx');
+    expect(body).not.toMatch(/process\.env\.OPM_OPMX\?\.trim\(\) \|\| 'opmx'/);
     expect(body).toContain('OPENPACKER_ALLOW_AMBIENT_SHIMS');
     expect(body).toContain('from pkg.mod import main');
     expect(body).toContain(storeRoot);

@@ -321,10 +321,14 @@ describe('openpacker CLI', () => {
         (component: { 'bom-ref': string }) => component['bom-ref'],
       ),
     );
+    const knownRefs = new Set(componentRefs);
+    knownRefs.add(sbom.metadata.component['bom-ref']);
+    expect(sbom.dependencies[0]?.ref).toBe(sbom.metadata.component['bom-ref']);
+    expect(sbom.dependencies[0]?.dependsOn.length).toBeGreaterThan(0);
     for (const dependency of sbom.dependencies) {
-      expect(componentRefs.has(dependency.ref)).toBe(true);
+      expect(knownRefs.has(dependency.ref)).toBe(true);
       for (const reference of dependency.dependsOn)
-        expect(componentRefs.has(reference)).toBe(true);
+        expect(knownRefs.has(reference)).toBe(true);
     }
   });
 

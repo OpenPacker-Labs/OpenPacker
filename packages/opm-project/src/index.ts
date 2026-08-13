@@ -62,6 +62,7 @@ export {
   discoverPythonBins,
   removeBinShims,
   resolveExecutable,
+  resolveOpmxPath,
   writeBinShims,
 } from './bins.js';
 

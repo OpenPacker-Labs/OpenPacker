@@ -399,7 +399,14 @@ export async function evaluatePolicy(
     policy.minimumReleaseAgeMinutes > 0 &&
     !matchesExclude(facts.packageId, policy.minimumReleaseAgeExclude)
   ) {
-    if (!facts.publishedAt || !facts.evaluationTime) {
+    if (facts.sourceKind === 'path') {
+      checks.push({
+        code: 'supply-chain.release-age',
+        status: 'valid',
+        message:
+          'local path has no publish clock; minimum release age does not apply',
+      });
+    } else if (!facts.publishedAt || !facts.evaluationTime) {
       checks.push({
         code: 'supply-chain.release-age',
         status: policy.minimumReleaseAgeStrict

@@ -46,11 +46,13 @@ is hard-denied), not a silent allow.
 | Host installer scripts (apt/choco)         | Semantic loss `SYSTEM_INSTALL_NOT_BYTE_VERIFIED`                     | Cannot claim `native-validated-v1`; elevation consent               |
 | Unsandboxed host install                   | `SYSTEM_INSTALL_NOT_SANDBOXED` when ambient                          | Default refuse; `allowHostUnsandboxedInstall` or `sandbox.mode=off` |
 
-## Policy profile (recommended production)
+## Policy profile (configured default)
 
-Normative knobs live on PREX `PolicyInput` (schema) and are evaluated by
-`@openpacker/policy`. Projects commit them under `[policy]` in `opm.toml` (no
-`${ENV}` expansion in registry pins):
+`opm init` writes this profile into `opm.toml`. Normative knobs live on PREX
+`PolicyInput` (schema) and are evaluated by `@openpacker/policy`. Projects
+commit them under `[policy]` (no `${ENV}` expansion in registry pins). A local
+`file:` / path source has no publish clock, so minimum release age does not
+apply to it:
 
 ```toml
 [policy]

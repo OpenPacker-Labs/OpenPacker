@@ -1,9 +1,33 @@
-import { accessSync, constants, existsSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  realpathSync,
+} from 'node:fs';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { SandboxBackendError, spawnCapture } from './mock.js';
-import { sensitiveMaskDirectories, sensitiveMaskFiles } from '../paths.js';
+import {
+  networkToolMaskFiles,
+  sensitiveMaskDirectories,
+  sensitiveMaskFiles,
+} from '../paths.js';
 import type { BackendProbe, SandboxBackend, SandboxProfile } from '../types.js';
+
+function regularFile(path: string): string | undefined {
+  try {
+    const stat = lstatSync(path);
+    if (stat.isFile()) return path;
+    if (stat.isSymbolicLink()) {
+      const real = realpathSync(path);
+      if (lstatSync(real).isFile()) return real;
+    }
+  } catch {
+    // missing or unreadable
+  }
+  return undefined;
+}
 
 function which(bin: string): string | undefined {
   const pathEnv = process.env.PATH ?? '';
@@ -152,13 +176,6 @@ export function buildBwrapArgv(input: {
   args.push('--tmpfs', '/tmp');
   args.push('--tmpfs', '/var/tmp');
 
-  for (const dir of sensitiveMaskDirectories()) {
-    if (existsSync(dir)) args.push('--tmpfs', dir);
-  }
-  for (const file of sensitiveMaskFiles()) {
-    if (existsSync(file)) args.push('--ro-bind', '/dev/null', file);
-  }
-
   const command0 = input.command[0];
   if (command0 && command0.includes('/')) {
     try {
@@ -189,6 +206,29 @@ export function buildBwrapArgv(input: {
     if (rw.has(path)) continue;
     if (!existsSync(path)) continue;
     args.push('--ro-bind', path, path);
+  }
+
+  // Remask after RW overlays. Host-install `--bind / /` would otherwise
+  // uncover credential files that were masked earlier.
+  for (const dir of sensitiveMaskDirectories()) {
+    try {
+      if (lstatSync(dir).isDirectory()) args.push('--tmpfs', dir);
+    } catch {
+      // missing
+    }
+  }
+  for (const file of sensitiveMaskFiles()) {
+    const real = regularFile(file);
+    if (real) args.push('--ro-bind', '/dev/null', real);
+  }
+  if (!input.network && input.profile === 'package-exec') {
+    const seen = new Set<string>();
+    for (const file of networkToolMaskFiles()) {
+      const real = regularFile(file);
+      if (!real || seen.has(real)) continue;
+      seen.add(real);
+      args.push('--ro-bind', '/dev/null', real);
+    }
   }
 
   args.push('--chdir', cwdPath);

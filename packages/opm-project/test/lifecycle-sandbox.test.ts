@@ -32,6 +32,24 @@ const allowPolicy: PolicyInput = {
 } as PolicyInput;
 
 describe('lifecycle policy gates', () => {
+  it('configured default refuses scripts on install', async () => {
+    const { defaultManifest, defaultSupplyChainPolicyInput } = await import(
+      '../src/index.js'
+    );
+    expect(defaultManifest().policy?.allowLifecycleScripts).toBe(false);
+    expect(defaultSupplyChainPolicyInput().allowLifecycleScripts).toBe(false);
+    expect(lifecycleScriptsAllowed(undefined, 'pkg:npm/evil')).toBe(false);
+    expect(
+      lifecycleScriptsAllowed(defaultManifest().policy, 'pkg:npm/evil'),
+    ).toBe(false);
+    expect(
+      lifecycleScriptsAllowed(
+        { ...allowPolicy, allowLifecycleScripts: true },
+        'pkg:npm/evil',
+      ),
+    ).toBe(false);
+  });
+
   it('refuses scripts unless allowlisted', () => {
     expect(
       lifecycleScriptsAllowed(

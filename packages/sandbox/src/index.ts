@@ -46,6 +46,7 @@ export {
   isPathInside,
   JailPathError,
   normalizeJailPaths,
+  networkToolMaskFiles,
   sensitiveMaskDirectories,
   sensitiveMaskFiles,
 } from './paths.js';

@@ -54,14 +54,14 @@ intent).
    receipt (same as existing evidence and lifecycle rules). Reference knobs
    (pnpm-aligned names in prose; PREX field names in code):
 
-   | Mitigation               | Policy field (reference)                                   | Default posture                                                      |
-   | ------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------- |
-   | Block dependency scripts | `allowLifecycleScripts` / `allowedLifecycleScriptPackages` | deny execution (OpenPacker materialize already does not run scripts) |
-   | Delay new publishes      | `minimumReleaseAgeMinutes` (+ exclude list)                | off until configured; recommend 1440 in prod profiles                |
-   | Trust no-downgrade       | `trustPolicy: "no-downgrade"`                              | off until prior tier is available                                    |
-   | Block exotic sources     | `blockExoticSources` (+ direct vs transitive)              | off until configured; recommend block for transitive                 |
-   | Registry pin             | `requireNamedRegistry` / expected `registryId`             | off until multi-registry                                             |
-   | Freeze resolution        | exact lock + `requireExactSourceSnapshot`                  | existing                                                             |
+   | Mitigation               | Policy field (reference)                                   | Default posture                                                     |
+   | ------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------- |
+   | Block dependency scripts | `allowLifecycleScripts` / `allowedLifecycleScriptPackages` | deny execution; `opm init` writes `allow_lifecycle_scripts = false` |
+   | Delay new publishes      | `minimumReleaseAgeMinutes` (+ exclude list)                | `opm init` writes 1440; local `file:` / path sources are exempt     |
+   | Trust no-downgrade       | `trustPolicy: "no-downgrade"`                              | `opm init` writes no-downgrade; first install has no prior tier     |
+   | Block exotic sources     | `blockExoticSources` (+ direct vs transitive)              | `opm init` blocks transitive git/tarball; direct still allowed      |
+   | Registry pin             | `requireNamedRegistry` / expected `registryId`             | off until multi-registry                                            |
+   | Freeze resolution        | exact lock + `requireExactSourceSnapshot`                  | existing                                                            |
 
 3. **Detection window is a first-class attack assumption.** Compromised packages
    are often removed within hours; a minimum age gate is a temporal quarantine

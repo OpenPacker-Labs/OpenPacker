@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -330,6 +330,7 @@ export async function writeBinShims(input: {
       binDir,
       target,
       pythonRoots,
+      opmxPath: resolveOpmxPath(),
     });
     await writeFile(shimPath, script, { mode: 0o755 });
     await chmod(shimPath, 0o755);
@@ -348,6 +349,24 @@ export async function writeBinShims(input: {
 }
 
 /**
+ * Absolute `opmx` to embed in shims. PATH lookup is a sandbox bypass:
+ * a package bin named `opmx` earlier on PATH would win.
+ */
+export function resolveOpmxPath(): string {
+  const fromEnv = process.env.OPM_OPMX?.trim();
+  if (fromEnv) return resolve(fromEnv);
+  const argv1 = process.argv[1];
+  if (argv1) {
+    const dir = dirname(resolve(argv1));
+    for (const name of ['opmx', 'opmx.js', 'opmx.mjs']) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return '';
+}
+
+/**
  * Generate a bin shim.
  *
  * Direct ambient spawn is a sandbox bypass (audit H3). Default behaviour:
@@ -360,6 +379,7 @@ function shimScriptFor(
     binDir: string;
     target: string;
     pythonRoots: readonly string[];
+    opmxPath: string;
   },
 ): string {
   const binName = JSON.stringify(bin.name);
@@ -413,8 +433,15 @@ function run(child) {
     process.exit(1);
   });
 }
-// Prefer re-entry through opmx (sandboxed). Direct ambient spawn is a bypass.
-const opmx = process.env.OPM_OPMX?.trim() || 'opmx';
+// Prefer re-entry through an absolute opmx (sandboxed). Never PATH-search.
+const opmx = process.env.OPM_OPMX?.trim() || ${JSON.stringify(context.opmxPath)};
+if (!opmx) {
+  console.error(
+    'opm: refuse ambient bin shim (sandbox). Use: opmx ' + ${binName} +
+    ' … or set OPM_OPMX to the opmx binary.',
+  );
+  process.exit(78);
+}
 const viaOpmx = spawn(opmx, [${binName}, ...args], {
   stdio: 'inherit',
   env: process.env,
