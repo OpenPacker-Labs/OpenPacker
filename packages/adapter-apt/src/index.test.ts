@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AptSystemProvider } from './index.js';
+import { AptSystemProvider, hostInstallerInput } from './index.js';
 
 /**
  * Nothing here runs apt. The executor is injected, so these assert the
@@ -171,6 +171,32 @@ describe('installing', () => {
     const outcome = await apt.install('pkg:deb/curl', { dryRun: true });
     expect(outcome.performed).toBe(false);
     expect(calls.some(([file]) => file === 'sudo')).toBe(false);
+  });
+
+  it('forwards offline into the host-install funnel (the inverted spread drops it)', () => {
+    // The bug: `undefined ? { offline: undefined } : {}` so `offline: true`
+    // never reaches runHostInstaller and the jail gets network.
+    const noop = async () => ({ stdout: '', stderr: '' });
+    expect(
+      hostInstallerInput({ offline: true }, ['apt-get'], noop).offline,
+    ).toBe(true);
+    expect(
+      hostInstallerInput({ offline: false }, ['apt-get'], noop).offline,
+    ).toBe(false);
+    expect(hostInstallerInput({}, ['apt-get'], noop).offline).toBeUndefined();
+    expect(
+      hostInstallerInput(
+        {
+          offline: true,
+          sandbox: { allowHostUnsandboxedInstall: true },
+        },
+        ['apt-get'],
+        noop,
+      ),
+    ).toMatchObject({
+      offline: true,
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
   });
 
   it('runs the planned command once consented, and reports what it settled on', async () => {
