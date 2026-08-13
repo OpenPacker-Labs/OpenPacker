@@ -1,11 +1,12 @@
 # sdlc state — sandbox security hardening
 
 - Initiative: close audit gaps (C1/C2/H1–H4/M1–M4) as one-shot swarm
-- Phase: **implementation → ship**
+- Phase: **complete** — #73 on main; gap-close follow-up on this session
 - Trunk base: `9c71d2b`
-- Issues: #63–#72
+- Shipped: `e6f5504` (#73)
+- Issues: #63–#72 closed via #73
 
-## Delivered on this branch
+## Delivered
 
 - Profiles: `package-exec` | `host-install` | `ambient`
 - Minimal bwrap binds for package-exec (no fat RO `/`)
@@ -15,3 +16,24 @@
 - Strict lifecycle allowlist default
 - Must-pass adversarial tests
 - Timeouts (default 600s)
+
+## Gap-close after #73 (this session)
+
+| Gap                                                                   | Fix                                               |
+| --------------------------------------------------------------------- | ------------------------------------------------- |
+| Apt called `runInSandbox` as package-exec and could claim `SANDBOXED` | Apt uses `runHostInstaller` like winget/choco/nix |
+| Project `[sandbox]` never reached host `opm add`                      | `hostSandboxFromPolicy` on plan/install           |
+| Generation `sandbox.enforced` inferred from “scripts ran”             | Receipts store `policyDigest` + observed backends |
+| MXC always RW-mounted cwd (C2 on that backend)                        | cwd is RO unless the caller granted write         |
+| Closeout docs still said “implementation → ship”                      | This file                                         |
+
+## Still true (honest product stance)
+
+Defense-in-depth, not a microVM. Host installers remain user-capability limited.
+Windows without MXC stays fail-closed. Seatbelt/MXC live probes skip when the
+tools are not on the runner.
+
+## Verification
+
+Scoped package tests + `npm run test:security`. Full `npm run verify` before
+merge.

@@ -14,9 +14,9 @@ import {
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
-  runInSandbox,
-  SANDBOX_LOSS,
-  type SandboxPolicy,
+  HostInstallerSandboxError,
+  planSandboxSummary,
+  runHostInstaller,
 } from '@openpacker/sandbox';
 
 /**
@@ -59,38 +59,6 @@ const APT_LOSS: readonly SemanticLoss[] = [
     blocksProfile: [],
   },
 ];
-
-const NOT_SANDBOXED: SemanticLoss = {
-  code: SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
-  severity: 'warning',
-  sourceEcosystem: 'deb',
-  sourcePath: '/',
-  originalMeaning: 'the install ran with ambient host privileges',
-  representedMeaning:
-    'OpenPacker did not enforce a jail around apt-get; allowHostUnsandboxedInstall was set',
-  blocksProfile: ['native-validated-v1'],
-};
-
-const SANDBOXED: SemanticLoss = {
-  code: SANDBOX_LOSS.SYSTEM_SANDBOXED,
-  severity: 'info',
-  sourceEcosystem: 'deb',
-  sourcePath: '/',
-  originalMeaning: 'the install process ran inside a containment backend',
-  representedMeaning:
-    'argv was launched via runInSandbox; system package mutation may still require broad grants',
-  blocksProfile: [],
-};
-
-function sandboxPolicyFromOptions(options: InstallOptions): SandboxPolicy {
-  return {
-    mode: options.sandbox?.mode ?? 'fail-closed',
-    prefer: options.sandbox?.prefer ?? 'auto',
-    allowHostUnsandboxedInstall:
-      options.sandbox?.allowHostUnsandboxedInstall ?? false,
-    required: (options.sandbox?.mode ?? 'fail-closed') === 'fail-closed',
-  };
-}
 
 /** `pkg:deb/debian/curl@7.88.1` → the name apt knows. */
 function aptName(exactPurl: string): { name: string; version?: string } {
@@ -205,18 +173,17 @@ export class AptSystemProvider implements InstallerProvider {
       ...(options.offline ? ['--no-download'] : []),
       target,
     ];
-    const sandbox = sandboxPolicyFromOptions(options);
-    const allowAmbient = sandbox.allowHostUnsandboxedInstall === true;
+    const summary = planSandboxSummary(options.sandbox);
     return {
       exactPurl,
       command,
       requiresElevation: !this.isRoot(),
       irreversible: true,
-      semanticLoss: allowAmbient ? [...APT_LOSS, NOT_SANDBOXED] : [...APT_LOSS],
+      semanticLoss: APT_LOSS,
       sandbox: {
-        mode: sandbox.mode ?? 'fail-closed',
-        prefer: sandbox.prefer ?? 'auto',
-        willEnforce: !allowAmbient && sandbox.mode !== 'off',
+        mode: summary.mode,
+        prefer: summary.prefer,
+        willEnforce: summary.willEnforce,
       },
     };
   }
@@ -243,54 +210,22 @@ export class AptSystemProvider implements InstallerProvider {
           `the command would be: ${plan.command.join(' ')}`,
       );
 
-    const [file, ...args] = plan.command;
-    const sandbox = sandboxPolicyFromOptions(options);
-    const allowAmbient =
-      sandbox.allowHostUnsandboxedInstall === true || sandbox.mode === 'off';
-
     try {
-      if (allowAmbient) {
-        const { stdout, stderr } = await this.execute(
-          file!,
-          args,
-          options.signal ? { signal: options.signal } : {},
-        );
-        const { installed } = await this.versions(
-          aptName(exactPurl).name,
-          options.signal,
-        ).catch(() => ({ installed: undefined }));
-        return {
-          ...plan,
-          performed: true,
-          exitCode: 0,
-          stdout,
-          stderr,
-          sandboxEnforced: false,
-          sandboxBackend: 'off',
-          semanticLoss: [...plan.semanticLoss, NOT_SANDBOXED],
-          ...(installed ? { installedVersion: installed } : {}),
-        };
-      }
-
-      // Prefer jailed launch. System package managers need broad host writes;
-      // when the backend cannot enforce, fail-closed refuses rather than
-      // silently ambient-running (ADR 0036).
-      const outcome = await runInSandbox({
-        argv: [file!, ...args],
-        cwd: process.cwd(),
-        policy: sandbox,
-        readwritePaths: ['/'],
-        readonlyPaths: [],
-        network: !options.offline,
+      const result = await runHostInstaller({
+        argv: plan.command,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+        ...(options.offline === undefined ? { offline: options.offline } : {}),
+        ecosystem: 'deb',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ambientExecute: async () => {
+          const [file, ...args] = plan.command;
+          return this.execute(
+            file!,
+            args,
+            options.signal ? { signal: options.signal } : {},
+          );
+        },
       });
-      if (!outcome.enforced && outcome.backend === 'none') {
-        throw new ProviderError(
-          'POLICY_DENIED',
-          `Installing ${exactPurl} requires a sandbox jail and none is available. ` +
-            `Set sandbox.allowHostUnsandboxedInstall to run ambient (records SYSTEM_INSTALL_NOT_SANDBOXED).`,
-        );
-      }
       const { installed } = await this.versions(
         aptName(exactPurl).name,
         options.signal,
@@ -298,19 +233,17 @@ export class AptSystemProvider implements InstallerProvider {
       return {
         ...plan,
         performed: true,
-        exitCode: outcome.exitCode,
-        stdout: outcome.stdout,
-        stderr: outcome.stderr,
-        sandboxEnforced: outcome.enforced,
-        sandboxBackend: outcome.backend,
-        semanticLoss: [
-          ...plan.semanticLoss,
-          ...(outcome.enforced ? [SANDBOXED] : []),
-          ...outcome.losses,
-        ],
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        sandboxEnforced: result.sandboxEnforced,
+        sandboxBackend: result.sandboxBackend,
+        semanticLoss: [...plan.semanticLoss, ...result.extraLosses],
         ...(installed ? { installedVersion: installed } : {}),
       };
     } catch (error) {
+      if (error instanceof HostInstallerSandboxError)
+        throw new ProviderError('POLICY_DENIED', error.message);
       if (error instanceof ProviderError) throw error;
       const failure = error as {
         code?: number;

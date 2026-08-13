@@ -425,10 +425,26 @@ test('a lifecycle-script allowlist does not extend to look-alike names', async (
   ).toBe('deny');
 });
 
+test('a global allowLifecycleScripts flag is not an allowlist', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    allowLifecycleScripts: true,
+    allowedLifecycleScriptPackages: [],
+  };
+  const decision = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/esbuild',
+    lifecycleScriptsExecuted: true,
+  });
+  expect(decision.decision).toBe('deny');
+});
+
 test('sandbox fail-closed denies when scripts ran without an enforced jail', async () => {
   const policy: PolicyDocument = {
     ...baseSupply,
     allowLifecycleScripts: true,
+    allowedLifecycleScriptPackages: ['pkg:npm/esbuild'],
     sandboxMode: 'fail-closed',
     sandboxRequired: true,
   };

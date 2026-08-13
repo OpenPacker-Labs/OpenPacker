@@ -16,6 +16,7 @@ import {
   listGenerations,
   listInstalled,
   buildPackageManifest,
+  hostSandboxFromPolicy,
   installSystemPackage,
   listRegistryVersions,
   packNativeProject,
@@ -152,7 +153,7 @@ export async function runOpm(
                     ? `${parsed.purl}@${parsed.version}`
                     : parsed.purl
               : `pkg:${ecosystem}/${parsed.alias}${parsed.version ? `@${parsed.version}` : ''}`;
-            return runHostInstall(exact, args, io);
+            return runHostInstall(exact, args, io, cwd);
           }
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
@@ -400,7 +401,7 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'system': {
-        return runSystemCommand(args, io);
+        return runSystemCommand(args, io, cwd);
       }
       case 'generations': {
         const root = await requireOpmRoot(cwd);
@@ -613,7 +614,11 @@ function isBooleanFlag(key: string): boolean {
  *
  * Subcommands: available | plan | install
  */
-async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
+async function runSystemCommand(
+  args: Parsed,
+  io: CliIo,
+  cwd: string,
+): Promise<number> {
   const sub = args.positionals[0] ?? 'available';
   if (sub === 'available' || sub === 'list') {
     const installers = await listSystemInstallers();
@@ -629,7 +634,7 @@ async function runSystemCommand(args: Parsed, io: CliIo): Promise<number> {
     const purl = args.positionals[1];
     if (!purl) throw usage(`opm system ${sub} requires a PURL`);
     if (sub === 'plan') args.options.set('dry-run', true);
-    return runHostInstall(purl, args, io);
+    return runHostInstall(purl, args, io, cwd);
   }
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
@@ -674,11 +679,23 @@ async function runHostInstall(
   purl: string,
   args: Parsed,
   io: CliIo,
+  cwd = process.cwd(),
 ): Promise<number> {
+  let sandbox = hostSandboxFromPolicy();
+  const root = await findOpmRoot(cwd);
+  if (root) {
+    try {
+      const manifest = await readManifestFile(projectPaths(root).manifest);
+      sandbox = hostSandboxFromPolicy(manifest.policy);
+    } catch {
+      sandbox = hostSandboxFromPolicy();
+    }
+  }
   const options = {
     offline: args.options.has('offline'),
     dryRun: args.options.has('dry-run'),
     allowElevation: args.options.has('allow-elevation'),
+    sandbox,
   };
   if (options.dryRun) {
     const plan = await planSystemInstall(purl, options);

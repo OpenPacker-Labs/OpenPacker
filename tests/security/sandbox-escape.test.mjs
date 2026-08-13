@@ -169,4 +169,9 @@ test('production package-run paths go through @openpacker/sandbox', async () => 
   const bins = read(join(root, 'packages/opm-project/src/bins.ts'), 'utf8');
   assert.match(bins, /OPENPACKER_ALLOW_AMBIENT_SHIMS/);
   assert.match(bins, /opmx/);
+
+  const apt = read(join(root, 'packages/adapter-apt/src/index.ts'), 'utf8');
+  assert.match(apt, /runHostInstaller/);
+  assert.doesNotMatch(apt, /SYSTEM_INSTALL_SANDBOXED/);
+  assert.doesNotMatch(apt, /profile: 'package-exec'/);
 });

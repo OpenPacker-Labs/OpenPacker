@@ -11,6 +11,7 @@ import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
 import { normalizeJailPaths } from './paths.js';
 import {
   assertGrantsNotDangerous,
+  assertPathNotRootOrHome,
   backendLosses,
   digestSandboxPolicy,
   loss,
@@ -81,6 +82,20 @@ export async function runInSandbox(
   const grantedWrite = normalizeJailPaths(packageGrants.write, 'write grant');
   const grantedRead = normalizeJailPaths(packageGrants.read, 'read grant');
   assertGrantsNotDangerous(grantedWrite, resolved.allowDangerousGrants);
+  if (profile === 'package-exec') {
+    assertPathNotRootOrHome(
+      input.cwd,
+      resolved.allowDangerousGrants,
+      'package-exec cwd',
+    );
+    for (const path of input.readwritePaths) {
+      assertPathNotRootOrHome(
+        path,
+        resolved.allowDangerousGrants,
+        'package-exec readwrite path',
+      );
+    }
+  }
   const network = Boolean(input.network || packageGrants.network);
 
   if (!resolved.enabled || resolved.mode === 'off') {
@@ -187,6 +202,7 @@ export async function runInSandbox(
           network,
           profile,
           legacyFatRoot: resolved.legacyFatRoot,
+          ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });
       } finally {

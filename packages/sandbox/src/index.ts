@@ -21,6 +21,7 @@ export {
 
 export {
   assertGrantsNotDangerous,
+  assertPathNotRootOrHome,
   backendLosses,
   digestSandboxPolicy,
   loss,
@@ -64,7 +65,11 @@ export {
   probeNativeBackends,
 } from './backends/native.js';
 
-export { createMxcBackend, probeMxc } from './backends/mxc.js';
+export {
+  createMxcBackend,
+  mxcFilesystemPaths,
+  probeMxc,
+} from './backends/mxc.js';
 
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
 

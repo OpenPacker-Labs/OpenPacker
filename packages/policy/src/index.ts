@@ -480,9 +480,10 @@ export async function evaluatePolicy(
   }
 
   if (facts.lifecycleScriptsExecuted === true) {
-    const allowed =
-      policy.allowLifecycleScripts === true ||
-      matchesExclude(facts.packageId, policy.allowedLifecycleScriptPackages);
+    const allowed = matchesExclude(
+      facts.packageId,
+      policy.allowedLifecycleScriptPackages,
+    );
     deny(
       'supply-chain.lifecycle-scripts-executed',
       !allowed,

@@ -128,6 +128,38 @@ export function mergeGrants(
   };
 }
 
+/**
+ * Reject a path that *is* the filesystem root or the user home.
+ * Paths *under* home (a project in ~/src) are allowed; package write
+ * grants under home are still refused by {@link assertGrantsNotDangerous}.
+ */
+export function assertPathNotRootOrHome(
+  raw: string,
+  allowDangerous: boolean,
+  label: string,
+): void {
+  if (allowDangerous) return;
+  const p = resolve(raw);
+  if (p === '/' || p === resolve('/')) {
+    throw new JailPathError(
+      label,
+      `refusing ${label} at filesystem root; set sandbox.allow_dangerous_grants = true`,
+    );
+  }
+  let home: string | undefined;
+  try {
+    home = resolve(homedir());
+  } catch {
+    home = undefined;
+  }
+  if (home && p === home) {
+    throw new JailPathError(
+      label,
+      `refusing ${label} at the user home (${home}); set sandbox.allow_dangerous_grants = true`,
+    );
+  }
+}
+
 /** Reject write grants that cover `/` or the user home unless allowed. */
 export function assertGrantsNotDangerous(
   writePaths: readonly string[],

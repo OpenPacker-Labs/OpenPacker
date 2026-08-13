@@ -9,7 +9,10 @@ import {
   runDeclaredLifecycleScripts,
   runLifecycleScript,
 } from '../src/lifecycle.js';
+import { observedSandboxForGeneration } from '../src/install.js';
+import { runSandboxedPackageProcess } from '../src/sandbox-run.js';
 import type { PolicyInput } from '@openpacker/contracts';
+import { createMockBackend, type SandboxOutcome } from '@openpacker/sandbox';
 
 const allowPolicy: PolicyInput = {
   allowYanked: false,
@@ -75,6 +78,24 @@ describe('lifecycle policy gates', () => {
 });
 
 describe('lifecycle jail execution', () => {
+  it('throws SANDBOX_UNAVAILABLE when fail-closed and jail is not enforced', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-life-unenforced-'));
+    await expect(
+      runLifecycleScript({
+        event: 'postinstall',
+        script: 'echo hi',
+        packageDir: dir,
+        packageId: 'pkg:npm/esbuild',
+        policy: {
+          ...allowPolicy,
+          sandboxMode: 'fail-closed',
+          sandboxRequired: true,
+        },
+        backend: createMockBackend({ unavailable: true }),
+      }),
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+  });
+
   it('throws POLICY_DENIED when scripts are not allowlisted', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'opm-life-deny-'));
     await expect(
@@ -147,6 +168,79 @@ describe('lifecycle jail execution', () => {
         });
       }
     }
+  });
+
+  it('runSandboxedPackageProcess denies project writes by default', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'opm-run-ro-'));
+    const victim = join(project, 'src.js');
+    await writeFile(victim, 'good\n');
+    // Without a jail this must throw rather than write. With a jail the
+    // project tree stays RO. Either way the file stays good.
+    try {
+      await runSandboxedPackageProcess({
+        argv: [
+          process.execPath,
+          '-e',
+          `require('fs').writeFileSync(${JSON.stringify(victim)},'pwned')`,
+        ],
+        cwd: project,
+        projectRoot: project,
+        policy: allowPolicy,
+      });
+    } catch {
+      // fail-closed without a backend, or the write itself failed
+    }
+    expect(await readFile(victim, 'utf8')).toBe('good\n');
+  });
+
+  it('runSandboxedPackageProcess refuses when the jail is not enforced', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'opm-run-unenforced-'));
+    await expect(
+      runSandboxedPackageProcess({
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+        cwd: project,
+        projectRoot: project,
+        policy: {
+          ...allowPolicy,
+          sandboxMode: 'fail-closed',
+        },
+        backend: createMockBackend({ unavailable: true }),
+      }),
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+  });
+
+  it('records policyDigest without claiming enforcement when scripts did not run', async () => {
+    const summary = await observedSandboxForGeneration({
+      policy: allowPolicy,
+      lifecycleScriptsExecuted: false,
+      outcomes: [],
+    });
+    expect(summary.policyDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(summary.lifecycleScriptsExecuted).toBe(false);
+    expect(summary.enforced).toBeUndefined();
+    expect(summary.backends).toBeUndefined();
+  });
+
+  it('does not infer enforced=true from scripts running — only from outcomes', async () => {
+    const ambient = {
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      backend: 'none',
+      profile: 'package-exec',
+      enforced: false,
+      containmentLimited: true,
+      policyDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
+      losses: [],
+      degraded: true,
+    } as SandboxOutcome;
+    const summary = await observedSandboxForGeneration({
+      policy: allowPolicy,
+      lifecycleScriptsExecuted: true,
+      outcomes: [ambient],
+    });
+    expect(summary.enforced).toBe(false);
+    expect(summary.backends).toEqual(['none']);
   });
 
   it('skips unapproved declared scripts without executing them', async () => {

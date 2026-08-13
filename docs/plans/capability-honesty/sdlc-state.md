@@ -61,5 +61,6 @@ remains enabled.
   (`MAX_COMPANION_NODES`); spec hedges already exist.
 - Maven provider still requires OpenPacker catalog sidecars (documented in
   `docs/product/reference-implementation.md`).
-- opm remains local/catalog-source-only by design (documented in README +
-  `docs/guides/opm.md`).
+- At closeout (2026-08-03) opm was local/catalog-source-only. Later initiatives
+  added registry `opm add` and a proof-checked closure; README and
+  `docs/guides/opm.md` now describe that path.

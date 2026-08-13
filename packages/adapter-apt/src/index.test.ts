@@ -94,6 +94,24 @@ describe('planning', () => {
         loss.blocksProfile.includes('native-validated-v1'),
       ),
     ).toBe(true);
+    expect(plan.sandbox).toEqual({
+      mode: 'fail-closed',
+      prefer: 'auto',
+      willEnforce: true,
+    });
+  });
+
+  it('does not claim full jail enforcement for host-install', async () => {
+    const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
+    const jailed = await apt.plan('pkg:deb/curl');
+    expect(jailed.sandbox?.willEnforce).toBe(true);
+    const ambient = await apt.plan('pkg:deb/curl', {
+      sandbox: { allowHostUnsandboxedInstall: true },
+    });
+    expect(ambient.sandbox?.willEnforce).toBe(false);
+    expect(ambient.semanticLoss.map((loss) => loss.code)).not.toContain(
+      'SYSTEM_INSTALL_SANDBOXED',
+    );
   });
 
   it('refuses anything that is not a Debian package name', async () => {

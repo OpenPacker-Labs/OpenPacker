@@ -73,6 +73,7 @@ export {
   lockPackageFromSource,
   mediaTypeForEcosystem,
   nativeIntegrityOf,
+  observedSandboxForGeneration,
   materializeLockPackage,
   readProjectState,
   uninstallAll,
@@ -184,6 +185,7 @@ export {
 } from './resolve.js';
 
 export {
+  hostSandboxFromPolicy,
   installSystemPackage,
   listSystemInstallers,
   planSystemInstall,

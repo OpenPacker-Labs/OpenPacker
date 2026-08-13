@@ -66,8 +66,10 @@ policy rather than claim “MXC-secure” as a product fact.
   mock backend; fail-closed is tested without host tools.
 - Semantic loss / evidence codes for sandbox outcomes are first-class:
   `SANDBOX_ENFORCED`, `SANDBOX_BACKEND_MXC`, `SANDBOX_BACKEND_NATIVE`,
-  `SANDBOX_UNAVAILABLE`, `SANDBOX_DEGRADED`, `SYSTEM_INSTALL_SANDBOXED`,
-  `SYSTEM_INSTALL_NOT_SANDBOXED`.
+  `SANDBOX_UNAVAILABLE`, `SANDBOX_DEGRADED`,
+  `SYSTEM_INSTALL_CONTAINMENT_LIMITED`, `SYSTEM_INSTALL_NOT_SANDBOXED`.
+  (`SYSTEM_INSTALL_SANDBOXED` is deprecated and must not be emitted for new host
+  installs.)
 
 ## Notes
 

@@ -167,6 +167,27 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
     expect(readFileSync(victim, 'utf8')).toBe('good\n');
   });
 
+  it('allows project source writes only when projectWrite is granted', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'op-escape-projw-'));
+    const victim = join(project, 'src.js');
+    writeFileSync(victim, 'good\n');
+    const outcome = await runInSandbox({
+      argv: [
+        process.execPath,
+        '-e',
+        `require('fs').writeFileSync(${JSON.stringify(victim)},'ok')`,
+      ],
+      cwd: project,
+      policy: { mode: 'fail-closed', prefer: 'native', projectWrite: true },
+      profile: 'package-exec',
+      readwritePaths: [project],
+      readonlyPaths: [],
+      backend,
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(readFileSync(victim, 'utf8')).toBe('ok');
+  });
+
   it('allows package-local writes', async () => {
     const pkg = mkdtempSync(join(tmpdir(), 'op-escape-ok-'));
     const target = join(pkg, 'built.bin');

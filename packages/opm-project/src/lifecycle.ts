@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   runInSandbox,
   type PackageGrants,
+  type SandboxBackend,
   type SandboxOutcome,
   type SandboxPolicy,
 } from '@openpacker/sandbox';
@@ -129,6 +130,8 @@ export async function runLifecycleScript(input: {
   policy: PolicyInput | undefined;
   /** Shell binary; default /bin/sh -c. */
   shell?: readonly string[];
+  /** Test seam: inject a backend. Production callers omit this. */
+  backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
   if (!lifecycleScriptsAllowed(input.policy, input.packageId)) {
     throw new OpmError(
@@ -159,6 +162,7 @@ export async function runLifecycleScript(input: {
     readwritePaths: [input.packageDir],
     readonlyPaths: [],
     network: grants?.network === true,
+    ...(input.backend === undefined ? {} : { backend: input.backend }),
   });
 
   // Fail-closed: a script that ran without an OS jail is ambient code

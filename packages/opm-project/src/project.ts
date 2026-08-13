@@ -24,7 +24,11 @@ import {
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
-import { installSystemPackage, planSystemInstall } from './system.js';
+import {
+  hostSandboxFromPolicy,
+  installSystemPackage,
+  planSystemInstall,
+} from './system.js';
 import type { InstallOutcome, InstallPlan } from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
@@ -211,12 +215,14 @@ export async function addPackage(input: {
         : parsed.purl.startsWith('pkg:')
           ? parsed.purl
           : `pkg:${ecosystem}/${parsed.alias}`;
+    const sandbox = hostSandboxFromPolicy(manifest.policy);
     const planOptions = {
       ...(input.offline !== undefined ? { offline: input.offline } : {}),
       ...(input.dryRun !== undefined ? { dryRun: input.dryRun } : {}),
       ...(input.allowElevation !== undefined
         ? { allowElevation: input.allowElevation }
         : {}),
+      sandbox,
     };
     const plan = await planSystemInstall(exact, planOptions);
     const outcome =
@@ -227,6 +233,7 @@ export async function addPackage(input: {
             ...(input.allowElevation !== undefined
               ? { allowElevation: input.allowElevation }
               : {}),
+            sandbox,
           });
     const alias = assertSafeSegment(parsed.alias, 'package alias');
     const state = (await readProjectState(paths.projectState)) ?? {

@@ -15,6 +15,7 @@ import {
   emptyLockfile,
   parseLockfile,
   parseManifest,
+  serializeManifest,
   priorTrustFromLock,
   projectPolicyDocument,
   providerFor,
@@ -205,6 +206,41 @@ ${body}
     expect(() =>
       parseManifest(manifestWithPolicy('block_exotic_transitive = "true"')),
     ).toThrow(/must be boolean, got string/);
+  });
+
+  it('round-trips [sandbox] knobs including project_write', () => {
+    const text = `
+[project]
+name = "sec"
+ecosystems = ["npm"]
+
+[options]
+offline = true
+layout = "opm"
+
+[sandbox]
+enabled = true
+mode = "fail-closed"
+prefer = "native"
+project_write = true
+minimal_path = false
+strict_lifecycle_allowlist = true
+allow_dangerous_grants = false
+legacy_fat_root = false
+timeout_ms = 120000
+`;
+    const manifest = parseManifest(text);
+    expect(manifest.policy?.sandboxMode).toBe('fail-closed');
+    expect(manifest.policy?.sandboxPrefer).toBe('native');
+    const ext = manifest.policy as typeof manifest.policy & {
+      projectWrite?: boolean;
+      timeoutMs?: number;
+    };
+    expect(ext.projectWrite).toBe(true);
+    expect(ext.timeoutMs).toBe(120000);
+    const again = parseManifest(serializeManifest(manifest));
+    expect((again.policy as typeof ext).projectWrite).toBe(true);
+    expect((again.policy as typeof ext).timeoutMs).toBe(120000);
   });
 
   it('refuses ${ENV} expansion in expected_registry_id', () => {
