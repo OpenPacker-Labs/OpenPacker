@@ -6,7 +6,13 @@ test('Rust release SBOM is deterministic and preserves dependency edges', () => 
   const metadata = {
     packages: [
       { id: 'b 1.0.0', name: 'b', version: '1.0.0', license: 'MIT' },
-      { id: 'a 1.0.0', name: 'a', version: '1.0.0', source: 'registry+x' },
+      {
+        id: 'a 1.0.0',
+        name: 'a',
+        version: '1.0.0',
+        source: 'registry+x',
+        checksum: 'ab'.repeat(32),
+      },
     ],
     resolve: {
       nodes: [
@@ -22,4 +28,7 @@ test('Rust release SBOM is deterministic and preserves dependency edges', () => 
     ref: 'pkg:cargo/a@1.0.0',
     dependsOn: ['pkg:cargo/b@1.0.0'],
   });
+  assert.deepEqual(first.components[0].hashes, [
+    { alg: 'SHA-256', content: 'ab'.repeat(32) },
+  ]);
 });

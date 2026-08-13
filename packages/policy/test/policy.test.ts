@@ -189,6 +189,28 @@ test('minimumReleaseAge missing publish time is not-provided unless strict', asy
   expect(hard.decision).toBe('deny');
 });
 
+test('minimumReleaseAge does not apply to local path sources', async () => {
+  const result = await evaluatePolicy(
+    { ...baseSupply, minimumReleaseAgeMinutes: 1440 },
+    {
+      evidence: [],
+      lifecycle: eligible,
+      sourceKind: 'path',
+      evaluationTime: '2026-08-04T00:00:00Z',
+    },
+  );
+  expect(result.decision).toBe('allow');
+  expect(result.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'supply-chain.release-age',
+        status: 'valid',
+        message: expect.stringMatching(/local path/i),
+      }),
+    ]),
+  );
+});
+
 test('trustPolicy no-downgrade refuses unsigned after trusted-publisher', async () => {
   expect(TRUST_TIER_RANK['trusted-publisher']).toBeGreaterThan(
     TRUST_TIER_RANK.unsigned,

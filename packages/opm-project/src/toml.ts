@@ -7,6 +7,7 @@ import type {
   RequirementScope,
 } from './types.js';
 import { OpmError } from './types.js';
+import { defaultSupplyChainPolicyInput } from './supply-chain.js';
 
 /**
  * Minimal TOML subset reader/writer for opm.toml.
@@ -25,6 +26,8 @@ export function defaultManifest(name = 'project'): OpmManifest {
       offline: false,
       layout: 'opm',
     },
+    // Configured recommended production profile (ADR 0033). Scripts stay off.
+    policy: defaultSupplyChainPolicyInput(),
   };
 }
 

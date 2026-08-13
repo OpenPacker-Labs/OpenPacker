@@ -13,9 +13,20 @@ source = "file:../../fixtures/opm/demo-tool-1.1.0.tgz"
 offline = true
 layout = "opm"
 
+[policy]
+allow_yanked = false
+allow_quarantined = false
+semantic_loss_maximum = "warning"
+allow_lifecycle_scripts = false
+minimum_release_age_minutes = 1440
+trust_policy = "no-downgrade"
+block_exotic_transitive = true
+block_exotic_direct = false
+
 # Package install/execution jail (ADR 0036). Defaults when omitted:
 # enabled, fail-closed, prefer auto (native bwrap/seatbelt when present, else MXC).
 [sandbox]
 enabled = true
 mode = "fail-closed"
 prefer = "auto"
+allow_host_unsandboxed_install = false

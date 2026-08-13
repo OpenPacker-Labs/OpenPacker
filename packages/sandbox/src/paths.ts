@@ -72,6 +72,30 @@ export function sensitiveMaskFiles(): string[] {
 }
 
 /**
+ * Network CLIs masked under package-exec when the jail has no network grant.
+ * Node itself can still open sockets; this removes the obvious host helpers.
+ */
+export function networkToolMaskFiles(): string[] {
+  const names = [
+    'curl',
+    'wget',
+    'nc',
+    'ncat',
+    'netcat',
+    'ssh',
+    'scp',
+    'sftp',
+    'rsync',
+  ];
+  const dirs = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+  const out: string[] = [];
+  for (const dir of dirs) {
+    for (const name of names) out.push(join(dir, name));
+  }
+  return out;
+}
+
+/**
  * Validate a jail grant path (read/write).
  *
  * Rejects empty, NUL, and path segments that are `..` before resolution so a

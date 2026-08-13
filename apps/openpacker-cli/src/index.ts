@@ -473,6 +473,18 @@ function exportSbom(input: JsonValue): JsonValue {
     dependencyRefs.set(item.nodeId, [...new Set(dependsOn)]);
   }
   const solutionDigest = formatDigest(solve.solution.solutionDigest);
+  const solutionRef = `urn:openpacker:solution:${solutionDigest}`;
+  const incoming = new Set(
+    solve.solution.dependencyEdges.map((edge) => edge.toNodeId),
+  );
+  const rootIds = solve.selected
+    .map((item) => item.nodeId)
+    .filter((id) => !incoming.has(id));
+  const rootRefs = (
+    rootIds.length > 0 ? rootIds : solve.selected.map((item) => item.nodeId)
+  )
+    .map((id) => componentRefs.get(id)!)
+    .sort();
   return {
     bomFormat: 'CycloneDX',
     specVersion: '1.6',
@@ -480,7 +492,7 @@ function exportSbom(input: JsonValue): JsonValue {
     version: 1,
     metadata: {
       component: {
-        'bom-ref': `urn:openpacker:solution:${solutionDigest}`,
+        'bom-ref': solutionRef,
         type: 'application',
         name: 'openpacker-solution',
         version: solutionDigest,
@@ -499,10 +511,13 @@ function exportSbom(input: JsonValue): JsonValue {
         content: artifact.digest.value,
       })),
     })),
-    dependencies: solve.selected.map((item) => ({
-      ref: componentRefs.get(item.nodeId)!,
-      dependsOn: dependencyRefs.get(item.nodeId)!,
-    })),
+    dependencies: [
+      { ref: solutionRef, dependsOn: rootRefs },
+      ...solve.selected.map((item) => ({
+        ref: componentRefs.get(item.nodeId)!,
+        dependsOn: dependencyRefs.get(item.nodeId)!,
+      })),
+    ],
   };
 }
 

@@ -10,11 +10,9 @@ export function rustMetadataToCycloneDx(metadata) {
   const packages = [...metadata.packages].sort((left, right) =>
     compare(left.id, right.id),
   );
+  const cargoPurl = (name, version) => `pkg:cargo/${name}@${version}`;
   const references = new Map(
-    packages.map((item) => [
-      item.id,
-      `pkg:cargo/${encodeURIComponent(item.name)}@${encodeURIComponent(item.version)}`,
-    ]),
+    packages.map((item) => [item.id, cargoPurl(item.name, item.version)]),
   );
   const components = packages.map((item) => ({
     type: 'library',
@@ -23,6 +21,9 @@ export function rustMetadataToCycloneDx(metadata) {
     version: item.version,
     purl: references.get(item.id),
     ...(item.license ? { licenses: [{ expression: item.license }] } : {}),
+    ...(item.checksum
+      ? { hashes: [{ alg: 'SHA-256', content: item.checksum }] }
+      : {}),
     ...(item.source
       ? { externalReferences: [{ type: 'distribution', url: item.source }] }
       : {}),

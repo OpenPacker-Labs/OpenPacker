@@ -82,6 +82,7 @@ export async function runInSandbox(
   const grantedWrite = normalizeJailPaths(packageGrants.write, 'write grant');
   const grantedRead = normalizeJailPaths(packageGrants.read, 'read grant');
   assertGrantsNotDangerous(grantedWrite, resolved.allowDangerousGrants);
+  assertGrantsNotDangerous(grantedRead, resolved.allowDangerousGrants);
   if (profile === 'package-exec') {
     assertPathNotRootOrHome(
       input.cwd,
@@ -93,6 +94,20 @@ export async function runInSandbox(
         path,
         resolved.allowDangerousGrants,
         'package-exec readwrite path',
+      );
+    }
+    for (const path of input.readonlyPaths) {
+      assertPathNotRootOrHome(
+        path,
+        resolved.allowDangerousGrants,
+        'package-exec readonly path',
+      );
+    }
+    for (const path of grantedRead) {
+      assertPathNotRootOrHome(
+        path,
+        resolved.allowDangerousGrants,
+        'package-exec read grant',
       );
     }
   }

@@ -105,3 +105,20 @@ export function extractCycloneDxEvidence(document: unknown): CycloneDxEvidence {
     );
   return { purls, hashes, dependencies, licenses, externalReferences };
 }
+
+/**
+ * Presence of a CycloneDX document is not integrity. A BOM with no PURLs
+ * and no hashes cannot be bound to a lock or artifact set.
+ */
+export function cycloneDxEvidenceStatus(
+  document: unknown,
+): 'valid' | 'invalid' {
+  try {
+    const evidence = extractCycloneDxEvidence(document);
+    if (evidence.purls.length === 0 && evidence.hashes.length === 0)
+      return 'invalid';
+    return 'valid';
+  } catch {
+    return 'invalid';
+  }
+}

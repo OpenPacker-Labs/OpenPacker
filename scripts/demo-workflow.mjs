@@ -48,6 +48,7 @@ import { createOpenPackerClient } from '@openpacker/sdk';
 import {
   Ed25519Signer,
   Ed25519Verifier,
+  cycloneDxEvidenceStatus,
   extractCycloneDxEvidence,
   verifyCanonical,
   verifyOfflineSigstoreBundle,
@@ -1362,6 +1363,12 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
       subject.artifact,
     );
     validateChunkIndex(chunk);
+    const sbomRefs = new Map(
+      sdkSolved.selected.map((item) => [
+        item.nodeId,
+        item.identity.exactPurl ?? `urn:openpacker:component:${item.nodeId}`,
+      ]),
+    );
     const sbom = {
       bomFormat: 'CycloneDX',
       specVersion: '1.6',
@@ -1370,10 +1377,22 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
         type: 'library',
         name: item.identity.name,
         version: item.normalizedVersion,
-        purl: item.identity.exactPurl,
-        licenses: [{ expression: 'MIT' }],
+        ...(item.identity.exactPurl === undefined
+          ? {}
+          : { purl: item.identity.exactPurl }),
+        hashes: item.artifacts.map((artifact) => ({
+          alg: 'SHA-256',
+          content: artifact.digest.value,
+        })),
       })),
-      dependencies: [],
+      dependencies: sdkSolved.selected.map((item) => ({
+        ref: sbomRefs.get(item.nodeId),
+        dependsOn: sdkSolved.solution.dependencyEdges
+          .filter((edge) => edge.fromNodeId === item.nodeId)
+          .map((edge) => sbomRefs.get(edge.toNodeId))
+          .filter(Boolean)
+          .sort(),
+      })),
     };
     const slsa = {
       _type: 'https://in-toto.io/Statement/v1',
@@ -1398,9 +1417,9 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     };
     verifySlsaProvenance(slsa, subject.artifact.digest);
     const cycloneEvidence = extractCycloneDxEvidence(sbom);
-    assert.ok(
-      cycloneEvidence.licenses.some(({ expression }) => expression === 'MIT'),
-    );
+    assert.equal(cycloneDxEvidenceStatus(sbom), 'valid');
+    assert.ok(cycloneEvidence.purls.length > 0);
+    assert.ok(cycloneEvidence.hashes.length > 0);
     const sigstore = await sigstoreFixture(
       fixture.upstream.get(subject.artifact.descriptorId).bytes,
       keys,

@@ -110,6 +110,17 @@ describe('bwrap argv profile', () => {
       (a, i) => a === '--ro-bind' && argv[i + 1] === '/' && argv[i + 2] === '/',
     );
     expect(fat).toBe(true);
+    const lastRootBind = argv.reduce(
+      (found, item, index) =>
+        item === '--bind' && argv[index + 1] === '/' ? index : found,
+      -1,
+    );
+    const lastMask = argv.reduce(
+      (found, item, index) =>
+        item === '--ro-bind' && argv[index + 1] === '/dev/null' ? index : found,
+      -1,
+    );
+    if (lastMask !== -1) expect(lastMask).toBeGreaterThan(lastRootBind);
   });
 });
 

@@ -180,7 +180,11 @@ export async function runHostInstaller(
     sandboxBackend: outcome.backend,
     containmentLimited: true,
     profile: 'host-install',
-    extraLosses: [limitedContainmentLoss(input.ecosystem), ...outcome.losses],
+    extraLosses: outcome.losses.some(
+      (loss) => loss.code === SANDBOX_LOSS.SYSTEM_LIMITED,
+    )
+      ? [...outcome.losses]
+      : [limitedContainmentLoss(input.ecosystem), ...outcome.losses],
     willEnforce: true,
   };
 }

@@ -211,6 +211,20 @@ describe('@openpacker/sandbox', () => {
     expect(() => assertGrantsNotDangerous(['/'], true)).not.toThrow();
   });
 
+  it('refuses package-exec readonly binds of /', async () => {
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+        cwd: await mkdtemp(join(tmpdir(), 'op-sandbox-ro-')),
+        policy: { mode: 'fail-closed' },
+        profile: 'package-exec',
+        readwritePaths: [],
+        readonlyPaths: ['/'],
+        backend: createMockBackend(),
+      }),
+    ).rejects.toBeInstanceOf(JailPathError);
+  });
+
   it('refuses package-exec binds of / or the user home', async () => {
     await expect(
       runInSandbox({
