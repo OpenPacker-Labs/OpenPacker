@@ -90,7 +90,7 @@ async function fixture(): Promise<string> {
       executable: 'acme-pack',
       commands: [
         {
-          argv: ['{executable}', 'pack', '--out', '{outputDirectory}'],
+          arguments: ['pack', '--out', '{outputDirectory}'],
         },
       ],
       authority: {

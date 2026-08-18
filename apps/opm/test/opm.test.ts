@@ -51,12 +51,7 @@ describe('opm + opmx CLI', () => {
         executable: 'node',
         commands: [
           {
-            argv: [
-              '{executable}',
-              'acme-pack.js',
-              '--out',
-              '{outputDirectory}',
-            ],
+            arguments: ['acme-pack.js', '--out', '{outputDirectory}'],
           },
         ],
         authority: { build: false, network: 'never', environment: [] },
