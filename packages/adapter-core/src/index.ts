@@ -1,8 +1,12 @@
 import { canonicalProjectionDigest, formatDigest } from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
+  Distribution,
   PackageIdentity,
   PackageInstance,
+  PackageManifest,
+  NormalizedPackManifest,
+  PackReceipt,
   SemanticLoss,
   SourceSnapshot,
   VersionConstraint,
@@ -376,6 +380,109 @@ export interface PackedArtifact {
   /** sha256 over the archive bytes, the same identity any other artifact has. */
   digest: string;
   semanticLoss: readonly SemanticLoss[];
+}
+
+/**
+ * Version 2 package-build boundary.
+ *
+ * Unlike the legacy `ProjectFormat.pack`, this is a capability in its own
+ * right: OCI, Nix and system packaging formats may be packable without also
+ * being project-manifest projection formats, and one pack can yield several
+ * native artifacts.
+ */
+export interface PackagePacker {
+  readonly providerId: string;
+  readonly purlType: Ecosystem;
+  available(options?: PackOptions): Promise<PackAvailability>;
+  detect(root: string): Promise<DetectedProject | undefined>;
+  /** Adapter-owned publish selection used by the normalized capture. */
+  capturePaths?(project: DetectedProject): Promise<readonly string[]>;
+  plan(input: PackInput, options?: PackOptions): Promise<PackPlan>;
+  pack(input: PackInput, options?: PackOptions): Promise<PackOutcome>;
+}
+
+export interface PackInput {
+  project: DetectedProject;
+  /** Optional common package document used for cross-target packing. */
+  manifest?: PackageManifest;
+  /** The target entry must be explicit when it differs from the source. */
+  target?: Distribution;
+  /** Internal OCI-based representation consumed by standardized emitters. */
+  normalized?: NormalizedPackInput;
+}
+
+export interface NormalizedPackInput {
+  manifest: NormalizedPackManifest;
+  files: readonly NormalizedPackFile[];
+}
+
+export interface NormalizedPackFile {
+  path: string;
+  contents: Uint8Array;
+  executable: boolean;
+}
+
+export interface PackOptions {
+  /** Directory receiving every native artifact and the pack receipt. */
+  outputDirectory?: string;
+  /** Native delegate now; standardized emitters are added by package-build/2. */
+  strategy?: 'delegate' | 'standard';
+  /** Select one native implementation from an adapter's supported tool family. */
+  tool?: string;
+  /** Permit a native command to compile or execute project-controlled code. */
+  allowBuild?: boolean;
+  /** Permit network access independently from build consent. */
+  allowNetwork?: boolean;
+  /** Refuse network even when allowNetwork is also set. */
+  offline?: boolean;
+  /** Return the exact plan without running it. */
+  dryRun?: boolean;
+  signal?: AbortSignal;
+  sandbox?: InstallOptions['sandbox'];
+}
+
+export interface PackAvailability {
+  available: boolean;
+  reason?: string;
+  tool?: { name: string; version?: string; path?: string };
+}
+
+export interface PackPlan {
+  strategy: 'delegate' | 'standard';
+  purlType: Ecosystem;
+  /** First command, retained for package-build/1-compatible displays. */
+  command?: readonly string[];
+  /** Ordered native commands when packing is not a single process. */
+  commands?: readonly (readonly string[])[];
+  /** Commands attempted after execution to retire temporary native state. */
+  cleanupCommands?: readonly (readonly string[])[];
+  tool?: { name: string; version?: string; path?: string };
+  requiresBuild: boolean;
+  requiresNetwork: boolean;
+  expectedRoles: readonly string[];
+  semanticLoss: readonly SemanticLoss[];
+}
+
+export interface PackArtifact {
+  path: string;
+  /** Present when the native tool reports package identity authoritatively. */
+  exactPurl?: string;
+  mediaType: string;
+  size: number;
+  digest: string;
+  nativeRole: string;
+  outputName?: string;
+}
+
+export interface PackOutcome extends PackPlan {
+  performed: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  artifacts: readonly PackArtifact[];
+  sandboxBackend?: string;
+  sandboxEnforced?: boolean;
+  receipt?: PackReceipt;
 }
 
 export interface WriteManifestOptions {

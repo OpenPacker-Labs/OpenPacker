@@ -19,7 +19,7 @@ import {
   hostSandboxFromPolicy,
   installSystemPackage,
   listRegistryVersions,
-  packNativeProject,
+  packProject,
   readLockfile,
   readManifestFile,
   listSystemInstallers,
@@ -382,21 +382,68 @@ export async function runOpm(
       }
       case 'pack': {
         const root = await requireOpmRoot(cwd);
+        const projectManifest = await readManifestFile(
+          projectPaths(root).manifest,
+        );
         const ecosystem =
           option(args, 'ecosystem') ?? option(args, 'e') ?? args.positionals[0];
         if (!ecosystem)
           throw usage(
             'opm pack requires an ecosystem: opm pack npm | opm pack nuget',
           );
+        const packageVersion = option(args, 'package-version');
+        if (!packageVersion)
+          throw usage(
+            'opm pack requires --package-version; target versions are never guessed',
+          );
         const output = option(args, 'output');
-        const artifact = await packNativeProject({
+        const result = await packProject({
           root,
           ecosystem,
+          strategy: args.options.has('delegate') ? 'delegate' : 'standard',
+          name: option(args, 'name') ?? projectManifest.project.name,
+          version: packageVersion,
           ...(output === undefined ? {} : { outputDirectory: output }),
+          ...(option(args, 'tool') === undefined
+            ? {}
+            : { tool: option(args, 'tool')! }),
+          allowBuild: args.options.has('allow-build'),
+          allowNetwork: args.options.has('allow-network'),
+          offline: args.options.has('offline'),
+          dryRun: args.options.has('dry-run'),
+          nativeMetadata: {
+            ...(option(args, 'os') === undefined
+              ? {}
+              : { 'dev.openpacker.oci.os': option(args, 'os')! }),
+            ...(option(args, 'arch') === undefined
+              ? {}
+              : {
+                  'dev.openpacker.oci.architecture': option(args, 'arch')!,
+                }),
+          },
         });
-        io.stdout.write(`${artifact.path}\n`);
-        io.stdout.write(`  ${artifact.digest}  ${artifact.size} bytes\n`);
-        for (const loss of artifact.semanticLoss)
+        if (!result.performed) {
+          const commands =
+            result.commands ?? (result.command ? [result.command] : []);
+          if (commands.length === 0) io.stdout.write(`standard ${ecosystem}\n`);
+          for (const command of commands)
+            io.stdout.write(`${command.join(' ')}\n`);
+          for (const command of result.cleanupCommands ?? [])
+            io.stdout.write(`cleanup: ${command.join(' ')}\n`);
+          return EXIT_CODES.success;
+        }
+        if (result.exitCode !== 0)
+          throw new OpmError(
+            'PACK_FAILED',
+            result.stderr || `Pack exited ${result.exitCode}`,
+          );
+        for (const artifact of result.artifacts) {
+          io.stdout.write(`${artifact.path}\n`);
+          io.stdout.write(
+            `  ${artifact.digest}  ${artifact.size} bytes  ${artifact.nativeRole}\n`,
+          );
+        }
+        for (const loss of result.semanticLoss)
           io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
         return EXIT_CODES.success;
       }
@@ -605,6 +652,9 @@ function isBooleanFlag(key: string): boolean {
     key === 'offline' ||
     key === 'json' ||
     key === 'dry-run' ||
+    key === 'delegate' ||
+    key === 'allow-build' ||
+    key === 'allow-network' ||
     key === 'allow-elevation'
   );
 }
@@ -783,6 +833,13 @@ Browse registries (no project needed):
 Resolve a full dependency graph (transitive, proof-checked):
   opm resolve pkg:npm/chalk --range '^4.1.0'
   opm resolve pkg:npm/chalk --candidates 8
+
+Pack a project:
+  opm pack npm --package-version <version>
+  opm pack <npm|cargo|pypi|nuget|maven|golang|oci|nix|deb|winget|chocolatey> --package-version <version>
+  opm pack oci --package-version <version> --delegate --tool <docker|podman|mise> --dry-run
+  Standard packing is the default. OCI targets require explicit --os and --arch.
+  Delegated scripts/builds require --allow-build; network additionally requires --allow-network.
 
 Host/profile installers use the same verbs when the registry advertises
 install (capability discovery). Examples:

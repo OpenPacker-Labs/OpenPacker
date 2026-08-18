@@ -18,6 +18,7 @@ import type {
   NativeLockEntry,
   NativeRequirement,
   PackedArtifact,
+  PackOutcome,
   ProjectFormat,
   ProjectionResult,
 } from '@openpacker/adapter-core';
@@ -269,6 +270,53 @@ export async function packNativeProject(input: {
       ? {}
       : { outputDirectory: input.outputDirectory }),
   });
+}
+
+/** Plan or run the versioned, typed native pack capability. */
+export async function packDelegatedProject(input: {
+  root: string;
+  ecosystem: string;
+  outputDirectory?: string;
+  tool?: string;
+  allowBuild?: boolean;
+  allowNetwork?: boolean;
+  offline?: boolean;
+  dryRun?: boolean;
+  signal?: AbortSignal;
+}): Promise<PackOutcome> {
+  const registry = requireAdapterRegistry();
+  const definition = await registry.definitionFor(input.ecosystem);
+  if (!hasResource(definition, 'prex.registry.package-build/2'))
+    throw new OpmError(
+      'UNSUPPORTED_OPERATION',
+      `The ${input.ecosystem} adapter does not advertise prex.registry.package-build/2.`,
+    );
+  const packer = await registry.packerFor(input.ecosystem);
+  const detected = await packer.detect(input.root);
+  if (!detected)
+    throw new OpmError(
+      'NOT_FOUND',
+      `No ${input.ecosystem} packable project in ${input.root}.`,
+    );
+  return packer.pack(
+    { project: detected },
+    {
+      strategy: 'delegate',
+      ...(input.outputDirectory === undefined
+        ? {}
+        : { outputDirectory: input.outputDirectory }),
+      ...(input.tool === undefined ? {} : { tool: input.tool }),
+      ...(input.allowBuild === undefined
+        ? {}
+        : { allowBuild: input.allowBuild }),
+      ...(input.allowNetwork === undefined
+        ? {}
+        : { allowNetwork: input.allowNetwork }),
+      ...(input.offline === undefined ? {} : { offline: input.offline }),
+      ...(input.dryRun === undefined ? {} : { dryRun: input.dryRun }),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    },
+  );
 }
 
 function collect(

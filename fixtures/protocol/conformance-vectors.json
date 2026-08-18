@@ -1732,6 +1732,26 @@
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/PackagePage",
       "valid": false,
       "levels": ["PREX-I"]
+    },
+    {
+      "name": "normalized-pack",
+      "file": "pack/normalized.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json#/$defs/NormalizedPackManifest",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "normalized-pack-without-target",
+      "file": "pack/normalized.json",
+      "mutations": [
+        {
+          "operation": "remove",
+          "path": "/target"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json#/$defs/NormalizedPackManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
     }
   ]
 }

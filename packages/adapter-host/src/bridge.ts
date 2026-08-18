@@ -95,11 +95,11 @@ export async function assertWitShapedModule(
       'INVALID_REGISTRY_DEFINITION',
       'service-index round-trip lost registryId',
     );
-  // At least one of catalog, codec, installer must exist for a useful adapter.
-  if (!module.codec && !module.catalog && !module.installer)
+  // At least one capability export must exist for a useful adapter.
+  if (!module.codec && !module.catalog && !module.installer && !module.packer)
     throw new AdapterHostError(
       'INVALID_ADAPTER',
-      `Adapter ${module.id} exports no codec, catalog, or installer`,
+      `Adapter ${module.id} exports no codec, catalog, installer, or packer`,
     );
 
   for (const type of CATALOG_RESOURCES) {
@@ -154,6 +154,14 @@ export async function assertWitShapedModule(
     throw new AdapterHostError(
       'INVALID_ADAPTER',
       `Adapter ${module.id} advertises prex.registry.environment/1 but does not export environment`,
+    );
+  if (
+    hasResource(definition, 'prex.registry.package-build/2') &&
+    !module.packer
+  )
+    throw new AdapterHostError(
+      'INVALID_ADAPTER',
+      `Adapter ${module.id} advertises prex.registry.package-build/2 but does not export packer`,
     );
 
   // Project-format levels are nested: writing a lockfile or a layout without

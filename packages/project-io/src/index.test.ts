@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,11 +6,27 @@ import {
   applySpanEdits,
   detectJsonStyle,
   editJsonFile,
+  findExecutable,
   matchFileStyle,
   ProjectIoError,
   readTextFile,
   writeFileAtomic,
 } from './index.js';
+
+describe('findExecutable', () => {
+  it('resolves a PATH binary without executing it', async () => {
+    await withTemp(async (dir) => {
+      const tool = join(dir, 'native');
+      const marker = join(dir, 'executed');
+      await writeFile(tool, `#!/bin/sh\ntouch '${marker}'\n`);
+      await chmod(tool, 0o755);
+      expect(await findExecutable('native', { PATH: dir, PATHEXT: '' })).toBe(
+        tool,
+      );
+      await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+});
 
 async function withTemp<T>(run: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'project-io-'));
@@ -190,7 +206,7 @@ describe('materialiseTree', () => {
 
 describe('archives', () => {
   it('produces a tar the materializer can read back', async () => {
-    const { packTarGzip } = await import('./archive.js');
+    const { packTar, packTarGzip } = await import('./archive.js');
     const { inspectArchive } = await import('@openpacker/materializer');
     const bytes = packTarGzip([
       {
@@ -210,6 +226,16 @@ describe('archives', () => {
       'package/bin/cli.js',
       'package/package.json',
     ]);
+    expect(
+      (
+        await inspectArchive(
+          packTar([
+            { path: 'plain.txt', contents: new TextEncoder().encode('plain') },
+          ]),
+          'tar',
+        )
+      ).map((file) => file.path),
+    ).toEqual(['plain.txt']);
   });
 
   it('is deterministic — the same input gives the same bytes', async () => {

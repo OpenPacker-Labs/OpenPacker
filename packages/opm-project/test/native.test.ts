@@ -9,6 +9,7 @@ import {
   buildPackageManifest,
   initProject,
   nativeName,
+  packDelegatedProject,
   projectNativeFormats,
   projectionLevel,
   removePackage,
@@ -385,6 +386,22 @@ describe('projection helpers', () => {
 });
 
 describe('package manifest', () => {
+  it('plans delegated packing through package-build v2', async () => {
+    const root = await tempProject({
+      'package.json': '{"name":"test-app","version":"1.0.0"}\n',
+    });
+    const outcome = await packDelegatedProject({
+      root,
+      ecosystem: 'npm',
+      dryRun: true,
+      offline: true,
+    });
+    expect(outcome.performed).toBe(false);
+    expect(outcome.strategy).toBe('delegate');
+    expect(outcome.command).toContain('--ignore-scripts');
+    expect(outcome.tool?.name).toBe('npm');
+  });
+
   it('describes the package and every ecosystem it ships to', async () => {
     const root = await tempProject({
       'package.json': '{\n  "name": "test-app"\n}\n',

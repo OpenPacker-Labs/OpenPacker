@@ -24,5 +24,7 @@ export const MEDIA_TYPES = {
   explanation: 'application/vnd.openpacker.explanation.v1+json',
   proof: 'application/vnd.openpacker.proof.v1+json',
   lockfile: 'application/vnd.openpacker.lock.v1+json',
+  normalizedPack: 'application/vnd.openpacker.normalized-pack.v1+json',
+  packReceipt: 'application/vnd.openpacker.pack-receipt.v1+json',
   problem: 'application/problem+json',
 } as const;

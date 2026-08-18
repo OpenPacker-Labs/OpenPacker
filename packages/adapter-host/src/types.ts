@@ -2,6 +2,7 @@ import type {
   CatalogProvider,
   EcosystemCodec,
   InstallerProvider,
+  PackagePacker,
   ProjectFormat,
 } from '@openpacker/adapter-core';
 
@@ -31,6 +32,7 @@ export type RegistryResourceType =
   | 'prex.registry.project-lock/1'
   | 'prex.registry.project-layout/1'
   | 'prex.registry.package-build/1'
+  | 'prex.registry.package-build/2'
   | (string & {});
 
 export interface RegistryResource {
@@ -116,6 +118,12 @@ export interface AdapterModule {
    * `prex.registry.project-manifest/1` and its siblings.
    */
   project?(context?: AdapterContext): ProjectFormat;
+  /**
+   * Multi-artifact delegated/standard pack boundary. Advertised via
+   * `prex.registry.package-build/2`; v1 remains on ProjectFormat for legacy
+   * adapters.
+   */
+  packer?(context?: AdapterContext): PackagePacker;
   /**
    * Optional environment projection (mise/nix). Returns canonical JSON bytes
    * or a plain object for PATH/env.

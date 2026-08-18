@@ -1,0 +1,71 @@
+{
+  "normalizedPackManifestVersion": "1",
+  "package": {
+    "packageManifestVersion": "1",
+    "name": "demo",
+    "version": "1.0.0",
+    "distributions": [
+      {
+        "purlType": "npm",
+        "identifier": "demo",
+        "version": "1.0.0",
+        "exactPurl": "pkg:npm/demo@1.0.0",
+        "requirements": []
+      }
+    ]
+  },
+  "target": {
+    "purlType": "npm",
+    "identifier": "demo",
+    "version": "1.0.0",
+    "exactPurl": "pkg:npm/demo@1.0.0",
+    "requirements": []
+  },
+  "tree": {
+    "manifestVersion": "1",
+    "entries": [
+      {
+        "path": "package.json",
+        "kind": "file",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "size": 32
+      }
+    ]
+  },
+  "oci": {
+    "imageLayoutVersion": "1.0.0",
+    "config": {
+      "entrypoint": [],
+      "arguments": [],
+      "environment": {},
+      "labels": {},
+      "exposedPorts": [],
+      "volumes": []
+    },
+    "layers": [
+      {
+        "descriptorId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "size": 2048,
+        "mediaType": "application/vnd.oci.image.layer.v1.tar",
+        "artifactType": "application/vnd.openpacker.normalized-source.v1.tar",
+        "nativeRole": "normalized-source",
+        "locations": [],
+        "referrers": [],
+        "externalRefs": []
+      }
+    ]
+  },
+  "requirements": [],
+  "lifecycle": [],
+  "nativeMetadata": {
+    "dev.openpacker.capture": "project-tree-v1"
+  },
+  "semanticLoss": []
+}
