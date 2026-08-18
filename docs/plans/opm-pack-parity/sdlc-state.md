@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: verification
-- Current layer: `03-standard-emitters`
+- Phase: complete
+- Current layer: complete
 - Branch: `sdlc/opm-pack-01-contracts-delegation`
 - External issues/PRs: not created; implementation authorization did not include
   external mutations
@@ -38,9 +38,17 @@
 
 - `929fcad`: package-build/2 host contract and strict npm delegation.
 - `e92baa5`: delegated command parity for native tool families and mise routing.
-- Working tree: normalized pack schema/model, bounded no-follow capture,
-  standard emitters, canonical receipts, standard-by-default CLI, conformance
-  and independent archive-format checks.
+- `d167cb4`: normalized pack schema/model, standard emitters, canonical
+  receipts, standard-by-default CLI, conformance and independent archive checks.
+- `cb8b381`: adapter-owned npm publish selection, non-executing tool discovery,
+  explicit target versions, dotnet build consent and WinGet validation.
+- `c20cd37`: directory snapshot/revalidation for fail-closed capture races.
+
+## Verification
+
+- 2026-08-18: focused package suites and impact-scoped staged gates passed.
+- 2026-08-18: full offline `npm run verify` passed after the final code change.
+- 2026-08-18: independent reviewer approved `c20cd37` with no findings.
 
 ## Acceptance
 
