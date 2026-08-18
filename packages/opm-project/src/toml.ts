@@ -2,6 +2,7 @@ import type { PolicyInput } from '@openpacker/contracts';
 import type {
   NativeProjectionLevel,
   OpmManifest,
+  PackProviderSource,
   PackageRequirement,
   RegistrySource,
   RequirementScope,
@@ -77,6 +78,22 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push(`url = ${tomlString(source.url)}`);
     if (source.defaultFor !== undefined && source.defaultFor.length > 0)
       lines.push(`default_for = ${tomlStringArray(source.defaultFor)}`);
+    lines.push('');
+  }
+
+  for (const id of Object.keys(manifest.packProviders ?? {}).sort()) {
+    const provider = manifest.packProviders![id]!;
+    lines.push(`[pack.providers.${packProviderKey(id)}]`);
+    lines.push(`manifest = ${tomlString(provider.manifest)}`);
+    if (provider.defaultFor !== undefined && provider.defaultFor.length > 0)
+      lines.push(`default_for = ${tomlStringArray(provider.defaultFor)}`);
+    if (
+      provider.allowEnvironment !== undefined &&
+      provider.allowEnvironment.length > 0
+    )
+      lines.push(
+        `allow_environment = ${tomlStringArray(provider.allowEnvironment)}`,
+      );
     lines.push('');
   }
 
@@ -247,6 +264,15 @@ export function parseManifest(text: string): OpmManifest {
     string,
     { url?: string; default_for?: string[] }
   >();
+  let packProviderId: string | undefined;
+  const packProviderScratch = new Map<
+    string,
+    {
+      manifest?: string;
+      default_for?: string[];
+      allow_environment?: string[];
+    }
+  >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -298,6 +324,18 @@ export function parseManifest(text: string): OpmManifest {
         sandboxPackageId = undefined;
         if (!registryScratch.has(registryId))
           registryScratch.set(registryId, {});
+      } else if (name.startsWith('pack.providers.')) {
+        section = 'pack-providers';
+        packProviderId = name.slice('pack.providers.'.length);
+        if (!PACK_PROVIDER_ID.test(packProviderId))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Invalid pack provider id "${packProviderId}" at line ${i + 1}`,
+          );
+        packageAlias = undefined;
+        sandboxPackageId = undefined;
+        if (!packProviderScratch.has(packProviderId))
+          packProviderScratch.set(packProviderId, {});
       } else if (name.startsWith('packages.')) {
         section = 'packages';
         packageAlias = name.slice('packages.'.length);
@@ -376,6 +414,25 @@ export function parseManifest(text: string): OpmManifest {
           `Unknown registry field "${key}" at line ${i + 1}`,
         );
       registryScratch.set(registryId, scratch);
+    } else if (section === 'pack-providers') {
+      if (packProviderId === undefined)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Provider field outside [pack.providers.<id>] at line ${i + 1}`,
+        );
+      const scratch = packProviderScratch.get(packProviderId) ?? {};
+      if (key === 'manifest' && typeof value === 'string')
+        scratch.manifest = value;
+      else if (key === 'default_for' && Array.isArray(value))
+        scratch.default_for = value;
+      else if (key === 'allow_environment' && Array.isArray(value))
+        scratch.allow_environment = value;
+      else
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown pack provider field "${key}" at line ${i + 1}`,
+        );
+      packProviderScratch.set(packProviderId, scratch);
     } else if (section === 'policy') {
       // A misspelled policy key must not be a silently weaker policy. Every
       // other section rejects unknown fields; the governance section is the
@@ -500,6 +557,27 @@ export function parseManifest(text: string): OpmManifest {
       };
     }
     manifest.registries = registries;
+  }
+
+  if (packProviderScratch.size > 0) {
+    const providers: Record<string, PackProviderSource> = {};
+    for (const [id, scratch] of packProviderScratch) {
+      if (!scratch.manifest)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Pack provider "${id}" is missing required manifest`,
+        );
+      providers[id] = {
+        manifest: scratch.manifest,
+        ...(scratch.default_for === undefined
+          ? {}
+          : { defaultFor: scratch.default_for }),
+        ...(scratch.allow_environment === undefined
+          ? {}
+          : { allowEnvironment: scratch.allow_environment }),
+      };
+    }
+    manifest.packProviders = providers;
   }
 
   if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
@@ -842,4 +920,12 @@ function escapeKey(key: string): string {
   if (/^[A-Za-z0-9_-]+$/.test(key)) return key;
   // quote-style section keys not supported; sanitize
   return key.replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+const PACK_PROVIDER_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/u;
+
+function packProviderKey(id: string): string {
+  if (!PACK_PROVIDER_ID.test(id))
+    throw new OpmError('INVALID_MANIFEST', `Invalid pack provider id "${id}"`);
+  return id;
 }

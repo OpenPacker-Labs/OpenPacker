@@ -10,6 +10,7 @@ export type {
   NativeProjectionLevel,
   OpmManifest,
   PackageRequirement,
+  PackProviderSource,
   RegistrySource,
   ParsedPackageSpec,
   ProjectState,

@@ -105,6 +105,30 @@ describe('manifest TOML', () => {
     expect(parsed.packages['demo-tool']?.version).toBe('1.1.0');
     expect(parsed.options.offline).toBe(true);
   });
+
+  it('round-trips delegated pack provider configuration without secrets', () => {
+    const text = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      packProviders: {
+        'example-acme': {
+          manifest: '.opm/providers/acme.json',
+          defaultFor: ['acme'],
+          allowEnvironment: ['ACME_TOKEN'],
+        },
+      },
+      options: { offline: true, layout: 'opm' },
+    });
+
+    expect(text).not.toContain('secret');
+    expect(parseManifest(text).packProviders).toEqual({
+      'example-acme': {
+        manifest: '.opm/providers/acme.json',
+        defaultFor: ['acme'],
+        allowEnvironment: ['ACME_TOKEN'],
+      },
+    });
+  });
 });
 
 describe('parsePackageSpec', () => {

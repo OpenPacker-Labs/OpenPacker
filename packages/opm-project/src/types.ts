@@ -39,6 +39,15 @@ export interface RegistrySource {
   defaultFor?: readonly string[];
 }
 
+export interface PackProviderSource {
+  /** Local provider manifest path, resolved from the project root. */
+  manifest: string;
+  /** PURL types that select this provider when --provider is omitted. */
+  defaultFor?: readonly string[];
+  /** Names, never values, that this project authorizes from the host env. */
+  allowEnvironment?: readonly string[];
+}
+
 export type RequirementScope =
   | 'runtime'
   | 'development'
@@ -86,6 +95,8 @@ export interface OpmManifest {
    * and selected per purl type by `defaultFor`.
    */
   registries?: Record<string, RegistrySource>;
+  /** Local delegated pack providers keyed by their manifest id. */
+  packProviders?: Record<string, PackProviderSource>;
   options: {
     offline: boolean;
     layout: 'opm';
