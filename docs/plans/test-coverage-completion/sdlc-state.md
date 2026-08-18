@@ -49,5 +49,8 @@ test suite and every advertised test type has a mandatory oracle.
 - 2026-08-18: the revised gate passed 774 tests with 98.46% production-file
   instrumentation and 81.43% function coverage across 48 workspaces. Every
   workspace independently cleared 80%/70%.
+- 2026-08-18: the first full verify exposed an Epoch Pact server race in the
+  broad `check:generated` alias. Pact-bearing Vitest aggregates now serialize
+  files; the formerly failing aggregate passed three consecutive runs.
 - Native parity is not yet rerun: Docker and Podman are unavailable, and host
   Nix/APT execution is prohibited by the isolation requirement.
