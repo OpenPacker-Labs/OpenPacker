@@ -20,6 +20,19 @@ Provider files are local, explicit project configuration. Version 1 does not
 define remote discovery, installation, secret values, shell command strings or
 ambient environment inheritance.
 
+Projects bind providers without embedding credentials:
+
+```toml
+[pack.providers.dev-example-acme]
+manifest = ".opm/providers/acme.json"
+default_for = ["acme"]
+allow_environment = ["ACME_TOKEN"]
+```
+
+The section key MUST equal the manifest `id`. Relative paths resolve from the
+project root. `default_for` MUST be a subset of the manifest's `purlTypes`, and
+`allow_environment` MUST be a subset of its declared environment authority.
+
 ## Templates
 
 Templates are argv or environment values, never shell text. Hosts replace:
