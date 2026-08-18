@@ -294,7 +294,7 @@ describe('manifest package packer', () => {
     ).rejects.toThrow(/exceed 5 total bytes/u);
   });
 
-  it('bounds an artifact that grows while hashing', async () => {
+  it('bounds an artifact that grows during collection', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
     let growth: Promise<void> | undefined;
@@ -312,7 +312,7 @@ describe('manifest package packer', () => {
     );
 
     await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /while hashing/u,
+      /exceeds 1024 bytes/u,
     );
     await growth;
   });

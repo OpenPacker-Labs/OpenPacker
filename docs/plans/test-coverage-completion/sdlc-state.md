@@ -52,5 +52,8 @@ test suite and every advertised test type has a mandatory oracle.
 - 2026-08-18: the first full verify exposed an Epoch Pact server race in the
   broad `check:generated` alias. Pact-bearing Vitest aggregates now serialize
   files; the formerly failing aggregate passed three consecutive runs.
+- 2026-08-18: the second full verify exposed a scheduler-dependent diagnostic in
+  the growing-artifact adversarial test. The oracle now requires the common
+  byte-limit rejection whether growth wins before opening or during hashing.
 - Native parity is not yet rerun: Docker and Podman are unavailable, and host
   Nix/APT execution is prohibited by the isolation requirement.
