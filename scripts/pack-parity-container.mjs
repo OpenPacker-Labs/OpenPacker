@@ -10,6 +10,7 @@ export function parityContainerCommand({
   image,
   artifactDirectory,
   command,
+  name,
   platform = 'linux',
 }) {
   if (!RUNTIMES.has(runtime))
@@ -20,6 +21,8 @@ export function parityContainerCommand({
     throw new Error('Windows parity requires Docker Hyper-V isolation');
   if (!DIGEST_IMAGE.test(image))
     throw new Error('parity image must be pinned by sha256 digest');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/u.test(name))
+    throw new Error('parity container name is required and must be safe');
   const absolute =
     platform === 'windows'
       ? win32.isAbsolute(artifactDirectory)
@@ -49,11 +52,10 @@ export function parityContainerCommand({
       ? [
           '--isolation=hyperv',
           '--user=ContainerUser',
-          '--read-only',
           '--network=none',
           '--memory=1g',
           '--cpus=1',
-          '--mount=type=volume,target=C:\\work',
+          '--storage-opt=size=20G',
           '--workdir=C:\\work',
           '--env=TEMP=C:\\work',
           '--env=TMP=C:\\work',
@@ -74,10 +76,13 @@ export function parityContainerCommand({
         ];
   return {
     executable: runtime,
+    name,
     arguments: [
       'run',
       '--rm',
+      `--name=${name}`,
       '--pull=never',
+      '--log-driver=none',
       ...isolation,
       '--mount',
       `type=bind,source=${source},target=${target},readonly`,
@@ -85,6 +90,25 @@ export function parityContainerCommand({
       ...command,
     ],
   };
+}
+
+export function runParityContainer(plan, execute = spawnSync) {
+  const result = execute(plan.executable, plan.arguments, {
+    stdio: 'inherit',
+    shell: false,
+    timeout: 120_000,
+  });
+  if (
+    result.error !== undefined ||
+    result.signal !== null ||
+    result.status !== 0
+  )
+    execute(plan.executable, ['rm', '--force', plan.name], {
+      stdio: 'ignore',
+      shell: false,
+      timeout: 10_000,
+    });
+  return result;
 }
 
 if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {

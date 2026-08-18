@@ -20,6 +20,7 @@ describe('default adapters', () => {
       'oci',
       'nix',
       'deb',
+      'apt',
       'winget',
       'chocolatey',
     ])
@@ -35,6 +36,16 @@ describe('default adapters', () => {
 
     const choco = await registry.definitionFor('chocolatey');
     expect(hasResource(choco, 'prex.registry.install/1')).toBe(true);
+
+    const apt = await registry.packerFor('apt');
+    expect(apt.providerId).toBe('standard-deb');
+    expect(apt.purlType).toBe('deb');
+    await expect(
+      apt.plan(
+        { project: { root: '/workspace', manifestPath: '/workspace/control' } },
+        { strategy: 'standard' },
+      ),
+    ).resolves.toMatchObject({ purlType: 'deb', strategy: 'standard' });
   });
 
   it('every default module satisfies the WIT-shaped bridge contract', async () => {

@@ -90,8 +90,9 @@ function fixtureFiles(kind: keyof typeof standardEmitters) {
     return [
       file(
         'Cargo.toml',
-        '[package]\nname="demo"\nversion="1.0.0"\nedition="2021"\n[lib]\npath="hello.txt"\n',
+        '[package]\nname="demo"\nversion="1.0.0"\nedition="2021"\n',
       ),
+      file('src/lib.rs', 'pub fn hello() {}\n'),
     ];
   if (kind === 'pypi')
     return [
@@ -111,7 +112,7 @@ function fixtureFiles(kind: keyof typeof standardEmitters) {
     return [
       file(
         'DEBIAN/control',
-        'Package: demo\nVersion: 1.0.0\nArchitecture: all\n',
+        'Package: demo\nVersion: 1.0.0\nArchitecture: all\nMaintainer: OpenPacker <noreply@openpacker.dev>\nDescription: demo package\n',
       ),
     ];
   if (kind === 'golang') return [file('go.mod', 'module demo\n')];

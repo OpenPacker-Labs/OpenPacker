@@ -80,4 +80,5 @@ and provide digest-pinned, already-loaded images through
 or `OPENPACKER_PARITY_<WINGET|CHOCOLATEY>_IMAGE` on Windows. The harness refuses
 mutable tags and image pulls. Linux containers have no network, capabilities,
 privilege escalation, writable root, or host socket; Windows uses Docker Hyper-V
-isolation. Artifacts are mounted read-only and scratch space is bounded.
+isolation with a storage-capped writable layer. Artifacts are mounted read-only,
+scratch space is bounded, and timed-out containers are forcibly removed by name.

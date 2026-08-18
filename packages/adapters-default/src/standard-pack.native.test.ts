@@ -1,9 +1,12 @@
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { parityContainerCommand } from '../../../scripts/pack-parity-container.mjs';
+import {
+  parityContainerCommand,
+  runParityContainer,
+} from '../../../scripts/pack-parity-container.mjs';
 import { standardEmitters } from './standard-pack.js';
 import { normalized } from './standard-pack.fixture.js';
 
@@ -43,7 +46,7 @@ const linuxCases: readonly NativeCase[] = [
     command: [
       'sh',
       '-ceu',
-      'mkdir /work/source && tar -xzf /input/demo-1.0.0.crate -C /work/source --strip-components=1 && cargo metadata --offline --format-version=1 --manifest-path /work/source/Cargo.toml',
+      'mkdir /work/source && tar -xzf /input/demo-1.0.0.crate -C /work/source --strip-components=1 && cargo check --offline --manifest-path /work/source/Cargo.toml',
     ],
   },
   {
@@ -111,7 +114,7 @@ const linuxCases: readonly NativeCase[] = [
     command: [
       'sh',
       '-ceu',
-      'mkdir -p /work/proxy/demo/@v /work/client && cp /input/demo-v1.0.0.* /work/proxy/demo/@v/ && printf "module client\\nrequire demo v1.0.0\\n" > /work/client/go.mod && cd /work/client && GOPROXY=file:///work/proxy GOSUMDB=off go mod download demo@v1.0.0',
+      'mkdir -p /work/proxy/demo/@v /work/client && cp /input/demo-v1.0.0.info /work/proxy/demo/@v/v1.0.0.info && cp /input/demo-v1.0.0.mod /work/proxy/demo/@v/v1.0.0.mod && cp /input/demo-v1.0.0.zip /work/proxy/demo/@v/v1.0.0.zip && printf "module client\\nrequire demo v1.0.0\\n" > /work/client/go.mod && cd /work/client && GOPROXY=file:///work/proxy GOSUMDB=off go mod download demo@v1.0.0',
     ],
   },
   {
@@ -135,7 +138,11 @@ const linuxCases: readonly NativeCase[] = [
     manager: 'APT/dpkg',
     target: 'deb',
     imageEnvironment: 'OPENPACKER_PARITY_APT_IMAGE',
-    command: ['dpkg-deb', '--info', '/input/demo-1.0.0.deb'],
+    command: [
+      'sh',
+      '-ceu',
+      'mkdir -p /work/apt/state/lists/partial /work/apt/cache/archives/partial /work/apt/etc/apt/preferences.d /work/apt/etc/apt/sources.list.d && touch /work/apt/state/status /work/apt/etc/apt/sources.list && apt-get -o Dir::State=/work/apt/state -o Dir::State::status=/work/apt/state/status -o Dir::Cache=/work/apt/cache -o Dir::Etc=/work/apt/etc/apt -o Debug::NoLocking=1 --simulate --no-download install /input/demo-1.0.0.deb',
+    ],
   },
 ];
 
@@ -193,16 +200,13 @@ describe.runIf(mode === 'linux' || mode === 'windows')(
         expect(image, `${imageEnvironment} is required`).toBeTruthy();
         const plan = parityContainerCommand({
           runtime,
+          name: `openpacker-parity-${randomUUID()}`,
           image: image!,
           artifactDirectory: artifacts,
           command: [...command],
           platform,
         });
-        const result = spawnSync(plan.executable, plan.arguments, {
-          stdio: 'inherit',
-          shell: false,
-          timeout: 120_000,
-        });
+        const result = runParityContainer(plan);
         if (result.error) throw result.error;
         expect(result.signal).toBeNull();
         expect(result.status).toBe(0);
