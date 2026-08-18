@@ -5,8 +5,9 @@
 - Phase: bottom-up review and squash-merge
 - Current layer: `02-manager-cases` independently approved
 - Branch: `sdlc/opm-pack-manager-parity-02-manager-cases`
-- External issues: not created. PRs: #85 (`01-isolation`) and #86
-  (`02-manager-cases`), tracked by stack #87.
+- External issues: not created. PR #85 (`01-isolation`) squash-merged as
+  `6540797`; PR #86 (`02-manager-cases`) is approved and pending squash merge.
+  Both are tracked by stack #87.
 
 ## Problem
 
@@ -68,8 +69,9 @@ mutate stores, databases, profiles, daemons, or the runner itself.
 
 ## Implemented
 
-- `8f2d4ea`: locked-down container plan and explicit host-Nix opt-in.
-- `24fae30`: offline manager oracles, native recipes, and fail-closed native
-  manifest requirements.
-- `f72262c`: review fixes for Go/Cargo/APT parity, Windows storage bounds,
-  unique container names, and forced timeout cleanup.
+- `6540797`: squash-merged locked-down container plan and explicit host-Nix
+  opt-in from PR #85.
+- `d865376`: offline manager oracles, native recipes, and fail-closed native
+  manifest requirements on PR #86 after cascade.
+- `1147ed5`: review fixes for Go/Cargo/APT parity, Windows storage bounds,
+  unique container names, and forced timeout cleanup after cascade.
