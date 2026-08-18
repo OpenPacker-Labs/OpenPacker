@@ -16,7 +16,8 @@
   [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
   [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
   [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) are open as a
-  stack. PR #79 is independently approved; PR #80 review fixes are in progress.
+  stack. PRs #79 and #80 are independently approved; PR #81 review fixes have
+  passed focused gates and await re-review.
 
 ## Problem and success criteria
 
@@ -106,10 +107,13 @@ Success is executable when:
 - Delegated-provider schema, WIT planner, conformance vectors, generated types,
   normative guide and ADR 0037 committed on the contracts branch.
 - Full `npm run verify` passed on the composed stack on 2026-08-18. PR #80's
-  first independent review requested executable binding, an honest dedicated WIT
-  world, a versioned planner input and broader negative vectors; those fixes are
-  now being validated before re-review.
+  executable binding, dedicated WIT world, versioned planner input and broader
+  negative vectors passed independent re-review.
 - Added the independently tested manifest loader and sandboxed host package; all
   seven package tests and the staged gate passed on 2026-08-18.
 - Added collision-safe delegated-provider routing independent from ecosystem
   adapter registration; all 20 adapter-host tests passed.
+- PR #81's first independent review found executable-path rebinding,
+  sandbox-wrapper environment, fail-closed mode, artifact race/bounds and parser
+  parity defects. The shared host fixes and 39 sandbox/provider tests pass; full
+  aggregate verification and re-review are pending.
