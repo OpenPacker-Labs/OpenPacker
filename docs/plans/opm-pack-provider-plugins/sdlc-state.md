@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: delivery complete
-- Current layer: complete
+- Phase: bottom-up closeout
+- Current layer: `04-opm-config` approved
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -17,7 +17,7 @@
   [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
   [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) comprise the
   delivery stack. All four are independently approved, and the final composed
-  stack passed the full offline aggregate before bottom-up squash merge.
+  stack passed the full offline aggregate. Bottom-up squash merge is pending.
 
 ## Problem and success criteria
 
@@ -127,4 +127,4 @@ Success is executable when:
   could fall back to another strategy. Missing and empty values now fail as
   usage errors, and the CLI regression proves explicit non-default selection.
 - Final `npm run verify` and independent reviews passed for all four stack
-  layers on 2026-08-18.
+  layers on 2026-08-18; bottom-up squash merge is pending.
