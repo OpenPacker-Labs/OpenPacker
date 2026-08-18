@@ -2,10 +2,11 @@
 
 ## Status
 
-- Phase: bottom-up PR submission
+- Phase: bottom-up review and squash-merge
 - Current layer: `02-manager-cases` independently approved
 - Branch: `sdlc/opm-pack-manager-parity-02-manager-cases`
-- External issues / PRs: not created.
+- External issues: not created. PRs: #85 (`01-isolation`) and #86
+  (`02-manager-cases`), tracked by stack #87.
 
 ## Problem
 
