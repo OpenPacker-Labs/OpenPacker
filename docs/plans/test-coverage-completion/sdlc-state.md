@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: implementation
-- Current layer: 02-test-type-closeout
+- Phase: verification and review
+- Current layer: bottom-up review
 - Branch: `sdlc/test-coverage-02-inventory`, stacked on
   `sdlc/test-coverage-01-authority`
 - External issues: not created
@@ -55,5 +55,9 @@ test suite and every advertised test type has a mandatory oracle.
 - 2026-08-18: the second full verify exposed a scheduler-dependent diagnostic in
   the growing-artifact adversarial test. The oracle now requires the common
   byte-limit rejection whether growth wins before opening or during hashing.
+- 2026-08-18: the final full offline `npm run verify` passed after both race
+  fixes, including all 48 workspace suites, 14 test-type authorities, explicit
+  package-manager parity, TypeScript/Rust builds, demos, benchmarks, goldens,
+  browser, fuzz, Pact chaos, and Pact mutation.
 - Native parity is not yet rerun: Docker and Podman are unavailable, and host
   Nix/APT execution is prohibited by the isolation requirement.
