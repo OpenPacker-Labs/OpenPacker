@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: independent review
-- Current layer: `04-opm-config`
+- Phase: delivery complete
+- Current layer: complete
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -15,9 +15,9 @@
 - PRs: [#79](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/79),
   [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
   [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
-  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) are open as a
-  stack. PRs #79, #80 and #81 are independently approved; PR #82 awaits final
-  independent review.
+  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) comprise the
+  delivery stack. All four are independently approved, and the final composed
+  stack passed the full offline aggregate before bottom-up squash merge.
 
 ## Problem and success criteria
 
@@ -123,3 +123,8 @@ Success is executable when:
 - Added strict `[pack.providers.<id>]` TOML configuration, local provider
   loading, declared environment binding, synthetic end-to-end packing and
   `--provider` selection.
+- PR #82's independent review found that an empty explicit provider selection
+  could fall back to another strategy. Missing and empty values now fail as
+  usage errors, and the CLI regression proves explicit non-default selection.
+- Final `npm run verify` and independent reviews passed for all four stack
+  layers on 2026-08-18.
