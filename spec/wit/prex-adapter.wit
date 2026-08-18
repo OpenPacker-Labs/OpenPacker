@@ -138,6 +138,22 @@ interface project {
     pack: func(project: list<u8>, options: list<u8>) -> result<list<u8>, error>;
 }
 
+/// Pure delegated package-build planner. The guest never executes commands.
+/// It returns canonical JSON DelegatedPackHostPlan bytes validated against
+/// delegated-pack-provider.schema.json; the host authorizes and executes the
+/// plan through its sandbox and receipt boundary.
+interface package-build {
+    use types.{error};
+
+    /// Canonical JSON DelegatedPackProviderManifest bytes describing identity,
+    /// detection, authority and artifacts.
+    provider-manifest: func() -> result<list<u8>, error>;
+
+    /// Canonical JSON input (DetectedProject, target and PackOptions) to
+    /// canonical JSON DelegatedPackHostPlan. Planning has no side effects.
+    plan: func(input: list<u8>) -> result<list<u8>, error>;
+}
+
 /// Full adapter world. Components may export a subset; hosts probe exports.
 world adapter {
     /// Wall clock for provenance timestamps when the host permits it.
@@ -149,4 +165,5 @@ world adapter {
     export install;
     export environment;
     export project;
+    export package-build;
 }

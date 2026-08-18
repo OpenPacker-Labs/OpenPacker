@@ -26,5 +26,7 @@ export const MEDIA_TYPES = {
   lockfile: 'application/vnd.openpacker.lock.v1+json',
   normalizedPack: 'application/vnd.openpacker.normalized-pack.v1+json',
   packReceipt: 'application/vnd.openpacker.pack-receipt.v1+json',
+  delegatedPackProvider:
+    'application/vnd.openpacker.delegated-pack-provider.v1+json',
   problem: 'application/problem+json',
 } as const;

@@ -1734,6 +1734,41 @@
       "levels": ["PREX-I"]
     },
     {
+      "name": "delegated-pack-provider",
+      "file": "pack-provider/example.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-unknown-template",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/commands/0/argv/1",
+          "value": "{shell}"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-ambiguous-artifact",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/artifacts/0/basename",
+          "value": "demo.acme"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
       "name": "normalized-pack",
       "file": "pack/normalized.json",
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json#/$defs/NormalizedPackManifest",
