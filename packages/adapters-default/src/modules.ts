@@ -23,7 +23,6 @@ import {
 import { NixCodec, NixStoreProvider } from '@openpacker/adapter-nix';
 import {
   NpmCodec,
-  NpmPackagePacker,
   NpmProjectFormat,
   NpmRegistryProvider,
 } from '@openpacker/adapter-npm';
@@ -50,6 +49,7 @@ import {
   golangPacker,
   mavenPacker,
   nixPacker,
+  npmPacker,
   nugetPacker,
   ociPacker,
   pypiPacker,
@@ -127,7 +127,7 @@ export function defaultAdapterModules(): AdapterModule[] {
         }),
       codec: () => new NpmCodec(),
       project: () => new NpmProjectFormat(),
-      packer: () => new NpmPackagePacker(),
+      packer: npmPacker,
       catalog: (context) =>
         new NpmRegistryProvider(
           transportFor('npm', context),

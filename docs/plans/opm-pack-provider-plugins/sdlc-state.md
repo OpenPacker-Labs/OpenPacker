@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: independent review
-- Current layer: `03-host`
+- Phase: bottom-up closeout
+- Current layer: `04-opm-config` approved
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -15,9 +15,9 @@
 - PRs: [#79](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/79),
   [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
   [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
-  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) are open as a
-  stack. PRs #79 and #80 are independently approved; PR #81 review fixes have
-  passed focused gates and await re-review.
+  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) comprise the
+  delivery stack. All four are independently approved, and the final composed
+  stack passed the full offline aggregate. Bottom-up squash merge is pending.
 
 ## Problem and success criteria
 
@@ -113,7 +113,18 @@ Success is executable when:
   seven package tests and the staged gate passed on 2026-08-18.
 - Added collision-safe delegated-provider routing independent from ecosystem
   adapter registration; all 20 adapter-host tests passed.
-- PR #81's first independent review found executable-path rebinding,
-  sandbox-wrapper environment, fail-closed mode, artifact race/bounds and parser
-  parity defects. The shared host fixes and 39 sandbox/provider tests pass; full
-  aggregate verification and re-review are pending.
+- PR #81's independent review found executable-path rebinding, sandbox-wrapper
+  environment, fail-closed mode, artifact race/bounds and parser parity defects.
+  The shared host fixes, 43 sandbox/provider tests, deterministic preflight and
+  postflight swap regressions, full aggregate verification and independent
+  re-review all pass.
+- Deleted 1,686 lines of built-in native delegation and retained standard
+  emitters behind a process-free packer.
+- Added strict `[pack.providers.<id>]` TOML configuration, local provider
+  loading, declared environment binding, synthetic end-to-end packing and
+  `--provider` selection.
+- PR #82's independent review found that an empty explicit provider selection
+  could fall back to another strategy. Missing and empty values now fail as
+  usage errors, and the CLI regression proves explicit non-default selection.
+- Final `npm run verify` and independent reviews passed for all four stack
+  layers on 2026-08-18; bottom-up squash merge is pending.

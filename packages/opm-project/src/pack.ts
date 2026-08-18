@@ -44,7 +44,10 @@ export async function packProject(input: {
   name: string;
   version: string;
   nativeMetadata?: Record<string, JsonValue>;
-  tool?: string;
+  provider?: string;
+  authorizedEnvironment?: Readonly<
+    Record<string, Readonly<Record<string, string>>>
+  >;
   allowBuild?: boolean;
   allowNetwork?: boolean;
   offline?: boolean;
@@ -52,7 +55,10 @@ export async function packProject(input: {
   signal?: AbortSignal;
 }): Promise<PackOutcome> {
   const registry = requireAdapterRegistry();
-  const packer = await registry.packerFor(input.ecosystem);
+  const packer =
+    input.strategy === 'delegate'
+      ? registry.delegatedPackerFor(input.ecosystem, input.provider)
+      : await registry.packerFor(input.ecosystem);
   const project = await packer.detect(input.root);
   if (!project)
     throw new OpmError(
@@ -94,7 +100,11 @@ export async function packProject(input: {
   const options: PackOptions = {
     strategy: input.strategy,
     outputDirectory,
-    ...(input.tool === undefined ? {} : { tool: input.tool }),
+    ...(input.authorizedEnvironment?.[packer.providerId] === undefined
+      ? {}
+      : {
+          authorizedEnvironment: input.authorizedEnvironment[packer.providerId],
+        }),
     ...(input.allowBuild === undefined ? {} : { allowBuild: input.allowBuild }),
     ...(input.allowNetwork === undefined
       ? {}

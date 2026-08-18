@@ -15,31 +15,45 @@ format, the project name supplies its native identifier unless `--name` is
 given, and `--package-version` supplies its version. OCI additionally requires
 an OS and architecture; OpenPacker does not guess a platform.
 
-| Target     | Standard output                | Delegate tools         |
-| ---------- | ------------------------------ | ---------------------- |
-| npm        | `.tgz`                         | npm, mise              |
-| Cargo      | `.crate`                       | cargo, mise            |
-| PyPI       | source `.tar.gz`               | uv, Python build, mise |
-| NuGet      | `.nupkg`                       | dotnet, NuGet, mise    |
-| Maven      | `.jar`                         | Maven, mise            |
-| Go         | module `.zip`, `.mod`, `.info` | none                   |
-| OCI        | OCI image-layout `.tar`        | Docker, Podman, mise   |
-| Nix        | `.nar`                         | Nix binary cache, mise |
-| Debian/APT | `.deb`                         | dpkg-deb, mise         |
-| WinGet     | validated YAML manifest set    | WinGet, mise           |
-| Chocolatey | `.nupkg`                       | Chocolatey, mise       |
+| Target     | Standard output                |
+| ---------- | ------------------------------ |
+| npm        | `.tgz`                         |
+| Cargo      | `.crate`                       |
+| PyPI       | source `.tar.gz`               |
+| NuGet      | `.nupkg`                       |
+| Maven      | `.jar`                         |
+| Go         | module `.zip`, `.mod`, `.info` |
+| OCI        | OCI image-layout `.tar`        |
+| Nix        | `.nar`                         |
+| Debian/APT | `.deb`                         |
+| WinGet     | validated YAML manifest set    |
+| Chocolatey | `.nupkg`                       |
 
-Use `--delegate` only when native-tool output is required:
+Native delegation is provider-driven; OPM contains no package-manager command
+table. Add a local
+[provider manifest](../../spec/prex/v1/delegated-pack-provider.md) and select it
+from `opm.toml`:
 
-```sh
-opm pack oci --package-version 1.2.3 --delegate --tool podman --allow-build --offline
-opm pack pypi --package-version 1.2.3 --delegate --tool uv --allow-build --allow-network
+```toml
+[pack.providers.dev-example-acme]
+manifest = ".opm/providers/acme.json"
+default_for = ["acme"]
+allow_environment = ["ACME_TOKEN"]
 ```
 
-Delegation never silently replaces standard packing. Native compilation or
-project-controlled lifecycle execution requires `--allow-build`; network access
-independently requires `--allow-network`, and `--offline` wins when both are
-present. All delegated commands run through the fail-closed package sandbox.
+The key must equal the provider manifest's `id`. `default_for` is optional; use
+`--provider` when several providers support one PURL type:
+
+```sh
+opm pack acme --package-version 1.2.3 --provider dev-example-acme --allow-build --offline
+```
+
+Provider manifests map to the standard `package-build` WIT plan interface; the
+host retains execution authority. Native compilation or project-controlled
+lifecycle execution requires `--allow-build`; network access independently
+requires `--allow-network`, and `--offline` wins when both are present. Only
+environment names declared by the provider and allowlisted in `opm.toml` are
+forwarded. All commands run through the fail-closed package sandbox.
 
 Internally, OpenPacker captures a bounded project tree and OCI-shaped config and
 layer model. That normalized representation is not a user workflow. The receipt

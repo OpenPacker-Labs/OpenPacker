@@ -276,8 +276,11 @@ export async function packNativeProject(input: {
 export async function packDelegatedProject(input: {
   root: string;
   ecosystem: string;
+  provider?: string;
+  name: string;
+  version: string;
   outputDirectory?: string;
-  tool?: string;
+  authorizedEnvironment?: Readonly<Record<string, string>>;
   allowBuild?: boolean;
   allowNetwork?: boolean;
   offline?: boolean;
@@ -285,13 +288,7 @@ export async function packDelegatedProject(input: {
   signal?: AbortSignal;
 }): Promise<PackOutcome> {
   const registry = requireAdapterRegistry();
-  const definition = await registry.definitionFor(input.ecosystem);
-  if (!hasResource(definition, 'prex.registry.package-build/2'))
-    throw new OpmError(
-      'UNSUPPORTED_OPERATION',
-      `The ${input.ecosystem} adapter does not advertise prex.registry.package-build/2.`,
-    );
-  const packer = await registry.packerFor(input.ecosystem);
+  const packer = registry.delegatedPackerFor(input.ecosystem, input.provider);
   const detected = await packer.detect(input.root);
   if (!detected)
     throw new OpmError(
@@ -299,13 +296,22 @@ export async function packDelegatedProject(input: {
       `No ${input.ecosystem} packable project in ${input.root}.`,
     );
   return packer.pack(
-    { project: detected },
+    {
+      project: detected,
+      target: {
+        purlType: input.ecosystem,
+        identifier: input.name,
+        version: input.version,
+      },
+    },
     {
       strategy: 'delegate',
       ...(input.outputDirectory === undefined
         ? {}
         : { outputDirectory: input.outputDirectory }),
-      ...(input.tool === undefined ? {} : { tool: input.tool }),
+      ...(input.authorizedEnvironment === undefined
+        ? {}
+        : { authorizedEnvironment: input.authorizedEnvironment }),
       ...(input.allowBuild === undefined
         ? {}
         : { allowBuild: input.allowBuild }),

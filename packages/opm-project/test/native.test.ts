@@ -386,20 +386,20 @@ describe('projection helpers', () => {
 });
 
 describe('package manifest', () => {
-  it('plans delegated packing through package-build v2', async () => {
+  it('does not fall back to a built-in delegated packer', async () => {
     const root = await tempProject({
       'package.json': '{"name":"test-app","version":"1.0.0"}\n',
     });
-    const outcome = await packDelegatedProject({
-      root,
-      ecosystem: 'npm',
-      dryRun: true,
-      offline: true,
-    });
-    expect(outcome.performed).toBe(false);
-    expect(outcome.strategy).toBe('delegate');
-    expect(outcome.command).toContain('--ignore-scripts');
-    expect(outcome.tool?.name).toBe('npm');
+    await expect(
+      packDelegatedProject({
+        root,
+        ecosystem: 'npm',
+        name: 'test-app',
+        version: '1.0.0',
+        dryRun: true,
+        offline: true,
+      }),
+    ).rejects.toThrow(/No delegated pack provider/u);
   });
 
   it('describes the package and every ecosystem it ships to', async () => {
