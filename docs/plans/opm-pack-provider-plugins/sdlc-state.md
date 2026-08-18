@@ -119,6 +119,6 @@ Success is executable when:
   aggregate verification and re-review are pending.
 - Deleted 1,686 lines of built-in native delegation and retained standard
   emitters behind a process-free packer.
-- Added strict `[pack.providers.<id>]` TOML configuration, local provider loading,
-  declared environment binding, synthetic end-to-end packing and `--provider`
-  selection.
+- Added strict `[pack.providers.<id>]` TOML configuration, local provider
+  loading, declared environment binding, synthetic end-to-end packing and
+  `--provider` selection.
