@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: bottom-up closeout
-- Current layer: `04-opm-config` approved
+- Phase: delivery complete
+- Current layer: complete
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -11,13 +11,15 @@
   3. `sdlc/opm-pack-plugins-03-host`
   4. `sdlc/opm-pack-plugins-04-opm-config`
 - Dispatch backend: parent sequential. The user authorized stacked delivery but
-  did not authorize implementation offload; independent review remains required.
+  did not authorize implementation offload; independent review was required and
+  passed.
 - PRs: [#79](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/79),
   [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
   [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
   [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) comprise the
-  delivery stack. All four are independently approved, and the final composed
-  stack passed the full offline aggregate. Bottom-up squash merge is pending.
+  delivery stack. All four were independently approved and squash-merged
+  bottom-up into `main`, completing at `d1bea94`. The final composed stack
+  passed the full offline aggregate before merge.
 
 ## Problem and success criteria
 
@@ -127,4 +129,4 @@ Success is executable when:
   could fall back to another strategy. Missing and empty values now fail as
   usage errors, and the CLI regression proves explicit non-default selection.
 - Final `npm run verify` and independent reviews passed for all four stack
-  layers on 2026-08-18; bottom-up squash merge is pending.
+  layers on 2026-08-18; bottom-up squash merge completed at `d1bea94`.
