@@ -255,7 +255,6 @@ export type DelegatedPackProviderManifest = {
   environment?: { [key: string]: PackProviderTemplate };
   authority: DelegatedProviderAuthority;
   artifacts: Array<PackProviderArtifactPattern>;
-  copyProjectArtifacts?: boolean;
 };
 export type DelegatedProviderAuthority = {
   build: boolean;
@@ -2569,9 +2568,6 @@ export const schemaCatalog: Record<string, JsonValue> = {
               items: {
                 $ref: '#/$defs/PackProviderArtifactPattern',
               },
-            },
-            copyProjectArtifacts: {
-              type: 'boolean',
             },
           },
           additionalProperties: false,

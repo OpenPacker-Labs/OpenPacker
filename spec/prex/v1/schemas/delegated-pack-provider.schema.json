@@ -188,8 +188,7 @@
           "minItems": 1,
           "maxItems": 64,
           "items": { "$ref": "#/$defs/PackProviderArtifactPattern" }
-        },
-        "copyProjectArtifacts": { "type": "boolean" }
+        }
       },
       "additionalProperties": false
     },
