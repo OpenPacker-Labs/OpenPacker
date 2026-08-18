@@ -2,9 +2,9 @@
 
 ## Status
 
-- Phase: implementation
-- Current layer: `01-isolation`
-- Branch: `sdlc/opm-pack-manager-parity-01-isolation`
+- Phase: bottom-up PR submission
+- Current layer: `02-manager-cases` independently approved
+- Branch: `sdlc/opm-pack-manager-parity-02-manager-cases`
 - External issues / PRs: not created.
 
 ## Problem
@@ -55,4 +55,20 @@ mutate stores, databases, profiles, daemons, or the runner itself.
 
 ## Verification
 
-- Pending.
+- 2026-08-18: focused pack parity, adapters-default type/tests, staged gates,
+  docs, and escalated security gate passed.
+- 2026-08-18: full offline `npm run verify` passed after the final code change.
+- 2026-08-18: independent review approved the code and isolation boundary after
+  Go proxy naming, Cargo/APT acceptance, alias coverage, storage bounds, and
+  forced cleanup were repaired.
+- Native Linux and Windows recipes remain intentionally unexecuted here because
+  no digest-pinned images/container runtime were supplied. Default verification
+  proved the complete matrix and that the lane stays dormant without opt-in.
+
+## Implemented
+
+- `8f2d4ea`: locked-down container plan and explicit host-Nix opt-in.
+- `24fae30`: offline manager oracles, native recipes, and fail-closed native
+  manifest requirements.
+- `f72262c`: review fixes for Go/Cargo/APT parity, Windows storage bounds,
+  unique container names, and forced timeout cleanup.
