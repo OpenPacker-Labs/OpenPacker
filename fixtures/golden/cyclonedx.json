@@ -2,6 +2,16 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "50da97e9e1fb0f5a99586d514029af0efab48771e4d49d1e4d966d85b4a72447"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "947191caee6e8583baf6ce1e8471d2833ced146dfc4fc519530afcc478cd0a9b"
+        }
+      ],
       "licenses": [{ "expression": "MIT" }],
       "name": "@openpacker/demo-tool",
       "purl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
@@ -9,6 +19,7 @@
       "version": "1.0.0"
     },
     {
+      "hashes": [],
       "licenses": [{ "expression": "MIT" }],
       "name": "openpacker-native-helper",
       "purl": "pkg:npm/openpacker-native-helper@1.0.0",
@@ -16,6 +27,12 @@
       "version": "1.0.0"
     },
     {
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "cfc5e7e4631edef5c9f25d862f084e733fe85f5103024abec549fc5bf5613fb4"
+        }
+      ],
       "licenses": [{ "expression": "MIT" }],
       "name": "openpacker-zstd-wasm",
       "purl": "pkg:cargo/openpacker-zstd-wasm@1.0.0",
@@ -23,6 +40,7 @@
       "version": "1.0.0"
     },
     {
+      "hashes": [],
       "licenses": [{ "expression": "MIT" }],
       "name": "openpacker-native-helper",
       "purl": "pkg:cargo/openpacker-native-helper@1.0.0",
@@ -30,6 +48,12 @@
       "version": "1.0.0"
     },
     {
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3559e6f2da525be1746a1f686e5485d974b468f6a7e4dbcd02ae0eec9c4760ee"
+        }
+      ],
       "licenses": [{ "expression": "MIT" }],
       "name": "openpacker.zstd.tool",
       "purl": "pkg:nuget/openpacker.zstd.tool@1.0.0",
@@ -37,6 +61,7 @@
       "version": "1.0.0"
     },
     {
+      "hashes": [],
       "licenses": [{ "expression": "MIT" }],
       "name": "openpacker.native.helper",
       "purl": "pkg:nuget/openpacker.native.helper@1.0.0",
@@ -44,7 +69,27 @@
       "version": "1.0.0"
     }
   ],
-  "dependencies": [],
+  "dependencies": [
+    {
+      "dependsOn": [
+        "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+        "pkg:cargo/openpacker-zstd-wasm@1.0.0",
+        "pkg:npm/openpacker-native-helper@1.0.0"
+      ],
+      "ref": "pkg:npm/%40openpacker/demo-tool@1.0.0"
+    },
+    { "dependsOn": [], "ref": "pkg:npm/openpacker-native-helper@1.0.0" },
+    {
+      "dependsOn": ["pkg:cargo/openpacker-native-helper@1.0.0"],
+      "ref": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
+    },
+    { "dependsOn": [], "ref": "pkg:cargo/openpacker-native-helper@1.0.0" },
+    {
+      "dependsOn": ["pkg:nuget/openpacker.native.helper@1.0.0"],
+      "ref": "pkg:nuget/openpacker.zstd.tool@1.0.0"
+    },
+    { "dependsOn": [], "ref": "pkg:nuget/openpacker.native.helper@1.0.0" }
+  ],
   "specVersion": "1.6",
   "version": 1
 }

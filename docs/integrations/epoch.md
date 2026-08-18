@@ -101,15 +101,21 @@ The provider contract runs against a real `openpackerd` base URL:
 
 ```sh
 npm run test:pact:consumer --workspace @openpacker/example-epoch-consumer
+npm run test:pact:chaos --workspace @openpacker/example-epoch-consumer
+npm run test:pact:mutation --workspace @openpacker/example-epoch-consumer
 OPENPACKER_URL=http://127.0.0.1:7337 npm run test:pact:provider --workspace @openpacker/example-epoch-consumer
 ```
 
 The Pact covers discovery, solve, verify, receipt retrieval, event feed, and RFC
-9457 errors. Provider verification does not replace daemon integration tests; it
-invokes those real routes with deterministic fixture state. Consumer Pact
-generation writes only to a temporary directory and compares the formatted
-result with the committed Pact, so normal tests never refresh a stale contract
-in place.
+9457 errors. A deterministic chaos suite proves the consumer fails closed on
+malformed JSON, missing event checkpoints, transient outages, and protocol
+version skew. The mutation suite changes request routing, response status,
+required headers, and body of every committed interaction and requires Pact
+provider verification to kill every mutant. Provider verification does not
+replace daemon integration tests; it invokes those real routes with
+deterministic fixture state. Consumer Pact generation writes only to a temporary
+directory and compares the formatted result with the committed Pact, so normal
+tests never refresh a stale contract in place.
 
 ## Dependency boundary
 

@@ -9,6 +9,7 @@ import {
 export interface EpochPactProviderOptions {
   providerBaseUrl: string;
   pactFile?: string;
+  logLevel?: 'error' | 'warn';
   prepareSignedReceipt?: () => Promise<{ receiptPath: string }>;
 }
 
@@ -25,7 +26,7 @@ export async function verifyEpochPact(
           'pacts/Epoch PREX Consumer-OpenPacker PREX Provider.json',
         ),
     ],
-    logLevel: 'warn',
+    logLevel: options.logLevel ?? 'warn',
     stateHandlers: {
       'the PREX reference provider is ready': async () => undefined,
       'a deterministic PREX solve is available': async () => undefined,

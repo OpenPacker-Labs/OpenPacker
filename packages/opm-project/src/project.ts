@@ -771,6 +771,9 @@ async function resolveRequirement(input: {
   // 1) Explicit source on requirement
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
+    const offlineBytes = input.offline
+      ? await fetchArtifactBytes(resolved, true)
+      : undefined;
     const sourceUri =
       resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
         ? toFileUrl(resolved)
@@ -782,7 +785,8 @@ async function resolveRequirement(input: {
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
-    const bytes = await fetchArtifactBytes(resolved, input.offline);
+    const bytes =
+      offlineBytes ?? (await fetchArtifactBytes(resolved, input.offline));
     const version =
       versionHint &&
       !versionHint.startsWith('^') &&

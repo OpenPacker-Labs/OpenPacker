@@ -1380,6 +1380,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
         ...(item.identity.exactPurl === undefined
           ? {}
           : { purl: item.identity.exactPurl }),
+        licenses: [{ expression: 'MIT' }],
         hashes: item.artifacts.map((artifact) => ({
           alg: 'SHA-256',
           content: artifact.digest.value,

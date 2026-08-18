@@ -66,7 +66,7 @@
       "kind": "event"
     },
     {
-      "digest": "sha256:20c17fd25bf8b0196313cb4b29a5fb74321a911b3f0a3e076a8646078418e116",
+      "digest": "sha256:37dced883af1163c8cce18316d0bca138a7f27a0142f5af0c79edf890cc07327",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
@@ -91,7 +91,7 @@
       "kind": "slsa"
     },
     {
-      "digest": "sha256:f73a0ba3f1c5c2737ffb2df666ced962d44639918c6c04dd7d0e8c07fc08e7c6",
+      "digest": "sha256:283c91c32b57a573c7f238851a3962720381e2a8c6857a04324e98e044e9fd33",
       "file": "fixtures/golden/cyclonedx.json",
       "kind": "cyclonedx"
     }
