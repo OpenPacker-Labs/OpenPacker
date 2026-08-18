@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { NixStoreProvider } from '../src/index.js';
 
-/**
- * Live Nix: runs only when `nix` is on PATH. Proves the provider drives a real
- * store rather than only the injected fixtures.
- */
-const hasNix = await new NixStoreProvider()
-  .available()
-  .then((a) => a.available);
+/** Live host Nix is explicit: tool discovery alone must not touch the store. */
+const liveEnabled = process.env.OPENPACKER_LIVE_NIX === '1';
+const hasNix = liveEnabled
+  ? await new NixStoreProvider().available().then((a) => a.available)
+  : false;
 
 describe.runIf(hasNix)('live nix', () => {
   const provider = new NixStoreProvider();
@@ -41,8 +39,8 @@ describe.runIf(hasNix)('live nix', () => {
   });
 });
 
-describe.runIf(!hasNix)('live nix (skipped)', () => {
-  it('documents that nix was not on PATH for this run', () => {
-    expect(hasNix).toBe(false);
+describe.runIf(!liveEnabled || !hasNix)('live nix (skipped)', () => {
+  it('requires explicit opt-in and an available Nix runtime', () => {
+    expect(liveEnabled && hasNix).toBe(false);
   });
 });
