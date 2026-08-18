@@ -1,0 +1,31 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackHostPlan",
+  "providerId": "dev.example.acme-pack",
+  "purlType": "acme",
+  "executable": "acme",
+  "commandArguments": [
+    [
+      "pack",
+      "/workspace/acme/acme.package.json",
+      "--output",
+      "/workspace/acme/dist",
+      "--offline"
+    ]
+  ],
+  "cleanupArguments": [],
+  "environment": {
+    "ACME_CACHE": "/workspace/acme/dist/.cache"
+  },
+  "authority": {
+    "build": true,
+    "network": "consent",
+    "environment": ["ACME_TOKEN"]
+  },
+  "artifacts": [
+    {
+      "suffix": ".acme",
+      "mediaType": "application/vnd.example.acme",
+      "nativeRole": "distribution"
+    }
+  ]
+}

@@ -22,7 +22,7 @@ Delegated pack providers use a versioned JSON manifest mapped to the
 
 The boundary is intentionally asymmetric:
 
-- providers declare detection markers, argv templates, requested authority,
+- providers declare detection markers, argument templates, requested authority,
   environment names and artifact patterns;
 - the host validates, grants authority, expands templates, resolves tools,
   executes through `runInSandbox`, contains outputs, hashes bytes and receipts;

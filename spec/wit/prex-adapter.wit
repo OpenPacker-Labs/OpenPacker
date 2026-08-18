@@ -149,12 +149,12 @@ interface package-build {
     /// detection, authority and artifacts.
     provider-manifest: func() -> result<list<u8>, error>;
 
-    /// Canonical JSON input (DetectedProject, target and PackOptions) to
-    /// canonical JSON DelegatedPackHostPlan. Planning has no side effects.
+    /// Canonical JSON DelegatedPackPlanInput to DelegatedPackHostPlan. Both are
+    /// defined by delegated-pack-provider.schema.json. Planning has no side effects.
     plan: func(input: list<u8>) -> result<list<u8>, error>;
 }
 
-/// Full adapter world. Components may export a subset; hosts probe exports.
+/// Full registry adapter world. Every listed export is mandatory.
 world adapter {
     /// Wall clock for provenance timestamps when the host permits it.
     import wasi:clocks/wall-clock@0.2.0;
@@ -165,5 +165,10 @@ world adapter {
     export install;
     export environment;
     export project;
+}
+
+/// Pure package-builder component world. Kept separate because WIT world
+/// exports are mandatory, not optional capability declarations.
+world package-builder {
     export package-build;
 }

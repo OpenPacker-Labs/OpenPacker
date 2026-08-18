@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: planned
-- Current layer: `03-host`
+- Phase: independent review
+- Current layer: `02-contracts`
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -12,7 +12,11 @@
   4. `sdlc/opm-pack-plugins-04-opm-config`
 - Dispatch backend: parent sequential. The user authorized stacked delivery but
   did not authorize implementation offload; independent review remains required.
-- PRs: not submitted yet.
+- PRs: [#79](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/79),
+  [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
+  [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
+  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) are open as a
+  stack. PR #79 is independently approved; PR #80 review fixes are in progress.
 
 ## Problem and success criteria
 
@@ -69,7 +73,7 @@ Success is executable when:
 - No plugin marketplace, installer, remote manifest fetch, signatures or hot
   reload in this initiative. Providers are local, explicit, schema-versioned
   files.
-- No generic workflow language. A provider declares detection markers, argv
+- No generic workflow language. A provider declares detection markers, argument
   templates, conditional argument lists, environment names and artifact
   patterns.
 - Standard emitters are not moved behind plugins: the requested openness
@@ -98,7 +102,10 @@ Success is executable when:
 
 ## Implementation log
 
-- `0a1a482`: durable plan and one-shot layer contracts.
-- `634ce1d`: delegated-provider schema, WIT planner, conformance vectors,
-  generated types, normative guide and ADR 0037. Contracts-layer staged gate
-  passed with process authority on 2026-08-18.
+- Durable plan and one-shot layer contracts committed on the contracts branch.
+- Delegated-provider schema, WIT planner, conformance vectors, generated types,
+  normative guide and ADR 0037 committed on the contracts branch.
+- Full `npm run verify` passed on the composed stack on 2026-08-18. PR #80's
+  first independent review requested executable binding, an honest dedicated WIT
+  world, a versioned planner input and broader negative vectors; those fixes are
+  now being validated before re-review.

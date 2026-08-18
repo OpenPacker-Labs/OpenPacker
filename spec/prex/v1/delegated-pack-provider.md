@@ -24,7 +24,6 @@ ambient environment inheritance.
 
 Templates are argv or environment values, never shell text. Hosts replace:
 
-- `{executable}`
 - `{projectRoot}`
 - `{manifestPath}`
 - `{outputDirectory}`
@@ -34,6 +33,16 @@ Templates are argv or environment values, never shell text. Hosts replace:
 Any other brace expression makes the provider invalid. Conditional arguments
 cover `allow-build`, `deny-build`, `allow-network` and `offline`; they do not
 change the authority declared by the provider.
+
+Manifest commands and cleanup commands carry argument lists only. The compiled
+`DelegatedPackHostPlan` preserves that shape; the host prepends the separately
+validated top-level executable. A provider cannot check one binary and then ask
+the host to execute another.
+
+WIT planners receive a canonical `DelegatedPackPlanInput` document from this
+schema. Version 1 contains the detected project root and manifest path, explicit
+target identity, output directory, and build/network/offline booleans. It never
+contains environment values, sandbox controls, or ambient host state.
 
 ## Authority
 

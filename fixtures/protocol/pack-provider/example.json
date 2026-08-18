@@ -10,8 +10,7 @@
   "executable": "acme",
   "commands": [
     {
-      "argv": [
-        "{executable}",
+      "arguments": [
         "pack",
         "{manifestPath}",
         "--output",

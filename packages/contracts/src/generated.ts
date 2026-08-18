@@ -232,14 +232,31 @@ export type ConformanceLevel =
   | 'PREX-C';
 export type Cursor = string;
 export type DelegatedPackHostPlan = {
+  $schema?: string;
   providerId: DelegatedProviderId;
   purlType: DelegatedProviderPurlType;
-  executable: string;
-  commands: Array<Array<string>>;
-  cleanupCommands: Array<Array<string>>;
+  executable: PackProviderExecutable;
+  commandArguments: Array<Array<string>>;
+  cleanupArguments: Array<Array<string>>;
   environment: { [key: string]: string };
   authority: DelegatedProviderAuthority;
   artifacts: Array<PackProviderArtifactPattern>;
+};
+export type DelegatedPackPlanInput = {
+  $schema?: string;
+  delegatedPackPlanInputVersion: '1';
+  project: { root: string; manifestPath: string };
+  target: {
+    purlType: DelegatedProviderPurlType;
+    identifier: string;
+    version: string;
+  };
+  options: {
+    outputDirectory: string;
+    allowBuild: boolean;
+    allowNetwork: boolean;
+    offline: boolean;
+  };
 };
 export type DelegatedPackProviderManifest = {
   $schema?: string;
@@ -248,7 +265,7 @@ export type DelegatedPackProviderManifest = {
   displayName?: string;
   purlTypes: Array<DelegatedProviderPurlType>;
   detection: PackProviderDetection;
-  executable: string;
+  executable: PackProviderExecutable;
   commands: Array<PackProviderCommandTemplate>;
   cleanupCommands?: Array<PackProviderCommandTemplate>;
   environment?: { [key: string]: PackProviderTemplate };
@@ -911,7 +928,9 @@ export type PackProviderArtifactFields = {
 export type PackProviderArtifactPattern =
   | (PackProviderArtifactFields & { suffix: string })
   | (PackProviderArtifactFields & { basename: string });
-export type PackProviderCommandTemplate = { argv: Array<PackProviderArgument> };
+export type PackProviderCommandTemplate = {
+  arguments: Array<PackProviderArgument>;
+};
 export type PackProviderCondition =
   | 'always'
   | 'allow-build'
@@ -920,6 +939,7 @@ export type PackProviderCondition =
   | 'offline';
 export type PackProviderDetection = { manifestNames: Array<string> };
 export type PackProviderEnvironmentName = string;
+export type PackProviderExecutable = string;
 export type PackProviderTemplate = string;
 export type PackReceipt = {
   packReceiptVersion: PackReceiptVersion;
@@ -2354,6 +2374,12 @@ export const schemaCatalog: Record<string, JsonValue> = {
           maxLength: 255,
           pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
         },
+        PackProviderExecutable: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._+-]*$',
+        },
         PackProviderTemplate: {
           $comment:
             'No shell expansion. Hosts replace only the closed token vocabulary, directly into argv or environment values.',
@@ -2361,7 +2387,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           minLength: 1,
           maxLength: 8192,
           pattern:
-            '^(?:[^{}]|\\{(?:executable|projectRoot|manifestPath|outputDirectory|packageName|packageVersion)\\})+$',
+            '^(?:[^{}]|\\{(?:projectRoot|manifestPath|outputDirectory|packageName|packageVersion)\\})+$',
         },
         PackProviderCondition: {
           enum: [
@@ -2394,12 +2420,11 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         PackProviderCommandTemplate: {
           type: 'object',
-          required: ['argv'],
+          required: ['arguments'],
           properties: {
-            argv: {
+            arguments: {
               type: 'array',
-              minItems: 1,
-              maxItems: 256,
+              maxItems: 255,
               items: {
                 $ref: '#/$defs/PackProviderArgument',
               },
@@ -2551,10 +2576,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               $ref: '#/$defs/PackProviderDetection',
             },
             executable: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 255,
-              pattern: '^[A-Za-z0-9][A-Za-z0-9._+-]*$',
+              $ref: '#/$defs/PackProviderExecutable',
             },
             commands: {
               type: 'array',
@@ -2595,6 +2617,90 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           additionalProperties: false,
         },
+        DelegatedPackPlanInput: {
+          $comment:
+            'Versioned canonical JSON passed to a package-build WIT planner. It contains no secret values or process authority.',
+          type: 'object',
+          required: [
+            'delegatedPackPlanInputVersion',
+            'project',
+            'target',
+            'options',
+          ],
+          properties: {
+            $schema: {
+              type: 'string',
+              format: 'uri',
+            },
+            delegatedPackPlanInputVersion: {
+              const: '1',
+            },
+            project: {
+              type: 'object',
+              required: ['root', 'manifestPath'],
+              properties: {
+                root: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+                manifestPath: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+              },
+              additionalProperties: false,
+            },
+            target: {
+              type: 'object',
+              required: ['purlType', 'identifier', 'version'],
+              properties: {
+                purlType: {
+                  $ref: '#/$defs/DelegatedProviderPurlType',
+                },
+                identifier: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 4096,
+                },
+                version: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 4096,
+                },
+              },
+              additionalProperties: false,
+            },
+            options: {
+              type: 'object',
+              required: [
+                'outputDirectory',
+                'allowBuild',
+                'allowNetwork',
+                'offline',
+              ],
+              properties: {
+                outputDirectory: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+                allowBuild: {
+                  type: 'boolean',
+                },
+                allowNetwork: {
+                  type: 'boolean',
+                },
+                offline: {
+                  type: 'boolean',
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
         DelegatedPackHostPlan: {
           $comment:
             'Canonical JSON returned by a package-build WIT guest or by compiling a provider manifest. The host authorizes and executes it.',
@@ -2603,13 +2709,17 @@ export const schemaCatalog: Record<string, JsonValue> = {
             'providerId',
             'purlType',
             'executable',
-            'commands',
-            'cleanupCommands',
+            'commandArguments',
+            'cleanupArguments',
             'environment',
             'authority',
             'artifacts',
           ],
           properties: {
+            $schema: {
+              type: 'string',
+              format: 'uri',
+            },
             providerId: {
               $ref: '#/$defs/DelegatedProviderId',
             },
@@ -2617,31 +2727,27 @@ export const schemaCatalog: Record<string, JsonValue> = {
               $ref: '#/$defs/DelegatedProviderPurlType',
             },
             executable: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 255,
+              $ref: '#/$defs/PackProviderExecutable',
             },
-            commands: {
+            commandArguments: {
               type: 'array',
               minItems: 1,
               maxItems: 64,
               items: {
                 type: 'array',
-                minItems: 1,
-                maxItems: 256,
+                maxItems: 255,
                 items: {
                   type: 'string',
                   maxLength: 8192,
                 },
               },
             },
-            cleanupCommands: {
+            cleanupArguments: {
               type: 'array',
               maxItems: 64,
               items: {
                 type: 'array',
-                minItems: 1,
-                maxItems: 256,
+                maxItems: 255,
                 items: {
                   type: 'string',
                   maxLength: 8192,
