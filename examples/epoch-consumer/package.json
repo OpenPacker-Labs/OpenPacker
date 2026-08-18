@@ -13,6 +13,8 @@
     "test:compat": "vitest run",
     "test:browser": "node --test test/sdk-browser.playwright.mjs",
     "test:pact:consumer": "vitest run test/pact.consumer.test.ts",
+    "test:pact:chaos": "vitest run test/pact.chaos.test.ts",
+    "test:pact:mutation": "vitest run test/pact.mutation.test.ts",
     "test:pact:provider": "node dist/src/pact-provider.js",
     "check:contracts": "vitest run",
     "check:generated": "vitest run"
