@@ -224,13 +224,21 @@ export class ManifestPackagePacker implements PackagePacker {
     await mkdir(outputDirectory, { recursive: true });
     const outputReal = await realpath(outputDirectory);
     const outputIdentity = await directoryIdentity(outputDirectory);
-    if (
-      (
-        await checkedProviderOutput(() =>
-          collectArtifacts(outputDirectory, outputReal, hostPlan, this.#limits),
-        )
-      ).length > 0
-    )
+    const existingArtifacts = await checkedProviderOutput(async () => {
+      const artifacts = await collectArtifacts(
+        outputDirectory,
+        outputReal,
+        hostPlan,
+        this.#limits,
+      );
+      await assertDirectoryIdentity(
+        outputDirectory,
+        outputReal,
+        outputIdentity,
+      );
+      return artifacts;
+    });
+    if (existingArtifacts.length > 0)
       throw new ProviderError(
         'OUTPUT_NOT_EMPTY',
         `${this.providerId} requires an output directory without matching artifacts`,

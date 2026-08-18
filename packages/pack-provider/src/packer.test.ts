@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DelegatedPackProviderManifest } from '@openpacker/contracts';
 import {
   runInSandbox,
@@ -21,6 +21,35 @@ import {
   ManifestPackagePacker,
   type ManifestPackagePackerLimits,
 } from './packer.js';
+
+const directorySwap = vi.hoisted(() => ({
+  output: undefined as string | undefined,
+  original: undefined as string | undefined,
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    async opendir(path: string) {
+      if (path !== directorySwap.output || directorySwap.original === undefined)
+        return actual.opendir(path);
+      const original = directorySwap.original;
+      directorySwap.output = undefined;
+      directorySwap.original = undefined;
+      await actual.rename(path, original);
+      await actual.mkdir(path);
+      const handle = await actual.opendir(path);
+      const close = handle.close.bind(handle);
+      handle.close = async () => {
+        await close();
+        await actual.rm(path, { recursive: true });
+        await actual.rename(original, path);
+      };
+      return handle;
+    },
+  };
+});
 
 const roots: string[] = [];
 
@@ -194,6 +223,20 @@ describe('manifest package packer', () => {
 
     await expect(
       packer.pack(input(root), { outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('rejects a preflight swap to empty and restore', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const original = join(root, 'out-original');
+    await mkdir(outputDirectory);
+    await writeFile(join(outputDirectory, 'stale.test'), 'stale');
+    directorySwap.output = outputDirectory;
+    directorySwap.original = original;
+
+    await expect(
+      configured().pack(input(root), { outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
