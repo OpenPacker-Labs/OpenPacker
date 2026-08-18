@@ -155,20 +155,23 @@ async function captureProject(
   const included =
     includePaths === undefined ? undefined : new Set(includePaths);
   const stableRoot = await realpath(root);
+  const directories = new Map<string, DirectorySnapshot>();
   let total = 0;
   const walk = async (directory: string, prefix: string): Promise<void> => {
     const directoryBefore = await stableDirectory(
       stableRoot,
       directory,
       prefix,
+      directories,
     );
     const entries = await readdir(directory, { withFileTypes: true });
-    const directoryAfter = await stableDirectory(stableRoot, directory, prefix);
-    if (
-      directoryBefore.dev !== directoryAfter.dev ||
-      directoryBefore.ino !== directoryAfter.ino
-    )
-      changed(prefix || '.');
+    const directoryAfter = await stableDirectory(
+      stableRoot,
+      directory,
+      prefix,
+      directories,
+    );
+    if (!sameDirectory(directoryBefore, directoryAfter)) changed(prefix || '.');
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
       const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
@@ -247,6 +250,14 @@ async function captureProject(
   };
   try {
     await walk(stableRoot, '');
+    for (const [directory, snapshot] of directories) {
+      const after = await directorySnapshot(
+        stableRoot,
+        directory,
+        snapshot.displayPath,
+      );
+      if (!sameDirectory(snapshot, after)) changed(snapshot.displayPath);
+    }
   } catch (error) {
     if (error instanceof OpmError) throw error;
     changed('.', error);
@@ -254,15 +265,55 @@ async function captureProject(
   return { files, sensitiveExcluded };
 }
 
+interface DirectorySnapshot {
+  displayPath: string;
+  dev: bigint;
+  ino: bigint;
+  ctimeNs: bigint;
+  mtimeNs: bigint;
+}
+
 async function stableDirectory(
   root: string,
   directory: string,
   displayPath: string,
-) {
+  snapshots: Map<string, DirectorySnapshot>,
+): Promise<DirectorySnapshot> {
+  const snapshot = await directorySnapshot(root, directory, displayPath || '.');
+  const previous = snapshots.get(directory);
+  if (previous !== undefined && !sameDirectory(previous, snapshot))
+    changed(displayPath || '.');
+  snapshots.set(directory, snapshot);
+  return snapshot;
+}
+
+async function directorySnapshot(
+  root: string,
+  directory: string,
+  displayPath: string,
+): Promise<DirectorySnapshot> {
   await assertContained(root, directory, displayPath || '.');
   const info = await lstat(directory, { bigint: true });
   if (!info.isDirectory()) changed(displayPath || '.');
-  return info;
+  return {
+    displayPath,
+    dev: info.dev,
+    ino: info.ino,
+    ctimeNs: info.ctimeNs,
+    mtimeNs: info.mtimeNs,
+  };
+}
+
+function sameDirectory(
+  left: DirectorySnapshot,
+  right: DirectorySnapshot,
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.ctimeNs === right.ctimeNs &&
+    left.mtimeNs === right.mtimeNs
+  );
 }
 
 async function assertContained(

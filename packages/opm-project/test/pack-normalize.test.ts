@@ -74,7 +74,7 @@ describe('normalized pack input', () => {
     ).rejects.toMatchObject({ code: 'INVALID_TARGET' });
   });
 
-  it('never captures through an ancestor replaced by a symlink', async () => {
+  it('fails when an ancestor is swapped to a symlink and restored', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-normalize-swap-'));
     const outside = await mkdtemp(join(tmpdir(), 'opm-normalize-outside-'));
     roots.push(root, outside);
@@ -95,16 +95,18 @@ describe('normalized pack input', () => {
       (result) => ({ result }),
       (error: unknown) => ({ error }),
     );
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
     await rename(join(root, 'z-project'), join(root, 'z-project-original'));
     await symlink(outside, join(root, 'z-project'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await rm(join(root, 'z-project'));
+    await rename(join(root, 'z-project-original'), join(root, 'z-project'));
 
     const outcome = await capture;
-    if ('result' in outcome)
-      expect(outcome.result.files.map((file) => file.path)).not.toContain(
-        'z-project/secret.txt',
-      );
-    else expect(outcome.error).toMatchObject({ code: 'PACK_INPUT_CHANGED' });
+    expect(outcome).toHaveProperty('error');
+    expect('error' in outcome ? outcome.error : undefined).toMatchObject({
+      code: 'PACK_INPUT_CHANGED',
+    });
   });
 });
 
