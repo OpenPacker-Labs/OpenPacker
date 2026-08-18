@@ -31,9 +31,15 @@ describe('delegated pack provider manifest', () => {
     expect(() =>
       parseDelegatedPackProvider({
         ...provider(),
-        commands: [{ argv: ['{shell}'] }],
+        commands: [{ arguments: ['{shell}'] }],
       }),
     ).toThrow(/unknown template token/u);
+    expect(() =>
+      parseDelegatedPackProvider({
+        ...provider(),
+        commands: [{ argv: ['sh', '-c', 'echo unsafe'] }],
+      }),
+    ).toThrow(/unknown field argv/u);
   });
 
   it('does not follow a provider manifest symlink', async () => {
@@ -58,8 +64,7 @@ function provider() {
     executable: 'test-pack',
     commands: [
       {
-        argv: [
-          '{executable}',
+        arguments: [
           'pack',
           { value: '--offline', when: 'offline' as const },
           '--out',

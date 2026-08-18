@@ -16,7 +16,7 @@ const EXECUTABLE = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
 const MEDIA_TYPE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/u;
 const ROLE = /^[a-z][a-z0-9-]*$/u;
 const TOKEN =
-  /\{(?:executable|projectRoot|manifestPath|outputDirectory|packageName|packageVersion)\}/gu;
+  /\{(?:projectRoot|manifestPath|outputDirectory|packageName|packageVersion)\}/gu;
 
 export async function loadDelegatedPackProvider(
   path: string,
@@ -160,11 +160,18 @@ function commandList(
 ): PackProviderCommandTemplate[] {
   return array(value, label, 64, empty).map((item, index) => {
     const command = record(item, `${label}[${index}]`);
-    keys(command, ['argv'], `${label}[${index}]`);
+    keys(command, ['arguments'], `${label}[${index}]`);
     return {
-      argv: array(command.argv, `${label}[${index}].argv`, 256, false).map(
-        (argument, argumentIndex) =>
-          parseArgument(argument, `${label}[${index}].argv[${argumentIndex}]`),
+      arguments: array(
+        command.arguments,
+        `${label}[${index}].arguments`,
+        255,
+        true,
+      ).map((argument, argumentIndex) =>
+        parseArgument(
+          argument,
+          `${label}[${index}].arguments[${argumentIndex}]`,
+        ),
       ),
     };
   });

@@ -106,7 +106,6 @@ export class ManifestPackagePacker implements PackagePacker {
       options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
     );
     const values: Readonly<Record<string, string>> = {
-      executable: this.manifest.executable,
       projectRoot: input.project.root,
       manifestPath: input.project.manifestPath,
       outputDirectory,
@@ -117,11 +116,11 @@ export class ManifestPackagePacker implements PackagePacker {
       providerId: this.providerId,
       purlType: this.purlType,
       executable: this.manifest.executable,
-      commands: this.manifest.commands.map((command) =>
-        expandArguments(command.argv, values, options),
+      commandArguments: this.manifest.commands.map((command) =>
+        expandArguments(command.arguments, values, options),
       ),
-      cleanupCommands: (this.manifest.cleanupCommands ?? []).map((command) =>
-        expandArguments(command.argv, values, options),
+      cleanupArguments: (this.manifest.cleanupCommands ?? []).map((command) =>
+        expandArguments(command.arguments, values, options),
       ),
       environment: Object.fromEntries(
         Object.entries(this.manifest.environment ?? {}).map(([name, value]) => [
@@ -140,8 +139,14 @@ export class ManifestPackagePacker implements PackagePacker {
       plan.authority.network === 'consent' &&
       options.allowNetwork === true &&
       options.offline !== true;
-    const commands = plan.commands.map((command) => [...command]);
-    const cleanupCommands = plan.cleanupCommands.map((command) => [...command]);
+    const commands = plan.commandArguments.map((arguments_) => [
+      plan.executable,
+      ...arguments_,
+    ]);
+    const cleanupCommands = plan.cleanupArguments.map((arguments_) => [
+      plan.executable,
+      ...arguments_,
+    ]);
     return {
       strategy: 'delegate',
       purlType: this.purlType,
@@ -204,9 +209,9 @@ export class ManifestPackagePacker implements PackagePacker {
     const outcomes: SandboxOutcome[] = [];
     const environment = { ...hostPlan.environment, ...authorizedEnvironment };
     try {
-      for (const command of hostPlan.commands) {
+      for (const arguments_ of hostPlan.commandArguments) {
         const outcome = await this.runCommand(
-          command,
+          [hostPlan.executable, ...arguments_],
           input,
           options,
           plan,
@@ -218,10 +223,10 @@ export class ManifestPackagePacker implements PackagePacker {
         if (outcome.exitCode !== 0) break;
       }
     } finally {
-      for (const command of hostPlan.cleanupCommands)
+      for (const arguments_ of hostPlan.cleanupArguments)
         outcomes.push(
           await this.runCommand(
-            command,
+            [hostPlan.executable, ...arguments_],
             input,
             options,
             plan,

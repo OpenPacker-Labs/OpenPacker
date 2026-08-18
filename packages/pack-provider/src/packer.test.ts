@@ -27,6 +27,15 @@ describe('manifest package packer', () => {
     expect(plan.commands).toEqual([
       ['test-pack', 'pack', '--network', '--out', join(root, 'out')],
     ]);
+    await expect(
+      packer.hostPlan(input(root), {
+        allowNetwork: true,
+        outputDirectory: join(root, 'out'),
+      }),
+    ).resolves.toMatchObject({
+      executable: 'test-pack',
+      commandArguments: [['pack', '--network', '--out', join(root, 'out')]],
+    });
     expect(plan.requiresNetwork).toBe(true);
   });
 
@@ -141,8 +150,7 @@ function manifest(): DelegatedPackProviderManifest {
     executable: 'test-pack',
     commands: [
       {
-        argv: [
-          '{executable}',
+        arguments: [
           'pack',
           { value: '--network', when: 'allow-network' },
           { value: '--offline', when: 'offline' },
