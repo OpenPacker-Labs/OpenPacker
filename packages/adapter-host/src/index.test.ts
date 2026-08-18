@@ -91,10 +91,31 @@ describe('AdapterRegistry discovery', () => {
     await expect(
       registry.catalogFor('fixture', {}, ['prex.registry.search/1']),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+    await expect(registry.packerFor('fixture')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_OPERATION',
+    });
     // Present resource is allowed.
     await expect(
       registry.catalogFor('fixture', {}, ['prex.registry.package-metadata/1']),
     ).resolves.toBeDefined();
+  });
+
+  it('routes package-build v2 through the packer export', async () => {
+    const packer = { providerId: 'fixture-pack', purlType: 'fixture' } as never;
+    const registry = new AdapterRegistry();
+    registry.register(
+      fixtureModule({
+        registryDefinition: () =>
+          definition([
+            {
+              '@id': 'exec:fixture-pack',
+              '@type': 'prex.registry.package-build/2',
+            },
+          ]),
+        packer: () => packer,
+      }),
+    );
+    await expect(registry.packerFor('fixture')).resolves.toBe(packer);
   });
 
   it('fails closed for update/uninstall/environment when not advertised', async () => {
@@ -179,6 +200,22 @@ describe('WIT-shaped bridge', () => {
           },
         ]),
       installer: () => ({ install: async () => ({}) }) as never,
+    });
+    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+      code: 'INVALID_ADAPTER',
+    });
+  });
+
+  it('rejects package-build v2 without a packer export', async () => {
+    const dishonest = fixtureModule({
+      registryDefinition: () =>
+        definition([
+          {
+            '@id': 'exec:fixture-pack',
+            '@type': 'prex.registry.package-build/2',
+          },
+        ]),
+      codec: () => ({}) as never,
     });
     await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
       code: 'INVALID_ADAPTER',

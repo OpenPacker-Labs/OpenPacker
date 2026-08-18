@@ -2,6 +2,7 @@ import type {
   CatalogProvider,
   EcosystemCodec,
   InstallerProvider,
+  PackagePacker,
   ProjectFormat,
 } from '@openpacker/adapter-core';
 import type {
@@ -185,6 +186,21 @@ export class AdapterRegistry {
         `Adapter ${module.id} does not export install`,
       );
     return module.installer(context);
+  }
+
+  async packerFor(
+    purlType: string,
+    context: AdapterContext = {},
+  ): Promise<PackagePacker> {
+    const module = this.moduleFor(purlType);
+    const definition = await module.registryDefinition(context);
+    requireResource(definition, 'prex.registry.package-build/2');
+    if (!module.packer)
+      throw new AdapterHostError(
+        'UNSUPPORTED_OPERATION',
+        `Adapter ${module.id} does not export packer`,
+      );
+    return module.packer(context);
   }
 
   /**

@@ -164,6 +164,7 @@ export {
 
 export {
   nativeName,
+  packDelegatedProject,
   packNativeProject,
   projectNativeFormats,
   projectionLevel,

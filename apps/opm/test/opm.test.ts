@@ -35,6 +35,26 @@ function capture() {
 }
 
 describe('opm + opmx CLI', () => {
+  it('prints the exact delegated pack plan without executing it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-cli-pack-'));
+    temps.push(root);
+    const cap = capture();
+    expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"cli-pack","version":"1.0.0"}\n',
+    );
+    expect(
+      await runOpm(
+        ['pack', 'npm', '--delegate', '--dry-run', '--offline'],
+        cap.io,
+        root,
+      ),
+    ).toBe(0);
+    expect(cap.out).toContain('npm pack');
+    expect(cap.out).toContain('--ignore-scripts');
+  });
+
   it('init add install list opmx remove', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-'));
     temps.push(root);

@@ -23,6 +23,7 @@ import {
 import { NixCodec, NixStoreProvider } from '@openpacker/adapter-nix';
 import {
   NpmCodec,
+  NpmPackagePacker,
   NpmProjectFormat,
   NpmRegistryProvider,
 } from '@openpacker/adapter-npm';
@@ -104,10 +105,17 @@ export function defaultAdapterModules(): AdapterModule[] {
           baseUrl: endpointFor('npm', context) || 'https://registry.npmjs.org',
           searchUrl: `${(endpointFor('npm', context) || 'https://registry.npmjs.org').replace(/\/$/, '')}/-/v1/search`,
           includeDeps: true,
-          project: { manifest: true, lock: true, layout: true, build: true },
+          project: {
+            manifest: true,
+            lock: true,
+            layout: true,
+            build: true,
+            buildV2: true,
+          },
         }),
       codec: () => new NpmCodec(),
       project: () => new NpmProjectFormat(),
+      packer: () => new NpmPackagePacker(),
       catalog: (context) =>
         new NpmRegistryProvider(
           transportFor('npm', context),

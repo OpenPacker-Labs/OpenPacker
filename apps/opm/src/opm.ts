@@ -20,6 +20,7 @@ import {
   installSystemPackage,
   listRegistryVersions,
   packNativeProject,
+  packDelegatedProject,
   readLockfile,
   readManifestFile,
   listSystemInstallers,
@@ -389,6 +390,42 @@ export async function runOpm(
             'opm pack requires an ecosystem: opm pack npm | opm pack nuget',
           );
         const output = option(args, 'output');
+        if (args.options.has('delegate')) {
+          const result = await packDelegatedProject({
+            root,
+            ecosystem,
+            ...(output === undefined ? {} : { outputDirectory: output }),
+            ...(option(args, 'tool') === undefined
+              ? {}
+              : { tool: option(args, 'tool')! }),
+            allowBuild: args.options.has('allow-build'),
+            allowNetwork: args.options.has('allow-network'),
+            offline: args.options.has('offline'),
+            dryRun: args.options.has('dry-run'),
+          });
+          if (!result.performed) {
+            io.stdout.write(
+              `${result.command?.join(' ') ?? 'standard pack'}\n`,
+            );
+            return EXIT_CODES.success;
+          }
+          if (result.exitCode !== 0)
+            throw new OpmError(
+              'PACK_FAILED',
+              result.stderr || `Native pack exited ${result.exitCode}`,
+            );
+          for (const artifact of result.artifacts) {
+            io.stdout.write(`${artifact.path}\n`);
+            io.stdout.write(
+              `  ${artifact.digest}  ${artifact.size} bytes  ${artifact.nativeRole}\n`,
+            );
+          }
+          for (const loss of result.semanticLoss)
+            io.stderr.write(
+              `opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`,
+            );
+          return EXIT_CODES.success;
+        }
         const artifact = await packNativeProject({
           root,
           ecosystem,
@@ -605,6 +642,9 @@ function isBooleanFlag(key: string): boolean {
     key === 'offline' ||
     key === 'json' ||
     key === 'dry-run' ||
+    key === 'delegate' ||
+    key === 'allow-build' ||
+    key === 'allow-network' ||
     key === 'allow-elevation'
   );
 }
@@ -783,6 +823,11 @@ Browse registries (no project needed):
 Resolve a full dependency graph (transitive, proof-checked):
   opm resolve pkg:npm/chalk --range '^4.1.0'
   opm resolve pkg:npm/chalk --candidates 8
+
+Pack a project:
+  opm pack npm
+  opm pack npm --delegate --dry-run
+  Delegated scripts/builds require --allow-build; network additionally requires --allow-network.
 
 Host/profile installers use the same verbs when the registry advertises
 install (capability discovery). Examples:
