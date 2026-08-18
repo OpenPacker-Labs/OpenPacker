@@ -435,6 +435,8 @@ export interface PackOptions {
   allowNetwork?: boolean;
   /** Refuse network even when allowNetwork is also set. */
   offline?: boolean;
+  /** Host-authorized environment values; providers cannot read ambient env. */
+  authorizedEnvironment?: Readonly<Record<string, string>>;
   /** Return the exact plan without running it. */
   dryRun?: boolean;
   signal?: AbortSignal;
