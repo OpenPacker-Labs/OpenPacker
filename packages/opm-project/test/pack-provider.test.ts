@@ -50,7 +50,12 @@ describe('configured delegated pack providers', () => {
       authorizedEnvironment: configured.authorizedEnvironment,
     });
 
-    expect(call?.argv).toEqual(['acme-pack', 'pack', '--out', outputDirectory]);
+    expect(call?.argv).toEqual([
+      '/usr/bin/acme-pack',
+      'pack',
+      '--out',
+      outputDirectory,
+    ]);
     expect(call?.grants?.env).toEqual(['ACME_TOKEN']);
     expect(call?.env).toEqual({ ACME_TOKEN: 'secret' });
     expect(result.artifacts.map((artifact) => artifact.nativeRole)).toEqual([
