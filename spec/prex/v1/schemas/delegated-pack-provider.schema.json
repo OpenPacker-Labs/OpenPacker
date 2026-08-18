@@ -51,7 +51,7 @@
         }
       ]
     },
-    "CommandTemplate": {
+    "PackProviderCommandTemplate": {
       "type": "object",
       "required": ["argv"],
       "properties": {
@@ -99,22 +99,10 @@
       },
       "additionalProperties": false
     },
-    "PackProviderArtifactPattern": {
+    "PackProviderArtifactFields": {
       "type": "object",
       "required": ["mediaType", "nativeRole"],
       "properties": {
-        "suffix": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 255,
-          "pattern": "^[.][A-Za-z0-9._+-]+$"
-        },
-        "basename": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 255,
-          "pattern": "^(?![.]{1,2}$)(?!.*[\\\\/]).+$"
-        },
         "mediaType": {
           "type": "string",
           "minLength": 3,
@@ -127,12 +115,47 @@
           "maxLength": 128,
           "pattern": "^[a-z][a-z0-9-]*$"
         }
-      },
+      }
+    },
+    "PackProviderArtifactPattern": {
       "oneOf": [
-        { "required": ["suffix"], "not": { "required": ["basename"] } },
-        { "required": ["basename"], "not": { "required": ["suffix"] } }
-      ],
-      "additionalProperties": false
+        {
+          "allOf": [
+            { "$ref": "#/$defs/PackProviderArtifactFields" },
+            {
+              "type": "object",
+              "required": ["suffix"],
+              "properties": {
+                "suffix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^[.][A-Za-z0-9._+-]+$"
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/PackProviderArtifactFields" },
+            {
+              "type": "object",
+              "required": ["basename"],
+              "properties": {
+                "basename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^(?![.]{1,2}$)(?!.*[\\\\/]).+$"
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
     },
     "DelegatedPackProviderManifest": {
       "type": "object",
@@ -169,12 +192,12 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 64,
-          "items": { "$ref": "#/$defs/CommandTemplate" }
+          "items": { "$ref": "#/$defs/PackProviderCommandTemplate" }
         },
         "cleanupCommands": {
           "type": "array",
           "maxItems": 64,
-          "items": { "$ref": "#/$defs/CommandTemplate" }
+          "items": { "$ref": "#/$defs/PackProviderCommandTemplate" }
         },
         "environment": {
           "type": "object",

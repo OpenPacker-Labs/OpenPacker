@@ -213,7 +213,6 @@ export type CloudEventCommon = {
   externalrefs: Array<ExternalRef>;
   extensions?: Extensions;
 };
-export type CommandTemplate = { argv: Array<PackProviderArgument> };
 export type Conflict = {
   id: string;
   expression: RequirementExpression;
@@ -250,8 +249,8 @@ export type DelegatedPackProviderManifest = {
   purlTypes: Array<DelegatedProviderPurlType>;
   detection: PackProviderDetection;
   executable: string;
-  commands: Array<CommandTemplate>;
-  cleanupCommands?: Array<CommandTemplate>;
+  commands: Array<PackProviderCommandTemplate>;
+  cleanupCommands?: Array<PackProviderCommandTemplate>;
   environment?: { [key: string]: PackProviderTemplate };
   authority: DelegatedProviderAuthority;
   artifacts: Array<PackProviderArtifactPattern>;
@@ -905,7 +904,14 @@ export type OutputName = string;
 export type PackProviderArgument =
   | PackProviderTemplate
   | { value: PackProviderTemplate; when: PackProviderCondition };
-export type PackProviderArtifactPattern = JsonValue | JsonValue;
+export type PackProviderArtifactFields = {
+  mediaType: string;
+  nativeRole: string;
+};
+export type PackProviderArtifactPattern =
+  | (PackProviderArtifactFields & { suffix: string })
+  | (PackProviderArtifactFields & { basename: string });
+export type PackProviderCommandTemplate = { argv: Array<PackProviderArgument> };
 export type PackProviderCondition =
   | 'always'
   | 'allow-build'
@@ -2386,7 +2392,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             },
           ],
         },
-        CommandTemplate: {
+        PackProviderCommandTemplate: {
           type: 'object',
           required: ['argv'],
           properties: {
@@ -2443,22 +2449,10 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           additionalProperties: false,
         },
-        PackProviderArtifactPattern: {
+        PackProviderArtifactFields: {
           type: 'object',
           required: ['mediaType', 'nativeRole'],
           properties: {
-            suffix: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 255,
-              pattern: '^[.][A-Za-z0-9._+-]+$',
-            },
-            basename: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 255,
-              pattern: '^(?![.]{1,2}$)(?!.*[\\\\/]).+$',
-            },
             mediaType: {
               type: 'string',
               minLength: 3,
@@ -2472,21 +2466,50 @@ export const schemaCatalog: Record<string, JsonValue> = {
               pattern: '^[a-z][a-z0-9-]*$',
             },
           },
+        },
+        PackProviderArtifactPattern: {
           oneOf: [
             {
-              required: ['suffix'],
-              not: {
-                required: ['basename'],
-              },
+              allOf: [
+                {
+                  $ref: '#/$defs/PackProviderArtifactFields',
+                },
+                {
+                  type: 'object',
+                  required: ['suffix'],
+                  properties: {
+                    suffix: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 255,
+                      pattern: '^[.][A-Za-z0-9._+-]+$',
+                    },
+                  },
+                },
+              ],
+              unevaluatedProperties: false,
             },
             {
-              required: ['basename'],
-              not: {
-                required: ['suffix'],
-              },
+              allOf: [
+                {
+                  $ref: '#/$defs/PackProviderArtifactFields',
+                },
+                {
+                  type: 'object',
+                  required: ['basename'],
+                  properties: {
+                    basename: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 255,
+                      pattern: '^(?![.]{1,2}$)(?!.*[\\\\/]).+$',
+                    },
+                  },
+                },
+              ],
+              unevaluatedProperties: false,
             },
           ],
-          additionalProperties: false,
         },
         DelegatedPackProviderManifest: {
           type: 'object',
@@ -2538,14 +2561,14 @@ export const schemaCatalog: Record<string, JsonValue> = {
               minItems: 1,
               maxItems: 64,
               items: {
-                $ref: '#/$defs/CommandTemplate',
+                $ref: '#/$defs/PackProviderCommandTemplate',
               },
             },
             cleanupCommands: {
               type: 'array',
               maxItems: 64,
               items: {
-                $ref: '#/$defs/CommandTemplate',
+                $ref: '#/$defs/PackProviderCommandTemplate',
               },
             },
             environment: {
