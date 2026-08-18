@@ -18,6 +18,7 @@ import {
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
+import { packTarGzip, writeFileAtomic } from '@openpacker/project-io';
 import { NpmProjectFormat } from './project.js';
 
 const run = promisify(execFile);
@@ -79,10 +80,14 @@ export class NpmPackagePacker implements PackagePacker {
 
   async plan(input: PackInput, options: PackOptions = {}): Promise<PackPlan> {
     if (options.strategy === 'standard')
-      throw new ProviderError(
-        'UNSUPPORTED_OPERATION',
-        'The npm package-build/2 adapter does not implement standard packing yet',
-      );
+      return {
+        strategy: 'standard',
+        purlType: 'npm',
+        requiresBuild: false,
+        requiresNetwork: false,
+        expectedRoles: ['distribution'],
+        semanticLoss: [],
+      };
     const outputDirectory = packOutputDirectory(input, options);
     const nativeCommand = [
       'npm',
@@ -113,6 +118,8 @@ export class NpmPackagePacker implements PackagePacker {
     input: PackInput,
     options: PackOptions = {},
   ): Promise<PackOutcome> {
+    if (options.strategy === 'standard')
+      return this.packStandard(input, options);
     const plan = await this.plan(input, options);
     const availability = await this.available(options);
     if (!availability.available)
@@ -179,6 +186,60 @@ export class NpmPackagePacker implements PackagePacker {
       sandboxBackend: outcome.backend,
       sandboxEnforced: outcome.enforced,
       semanticLoss: [...plan.semanticLoss, ...outcome.losses],
+    };
+  }
+
+  private async packStandard(
+    input: PackInput,
+    options: PackOptions,
+  ): Promise<PackOutcome> {
+    const plan = await this.plan(input, options);
+    if (options.dryRun)
+      return {
+        ...plan,
+        performed: false,
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        artifacts: [],
+      };
+    if (input.normalized === undefined)
+      throw new ProviderError(
+        'INVALID_REQUEST',
+        'Standard npm packing requires a normalized pack input',
+      );
+    const target = input.normalized.manifest.target;
+    const stem = `${safeFileName(target.identifier)}-${safeFileName(target.version)}`;
+    const bytes = packTarGzip(
+      input.normalized.files.map((file) => ({
+        ...file,
+        path: `package/${file.path}`,
+      })),
+    );
+    const outputDirectory = packOutputDirectory(input, options);
+    const path = join(outputDirectory, `${stem}.tgz`);
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFileAtomic(path, bytes);
+    return {
+      ...plan,
+      performed: true,
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      artifacts: [
+        {
+          path,
+          ...(target.exactPurl === undefined
+            ? {}
+            : { exactPurl: target.exactPurl }),
+          mediaType: 'application/vnd.npm.package+gzip',
+          size: bytes.byteLength,
+          digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+          nativeRole: 'distribution',
+          outputName: `${stem}.tgz`,
+        },
+      ],
+      semanticLoss: [...input.normalized.manifest.semanticLoss],
     };
   }
 }
@@ -258,4 +319,13 @@ function npmPurl(name: string, version: string): string {
   if (!name || name.includes('/'))
     throw new ProviderError('INVALID_RESPONSE', `Invalid npm name: ${name}`);
   return `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`;
+}
+
+function safeFileName(value: string): string {
+  const safe = value
+    .replace(/[^A-Za-z0-9._-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '');
+  if (safe === '')
+    throw new ProviderError('INVALID_REQUEST', `Unsafe package name: ${value}`);
+  return safe;
 }

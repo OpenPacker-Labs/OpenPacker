@@ -190,7 +190,7 @@ describe('materialiseTree', () => {
 
 describe('archives', () => {
   it('produces a tar the materializer can read back', async () => {
-    const { packTarGzip } = await import('./archive.js');
+    const { packTar, packTarGzip } = await import('./archive.js');
     const { inspectArchive } = await import('@openpacker/materializer');
     const bytes = packTarGzip([
       {
@@ -210,6 +210,16 @@ describe('archives', () => {
       'package/bin/cli.js',
       'package/package.json',
     ]);
+    expect(
+      (
+        await inspectArchive(
+          packTar([
+            { path: 'plain.txt', contents: new TextEncoder().encode('plain') },
+          ]),
+          'tar',
+        )
+      ).map((file) => file.path),
+    ).toEqual(['plain.txt']);
   });
 
   it('is deterministic — the same input gives the same bytes', async () => {

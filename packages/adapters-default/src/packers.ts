@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { CargoProjectFormat } from '@openpacker/adapter-cargo';
+import { GolangProjectFormat } from '@openpacker/adapter-golang';
 import { MavenProjectFormat } from '@openpacker/adapter-maven';
 import { NugetProjectFormat } from '@openpacker/adapter-nuget';
 import { PypiProjectFormat } from '@openpacker/adapter-pypi';
@@ -10,11 +11,13 @@ import {
   markerDetector,
   type DelegatedCommandPackerOptions,
 } from './delegated-pack.js';
+import { standardEmitters } from './standard-pack.js';
 
 const cargo = new CargoProjectFormat();
 const pypi = new PypiProjectFormat();
 const nuget = new NugetProjectFormat();
 const maven = new MavenProjectFormat();
+const golang = new GolangProjectFormat();
 
 export function cargoPacker(): DelegatedCommandPacker {
   return packer({
@@ -51,6 +54,7 @@ export function cargoPacker(): DelegatedCommandPacker {
         nativeRole: 'distribution',
       },
     ],
+    standard: standardEmitters.cargo,
   });
 }
 
@@ -111,6 +115,7 @@ export function pypiPacker(): DelegatedCommandPacker {
         nativeRole: 'source-distribution',
       },
     ],
+    standard: standardEmitters.pypi,
   });
 }
 
@@ -170,6 +175,7 @@ export function nugetPacker(): DelegatedCommandPacker {
         nativeRole: 'symbols',
       },
     ],
+    standard: standardEmitters.nuget,
   });
 }
 
@@ -214,6 +220,7 @@ export function mavenPacker(): DelegatedCommandPacker {
         nativeRole: 'distribution',
       },
     ],
+    standard: standardEmitters.maven,
   });
 }
 
@@ -285,6 +292,7 @@ export function ociPacker(): DelegatedCommandPacker {
         nativeRole: 'oci-layout',
       },
     ],
+    standard: standardEmitters.oci,
   });
 }
 
@@ -331,6 +339,7 @@ export function nixPacker(): DelegatedCommandPacker {
         nativeRole: 'cache-metadata',
       },
     ],
+    standard: standardEmitters.nix,
   });
 }
 
@@ -366,6 +375,7 @@ export function debPacker(): DelegatedCommandPacker {
         nativeRole: 'distribution',
       },
     ],
+    standard: standardEmitters.deb,
   });
 }
 
@@ -407,6 +417,7 @@ export function wingetPacker(): DelegatedCommandPacker {
       },
     ],
     copyProjectArtifacts: true,
+    standard: standardEmitters.winget,
   });
 }
 
@@ -444,6 +455,28 @@ export function chocolateyPacker(): DelegatedCommandPacker {
         nativeRole: 'distribution',
       },
     ],
+    standard: standardEmitters.chocolatey,
+  });
+}
+
+export function golangPacker(): DelegatedCommandPacker {
+  return packer({
+    providerId: 'golang-pack',
+    purlType: 'golang',
+    detect: (root) => golang.detect(root),
+    defaultTool: 'go',
+    tools: {
+      go: {
+        executable: 'go',
+        plan: () => {
+          throw new Error(
+            'Go has no native pack command; use standardized packing',
+          );
+        },
+      },
+    },
+    artifacts: [],
+    standard: standardEmitters.golang,
   });
 }
 

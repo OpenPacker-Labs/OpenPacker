@@ -163,6 +163,14 @@ export {
 } from './manifest.js';
 
 export {
+  normalizeProjectPack,
+  normalizedPackId,
+  type NormalizedProjectPack,
+} from './pack-normalize.js';
+
+export { PACK_RECEIPT, packProject, packStandardProject } from './pack.js';
+
+export {
   nativeName,
   packDelegatedProject,
   packNativeProject,

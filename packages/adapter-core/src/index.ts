@@ -5,6 +5,8 @@ import type {
   PackageIdentity,
   PackageInstance,
   PackageManifest,
+  NormalizedPackManifest,
+  PackReceipt,
   SemanticLoss,
   SourceSnapshot,
   VersionConstraint,
@@ -403,6 +405,19 @@ export interface PackInput {
   manifest?: PackageManifest;
   /** The target entry must be explicit when it differs from the source. */
   target?: Distribution;
+  /** Internal OCI-based representation consumed by standardized emitters. */
+  normalized?: NormalizedPackInput;
+}
+
+export interface NormalizedPackInput {
+  manifest: NormalizedPackManifest;
+  files: readonly NormalizedPackFile[];
+}
+
+export interface NormalizedPackFile {
+  path: string;
+  contents: Uint8Array;
+  executable: boolean;
 }
 
 export interface PackOptions {
@@ -465,6 +480,7 @@ export interface PackOutcome extends PackPlan {
   artifacts: readonly PackArtifact[];
   sandboxBackend?: string;
   sandboxEnforced?: boolean;
+  receipt?: PackReceipt;
 }
 
 export interface WriteManifestOptions {

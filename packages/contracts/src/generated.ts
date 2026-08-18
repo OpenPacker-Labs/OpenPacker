@@ -758,6 +758,41 @@ export type NormalizeResult = {
   warnings: Array<Warning>;
   semanticLoss: Array<SemanticLoss>;
 };
+export type NormalizedLifecycleHook = {
+  phase: 'prepare' | 'prepack' | 'pack' | 'postpack' | 'install' | 'uninstall';
+  nativeName?: string;
+  command: Array<string>;
+  requiresBuild: boolean;
+  requiresNetwork: boolean;
+};
+export type NormalizedOciConfig = {
+  entrypoint: Array<string>;
+  arguments: Array<string>;
+  environment: { [key: string]: string };
+  workingDirectory?: string;
+  user?: string;
+  labels: { [key: string]: string };
+  exposedPorts: Array<string>;
+  volumes: Array<string>;
+  stopSignal?: string;
+};
+export type NormalizedOciModel = {
+  imageLayoutVersion: '1.0.0';
+  config: NormalizedOciConfig;
+  layers: Array<ArtifactDescriptor>;
+};
+export type NormalizedPackManifest = {
+  normalizedPackManifestVersion: NormalizedPackManifestVersion;
+  package: PackageManifest;
+  target: Distribution;
+  tree: TreeManifest;
+  oci: NormalizedOciModel;
+  requirements: Array<DistributionRequirement>;
+  lifecycle: Array<NormalizedLifecycleHook>;
+  nativeMetadata: Extensions;
+  semanticLoss: Array<SemanticLoss>;
+};
+export type NormalizedPackManifestVersion = '1';
 export type OciDescriptor = {
   mediaType: string;
   digest: string;
@@ -835,6 +870,18 @@ export type OpenPackerOverlay = {
   extensions?: Extensions;
 };
 export type OutputName = string;
+export type PackReceipt = {
+  packReceiptVersion: PackReceiptVersion;
+  strategy: 'delegate' | 'standard';
+  target: Distribution;
+  normalizedManifestDigest: Digest;
+  tool?: PackTool;
+  commands: Array<Array<string>>;
+  sandbox?: { backend?: string; enforced: boolean };
+  artifacts: Array<ArtifactDescriptor>;
+  semanticLoss: Array<SemanticLoss>;
+};
+export type PackReceiptVersion = '1';
 export type PackRequest = {
   exactPurl: string;
   artifact: ArtifactDescriptor;
@@ -845,6 +892,7 @@ export type PackResponse = {
   nativeBlob: OciDescriptor;
   artifact: ArtifactDescriptor;
 };
+export type PackTool = { name: string; version?: string; path?: string };
 export type PackageIdentity = {
   canonicalPurl: string;
   exactPurl?: string;
@@ -6456,6 +6504,302 @@ export const schemaCatalog: Record<string, JsonValue> = {
           'CANCELLED',
           'INTERNAL_ERROR',
         ],
+      },
+    },
+  },
+  'https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json': {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json',
+    title: 'PREX normalized pack model and canonical pack receipt',
+    $defs: {
+      NormalizedPackManifestVersion: {
+        const: '1',
+      },
+      NormalizedPackManifest: {
+        $comment:
+          'Internal target-independent pack input. OCI config plus ordered content layers form the common denominator; nativeMetadata retains target-only semantics without changing the common filesystem/runtime model.',
+        type: 'object',
+        required: [
+          'normalizedPackManifestVersion',
+          'package',
+          'target',
+          'tree',
+          'oci',
+          'requirements',
+          'lifecycle',
+          'nativeMetadata',
+          'semanticLoss',
+        ],
+        properties: {
+          normalizedPackManifestVersion: {
+            $ref: '#/$defs/NormalizedPackManifestVersion',
+          },
+          package: {
+            $ref: 'package-manifest.schema.json#/$defs/PackageManifest',
+          },
+          target: {
+            $ref: 'package-manifest.schema.json#/$defs/Distribution',
+          },
+          tree: {
+            $ref: 'model.schema.json#/$defs/TreeManifest',
+          },
+          oci: {
+            $ref: '#/$defs/NormalizedOciModel',
+          },
+          requirements: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              $ref: 'package-manifest.schema.json#/$defs/DistributionRequirement',
+            },
+          },
+          lifecycle: {
+            type: 'array',
+            maxItems: 128,
+            items: {
+              $ref: '#/$defs/NormalizedLifecycleHook',
+            },
+          },
+          nativeMetadata: {
+            $ref: 'common.schema.json#/$defs/Extensions',
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 256,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      NormalizedOciModel: {
+        type: 'object',
+        required: ['imageLayoutVersion', 'config', 'layers'],
+        properties: {
+          imageLayoutVersion: {
+            const: '1.0.0',
+          },
+          config: {
+            $ref: '#/$defs/NormalizedOciConfig',
+          },
+          layers: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 128,
+            items: {
+              $ref: 'model.schema.json#/$defs/ArtifactDescriptor',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      NormalizedOciConfig: {
+        $comment:
+          'OCI image config fields shared by containers and language/system packages. Empty values are explicit so emitters never infer runtime behavior.',
+        type: 'object',
+        required: [
+          'entrypoint',
+          'arguments',
+          'environment',
+          'labels',
+          'exposedPorts',
+          'volumes',
+        ],
+        properties: {
+          entrypoint: {
+            type: 'array',
+            maxItems: 256,
+            items: {
+              type: 'string',
+              maxLength: 8192,
+            },
+          },
+          arguments: {
+            type: 'array',
+            maxItems: 256,
+            items: {
+              type: 'string',
+              maxLength: 8192,
+            },
+          },
+          environment: {
+            type: 'object',
+            maxProperties: 4096,
+            additionalProperties: {
+              type: 'string',
+              maxLength: 1048576,
+            },
+          },
+          workingDirectory: {
+            type: 'string',
+            maxLength: 4096,
+          },
+          user: {
+            type: 'string',
+            maxLength: 1024,
+          },
+          labels: {
+            type: 'object',
+            maxProperties: 4096,
+            additionalProperties: {
+              type: 'string',
+              maxLength: 1048576,
+            },
+          },
+          exposedPorts: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              type: 'string',
+              maxLength: 128,
+            },
+          },
+          volumes: {
+            type: 'array',
+            maxItems: 4096,
+            items: {
+              type: 'string',
+              maxLength: 4096,
+            },
+          },
+          stopSignal: {
+            type: 'string',
+            maxLength: 128,
+          },
+        },
+        additionalProperties: false,
+      },
+      NormalizedLifecycleHook: {
+        type: 'object',
+        required: ['phase', 'command', 'requiresBuild', 'requiresNetwork'],
+        properties: {
+          phase: {
+            enum: [
+              'prepare',
+              'prepack',
+              'pack',
+              'postpack',
+              'install',
+              'uninstall',
+            ],
+          },
+          nativeName: {
+            type: 'string',
+            maxLength: 255,
+          },
+          command: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 256,
+            items: {
+              type: 'string',
+              maxLength: 8192,
+            },
+          },
+          requiresBuild: {
+            type: 'boolean',
+          },
+          requiresNetwork: {
+            type: 'boolean',
+          },
+        },
+        additionalProperties: false,
+      },
+      PackReceiptVersion: {
+        const: '1',
+      },
+      PackReceipt: {
+        type: 'object',
+        required: [
+          'packReceiptVersion',
+          'strategy',
+          'target',
+          'normalizedManifestDigest',
+          'commands',
+          'artifacts',
+          'semanticLoss',
+        ],
+        properties: {
+          packReceiptVersion: {
+            $ref: '#/$defs/PackReceiptVersion',
+          },
+          strategy: {
+            enum: ['delegate', 'standard'],
+          },
+          target: {
+            $ref: 'package-manifest.schema.json#/$defs/Distribution',
+          },
+          normalizedManifestDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          tool: {
+            $ref: '#/$defs/PackTool',
+          },
+          commands: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 256,
+              items: {
+                type: 'string',
+                maxLength: 8192,
+              },
+            },
+          },
+          sandbox: {
+            type: 'object',
+            required: ['enforced'],
+            properties: {
+              backend: {
+                type: 'string',
+                maxLength: 128,
+              },
+              enforced: {
+                type: 'boolean',
+              },
+            },
+            additionalProperties: false,
+          },
+          artifacts: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 256,
+            items: {
+              $ref: 'model.schema.json#/$defs/ArtifactDescriptor',
+            },
+          },
+          semanticLoss: {
+            type: 'array',
+            maxItems: 256,
+            items: {
+              $ref: 'common.schema.json#/$defs/SemanticLoss',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      PackTool: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+          },
+          version: {
+            type: 'string',
+            maxLength: 255,
+          },
+          path: {
+            type: 'string',
+            maxLength: 4096,
+          },
+        },
+        additionalProperties: false,
       },
     },
   },

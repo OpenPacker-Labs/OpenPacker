@@ -14,6 +14,8 @@ before selecting them.
 | explanation      | `application/vnd.openpacker.explanation.v1+json`      |
 | proof            | `application/vnd.openpacker.proof.v1+json`            |
 | lockfile         | `application/vnd.openpacker.lock.v1+json`             |
+| normalized pack  | `application/vnd.openpacker.normalized-pack.v1+json`  |
+| pack receipt     | `application/vnd.openpacker.pack-receipt.v1+json`     |
 | tree manifest    | `application/vnd.openpacker.tree-manifest.v1+json`    |
 | build recipe     | `application/vnd.openpacker.build-recipe.v1+json`     |
 | substitute       | `application/vnd.openpacker.substitute.v1+json`       |

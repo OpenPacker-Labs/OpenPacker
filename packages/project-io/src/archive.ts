@@ -39,6 +39,11 @@ const ZIP_EPOCH = new Date('1980-06-01T12:00:00Z');
  * native tool.
  */
 export function packTarGzip(entries: readonly ArchiveEntry[]): Uint8Array {
+  return gzipSync(packTar(entries), { level: 9, mtime: 0 });
+}
+
+/** Deterministic uncompressed ustar, used for OCI layers and Debian members. */
+export function packTar(entries: readonly ArchiveEntry[]): Uint8Array {
   const blocks: Uint8Array[] = [];
   for (const entry of sorted(entries)) {
     blocks.push(tarHeader(entry));
@@ -48,8 +53,7 @@ export function packTarGzip(entries: readonly ArchiveEntry[]): Uint8Array {
   }
   // Two zero blocks terminate a tar, then padding to a 20-block record.
   blocks.push(new Uint8Array(BLOCK * 2));
-  const tar = concat(blocks);
-  return gzipSync(tar, { level: 9, mtime: 0 });
+  return concat(blocks);
 }
 
 /** A zip, as NuGet publishes (`.nupkg` is an OPC zip). */

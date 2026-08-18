@@ -198,4 +198,4 @@ export {
   type MaterialiseResult,
 } from './layout.js';
 
-export { packTarGzip, packZip, type ArchiveEntry } from './archive.js';
+export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';

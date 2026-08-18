@@ -47,6 +47,7 @@ import {
   cargoPacker,
   chocolateyPacker,
   debPacker,
+  golangPacker,
   mavenPacker,
   nixPacker,
   nugetPacker,
@@ -324,10 +325,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['golang'],
           native: 'golang-proxy-v1',
           baseUrl: endpointFor('golang', context) || 'https://proxy.golang.org',
-          project: { manifest: true },
+          project: { manifest: true, buildV2: true },
         }),
       codec: () => new GolangCodec(),
       project: () => new GolangProjectFormat(),
+      packer: golangPacker,
       catalog: (context) =>
         new GolangProxyProvider(
           transportFor('golang', context),

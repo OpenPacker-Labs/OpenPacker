@@ -13,6 +13,9 @@ OpenPacker still ships the PREX control plane
 (`openpacker normalize|solve|import-lock|…`). That is **not** what you use to
 manage a project’s packages. Use **`opm`**.
 
+Package publishers can use [`opm pack`](opm-pack.md) for deterministic native
+artifacts or explicit native-tool delegation.
+
 ---
 
 ## Install

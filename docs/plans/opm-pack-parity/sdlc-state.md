@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: implementation
-- Current layer: `01-contracts-delegation`
+- Phase: verification
+- Current layer: `03-standard-emitters`
 - Branch: `sdlc/opm-pack-01-contracts-delegation`
 - External issues/PRs: not created; implementation authorization did not include
   external mutations
@@ -33,6 +33,14 @@
    OCI/CAS representation, adapter normalization.
 3. `03-standard-emitters`: deterministic target-native emitters,
    standard-by-default CLI, parity and adversarial coverage.
+
+## Implemented
+
+- `929fcad`: package-build/2 host contract and strict npm delegation.
+- `e92baa5`: delegated command parity for native tool families and mise routing.
+- Working tree: normalized pack schema/model, bounded no-follow capture,
+  standard emitters, canonical receipts, standard-by-default CLI, conformance
+  and independent archive-format checks.
 
 ## Acceptance
 

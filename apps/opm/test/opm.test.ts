@@ -55,6 +55,31 @@ describe('opm + opmx CLI', () => {
     expect(cap.out).toContain('--ignore-scripts');
   });
 
+  it('packs standard native bytes and a receipt without npm on PATH', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-cli-standard-pack-'));
+    temps.push(root);
+    let cap = capture();
+    expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"cli-pack","version":"1.0.0"}\n',
+    );
+    cap = capture();
+    expect(
+      await runOpm(['pack', 'npm', '--package-version', '1.0.0'], cap.io, root),
+    ).toBe(0);
+    expect(cap.out).toContain('cli-pack-1.0.0.tgz');
+    expect(cap.out).toContain('opm-pack-receipt.json');
+    const receipt = JSON.parse(
+      await readFile(
+        join(root, '.opm', 'pack', 'opm-pack-receipt.json'),
+        'utf8',
+      ),
+    ) as { strategy: string; artifacts: unknown[] };
+    expect(receipt.strategy).toBe('standard');
+    expect(receipt.artifacts).toHaveLength(1);
+  });
+
   it('init add install list opmx remove', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-'));
     temps.push(root);

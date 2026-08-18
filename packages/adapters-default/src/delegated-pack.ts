@@ -15,6 +15,7 @@ import {
   ProviderError,
   type DetectedProject,
   type Ecosystem,
+  type NormalizedPackInput,
   type PackArtifact,
   type PackAvailability,
   type PackInput,
@@ -28,6 +29,7 @@ import {
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
+import { writeFileAtomic } from '@openpacker/project-io';
 
 const run = promisify(execFile);
 
@@ -73,6 +75,20 @@ export interface DelegatedCommandPackerOptions {
   artifacts: readonly DelegatedArtifactType[];
   /** Native manifest bundles (for example WinGet) are validated, then copied. */
   copyProjectArtifacts?: boolean;
+  standard?: StandardEmitter;
+}
+
+export interface StandardEmitterArtifact {
+  fileName: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  nativeRole: string;
+  exactPurl?: string;
+}
+
+export interface StandardEmitter {
+  expectedRoles: readonly string[];
+  emit(input: NormalizedPackInput): Promise<readonly StandardEmitterArtifact[]>;
 }
 
 /** Shared execution mechanics; each adapter still owns its native command. */
@@ -120,11 +136,21 @@ export class DelegatedCommandPacker implements PackagePacker {
   }
 
   async plan(input: PackInput, options: PackOptions = {}): Promise<PackPlan> {
-    if (options.strategy === 'standard')
-      throw new ProviderError(
-        'UNSUPPORTED_OPERATION',
-        `${this.purlType} delegated packing does not implement standard packing`,
-      );
+    if (options.strategy === 'standard') {
+      if (this.config.standard === undefined)
+        throw new ProviderError(
+          'UNSUPPORTED_OPERATION',
+          `${this.purlType} does not implement standardized packing`,
+        );
+      return {
+        strategy: 'standard',
+        purlType: this.purlType,
+        requiresBuild: false,
+        requiresNetwork: false,
+        expectedRoles: this.config.standard.expectedRoles,
+        semanticLoss: [],
+      };
+    }
     const selected = this.selectedTool(options);
     const outputDirectory = packOutputDirectory(input, options);
     const native = selected.tool.plan({
@@ -155,6 +181,8 @@ export class DelegatedCommandPacker implements PackagePacker {
     input: PackInput,
     options: PackOptions = {},
   ): Promise<PackOutcome> {
+    if (options.strategy === 'standard')
+      return this.packStandard(input, options);
     const selected = this.selectedTool(options);
     const native = selected.tool.plan({
       project: input.project,
@@ -181,6 +209,15 @@ export class DelegatedCommandPacker implements PackagePacker {
 
     const outputDirectory = packOutputDirectory(input, options);
     await mkdir(outputDirectory, { recursive: true });
+    const existing = await collectArtifacts(
+      outputDirectory,
+      this.config.artifacts,
+    );
+    if (existing.length > 0)
+      throw new ProviderError(
+        'OUTPUT_NOT_EMPTY',
+        `${this.purlType} delegated packing requires an output directory without existing native artifacts`,
+      );
     const outcomes: SandboxOutcome[] = [];
     try {
       for (const command of plan.commands ?? [plan.command!]) {
@@ -242,6 +279,67 @@ export class DelegatedCommandPacker implements PackagePacker {
         ...plan.semanticLoss,
         ...outcomes.flatMap((item) => item.losses),
       ],
+    };
+  }
+
+  private async packStandard(
+    input: PackInput,
+    options: PackOptions,
+  ): Promise<PackOutcome> {
+    const plan = await this.plan(input, options);
+    if (options.dryRun) return emptyOutcome(plan);
+    if (input.normalized === undefined)
+      throw new ProviderError(
+        'INVALID_REQUEST',
+        'Standard packing requires a normalized pack input',
+      );
+    const emitter = this.config.standard!;
+    const outputDirectory = packOutputDirectory(input, options);
+    await mkdir(outputDirectory, { recursive: true });
+    const emitted = await emitter.emit(input.normalized);
+    const artifacts: PackArtifact[] = [];
+    const names = new Set<string>();
+    for (const artifact of emitted) {
+      if (basename(artifact.fileName) !== artifact.fileName)
+        throw new ProviderError(
+          'INVALID_RESPONSE',
+          `Standard emitter returned an unsafe filename: ${artifact.fileName}`,
+        );
+      if (names.has(artifact.fileName))
+        throw new ProviderError(
+          'INVALID_RESPONSE',
+          `Standard emitter returned duplicate filename: ${artifact.fileName}`,
+        );
+      names.add(artifact.fileName);
+    }
+    for (const artifact of emitted) {
+      const path = join(outputDirectory, artifact.fileName);
+      await writeFileAtomic(path, artifact.bytes);
+      artifacts.push({
+        path,
+        ...(artifact.exactPurl === undefined
+          ? {}
+          : { exactPurl: artifact.exactPurl }),
+        mediaType: artifact.mediaType,
+        size: artifact.bytes.byteLength,
+        digest: `sha256:${createHash('sha256').update(artifact.bytes).digest('hex')}`,
+        nativeRole: artifact.nativeRole,
+        outputName: artifact.fileName,
+      });
+    }
+    if (artifacts.length === 0)
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        `${this.purlType} standard emitter produced no artifacts`,
+      );
+    return {
+      ...plan,
+      performed: true,
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      artifacts,
+      semanticLoss: [...input.normalized.manifest.semanticLoss],
     };
   }
 

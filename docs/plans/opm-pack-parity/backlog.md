@@ -5,6 +5,8 @@ implementation contracts.
 
 ## 01 — Versioned delegated pack capability
 
+Status: implemented and locally gated.
+
 Why: OPM currently exposes single-artifact in-process npm/NuGet packers and
 cannot safely drive native package toolchains.
 
@@ -18,6 +20,8 @@ failure cleanup. Legacy package-build v1 remains compatible.
 
 ## 02 — Normalized pack model
 
+Status: implemented; full verification pending.
+
 Why: standardized packing needs a target-independent representation that can be
 produced without invoking a delegate.
 
@@ -30,6 +34,8 @@ normalization produce stable tree and manifest digests with explicit semantic
 loss.
 
 ## 03 — Deterministic standard emitters
+
+Status: implemented; full verification pending.
 
 Why: the final OPM path must produce target-native artifacts without installed
 native pack tooling.
