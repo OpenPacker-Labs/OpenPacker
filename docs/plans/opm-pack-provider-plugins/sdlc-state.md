@@ -3,7 +3,7 @@
 ## Status
 
 - Phase: planned
-- Current layer: `02-contracts`
+- Current layer: `03-host`
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -95,3 +95,10 @@ Success is executable when:
 - `npm run verify` passes on every submitted stack layer's final composition.
 - Each PR receives bottom-up rubber-duck, adversarial and independent review;
   all threads are resolved before squash merge.
+
+## Implementation log
+
+- `0a1a482`: durable plan and one-shot layer contracts.
+- `634ce1d`: delegated-provider schema, WIT planner, conformance vectors,
+  generated types, normative guide and ADR 0037. Contracts-layer staged gate
+  passed with process authority on 2026-08-18.
