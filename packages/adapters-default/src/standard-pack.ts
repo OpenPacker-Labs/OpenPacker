@@ -5,10 +5,19 @@ import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTar, packTarGzip, packZip } from '@openpacker/project-io';
 import { parse as parseYaml } from 'yaml';
-import type {
-  StandardEmitter,
-  StandardEmitterArtifact,
-} from './delegated-pack.js';
+
+export interface StandardEmitterArtifact {
+  fileName: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  nativeRole: string;
+  exactPurl?: string;
+}
+
+export interface StandardEmitter {
+  expectedRoles: readonly string[];
+  emit(input: NormalizedPackInput): Promise<readonly StandardEmitterArtifact[]>;
+}
 
 const text = (value: string): Uint8Array => new TextEncoder().encode(value);
 

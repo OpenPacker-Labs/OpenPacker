@@ -816,4 +816,3 @@ export class NpmRegistryProvider implements CatalogProvider {
 }
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
-export { NpmPackagePacker } from './pack.js';
