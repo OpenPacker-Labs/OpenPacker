@@ -53,6 +53,14 @@ describe('standard pack emitters', () => {
     ]);
     expect(artifacts[0]?.nativeRole).toBe('manifest');
   });
+
+  it('rejects incomplete WinGet YAML instead of relabelling it', async () => {
+    const input = normalized('winget');
+    input.files[0]!.contents = new TextEncoder().encode('hello');
+    await expect(standardEmitters.winget.emit(input)).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+    });
+  });
 });
 
 function normalized(kind: keyof typeof standardEmitters): NormalizedPackInput {
@@ -60,7 +68,27 @@ function normalized(kind: keyof typeof standardEmitters): NormalizedPackInput {
   const files = [
     {
       path: kind === 'winget' ? 'demo.installer.yaml' : 'hello.txt',
-      contents: new TextEncoder().encode('hello'),
+      contents: new TextEncoder().encode(
+        kind === 'winget'
+          ? [
+              'PackageIdentifier: demo',
+              'PackageVersion: 1.0.0',
+              'PackageLocale: en-US',
+              'Publisher: OpenPacker',
+              'PackageName: demo',
+              'License: MIT',
+              'ShortDescription: demo package',
+              'Installers:',
+              '  - Architecture: x64',
+              '    InstallerType: portable',
+              '    InstallerUrl: https://example.invalid/demo.exe',
+              `    InstallerSha256: ${'a'.repeat(64)}`,
+              'ManifestType: singleton',
+              'ManifestVersion: 1.6.0',
+              '',
+            ].join('\n')
+          : 'hello',
+      ),
       executable: false,
     },
     ...(kind === 'deb'

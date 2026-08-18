@@ -112,7 +112,7 @@ function configured(
   };
   return new DelegatedCommandPacker(
     config,
-    async (file) => ({ stdout: `${file} 1.0.0`, stderr: '' }),
+    async (file) => `/usr/bin/${file}`,
     sandbox as never,
   );
 }

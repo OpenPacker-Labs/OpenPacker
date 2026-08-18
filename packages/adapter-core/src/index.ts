@@ -395,6 +395,8 @@ export interface PackagePacker {
   readonly purlType: Ecosystem;
   available(options?: PackOptions): Promise<PackAvailability>;
   detect(root: string): Promise<DetectedProject | undefined>;
+  /** Adapter-owned publish selection used by the normalized capture. */
+  capturePaths?(project: DetectedProject): Promise<readonly string[]>;
   plan(input: PackInput, options?: PackOptions): Promise<PackPlan>;
   pack(input: PackInput, options?: PackOptions): Promise<PackOutcome>;
 }

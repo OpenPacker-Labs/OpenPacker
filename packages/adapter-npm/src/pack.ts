@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
-import { promisify } from 'node:util';
 import {
   ProviderError,
   type DetectedProject,
@@ -18,16 +16,14 @@ import {
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
-import { packTarGzip, writeFileAtomic } from '@openpacker/project-io';
-import { NpmProjectFormat } from './project.js';
+import {
+  findExecutable,
+  packTarGzip,
+  writeFileAtomic,
+} from '@openpacker/project-io';
+import { NpmProjectFormat, npmPublishPaths } from './project.js';
 
-const run = promisify(execFile);
-
-type Execute = (
-  file: string,
-  args: readonly string[],
-  options?: { signal?: AbortSignal },
-) => Promise<{ stdout: string; stderr: string }>;
+type ResolveExecutable = (name: string) => Promise<string | undefined>;
 
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
@@ -43,11 +39,7 @@ export class NpmPackagePacker implements PackagePacker {
   readonly #project = new NpmProjectFormat();
 
   constructor(
-    private readonly execute: Execute = (file, args, options) =>
-      run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
-        maxBuffer: 8 * 1024 * 1024,
-      }),
+    private readonly resolveExecutable: ResolveExecutable = findExecutable,
     private readonly sandboxRun: SandboxRun = runInSandbox,
   ) {}
 
@@ -58,24 +50,21 @@ export class NpmPackagePacker implements PackagePacker {
         reason: `npm pack supports npm or mise, not ${options.tool}`,
       };
     const tool = options.tool ?? 'npm';
-    try {
-      const { stdout } = await this.execute(
-        tool,
-        ['--version'],
-        options.signal ? { signal: options.signal } : {},
-      );
-      const version = stdout.trim();
+    const path = await this.resolveExecutable(tool).catch(() => undefined);
+    if (path !== undefined)
       return {
         available: true,
-        tool: { name: tool, ...(version ? { version } : {}) },
+        tool: { name: tool, path },
       };
-    } catch {
-      return { available: false, reason: `${tool} is not on PATH` };
-    }
+    return { available: false, reason: `${tool} is not on PATH` };
   }
 
   detect(root: string): Promise<DetectedProject | undefined> {
     return this.#project.detect(root);
+  }
+
+  capturePaths(project: DetectedProject): Promise<readonly string[]> {
+    return npmPublishPaths(project);
   }
 
   async plan(input: PackInput, options: PackOptions = {}): Promise<PackPlan> {

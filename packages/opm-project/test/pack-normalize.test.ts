@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -65,6 +72,39 @@ describe('normalized pack input', () => {
         target: { ...target, identifier: 'different' },
       }),
     ).rejects.toMatchObject({ code: 'INVALID_TARGET' });
+  });
+
+  it('never captures through an ancestor replaced by a symlink', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-normalize-swap-'));
+    const outside = await mkdtemp(join(tmpdir(), 'opm-normalize-outside-'));
+    roots.push(root, outside);
+    await mkdir(join(root, 'z-project'));
+    await writeFile(join(root, 'z-project', 'safe.txt'), 'safe');
+    await writeFile(join(outside, 'secret.txt'), 'secret');
+    await Promise.all(
+      Array.from({ length: 200 }, (_, index) =>
+        writeFile(join(root, `a-${index.toString().padStart(3, '0')}`), 'x'),
+      ),
+    );
+
+    const capture = normalizeProjectPack({
+      root,
+      package: manifest,
+      target,
+    }).then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await rename(join(root, 'z-project'), join(root, 'z-project-original'));
+    await symlink(outside, join(root, 'z-project'));
+
+    const outcome = await capture;
+    if ('result' in outcome)
+      expect(outcome.result.files.map((file) => file.path)).not.toContain(
+        'z-project/secret.txt',
+      );
+    else expect(outcome.error).toMatchObject({ code: 'PACK_INPUT_CHANGED' });
   });
 });
 

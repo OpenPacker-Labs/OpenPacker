@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import type { PackReceipt } from '@openpacker/contracts';
+import { inspectArchive } from '@openpacker/materializer';
 import { PACK_RECEIPT, packProject } from '../src/pack.js';
 
 const roots: string[] = [];
@@ -93,5 +94,37 @@ describe('pack project', () => {
         requiresNetwork: false,
       }),
     );
+  });
+
+  it('uses npm publish selection before normalized capture', async () => {
+    configureDefaultAdapters();
+    const root = await mkdtemp(join(tmpdir(), 'opm-standard-npm-files-'));
+    roots.push(root);
+    await mkdir(join(root, 'dist'));
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"demo","version":"1.0.0","files":["dist"]}\n',
+    );
+    await writeFile(join(root, 'dist', 'index.js'), 'export default 1;\n');
+    await writeFile(join(root, 'source.js'), 'excluded source\n');
+    await writeFile(join(root, '.npmignore'), 'source.js\n');
+    await writeFile(join(root, '.npmrc'), '//registry/:_authToken=secret\n');
+    await writeFile(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n');
+
+    const result = await packProject({
+      root,
+      ecosystem: 'npm',
+      strategy: 'standard',
+      name: 'demo',
+      version: '1.0.0',
+    });
+    const archive = result.artifacts.find(
+      (artifact) => artifact.nativeRole === 'distribution',
+    )!;
+    expect(
+      (await inspectArchive(await readFile(archive.path), 'tar+gzip')).map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(['package/dist/index.js', 'package/package.json']);
   });
 });

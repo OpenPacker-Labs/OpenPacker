@@ -46,13 +46,35 @@ describe('opm + opmx CLI', () => {
     );
     expect(
       await runOpm(
-        ['pack', 'npm', '--delegate', '--dry-run', '--offline'],
+        [
+          'pack',
+          'npm',
+          '--package-version',
+          '1.0.0',
+          '--delegate',
+          '--dry-run',
+          '--offline',
+        ],
         cap.io,
         root,
       ),
     ).toBe(0);
     expect(cap.out).toContain('npm pack');
     expect(cap.out).toContain('--ignore-scripts');
+  });
+
+  it('refuses to guess a pack target version', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-cli-pack-version-'));
+    temps.push(root);
+    const cap = capture();
+    expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"cli-pack","version":"1.2.3"}\n',
+    );
+    expect(await runOpm(['pack', 'npm'], cap.io, root)).toBe(2);
+    expect(cap.err).toContain('requires --package-version');
+    expect(cap.err).not.toContain('0.0.0');
   });
 
   it('packs standard native bytes and a receipt without npm on PATH', async () => {

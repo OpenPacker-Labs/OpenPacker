@@ -391,13 +391,18 @@ export async function runOpm(
           throw usage(
             'opm pack requires an ecosystem: opm pack npm | opm pack nuget',
           );
+        const packageVersion = option(args, 'package-version');
+        if (!packageVersion)
+          throw usage(
+            'opm pack requires --package-version; target versions are never guessed',
+          );
         const output = option(args, 'output');
         const result = await packProject({
           root,
           ecosystem,
           strategy: args.options.has('delegate') ? 'delegate' : 'standard',
           name: option(args, 'name') ?? projectManifest.project.name,
-          version: option(args, 'package-version') ?? '0.0.0',
+          version: packageVersion,
           ...(output === undefined ? {} : { outputDirectory: output }),
           ...(option(args, 'tool') === undefined
             ? {}
@@ -830,9 +835,9 @@ Resolve a full dependency graph (transitive, proof-checked):
   opm resolve pkg:npm/chalk --candidates 8
 
 Pack a project:
-  opm pack npm
-  opm pack <npm|cargo|pypi|nuget|maven|golang|oci|nix|deb|winget|chocolatey>
-  opm pack oci --delegate --tool <docker|podman|mise> --dry-run
+  opm pack npm --package-version <version>
+  opm pack <npm|cargo|pypi|nuget|maven|golang|oci|nix|deb|winget|chocolatey> --package-version <version>
+  opm pack oci --package-version <version> --delegate --tool <docker|podman|mise> --dry-run
   Standard packing is the default. OCI targets require explicit --os and --arch.
   Delegated scripts/builds require --allow-build; network additionally requires --allow-network.
 

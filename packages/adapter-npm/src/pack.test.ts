@@ -32,7 +32,7 @@ describe('NpmPackagePacker', () => {
     const project = await fixture();
     try {
       const packer = new NpmPackagePacker(
-        async () => ({ stdout: '11.17.0\n', stderr: '' }),
+        async () => '/usr/bin/npm',
         async () => sandboxOutcome('[]'),
       );
       const detected = await packer.detect(project.root);
@@ -62,7 +62,7 @@ describe('NpmPackagePacker', () => {
     const project = await fixture();
     try {
       const packer = new NpmPackagePacker(
-        async () => ({ stdout: '11.17.0\n', stderr: '' }),
+        async () => '/usr/bin/npm',
         async () => sandboxOutcome('[]'),
       );
       const detected = (await packer.detect(project.root))!;
@@ -95,7 +95,7 @@ describe('NpmPackagePacker', () => {
       const calls: readonly string[][] = [];
       const outputDirectory = join(project.root, 'out');
       const packer = new NpmPackagePacker(
-        async () => ({ stdout: '11.17.0\n', stderr: '' }),
+        async () => '/usr/bin/npm',
         async (input) => {
           (calls as string[][]).push([...input.argv]);
           await mkdir(outputDirectory, { recursive: true });
@@ -135,7 +135,7 @@ describe('NpmPackagePacker', () => {
     try {
       let ran = false;
       const packer = new NpmPackagePacker(
-        async () => ({ stdout: '11.17.0\n', stderr: '' }),
+        async () => '/usr/bin/npm',
         async () => {
           ran = true;
           return sandboxOutcome('[]');
@@ -155,7 +155,7 @@ describe('NpmPackagePacker', () => {
     const project = await fixture();
     try {
       const packer = new NpmPackagePacker(
-        async () => ({ stdout: '11.17.0\n', stderr: '' }),
+        async () => '/usr/bin/npm',
         async () =>
           sandboxOutcome(
             JSON.stringify([

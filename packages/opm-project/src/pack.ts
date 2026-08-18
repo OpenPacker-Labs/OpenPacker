@@ -76,6 +76,9 @@ export async function packProject(input: {
   const outputDirectory = resolve(
     input.outputDirectory ?? join(input.root, OPM_DIR, 'pack'),
   );
+  const includePaths = input.dryRun
+    ? undefined
+    : await packer.capturePaths?.(project);
   const normalized = input.dryRun
     ? undefined
     : await normalizeProjectPack({
@@ -86,6 +89,7 @@ export async function packProject(input: {
           ? {}
           : { nativeMetadata: input.nativeMetadata }),
         excludePaths: [outputDirectory],
+        ...(includePaths === undefined ? {} : { includePaths }),
       });
   const options: PackOptions = {
     strategy: input.strategy,

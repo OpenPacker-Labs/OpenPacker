@@ -9,8 +9,40 @@
  * change, write back with everything else byte-identical.
  */
 
-import { readFile, rename, writeFile, mkdir, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { constants } from 'node:fs';
+import {
+  access,
+  readFile,
+  rename,
+  writeFile,
+  mkdir,
+  rm,
+} from 'node:fs/promises';
+import { delimiter, dirname, extname, join } from 'node:path';
+
+/** Resolve a command without executing project- or PATH-controlled code. */
+export async function findExecutable(
+  name: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<string | undefined> {
+  const extensions =
+    process.platform === 'win32' && extname(name) === ''
+      ? (environment.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')
+      : [''];
+  for (const directory of (environment.PATH ?? '').split(delimiter)) {
+    if (directory === '') continue;
+    for (const extension of extensions) {
+      const candidate = join(directory, `${name}${extension}`);
+      try {
+        await access(candidate, constants.X_OK);
+        return candidate;
+      } catch {
+        // Try the next PATH entry.
+      }
+    }
+  }
+  return undefined;
+}
 
 export class ProjectIoError extends Error {
   readonly code: string;

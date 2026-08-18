@@ -32,8 +32,8 @@ an OS and architecture; OpenPacker does not guess a platform.
 Use `--delegate` only when native-tool output is required:
 
 ```sh
-opm pack oci --delegate --tool podman --allow-build --offline
-opm pack pypi --delegate --tool uv --allow-build --allow-network
+opm pack oci --package-version 1.2.3 --delegate --tool podman --allow-build --offline
+opm pack pypi --package-version 1.2.3 --delegate --tool uv --allow-build --allow-network
 ```
 
 Delegation never silently replaces standard packing. Native compilation or

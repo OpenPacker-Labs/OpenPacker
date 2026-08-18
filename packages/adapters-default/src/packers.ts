@@ -140,7 +140,8 @@ export function nugetPacker(): DelegatedCommandPacker {
               ...(network(options) ? [] : ['--no-restore']),
             ],
           ],
-          requiresBuild: options.allowBuild === true,
+          // MSBuild evaluates project-controlled Pack targets even with --no-build.
+          requiresBuild: true,
           requiresNetwork: network(options),
           expectedRoles: ['distribution', 'symbols'],
         }),
@@ -323,6 +324,16 @@ export function nixPacker(): DelegatedCommandPacker {
       },
     },
     artifacts: [
+      {
+        extension: '.nar.xz',
+        mediaType: 'application/x-xz',
+        nativeRole: 'nar',
+      },
+      {
+        extension: '.nar.zst',
+        mediaType: 'application/zstd',
+        nativeRole: 'nar',
+      },
       {
         extension: '.nar',
         mediaType: 'application/x-nix-archive',

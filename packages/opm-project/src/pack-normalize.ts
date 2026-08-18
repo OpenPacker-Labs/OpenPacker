@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import {
+  dirname,
+  join,
+  relative as pathRelative,
+  resolve,
+  sep,
+} from 'node:path';
 import type {
   NormalizedPackFile,
   NormalizedPackInput,
@@ -41,9 +47,14 @@ export async function normalizeProjectPack(input: {
   nativeMetadata?: Record<string, JsonValue>;
   semanticLoss?: readonly SemanticLoss[];
   excludePaths?: readonly string[];
+  includePaths?: readonly string[];
 }): Promise<NormalizedProjectPack> {
   assertTarget(input.package, input.target);
-  const capture = await captureProject(input.root, input.excludePaths ?? []);
+  const capture = await captureProject(
+    input.root,
+    input.excludePaths ?? [],
+    input.includePaths,
+  );
   const files = capture.files;
   const treeEntries: TreeManifestEntry[] = [];
   for (const file of files) {
@@ -133,6 +144,7 @@ export async function normalizeProjectPack(input: {
 async function captureProject(
   root: string,
   excludePaths: readonly string[],
+  includePaths: readonly string[] | undefined,
 ): Promise<{
   files: NormalizedPackFile[];
   sensitiveExcluded: string[];
@@ -140,9 +152,23 @@ async function captureProject(
   const files: NormalizedPackFile[] = [];
   const sensitiveExcluded: string[] = [];
   const excluded = excludePaths.map((path) => resolve(path));
+  const included =
+    includePaths === undefined ? undefined : new Set(includePaths);
+  const stableRoot = await realpath(root);
   let total = 0;
   const walk = async (directory: string, prefix: string): Promise<void> => {
+    const directoryBefore = await stableDirectory(
+      stableRoot,
+      directory,
+      prefix,
+    );
     const entries = await readdir(directory, { withFileTypes: true });
+    const directoryAfter = await stableDirectory(stableRoot, directory, prefix);
+    if (
+      directoryBefore.dev !== directoryAfter.dev ||
+      directoryBefore.ino !== directoryAfter.ino
+    )
+      changed(prefix || '.');
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
       const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
@@ -159,11 +185,13 @@ async function captureProject(
         continue;
       }
       if (!entry.isFile()) continue;
+      if (included !== undefined && !included.has(relative)) continue;
       if (entry.name === '.env' || entry.name.startsWith('.env.')) {
         sensitiveExcluded.push(relative);
         continue;
       }
       const path = join(directory, entry.name);
+      await assertContained(stableRoot, path, relative);
       const pathBefore = await lstat(path, { bigint: true });
       if (!pathBefore.isFile())
         throw new OpmError(
@@ -185,6 +213,7 @@ async function captureProject(
             'PACK_INPUT_CHANGED',
             `Pack input changed while capturing ${relative}`,
           );
+        await assertContained(stableRoot, path, relative);
         total += Number(before.size);
         if (files.length >= MAX_FILES || total > MAX_BYTES)
           throw new OpmError(
@@ -194,6 +223,7 @@ async function captureProject(
         const contents = new Uint8Array(await handle.readFile());
         const after = await handle.stat({ bigint: true });
         const pathAfter = await lstat(path, { bigint: true });
+        await assertContained(stableRoot, path, relative);
         if (
           before.size !== after.size ||
           before.mtimeNs !== after.mtimeNs ||
@@ -215,8 +245,58 @@ async function captureProject(
       }
     }
   };
-  await walk(root, '');
+  try {
+    await walk(stableRoot, '');
+  } catch (error) {
+    if (error instanceof OpmError) throw error;
+    changed('.', error);
+  }
   return { files, sensitiveExcluded };
+}
+
+async function stableDirectory(
+  root: string,
+  directory: string,
+  displayPath: string,
+) {
+  await assertContained(root, directory, displayPath || '.');
+  const info = await lstat(directory, { bigint: true });
+  if (!info.isDirectory()) changed(displayPath || '.');
+  return info;
+}
+
+async function assertContained(
+  root: string,
+  path: string,
+  displayPath: string,
+): Promise<void> {
+  if (resolve(path) === root) {
+    if ((await realpath(path)) !== root) changed(displayPath);
+    return;
+  }
+  const relative = pathRelative(root, path);
+  if (relative === '..' || relative.startsWith(`..${sep}`))
+    changed(displayPath);
+  let current = root;
+  const ancestor = pathRelative(root, dirname(path));
+  for (const part of ancestor === '' ? [] : ancestor.split(sep)) {
+    current = join(current, part);
+    const info = await lstat(current, { bigint: true });
+    if (!info.isDirectory() || info.isSymbolicLink()) changed(displayPath);
+  }
+  const resolved = await realpath(path);
+  const resolvedRelative = pathRelative(root, resolved);
+  if (resolvedRelative === '..' || resolvedRelative.startsWith(`..${sep}`))
+    changed(displayPath);
+}
+
+function changed(path: string, cause?: unknown): never {
+  throw new OpmError(
+    'PACK_INPUT_CHANGED',
+    `Pack input changed while capturing ${path}${
+      cause instanceof Error ? `: ${cause.message}` : ''
+    }`,
+  );
 }
 
 function assertTarget(pack: PackageManifest, target: Distribution): void {

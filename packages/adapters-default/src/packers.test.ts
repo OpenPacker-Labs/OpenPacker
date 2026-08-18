@@ -22,7 +22,7 @@ describe('delegated pack plans', () => {
   it.each([
     [cargoPacker(), 'cargo', '--target-dir', false],
     [pypiPacker(), 'uv', '--out-dir', true],
-    [nugetPacker(), 'dotnet', '--output', false],
+    [nugetPacker(), 'dotnet', '--output', true],
     [mavenPacker(), 'mvn', 'package', true],
     [nixPacker(), 'nix', 'file:///out', true],
     [debPacker(), 'dpkg-deb', 'package.deb', false],
@@ -43,6 +43,13 @@ describe('delegated pack plans', () => {
       expect(plan.requiresNetwork).toBe(false);
     },
   );
+
+  it('requires build consent before dotnet can evaluate project targets', async () => {
+    const packer = nugetPacker();
+    await expect(
+      packer.pack({ project }, { outputDirectory: '/out', tool: 'dotnet' }),
+    ).rejects.toMatchObject({ code: 'BUILD_CONSENT_REQUIRED' });
+  });
 
   it('plans OCI archives for both Docker and Podman', async () => {
     const docker = await ociPacker().plan(

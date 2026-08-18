@@ -4,6 +4,7 @@ import { ProviderError } from '@openpacker/adapter-core';
 import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTar, packTarGzip, packZip } from '@openpacker/project-io';
+import { parse as parseYaml } from 'yaml';
 import type {
   StandardEmitter,
   StandardEmitterArtifact,
@@ -152,19 +153,19 @@ export const standardEmitters = {
     ),
   ]),
   deb: emitter(['distribution'], async (input) => [emitDeb(input)]),
-  winget: emitter(['manifest'], async (input) =>
-    input.files
-      .filter((file) => /\.ya?ml$/iu.test(file.path))
-      .map((file) =>
-        artifact(
-          file.path.split('/').at(-1)!,
-          file.contents,
-          'application/yaml',
-          'manifest',
-          input,
-        ),
+  winget: emitter(['manifest'], async (input) => {
+    const files = input.files.filter((file) => /\.ya?ml$/iu.test(file.path));
+    validateWingetManifestSet(input, files);
+    return files.map((file) =>
+      artifact(
+        file.path.split('/').at(-1)!,
+        file.contents,
+        'application/yaml',
+        'manifest',
+        input,
       ),
-  ),
+    );
+  }),
   chocolatey: emitter(['distribution'], async (input) => [
     artifact(
       `${fileStem(input)}.nupkg`,
@@ -222,6 +223,130 @@ export const standardEmitters = {
     },
   ),
 } as const;
+
+function validateWingetManifestSet(
+  input: NormalizedPackInput,
+  files: NormalizedPackInput['files'],
+): void {
+  const types = new Set<string>();
+  for (const file of files) {
+    let value: unknown;
+    try {
+      value = parseYaml(new TextDecoder().decode(file.contents), {
+        maxAliasCount: 0,
+      });
+    } catch (error) {
+      invalidWinget(`${file.path} is not valid YAML: ${errorMessage(error)}`);
+    }
+    if (!isRecord(value)) invalidWinget(`${file.path} must contain a mapping`);
+    const required = [
+      'PackageIdentifier',
+      'PackageVersion',
+      'ManifestType',
+      'ManifestVersion',
+    ];
+    for (const field of required)
+      if (typeof value[field] !== 'string' || value[field].trim() === '')
+        invalidWinget(`${file.path} requires ${field}`);
+    if (value.PackageIdentifier !== input.manifest.target.identifier)
+      invalidWinget(`${file.path} PackageIdentifier does not match the target`);
+    if (value.PackageVersion !== input.manifest.target.version)
+      invalidWinget(`${file.path} PackageVersion does not match the target`);
+    const type = value.ManifestType as string;
+    if (
+      ![
+        'singleton',
+        'version',
+        'installer',
+        'defaultLocale',
+        'locale',
+      ].includes(type)
+    )
+      invalidWinget(`${file.path} has unsupported ManifestType ${type}`);
+    if (types.has(type) && type !== 'locale')
+      invalidWinget(`WinGet manifest set contains duplicate ${type} manifests`);
+    types.add(type);
+    if (!/^\d+\.\d+\.\d+$/u.test(value.ManifestVersion as string))
+      invalidWinget(`${file.path} has an invalid ManifestVersion`);
+    if (type === 'installer' || type === 'singleton')
+      validateWingetInstallers(
+        file.path,
+        value.Installers,
+        value.InstallerType,
+      );
+    if (type === 'version' && !nonEmpty(value.DefaultLocale))
+      invalidWinget(`${file.path} requires DefaultLocale`);
+    if (
+      (type === 'defaultLocale' || type === 'singleton') &&
+      ![
+        'PackageLocale',
+        'Publisher',
+        'PackageName',
+        'License',
+        'ShortDescription',
+      ].every((field) => nonEmpty(value[field]))
+    )
+      invalidWinget(`${file.path} is missing required locale metadata`);
+    if (type === 'locale' && !nonEmpty(value.PackageLocale))
+      invalidWinget(`${file.path} requires PackageLocale`);
+  }
+  const singleton = types.has('singleton');
+  if (
+    files.length === 0 ||
+    (singleton
+      ? files.length !== 1
+      : !['version', 'installer', 'defaultLocale'].every((type) =>
+          types.has(type),
+        ))
+  )
+    invalidWinget(
+      'WinGet requires one singleton manifest or a version, installer, and defaultLocale set',
+    );
+}
+
+function validateWingetInstallers(
+  path: string,
+  value: unknown,
+  defaultInstallerType: unknown,
+): void {
+  if (!Array.isArray(value) || value.length === 0)
+    invalidWinget(`${path} requires at least one installer`);
+  for (const installer of value) {
+    if (
+      !isRecord(installer) ||
+      !['x86', 'x64', 'arm', 'arm64', 'neutral'].includes(
+        String(installer.Architecture),
+      ) ||
+      (!nonEmpty(defaultInstallerType) && !nonEmpty(installer.InstallerType)) ||
+      !nonEmpty(installer.InstallerUrl) ||
+      typeof installer.InstallerSha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/iu.test(installer.InstallerSha256)
+    )
+      invalidWinget(`${path} contains an incomplete installer`);
+    try {
+      const url = new URL(installer.InstallerUrl as string);
+      if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
+    } catch {
+      invalidWinget(`${path} contains an invalid InstallerUrl`);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function invalidWinget(message: string): never {
+  throw new ProviderError('INVALID_REQUEST', message);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function emitter(
   expectedRoles: readonly string[],

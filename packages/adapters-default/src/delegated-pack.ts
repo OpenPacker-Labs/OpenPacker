@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import {
@@ -10,7 +9,6 @@ import {
   resolve,
   sep,
 } from 'node:path';
-import { promisify } from 'node:util';
 import {
   ProviderError,
   type DetectedProject,
@@ -29,15 +27,9 @@ import {
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
-import { writeFileAtomic } from '@openpacker/project-io';
+import { findExecutable, writeFileAtomic } from '@openpacker/project-io';
 
-const run = promisify(execFile);
-
-type Execute = (
-  file: string,
-  args: readonly string[],
-  options?: { signal?: AbortSignal },
-) => Promise<{ stdout: string; stderr: string }>;
+type ResolveExecutable = (name: string) => Promise<string | undefined>;
 
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
@@ -98,11 +90,7 @@ export class DelegatedCommandPacker implements PackagePacker {
 
   constructor(
     private readonly config: DelegatedCommandPackerOptions,
-    private readonly execute: Execute = (file, args, options) =>
-      run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
-        maxBuffer: 8 * 1024 * 1024,
-      }),
+    private readonly resolveExecutable: ResolveExecutable = findExecutable,
     private readonly sandboxRun: SandboxRun = runInSandbox,
   ) {
     this.providerId = config.providerId;
@@ -112,23 +100,18 @@ export class DelegatedCommandPacker implements PackagePacker {
   async available(options: PackOptions = {}): Promise<PackAvailability> {
     const selected = this.selectedTool(options);
     const executable = selected.mise ? 'mise' : selected.tool.executable;
-    try {
-      const { stdout } = await this.execute(
-        executable,
-        ['--version'],
-        options.signal ? { signal: options.signal } : {},
-      );
-      const version = stdout.trim().split(/\s+/u).at(-1);
+    const path = await this.resolveExecutable(executable).catch(
+      () => undefined,
+    );
+    if (path !== undefined)
       return {
         available: true,
         tool: {
           name: selected.mise ? 'mise' : selected.name,
-          ...(version ? { version } : {}),
+          path,
         },
       };
-    } catch {
-      return { available: false, reason: `${executable} is not on PATH` };
-    }
+    return { available: false, reason: `${executable} is not on PATH` };
   }
 
   detect(root: string): Promise<DetectedProject | undefined> {
@@ -190,6 +173,11 @@ export class DelegatedCommandPacker implements PackagePacker {
       options,
     });
     const plan = await this.plan(input, options);
+    if (!options.dryRun && plan.requiresBuild && options.allowBuild !== true)
+      throw new ProviderError(
+        'BUILD_CONSENT_REQUIRED',
+        `${this.purlType} packing executes a build; pass --allow-build`,
+      );
     const availability = await this.available(options);
     if (!availability.available)
       throw new ProviderError(
@@ -201,11 +189,6 @@ export class DelegatedCommandPacker implements PackagePacker {
       ...(availability.tool === undefined ? {} : { tool: availability.tool }),
     };
     if (options.dryRun) return emptyOutcome(withTool);
-    if (plan.requiresBuild && options.allowBuild !== true)
-      throw new ProviderError(
-        'BUILD_CONSENT_REQUIRED',
-        `${this.purlType} packing executes a build; pass --allow-build`,
-      );
 
     const outputDirectory = packOutputDirectory(input, options);
     await mkdir(outputDirectory, { recursive: true });

@@ -50,6 +50,7 @@ const DEPENDENCY_FIELDS = [
 interface PackageJson {
   name?: string;
   version?: string;
+  files?: string[];
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -290,15 +291,13 @@ export class NpmProjectFormat implements ProjectFormat {
   ): Promise<PackedArtifact> {
     const manifest = JSON.parse(
       await readFile(project.manifestPath, 'utf8'),
-    ) as PackageJson & { files?: string[] };
+    ) as PackageJson;
     const name = manifest.name ?? 'package';
     const version = manifest.version ?? '0.0.0';
 
-    const ignore = await readIgnoreFile(project.root);
     const all = await collectFiles(project.root);
-    const included = all.filter((file) =>
-      shouldPublish(file.path, manifest.files, ignore),
-    );
+    const publishPaths = new Set(await npmPublishPaths(project));
+    const included = all.filter((file) => publishPaths.has(file.path));
 
     // npm archives put everything under `package/`.
     const bytes = packTarGzip(
@@ -431,6 +430,35 @@ const ALWAYS_PUBLISH = [
   /^licen[cs]e(\.|$)/iu,
   /^changelog(\.|$)/iu,
 ];
+
+/** The exact project paths OpenPacker's npm implementation may publish. */
+export async function npmPublishPaths(
+  project: DetectedProject,
+): Promise<readonly string[]> {
+  const manifest = JSON.parse(
+    await readFile(project.manifestPath, 'utf8'),
+  ) as PackageJson;
+  const ignore = await readIgnoreFile(project.root);
+  return (await listFilePaths(project.root)).filter((path) =>
+    shouldPublish(path, manifest.files, ignore),
+  );
+}
+
+async function listFilePaths(root: string): Promise<string[]> {
+  const { readdir } = await import('node:fs/promises');
+  const paths: string[] = [];
+  const walk = async (directory: string, prefix: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (prefix === '' && NEVER_PUBLISH.has(entry.name)) continue;
+        await walk(join(directory, entry.name), path);
+      } else if (entry.isFile()) paths.push(path);
+    }
+  };
+  await walk(root, '');
+  return paths;
+}
 
 async function readIgnoreFile(root: string): Promise<string[]> {
   const { readFile: read } = await import('node:fs/promises');
