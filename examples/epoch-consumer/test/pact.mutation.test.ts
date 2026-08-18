@@ -16,7 +16,12 @@ interface PactInteraction {
     status: number;
     headers: Record<string, string[]>;
     body: { content: unknown; encoded: boolean | string };
-    matchingRules?: { body?: unknown };
+    matchingRules?: {
+      body?: Record<
+        string,
+        { combine: string; matchers: Array<Record<string, unknown>> }
+      >;
+    };
   };
 }
 
@@ -43,6 +48,11 @@ describe('committed Pact mutation coverage', () => {
       await readFile(committedPact, 'utf8'),
     ) as PactDocument;
     expect(original.interactions.length).toBeGreaterThan(0);
+    await verifyEpochPact({
+      providerBaseUrl: provider.address,
+      pactFile: committedPact,
+      logLevel: 'error',
+    });
     const directory = await mkdtemp(join(tmpdir(), 'openpacker-pact-mutants-'));
     const survivors: string[] = [];
     const mutations = {
@@ -59,8 +69,6 @@ describe('committed Pact mutation coverage', () => {
         interaction.response.headers['X-Pact-Chaos'] = ['required'];
       },
       body(interaction: PactInteraction) {
-        if (interaction.response.matchingRules)
-          delete interaction.response.matchingRules.body;
         if (
           typeof interaction.response.body.content === 'object' &&
           interaction.response.body.content !== null
@@ -68,7 +76,12 @@ describe('committed Pact mutation coverage', () => {
           Object.assign(interaction.response.body.content, {
             pactChaosMutation: 'required',
           });
-        else interaction.response.body.content = 'cGFjdC1jaGFvcy1tdXRhdGlvbg==';
+        else {
+          interaction.response.body.content = 'cGFjdC1jaGFvcy1tdXRhdGlvbg==';
+          interaction.response.matchingRules?.body?.['$']?.matchers.push({
+            match: 'equality',
+          });
+        }
       },
     };
 

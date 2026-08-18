@@ -240,6 +240,18 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'OFFLINE' });
   });
 
+  it('refuses an explicit network source while offline', async () => {
+    const root = await tempProject();
+    await expect(
+      addPackage({
+        root,
+        spec: 'pkg:npm/example@1.0.0',
+        source: 'https://registry.example.invalid/example-1.0.0.tgz',
+        offline: true,
+      }),
+    ).rejects.toMatchObject({ code: 'OFFLINE' });
+  });
+
   it('rejects a tampered artifact with DIGEST_MISMATCH before extraction', async () => {
     const root = await tempProject();
     const wrongDigest = `sha256:${'b'.repeat(64)}`;
