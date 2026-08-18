@@ -398,9 +398,12 @@ export async function runOpm(
             'opm pack requires --package-version; target versions are never guessed',
           );
         const output = option(args, 'output');
+        const providerRequested = args.options.has('provider');
         const provider = option(args, 'provider');
+        if (providerRequested && (!provider || provider.trim() === ''))
+          throw usage('opm pack --provider requires a provider id');
         const strategy =
-          args.options.has('delegate') || provider !== undefined
+          args.options.has('delegate') || providerRequested
             ? 'delegate'
             : 'standard';
         const configured =
