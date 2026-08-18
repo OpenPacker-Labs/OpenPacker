@@ -5,8 +5,7 @@
 - Phase: complete
 - Current layer: complete
 - Branch: `sdlc/opm-pack-01-contracts-delegation`
-- External issues/PRs: not created; implementation authorization did not include
-  external mutations
+- External issues: not created. PR: #79.
 
 ## Decisions
 

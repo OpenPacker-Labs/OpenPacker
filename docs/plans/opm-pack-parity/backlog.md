@@ -20,7 +20,7 @@ failure cleanup. Legacy package-build v1 remains compatible.
 
 ## 02 — Normalized pack model
 
-Status: implemented; full verification pending.
+Status: implemented and fully verified.
 
 Why: standardized packing needs a target-independent representation that can be
 produced without invoking a delegate.
@@ -35,7 +35,7 @@ loss.
 
 ## 03 — Deterministic standard emitters
 
-Status: implemented; full verification pending.
+Status: implemented and fully verified.
 
 Why: the final OPM path must produce target-native artifacts without installed
 native pack tooling.
