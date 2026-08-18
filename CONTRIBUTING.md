@@ -38,7 +38,10 @@ Run `npm run verify` before review. It includes format, contract/generated
 freshness, license, TypeScript, Rust, conformance, security, integration,
 compatibility, browser, fuzz, benchmark, and production-path demo gates. Live
 public providers and registries are separate opt-in jobs and do not excuse an
-offline failure.
+offline failure. Coverage includes every app, example, and package and applies
+the 80% production-file and 70% function thresholds to each workspace, not only
+to the repository aggregate. `npm run check:test-inventory` keeps every
+workspace suite and every applicable specialized oracle mandatory.
 
 Commit generated changes only with their source and freshness evidence. Solver
 fixtures require independent proof and bounded oracle agreement; artifacts

@@ -3,8 +3,9 @@
 ## Status
 
 - Phase: implementation
-- Current layer: 01-per-workspace-coverage
-- Branch: `sdlc/test-coverage-01-authority`
+- Current layer: 02-test-type-closeout
+- Branch: `sdlc/test-coverage-02-inventory`, stacked on
+  `sdlc/test-coverage-01-authority`
 - External issues: not created
 
 ## Problem
@@ -45,5 +46,8 @@ test suite and every advertised test type has a mandatory oracle.
   78.5% functions, but examples were absent and six workspaces were below the
   70% function threshold. The in-workspace run also exposed expected process
   restrictions; it is not accepted as a product failure.
+- 2026-08-18: the revised gate passed 774 tests with 98.46% production-file
+  instrumentation and 81.43% function coverage across 48 workspaces. Every
+  workspace independently cleared 80%/70%.
 - Native parity is not yet rerun: Docker and Podman are unavailable, and host
   Nix/APT execution is prohibited by the isolation requirement.

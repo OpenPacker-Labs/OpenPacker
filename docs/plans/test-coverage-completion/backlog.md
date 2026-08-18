@@ -2,7 +2,7 @@
 
 ## 01 — Per-workspace coverage authority
 
-Status: in progress.
+Status: implemented and focused gates green.
 
 Make the existing V8 coverage gate include every app, example, and package,
 measure only production source, and fail when any workspace falls below the
@@ -11,7 +11,7 @@ reported gap.
 
 ## 02 — Test-type closeout
 
-Status: pending.
+Status: in progress.
 
 Prove every workspace has an executable unit suite and that every specialized
 repository gate has a mandatory, non-empty oracle. Run focused checks, the full
