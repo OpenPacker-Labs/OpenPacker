@@ -51,24 +51,25 @@ export class NpmPackagePacker implements PackagePacker {
   ) {}
 
   async available(options: PackOptions = {}): Promise<PackAvailability> {
-    if (options.tool !== undefined && options.tool !== 'npm')
+    if (options.tool !== undefined && !['npm', 'mise'].includes(options.tool))
       return {
         available: false,
-        reason: `npm pack does not support tool ${options.tool}`,
+        reason: `npm pack supports npm or mise, not ${options.tool}`,
       };
+    const tool = options.tool ?? 'npm';
     try {
       const { stdout } = await this.execute(
-        'npm',
+        tool,
         ['--version'],
         options.signal ? { signal: options.signal } : {},
       );
       const version = stdout.trim();
       return {
         available: true,
-        tool: { name: 'npm', ...(version ? { version } : {}) },
+        tool: { name: tool, ...(version ? { version } : {}) },
       };
     } catch {
-      return { available: false, reason: 'npm is not on PATH' };
+      return { available: false, reason: `${tool} is not on PATH` };
     }
   }
 
@@ -83,18 +84,24 @@ export class NpmPackagePacker implements PackagePacker {
         'The npm package-build/2 adapter does not implement standard packing yet',
       );
     const outputDirectory = packOutputDirectory(input, options);
+    const nativeCommand = [
+      'npm',
+      'pack',
+      input.project.root,
+      '--json',
+      '--pack-destination',
+      outputDirectory,
+      ...(options.allowBuild ? [] : ['--ignore-scripts']),
+    ];
+    const command =
+      options.tool === 'mise'
+        ? ['mise', 'exec', '--', ...nativeCommand]
+        : nativeCommand;
     return {
       strategy: 'delegate',
       purlType: 'npm',
-      command: [
-        'npm',
-        'pack',
-        input.project.root,
-        '--json',
-        '--pack-destination',
-        outputDirectory,
-        ...(options.allowBuild ? [] : ['--ignore-scripts']),
-      ],
+      command,
+      commands: [command],
       requiresBuild: options.allowBuild === true,
       requiresNetwork: options.allowNetwork === true && !options.offline,
       expectedRoles: ['distribution'],

@@ -404,9 +404,11 @@ export async function runOpm(
             dryRun: args.options.has('dry-run'),
           });
           if (!result.performed) {
-            io.stdout.write(
-              `${result.command?.join(' ') ?? 'standard pack'}\n`,
-            );
+            for (const command of result.commands ??
+              (result.command ? [result.command] : []))
+              io.stdout.write(`${command.join(' ')}\n`);
+            for (const command of result.cleanupCommands ?? [])
+              io.stdout.write(`cleanup: ${command.join(' ')}\n`);
             return EXIT_CODES.success;
           }
           if (result.exitCode !== 0)
@@ -826,7 +828,8 @@ Resolve a full dependency graph (transitive, proof-checked):
 
 Pack a project:
   opm pack npm
-  opm pack npm --delegate --dry-run
+  opm pack <npm|cargo|pypi|nuget|maven|oci|nix|deb|winget|chocolatey>
+  opm pack oci --delegate --tool <docker|podman|mise> --dry-run
   Delegated scripts/builds require --allow-build; network additionally requires --allow-network.
 
 Host/profile installers use the same verbs when the registry advertises

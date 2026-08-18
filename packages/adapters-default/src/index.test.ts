@@ -78,17 +78,19 @@ describe('default adapters', () => {
         'prex.registry.enumerate-versions/1',
         'prex.registry.artifact/1',
         'prex.registry.dependency-graph/1',
+        'prex.registry.package-build/2',
       ],
       oci: [
         'prex.registry.package-metadata/1',
         'prex.registry.enumerate-versions/1',
         'prex.registry.artifact/1',
+        'prex.registry.package-build/2',
       ],
       // Install-only until catalog/environment exports are wired.
-      nix: ['prex.registry.install/1'],
-      deb: ['prex.registry.install/1'],
-      winget: ['prex.registry.install/1'],
-      chocolatey: ['prex.registry.install/1'],
+      nix: ['prex.registry.install/1', 'prex.registry.package-build/2'],
+      deb: ['prex.registry.install/1', 'prex.registry.package-build/2'],
+      winget: ['prex.registry.install/1', 'prex.registry.package-build/2'],
+      chocolatey: ['prex.registry.install/1', 'prex.registry.package-build/2'],
     };
     const forbiddenOnHost: Record<string, string[]> = {
       nix: [

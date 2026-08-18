@@ -43,6 +43,17 @@ import {
   hostInstallerDefinition,
   httpRegistryDefinition,
 } from './definitions.js';
+import {
+  cargoPacker,
+  chocolateyPacker,
+  debPacker,
+  mavenPacker,
+  nixPacker,
+  nugetPacker,
+  ociPacker,
+  pypiPacker,
+  wingetPacker,
+} from './packers.js';
 
 const DEFAULT_ENDPOINTS: Readonly<Record<string, string>> = {
   npm: 'https://registry.npmjs.org',
@@ -134,10 +145,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'cargo-sparse-v1',
           baseUrl: endpointFor('cargo', context) || 'https://index.crates.io',
           includeDeps: true,
-          project: { manifest: true, lock: true },
+          project: { manifest: true, lock: true, buildV2: true },
         }),
       codec: () => new CargoCodec(),
       project: () => new CargoProjectFormat(),
+      packer: cargoPacker,
       catalog: (context) =>
         new CargoSparseProvider(
           transportFor('cargo', context),
@@ -156,10 +168,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'pypi-json-v1',
           baseUrl: endpointFor('pypi', context) || 'https://pypi.org/pypi',
           includeDeps: true,
-          project: { manifest: true },
+          project: { manifest: true, buildV2: true },
         }),
       codec: () => new PypiCodec(),
       project: () => new PypiProjectFormat(),
+      packer: pypiPacker,
       catalog: (context) =>
         new PypiJsonProvider(
           transportFor('pypi', context),
@@ -238,6 +251,7 @@ export function defaultAdapterModules(): AdapterModule[] {
                     'prex.registry.project-lock/1',
                     'prex.registry.project-layout/1',
                     'prex.registry.package-build/1',
+                    'prex.registry.package-build/2',
                   ] as const,
                 },
               ],
@@ -258,11 +272,18 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'nuget-v3',
           baseUrl: endpoint,
           includeArtifact: true,
-          project: { manifest: true, lock: true, layout: true, build: true },
+          project: {
+            manifest: true,
+            lock: true,
+            layout: true,
+            build: true,
+            buildV2: true,
+          },
         });
       },
       codec: () => new NugetCodec(),
       project: () => new NugetProjectFormat(),
+      packer: nugetPacker,
       catalog: (context) =>
         new NugetV3Provider(
           transportFor('nuget', context),
@@ -281,10 +302,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'maven-repo-v1',
           baseUrl:
             endpointFor('maven', context) || 'https://repo1.maven.org/maven2',
-          project: { manifest: true },
+          project: { manifest: true, buildV2: true },
         }),
       codec: () => new MavenCodec(),
       project: () => new MavenProjectFormat(),
+      packer: mavenPacker,
       catalog: (context) =>
         new MavenRepositoryProvider(
           transportFor('maven', context),
@@ -324,7 +346,9 @@ export function defaultAdapterModules(): AdapterModule[] {
           native: 'oci-distribution-v1',
           baseUrl: 'https://registry-1.docker.io',
           includeArtifact: true,
+          project: { buildV2: true },
         }),
+      packer: ociPacker,
       catalog: (context) =>
         new OciRegistryProvider({
           ...(context.now ? { now: context.now } : {}),
@@ -346,7 +370,10 @@ export function defaultAdapterModules(): AdapterModule[] {
         resources: [
           {
             '@id': 'exec:nix',
-            '@type': 'prex.registry.install/1' as const,
+            '@type': [
+              'prex.registry.install/1',
+              'prex.registry.package-build/2',
+            ] as const,
           },
         ],
         features: {
@@ -359,6 +386,7 @@ export function defaultAdapterModules(): AdapterModule[] {
       }),
       codec: () => new NixCodec(),
       installer: () => new NixStoreProvider(),
+      packer: nixPacker,
     },
     {
       id: 'org.openpacker.adapter.apt',
@@ -370,6 +398,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['deb', 'apt'],
           native: 'apt-get-v1',
           execId: 'exec:apt-get',
+          extraResources: ['prex.registry.package-build/2'],
           features: {
             installSideEffects: 'system',
             reversibility: 'uninstall',
@@ -378,6 +407,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           },
         }),
       installer: () => new AptSystemProvider(),
+      packer: debPacker,
     },
     {
       id: 'org.openpacker.adapter.winget',
@@ -389,6 +419,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['winget'],
           native: 'winget-v1',
           execId: 'exec:winget',
+          extraResources: ['prex.registry.package-build/2'],
           features: {
             installSideEffects: 'system',
             reversibility: 'uninstall',
@@ -397,6 +428,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           },
         }),
       installer: () => new WingetSystemProvider(),
+      packer: wingetPacker,
     },
     {
       id: 'org.openpacker.adapter.chocolatey',
@@ -408,6 +440,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           purlTypes: ['chocolatey'],
           native: 'chocolatey-v1',
           execId: 'exec:choco',
+          extraResources: ['prex.registry.package-build/2'],
           features: {
             installSideEffects: 'system',
             reversibility: 'uninstall',
@@ -416,6 +449,7 @@ export function defaultAdapterModules(): AdapterModule[] {
           },
         }),
       installer: () => new ChocolateyProvider(),
+      packer: chocolateyPacker,
     },
   ];
 }

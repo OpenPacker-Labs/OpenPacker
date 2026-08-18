@@ -433,7 +433,12 @@ export interface PackAvailability {
 export interface PackPlan {
   strategy: 'delegate' | 'standard';
   purlType: Ecosystem;
+  /** First command, retained for package-build/1-compatible displays. */
   command?: readonly string[];
+  /** Ordered native commands when packing is not a single process. */
+  commands?: readonly (readonly string[])[];
+  /** Commands attempted after execution to retire temporary native state. */
+  cleanupCommands?: readonly (readonly string[])[];
   tool?: { name: string; version?: string; path?: string };
   requiresBuild: boolean;
   requiresNetwork: boolean;
@@ -443,7 +448,8 @@ export interface PackPlan {
 
 export interface PackArtifact {
   path: string;
-  exactPurl: string;
+  /** Present when the native tool reports package identity authoritatively. */
+  exactPurl?: string;
   mediaType: string;
   size: number;
   digest: string;

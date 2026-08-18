@@ -54,17 +54,19 @@ export function httpRegistryDefinition(input: {
       '@id': input.baseUrl,
       '@type': 'prex.registry.install/1',
     });
-  if (input.project?.manifest) {
-    const types: string[] = ['prex.registry.project-manifest/1'];
+  if (input.project) {
+    const types: string[] = [];
+    if (input.project.manifest) types.push('prex.registry.project-manifest/1');
     if (input.project.lock) types.push('prex.registry.project-lock/1');
     if (input.project.layout) types.push('prex.registry.project-layout/1');
     if (input.project.build) types.push('prex.registry.package-build/1');
     if (input.project.buildV2) types.push('prex.registry.package-build/2');
-    resources.push({
-      // The project file lives in the working tree, not at a registry URL.
-      '@id': 'project:workspace',
-      '@type': types.length === 1 ? types[0]! : types,
-    });
+    if (types.length > 0)
+      resources.push({
+        // The project file lives in the working tree, not at a registry URL.
+        '@id': 'project:workspace',
+        '@type': types.length === 1 ? types[0]! : types,
+      });
   }
   return {
     registryDefinitionVersion: '1',
