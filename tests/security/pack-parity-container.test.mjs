@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { parityContainerCommand } from '../../scripts/pack-parity-container.mjs';
 
@@ -71,4 +72,41 @@ test('native parity rejects ambient execution and mutable image selection', () =
       }),
     /safe mount/u,
   );
+});
+
+test('Windows manager parity requires Hyper-V isolation', () => {
+  const plan = parityContainerCommand({
+    runtime: 'docker',
+    platform: 'windows',
+    image,
+    artifactDirectory: 'C:\\openpacker-parity',
+    command: ['winget', 'validate', '--manifest', 'C:\\input'],
+  });
+  assert.ok(plan.arguments.includes('--isolation=hyperv'));
+  assert.ok(plan.arguments.includes('--user=ContainerUser'));
+  assert.ok(plan.arguments.includes('--network=none'));
+  assert.ok(plan.arguments.includes('--read-only'));
+  assert.ok(plan.arguments.includes('--mount=type=volume,target=C:\\work'));
+  assert.throws(
+    () =>
+      parityContainerCommand({
+        runtime: 'podman',
+        platform: 'windows',
+        image,
+        artifactDirectory: 'C:\\openpacker-parity',
+        command: ['winget', '--version'],
+      }),
+    /Docker Hyper-V/u,
+  );
+});
+
+test('native parity command refuses a silent skipped run', () => {
+  const env = { ...process.env };
+  delete env.OPENPACKER_NATIVE_PACK_PARITY;
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/pack-parity-container.mjs'],
+    { cwd: process.cwd(), env, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 2);
 });

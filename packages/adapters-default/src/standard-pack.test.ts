@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { NormalizedPackInput } from '@openpacker/adapter-core';
+import { createHash } from 'node:crypto';
 import { inspectArchive } from '@openpacker/materializer';
 import { standardEmitters } from './standard-pack.js';
+import { normalized } from './standard-pack.fixture.js';
 
 describe('standard pack emitters', () => {
   it.each([
@@ -32,6 +33,64 @@ describe('standard pack emitters', () => {
     },
   );
 
+  it.each([
+    ['npm', 'npm', 'tar+gzip', 'package/package.json', /"name":"demo"/u],
+    ['Cargo', 'cargo', 'tar+gzip', 'demo-1.0.0/Cargo.toml', /name="demo"/u],
+    ['pip', 'pypi', 'tar+gzip', 'demo-1.0.0/PKG-INFO', /Name: demo/u],
+    ['uv', 'pypi', 'tar+gzip', 'demo-1.0.0/setup.py', /setuptools/u],
+    ['NuGet', 'nuget', 'zip', 'demo.nuspec', /<id>demo<\/id>/u],
+    [
+      'Maven',
+      'maven',
+      'zip',
+      'META-INF/MANIFEST.MF',
+      /Manifest-Version: 1\.0/u,
+    ],
+    ['Go', 'golang', 'zip', 'demo@v1.0.0/go.mod', /module demo/u],
+    ['Docker', 'oci', 'tar', 'oci-layout', /"imageLayoutVersion":"1\.0\.0"/u],
+    ['Podman', 'oci', 'tar', 'index.json', /"schemaVersion":2/u],
+    ['Chocolatey', 'chocolatey', 'zip', 'demo.nuspec', /<id>demo<\/id>/u],
+  ] as const)(
+    '%s standard %s output matches its required archive structure',
+    async (_manager, target, format, expectedPath, expectedContents) => {
+      const artifacts = await standardEmitters[target].emit(normalized(target));
+      const archive = artifacts.find((artifact) =>
+        target === 'golang' ? artifact.fileName.endsWith('.zip') : true,
+      )!;
+      const entries = await inspectArchive(archive.bytes, format);
+      const entry = entries.find(({ path }) => path === expectedPath);
+      expect(entry).toBeDefined();
+      expect(new TextDecoder().decode(entry!.data)).toMatch(expectedContents);
+    },
+  );
+
+  it.each([
+    ['Nix', 'nix'],
+    ['APT/dpkg', 'deb'],
+    ['WinGet', 'winget'],
+  ] as const)(
+    '%s standard %s output matches its required native structure',
+    async (_manager, target) => {
+      const artifact = (
+        await standardEmitters[target].emit(normalized(target))
+      )[0]!;
+      if (target === 'nix') {
+        expect(readNarString(artifact.bytes, 0).value).toBe('nix-archive-1');
+      } else if (target === 'deb') {
+        expect(arMembers(artifact.bytes)).toEqual([
+          'debian-binary',
+          'control.tar.gz',
+          'data.tar.gz',
+        ]);
+      } else {
+        expect(artifact.fileName).toBe('demo.installer.yaml');
+        expect(new TextDecoder().decode(artifact.bytes)).toContain(
+          'ManifestType: singleton',
+        );
+      }
+    },
+  );
+
   it('emits a parseable Debian ar and Nix NAR', async () => {
     const deb = (await standardEmitters.deb.emit(normalized('deb')))[0]!;
     expect(new TextDecoder().decode(deb.bytes.slice(0, 8))).toBe('!<arch>\n');
@@ -40,10 +99,52 @@ describe('standard pack emitters', () => {
       'control.tar.gz',
       'data.tar.gz',
     ]);
+    expect(
+      (
+        await inspectArchive(arMember(deb.bytes, 'control.tar.gz'), 'tar+gzip')
+      ).map(({ path }) => path),
+    ).toEqual(['control']);
+    expect(
+      (
+        await inspectArchive(arMember(deb.bytes, 'data.tar.gz'), 'tar+gzip')
+      ).map(({ path }) => path),
+    ).toContain('hello.txt');
 
     const nar = (await standardEmitters.nix.emit(normalized('nix')))[0]!;
-    expect(readNarString(nar.bytes, 0).value).toBe('nix-archive-1');
-    expect(new TextDecoder().decode(nar.bytes)).toContain('hello.txt');
+    expect(narStrings(nar.bytes)).toEqual(
+      expect.arrayContaining(['nix-archive-1', 'hello.txt', 'hello']),
+    );
+  });
+
+  it('emits an internally complete OCI digest graph', async () => {
+    const artifact = (await standardEmitters.oci.emit(normalized('oci')))[0]!;
+    const entries = await inspectArchive(artifact.bytes, 'tar');
+    const blobs = new Map(entries.map((entry) => [entry.path, entry.data]));
+    const index = JSON.parse(
+      new TextDecoder().decode(blobs.get('index.json')!),
+    ) as { manifests: Array<{ digest: string; size: number }> };
+    const manifestDescriptor = index.manifests[0]!;
+    const manifest = digestBlob(blobs, manifestDescriptor);
+    const parsed = JSON.parse(new TextDecoder().decode(manifest)) as {
+      config: { digest: string; size: number };
+      layers: Array<{ digest: string; size: number }>;
+    };
+    digestBlob(blobs, parsed.config);
+    for (const layer of parsed.layers) digestBlob(blobs, layer);
+  });
+
+  it('emits a complete Go module proxy set', async () => {
+    const artifacts = await standardEmitters.golang.emit(normalized('golang'));
+    expect(artifacts.map(({ nativeRole }) => nativeRole)).toEqual([
+      'module-zip',
+      'module-file',
+      'version-info',
+    ]);
+    expect(new TextDecoder().decode(artifacts[1]!.bytes)).toBe('module demo\n');
+    expect(JSON.parse(new TextDecoder().decode(artifacts[2]!.bytes))).toEqual({
+      Time: '1970-01-01T00:00:00Z',
+      Version: 'v1.0.0',
+    });
   });
 
   it('keeps a WinGet package as a typed native manifest set', async () => {
@@ -61,115 +162,73 @@ describe('standard pack emitters', () => {
       code: 'INVALID_REQUEST',
     });
   });
+
+  it.each([
+    ['npm', 'npm package.json'],
+    ['cargo', 'Cargo.toml'],
+    ['pypi', 'Python build manifest'],
+    ['chocolatey', '.nuspec manifest'],
+  ] as const)('rejects %s output without %s', async (target, _description) => {
+    const input = normalized(target);
+    input.files = input.files.filter(
+      (file) =>
+        ![
+          'package.json',
+          'Cargo.toml',
+          'pyproject.toml',
+          'setup.py',
+          'setup.cfg',
+          'demo.nuspec',
+        ].includes(file.path),
+    );
+    await expect(standardEmitters[target].emit(input)).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+    });
+  });
 });
 
-function normalized(kind: keyof typeof standardEmitters): NormalizedPackInput {
-  const identifier = kind === 'maven' ? 'dev.openpacker:demo' : 'demo';
-  const files = [
-    {
-      path: kind === 'winget' ? 'demo.installer.yaml' : 'hello.txt',
-      contents: new TextEncoder().encode(
-        kind === 'winget'
-          ? [
-              'PackageIdentifier: demo',
-              'PackageVersion: 1.0.0',
-              'PackageLocale: en-US',
-              'Publisher: OpenPacker',
-              'PackageName: demo',
-              'License: MIT',
-              'ShortDescription: demo package',
-              'Installers:',
-              '  - Architecture: x64',
-              '    InstallerType: portable',
-              '    InstallerUrl: https://example.invalid/demo.exe',
-              `    InstallerSha256: ${'a'.repeat(64)}`,
-              'ManifestType: singleton',
-              'ManifestVersion: 1.6.0',
-              '',
-            ].join('\n')
-          : 'hello',
-      ),
-      executable: false,
-    },
-    ...(kind === 'deb'
-      ? [
-          {
-            path: 'DEBIAN/control',
-            contents: new TextEncoder().encode(
-              'Package: demo\nVersion: 1.0.0\nArchitecture: all\n',
-            ),
-            executable: false,
-          },
-        ]
-      : []),
-    ...(kind === 'golang'
-      ? [
-          {
-            path: 'go.mod',
-            contents: new TextEncoder().encode('module demo\n'),
-            executable: false,
-          },
-        ]
-      : []),
-  ];
-  return {
-    files,
-    manifest: {
-      normalizedPackManifestVersion: '1',
-      package: {
-        packageManifestVersion: '1',
-        name: 'demo',
-        version: '1.0.0',
-        distributions: [{ purlType: kind, identifier, version: '1.0.0' }],
-      },
-      target: { purlType: kind, identifier, version: '1.0.0' },
-      tree: { manifestVersion: '1', entries: [] },
-      oci: {
-        imageLayoutVersion: '1.0.0',
-        config: {
-          entrypoint: [],
-          arguments: [],
-          environment: {},
-          labels: {},
-          exposedPorts: [],
-          volumes: [],
-        },
-        layers: [
-          {
-            descriptorId: 'layer',
-            digest: { algorithm: 'sha256', value: '0'.repeat(64) },
-            size: 0,
-            mediaType: 'application/vnd.oci.image.layer.v1.tar',
-            artifactType: 'application/vnd.openpacker.normalized-source.v1.tar',
-            nativeRole: 'normalized-source',
-            locations: [],
-            referrers: [],
-            externalRefs: [],
-          },
-        ],
-      },
-      requirements: [],
-      lifecycle: [],
-      nativeMetadata: {
-        'dev.openpacker.capture': 'project-tree-v1',
-        'dev.openpacker.oci.os': 'linux',
-        'dev.openpacker.oci.architecture': 'amd64',
-      },
-      semanticLoss: [],
-    },
-  };
+function arMembers(bytes: Uint8Array): string[] {
+  return arEntries(bytes).map(({ name }) => name);
 }
 
-function arMembers(bytes: Uint8Array): string[] {
-  const names: string[] = [];
+function arMember(bytes: Uint8Array, name: string): Uint8Array {
+  return arEntries(bytes).find((entry) => entry.name === name)!.bytes;
+}
+
+function arEntries(bytes: Uint8Array) {
+  const entries: Array<{ name: string; bytes: Uint8Array }> = [];
   let offset = 8;
   while (offset < bytes.byteLength) {
     const header = new TextDecoder().decode(bytes.slice(offset, offset + 60));
-    names.push(header.slice(0, 16).trim().replace(/\/$/u, ''));
+    const name = header.slice(0, 16).trim().replace(/\/$/u, '');
     const size = Number(header.slice(48, 58).trim());
+    entries.push({ name, bytes: bytes.slice(offset + 60, offset + 60 + size) });
     offset += 60 + size + (size % 2);
   }
-  return names;
+  return entries;
+}
+
+function narStrings(bytes: Uint8Array): string[] {
+  const values: string[] = [];
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const value = readNarString(bytes, offset);
+    values.push(value.value);
+    offset = value.next;
+  }
+  return values;
+}
+
+function digestBlob(
+  blobs: Map<string, Uint8Array>,
+  descriptor: { digest: string; size: number },
+): Uint8Array {
+  const bytes = blobs.get(`blobs/sha256/${descriptor.digest.slice(7)}`)!;
+  expect(bytes.byteLength).toBe(descriptor.size);
+  expect(`sha256:${createHash('sha256').update(bytes).digest('hex')}`).toBe(
+    descriptor.digest,
+  );
+  return bytes;
 }
 
 function readNarString(
