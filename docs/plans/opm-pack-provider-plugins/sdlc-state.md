@@ -3,7 +3,7 @@
 ## Status
 
 - Phase: independent review
-- Current layer: `02-contracts`
+- Current layer: `03-host`
 - Parent stack branch: `sdlc/opm-pack-01-contracts-delegation`
 - Stack chain:
   1. `sdlc/opm-pack-01-contracts-delegation`
@@ -109,3 +109,7 @@ Success is executable when:
   first independent review requested executable binding, an honest dedicated WIT
   world, a versioned planner input and broader negative vectors; those fixes are
   now being validated before re-review.
+- Added the independently tested manifest loader and sandboxed host package; all
+  seven package tests and the staged gate passed on 2026-08-18.
+- Added collision-safe delegated-provider routing independent from ecosystem
+  adapter registration; all 20 adapter-host tests passed.
