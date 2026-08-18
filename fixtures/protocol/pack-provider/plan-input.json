@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackPlanInput",
+  "delegatedPackPlanInputVersion": "1",
+  "project": {
+    "root": "/workspace/acme",
+    "manifestPath": "/workspace/acme/acme.package.json"
+  },
+  "target": {
+    "purlType": "acme",
+    "identifier": "demo",
+    "version": "1.2.3"
+  },
+  "options": {
+    "outputDirectory": "/workspace/acme/dist",
+    "allowBuild": true,
+    "allowNetwork": false,
+    "offline": true
+  }
+}

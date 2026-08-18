@@ -231,6 +231,54 @@ export type ConformanceLevel =
   | 'PREX-R'
   | 'PREX-C';
 export type Cursor = string;
+export type DelegatedPackHostPlan = {
+  $schema?: string;
+  providerId: DelegatedProviderId;
+  purlType: DelegatedProviderPurlType;
+  executable: PackProviderExecutable;
+  commandArguments: Array<Array<string>>;
+  cleanupArguments: Array<Array<string>>;
+  environment: { [key: string]: string };
+  authority: DelegatedProviderAuthority;
+  artifacts: Array<PackProviderArtifactPattern>;
+};
+export type DelegatedPackPlanInput = {
+  $schema?: string;
+  delegatedPackPlanInputVersion: '1';
+  project: { root: string; manifestPath: string };
+  target: {
+    purlType: DelegatedProviderPurlType;
+    identifier: string;
+    version: string;
+  };
+  options: {
+    outputDirectory: string;
+    allowBuild: boolean;
+    allowNetwork: boolean;
+    offline: boolean;
+  };
+};
+export type DelegatedPackProviderManifest = {
+  $schema?: string;
+  delegatedPackProviderVersion: '1';
+  id: DelegatedProviderId;
+  displayName?: string;
+  purlTypes: Array<DelegatedProviderPurlType>;
+  detection: PackProviderDetection;
+  executable: PackProviderExecutable;
+  commands: Array<PackProviderCommandTemplate>;
+  cleanupCommands?: Array<PackProviderCommandTemplate>;
+  environment?: { [key: string]: PackProviderTemplate };
+  authority: DelegatedProviderAuthority;
+  artifacts: Array<PackProviderArtifactPattern>;
+};
+export type DelegatedProviderAuthority = {
+  build: boolean;
+  network: 'never' | 'consent';
+  environment: Array<PackProviderEnvironmentName>;
+};
+export type DelegatedProviderId = string;
+export type DelegatedProviderPurlType = string;
 export type DependencyEdge = {
   requirementId: string;
   fromNodeId: string;
@@ -870,6 +918,29 @@ export type OpenPackerOverlay = {
   extensions?: Extensions;
 };
 export type OutputName = string;
+export type PackProviderArgument =
+  | PackProviderTemplate
+  | { value: PackProviderTemplate; when: PackProviderCondition };
+export type PackProviderArtifactFields = {
+  mediaType: string;
+  nativeRole: string;
+};
+export type PackProviderArtifactPattern =
+  | (PackProviderArtifactFields & { suffix: string })
+  | (PackProviderArtifactFields & { basename: string });
+export type PackProviderCommandTemplate = {
+  arguments: Array<PackProviderArgument>;
+};
+export type PackProviderCondition =
+  | 'always'
+  | 'allow-build'
+  | 'deny-build'
+  | 'allow-network'
+  | 'offline';
+export type PackProviderDetection = { manifestNames: Array<string> };
+export type PackProviderEnvironmentName = string;
+export type PackProviderExecutable = string;
+export type PackProviderTemplate = string;
 export type PackReceipt = {
   packReceiptVersion: PackReceiptVersion;
   strategy: 'delegate' | 'standard';
@@ -2279,6 +2350,437 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
     },
   },
+  'https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json':
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json',
+      title: 'PREX delegated pack provider manifest and host plan',
+      $defs: {
+        DelegatedProviderId: {
+          type: 'string',
+          minLength: 3,
+          maxLength: 255,
+          pattern: '^[a-z0-9]+(?:[.-][a-z0-9]+)+$',
+        },
+        DelegatedProviderPurlType: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 64,
+          pattern: '^[a-z][a-z0-9+.-]*$',
+        },
+        PackProviderEnvironmentName: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
+        },
+        PackProviderExecutable: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._+-]*$',
+        },
+        PackProviderTemplate: {
+          $comment:
+            'No shell expansion. Hosts replace only the closed token vocabulary, directly into argv or environment values.',
+          type: 'string',
+          minLength: 1,
+          maxLength: 8192,
+          pattern:
+            '^(?:[^{}]|\\{(?:projectRoot|manifestPath|outputDirectory|packageName|packageVersion)\\})+$',
+        },
+        PackProviderCondition: {
+          enum: [
+            'always',
+            'allow-build',
+            'deny-build',
+            'allow-network',
+            'offline',
+          ],
+        },
+        PackProviderArgument: {
+          oneOf: [
+            {
+              $ref: '#/$defs/PackProviderTemplate',
+            },
+            {
+              type: 'object',
+              required: ['value', 'when'],
+              properties: {
+                value: {
+                  $ref: '#/$defs/PackProviderTemplate',
+                },
+                when: {
+                  $ref: '#/$defs/PackProviderCondition',
+                },
+              },
+              additionalProperties: false,
+            },
+          ],
+        },
+        PackProviderCommandTemplate: {
+          type: 'object',
+          required: ['arguments'],
+          properties: {
+            arguments: {
+              type: 'array',
+              maxItems: 255,
+              items: {
+                $ref: '#/$defs/PackProviderArgument',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        PackProviderDetection: {
+          type: 'object',
+          required: ['manifestNames'],
+          properties: {
+            manifestNames: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255,
+                pattern: '^(?![.]{1,2}$)(?!.*[\\\\/]).+$',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        DelegatedProviderAuthority: {
+          $comment:
+            'Authority is a request, never a grant. The host separately requires user consent and sandbox enforcement.',
+          type: 'object',
+          required: ['build', 'network', 'environment'],
+          properties: {
+            build: {
+              type: 'boolean',
+            },
+            network: {
+              enum: ['never', 'consent'],
+            },
+            environment: {
+              type: 'array',
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                $ref: '#/$defs/PackProviderEnvironmentName',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        PackProviderArtifactFields: {
+          type: 'object',
+          required: ['mediaType', 'nativeRole'],
+          properties: {
+            mediaType: {
+              type: 'string',
+              minLength: 3,
+              maxLength: 255,
+              pattern: '^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$',
+            },
+            nativeRole: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 128,
+              pattern: '^[a-z][a-z0-9-]*$',
+            },
+          },
+        },
+        PackProviderArtifactPattern: {
+          oneOf: [
+            {
+              allOf: [
+                {
+                  $ref: '#/$defs/PackProviderArtifactFields',
+                },
+                {
+                  type: 'object',
+                  required: ['suffix'],
+                  properties: {
+                    suffix: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 255,
+                      pattern: '^[.][A-Za-z0-9._+-]+$',
+                    },
+                  },
+                },
+              ],
+              unevaluatedProperties: false,
+            },
+            {
+              allOf: [
+                {
+                  $ref: '#/$defs/PackProviderArtifactFields',
+                },
+                {
+                  type: 'object',
+                  required: ['basename'],
+                  properties: {
+                    basename: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 255,
+                      pattern: '^(?![.]{1,2}$)(?!.*[\\\\/]).+$',
+                    },
+                  },
+                },
+              ],
+              unevaluatedProperties: false,
+            },
+          ],
+        },
+        DelegatedPackProviderManifest: {
+          type: 'object',
+          required: [
+            'delegatedPackProviderVersion',
+            'id',
+            'purlTypes',
+            'detection',
+            'executable',
+            'commands',
+            'authority',
+            'artifacts',
+          ],
+          properties: {
+            $schema: {
+              type: 'string',
+              format: 'uri',
+            },
+            delegatedPackProviderVersion: {
+              const: '1',
+            },
+            id: {
+              $ref: '#/$defs/DelegatedProviderId',
+            },
+            displayName: {
+              type: 'string',
+              maxLength: 255,
+            },
+            purlTypes: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              uniqueItems: true,
+              items: {
+                $ref: '#/$defs/DelegatedProviderPurlType',
+              },
+            },
+            detection: {
+              $ref: '#/$defs/PackProviderDetection',
+            },
+            executable: {
+              $ref: '#/$defs/PackProviderExecutable',
+            },
+            commands: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              items: {
+                $ref: '#/$defs/PackProviderCommandTemplate',
+              },
+            },
+            cleanupCommands: {
+              type: 'array',
+              maxItems: 64,
+              items: {
+                $ref: '#/$defs/PackProviderCommandTemplate',
+              },
+            },
+            environment: {
+              type: 'object',
+              maxProperties: 64,
+              propertyNames: {
+                $ref: '#/$defs/PackProviderEnvironmentName',
+              },
+              additionalProperties: {
+                $ref: '#/$defs/PackProviderTemplate',
+              },
+            },
+            authority: {
+              $ref: '#/$defs/DelegatedProviderAuthority',
+            },
+            artifacts: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              items: {
+                $ref: '#/$defs/PackProviderArtifactPattern',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+        DelegatedPackPlanInput: {
+          $comment:
+            'Versioned canonical JSON passed to a package-build WIT planner. It contains no secret values or process authority.',
+          type: 'object',
+          required: [
+            'delegatedPackPlanInputVersion',
+            'project',
+            'target',
+            'options',
+          ],
+          properties: {
+            $schema: {
+              type: 'string',
+              format: 'uri',
+            },
+            delegatedPackPlanInputVersion: {
+              const: '1',
+            },
+            project: {
+              type: 'object',
+              required: ['root', 'manifestPath'],
+              properties: {
+                root: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+                manifestPath: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+              },
+              additionalProperties: false,
+            },
+            target: {
+              type: 'object',
+              required: ['purlType', 'identifier', 'version'],
+              properties: {
+                purlType: {
+                  $ref: '#/$defs/DelegatedProviderPurlType',
+                },
+                identifier: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 4096,
+                },
+                version: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 4096,
+                },
+              },
+              additionalProperties: false,
+            },
+            options: {
+              type: 'object',
+              required: [
+                'outputDirectory',
+                'allowBuild',
+                'allowNetwork',
+                'offline',
+              ],
+              properties: {
+                outputDirectory: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8192,
+                },
+                allowBuild: {
+                  type: 'boolean',
+                },
+                allowNetwork: {
+                  type: 'boolean',
+                },
+                offline: {
+                  type: 'boolean',
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+        DelegatedPackHostPlan: {
+          $comment:
+            'Canonical JSON returned by a package-build WIT guest or by compiling a provider manifest. The host authorizes and executes it.',
+          type: 'object',
+          required: [
+            'providerId',
+            'purlType',
+            'executable',
+            'commandArguments',
+            'cleanupArguments',
+            'environment',
+            'authority',
+            'artifacts',
+          ],
+          properties: {
+            $schema: {
+              type: 'string',
+              format: 'uri',
+            },
+            providerId: {
+              $ref: '#/$defs/DelegatedProviderId',
+            },
+            purlType: {
+              $ref: '#/$defs/DelegatedProviderPurlType',
+            },
+            executable: {
+              $ref: '#/$defs/PackProviderExecutable',
+            },
+            commandArguments: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              items: {
+                type: 'array',
+                maxItems: 255,
+                items: {
+                  type: 'string',
+                  maxLength: 8192,
+                },
+              },
+            },
+            cleanupArguments: {
+              type: 'array',
+              maxItems: 64,
+              items: {
+                type: 'array',
+                maxItems: 255,
+                items: {
+                  type: 'string',
+                  maxLength: 8192,
+                },
+              },
+            },
+            environment: {
+              type: 'object',
+              maxProperties: 128,
+              propertyNames: {
+                $ref: '#/$defs/PackProviderEnvironmentName',
+              },
+              additionalProperties: {
+                type: 'string',
+                maxLength: 1048576,
+              },
+            },
+            authority: {
+              $ref: '#/$defs/DelegatedProviderAuthority',
+            },
+            artifacts: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 64,
+              items: {
+                $ref: '#/$defs/PackProviderArtifactPattern',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
   'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json': {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://openpacker.dev/spec/prex/v1/schemas/environment.schema.json',

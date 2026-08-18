@@ -1734,6 +1734,157 @@
       "levels": ["PREX-I"]
     },
     {
+      "name": "delegated-pack-provider",
+      "file": "pack-provider/example.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-unknown-template",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/commands/0/arguments/0",
+          "value": "{shell}"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-command-executable",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/commands/0/argv",
+          "value": ["sh", "-c", "echo unsafe"]
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-invalid-authority",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/authority/network",
+          "value": "always"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-invalid-environment",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/authority/environment/0",
+          "value": "BAD-NAME"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-unsafe-detection-path",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/detection/manifestNames/0",
+          "value": "../acme.package.json"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-ambiguous-artifact",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/artifacts/0/basename",
+          "value": "demo.acme"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-provider-unsafe-artifact-path",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/artifacts/0/suffix"
+        },
+        {
+          "operation": "set",
+          "path": "/artifacts/0/basename",
+          "value": "../demo.acme"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-plan-input",
+      "file": "pack-provider/plan-input.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackPlanInput",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-plan-input-unknown-option",
+      "file": "pack-provider/plan-input.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/options/tool",
+          "value": "sh"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackPlanInput",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-host-plan",
+      "file": "pack-provider/host-plan.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackHostPlan",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-host-plan-invalid-executable",
+      "file": "pack-provider/host-plan.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executable",
+          "value": "/bin/sh"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackHostPlan",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
       "name": "normalized-pack",
       "file": "pack/normalized.json",
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/pack.schema.json#/$defs/NormalizedPackManifest",

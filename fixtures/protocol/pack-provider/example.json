@@ -1,0 +1,38 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+  "delegatedPackProviderVersion": "1",
+  "id": "dev.example.acme-pack",
+  "displayName": "Acme package builder",
+  "purlTypes": ["acme"],
+  "detection": {
+    "manifestNames": ["acme.package.json"]
+  },
+  "executable": "acme",
+  "commands": [
+    {
+      "arguments": [
+        "pack",
+        "{manifestPath}",
+        "--output",
+        "{outputDirectory}",
+        { "value": "--offline", "when": "offline" }
+      ]
+    }
+  ],
+  "cleanupCommands": [],
+  "environment": {
+    "ACME_CACHE": "{outputDirectory}/.cache"
+  },
+  "authority": {
+    "build": true,
+    "network": "consent",
+    "environment": ["ACME_TOKEN"]
+  },
+  "artifacts": [
+    {
+      "suffix": ".acme",
+      "mediaType": "application/vnd.example.acme",
+      "nativeRole": "distribution"
+    }
+  ]
+}
