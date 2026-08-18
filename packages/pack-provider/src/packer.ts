@@ -226,11 +226,8 @@ export class ManifestPackagePacker implements PackagePacker {
     const outputIdentity = await directoryIdentity(outputDirectory);
     if (
       (
-        await collectArtifactsChecked(
-          outputDirectory,
-          outputReal,
-          hostPlan,
-          this.#limits,
+        await checkedProviderOutput(() =>
+          collectArtifacts(outputDirectory, outputReal, hostPlan, this.#limits),
         )
       ).length > 0
     )
@@ -271,26 +268,33 @@ export class ManifestPackagePacker implements PackagePacker {
     }
     const outcome =
       outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
-    const currentIdentity = await directoryIdentity(outputDirectory);
-    if (
-      currentIdentity.dev !== outputIdentity.dev ||
-      currentIdentity.ino !== outputIdentity.ino ||
-      (await realpath(outputDirectory)) !== outputReal
-    )
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        'Delegated provider replaced its output directory',
+    const artifacts = await checkedProviderOutput(async () => {
+      const currentIdentity = await directoryIdentity(outputDirectory);
+      if (
+        currentIdentity.dev !== outputIdentity.dev ||
+        currentIdentity.ino !== outputIdentity.ino ||
+        (await realpath(outputDirectory)) !== outputReal
+      )
+        throw new ProviderError(
+          'INVALID_RESPONSE',
+          'Delegated provider replaced its output directory',
+        );
+      const collected =
+        outcome.exitCode === 0
+          ? await collectArtifacts(
+              outputDirectory,
+              outputReal,
+              hostPlan,
+              this.#limits,
+            )
+          : [];
+      await assertDirectoryIdentity(
+        outputDirectory,
+        outputReal,
+        currentIdentity,
       );
-    const artifacts =
-      outcome.exitCode === 0
-        ? await collectArtifactsChecked(
-            outputDirectory,
-            outputReal,
-            hostPlan,
-            this.#limits,
-          )
-        : [];
-    await assertDirectoryIdentity(outputDirectory, outputReal, currentIdentity);
+      return collected;
+    });
     if (outcome.exitCode === 0 && artifacts.length === 0)
       throw new ProviderError(
         'INVALID_RESPONSE',
@@ -529,14 +533,11 @@ async function collectArtifacts(
   return artifacts;
 }
 
-async function collectArtifactsChecked(
-  outputDirectory: string,
-  outputReal: string,
-  plan: DelegatedPackHostPlan,
-  limits: ManifestPackagePackerLimits,
-): Promise<PackArtifact[]> {
+async function checkedProviderOutput<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
   try {
-    return await collectArtifacts(outputDirectory, outputReal, plan, limits);
+    return await operation();
   } catch (error) {
     if (error instanceof ProviderError) throw error;
     throw new ProviderError(
