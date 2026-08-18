@@ -7,6 +7,7 @@ import {
   addPackage,
   activateGeneration,
   collectGarbage,
+  configurePackProviders,
   ecosystemFromPurl,
   environmentScript,
   environmentVariables,
@@ -397,16 +398,32 @@ export async function runOpm(
             'opm pack requires --package-version; target versions are never guessed',
           );
         const output = option(args, 'output');
+        const provider = option(args, 'provider');
+        const strategy =
+          args.options.has('delegate') || provider !== undefined
+            ? 'delegate'
+            : 'standard';
+        const configured =
+          strategy === 'delegate'
+            ? await configurePackProviders({
+                root,
+                manifest: projectManifest,
+                environment: process.env,
+              })
+            : undefined;
         const result = await packProject({
           root,
           ecosystem,
-          strategy: args.options.has('delegate') ? 'delegate' : 'standard',
+          strategy,
           name: option(args, 'name') ?? projectManifest.project.name,
           version: packageVersion,
           ...(output === undefined ? {} : { outputDirectory: output }),
-          ...(option(args, 'tool') === undefined
+          ...(provider === undefined ? {} : { provider }),
+          ...(configured === undefined
             ? {}
-            : { tool: option(args, 'tool')! }),
+            : {
+                authorizedEnvironment: configured.authorizedEnvironment,
+              }),
           allowBuild: args.options.has('allow-build'),
           allowNetwork: args.options.has('allow-network'),
           offline: args.options.has('offline'),
@@ -837,9 +854,10 @@ Resolve a full dependency graph (transitive, proof-checked):
 Pack a project:
   opm pack npm --package-version <version>
   opm pack <npm|cargo|pypi|nuget|maven|golang|oci|nix|deb|winget|chocolatey> --package-version <version>
-  opm pack oci --package-version <version> --delegate --tool <docker|podman|mise> --dry-run
+  opm pack <purl-type> --package-version <version> --provider <id> --dry-run
   Standard packing is the default. OCI targets require explicit --os and --arch.
-  Delegated scripts/builds require --allow-build; network additionally requires --allow-network.
+  Delegated providers come from [pack.providers.<id>] in opm.toml.
+  Provider builds require --allow-build; network additionally requires --allow-network.
 
 Host/profile installers use the same verbs when the registry advertises
 install (capability discovery). Examples:

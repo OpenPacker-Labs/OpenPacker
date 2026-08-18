@@ -40,18 +40,48 @@ describe('opm + opmx CLI', () => {
     temps.push(root);
     const cap = capture();
     expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
+    await writeFile(join(root, 'acme.pack'), 'project\n');
     await writeFile(
-      join(root, 'package.json'),
-      '{"name":"cli-pack","version":"1.0.0"}\n',
+      join(root, 'provider.json'),
+      JSON.stringify({
+        delegatedPackProviderVersion: '1',
+        id: 'example-acme',
+        purlTypes: ['acme'],
+        detection: { manifestNames: ['acme.pack'] },
+        executable: 'node',
+        commands: [
+          {
+            argv: [
+              '{executable}',
+              'acme-pack.js',
+              '--out',
+              '{outputDirectory}',
+            ],
+          },
+        ],
+        authority: { build: false, network: 'never', environment: [] },
+        artifacts: [
+          {
+            suffix: '.acme',
+            mediaType: 'application/x-acme',
+            nativeRole: 'distribution',
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      join(root, 'opm.toml'),
+      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[pack.providers.example-acme]\nmanifest = "provider.json"\ndefault_for = ["acme"]\n`,
     );
     expect(
       await runOpm(
         [
           'pack',
-          'npm',
+          'acme',
           '--package-version',
           '1.0.0',
-          '--delegate',
+          '--provider',
+          'example-acme',
           '--dry-run',
           '--offline',
         ],
@@ -59,8 +89,8 @@ describe('opm + opmx CLI', () => {
         root,
       ),
     ).toBe(0);
-    expect(cap.out).toContain('npm pack');
-    expect(cap.out).toContain('--ignore-scripts');
+    expect(cap.out).toContain('node acme-pack.js');
+    expect(cap.out).toContain('--out');
   });
 
   it('refuses to guess a pack target version', async () => {
