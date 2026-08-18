@@ -170,6 +170,10 @@ export {
 } from './pack-normalize.js';
 
 export { PACK_RECEIPT, packProject, packStandardProject } from './pack.js';
+export {
+  configurePackProviders,
+  type ConfiguredPackProviders,
+} from './pack-providers.js';
 
 export {
   nativeName,
