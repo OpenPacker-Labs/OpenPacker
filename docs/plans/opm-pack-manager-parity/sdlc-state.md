@@ -2,10 +2,12 @@
 
 ## Status
 
-- Phase: implementation
-- Current layer: `01-isolation`
-- Branch: `sdlc/opm-pack-manager-parity-01-isolation`
-- External issues / PRs: not created.
+- Phase: bottom-up review and squash-merge
+- Current layer: `02-manager-cases` independently approved
+- Branch: `sdlc/opm-pack-manager-parity-02-manager-cases`
+- External issues: not created. PR #85 (`01-isolation`) squash-merged as
+  `6540797`; PR #86 (`02-manager-cases`) is approved and pending squash merge.
+  Both are tracked by stack #87.
 
 ## Problem
 
@@ -19,9 +21,11 @@ mutate stores, databases, profiles, daemons, or the runner itself.
 - Normal verification remains offline and process-free: every standard target
   has a format-specific artifact oracle and every supported manager maps to one.
 - Native-manager parity is explicit opt-in and runs only through Docker or
-  Podman with preloaded digest-pinned images, no network, a read-only root,
-  dropped capabilities, no privilege escalation, a non-root user, bounded
-  resources, tmpfs scratch space, and read-only artifact mounts.
+  Podman with preloaded digest-pinned images, no network, bounded resources,
+  read-only artifact mounts, and deterministic timeout cleanup. Linux also uses
+  a read-only root, dropped capabilities, no privilege escalation, a non-root
+  user, and bounded tmpfs; Windows uses Hyper-V isolation and a bounded writable
+  layer.
 - The harness never mounts a container socket. OCI is checked with an
   unprivileged OCI archive consumer; it does not use Docker-in-Docker.
 - WinGet and Chocolatey native checks require a Windows container runtime. Their
@@ -53,4 +57,21 @@ mutate stores, databases, profiles, daemons, or the runner itself.
 
 ## Verification
 
-- Pending.
+- 2026-08-18: focused pack parity, adapters-default type/tests, staged gates,
+  docs, and escalated security gate passed.
+- 2026-08-18: full offline `npm run verify` passed after the final code change.
+- 2026-08-18: independent review approved the code and isolation boundary after
+  Go proxy naming, Cargo/APT acceptance, alias coverage, storage bounds, and
+  forced cleanup were repaired.
+- Native Linux and Windows recipes remain intentionally unexecuted here because
+  no digest-pinned images/container runtime were supplied. Default verification
+  proved the complete matrix and that the lane stays dormant without opt-in.
+
+## Implemented
+
+- `6540797`: squash-merged locked-down container plan and explicit host-Nix
+  opt-in from PR #85.
+- `d865376`: offline manager oracles, native recipes, and fail-closed native
+  manifest requirements on PR #86 after cascade.
+- `1147ed5`: review fixes for Go/Cargo/APT parity, Windows storage bounds,
+  unique container names, and forced timeout cleanup after cascade.

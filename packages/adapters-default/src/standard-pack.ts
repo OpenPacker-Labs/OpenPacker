@@ -22,18 +22,25 @@ export interface StandardEmitter {
 const text = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 export const standardEmitters = {
-  npm: emitter(['distribution'], async (input) => [
-    artifact(
-      `${fileStem(input)}.tgz`,
-      packTarGzip(
-        input.files.map((file) => ({ ...file, path: `package/${file.path}` })),
+  npm: emitter(['distribution'], async (input) => {
+    requireFile(input, (path) => path === 'package.json', 'npm package.json');
+    return [
+      artifact(
+        `${fileStem(input)}.tgz`,
+        packTarGzip(
+          input.files.map((file) => ({
+            ...file,
+            path: `package/${file.path}`,
+          })),
+        ),
+        'application/vnd.npm.package+gzip',
+        'distribution',
+        input,
       ),
-      'application/vnd.npm.package+gzip',
-      'distribution',
-      input,
-    ),
-  ]),
+    ];
+  }),
   cargo: emitter(['distribution'], async (input) => {
+    requireFile(input, (path) => path === 'Cargo.toml', 'Cargo.toml');
     const prefix = `${safe(input.manifest.target.identifier)}-${safe(
       input.manifest.target.version,
     )}`;
@@ -53,6 +60,11 @@ export const standardEmitters = {
     ];
   }),
   pypi: emitter(['source-distribution'], async (input) => {
+    requireFile(
+      input,
+      (path) => ['pyproject.toml', 'setup.py', 'setup.cfg'].includes(path),
+      'a Python build manifest',
+    );
     const prefix = `${pythonName(input.manifest.target.identifier)}-${safe(
       input.manifest.target.version,
     )}`;
@@ -175,15 +187,22 @@ export const standardEmitters = {
       ),
     );
   }),
-  chocolatey: emitter(['distribution'], async (input) => [
-    artifact(
-      `${fileStem(input)}.nupkg`,
-      packZip(input.files),
-      'application/zip',
-      'distribution',
+  chocolatey: emitter(['distribution'], async (input) => {
+    requireFile(
       input,
-    ),
-  ]),
+      (path) => /(^|\/)[^/]+\.nuspec$/iu.test(path),
+      'a .nuspec manifest',
+    );
+    return [
+      artifact(
+        `${fileStem(input)}.nupkg`,
+        packZip(input.files),
+        'application/zip',
+        'distribution',
+        input,
+      ),
+    ];
+  }),
   golang: emitter(
     ['module-zip', 'module-file', 'version-info'],
     async (input) => {
@@ -232,6 +251,18 @@ export const standardEmitters = {
     },
   ),
 } as const;
+
+function requireFile(
+  input: NormalizedPackInput,
+  matches: (path: string) => boolean,
+  description: string,
+): void {
+  if (!input.files.some((file) => matches(file.path)))
+    throw new ProviderError(
+      'INVALID_REQUEST',
+      `${input.manifest.target.purlType} standard packing requires ${description}`,
+    );
+}
 
 function validateWingetManifestSet(
   input: NormalizedPackInput,

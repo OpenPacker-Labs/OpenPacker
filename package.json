@@ -27,6 +27,8 @@
     "test:compat": "node scripts/run-gate.mjs compat",
     "test:browser": "node scripts/run-gate.mjs browser",
     "test:live": "npm run test:live --workspace @openpacker/oci",
+    "test:pack-parity": "npm exec -- vitest run packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs",
+    "test:pack-parity:native": "node scripts/pack-parity-container.mjs",
     "test:fuzz": "node scripts/fuzz-smoke.mjs",
     "test:docs": "node docs/operations/documentation-smoke.mjs",
     "benchmark": "node benchmarks/run.mjs",
