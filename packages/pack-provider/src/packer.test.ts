@@ -1,9 +1,21 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DelegatedPackProviderManifest } from '@openpacker/contracts';
-import type { RunInSandboxInput, SandboxOutcome } from '@openpacker/sandbox';
+import {
+  runInSandbox,
+  type RunInSandboxInput,
+  type SandboxBackend,
+  type SandboxOutcome,
+} from '@openpacker/sandbox';
 import { ManifestPackagePacker } from './packer.js';
 
 const roots: string[] = [];
@@ -83,7 +95,7 @@ describe('manifest package packer', () => {
     });
 
     expect(call?.argv).toEqual([
-      'test-pack',
+      '/usr/bin/test-pack',
       'pack',
       '--offline',
       '--out',
@@ -99,6 +111,39 @@ describe('manifest package packer', () => {
         nativeRole: 'distribution',
       }),
     ]);
+  });
+
+  it('binds the resolved path and keeps loader env inside a fail-closed jail', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    let backendInput: Parameters<SandboxBackend['run']>[0] | undefined;
+    const backend: SandboxBackend = {
+      id: 'native-bwrap',
+      async run(input_) {
+        backendInput = input_;
+        await writeFile(join(outputDirectory, 'demo.test'), 'native bytes');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    };
+    const value = manifest();
+    value.authority.environment = ['LD_PRELOAD'];
+    const packer = configured(
+      value,
+      async () => '/opt/acme/test-pack',
+      async (input_) => runInSandbox({ ...input_, backend }),
+    );
+
+    const result = await packer.pack(input(root), {
+      outputDirectory,
+      authorizedEnvironment: { LD_PRELOAD: '/tmp/evil.so' },
+      sandbox: { mode: 'off' },
+    });
+
+    expect(backendInput?.argv[0]).toBe('/opt/acme/test-pack');
+    expect(backendInput?.env.LD_PRELOAD).toBe('/tmp/evil.so');
+    expect(backendInput?.hostEnv.LD_PRELOAD).toBeUndefined();
+    expect(result.sandboxBackend).toBe('native-bwrap');
+    expect(result.sandboxEnforced).toBe(true);
   });
 
   it('rejects undeclared environment and artifact symlinks', async () => {
@@ -124,6 +169,59 @@ describe('manifest package packer', () => {
     await expect(
       packer.pack(input(root), { outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('bounds artifact count', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await Promise.all(
+          Array.from({ length: 257 }, (_, index) =>
+            writeFile(join(outputDirectory, `${index}.test`), ''),
+          ),
+        );
+        return outcome();
+      },
+    );
+
+    await expect(
+      packer.pack(input(root), { outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('rejects an output-directory swap and restore during collection', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const original = join(root, 'out-original');
+    let attack: Promise<void> | undefined;
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(
+          join(outputDirectory, 'demo.test'),
+          Buffer.alloc(32 * 1_024 * 1_024),
+        );
+        attack = new Promise<void>((resolvePromise) =>
+          setTimeout(resolvePromise, 5),
+        ).then(async () => {
+          await rename(outputDirectory, original);
+          await mkdir(outputDirectory);
+          await writeFile(join(outputDirectory, 'demo.test'), 'replacement');
+          await rm(outputDirectory, { recursive: true });
+          await rename(original, outputDirectory);
+        });
+        return outcome();
+      },
+    );
+
+    await expect(
+      packer.pack(input(root), { outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    await attack;
   });
 });
 

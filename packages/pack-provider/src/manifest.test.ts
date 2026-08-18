@@ -27,19 +27,34 @@ describe('delegated pack provider manifest', () => {
   it('rejects unknown fields and template tokens', () => {
     expect(() =>
       parseDelegatedPackProvider({ ...provider(), surprise: true }),
-    ).toThrow(/unknown field surprise/u);
+    ).toThrow(/does not match/u);
     expect(() =>
       parseDelegatedPackProvider({
         ...provider(),
         commands: [{ arguments: ['{shell}'] }],
       }),
-    ).toThrow(/unknown template token/u);
+    ).toThrow(/does not match/u);
     expect(() =>
       parseDelegatedPackProvider({
         ...provider(),
         commands: [{ argv: ['sh', '-c', 'echo unsafe'] }],
       }),
-    ).toThrow(/unknown field argv/u);
+    ).toThrow(/does not match/u);
+  });
+
+  it('uses the normative schema without parser drift', () => {
+    expect(() =>
+      parseDelegatedPackProvider({ ...provider(), displayName: '' }),
+    ).not.toThrow();
+    expect(() =>
+      parseDelegatedPackProvider({
+        ...provider(),
+        purlTypes: ['a'.repeat(65)],
+      }),
+    ).toThrow(/does not match/u);
+    expect(() =>
+      parseDelegatedPackProvider({ ...provider(), $schema: 'not a uri' }),
+    ).toThrow(/does not match/u);
   });
 
   it('does not follow a provider manifest symlink', async () => {

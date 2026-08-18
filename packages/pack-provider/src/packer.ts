@@ -28,6 +28,11 @@ import {
 type ResolveExecutable = (name: string) => Promise<string | undefined>;
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
+const MAX_OUTPUT_ENTRIES = 4_096;
+const MAX_ARTIFACTS = 256;
+const MAX_ARTIFACT_BYTES = 1_073_741_824n;
+const MAX_TOTAL_ARTIFACT_BYTES = 2_147_483_648n;
+
 export interface ManifestPackagePackerDependencies {
   resolveExecutable?: ResolveExecutable;
   sandboxRun?: SandboxRun;
@@ -56,9 +61,10 @@ export class ManifestPackagePacker implements PackagePacker {
   }
 
   async available(): Promise<PackAvailability> {
-    const path = await this.#resolveExecutable(this.manifest.executable).catch(
-      () => undefined,
-    );
+    const candidate = await this.#resolveExecutable(
+      this.manifest.executable,
+    ).catch(() => undefined);
+    const path = candidate === undefined ? undefined : resolve(candidate);
     return path === undefined
       ? {
           available: false,
@@ -186,6 +192,12 @@ export class ManifestPackagePacker implements PackagePacker {
         'UNSUPPORTED_ECOSYSTEM',
         `${this.providerId} cannot pack here: ${availability.reason}`,
       );
+    const executablePath = availability.tool?.path;
+    if (executablePath === undefined)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        `${this.providerId} did not resolve an executable path`,
+      );
     const withTool = {
       ...plan,
       ...(availability.tool === undefined ? {} : { tool: availability.tool }),
@@ -211,7 +223,7 @@ export class ManifestPackagePacker implements PackagePacker {
     try {
       for (const arguments_ of hostPlan.commandArguments) {
         const outcome = await this.runCommand(
-          [hostPlan.executable, ...arguments_],
+          [executablePath, ...arguments_],
           input,
           options,
           plan,
@@ -226,7 +238,7 @@ export class ManifestPackagePacker implements PackagePacker {
       for (const arguments_ of hostPlan.cleanupArguments)
         outcomes.push(
           await this.runCommand(
-            [hostPlan.executable, ...arguments_],
+            [executablePath, ...arguments_],
             input,
             options,
             plan,
@@ -252,6 +264,7 @@ export class ManifestPackagePacker implements PackagePacker {
       outcome.exitCode === 0
         ? await collectArtifacts(outputDirectory, outputReal, hostPlan)
         : [];
+    await assertDirectoryIdentity(outputDirectory, outputReal, currentIdentity);
     if (outcome.exitCode === 0 && artifacts.length === 0)
       throw new ProviderError(
         'INVALID_RESPONSE',
@@ -296,7 +309,7 @@ export class ManifestPackagePacker implements PackagePacker {
       policy: {
         enabled: true,
         required: true,
-        mode: options.sandbox?.mode ?? 'fail-closed',
+        mode: 'fail-closed',
         prefer: options.sandbox?.prefer ?? 'auto',
       },
       readwritePaths: [outputDirectory],
@@ -381,7 +394,13 @@ async function collectArtifacts(
   plan: DelegatedPackHostPlan,
 ): Promise<PackArtifact[]> {
   const artifacts: PackArtifact[] = [];
+  let totalBytes = 0n;
   const entries = await readdir(outputDirectory, { withFileTypes: true });
+  if (entries.length > MAX_OUTPUT_ENTRIES)
+    throw new ProviderError(
+      'INVALID_RESPONSE',
+      `Delegated provider output exceeds ${MAX_OUTPUT_ENTRIES} entries`,
+    );
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
     if (!entry.isFile()) continue;
@@ -391,6 +410,11 @@ async function collectArtifacts(
         ('suffix' in candidate && entry.name.endsWith(candidate.suffix)),
     );
     if (type === undefined) continue;
+    if (artifacts.length >= MAX_ARTIFACTS)
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        `Delegated provider output exceeds ${MAX_ARTIFACTS} artifacts`,
+      );
     const path = join(outputDirectory, entry.name);
     const resolved = await realpath(path);
     const relativePath = relative(outputReal, resolved);
@@ -405,6 +429,11 @@ async function collectArtifacts(
         'INVALID_RESPONSE',
         `Artifact is not a regular file: ${entry.name}`,
       );
+    if (before.size > MAX_ARTIFACT_BYTES)
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        `Artifact exceeds ${MAX_ARTIFACT_BYTES} bytes: ${entry.name}`,
+      );
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const opened = await handle.stat({ bigint: true });
@@ -414,14 +443,23 @@ async function collectArtifacts(
           `Artifact changed while opening: ${entry.name}`,
         );
       const hash = createHash('sha256');
-      for await (const chunk of handle.createReadStream({ autoClose: false }))
+      let bytes = 0n;
+      for await (const chunk of handle.createReadStream({ autoClose: false })) {
+        bytes += BigInt(chunk.byteLength);
+        if (bytes > MAX_ARTIFACT_BYTES)
+          throw new ProviderError(
+            'INVALID_RESPONSE',
+            `Artifact exceeds ${MAX_ARTIFACT_BYTES} bytes while hashing: ${entry.name}`,
+          );
         hash.update(chunk);
+      }
       const after = await handle.stat({ bigint: true });
       const pathAfter = await lstat(path, { bigint: true });
       if (
         opened.size !== after.size ||
         opened.mtimeNs !== after.mtimeNs ||
         opened.ctimeNs !== after.ctimeNs ||
+        bytes !== after.size ||
         after.dev !== pathAfter.dev ||
         after.ino !== pathAfter.ino ||
         (await realpath(path)) !== resolved
@@ -429,6 +467,12 @@ async function collectArtifacts(
         throw new ProviderError(
           'INVALID_RESPONSE',
           `Artifact changed while hashing: ${entry.name}`,
+        );
+      totalBytes += after.size;
+      if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES)
+        throw new ProviderError(
+          'INVALID_RESPONSE',
+          `Delegated provider artifacts exceed ${MAX_TOTAL_ARTIFACT_BYTES} total bytes`,
         );
       artifacts.push({
         path,
@@ -445,14 +489,43 @@ async function collectArtifacts(
   return artifacts;
 }
 
-async function directoryIdentity(
-  path: string,
-): Promise<{ dev: bigint; ino: bigint }> {
+async function directoryIdentity(path: string): Promise<DirectoryIdentity> {
   const info = await lstat(path, { bigint: true });
   if (!info.isDirectory() || info.isSymbolicLink())
     throw new ProviderError(
       'INVALID_RESPONSE',
       `Output is not a directory: ${path}`,
     );
-  return { dev: info.dev, ino: info.ino };
+  return {
+    dev: info.dev,
+    ino: info.ino,
+    ctimeNs: info.ctimeNs,
+    mtimeNs: info.mtimeNs,
+  };
+}
+
+interface DirectoryIdentity {
+  dev: bigint;
+  ino: bigint;
+  ctimeNs: bigint;
+  mtimeNs: bigint;
+}
+
+async function assertDirectoryIdentity(
+  path: string,
+  expectedReal: string,
+  expected: DirectoryIdentity,
+): Promise<void> {
+  const current = await directoryIdentity(path);
+  if (
+    current.dev !== expected.dev ||
+    current.ino !== expected.ino ||
+    current.ctimeNs !== expected.ctimeNs ||
+    current.mtimeNs !== expected.mtimeNs ||
+    (await realpath(path)) !== expectedReal
+  )
+    throw new ProviderError(
+      'INVALID_RESPONSE',
+      'Delegated provider output directory changed during artifact collection',
+    );
 }

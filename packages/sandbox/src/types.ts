@@ -129,6 +129,9 @@ export interface SandboxBackend {
   run(input: {
     argv: readonly string[];
     cwd: string;
+    /** Scrubbed environment for a native sandbox wrapper process. */
+    hostEnv: Readonly<Record<string, string>>;
+    /** Environment installed inside the jail for the target process. */
     env: Readonly<Record<string, string>>;
     readwritePaths: readonly string[];
     readonlyPaths: readonly string[];
