@@ -23,6 +23,8 @@ export class AdapterRegistry {
   readonly #byId = new Map<string, AdapterModule>();
   readonly #byPurlType = new Map<string, AdapterModule>();
   readonly #bySource = new Map<string, AdapterModule>();
+  readonly #packProviders = new Map<string, Map<string, PackagePacker>>();
+  readonly #defaultPackProvider = new Map<string, PackagePacker>();
 
   /**
    * Register a module as the default for the purl types it declares.
@@ -39,6 +41,50 @@ export class AdapterRegistry {
 
   registerAll(modules: readonly AdapterModule[]): void {
     for (const module of modules) this.register(module);
+  }
+
+  registerPackProvider(
+    packer: PackagePacker,
+    options: { makeDefault?: boolean } = {},
+  ): void {
+    const providerId = packer.providerId.toLowerCase();
+    const purlType = packer.purlType.toLowerCase();
+    const byType = this.#packProviders.get(providerId) ?? new Map();
+    if (byType.has(purlType))
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        `Pack provider ${packer.providerId} already owns purl type ${packer.purlType}`,
+      );
+    const existingDefault = this.#defaultPackProvider.get(purlType);
+    if (options.makeDefault === true && existingDefault)
+      throw new AdapterHostError(
+        'INVALID_ADAPTER',
+        `Purl type ${packer.purlType} already defaults to pack provider ${existingDefault.providerId}`,
+      );
+    byType.set(purlType, packer);
+    this.#packProviders.set(providerId, byType);
+    if (options.makeDefault === true)
+      this.#defaultPackProvider.set(purlType, packer);
+  }
+
+  packProviderIds(): readonly string[] {
+    return [...this.#packProviders.keys()].sort();
+  }
+
+  delegatedPackerFor(purlType: string, providerId?: string): PackagePacker {
+    const type = purlType.toLowerCase();
+    const packer =
+      providerId === undefined
+        ? this.#defaultPackProvider.get(type)
+        : this.#packProviders.get(providerId.toLowerCase())?.get(type);
+    if (!packer)
+      throw new AdapterHostError(
+        'UNSUPPORTED_ECOSYSTEM',
+        providerId === undefined
+          ? `No delegated pack provider is the default for purl type "${purlType}".`
+          : `Pack provider "${providerId}" does not support purl type "${purlType}".`,
+      );
+    return packer;
   }
 
   /**
