@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -13,6 +14,15 @@ const root = resolve(import.meta.dirname, '..');
 const coverage = join(root, 'coverage');
 const raw = join(coverage, 'raw');
 const thresholds = { instrumentedFilesPercent: 80, functionPercent: 70 };
+const workspaceRoots = ['apps', 'examples', 'packages'];
+const workspaces = workspaceRoots
+  .flatMap((directory) =>
+    readdirSync(join(root, directory), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(directory, entry.name)),
+  )
+  .filter((workspace) => existsSync(join(root, workspace, 'package.json')))
+  .sort();
 rmSync(raw, { recursive: true, force: true });
 mkdirSync(raw, { recursive: true });
 
@@ -25,6 +35,7 @@ const result = spawnSync(
     'run',
     'packages',
     'apps',
+    'examples',
     '--config',
     'scripts/vitest.coverage.config.mjs',
   ],
@@ -37,20 +48,39 @@ const result = spawnSync(
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-function sourceFiles(directory) {
+function filesMatching(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    return entry.name.endsWith('.ts') &&
-      !entry.name.endsWith('.test.ts') &&
-      !entry.name.endsWith('.d.ts')
-      ? [relative(root, path)]
-      : [];
+    if (entry.isDirectory()) return filesMatching(path, predicate);
+    return predicate(entry.name) ? [relative(root, path)] : [];
   });
 }
 
-const expectedFiles = ['packages', 'apps']
-  .flatMap((directory) => sourceFiles(join(root, directory)))
+const workspaceTests = new Map(
+  workspaces.map((workspace) => [
+    workspace,
+    filesMatching(join(root, workspace), (name) =>
+      /\.(?:test|spec)\.(?:[cm]?js|tsx?)$/u.test(name),
+    ),
+  ]),
+);
+const missingTests = [...workspaceTests]
+  .filter(([, tests]) => tests.length === 0)
+  .map(([workspace]) => workspace);
+if (missingTests.length)
+  throw new Error(`workspaces without tests: ${missingTests.join(', ')}`);
+
+const expectedFiles = workspaces
+  .flatMap((workspace) => {
+    const source = join(root, workspace, 'src');
+    return filesMatching(
+      source,
+      (name) =>
+        name.endsWith('.ts') &&
+        !name.endsWith('.test.ts') &&
+        !name.endsWith('.d.ts'),
+    );
+  })
   .sort();
 const functionsByFile = new Map(expectedFiles.map((file) => [file, new Map()]));
 for (const name of readdirSync(raw).filter((entry) =>
@@ -105,6 +135,32 @@ const instrumentedFilesPercent = Number(
 const functionPercent = Number(
   ((coveredFunctions / functions) * 100).toFixed(2),
 );
+const workspaceCoverage = workspaces.map((workspace) => {
+  const files = perFile.filter(({ file }) => file.startsWith(`${workspace}/`));
+  const instrumented = files.filter((file) => file.instrumented);
+  const workspaceFunctions = instrumented.reduce(
+    (sum, file) => sum + file.functions,
+    0,
+  );
+  const workspaceCoveredFunctions = instrumented.reduce(
+    (sum, file) => sum + file.coveredFunctions,
+    0,
+  );
+  return {
+    workspace,
+    tests: workspaceTests.get(workspace).length,
+    sourceFiles: files.length,
+    instrumentedFiles: instrumented.length,
+    instrumentedFilesPercent: Number(
+      ((instrumented.length / files.length) * 100).toFixed(2),
+    ),
+    functions: workspaceFunctions,
+    coveredFunctions: workspaceCoveredFunctions,
+    functionPercent: Number(
+      ((workspaceCoveredFunctions / workspaceFunctions) * 100).toFixed(2),
+    ),
+  };
+});
 const summary = {
   schemaVersion: 'org.openpacker.coverage-summary.v1',
   thresholds,
@@ -114,13 +170,36 @@ const summary = {
   functions,
   coveredFunctions,
   functionPercent,
+  workspaces: workspaceCoverage,
   perFile,
 };
 writeFileSync(
   join(coverage, 'summary.json'),
   `${JSON.stringify(summary, null, 2)}\n`,
 );
-console.log(JSON.stringify(summary));
+console.log(
+  `coverage: ${instrumentedFilesPercent}% files, ${functionPercent}% functions across ${workspaceCoverage.length} workspaces`,
+);
+for (const workspace of workspaceCoverage)
+  console.log(
+    `${workspace.workspace}: ${workspace.instrumentedFilesPercent}% files, ${workspace.functionPercent}% functions, ${workspace.tests} test files`,
+  );
+const failingWorkspaces = workspaceCoverage.filter(
+  (workspace) =>
+    workspace.sourceFiles === 0 ||
+    workspace.functions === 0 ||
+    workspace.instrumentedFilesPercent < thresholds.instrumentedFilesPercent ||
+    workspace.functionPercent < thresholds.functionPercent,
+);
+if (failingWorkspaces.length)
+  throw new Error(
+    `workspace coverage below threshold: ${failingWorkspaces
+      .map(
+        (workspace) =>
+          `${workspace.workspace} files ${workspace.instrumentedFilesPercent}%/${thresholds.instrumentedFilesPercent}%, functions ${workspace.functionPercent}%/${thresholds.functionPercent}%`,
+      )
+      .join('; ')}`,
+  );
 if (
   instrumentedFilesPercent < thresholds.instrumentedFilesPercent ||
   functionPercent < thresholds.functionPercent

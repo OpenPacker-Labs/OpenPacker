@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createCloudEvent, MemoryEventSink } from '@openpacker/events';
 import {
+  descriptorForBytes,
+  streamFromBytes,
+} from '@openpacker/artifact-model';
+import {
   assertConforms,
+  checkArtifactSink,
+  checkArtifactSource,
+  checkClock,
+  checkCredentialResolver,
   checkEvidenceVerifier,
   checkEventSink,
   checkExtensionDescriptor,
+  checkPolicyRule,
+  checkReceiptSigner,
   type ExtensionDescriptor,
 } from './index.js';
 
@@ -93,5 +103,98 @@ describe('extension conformance', () => {
     );
     assertConforms(report);
     expect(calls).toBe(2);
+  });
+
+  it('checks artifact, policy, credential, clock, and signer extensions', async () => {
+    const bytes = new TextEncoder().encode('fixture');
+    const artifact = await descriptorForBytes({
+      bytes,
+      descriptorId: 'fixture',
+      mediaType: 'application/octet-stream',
+      artifactType: 'application/vnd.openpacker.package',
+      nativeRole: 'package',
+    });
+    const extension = (id: string, implementation: object) => ({
+      descriptor: { ...descriptor, id },
+      implementation,
+    });
+    assertConforms(
+      await checkArtifactSource(
+        extension('dev.openpacker.fixture-source', {
+          async stat() {
+            return { descriptor: artifact, rangeSupported: false };
+          },
+          async open() {
+            return streamFromBytes(bytes);
+          },
+          async listReferrers() {
+            return [];
+          },
+        }),
+        artifact,
+        bytes,
+      ),
+    );
+    assertConforms(
+      await checkArtifactSink(
+        extension('dev.openpacker.fixture-sink', {
+          async putBlob() {
+            return artifact;
+          },
+          async putManifest() {
+            return artifact;
+          },
+          async attachReferrer() {},
+        }),
+        artifact,
+        bytes,
+      ),
+    );
+    assertConforms(
+      await checkPolicyRule(
+        extension('dev.openpacker.fixture-policy', {
+          async evaluate() {
+            return { status: 'valid' as const, code: 'OK', message: 'ok' };
+          },
+        }),
+        {},
+      ),
+    );
+    assertConforms(
+      await checkClock(
+        extension('dev.openpacker.fixture-clock', {
+          now: () => '2026-08-18T00:00:00Z',
+        }),
+      ),
+    );
+    assertConforms(
+      await checkCredentialResolver(
+        extension('dev.openpacker.fixture-credentials', {
+          async resolve() {
+            return { token: 'secret' };
+          },
+        }),
+        'secret://fixture',
+      ),
+    );
+    const signer = {
+      algorithm: 'fixture',
+      keyId: 'fixture',
+      async sign(message: Uint8Array) {
+        return message;
+      },
+    };
+    assertConforms(
+      await checkReceiptSigner(
+        extension('dev.openpacker.fixture-signer', signer),
+        {
+          algorithm: 'fixture',
+          keyId: 'fixture',
+          async verify(message, signature) {
+            return message.every((byte, index) => byte === signature[index]);
+          },
+        },
+      ),
+    );
   });
 });

@@ -3,9 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  ArtifactIntegrityError,
   collectStream,
   descriptorForBytes,
+  digestString,
   streamFromBytes,
+  validateDigest,
   validateRange,
   verifyBytes,
 } from './index.js';
@@ -46,5 +49,36 @@ describe('artifact model', () => {
   it('rejects invalid and unbounded ranges', () => {
     expect(() => validateRange({ offset: -1 })).toThrow(RangeError);
     expect(() => validateRange({ offset: 0, length: 0 })).toThrow(RangeError);
+  });
+
+  it('fails closed on digest drift, stream limits, and cancellation', async () => {
+    const bytes = new TextEncoder().encode('abc');
+    const descriptor = await descriptorForBytes({
+      bytes,
+      descriptorId: 'fixture',
+      mediaType: 'application/octet-stream',
+      artifactType: 'application/vnd.openpacker.package',
+      nativeRole: 'package',
+      fileName: 'fixture.bin',
+    });
+    expect(digestString(descriptor.digest)).toMatch(/^sha256:/u);
+    expect(() => validateDigest(descriptor.digest)).not.toThrow();
+    await expect(
+      verifyBytes(
+        {
+          ...descriptor,
+          digest: { ...descriptor.digest, value: '0'.repeat(64) },
+        },
+        bytes,
+      ),
+    ).rejects.toBeInstanceOf(ArtifactIntegrityError);
+    await expect(collectStream(streamFromBytes(bytes), 2)).rejects.toThrow(
+      /exceeds/u,
+    );
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+    await expect(
+      collectStream(streamFromBytes(bytes), 3, controller.signal),
+    ).rejects.toThrow('cancelled');
   });
 });

@@ -4,18 +4,27 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   assertGrantsNotDangerous,
+  buildSeatbeltProfile,
   createMockBackend,
   digestSandboxPolicy,
   isDeniedCredential,
+  isPathInside,
   JailPathError,
+  limitedContainmentLoss,
   matchPackageGrant,
   mxcFilesystemPaths,
+  networkToolMaskFiles,
+  notSandboxedLoss,
   planSandboxSummary,
+  probeNativeBackends,
   resolvePolicy,
   runHostInstaller,
   runInSandbox,
   scrubEnvironment,
   SANDBOX_LOSS,
+  sandboxPolicyFromInstallOptions,
+  sensitiveMaskDirectories,
+  sensitiveMaskFiles,
 } from './index.js';
 
 describe('@openpacker/sandbox', () => {
@@ -267,5 +276,33 @@ describe('@openpacker/sandbox', () => {
     });
     expect(outcome.enforced).toBe(false);
     expect(outcome.profile).toBe('package-exec');
+  });
+
+  it('builds deterministic host profiles and loss disclosures', () => {
+    expect(probeNativeBackends()).toEqual(expect.any(Array));
+    expect(sensitiveMaskDirectories()).toContain('/root/.ssh');
+    expect(sensitiveMaskFiles()).toContain('/etc/shadow');
+    expect(networkToolMaskFiles()).toContain('/usr/bin/curl');
+    expect(isPathInside('/tmp/root', '/tmp/root/child')).toBe(true);
+    expect(isPathInside('/tmp/root', '/tmp/other')).toBe(false);
+    expect(
+      buildSeatbeltProfile({
+        readwritePaths: ['/tmp/write'],
+        readonlyPaths: ['/tmp/read'],
+        network: false,
+        profile: 'package-exec',
+      }),
+    ).toContain('(deny network*)');
+    expect(sandboxPolicyFromInstallOptions({ mode: 'off' })).toMatchObject({
+      mode: 'off',
+      required: false,
+      legacyFatRoot: true,
+    });
+    expect(notSandboxedLoss('apt').code).toBe(
+      SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
+    );
+    expect(limitedContainmentLoss('apt').code).toBe(
+      SANDBOX_LOSS.SYSTEM_LIMITED,
+    );
   });
 });

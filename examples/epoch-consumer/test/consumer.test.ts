@@ -8,6 +8,11 @@ import {
 } from '../src/index.js';
 
 describe('neutral Epoch consumer boundary', () => {
+  it('keeps the demo import-safe for tests and embedding', async () => {
+    const demo = await import('../src/demo.js');
+    expect(demo.runDemo).toBeTypeOf('function');
+  });
+
   it('preserves canonical event bytes and consumes duplicates idempotently', async () => {
     const event = await createCloudEvent({
       type: 'org.openpacker.resolution.completed',

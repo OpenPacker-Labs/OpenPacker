@@ -18,6 +18,7 @@ import {
   createReferenceOperations,
   OperationError,
 } from '../src/operations.js';
+import { createStandaloneReferenceOperations } from '../src/reference.js';
 
 const digest = (character: string) => ({
   algorithm: 'sha256' as const,
@@ -86,6 +87,33 @@ const universe: ResolutionUniverse = {
 };
 
 describe('openpackerd', () => {
+  it('boots the standalone reference operations with an empty universe', async () => {
+    const operations = await createStandaloneReferenceOperations();
+    const meta = {
+      protocolVersion: '1.0-draft' as const,
+      provider: {
+        id: 'org.openpacker.reference',
+        implementation: 'openpackerd',
+        version: '0.1.0',
+      },
+    };
+    expect(operations.capabilities?.(meta).protocolVersions).toContain(
+      '1.0-draft',
+    );
+    await expect(
+      operations.identify(
+        { query: { alias: 'missing' } } as never,
+        {} as never,
+      ),
+    ).resolves.toMatchObject({ status: 'not-found', candidates: [] });
+    await expect(
+      operations.pack({} as never, {} as never),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_CAPABILITY_MISSING',
+      status: 501,
+    });
+  });
+
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {
     const keys = JSON.parse(
       await readFile(

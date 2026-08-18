@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   loadDelegatedPackProvider,
   parseDelegatedPackProvider,
-} from './manifest.js';
+} from './index.js';
 
 const roots: string[] = [];
 

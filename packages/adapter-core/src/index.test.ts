@@ -1,13 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertBoundedProviderMetadata,
   compareParsedVersions,
+  compareCodePoints,
   BoundedFetchTransport,
   evaluateRange,
+  evaluateSemverRange,
   FixtureHttpTransport,
   formatPurl,
+  header,
+  isEcosystem,
   parsePurl,
   parseSemver,
+  parseSemverRange,
   parseVers,
+  packageNodeId,
+  providerErrorForStatus,
+  rangeToConstraint,
+  renderRange,
+  semanticLoss,
+  sourceRef,
+  text,
+  verifyNativeDigest,
   json,
 } from './index.js';
 
@@ -69,6 +83,70 @@ describe('version primitives', () => {
     expect(parsed.vers).toBe('vers:npm/>=1.0.0|<2.0.0||=3.0.0');
     expect(parseVers(parsed.vers!).vers).toBe(parsed.vers);
     expect(() => parseVers('vers:npm/>=1||')).toThrow(/Invalid VERS clause/);
+  });
+
+  it('covers native range forms and their portable constraint mapping', async () => {
+    expect(isEcosystem('npm')).toBe(true);
+    expect(isEcosystem('NPM')).toBe(false);
+    expect(compareCodePoints('a', 'b')).toBeLessThan(0);
+    const compareNative = (left: string, right: string) =>
+      compareParsedVersions(parseSemver(left), parseSemver(right));
+    const caret = parseSemverRange('^1.2.3', {
+      scheme: 'npm',
+      bare: 'caret',
+      commaAnd: true,
+      hyphenRanges: true,
+    });
+    expect(renderRange(caret.ast)).toBe('>=1.2.3 <2.0.0');
+    expect(evaluateSemverRange('1.9.0', caret.ast, compareNative)).toBe(true);
+    expect(rangeToConstraint(caret)).toMatchObject({
+      reversible: false,
+      semanticLoss: [{ code: 'NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE' }],
+    });
+    expect(
+      parseSemverRange('1.2 - 1.4', {
+        scheme: 'npm',
+        bare: 'caret',
+        hyphenRanges: true,
+      }).normalized,
+    ).toBe('>=1.2.0 <1.5.0');
+    const prerelease = parseSemverRange('>=1.0.0-beta.1 <2.0.0', {
+      scheme: 'npm',
+      bare: 'caret',
+    });
+    expect(
+      evaluateSemverRange('1.0.0-beta.2', prerelease.ast, compareNative),
+    ).toBe(true);
+    expect(semanticLoss('npm', 'LOSS', '/range', 'native').severity).toBe(
+      'warning',
+    );
+
+    expect(providerErrorForStatus(404).code).toBe('PACKAGE_NOT_FOUND');
+    expect(providerErrorForStatus(429).code).toBe('RATE_LIMITED');
+    expect(providerErrorForStatus(500).code).toBe('UPSTREAM_UNAVAILABLE');
+    const response = {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+      body: new TextEncoder().encode('hello'),
+      url: 'https://fixture.test',
+    };
+    expect(text(response)).toBe('hello');
+    expect(header(response, 'content-type')).toBe('text/plain');
+    expect(() => assertBoundedProviderMetadata({ a: { b: 1 } })).not.toThrow();
+    expect(() => assertBoundedProviderMetadata({ a: { b: 1 } }, 1)).toThrow(
+      /depth/u,
+    );
+    expect(
+      await verifyNativeDigest(
+        new TextEncoder().encode('abc'),
+        'sha256',
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      ),
+    ).toBe(true);
+    expect(sourceRef('npm', 'https://registry.test').type).toBe('registry');
+    expect(await packageNodeId({ exactPurl: 'pkg:npm/demo@1.0.0' })).toMatch(
+      /^sha256:/u,
+    );
   });
 });
 

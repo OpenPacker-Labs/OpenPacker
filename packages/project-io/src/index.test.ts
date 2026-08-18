@@ -4,12 +4,16 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   applySpanEdits,
+  collectFiles,
   detectJsonStyle,
   editJsonFile,
+  editTomlArray,
+  editTomlTable,
   findExecutable,
   matchFileStyle,
   ProjectIoError,
   readTextFile,
+  removeTree,
   writeFileAtomic,
 } from './index.js';
 
@@ -200,6 +204,50 @@ describe('materialiseTree', () => {
       await expect(
         readFile(join(destination, 'stale.js'), 'utf8'),
       ).rejects.toThrow();
+    });
+  });
+});
+
+describe('TOML and tree helpers', () => {
+  it('edits tables and owned array entries without disturbing foreign data', async () => {
+    await withTemp(async (dir) => {
+      const path = join(dir, 'pyproject.toml');
+      await writeFile(
+        path,
+        '[project]\nname = "demo"\ndependencies = ["foreign>=1", "owned==1"]\n',
+      );
+      await editTomlTable(path, {
+        table: 'tool.opm',
+        entries: [{ key: 'managed', value: 'true' }],
+      });
+      await editTomlArray(path, {
+        table: 'project',
+        key: 'dependencies',
+        items: ['owned==2'],
+        owns: (item) => item.startsWith('owned'),
+      });
+      const text = await readFile(path, 'utf8');
+      expect(text).toContain('foreign>=1');
+      expect(text).toContain('owned==2');
+      expect(text).not.toContain('owned==1');
+      expect(text).toContain('[tool.opm]');
+    });
+  });
+
+  it('collects executable metadata and removes trees idempotently', async () => {
+    await withTemp(async (dir) => {
+      const nested = join(dir, 'tree', 'bin');
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(nested, { recursive: true });
+      const file = join(nested, 'tool');
+      await writeFile(file, 'tool');
+      await chmod(file, 0o755);
+      expect(await collectFiles(join(dir, 'tree'), 'package')).toMatchObject([
+        { path: 'package/bin/tool', executable: true },
+      ]);
+      await removeTree(join(dir, 'tree'));
+      await removeTree(join(dir, 'tree'));
+      await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });
 });
