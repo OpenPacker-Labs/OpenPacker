@@ -123,11 +123,12 @@ export function createBwrapBackend(): SandboxBackend {
         network: input.network,
         profile: input.profile,
         legacyFatRoot: input.legacyFatRoot === true,
+        environment: input.env,
       });
       return spawnCapture({
         argv,
         cwd: input.cwd,
-        env: input.env,
+        env: input.hostEnv,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -143,6 +144,7 @@ export function buildBwrapArgv(input: {
   network: boolean;
   profile: SandboxProfile;
   legacyFatRoot?: boolean;
+  environment?: Readonly<Record<string, string>>;
 }): string[] {
   const args: string[] = [
     input.bwrap,
@@ -152,6 +154,11 @@ export function buildBwrapArgv(input: {
     '--unshare-ipc',
   ];
   if (!input.network) args.push('--unshare-net');
+  args.push('--clearenv');
+  for (const [name, value] of Object.entries(input.environment ?? {}).sort(
+    ([left], [right]) => left.localeCompare(right),
+  ))
+    args.push('--setenv', name, value);
 
   const fat =
     input.profile === 'host-install' ||
@@ -260,9 +267,19 @@ export function createSeatbeltBackend(): SandboxBackend {
         legacyFatRoot: input.legacyFatRoot === true,
       });
       return spawnCapture({
-        argv: [se, '-p', profile, ...input.argv],
+        argv: [
+          se,
+          '-p',
+          profile,
+          '/usr/bin/env',
+          '-i',
+          ...Object.entries(input.env)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, value]) => `${name}=${value}`),
+          ...input.argv,
+        ],
         cwd: input.cwd,
-        env: input.env,
+        env: input.hostEnv,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },

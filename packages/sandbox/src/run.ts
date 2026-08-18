@@ -184,6 +184,10 @@ export async function runInSandbox(
       minimalPath: profile === 'package-exec' && resolved.minimalPath,
       ...(interpreter === undefined ? {} : { interpreter }),
     });
+    const hostEnv = scrubEnvironment({
+      jailHome,
+      minimalPath: true,
+    });
     const readwrite = normalizeJailPaths(
       [...input.readwritePaths, jailHome, ...grantedWrite],
       'readwrite path',
@@ -211,6 +215,7 @@ export async function runInSandbox(
         return await active.run({
           argv: input.argv,
           cwd: input.cwd,
+          hostEnv,
           env,
           readwritePaths: readwrite,
           readonlyPaths: readonly,

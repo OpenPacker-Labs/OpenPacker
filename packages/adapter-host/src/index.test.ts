@@ -118,6 +118,40 @@ describe('AdapterRegistry discovery', () => {
     await expect(registry.packerFor('fixture')).resolves.toBe(packer);
   });
 
+  it('routes configured delegated pack providers independently from adapters', () => {
+    const registry = new AdapterRegistry();
+    const first = {
+      providerId: 'example.first',
+      purlType: 'fixture',
+    } as never;
+    const second = {
+      providerId: 'example.second',
+      purlType: 'fixture',
+    } as never;
+    const third = {
+      providerId: 'example.third',
+      purlType: 'fixture',
+    } as never;
+    registry.registerPackProvider(first, { makeDefault: true });
+    registry.registerPackProvider(second);
+
+    expect(registry.packProviderIds()).toEqual([
+      'example.first',
+      'example.second',
+    ]);
+    expect(registry.delegatedPackerFor('fixture')).toBe(first);
+    expect(registry.delegatedPackerFor('fixture', 'example.second')).toBe(
+      second,
+    );
+    expect(() => registry.delegatedPackerFor('other', 'example.first')).toThrow(
+      /does not support/u,
+    );
+    expect(() =>
+      registry.registerPackProvider(third, { makeDefault: true }),
+    ).toThrow(/already defaults/u);
+    expect(registry.packProviderIds()).not.toContain('example.third');
+  });
+
   it('fails closed for update/uninstall/environment when not advertised', async () => {
     const registry = new AdapterRegistry();
     registry.register(

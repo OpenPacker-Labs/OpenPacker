@@ -86,8 +86,12 @@ describe('bwrap argv profile', () => {
       readonlyPaths: [],
       network: false,
       profile: 'package-exec',
+      environment: { LD_PRELOAD: '/jail/only.so', SAFE: 'yes' },
     });
     expect(argv).toContain('--unshare-net');
+    expect(argv).toContain('--clearenv');
+    expect(argv).toContain('--setenv');
+    expect(argv).toContain('LD_PRELOAD');
     // Fat root should not appear for package-exec.
     const fat = argv.some(
       (a, i) => a === '--ro-bind' && argv[i + 1] === '/' && argv[i + 2] === '/',
