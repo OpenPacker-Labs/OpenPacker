@@ -6,4 +6,5 @@ export {
   ManifestPackagePacker,
   manifestPackagePackers,
   type ManifestPackagePackerDependencies,
+  type ManifestPackagePackerLimits,
 } from './packer.js';

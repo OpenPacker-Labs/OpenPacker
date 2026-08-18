@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
+import { constants, type Dirent } from 'node:fs';
+import { lstat, mkdir, open, opendir, realpath } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
@@ -28,14 +28,26 @@ import {
 type ResolveExecutable = (name: string) => Promise<string | undefined>;
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
-const MAX_OUTPUT_ENTRIES = 4_096;
-const MAX_ARTIFACTS = 256;
-const MAX_ARTIFACT_BYTES = 1_073_741_824n;
-const MAX_TOTAL_ARTIFACT_BYTES = 2_147_483_648n;
+const DEFAULT_LIMITS: ManifestPackagePackerLimits = {
+  outputEntries: 4_096,
+  artifacts: 256,
+  artifactBytes: 1_073_741_824n,
+  totalArtifactBytes: 2_147_483_648n,
+  readChunkBytes: 64 * 1_024,
+};
+
+export interface ManifestPackagePackerLimits {
+  outputEntries: number;
+  artifacts: number;
+  artifactBytes: bigint;
+  totalArtifactBytes: bigint;
+  readChunkBytes: number;
+}
 
 export interface ManifestPackagePackerDependencies {
   resolveExecutable?: ResolveExecutable;
   sandboxRun?: SandboxRun;
+  limits?: Partial<ManifestPackagePackerLimits>;
 }
 
 export class ManifestPackagePacker implements PackagePacker {
@@ -43,6 +55,7 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly purlType: string;
   readonly #resolveExecutable: ResolveExecutable;
   readonly #sandboxRun: SandboxRun;
+  readonly #limits: ManifestPackagePackerLimits;
 
   constructor(
     private readonly manifest: DelegatedPackProviderManifest,
@@ -58,6 +71,7 @@ export class ManifestPackagePacker implements PackagePacker {
     this.purlType = purlType;
     this.#resolveExecutable = dependencies.resolveExecutable ?? findExecutable;
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
+    this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
   }
 
   async available(): Promise<PackAvailability> {
@@ -211,7 +225,14 @@ export class ManifestPackagePacker implements PackagePacker {
     const outputReal = await realpath(outputDirectory);
     const outputIdentity = await directoryIdentity(outputDirectory);
     if (
-      (await collectArtifacts(outputDirectory, outputReal, hostPlan)).length > 0
+      (
+        await collectArtifactsChecked(
+          outputDirectory,
+          outputReal,
+          hostPlan,
+          this.#limits,
+        )
+      ).length > 0
     )
       throw new ProviderError(
         'OUTPUT_NOT_EMPTY',
@@ -262,7 +283,12 @@ export class ManifestPackagePacker implements PackagePacker {
       );
     const artifacts =
       outcome.exitCode === 0
-        ? await collectArtifacts(outputDirectory, outputReal, hostPlan)
+        ? await collectArtifactsChecked(
+            outputDirectory,
+            outputReal,
+            hostPlan,
+            this.#limits,
+          )
         : [];
     await assertDirectoryIdentity(outputDirectory, outputReal, currentIdentity);
     if (outcome.exitCode === 0 && artifacts.length === 0)
@@ -392,15 +418,26 @@ async function collectArtifacts(
   outputDirectory: string,
   outputReal: string,
   plan: DelegatedPackHostPlan,
+  limits: ManifestPackagePackerLimits,
 ): Promise<PackArtifact[]> {
   const artifacts: PackArtifact[] = [];
   let totalBytes = 0n;
-  const entries = await readdir(outputDirectory, { withFileTypes: true });
-  if (entries.length > MAX_OUTPUT_ENTRIES)
-    throw new ProviderError(
-      'INVALID_RESPONSE',
-      `Delegated provider output exceeds ${MAX_OUTPUT_ENTRIES} entries`,
-    );
+  const entries: Dirent[] = [];
+  const directory = await opendir(outputDirectory);
+  try {
+    for (;;) {
+      const entry = await directory.read();
+      if (entry === null) break;
+      if (entries.length >= limits.outputEntries)
+        throw new ProviderError(
+          'INVALID_RESPONSE',
+          `Delegated provider output exceeds ${limits.outputEntries} entries`,
+        );
+      entries.push(entry);
+    }
+  } finally {
+    await directory.close().catch(() => undefined);
+  }
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
     if (!entry.isFile()) continue;
@@ -410,10 +447,10 @@ async function collectArtifacts(
         ('suffix' in candidate && entry.name.endsWith(candidate.suffix)),
     );
     if (type === undefined) continue;
-    if (artifacts.length >= MAX_ARTIFACTS)
+    if (artifacts.length >= limits.artifacts)
       throw new ProviderError(
         'INVALID_RESPONSE',
-        `Delegated provider output exceeds ${MAX_ARTIFACTS} artifacts`,
+        `Delegated provider output exceeds ${limits.artifacts} artifacts`,
       );
     const path = join(outputDirectory, entry.name);
     const resolved = await realpath(path);
@@ -429,10 +466,10 @@ async function collectArtifacts(
         'INVALID_RESPONSE',
         `Artifact is not a regular file: ${entry.name}`,
       );
-    if (before.size > MAX_ARTIFACT_BYTES)
+    if (before.size > limits.artifactBytes)
       throw new ProviderError(
         'INVALID_RESPONSE',
-        `Artifact exceeds ${MAX_ARTIFACT_BYTES} bytes: ${entry.name}`,
+        `Artifact exceeds ${limits.artifactBytes} bytes: ${entry.name}`,
       );
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
@@ -444,12 +481,15 @@ async function collectArtifacts(
         );
       const hash = createHash('sha256');
       let bytes = 0n;
-      for await (const chunk of handle.createReadStream({ autoClose: false })) {
+      for await (const chunk of handle.createReadStream({
+        autoClose: false,
+        highWaterMark: limits.readChunkBytes,
+      })) {
         bytes += BigInt(chunk.byteLength);
-        if (bytes > MAX_ARTIFACT_BYTES)
+        if (bytes > limits.artifactBytes)
           throw new ProviderError(
             'INVALID_RESPONSE',
-            `Artifact exceeds ${MAX_ARTIFACT_BYTES} bytes while hashing: ${entry.name}`,
+            `Artifact exceeds ${limits.artifactBytes} bytes while hashing: ${entry.name}`,
           );
         hash.update(chunk);
       }
@@ -469,10 +509,10 @@ async function collectArtifacts(
           `Artifact changed while hashing: ${entry.name}`,
         );
       totalBytes += after.size;
-      if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES)
+      if (totalBytes > limits.totalArtifactBytes)
         throw new ProviderError(
           'INVALID_RESPONSE',
-          `Delegated provider artifacts exceed ${MAX_TOTAL_ARTIFACT_BYTES} total bytes`,
+          `Delegated provider artifacts exceed ${limits.totalArtifactBytes} total bytes`,
         );
       artifacts.push({
         path,
@@ -487,6 +527,23 @@ async function collectArtifacts(
     }
   }
   return artifacts;
+}
+
+async function collectArtifactsChecked(
+  outputDirectory: string,
+  outputReal: string,
+  plan: DelegatedPackHostPlan,
+  limits: ManifestPackagePackerLimits,
+): Promise<PackArtifact[]> {
+  try {
+    return await collectArtifacts(outputDirectory, outputReal, plan, limits);
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    throw new ProviderError(
+      'INVALID_RESPONSE',
+      `Delegated provider output changed during collection: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function directoryIdentity(path: string): Promise<DirectoryIdentity> {

@@ -1,4 +1,5 @@
 import {
+  appendFile,
   mkdtemp,
   mkdir,
   rename,
@@ -16,7 +17,10 @@ import {
   type SandboxBackend,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
-import { ManifestPackagePacker } from './packer.js';
+import {
+  ManifestPackagePacker,
+  type ManifestPackagePackerLimits,
+} from './packer.js';
 
 const roots: string[] = [];
 
@@ -179,17 +183,95 @@ describe('manifest package packer', () => {
       async () => '/usr/bin/test-pack',
       async () => {
         await Promise.all(
-          Array.from({ length: 257 }, (_, index) =>
+          Array.from({ length: 3 }, (_, index) =>
             writeFile(join(outputDirectory, `${index}.test`), ''),
           ),
         );
         return outcome();
       },
+      { artifacts: 2 },
     );
 
     await expect(
       packer.pack(input(root), { outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('bounds directory entries before materializing them', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await Promise.all(
+          ['a', 'b', 'c'].map((name) =>
+            writeFile(join(outputDirectory, `${name}.tmp`), ''),
+          ),
+        );
+        return outcome();
+      },
+      { outputEntries: 2 },
+    );
+
+    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
+      /exceeds 2 entries/u,
+    );
+  });
+
+  it('bounds individual and aggregate artifact bytes', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const single = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), '12345');
+        return outcome();
+      },
+      { artifactBytes: 4n },
+    );
+    await expect(single.pack(input(root), { outputDirectory })).rejects.toThrow(
+      /exceeds 4 bytes/u,
+    );
+
+    await rm(outputDirectory, { recursive: true, force: true });
+    const aggregate = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'a.test'), '123');
+        await writeFile(join(outputDirectory, 'b.test'), '456');
+        return outcome();
+      },
+      { artifactBytes: 10n, totalArtifactBytes: 5n },
+    );
+    await expect(
+      aggregate.pack(input(root), { outputDirectory }),
+    ).rejects.toThrow(/exceed 5 total bytes/u);
+  });
+
+  it('bounds an artifact that grows while hashing', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    let growth: Promise<void> | undefined;
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), Buffer.alloc(1024));
+        growth = new Promise<void>((resolvePromise) =>
+          setTimeout(resolvePromise, 5),
+        ).then(() => appendFile(join(outputDirectory, 'demo.test'), 'x'));
+        return outcome();
+      },
+      { artifactBytes: 1024n, readChunkBytes: 1 },
+    );
+
+    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
+      /while hashing/u,
+    );
+    await growth;
   });
 
   it('rejects an output-directory swap and restore during collection', async () => {
@@ -203,10 +285,10 @@ describe('manifest package packer', () => {
       async () => {
         await writeFile(
           join(outputDirectory, 'demo.test'),
-          Buffer.alloc(32 * 1_024 * 1_024),
+          Buffer.alloc(8 * 1_024),
         );
         attack = new Promise<void>((resolvePromise) =>
-          setTimeout(resolvePromise, 5),
+          setTimeout(resolvePromise, 1),
         ).then(async () => {
           await rename(outputDirectory, original);
           await mkdir(outputDirectory);
@@ -216,12 +298,15 @@ describe('manifest package packer', () => {
         });
         return outcome();
       },
+      { readChunkBytes: 1 },
     );
 
-    await expect(
-      packer.pack(input(root), { outputDirectory }),
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    const result = await packer.pack(input(root), { outputDirectory }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     await attack;
+    expect(result).toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 });
 
@@ -232,10 +317,12 @@ function configured(
   sandboxRun: (
     input: RunInSandboxInput,
   ) => Promise<SandboxOutcome> = async () => outcome(),
+  limits?: Partial<ManifestPackagePackerLimits>,
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
     resolveExecutable,
     sandboxRun,
+    ...(limits === undefined ? {} : { limits }),
   });
 }
 
