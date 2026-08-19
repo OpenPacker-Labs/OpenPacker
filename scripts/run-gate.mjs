@@ -11,6 +11,7 @@ const directories = {
   security: ['tests/security'],
   integration: ['tests/integration'],
   e2e: ['tests/e2e'],
+  behavior: ['tests/behavior'],
   compat: ['tests/compat'],
   browser: ['tests/browser'],
 };
