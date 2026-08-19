@@ -211,6 +211,16 @@ describe('opm + opmx CLI', () => {
     ).toBe(0);
     expect(cap.out).toMatch(/Added demo-tool/);
 
+    const statePath = join(root, '.opm/project.json');
+    const forgedState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { purl: string; storePath: string; bins: { target?: string }[] }
+      >;
+    };
+    forgedState.packages['demo-tool']!.purl = 'pkg:npm/attacker@9.9.9';
+    await writeFile(statePath, JSON.stringify(forgedState));
+
     cap = capture();
     expect(await runOpm(['list'], cap.io, root)).toBe(0);
     expect(cap.out).toMatch(/demo-tool/);
@@ -219,6 +229,26 @@ describe('opm + opmx CLI', () => {
     cap = capture();
     expect(await runOpmx(['demo-tool', '--version'], cap.io, root)).toBe(0);
     expect(cap.out).toMatch(/1\.1\.0/);
+    const repairedState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { purl: string; storePath: string; bins: { target?: string }[] }
+      >;
+    };
+    expect(repairedState.packages['demo-tool']?.purl).toBe(
+      'pkg:npm/@openpacker/demo-tool@1.1.0',
+    );
+
+    const toolPath = repairedState.packages['demo-tool']!.bins[0]!.target!;
+    const toolBytes = await readFile(toolPath);
+    await writeFile(
+      toolPath,
+      Buffer.concat([toolBytes, Buffer.from('\n# tampered')]),
+    );
+    cap = capture();
+    expect(await runOpmx(['demo-tool'], cap.io, root)).toBe(9);
+    expect(cap.err).toMatch(/store tree does not match/u);
+    await writeFile(toolPath, toolBytes);
 
     cap = capture();
     expect(await runOpmx(['demo-tool', 'hello'], cap.io, root)).toBe(0);
