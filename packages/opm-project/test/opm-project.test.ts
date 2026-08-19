@@ -58,7 +58,6 @@ import {
   discoverBins,
   whyPackage,
   OpmError,
-  defaultSupplyChainPolicyInput,
 } from '../src/index.js';
 import { packTarGzip } from '@openpacker/project-io';
 import {
@@ -587,54 +586,29 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
-  it('rechecks every current policy against facts persisted in an existing lock', async () => {
+  it('refuses lock digest and policy claims that do not survive fresh resolution', async () => {
     const root = await tempProject();
-    const bytes = await readFile(fixtureTgz);
-    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    const storeKey = storeKeyFromDigest(digest);
-    const pkg = {
-      alias: 'demo',
-      purl: 'pkg:nuget/demo@1.1.0',
-      version: '1.1.0',
-      digest,
-      size: bytes.byteLength,
-      format: 'tar+gzip' as const,
-      mediaType: 'application/vnd.openpacker.package.tgz',
-      source: `file:${fixtureTgz}`,
-      storeKey,
-      bins: [],
-      reason: 'direct' as const,
-      ecosystem: 'nuget',
-      sourceKind: 'registry' as const,
-      registryId: 'urn:example:nuget',
-      publishedAt: '2020-01-01T00:00:00.000Z',
-      trustLevel: 'registry-attested' as const,
-      lifecycle: { status: 'published' as const, eligible: true },
-    };
-    const installed = await materializeLockPackage({
+    await addPackage({
       root,
-      pkg,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
       offline: true,
-      policy: {
-        ...defaultSupplyChainPolicyInput(),
-        minimumReleaseAgeMinutes: 60,
-        expectedRegistryId: 'urn:example:nuget',
-      },
     });
-    expect(installed.storePath).toContain(storeKey);
+    const paths = projectPaths(root);
+    const lock = await readLockfile(paths.lock);
+    if (!lock) throw new Error('expected lock');
+    const pkg = lock.packages['demo-tool']!;
+    pkg.digest = `sha256:${'b'.repeat(64)}`;
+    pkg.storeKey = storeKeyFromDigest(pkg.digest);
+    pkg.sourceKind = 'registry';
+    pkg.registryId = 'urn:attacker:registry';
+    pkg.publishedAt = '2020-01-01T00:00:00.000Z';
+    pkg.trustLevel = 'registry-attested';
+    pkg.lifecycle = { status: 'published', eligible: true };
+    await writeLockfile(paths.lock, lock);
 
-    await expect(
-      materializeLockPackage({
-        root,
-        pkg,
-        offline: true,
-        force: true,
-        policy: {
-          ...defaultSupplyChainPolicyInput(),
-          maximumArtifactSize: bytes.byteLength - 1,
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      { code: 'INVALID_LOCK' },
+    );
   });
 
   it('rejects a size mismatch even when the digest matches', async () => {

@@ -69,7 +69,6 @@ import {
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
   lockPackageSupplyChainFields,
-  priorTrustFromLock,
   projectPolicyDocument,
 } from './supply-chain.js';
 import { providerFor } from './registry.js';
@@ -79,6 +78,7 @@ import { discoverNpmBins } from './bins.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { materialize } from '@openpacker/materializer';
+import { canonicalize } from '@openpacker/canonical';
 import {
   descriptorForBytes,
   streamFromBytes,
@@ -431,18 +431,31 @@ export async function installProject(input: {
   }
   assertLockMatchesManifest(input.root, manifest, lock);
   const offline = input.offline ?? manifest.options.offline;
+  const verifiedLock = await resolveManifestToLock({
+    root: input.root,
+    manifest,
+    offline,
+  });
+  if (
+    canonicalize(JSON.parse(serializeLockfile(lock))) !==
+    canonicalize(JSON.parse(serializeLockfile(verifiedLock)))
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      'Lock claims do not match a fresh resolution of the committed manifest',
+    );
   const state = await installFromLock({
     root: input.root,
-    lock,
+    lock: verifiedLock,
     offline,
     ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,
     manifest,
-    lock,
+    lock: verifiedLock,
   });
-  return { lock, state, native };
+  return { lock: verifiedLock, state, native };
 }
 
 function assertLockMatchesManifest(
@@ -630,8 +643,6 @@ export async function resolveManifestToLock(input: {
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
   lock.manifestDigest = manifestDigest(input.manifest);
-  const priorLock = await readLockfile(paths.lock);
-
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
     const locked = await resolveRequirement({
       root: input.root,
@@ -640,7 +651,6 @@ export async function resolveManifestToLock(input: {
       offline: input.offline,
       catalog,
       manifest: input.manifest,
-      ...(priorLock === undefined ? {} : { priorLock }),
       ...(input.registryOptions === undefined
         ? {}
         : { registryOptions: input.registryOptions }),
@@ -660,7 +670,6 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
-      ...(priorLock === undefined ? {} : { priorLock }),
       ...(input.registryOptions === undefined
         ? {}
         : { registryOptions: input.registryOptions }),
@@ -714,7 +723,6 @@ function nativeRangeFor(
 async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
-  priorLock?: OpmLockfile | undefined;
   registryOptions?: RegistryOptions | undefined;
 }): Promise<{
   packages: Record<string, LockPackage>;
@@ -806,10 +814,6 @@ async function resolveTransitive(input: {
 
       // A dependency nobody asked for directly is the case blockExoticSources
       // exists for, so it is evaluated at its real depth rather than skipped.
-      const priorTrust = priorTrustFromLock(
-        input.priorLock,
-        artifact.exactPurl,
-      );
       const facts = captureFactsFromSourceUri(
         artifact.exactPurl,
         artifact.uri,
@@ -821,7 +825,6 @@ async function resolveTransitive(input: {
           lifecycle: instance.lifecycle,
           semanticLoss: instance.semanticLoss,
           sourceSnapshotDigests: instance.sourceSnapshots,
-          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
         },
       );
       facts.registryId = artifact.registryId;
@@ -930,7 +933,6 @@ async function resolveRequirement(input: {
     }
   >;
   manifest: OpmManifest;
-  priorLock?: OpmLockfile | undefined;
   registryOptions?: RegistryOptions | undefined;
 }): Promise<LockPackage> {
   const ecosystem = ecosystemFromPurl(input.req.purl);
@@ -944,7 +946,6 @@ async function resolveRequirement(input: {
   const policy = projectPolicyDocument(input.manifest);
   const evaluationTime = new Date().toISOString();
   const packageKey = candidateExact ?? stripPurlVersion(input.req.purl);
-  const priorTrust = priorTrustFromLock(input.priorLock, packageKey);
 
   // 1) Explicit source on requirement
   if (input.req.source) {
@@ -959,7 +960,6 @@ async function resolveRequirement(input: {
     const facts = captureFactsFromSourceUri(packageKey, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,
-      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
@@ -1053,7 +1053,6 @@ async function resolveRequirement(input: {
     const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,
-      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
@@ -1170,7 +1169,6 @@ async function resolveRequirement(input: {
         evaluationTime,
         dependencyDepth: 0,
         registryId: artifact.registryId,
-        ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
       });
       // Prefer artifact URI for source kind when inspect did not set one.
       if (facts.sourceKind === undefined) {
@@ -1203,7 +1201,6 @@ async function resolveRequirement(input: {
           // resolveRegistryArtifact already checked against this ecosystem's
           // allowlist — that, not the URI's shape, is what makes it a registry.
           fromRegistryArtifactRecord: true,
-          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
           lifecycleScriptsExecuted: false,
         },
       );

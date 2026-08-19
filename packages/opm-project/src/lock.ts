@@ -188,6 +188,14 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       `Package "${alias}" has invalid lifecycle`,
     );
   if (
+    pkg.nativeIntegrity !== undefined &&
+    !isNativeIntegrity(pkg.nativeIntegrity)
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid nativeIntegrity`,
+    );
+  if (
     pkg.dependencies !== undefined &&
     (!Array.isArray(pkg.dependencies) ||
       pkg.dependencies.some(
@@ -223,7 +231,26 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       : {}),
     ...(isSourceKind(pkg.sourceKind) ? { sourceKind: pkg.sourceKind } : {}),
     ...(isLifecycleState(pkg.lifecycle) ? { lifecycle: pkg.lifecycle } : {}),
+    ...(isNativeIntegrity(pkg.nativeIntegrity)
+      ? { nativeIntegrity: pkg.nativeIntegrity }
+      : {}),
   };
+}
+
+function isNativeIntegrity(
+  value: unknown,
+): value is NonNullable<LockPackage['nativeIntegrity']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false;
+  const integrity = value as Record<string, unknown>;
+  return (
+    typeof integrity.algorithm === 'string' &&
+    integrity.algorithm !== '' &&
+    typeof integrity.value === 'string' &&
+    integrity.value !== '' &&
+    typeof integrity.encoding === 'string' &&
+    integrity.encoding !== ''
+  );
 }
 
 function isLifecycleState(
