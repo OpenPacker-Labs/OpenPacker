@@ -644,6 +644,8 @@ export class OciRegistryClient {
     errorBodyTimeoutMilliseconds?: number;
   }) {
     this.registry = new URL(input.registry);
+    if (this.registry.protocol !== 'https:')
+      throw new TypeError('Registry URL must use HTTPS');
     if (
       this.registry.username ||
       this.registry.password ||

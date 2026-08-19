@@ -93,6 +93,16 @@ describe('OCI image layout', () => {
 });
 
 describe('OCI Distribution client', () => {
+  it('rejects plaintext registry origins', () => {
+    expect(
+      () =>
+        new OciRegistryClient({
+          registry: 'http://registry.example',
+          repository: 'openpacker/demo',
+        }),
+    ).toThrow(/must use HTTPS/u);
+  });
+
   it('bounds registry error bodies before decoding diagnostics', async () => {
     const client = new OciRegistryClient({
       registry: 'https://registry.example',
