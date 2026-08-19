@@ -14,6 +14,7 @@ import {
   assertDaemonBindAddress,
   assertDaemonPort,
   createOpenPackerDaemon,
+  SqliteStateStore,
 } from '../src/index.js';
 import { runDaemon } from '../src/cli.js';
 import {
@@ -178,7 +179,67 @@ describe('openpackerd', () => {
     ).rejects.toMatchObject({ code: 'LIFECYCLE_DENIED' });
     await expect(
       operations.materialize({ subject, forensic: true } as never, {} as never),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    const policy = {
+      allowYanked: false,
+      allowQuarantined: false,
+      semanticLossMaximum: 'warning' as const,
+      requiredEvidence: [],
+      permitForensicDigestMaterialization: true,
+    };
+    await expect(
+      operations.materialize(
+        { subject, forensic: true, policy } as never,
+        {} as never,
+      ),
     ).resolves.toMatchObject({ descriptor });
+    await expect(
+      operations.materialize(
+        {
+          subject: {
+            type: 'artifact',
+            descriptor: { ...descriptor, digest: digest('8') },
+          },
+          forensic: true,
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+  });
+
+  it('rejects a catalog snapshot whose claimed root was not recomputed', async () => {
+    const store = new SqliteStateStore(':memory:');
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: async () => {
+          throw new Error('not reached');
+        },
+        pack: async () => {
+          throw new Error('not reached');
+        },
+        publish: async () => {
+          throw new Error('not reached');
+        },
+      },
+    });
+    const forged = { ...snapshot, providerId: 'attacker' };
+    await expect(
+      operations.catalogImport(forged, { store } as never),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+    expect(
+      store.getSnapshot('sha256', snapshot.rootDigest.value),
+    ).toBeUndefined();
   });
 
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {

@@ -71,7 +71,7 @@ import {
 } from '@openpacker/lock-import';
 import { signReceipt, verifySignedReceipt } from '@openpacker/receipts';
 import type { Signer, Verifier } from '@openpacker/trust';
-import type { OpenPackerStateStore } from './store.js';
+import { sourceSnapshotDigest, type OpenPackerStateStore } from './store.js';
 
 export interface OperationContext {
   signal: AbortSignal;
@@ -412,6 +412,14 @@ export function createReferenceOperations(
 
     async materialize(input) {
       const { descriptor, package: owner } = findArtifact(input, instances());
+      if (
+        input.forensic === true &&
+        input.policy?.permitForensicDigestMaterialization !== true
+      )
+        throw operationError(
+          'POLICY_DENIED',
+          'Forensic artifact materialization requires explicit policy permission',
+        );
       if (owner?.lifecycle.eligible === false && input.forensic !== true)
         throw operationError(
           'LIFECYCLE_DENIED',
@@ -583,6 +591,15 @@ export function createReferenceOperations(
 
     async catalogImport(input, context) {
       const snapshot = snapshotFrom(input);
+      if (
+        formatDigest(await sourceSnapshotDigest(snapshot)) !==
+        formatDigest(snapshot.rootDigest)
+      )
+        throw operationError(
+          'DIGEST_MISMATCH',
+          'Catalog snapshot root digest does not match its content',
+          400,
+        );
       const digest = await context.store.putSnapshot(input);
       return { snapshot, digest };
     },
