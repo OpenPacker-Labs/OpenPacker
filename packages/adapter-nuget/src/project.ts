@@ -346,6 +346,15 @@ function assertPackFileName(fileName: string, manifestPath: string): void {
     );
 }
 
+function assertFrameworkSegment(framework: string, manifestPath: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/u.test(framework))
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      manifestPath,
+      `TargetFramework is not a safe path segment: ${framework}`,
+    );
+}
+
 interface ParsedReference {
   include: string;
   version?: string;
@@ -710,7 +719,9 @@ function firstTargetFramework(text: string): string | undefined {
 
 function targetFramework(project: DetectedProject): string | undefined {
   const value = project.metadata?.targetFramework;
-  return typeof value === 'string' ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  assertFrameworkSegment(value, project.manifestPath);
+  return value;
 }
 
 function integrityLoss(entry: NativeLockEntry): SemanticLoss {
