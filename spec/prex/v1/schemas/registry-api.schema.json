@@ -219,14 +219,58 @@
     },
     "StatusUpdate": {
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "statusUpdateVersion",
+        "eventId",
+        "name",
+        "version",
+        "status",
+        "reason",
+        "issuedAt"
+      ],
       "properties": {
+        "statusUpdateVersion": { "const": "1" },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
         "status": {
           "enum": ["active", "deprecated", "deleted"]
         },
         "reason": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 4096
+        },
+        "issuedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "SignedStatusUpdate": {
+      "$comment": "A fresh immutable lifecycle mutation. Signatures are Ed25519 over the ASCII formatDigest(updateDigest); the registry re-derives the digest and requires a non-revoked namespace key.",
+      "type": "object",
+      "required": ["update", "updateDigest", "signatures"],
+      "properties": {
+        "update": { "$ref": "#/$defs/StatusUpdate" },
+        "updateDigest": { "$ref": "common.schema.json#/$defs/Digest" },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "package-manifest.schema.json#/$defs/ManifestSignature"
+          }
         }
       },
       "additionalProperties": false
@@ -249,9 +293,6 @@
           "items": {
             "$ref": "package-manifest.schema.json#/$defs/ManifestSignature"
           }
-        },
-        "namespaceProof": {
-          "$ref": "#/$defs/NamespaceProof"
         }
       },
       "additionalProperties": false

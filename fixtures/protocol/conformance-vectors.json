@@ -1520,16 +1520,41 @@
       "levels": ["PREX-I"]
     },
     {
-      "name": "registry-publish-bad-namespace",
+      "name": "registry-publish-cannot-self-authorize-namespace",
       "file": "registry-api/publish-request.json",
       "mutations": [
         {
           "operation": "set",
-          "path": "/namespaceProof/namespace",
-          "value": "Example"
+          "path": "/namespaceProof",
+          "value": {
+            "namespace": "com.example",
+            "method": "dns-txt",
+            "keyId": "publisher-1"
+          }
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest",
+      "valid": false,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-signed-status-update",
+      "file": "registry-api/signed-status-update.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate",
+      "valid": true,
+      "levels": ["PREX-I"]
+    },
+    {
+      "name": "registry-status-update-unsigned",
+      "file": "registry-api/signed-status-update.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/signatures",
+          "value": []
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate",
       "valid": false,
       "levels": ["PREX-I"]
     },

@@ -709,7 +709,7 @@ export class BoundedFetchTransport implements HttpTransport {
           );
         if (next.origin !== url.origin)
           headers = stripSensitiveHeaders(headers);
-        if (response.status === 303) method = 'GET';
+        if (response.status === 303 && method !== 'HEAD') method = 'GET';
         url = next;
         redirects += 1;
         continue;

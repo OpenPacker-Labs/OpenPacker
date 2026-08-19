@@ -13,10 +13,7 @@
  */
 
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
-import {
-  BoundedFetchTransport,
-  type HttpTransport,
-} from '@openpacker/adapter-core';
+import type { HttpTransport } from '@openpacker/adapter-core';
 import {
   canonicalBytes,
   canonicalDigest,
@@ -29,6 +26,7 @@ import type {
   PackageManifest,
   Problem,
   RegistryEntry,
+  SignedStatusUpdate,
 } from '@openpacker/contracts';
 import { createPrexValidator, validateContract } from '@openpacker/conformance';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
@@ -79,6 +77,8 @@ const PUBLISH_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryPublishRequest';
 const REDIRECT_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedPackageRedirect';
+const STATUS_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate';
 /**
  * Publishes per holder per hour, by default.
  *
@@ -91,6 +91,7 @@ const REDIRECT_SCHEMA =
 const DEFAULT_QUOTA: QuotaPolicy = { limit: 120, windowSeconds: 3600 };
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
+const STATUS_FRESHNESS_MILLISECONDS = 5 * 60 * 1000;
 
 export interface RegistryOptions {
   registryId: string;
@@ -128,7 +129,10 @@ export interface RegistryOptions {
    * a re-check. Zero disables checking entirely.
    */
   serviceabilityTtlMilliseconds?: number;
-  /** Transport for reaching what a manifest advertises. */
+  /**
+   * Operator-authorized transport for reaching what a manifest advertises.
+   * Absent disables probes; publisher locations never authorize registry egress.
+   */
   serviceabilityTransport?: HttpTransport;
   /** Publish allowance, charged per namespace holder. See DEFAULT_QUOTA. */
   quota?: QuotaPolicy;
@@ -203,7 +207,8 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     entry: StoredEntry,
     known: ServiceabilityRecord | undefined,
   ): void {
-    if (serviceabilityTtl <= 0) return;
+    const transport = options.serviceabilityTransport;
+    if (serviceabilityTtl <= 0 || !transport) return;
     const key = `${entry.name}@${entry.version}`;
     if (inFlight.has(key)) return;
     if (!isStale(known, serviceabilityTtl, Date.parse(clock.now()))) return;
@@ -222,15 +227,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           ...(distribution.size === undefined
             ? {}
             : { size: distribution.size }),
-          transport:
-            options.serviceabilityTransport ??
-            new BoundedFetchTransport({
-              allowedOrigins: [
-                ...new Set(
-                  distribution.locations!.map((uri) => new URL(uri).origin),
-                ),
-              ],
-            }),
+          transport,
           now: clock.now,
         });
         store.recordServiceability(entry.name, entry.version, record);
@@ -354,6 +351,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         );
 
       store.recordRotation(rotation);
+      store.rotateNamespaceKey(rotation.previousKeyId, rotation.nextKeyId);
       store.revoke({
         keyId: rotation.previousKeyId,
         revokedAt: rotation.rotatedAt,
@@ -730,7 +728,6 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           signature: string;
           role?: string;
         }[];
-        namespaceProof?: { namespace: string; keyId: string; method: string };
       };
       if (!body?.manifest)
         throw new PublishError(
@@ -810,12 +807,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // allowance would be no allowance at all.
       const holder =
         signatures.length > 0
-          ? assertNamespace(
-              store,
-              body.manifest.name,
-              signatures,
-              body.namespaceProof,
-            )
+          ? assertNamespace(store, body.manifest.name, signatures)
           : 'operator:anonymous';
 
       // A name that has moved cannot be published to at the old name; that is
@@ -853,23 +845,46 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     '/v1/packages/:name/versions/:version/status',
     async (request, reply) => {
       try {
-        const body = request.body as { status?: string };
-        if (
-          body?.status !== 'active' &&
-          body?.status !== 'deprecated' &&
-          body?.status !== 'deleted'
-        )
+        const body = request.body as SignedStatusUpdate;
+        assertValid(STATUS_SCHEMA, body as unknown as JsonValue, validator);
+        const name = decodeURIComponent(request.params.name);
+        const version = decodeURIComponent(request.params.version);
+        if (body.update.name !== name || body.update.version !== version)
           throw new PublishError(
             'INVALID_REQUEST',
             400,
-            'status must be active, deprecated, or deleted',
+            'The signed lifecycle update does not match this package route',
           );
-        const entry = store.setStatus(
-          decodeURIComponent(request.params.name),
-          decodeURIComponent(request.params.version),
-          body.status,
-          clock.now(),
+        assertFreshStatusUpdate(body.update.issuedAt, clock.now());
+        const updateDigest = await canonicalDigest(
+          body.update as unknown as JsonValue,
         );
+        if (
+          body.updateDigest.algorithm !== updateDigest.algorithm ||
+          body.updateDigest.value !== updateDigest.value
+        )
+          throw new PublishError(
+            'DIGEST_MISMATCH',
+            400,
+            `Stated ${formatDigest(body.updateDigest)} but the lifecycle update hashes to ${formatDigest(updateDigest)}`,
+          );
+        await assertStatusAuthority(
+          store,
+          name,
+          body.signatures,
+          new TextEncoder().encode(formatDigest(updateDigest)),
+          publisherKeyFor,
+        );
+        const entry = store.applyStatus({
+          eventId: body.update.eventId,
+          name,
+          version,
+          status: body.update.status,
+          updateDigest: formatDigest(updateDigest),
+          update: body.update as unknown as JsonValue,
+          signatures: body.signatures,
+          now: clock.now(),
+        });
         return sendJson(
           reply,
           toRegistryEntry(entry, options) as unknown as JsonValue,
@@ -952,20 +967,7 @@ function assertNamespace(
   store: RegistryStore,
   packageName: string,
   signatures: readonly { keyId: string }[],
-  proof?: {
-    namespace: string;
-    keyId: string;
-    method: string;
-    verifiedAt?: string;
-  },
 ): string {
-  if (proof)
-    store.trustKey(
-      proof.namespace,
-      proof.keyId,
-      proof.method,
-      proof.verifiedAt ?? '',
-    );
   const candidates = namespacesOf(packageName);
   for (const namespace of candidates) {
     const permitted = new Set(store.keysFor(namespace));
@@ -980,8 +982,63 @@ function assertNamespace(
     'POLICY_DENIED',
     403,
     `No signing key on this request is permitted to publish "${packageName}". ` +
-      `Provide a namespace proof for one of: ${candidates.join(', ') || '(none)'}.`,
+      `An operator must bind it to one of: ${candidates.join(', ') || '(none)'}.`,
   );
+}
+
+function assertFreshStatusUpdate(issuedAt: string, nowValue: string): void {
+  const issued = Date.parse(issuedAt);
+  const now = Date.parse(nowValue);
+  if (
+    !Number.isFinite(issued) ||
+    !Number.isFinite(now) ||
+    issued > now ||
+    now - issued > STATUS_FRESHNESS_MILLISECONDS
+  )
+    throw new PublishError(
+      'POLICY_DENIED',
+      403,
+      'Lifecycle updates must be issued within the last five minutes',
+    );
+}
+
+async function assertStatusAuthority(
+  store: RegistryStore,
+  packageName: string,
+  signatures: readonly { keyId: string; signature: string }[],
+  message: Uint8Array,
+  keyFor: (keyId: string) => JsonWebKey | undefined,
+): Promise<void> {
+  let authorized = false;
+  for (const signature of signatures) {
+    const key = keyFor(signature.keyId);
+    if (!key)
+      throw new PublishError(
+        'INVALID_SIGNATURE',
+        403,
+        `Key ${signature.keyId} is not known to this registry`,
+      );
+    if (!mayPublish(signature.keyId, store.revocations()))
+      throw new PublishError(
+        'POLICY_DENIED',
+        403,
+        `Key ${signature.keyId} is revoked`,
+      );
+    const verifier = await Ed25519Verifier.fromJwk(signature.keyId, key);
+    if (!(await verifier.verify(message, signature.signature)))
+      throw new PublishError(
+        'INVALID_SIGNATURE',
+        400,
+        `Signature from ${signature.keyId} does not verify`,
+      );
+    if (holdsName(store, packageName, signature.keyId)) authorized = true;
+  }
+  if (!authorized)
+    throw new PublishError(
+      'POLICY_DENIED',
+      403,
+      `No signing key on this lifecycle update may mutate ${packageName}`,
+    );
 }
 
 /** Where a name resolves today, after any renames. */
@@ -1186,8 +1243,12 @@ function fail(reply: FastifyReply, error: unknown): FastifyReply {
       problem(
         error.code === 'VERSION_EXISTS'
           ? 'SNAPSHOT_MISMATCH'
-          : 'PACKAGE_NOT_FOUND',
-        error.code === 'VERSION_EXISTS' ? 409 : 404,
+          : error.code === 'EVENT_EXISTS'
+            ? 'POLICY_DENIED'
+            : 'PACKAGE_NOT_FOUND',
+        error.code === 'VERSION_EXISTS' || error.code === 'EVENT_EXISTS'
+          ? 409
+          : 404,
         'Registry request failed',
         error.message,
       ),

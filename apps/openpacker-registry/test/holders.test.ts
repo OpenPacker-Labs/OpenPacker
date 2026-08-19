@@ -46,7 +46,7 @@ function manifest(name: string, version = '1.0.0'): PackageManifest {
 async function publishBody(
   name: string,
   version: string,
-  namespace: string,
+  _namespace: string,
   keyId = 'publisher-1',
 ) {
   const value = manifest(name, version);
@@ -65,15 +65,26 @@ async function publishBody(
         role: 'publisher' as const,
       },
     ],
-    namespaceProof: { namespace, method: 'dns-txt' as const, keyId },
   };
 }
 
-function registry(overrides: Record<string, unknown> = {}) {
+function registry(
+  overrides: Record<string, unknown> = {},
+  namespaces: readonly string[] = ['com.example'],
+) {
+  const store =
+    (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
+  for (const namespace of namespaces)
+    store.trustKey(
+      namespace,
+      'publisher-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+    );
   return createRegistry({
     registryId: 'urn:openpacker:registry:test',
     purlTypes: ['npm'],
-    store: new RegistryStore(),
+    store,
     publisherKeys: { 'publisher-1': keys.leaf!, 'publisher-2': keys.leaf! },
     clock: { now: () => '2026-08-10T00:00:00.000Z' },
     ...overrides,
@@ -130,7 +141,7 @@ describe('holder attribution', () => {
   });
 
   it('lists the most concentrated holder first', async () => {
-    const app = registry();
+    const app = registry({}, ['com.example.a', 'com.example.b', 'org.other']);
     await app.inject({
       method: 'POST',
       url: '/v1/publish',
@@ -168,7 +179,11 @@ describe('publish quota', () => {
   });
 
   it('charges a holder once, however many namespaces it takes out', async () => {
-    const app = registry({ quota: { limit: 2, windowSeconds: 3600 } });
+    const app = registry({ quota: { limit: 2, windowSeconds: 3600 } }, [
+      'com.example.a',
+      'com.example.b',
+      'com.example.c',
+    ]);
     // Three different namespaces, one domain behind all of them. A per-namespace
     // budget would let this run forever for the price of a DNS record.
     const first = await app.inject({
@@ -219,18 +234,25 @@ describe('publish quota', () => {
   });
 
   it('does not charge a publish under a name the key does not hold', async () => {
-    const app = registry({ quota: { limit: 1, windowSeconds: 3600 } });
+    const store = new RegistryStore();
+    const app = registry(
+      { quota: { limit: 1, windowSeconds: 3600 }, store },
+      [],
+    );
     // Otherwise anyone can exhaust a publisher's allowance by publishing
     // rubbish under their name and being refused for it.
     const refused = await app.inject({
       method: 'POST',
       url: '/v1/publish',
-      payload: {
-        ...(await publishBody('com.example.a', '1.0.0', 'com.example.a')),
-        namespaceProof: undefined,
-      },
+      payload: await publishBody('com.example.a', '1.0.0', 'com.example.a'),
     });
     expect(refused.statusCode).toBe(403);
+    store.trustKey(
+      'com.example.a',
+      'publisher-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+    );
     const allowed = await app.inject({
       method: 'POST',
       url: '/v1/publish',
@@ -286,9 +308,12 @@ describe('rename and transfer', () => {
     };
   }
 
-  /** A registry holding io.github.acme.tool, with both namespaces proved. */
-  async function withPackage() {
-    const app = registry();
+  /** A registry holding io.github.acme.tool with operator-established authority. */
+  async function withPackage(destinationAuthorized = false) {
+    const app = registry({}, [
+      'io.github.acme',
+      ...(destinationAuthorized ? ['com.acme'] : []),
+    ]);
     await app.inject({
       method: 'POST',
       url: '/v1/publish',
@@ -319,13 +344,7 @@ describe('rename and transfer', () => {
   });
 
   it('moves the package and leaves a verifiable redirect', async () => {
-    const app = await withPackage();
-    // Prove the destination too, which is what makes the move legitimate.
-    await app.inject({
-      method: 'POST',
-      url: '/v1/publish',
-      payload: await publishBody('com.acme.other', '1.0.0', 'com.acme'),
-    });
+    const app = await withPackage(true);
     const response = await app.inject({
       method: 'POST',
       url: '/v1/packages/io.github.acme.tool/rename',
@@ -361,7 +380,7 @@ describe('rename and transfer', () => {
   });
 
   it('refuses to rename onto a name somebody already publishes', async () => {
-    const app = await withPackage();
+    const app = await withPackage(true);
     await app.inject({
       method: 'POST',
       url: '/v1/publish',
@@ -381,12 +400,7 @@ describe('rename and transfer', () => {
   });
 
   it('refuses a publish at a name that has moved', async () => {
-    const app = await withPackage();
-    await app.inject({
-      method: 'POST',
-      url: '/v1/publish',
-      payload: await publishBody('com.acme.other', '1.0.0', 'com.acme'),
-    });
+    const app = await withPackage(true);
     await app.inject({
       method: 'POST',
       url: '/v1/packages/io.github.acme.tool/rename',

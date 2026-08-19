@@ -45,7 +45,7 @@ function manifest(
   } as PackageManifest;
 }
 
-async function publishBody(value: PackageManifest, namespace: string) {
+async function publishBody(value: PackageManifest, _namespace: string) {
   const digest = await canonicalDigest(value as unknown as JsonValue);
   const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
   return {
@@ -61,19 +61,54 @@ async function publishBody(value: PackageManifest, namespace: string) {
         role: 'publisher' as const,
       },
     ],
-    namespaceProof: {
-      namespace,
-      method: 'dns-txt' as const,
-      keyId: 'publisher-1',
-    },
+  };
+}
+
+async function statusBody(
+  name: string,
+  version: string,
+  status: 'active' | 'deprecated' | 'deleted',
+) {
+  const update = {
+    statusUpdateVersion: '1' as const,
+    eventId: `${name}@${version}:${status}`,
+    name,
+    version,
+    status,
+    reason: `test transition to ${status}`,
+    issuedAt: '2026-08-10T00:00:00.000Z',
+  };
+  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+  return {
+    update,
+    updateDigest,
+    signatures: [
+      {
+        algorithm: 'ed25519' as const,
+        keyId: 'publisher-1',
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(updateDigest)),
+        ),
+        role: 'publisher' as const,
+      },
+    ],
   };
 }
 
 function registry(overrides: Record<string, unknown> = {}) {
+  const store =
+    (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
+  store.trustKey(
+    'com.example',
+    'publisher-1',
+    'dns-txt',
+    '2026-08-10T00:00:00.000Z',
+  );
   return createRegistry({
     registryId: 'urn:openpacker:registry:test',
     purlTypes: ['npm'],
-    store: new RegistryStore(),
+    store,
     publisherKeys: { 'publisher-1': keys.leaf! },
     clock: { now: () => '2026-08-10T00:00:00.000Z' },
     ...overrides,
@@ -339,7 +374,7 @@ describe('search', () => {
     await app.inject({
       method: 'PATCH',
       url: '/v1/packages/com.example.parser/versions/1.0.0/status',
-      payload: { status: 'deleted' },
+      payload: await statusBody('com.example.parser', '1.0.0', 'deleted'),
     });
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=parser' })

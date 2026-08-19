@@ -143,6 +143,17 @@ export class RegistryStore {
         redirect_digest TEXT NOT NULL,
         signatures BLOB NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS status_events (
+        event_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        status TEXT NOT NULL,
+        update_digest TEXT NOT NULL,
+        update_document BLOB NOT NULL,
+        signatures BLOB NOT NULL,
+        recorded_at TEXT NOT NULL,
+        FOREIGN KEY (name, version) REFERENCES entries(name, version)
+      ) STRICT;
     `);
     // A registry that predates holder attribution has proofs with no holder.
     // Backfilling on open keeps `GET /v1/holders` honest about history rather
@@ -335,25 +346,92 @@ export class RegistryStore {
     return { entries: filtered, hasMore: rows.length > query.limit };
   }
 
-  setStatus(
-    name: string,
-    version: string,
-    status: EntryStatus,
-    now: string,
-  ): StoredEntry {
-    const existing = this.get(name, version);
+  applyStatus(input: {
+    eventId: string;
+    name: string;
+    version: string;
+    status: EntryStatus;
+    updateDigest: string;
+    update: JsonValue;
+    signatures: readonly unknown[];
+    now: string;
+  }): StoredEntry {
+    const existing = this.get(input.name, input.version);
     if (!existing)
       throw new RegistryStoreError(
         'NOT_FOUND',
-        `${name}@${version} is not published here`,
+        `${input.name}@${input.version} is not published here`,
       );
-    this.#database
+    if (
+      this.#database
+        .prepare('SELECT 1 FROM status_events WHERE event_id = ?')
+        .get(input.eventId)
+    )
+      throw new RegistryStoreError(
+        'EVENT_EXISTS',
+        `Lifecycle event ${input.eventId} was already applied`,
+      );
+
+    this.#database.exec('BEGIN IMMEDIATE');
+    try {
+      this.#database
+        .prepare(
+          `INSERT INTO status_events
+             (event_id, name, version, status, update_digest,
+              update_document, signatures, recorded_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.eventId,
+          input.name,
+          input.version,
+          input.status,
+          input.updateDigest,
+          canonicalBytes(input.update),
+          new TextEncoder().encode(JSON.stringify(input.signatures)),
+          input.now,
+        );
+      this.#database
+        .prepare(
+          'UPDATE entries SET status = ?, updated_at = ? WHERE name = ? AND version = ?',
+        )
+        .run(input.status, input.now, input.name, input.version);
+      this.#recomputeLatest(input.name);
+      this.#database.exec('COMMIT');
+    } catch (error) {
+      this.#database.exec('ROLLBACK');
+      throw error;
+    }
+    return this.get(input.name, input.version)!;
+  }
+
+  /** Carry independently verified namespace authority across a signed rotation. */
+  rotateNamespaceKey(previousKeyId: string, nextKeyId: string): void {
+    const bindings = this.#database
       .prepare(
-        'UPDATE entries SET status = ?, updated_at = ? WHERE name = ? AND version = ?',
+        `SELECT namespace, method, holder_id, verified_at
+         FROM namespace_keys WHERE key_id = ?`,
       )
-      .run(status, now, name, version);
-    this.#recomputeLatest(name);
-    return this.get(name, version)!;
+      .all(previousKeyId) as unknown as {
+      namespace: string;
+      method: string;
+      holder_id: string;
+      verified_at: string;
+    }[];
+    for (const binding of bindings)
+      this.#database
+        .prepare(
+          `INSERT OR REPLACE INTO namespace_keys
+             (namespace, key_id, method, holder_id, verified_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          binding.namespace,
+          nextKeyId,
+          binding.method,
+          binding.holder_id,
+          binding.verified_at,
+        );
   }
 
   serviceability(
