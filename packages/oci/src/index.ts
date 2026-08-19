@@ -385,6 +385,20 @@ export interface RegistryAuthentication {
   ): Promise<Readonly<Record<string, string>>>;
 }
 
+function exactHttpsOrigin(value: string, label: string): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  )
+    throw new TypeError(`${label} must be an exact HTTPS origin`);
+  return url.origin;
+}
+
 /**
  * The token handshake every public OCI registry uses.
  *
@@ -401,6 +415,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
   readonly #tokens = new Map<string, { token: string; expiresAt: number }>();
   readonly #fetch: typeof fetch;
   readonly #credentials: { username: string; password: string } | undefined;
+  readonly #credentialRegistryOrigin: string | undefined;
   readonly #now: () => number;
   readonly #allowedTokenOrigins: ReadonlySet<string>;
 
@@ -424,6 +439,8 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     options: {
       fetch?: typeof fetch;
       credentials?: { username: string; password: string };
+      /** Exact registry origin these credentials authenticate. */
+      registryOrigin?: string;
       now?: () => number;
       /** Extra origins this caller authorizes to receive its credentials. */
       allowedTokenOrigins?: readonly string[];
@@ -431,21 +448,31 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
   ) {
     this.#fetch = options.fetch ?? fetch;
     this.#credentials = options.credentials;
+    const credentialRegistryOrigin = options.registryOrigin
+      ? exactHttpsOrigin(options.registryOrigin, 'OCI registryOrigin')
+      : undefined;
+    this.#credentialRegistryOrigin = credentialRegistryOrigin;
+    if (this.#credentials && !this.#credentialRegistryOrigin)
+      throw new TypeError(
+        'Credentialed OCI authentication requires registryOrigin',
+      );
     this.#now = options.now ?? (() => Date.now());
     this.#allowedTokenOrigins = new Set(
-      (options.allowedTokenOrigins ?? []).map((value) => new URL(value).origin),
+      (options.allowedTokenOrigins ?? []).map((value) =>
+        exactHttpsOrigin(value, 'OCI token origin'),
+      ),
     );
   }
 
   /** Where this registry's credentials may be sent. */
-  #credentialOrigins(requestUrl: URL): ReadonlySet<string> {
+  #credentialOrigins(): ReadonlySet<string> {
+    const registryOrigin = this.#credentialRegistryOrigin!;
     return new Set([
       // A registry issuing its own tokens is the common case and is not a
       // delegation at all.
-      requestUrl.origin,
-      ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[
-        requestUrl.origin
-      ] ?? []),
+      registryOrigin,
+      ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[registryOrigin] ??
+        []),
       ...this.#allowedTokenOrigins,
     ]);
   }
@@ -455,6 +482,14 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     scope: string,
     signal?: AbortSignal,
   ): Promise<Readonly<Record<string, string>>> {
+    if (
+      this.#credentials &&
+      requestUrl.origin !== this.#credentialRegistryOrigin
+    )
+      throw new RegistryProtocolError(
+        'UNAUTHORIZED',
+        `OCI credentials for ${this.#credentialRegistryOrigin} cannot authenticate ${requestUrl.origin}`,
+      );
     const key = `${requestUrl.origin}|${scope}`;
     const cached = this.#tokens.get(key);
     if (cached && cached.expiresAt > this.#now())
@@ -499,7 +534,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       // `realm="https://attacker/token"` and be handed the user's password.
       // The anonymous flow below still follows any HTTPS realm, because it
       // discloses nothing.
-      if (!this.#credentialOrigins(requestUrl).has(tokenUrl.origin))
+      if (!this.#credentialOrigins().has(tokenUrl.origin))
         throw new RegistryProtocolError(
           'UNAUTHORIZED',
           `${requestUrl.origin} asked for credentials to be sent to ${tokenUrl.origin}, ` +
@@ -1075,6 +1110,8 @@ export class OciRegistryClient {
     signal?: AbortSignal,
   ): Promise<OciDescriptor[]> {
     validateOciDescriptor(subject);
+    const maximumReferrers = 1_000;
+    const maximumReferrerManifestBytes = 4 * 1024 * 1024;
     const output: OciDescriptor[] = [];
     const visited = new Set<string>();
     let next: URL | undefined = this.endpoint(
@@ -1108,6 +1145,11 @@ export class OciRegistryClient {
         );
       for (const descriptor of index.manifests)
         validateOciDescriptor(descriptor);
+      if (output.length + index.manifests.length > maximumReferrers)
+        throw new RegistryProtocolError(
+          'PAGINATION_LIMIT',
+          `Registry returned more than ${maximumReferrers} referrers`,
+        );
       output.push(...index.manifests);
       const link = response.headers.get('link');
       const match = link?.match(/<([^>]+)>;\s*rel="?next"?/u);
@@ -1123,6 +1165,43 @@ export class OciRegistryClient {
         'PAGINATION_LIMIT',
         'Registry referrers pagination exceeded 100 pages',
       );
+    for (const descriptor of output) {
+      const pulled = await this.pullManifest(
+        descriptor.digest,
+        maximumReferrerManifestBytes,
+        signal,
+      );
+      const manifest = pulled.manifest;
+      if (
+        pulled.descriptor.digest !== descriptor.digest ||
+        pulled.descriptor.size !== descriptor.size ||
+        pulled.descriptor.mediaType !== descriptor.mediaType
+      )
+        throw new RegistryProtocolError(
+          'INVALID_RESPONSE',
+          `Referrers index descriptor does not match ${descriptor.digest}`,
+        );
+      if (
+        !manifest.subject ||
+        manifest.subject.digest !== subject.digest ||
+        manifest.subject.size !== subject.size ||
+        manifest.subject.mediaType !== subject.mediaType
+      )
+        throw new RegistryProtocolError(
+          'INVALID_RESPONSE',
+          `Referrer ${descriptor.digest} does not bind the requested subject`,
+        );
+      if (
+        (artifactType !== undefined &&
+          manifest.artifactType !== artifactType) ||
+        (descriptor.artifactType !== undefined &&
+          manifest.artifactType !== descriptor.artifactType)
+      )
+        throw new RegistryProtocolError(
+          'INVALID_RESPONSE',
+          `Referrer ${descriptor.digest} does not bind the requested artifact type`,
+        );
+    }
     return output.sort((left, right) =>
       compareCanonicalStrings(left.digest, right.digest),
     );
