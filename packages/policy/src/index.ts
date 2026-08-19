@@ -308,6 +308,12 @@ export async function evaluatePolicy(
       message,
     });
   if (!facts.lifecycle) {
+    // `not-applicable` would be the honest status for a path source, but the
+    // aggregate decision treats every non-`valid` check as indeterminate
+    // ("required evidence is valid-only"), so emitting it would fail-close
+    // local path installs that carry no registry lifecycle by construction.
+    // `valid` here means "no lifecycle gate applies", not "a registry said
+    // this release is eligible".
     checks.push({
       code: 'lifecycle.eligibility',
       status: facts.sourceKind === 'path' ? 'valid' : 'not-provided',

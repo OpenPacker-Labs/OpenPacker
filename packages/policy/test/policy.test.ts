@@ -211,6 +211,47 @@ test('minimumReleaseAge does not apply to local path sources', async () => {
   );
 });
 
+test('path source without lifecycle reports lifecycle.eligibility valid, meaning no gate applies', async () => {
+  // Pins the deliberate choice documented at the check: `not-applicable`
+  // exists in the evidence vocabulary, but the aggregate decision treats any
+  // non-`valid` check as indeterminate, so it would fail-close local path
+  // installs that carry no registry lifecycle by construction. `valid` here
+  // means "no lifecycle gate applies", not "a registry attested eligibility".
+  const result = await evaluatePolicy(baseSupply, {
+    evidence: [],
+    packageId: 'pkg:npm/local-tool',
+    sourceKind: 'path',
+    evaluationTime: '2026-08-04T00:00:00Z',
+  });
+  expect(result.decision).toBe('allow');
+  expect(result.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'lifecycle.eligibility',
+        status: 'valid',
+        message: 'Registry lifecycle does not apply to a local path source',
+      }),
+    ]),
+  );
+  // A non-path source without lifecycle is the opposite: not-provided, and
+  // the decision fails closed.
+  const remote = await evaluatePolicy(baseSupply, {
+    evidence: [],
+    packageId: 'pkg:npm/remote-tool',
+    sourceKind: 'tarball',
+    evaluationTime: '2026-08-04T00:00:00Z',
+  });
+  expect(remote.decision).toBe('indeterminate');
+  expect(remote.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'lifecycle.eligibility',
+        status: 'not-provided',
+      }),
+    ]),
+  );
+});
+
 test('trustPolicy no-downgrade refuses unsigned after trusted-publisher', async () => {
   expect(TRUST_TIER_RANK['trusted-publisher']).toBeGreaterThan(
     TRUST_TIER_RANK.unsigned,
