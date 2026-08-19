@@ -370,9 +370,32 @@ test('lifecycle script execution is denied unless allowlisted', async () => {
       lifecycle: eligible,
       packageId: 'pkg:npm/esbuild',
       lifecycleScriptsExecuted: true,
+      sandboxEnforced: true,
+      sandboxBackend: 'bubblewrap',
     },
   );
   expect(allowlisted.decision).toBe('allow');
+
+  const missingSandboxEvidence = await evaluatePolicy(
+    {
+      ...baseSupply,
+      allowLifecycleScripts: false,
+      allowedLifecycleScriptPackages: ['pkg:npm/esbuild'],
+    },
+    {
+      evidence: [],
+      lifecycle: eligible,
+      packageId: 'pkg:npm/esbuild',
+      lifecycleScriptsExecuted: true,
+    },
+  );
+  expect(missingSandboxEvidence.decision).toBe('indeterminate');
+  expect(missingSandboxEvidence.checks).toContainEqual(
+    expect.objectContaining({
+      code: 'sandbox.enforcement',
+      status: 'not-provided',
+    }),
+  );
 
   const declaredOnly = await evaluatePolicy(
     { ...baseSupply, allowLifecycleScripts: false },
@@ -633,6 +656,8 @@ test('a lifecycle-script allowlist does not extend to look-alike names', async (
     lifecycle: eligible,
     packageId,
     lifecycleScriptsExecuted: true,
+    sandboxEnforced: true,
+    sandboxBackend: 'bubblewrap' as const,
   });
   expect((await evaluatePolicy(policy, ran('pkg:npm/esbuild'))).decision).toBe(
     'allow',

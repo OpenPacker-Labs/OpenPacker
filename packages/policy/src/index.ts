@@ -623,12 +623,17 @@ export async function evaluatePolicy(
   const sandboxMode = policy.sandboxMode ?? 'fail-closed';
   const sandboxRequired =
     policy.sandboxRequired ?? sandboxMode === 'fail-closed';
-  if (
-    facts.sandboxEnforced === false &&
-    (facts.lifecycleScriptsExecuted === true ||
-      facts.sandboxBackend === 'none' ||
-      facts.sandboxDegraded === true)
-  ) {
+  const sandboxEvidenceRequired =
+    facts.lifecycleScriptsExecuted === true ||
+    facts.sandboxBackend === 'none' ||
+    facts.sandboxDegraded === true;
+  if (sandboxEvidenceRequired && facts.sandboxEnforced === undefined) {
+    checks.push({
+      code: 'sandbox.enforcement',
+      status: 'not-provided',
+      message: 'Execution occurred without sandbox enforcement evidence',
+    });
+  } else if (facts.sandboxEnforced === false && sandboxEvidenceRequired) {
     if (sandboxMode === 'off') {
       checks.push({
         code: 'sandbox.disabled',
