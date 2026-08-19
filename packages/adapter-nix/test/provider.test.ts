@@ -13,6 +13,7 @@ import {
 // nixbase32 excludes e, o, u and t; this is the alphabet itself.
 const OUT = '0123456789abcdfghijklmnpqrsvwxyz';
 const LIBC = 'c9dd4k6m8p0r2v6x8z0b2d4f6h8j0l1n';
+const findNix = async () => 'nix';
 
 function nix(responses: Record<string, string>) {
   const calls: string[][] = [];
@@ -101,7 +102,11 @@ describe('resolution is delegated to nix', () => {
     // --recursive is what makes this dependency resolution: nix has already
     // computed the graph, and the useful thing is to record it.
     const { calls, execute } = nix(withRealise(closureJson));
-    const closure = await new NixStoreProvider(execute).closure('nixpkgs#jq');
+    const closure = await new NixStoreProvider(
+      execute,
+      new NixCodec(),
+      findNix,
+    ).closure('nixpkgs#jq');
     expect(calls[0]?.[0]).toBe('nix');
     expect(calls[0]).toContain('build');
     expect(calls[0]).toContain('--no-link');
@@ -116,7 +121,9 @@ describe('resolution is delegated to nix', () => {
 
   it('accepts a PURL and realises the mapped installable', async () => {
     const { calls, execute } = nix(withRealise(closureJson));
-    await new NixStoreProvider(execute).closure('pkg:nix/jq');
+    await new NixStoreProvider(execute, new NixCodec(), findNix).closure(
+      'pkg:nix/jq',
+    );
     expect(calls[0]).toContain('nixpkgs#jq');
   });
 
@@ -124,6 +131,8 @@ describe('resolution is delegated to nix', () => {
     const { execute } = nix(withRealise(closureJson));
     const { instances, semanticLoss } = await new NixStoreProvider(
       execute,
+      new NixCodec(),
+      findNix,
     ).resolve('nixpkgs#jq');
     expect(instances).toHaveLength(2);
     // Nix did the solving; the record must say so rather than implying
@@ -145,7 +154,11 @@ describe('resolution is delegated to nix', () => {
       ),
     );
     expect(
-      (await new NixStoreProvider(execute).closure('nixpkgs#jq')).length,
+      (
+        await new NixStoreProvider(execute, new NixCodec(), findNix).closure(
+          'nixpkgs#jq',
+        )
+      ).length,
     ).toBe(1);
   });
 

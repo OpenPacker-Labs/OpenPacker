@@ -139,8 +139,14 @@ export class WingetSystemProvider implements InstallerProvider {
     signal?: AbortSignal,
   ): Promise<readonly string[]> {
     const { id } = wingetId(exactPurl);
+    const executable = await this.findExecutable('winget');
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'winget was not found in a trusted host directory',
+      );
     const { stdout } = await this.execute(
-      'winget',
+      executable,
       ['show', '--id', id, '--exact', '--versions', '--disable-interactivity'],
       signal ? { signal } : {},
     );

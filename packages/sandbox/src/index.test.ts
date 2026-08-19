@@ -1,5 +1,12 @@
 import { constants } from 'node:fs';
-import { chmod, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +20,7 @@ import {
   createMockBackend,
   digestSandboxPolicy,
   findTrustedSandboxHelper,
+  findHostExecutable,
   isDeniedCredential,
   isPathInside,
   JailPathError,
@@ -35,6 +43,21 @@ import {
 } from './index.js';
 
 describe('@openpacker/sandbox', () => {
+  it('does not trust a package-manager executable from project PATH', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'opm-host-path-'));
+    const name = `opm-project-manager-${process.pid}`;
+    try {
+      const executable = join(directory, name);
+      await writeFile(executable, '#!/bin/sh\n');
+      await chmod(executable, 0o755);
+      await expect(
+        findHostExecutable(name, { PATH: directory }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('defaults to fail-closed and auto prefer', () => {
     const resolved = resolvePolicy({});
     expect(resolved.mode).toBe('fail-closed');

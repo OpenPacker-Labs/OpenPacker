@@ -148,8 +148,9 @@ export class NixStoreProvider implements InstallerProvider {
     flake = 'nixpkgs',
     signal?: AbortSignal,
   ): Promise<{ attribute: string; version?: string; description?: string }[]> {
+    const executable = await this.nativeExecutable();
     const { stdout } = await this.execute(
-      'nix',
+      executable,
       [
         'search',
         assertInstallable(flake),
@@ -185,10 +186,11 @@ export class NixStoreProvider implements InstallerProvider {
     signal?: AbortSignal,
   ): Promise<{ path: string; references: string[]; narSize?: number }[]> {
     const target = installableFromPurl(installable);
+    const executable = await this.nativeExecutable();
     const opts = signal ? { signal } : {};
     // Realise into the store (idempotent when already present).
     await this.execute(
-      'nix',
+      executable,
       [
         'build',
         target,
@@ -199,7 +201,7 @@ export class NixStoreProvider implements InstallerProvider {
       opts,
     );
     const { stdout } = await this.execute(
-      'nix',
+      executable,
       [
         'path-info',
         target,
@@ -222,6 +224,16 @@ export class NixStoreProvider implements InstallerProvider {
       references: value?.references ?? [],
       ...(value?.narSize === undefined ? {} : { narSize: value.narSize }),
     }));
+  }
+
+  private async nativeExecutable(): Promise<string> {
+    const executable = await this.findExecutable('nix');
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'nix was not found in a trusted host directory',
+      );
+    return executable;
   }
 
   /** PREX instances for an installable (or PURL) and everything it needs. */

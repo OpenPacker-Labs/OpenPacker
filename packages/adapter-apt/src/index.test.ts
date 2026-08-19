@@ -68,13 +68,14 @@ describe('availability', () => {
 it('parses installed and candidate versions from apt-cache', async () => {
   const apt = new AptSystemProvider(
     fakeApt({
-      'apt-cache policy curl': {
+      '/usr/bin/apt-cache policy curl': {
         stdout:
           '  Installed: 8.5.0-2ubuntu10.11\n  Candidate: 8.5.0-2ubuntu10.12',
       },
     }).execute,
     linux,
     () => false,
+    async (name) => `/usr/bin/${name}`,
   );
   expect(await apt.versions('curl')).toEqual({
     installed: '8.5.0-2ubuntu10.11',

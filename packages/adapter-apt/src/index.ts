@@ -159,8 +159,10 @@ export class AptSystemProvider implements InstallerProvider {
     name: string,
     signal?: AbortSignal,
   ): Promise<{ candidate?: string; installed?: string }> {
+    const aptCache = await this.findExecutable('apt-cache');
+    if (!aptCache) return {};
     const { stdout } = await this.execute(
-      'apt-cache',
+      aptCache,
       ['policy', aptName(`pkg:deb/${name}`).name],
       signal ? { signal } : {},
     );
