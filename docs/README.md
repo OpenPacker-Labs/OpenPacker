@@ -59,15 +59,16 @@ API detail.
 
 ## Operations and security
 
-| Document                                                           | Subject                       |
-| ------------------------------------------------------------------ | ----------------------------- |
-| [Storage and deployment](operations/storage-deployment.md)         | CAS, SQLite, binding          |
-| [Trust and policy](operations/trust-lifecycle-policy.md)           | Evidence vs decisions         |
-| [Threat model](security/threat-model.md)                           | Security assumptions          |
-| [Supply chain](security/supply-chain.md)                           | Capture + mitigate attacks    |
-| [Codex Security](security/codex-security.md)                       | Local AI security scan        |
-| [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates      |
-| [ADRs](adr/README.md)                                              | Stable architecture decisions |
+| Document                                                           | Subject                          |
+| ------------------------------------------------------------------ | -------------------------------- |
+| [Storage and deployment](operations/storage-deployment.md)         | CAS, SQLite, binding             |
+| [Trust and policy](operations/trust-lifecycle-policy.md)           | Evidence vs decisions            |
+| [Threat model](security/threat-model.md)                           | Security assumptions             |
+| [Supply chain](security/supply-chain.md)                           | Capture + mitigate attacks       |
+| [Codex Security](security/codex-security.md)                       | Local AI security scan           |
+| [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates         |
+| [Testing strategy](guides/testing.md)                              | Test-type matrix and authorities |
+| [ADRs](adr/README.md)                                              | Stable architecture decisions    |
 
 ## Agent SDLC
 
