@@ -39,6 +39,9 @@ export function serializeLockfile(lock: OpmLockfile): string {
     {
       schemaVersion: lock.schemaVersion,
       generatedBy: lock.generatedBy,
+      ...(lock.manifestDigest === undefined
+        ? {}
+        : { manifestDigest: lock.manifestDigest }),
       packages,
     },
     null,
@@ -88,6 +91,9 @@ export function parseLockfile(text: string): OpmLockfile {
   return {
     schemaVersion: 1,
     generatedBy: 'opm',
+    ...(typeof record.manifestDigest === 'string'
+      ? { manifestDigest: record.manifestDigest }
+      : {}),
     packages,
   };
 }
@@ -180,8 +186,19 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       'INVALID_LOCK',
       `Package "${alias}" has invalid lifecycle`,
     );
+  if (
+    pkg.dependencies !== undefined &&
+    (!Array.isArray(pkg.dependencies) ||
+      pkg.dependencies.some(
+        (dependency) => typeof dependency !== 'string' || dependency === '',
+      ))
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid dependencies`,
+    );
   return {
-    alias: typeof pkg.alias === 'string' ? pkg.alias : alias,
+    alias,
     purl: requiredString('purl'),
     version: requiredString('version'),
     digest: requiredString('digest'),
@@ -193,6 +210,9 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     bins,
     reason,
     ecosystem: requiredString('ecosystem'),
+    ...(Array.isArray(pkg.dependencies)
+      ? { dependencies: [...new Set(pkg.dependencies as string[])].sort() }
+      : {}),
     ...(isTrustTier(pkg.trustLevel) ? { trustLevel: pkg.trustLevel } : {}),
     ...(typeof pkg.publishedAt === 'string'
       ? { publishedAt: pkg.publishedAt }

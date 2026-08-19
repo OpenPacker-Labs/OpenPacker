@@ -32,6 +32,7 @@ import {
   listGenerations,
   readEnvironmentState,
   readProjectState,
+  readLockfile,
   recordGeneration,
   rollbackTarget,
   switchGeneration,
@@ -51,6 +52,7 @@ import {
   syncProject,
   uninstallProject,
   writeBinShims,
+  writeLockfile,
   discoverBins,
   whyPackage,
   OpmError,
@@ -1027,6 +1029,48 @@ describe('environment generations', () => {
     const paths = projectPaths(root);
     const manifest = parseManifest(await readFile(paths.manifest, 'utf8'));
     manifest.packages = {};
+    await writeFile(paths.manifest, serializeManifest(manifest));
+
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      { code: 'INVALID_LOCK' },
+    );
+  });
+
+  it('rejects an existing lock package outside the manifest dependency closure', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const paths = projectPaths(root);
+    const lock = await readLockfile(paths.lock);
+    if (!lock) throw new Error('expected lock');
+    const direct = lock.packages['demo-tool']!;
+    lock.packages.intruder = {
+      ...direct,
+      alias: 'intruder',
+      purl: 'pkg:npm/intruder@1.0.0',
+      reason: 'transitive',
+      dependencies: [],
+    };
+    await writeLockfile(paths.lock, lock);
+
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      { code: 'INVALID_LOCK' },
+    );
+  });
+
+  it('rejects an existing lock after its committed policy changes', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const paths = projectPaths(root);
+    const manifest = parseManifest(await readFile(paths.manifest, 'utf8'));
+    manifest.policy = { ...manifest.policy, allowYanked: true };
     await writeFile(paths.manifest, serializeManifest(manifest));
 
     await expect(installProject({ root, offline: true })).rejects.toMatchObject(

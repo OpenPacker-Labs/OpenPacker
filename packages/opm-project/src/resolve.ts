@@ -614,6 +614,7 @@ export async function solveGraph(input: {
   >;
 }): Promise<{
   selected: PackageInstance[];
+  dependencyEdges: { fromNodeId: string; toNodeId: string }[];
   solutionDigest: string;
   proofValid: boolean;
 }> {
@@ -699,12 +700,50 @@ export async function solveGraph(input: {
   const byNodeId = new Map(
     input.graph.packages.map((instance) => [instance.nodeId, instance]),
   );
+  const selected = solved.solution.selectedNodeIds
+    .map((nodeId) => byNodeId.get(nodeId))
+    .filter((instance): instance is PackageInstance => instance !== undefined);
+  const selectedByPurl = new Map<string, PackageInstance>();
+  for (const instance of selected) {
+    const exact = instance.identity.exactPurl;
+    if (exact === undefined)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        'Selected package lacks an exact PURL',
+      );
+    const base = stripPurlVersion(exact);
+    if (selectedByPurl.has(base))
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `Selected closure contains multiple versions of ${base}`,
+      );
+    selectedByPurl.set(base, instance);
+  }
+  const dependencyEdges: { fromNodeId: string; toNodeId: string }[] = [];
+  for (const instance of selected)
+    for (const requirement of instance.requirements ?? []) {
+      if (
+        requirement.optional ||
+        !INSTALLED_KINDS.has(requirement.kind) ||
+        requirement.expression.type !== 'package'
+      )
+        continue;
+      const dependency = selectedByPurl.get(
+        stripPurlVersion(requirement.expression.purl),
+      );
+      if (dependency === undefined)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected closure omits required package ${requirement.expression.purl}`,
+        );
+      dependencyEdges.push({
+        fromNodeId: instance.nodeId,
+        toNodeId: dependency.nodeId,
+      });
+    }
   return {
-    selected: solved.solution.selectedNodeIds
-      .map((nodeId) => byNodeId.get(nodeId))
-      .filter(
-        (instance): instance is PackageInstance => instance !== undefined,
-      ),
+    selected,
+    dependencyEdges,
     solutionDigest: solved.solution.solutionDigest as unknown as string,
     proofValid: checked.valid,
   };

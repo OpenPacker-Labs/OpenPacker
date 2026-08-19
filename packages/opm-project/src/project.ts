@@ -322,12 +322,27 @@ export async function removePackage(input: {
   await writeManifestFile(paths.manifest, manifest);
 
   const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
-  delete lock.packages[input.alias];
+  const previousAliases = Object.keys(lock.packages);
+  const removed = lock.packages[input.alias];
+  if (removed) removed.reason = 'transitive';
+  const reachable = new Set(Object.keys(manifest.packages));
+  const queue = [...reachable];
+  while (queue.length > 0) {
+    const pkg = lock.packages[queue.shift()!];
+    for (const dependency of pkg?.dependencies ?? [])
+      if (!reachable.has(dependency)) {
+        reachable.add(dependency);
+        queue.push(dependency);
+      }
+  }
+  for (const alias of previousAliases)
+    if (!reachable.has(alias)) delete lock.packages[alias];
+  lock.manifestDigest = manifestDigest(manifest);
   await writeLockfile(paths.lock, lock);
 
   const state = await uninstallPackages({
     root: input.root,
-    aliases: [input.alias],
+    aliases: previousAliases.filter((alias) => !lock.packages[alias]),
   });
 
   // Removing from opm.toml and leaving the entry in package.json would let the
@@ -433,6 +448,11 @@ function assertLockMatchesManifest(
   manifest: OpmManifest,
   lock: OpmLockfile,
 ): void {
+  if (lock.manifestDigest !== manifestDigest(manifest))
+    throw new OpmError(
+      'INVALID_LOCK',
+      'Lock was not produced from the current manifest and policy',
+    );
   for (const [alias, requirement] of Object.entries(manifest.packages)) {
     const pkg = lock.packages[alias];
     if (!pkg || pkg.reason !== 'direct')
@@ -473,6 +493,36 @@ function assertLockMatchesManifest(
         'INVALID_LOCK',
         `Lock contains undeclared direct package ${alias}`,
       );
+
+  const reachable = new Set(Object.keys(manifest.packages));
+  const queue = [...reachable];
+  while (queue.length > 0) {
+    const alias = queue.shift()!;
+    const pkg = lock.packages[alias];
+    if (!pkg)
+      throw new OpmError('INVALID_LOCK', `Lock dependency ${alias} is missing`);
+    for (const dependency of pkg.dependencies ?? []) {
+      if (!lock.packages[dependency])
+        throw new OpmError(
+          'INVALID_LOCK',
+          `Lock dependency ${alias} -> ${dependency} is missing`,
+        );
+      if (!reachable.has(dependency)) {
+        reachable.add(dependency);
+        queue.push(dependency);
+      }
+    }
+  }
+  for (const alias of Object.keys(lock.packages))
+    if (!reachable.has(alias))
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock contains package ${alias} outside the manifest dependency closure`,
+      );
+}
+
+function manifestDigest(manifest: OpmManifest): string {
+  return digestOf(new TextEncoder().encode(serializeManifest(manifest)));
 }
 
 function normalizedRequirementSource(source: string, root: string): string {
@@ -577,6 +627,7 @@ export async function resolveManifestToLock(input: {
 
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
+  lock.manifestDigest = manifestDigest(input.manifest);
   const priorLock = await readLockfile(paths.lock);
 
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
@@ -612,8 +663,14 @@ export async function resolveManifestToLock(input: {
         ? {}
         : { registryOptions: input.registryOptions }),
     });
-    for (const [alias, pkg] of Object.entries(transitive))
+    for (const [alias, pkg] of Object.entries(transitive.packages))
       if (!lock.packages[alias]) lock.packages[alias] = pkg;
+    for (const [alias, dependencies] of Object.entries(
+      transitive.dependencies,
+    )) {
+      const pkg = lock.packages[alias];
+      if (pkg) pkg.dependencies = dependencies;
+    }
   }
   return lock;
 }
@@ -657,15 +714,19 @@ async function resolveTransitive(input: {
   manifest: OpmManifest;
   priorLock?: OpmLockfile | undefined;
   registryOptions?: RegistryOptions | undefined;
-}): Promise<Record<string, LockPackage>> {
+}): Promise<{
+  packages: Record<string, LockPackage>;
+  dependencies: Record<string, string[]>;
+}> {
   const resolvable = input.direct.filter((pkg) =>
     requireAdapterRegistry().has(pkg.ecosystem),
   );
-  if (resolvable.length === 0) return {};
+  if (resolvable.length === 0) return { packages: {}, dependencies: {} };
 
   const policy = projectPolicyDocument(input.manifest);
   const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
+  const dependencies: Record<string, string[]> = {};
   try {
     const optionsFor = (ecosystem: string) =>
       registryOptionsForEcosystem(
@@ -682,7 +743,7 @@ async function resolveTransitive(input: {
       })),
       optionsFor,
     });
-    if (graph.packages.length === 0) return {};
+    if (graph.packages.length === 0) return { packages: {}, dependencies: {} };
 
     const solved = await solveGraph({
       graph,
@@ -709,6 +770,11 @@ async function resolveTransitive(input: {
       const exact = instance.identity.exactPurl;
       if (exact === undefined || directPurls.has(exact)) continue;
       const alias = aliasForPurl(exact);
+      if (out[alias] && out[alias].purl !== exact)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected packages collide on lock alias ${alias}`,
+        );
       if (out[alias]) continue;
       // `inspect` describes a package; the downloadable artifact and its
       // published digest come from the artifact record, which is what the
@@ -782,6 +848,38 @@ async function resolveTransitive(input: {
         ...lockPackageSupplyChainFields(facts),
       };
     }
+
+    const aliasByNodeId = new Map<string, string>();
+    const directByPurl = new Map(
+      input.direct.map((pkg) => [pkg.purl, pkg.alias]),
+    );
+    for (const instance of solved.selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined) continue;
+      const alias = directByPurl.get(exact) ?? aliasForPurl(exact);
+      const pkg =
+        input.direct.find((candidate) => candidate.alias === alias) ??
+        out[alias];
+      if (pkg === undefined || pkg.purl !== exact)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected package ${exact} has no unique lock entry`,
+        );
+      aliasByNodeId.set(instance.nodeId, alias);
+      dependencies[alias] ??= [];
+    }
+    for (const edge of solved.dependencyEdges) {
+      const from = aliasByNodeId.get(edge.fromNodeId);
+      const to = aliasByNodeId.get(edge.toNodeId);
+      if (from === undefined || to === undefined)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          'Selected dependency edge has no lock entry',
+        );
+      dependencies[from]!.push(to);
+    }
+    for (const alias of Object.keys(dependencies))
+      dependencies[alias] = [...new Set(dependencies[alias])].sort();
   } catch (error) {
     // Soft-fail at the project boundary: a transitive walk must not make a
     // previously installable direct set unusable. Unit tests exercise the
@@ -797,9 +895,9 @@ async function resolveTransitive(input: {
         error.code === 'SIZE_MISMATCH')
     )
       throw error;
-    return {};
+    return { packages: {}, dependencies: {} };
   }
-  return out;
+  return { packages: out, dependencies };
 }
 
 /** A filesystem-safe alias for a transitive package. */

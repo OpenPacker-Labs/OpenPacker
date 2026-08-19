@@ -346,6 +346,10 @@ describe('supply-chain policy over the transitive closure', () => {
         );
         expect(alpha?.reason).toBe('transitive');
         expect(alpha?.sourceKind).toBe('registry');
+        expect(lock.packages['demo-tool']?.dependencies).toEqual(
+          expect.arrayContaining(['alpha', 'beta', 'gamma']),
+        );
+        expect(alpha?.dependencies).toEqual([]);
       });
     } finally {
       await rm(root, { recursive: true, force: true });

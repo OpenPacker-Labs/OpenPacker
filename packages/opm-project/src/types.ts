@@ -127,6 +127,8 @@ export interface LockPackage {
   bins: readonly BinDeclaration[];
   reason: 'direct' | 'transitive';
   ecosystem: string;
+  /** Lock aliases this package requires in the selected closure. */
+  dependencies?: readonly string[];
   /** Captured trust tier for no-downgrade on upgrade. */
   trustLevel?: TrustTier;
   /** Registry-reported publish time when captured. */
@@ -159,6 +161,8 @@ export interface NativeIntegrity {
 export interface OpmLockfile {
   schemaVersion: 1;
   generatedBy: 'opm';
+  /** Digest of the exact manifest and policy that produced this lock. */
+  manifestDigest?: string;
   packages: Record<string, LockPackage>;
 }
 
