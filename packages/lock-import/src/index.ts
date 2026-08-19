@@ -340,46 +340,45 @@ export function parsePnpmLock(text: string): {
       'INVALID_LOCKFILE',
       `Unsupported pnpm lockfileVersion "${version}"; only version 9 is supported.`,
     );
-  if (!document.packages || typeof document.packages !== 'object')
+  if (
+    !document.packages ||
+    typeof document.packages !== 'object' ||
+    Array.isArray(document.packages)
+  )
     throw new ProviderError(
       'INVALID_LOCKFILE',
       'pnpm-lock.yaml has no packages section',
     );
-  const contextualSnapshot = Object.keys(document.snapshots ?? {}).find((key) =>
-    key.includes('('),
-  );
-  if (contextualSnapshot)
-    throw new ProviderError(
-      'INVALID_LOCKFILE',
-      `pnpm peer context cannot be represented losslessly: ${contextualSnapshot}`,
-    );
 
-  const packages: Record<
-    string,
-    { version: string; resolved?: string; integrity?: string }
-  > = {};
-  for (const [key, value] of Object.entries(document.packages)) {
-    // Peer-dependency suffixes like `(react@18.0.0)` describe how a package was
-    // resolved, not which package it is.
+  const parsePackageKey = (key: string): { name: string; version: string } => {
     if (key.includes('('))
       throw new ProviderError(
         'INVALID_LOCKFILE',
         `pnpm peer context cannot be represented losslessly: ${key}`,
       );
-    const identifier = key;
-    const at = identifier.lastIndexOf('@');
+    const at = key.lastIndexOf('@');
     if (at <= 0)
       throw new ProviderError(
         'INVALID_LOCKFILE',
         `pnpm-lock.yaml contains an unsupported package key: ${key}`,
       );
-    const name = identifier.slice(0, at);
-    const packageVersion = identifier.slice(at + 1);
+    const name = key.slice(0, at);
+    const packageVersion = key.slice(at + 1);
     if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name) || !/^[0-9]/u.test(packageVersion))
       throw new ProviderError(
         'INVALID_LOCKFILE',
         `pnpm-lock.yaml contains an unsupported package key: ${key}`,
       );
+    return { name, version: packageVersion };
+  };
+
+  const packages: Record<
+    string,
+    { version: string; resolved?: string; integrity?: string }
+  > = {};
+  const packageKeys = new Set<string>();
+  for (const [key, value] of Object.entries(document.packages)) {
+    const { name, version: packageVersion } = parsePackageKey(key);
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
     const installPath = `node_modules/${name}`;
@@ -397,6 +396,26 @@ export function parsePnpmLock(text: string): {
         ? { integrity: value.resolution.integrity }
         : {}),
     };
+    packageKeys.add(key);
+  }
+  if (document.snapshots !== undefined) {
+    if (
+      document.snapshots === null ||
+      typeof document.snapshots !== 'object' ||
+      Array.isArray(document.snapshots)
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        'pnpm-lock.yaml snapshots must be a mapping',
+      );
+    for (const key of Object.keys(document.snapshots)) {
+      parsePackageKey(key);
+      if (!packageKeys.has(key))
+        throw new ProviderError(
+          'INVALID_LOCKFILE',
+          `pnpm-lock.yaml snapshot has no matching package: ${key}`,
+        );
+    }
   }
   if (Object.keys(packages).length === 0)
     throw new ProviderError(

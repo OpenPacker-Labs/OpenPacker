@@ -248,6 +248,28 @@ describe('pnpm-lock.yaml import', () => {
     ).toThrow(/unsupported package key/u);
   });
 
+  it('refuses malformed or unbound snapshot selections', () => {
+    for (const snapshots of [
+      "['react-dom@18.2.0(react@18.2.0)']",
+      "'react-dom@18.2.0(react@18.2.0)'",
+    ])
+      expect(() =>
+        parsePnpmLock(
+          `lockfileVersion: '9.0'\npackages:\n  'react-dom@18.2.0': {}\nsnapshots: ${snapshots}\n`,
+        ),
+      ).toThrow(/snapshots must be a mapping/u);
+    expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'a@1.0.0': {}\nsnapshots:\n  'a@1.0.0': {}\n  local-malformed: {}\n",
+      ),
+    ).toThrow(/unsupported package key/u);
+    expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'a@1.0.0': {}\nsnapshots:\n  'b@1.0.0': {}\n",
+      ),
+    ).toThrow(/no matching package/u);
+  });
+
   it('is detected from its version and packages sections', () => {
     expect(
       detectLockFormat(
