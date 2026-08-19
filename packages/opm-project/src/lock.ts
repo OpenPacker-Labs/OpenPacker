@@ -1,5 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { parseCanonicalJson } from '@openpacker/canonical';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
+import { readStableFile, writeStableFile } from './paths.js';
 import type { LockPackage, OpmLockfile } from './types.js';
 import { OpmError } from './types.js';
 
@@ -52,7 +53,7 @@ export function serializeLockfile(lock: OpmLockfile): string {
 export function parseLockfile(text: string): OpmLockfile {
   let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    value = parseCanonicalJson(text);
   } catch (error) {
     throw new OpmError(
       'INVALID_LOCK',
@@ -242,7 +243,7 @@ export async function readLockfile(
   path: string,
 ): Promise<OpmLockfile | undefined> {
   try {
-    return parseLockfile(await readFile(path, 'utf8'));
+    return parseLockfile(await readStableFile(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -253,5 +254,5 @@ export async function writeLockfile(
   path: string,
   lock: OpmLockfile,
 ): Promise<void> {
-  await writeFile(path, serializeLockfile(lock), 'utf8');
+  await writeStableFile(path, serializeLockfile(lock));
 }

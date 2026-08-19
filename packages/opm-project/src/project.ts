@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type {
   LockPackage,
@@ -54,7 +54,9 @@ import {
   MANIFEST_NAME,
   parentDirs,
   projectPaths,
+  readStableFile,
   storeKeyFromDigest,
+  writeStableFile,
 } from './paths.js';
 import {
   ecosystemFromPurl,
@@ -124,7 +126,7 @@ export async function initProject(input: {
   const name = input.name ?? defaultName(input.root);
   const manifest = defaultManifest(name);
   await mkdir(paths.root, { recursive: true });
-  await writeFile(paths.manifest, serializeManifest(manifest), 'utf8');
+  await writeStableFile(paths.manifest, serializeManifest(manifest));
   await ensureStableDirectory(paths.opmDir);
   await ensureStableDirectory(paths.store);
   await ensureStableDirectory(paths.bin);
@@ -147,14 +149,14 @@ function defaultName(root: string): string {
 }
 
 export async function readManifestFile(path: string): Promise<OpmManifest> {
-  return parseManifest(await readFile(path, 'utf8'));
+  return parseManifest(await readStableFile(path));
 }
 
 export async function writeManifestFile(
   path: string,
   manifest: OpmManifest,
 ): Promise<void> {
-  await writeFile(path, serializeManifest(manifest), 'utf8');
+  await writeStableFile(path, serializeManifest(manifest));
 }
 
 export async function addPackage(input: {

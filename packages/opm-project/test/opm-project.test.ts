@@ -33,6 +33,7 @@ import {
   readEnvironmentState,
   readProjectState,
   readLockfile,
+  readManifestFile,
   recordGeneration,
   rollbackTarget,
   switchGeneration,
@@ -53,6 +54,7 @@ import {
   uninstallProject,
   writeBinShims,
   writeLockfile,
+  writeManifestFile,
   discoverBins,
   whyPackage,
   OpmError,
@@ -355,6 +357,37 @@ describe('fail-closed install paths', () => {
       code: 'UNSAFE_PATH',
     });
     expect(await readFile(outside, 'utf8')).toBe('outside');
+  });
+
+  it('replaces linked manifest and lock files without reading or writing their targets', async () => {
+    const root = await tempProject();
+    const manifestPath = join(root, 'opm.toml');
+    const lockPath = join(root, 'opm.lock.json');
+    const manifest = await readManifestFile(manifestPath);
+    const lock = await readLockfile(lockPath);
+    if (!lock) throw new Error('expected lock');
+    const outsideManifest = join(root, 'outside-manifest');
+    const outsideLock = join(root, 'outside-lock');
+    await writeFile(outsideManifest, 'outside manifest');
+    await writeFile(outsideLock, 'outside lock');
+    await rm(manifestPath);
+    await rm(lockPath);
+    await symlink(outsideManifest, manifestPath);
+    await symlink(outsideLock, lockPath);
+
+    await expect(readManifestFile(manifestPath)).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    await expect(readLockfile(lockPath)).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    await writeManifestFile(manifestPath, manifest);
+    await writeLockfile(lockPath, lock);
+
+    expect((await lstat(manifestPath)).isFile()).toBe(true);
+    expect((await lstat(lockPath)).isFile()).toBe(true);
+    expect(await readFile(outsideManifest, 'utf8')).toBe('outside manifest');
+    expect(await readFile(outsideLock, 'utf8')).toBe('outside lock');
   });
 
   it.each(['bin', 'links'])(
