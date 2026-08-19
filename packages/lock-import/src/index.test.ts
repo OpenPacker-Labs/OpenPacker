@@ -339,4 +339,50 @@ describe('poetry.lock import', () => {
       ),
     ).toThrow(/missing a string name or version/u);
   });
+
+  it('refuses names that do not normalise to a PyPI distribution name', () => {
+    expect(() =>
+      parsePoetryLock(`[[package]]\nname = "-foo"\nversion = "1.0"\n`),
+    ).toThrow(/invalid name/u);
+    expect(() =>
+      parsePoetryLock(`[[package]]\nname = "!!!"\nversion = "1.0"\n`),
+    ).toThrow(/invalid name/u);
+  });
+
+  it('refuses per-entry python-versions and optional selections', () => {
+    // python-versions is environment applicability: dropping it would pin a
+    // selection for interpreters the lock never covered.
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\npython-versions = ">=3.6"\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    // optional = true means the package may not participate in the locked set.
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\noptional = true\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    // optional = false is the poetry default and carries no information.
+    expect(
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\noptional = false\n`,
+      ).package,
+    ).toEqual([{ name: 'foo', version: '1.0' }]);
+  });
+
+  it('surfaces [metadata] python-versions as tracked requires-python loss', async () => {
+    const parsed = parsePoetryLock(
+      `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\npython-versions = "^3.10"\n`,
+    );
+    expect(parsed['requires-python']).toBe('^3.10');
+    const plan = await planLockCapture(
+      `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\npython-versions = "^3.10"\n`,
+    );
+    expect(
+      plan.semanticLoss.some(
+        (loss) => loss.code === 'PYPI_LOCK_REQUIRES_PYTHON',
+      ),
+    ).toBe(true);
+  });
 });

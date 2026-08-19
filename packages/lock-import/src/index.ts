@@ -232,7 +232,11 @@ function defaultHandlers(
  * version — so the conversion is a rename rather than a translation. What it
  * does not carry is uv's per-package artifact hashes in the same shape, and
  * that difference is where the import loses information rather than inventing
- * it.
+ * it. Per-entry environment context (`python-versions`, markers, sources,
+ * `optional = true`) is refused outright: a lock that only applies to some
+ * interpreters or only includes some packages cannot be imported as a flat
+ * pinned set. The lock-wide `[metadata] python-versions` survives as uv.lock's
+ * `requires-python`, which the pypi codec records as tracked semantic loss.
  */
 function hasUnsupportedPoetryContext(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(hasUnsupportedPoetryContext);
@@ -243,19 +247,33 @@ function hasUnsupportedPoetryContext(value: unknown): boolean {
       key === 'markers' ||
       key === 'source' ||
       key === 'files' ||
+      // python-versions is interpreter applicability; dropping it would pin a
+      // selection for environments the lock never claimed to cover.
+      key === 'python-versions' ||
+      // optional = true means the package may not participate in the locked
+      // set at all. (optional = false is the poetry default and carries no
+      // information, so it is not context.)
+      (key === 'optional' && child === true) ||
       hasUnsupportedPoetryContext(child),
   );
 }
 
 export function parsePoetryLock(text: string): {
   version: 1;
+  'requires-python'?: string;
   package: { name: string; version: string }[];
 } {
-  const document = parseToml(text) as {
+  // Depth is capped far beyond anything a real poetry.lock nests to; the cap
+  // also bounds the hasUnsupportedPoetryContext recursion over the result.
+  const document = parseToml(text, { maxDepth: 64 }) as {
     package?: Array<
       Record<string, unknown> & { name?: unknown; version?: unknown }
     >;
-    metadata?: { 'lock-version'?: unknown; files?: unknown };
+    metadata?: {
+      'lock-version'?: unknown;
+      'python-versions'?: unknown;
+      files?: unknown;
+    };
   };
   if (!Array.isArray(document.package))
     throw new ProviderError(
@@ -288,7 +306,7 @@ export function parsePoetryLock(text: string): {
     if (hasUnsupportedPoetryContext(entry))
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `poetry.lock package ${name} carries marker, source, or artifact context that cannot be represented losslessly`,
+        `poetry.lock package ${name} carries marker, source, python-version, optionality, or artifact context that cannot be represented losslessly`,
       );
     if (seen.has(name))
       throw new ProviderError(
@@ -303,7 +321,17 @@ export function parsePoetryLock(text: string): {
       'INVALID_LOCKFILE',
       'poetry.lock contains no importable packages',
     );
-  return { version: 1, package: packages };
+  // The lock-wide [metadata] python-versions maps onto uv.lock's
+  // requires-python, which the pypi codec records as a tracked semantic loss
+  // rather than discarding it.
+  const requiresPython = document.metadata?.['python-versions'];
+  return {
+    version: 1,
+    ...(typeof requiresPython === 'string'
+      ? { 'requires-python': requiresPython }
+      : {}),
+    package: packages,
+  };
 }
 
 /**
