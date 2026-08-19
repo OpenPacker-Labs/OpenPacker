@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const root = resolve(import.meta.dirname, '..');
 const testFile = /\.(?:test|spec)\.(?:[cm]?js|tsx?)$/u;
+const activeTest =
+  /\b(?:it|test)(?:\.(?:concurrent|each))?(?:\([^)]*\))?\s*\(/u;
 
 function filesIn(path) {
   if (!existsSync(path)) return [];
@@ -13,87 +16,200 @@ function filesIn(path) {
   );
 }
 
-function hasOracle(path) {
-  if (!existsSync(path)) return false;
-  return statSync(path).isDirectory()
-    ? filesIn(path).some((file) => testFile.test(file))
-    : true;
+export function workspaceInventoryFailures(rows) {
+  return rows.flatMap((row) => {
+    const failures = [];
+    if (!/(?:^|\s)vitest\s+run(?:\s|$)/u.test(row.testScript ?? ''))
+      failures.push(
+        `${row.workspace}: test script is not a runnable Vitest gate`,
+      );
+    if (row.discoveredTests === 0)
+      failures.push(`${row.workspace}: Vitest discovered no tests`);
+    else if (row.activeTests === 0)
+      failures.push(
+        `${row.workspace}: discovered suite is skipped or todo only`,
+      );
+    return failures;
+  });
 }
 
-const workspaces = ['apps', 'examples', 'packages'].flatMap((directory) =>
-  readdirSync(join(root, directory), { withFileTypes: true })
-    .filter(
-      (entry) =>
-        entry.isDirectory() &&
-        existsSync(join(root, directory, entry.name, 'package.json')),
+export function authorityInventoryFailures(authorities, scripts, hasOracle) {
+  return authorities.flatMap(({ type, script, commandIncludes, paths }) => {
+    const command = scripts[script] ?? '';
+    const failures = [];
+    if (!command) failures.push(`${type}: missing ${script} script`);
+    else if (!command.includes(commandIncludes))
+      failures.push(`${type}: ${script} is not bound to ${commandIncludes}`);
+    for (const path of paths)
+      if (!hasOracle(path)) failures.push(`${type}: missing oracle ${path}`);
+    return failures;
+  });
+}
+
+export function checkTestInventory(root) {
+  const workspaces = ['apps', 'examples', 'packages']
+    .flatMap((directory) =>
+      readdirSync(join(root, directory), { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            existsSync(join(root, directory, entry.name, 'package.json')),
+        )
+        .map((entry) => join(directory, entry.name)),
     )
-    .map((entry) => join(directory, entry.name)),
-);
-const failures = [];
-for (const workspace of workspaces) {
-  const manifest = JSON.parse(
-    readFileSync(join(root, workspace, 'package.json'), 'utf8'),
+    .sort();
+  const discovery = spawnSync(
+    'npm',
+    [
+      'exec',
+      '--',
+      'vitest',
+      'list',
+      'packages',
+      'apps',
+      'examples',
+      '--config',
+      'scripts/vitest.gate.config.mjs',
+      '--json',
+    ],
+    { cwd: root, encoding: 'utf8' },
   );
-  if (!manifest.scripts?.test)
-    failures.push(`${workspace}: missing test script`);
-  if (!filesIn(join(root, workspace)).some((file) => testFile.test(file)))
-    failures.push(`${workspace}: missing test file`);
+  if (discovery.error) throw discovery.error;
+  if (discovery.status !== 0)
+    throw new Error(discovery.stderr || 'Vitest discovery failed');
+  const discovered = JSON.parse(discovery.stdout);
+  const rows = workspaces.map((workspace) => {
+    const manifest = JSON.parse(
+      readFileSync(join(root, workspace, 'package.json'), 'utf8'),
+    );
+    const tests = discovered.filter(
+      ({ file }) =>
+        relative(join(root, workspace), file) !== '..' &&
+        !relative(join(root, workspace), file).startsWith(
+          `..${process.platform === 'win32' ? '\\' : '/'}`,
+        ),
+    );
+    const files = [...new Set(tests.map(({ file }) => file))];
+    return {
+      workspace,
+      testScript: manifest.scripts?.test,
+      discoveredTests: tests.length,
+      activeTests: files.filter((file) =>
+        activeTest.test(readFileSync(file, 'utf8')),
+      ).length,
+    };
+  });
+
+  const authorities = [
+    ['unit', 'test', 'run-gate.mjs unit', ['tests/unit']],
+    ['property', 'test', 'run-gate.mjs unit', ['tests/property']],
+    [
+      'conformance',
+      'test:conformance',
+      'run-gate.mjs conformance',
+      ['tests/conformance', 'packages/conformance/test'],
+    ],
+    [
+      'security',
+      'test:security',
+      'run-gate.mjs security',
+      ['tests/security', 'packages/sandbox/src/escape.test.ts'],
+    ],
+    [
+      'integration',
+      'test:integration',
+      'run-gate.mjs integration',
+      ['tests/integration', 'integrations/mise/test'],
+    ],
+    ['e2e', 'test:e2e', 'run-gate.mjs e2e', ['tests/e2e']],
+    ['compatibility', 'test:compat', 'run-gate.mjs compat', ['tests/compat']],
+    [
+      'browser',
+      'test:browser',
+      'run-gate.mjs browser',
+      [
+        'tests/browser',
+        'examples/epoch-consumer/test/sdk-browser.playwright.mjs',
+      ],
+    ],
+    ['fuzz', 'test:fuzz', 'fuzz-smoke.mjs', ['scripts/fuzz-smoke.mjs']],
+    [
+      'pact',
+      'coverage',
+      'coverage.mjs',
+      ['examples/epoch-consumer/test/pact.consumer.test.ts'],
+    ],
+    [
+      'chaos',
+      'coverage',
+      'coverage.mjs',
+      ['examples/epoch-consumer/test/pact.chaos.test.ts'],
+    ],
+    [
+      'mutation',
+      'coverage',
+      'coverage.mjs',
+      ['examples/epoch-consumer/test/pact.mutation.test.ts'],
+    ],
+    ['mutation', 'test', 'run-gate.mjs unit', ['tests/property/prex.test.mjs']],
+    [
+      'pack-parity',
+      'test:pack-parity',
+      'standard-pack.test.ts',
+      [
+        'packages/adapters-default/src/standard-pack.test.ts',
+        'packages/adapters-default/src/standard-pack.native.test.ts',
+      ],
+    ],
+    [
+      'pack-parity-native',
+      'test:pack-parity:native',
+      'pack-parity-container.mjs',
+      ['scripts/pack-parity-container.mjs'],
+    ],
+    [
+      'live-oci',
+      'test:live',
+      '@openpacker/oci',
+      ['packages/oci/scripts/live-interop.mjs'],
+    ],
+    [
+      'live-nix',
+      'test:live',
+      '@openpacker/adapter-nix',
+      ['packages/adapter-nix/test/provider.live.test.ts'],
+    ],
+  ].map(([type, script, commandIncludes, paths]) => ({
+    type,
+    script,
+    commandIncludes,
+    paths,
+  }));
+  const scripts = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  ).scripts;
+  const hasOracle = (path) => {
+    const absolute = join(root, path);
+    if (!existsSync(absolute)) return false;
+    if (!statSync(absolute).isDirectory()) return true;
+    return filesIn(absolute).some(
+      (file) =>
+        testFile.test(file) && activeTest.test(readFileSync(file, 'utf8')),
+    );
+  };
+  const failures = [
+    ...workspaceInventoryFailures(rows),
+    ...authorityInventoryFailures(authorities, scripts, hasOracle),
+  ];
+  if (failures.length) throw new Error(failures.join('\n'));
+  const runnableTests = rows.reduce((sum, row) => sum + row.discoveredTests, 0);
+  console.log(
+    `test inventory: ${workspaces.length} workspaces, ${runnableTests} discovered tests, ${new Set(authorities.map(({ type }) => type)).size} test types`,
+  );
 }
 
-const authorities = {
-  unit: ['tests/unit'],
-  property: ['tests/property'],
-  conformance: ['tests/conformance', 'packages/conformance/test'],
-  security: ['tests/security', 'packages/sandbox/src/escape.test.ts'],
-  integration: ['tests/integration', 'integrations/mise/test'],
-  e2e: ['tests/e2e'],
-  compatibility: ['tests/compat'],
-  browser: [
-    'tests/browser',
-    'examples/epoch-consumer/test/sdk-browser.playwright.mjs',
-  ],
-  fuzz: ['scripts/fuzz-smoke.mjs'],
-  pact: ['examples/epoch-consumer/test/pact.consumer.test.ts'],
-  chaos: ['examples/epoch-consumer/test/pact.chaos.test.ts'],
-  mutation: [
-    'examples/epoch-consumer/test/pact.mutation.test.ts',
-    'tests/property/prex.test.mjs',
-  ],
-  'pack-parity': [
-    'packages/adapters-default/src/standard-pack.test.ts',
-    'packages/adapters-default/src/standard-pack.native.test.ts',
-    'scripts/pack-parity-container.mjs',
-  ],
-  live: [
-    'packages/adapter-nix/test/provider.live.test.ts',
-    'packages/oci/scripts/live-interop.mjs',
-  ],
-};
-for (const [type, paths] of Object.entries(authorities))
-  for (const path of paths)
-    if (!hasOracle(join(root, path)))
-      failures.push(`${type}: missing oracle ${path}`);
-
-const scripts = JSON.parse(
-  readFileSync(join(root, 'package.json'), 'utf8'),
-).scripts;
-for (const name of [
-  'test',
-  'coverage',
-  'test:conformance',
-  'test:security',
-  'test:integration',
-  'test:e2e',
-  'test:compat',
-  'test:browser',
-  'test:fuzz',
-  'test:pack-parity',
-  'test:pack-parity:native',
-  'test:live',
-])
-  if (!scripts[name]) failures.push(`root: missing ${name} script`);
-
-if (failures.length) throw new Error(failures.join('\n'));
-console.log(
-  `test inventory: ${workspaces.length} workspaces, ${Object.keys(authorities).length} test types`,
-);
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+)
+  checkTestInventory(resolve(import.meta.dirname, '..'));
