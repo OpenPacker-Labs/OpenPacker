@@ -1,0 +1,16 @@
+{
+  "format": "cargo-lock",
+  "ecosystem": "cargo",
+  "packageCount": 2,
+  "lockedExactPurls": [
+    "pkg:cargo/cfg-if@1.0.0",
+    "pkg:cargo/demo-zstd@1.0.0"
+  ],
+  "semanticLossCodes": [
+    "NATIVE_RESULT_CAPTURE_ONLY"
+  ],
+  "sourceDigest": {
+    "algorithm": "sha256",
+    "value": "28852051ac53197e6d33698ef6f00f093cd2bbe4fb2c42ed0fd093f77d65fc95"
+  }
+}

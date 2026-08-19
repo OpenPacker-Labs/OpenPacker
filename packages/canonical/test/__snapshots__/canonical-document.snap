@@ -1,0 +1,1 @@
+{"alpha":{"nested":true,"nothing":null},"empty":{"array":[],"object":{}},"key with spaces":{"deep":[{"a":2,"b":1}]},"numbers":[0,1,-42,9007199254740991,123456789],"unicode":"café ☕ 日本語","zebra":[3,1,2]}
