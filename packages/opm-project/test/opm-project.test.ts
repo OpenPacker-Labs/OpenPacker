@@ -782,15 +782,15 @@ describe('environment generations', () => {
     for (const line of script.trimEnd().split('\n'))
       expect(line).toMatch(/^export [A-Z_]+=/u);
     const environment = await environmentVariables({ root });
-    for (const name of Object.keys(environment)) {
-      const echoed = execFileSync('/bin/sh', [
-        '-c',
-        `${script}printf '%s' "$${name}"`,
-      ]);
-      expect(echoed.toString(), `${name} survives eval`).toBe(
-        environment[name],
-      );
-    }
+    const names = Object.keys(environment);
+    const echoed = execFileSync('/bin/sh', [
+      '-c',
+      `${script}printf '%s\\0' ${names.map((name) => `"$${name}"`).join(' ')}`,
+    ])
+      .toString()
+      .split('\0')
+      .slice(0, -1);
+    expect(echoed).toEqual(names.map((name) => environment[name]));
   });
 
   it('derives shell environment from the current generation', async () => {
