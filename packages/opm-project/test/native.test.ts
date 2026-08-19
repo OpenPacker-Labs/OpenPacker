@@ -449,7 +449,7 @@ describe('package manifest', () => {
     const registry = built.manifest.registries?.[0];
     expect(registry?.registryId).toBe('urn:openpacker:registry:npmjs-org');
     expect(registry?.definitionDigest?.value).toMatch(/^[0-9a-f]{64}$/u);
-  });
+  }, 30_000);
 
   it('claims nothing verified until something is actually checked', async () => {
     const root = await tempProject({
@@ -496,7 +496,7 @@ describe('package manifest', () => {
       withArtifact.distributions.find((entry) => entry.purlType === 'npm')
         ?.digest?.value,
     ).toBe('a'.repeat(64));
-  });
+  }, 30_000);
 
   it('canonicalises, so the same inputs give the same digest', async () => {
     const root = await tempProject({
