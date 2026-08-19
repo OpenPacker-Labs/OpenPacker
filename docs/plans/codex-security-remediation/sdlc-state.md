@@ -2,9 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layers 01 through 03 independently approved
-- Current layer: `04-lock-composition` implemented and awaiting independent
-  review
+- Phase: implementing; layers 01 through 04 independently approved
+- Current layer: `05-scan-closeout`
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -153,3 +152,6 @@ upstream Codex Security release currently has no patched version.
   boundary. Lock import 24/24, OCM 5/5, both package typechecks, all staged
   gates, and the exact layer six-gate impact aggregate passed; diff checks were
   clean.
+- 2026-08-19 layer 04 independent review: approved at `88457fe` after native
+  variant, marker, hash, snapshot, endpoint, cycle, and deep-chain cases were
+  independently rechecked with no remaining finding.
