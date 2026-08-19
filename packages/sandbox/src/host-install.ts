@@ -126,9 +126,7 @@ export async function runHostInstaller(
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
 
-  if (!outcome.enforced && outcome.backend === 'none') {
-    // host-install never sets enforced true; check backend for availability
-  }
+  // host-install never sets enforced true; backend availability is the check.
   if (outcome.backend === 'none') {
     throw new HostInstallerSandboxError(
       'Install requires an OS-owned sandbox backend and none is available',
