@@ -8,6 +8,7 @@ import type {
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import keys from '../../../fixtures/trust/keys.json';
 import {
+  canonicalRequestDigest,
   rejectReceiptReplay,
   signReceipt,
   verifySignedReceipt,
@@ -33,11 +34,12 @@ async function receipt(): Promise<ResolutionReceipt> {
     objectives: ['satisfy-hard-constraints', 'canonical-lexical-tie-break'],
     mode: 'closure',
     evaluationTime: '2026-01-01T00:00:00Z',
+    context: { idempotencyKey: 'receipt-fixture' },
   };
   return {
     receiptVersion: '1',
     protocolVersion: '1.0-draft',
-    requestDigest: await canonicalDigest(normalizedRequest),
+    requestDigest: await canonicalRequestDigest(normalizedRequest),
     normalizedRequest,
     universeDigest: digest('2'),
     sourceSnapshots: [

@@ -18,7 +18,10 @@ import {
   verifyCloudEvent,
   type OpenPackerCloudEvent,
 } from '@openpacker/events';
-import { verifySignedReceipt } from '@openpacker/receipts';
+import {
+  canonicalRequestDigest,
+  verifySignedReceipt,
+} from '@openpacker/receipts';
 import type { OpenPackerClient, RawEvent } from '@openpacker/sdk';
 import type { Verifier } from '@openpacker/trust';
 
@@ -126,9 +129,7 @@ export async function consumeResolution(input: {
   )
     throw new Error('Signed receipt does not bind the requested solve input');
   const requestDigest = formatDigest(
-    await canonicalDigest(
-      solved.data.normalizedRequest as unknown as JsonValue,
-    ),
+    await canonicalRequestDigest(solved.data.normalizedRequest),
   );
   if (
     formatDigest(solved.data.requestDigest) !== requestDigest ||

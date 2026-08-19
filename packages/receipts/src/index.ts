@@ -1,14 +1,17 @@
 import {
   canonicalBytes,
   canonicalDigest,
+  canonicalProjectionDigest,
   compareCanonicalStrings,
   formatDigest,
 } from '@openpacker/canonical';
-import type {
-  Digest,
-  JsonValue,
-  ResolutionReceipt,
-  SignedReceipt,
+import {
+  DIGEST_PROJECTIONS,
+  type Digest,
+  type JsonValue,
+  type ResolutionReceipt,
+  type SignedReceipt,
+  type SolveRequest,
 } from '@openpacker/contracts';
 import type { Signer, Verifier } from '@openpacker/trust';
 
@@ -27,12 +30,20 @@ export interface ReceiptReplayContext {
 const equal = (left: Digest, right: Digest): boolean =>
   left.algorithm === right.algorithm && left.value === right.value;
 
+export async function canonicalRequestDigest(
+  request: SolveRequest,
+): Promise<Digest> {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    ({ id }) => id === 'request-v1',
+  );
+  if (!projection) throw new Error('Missing request-v1 digest projection');
+  return canonicalProjectionDigest(request as unknown as JsonValue, projection);
+}
+
 export async function validateReceiptBindings(
   receipt: ResolutionReceipt,
 ): Promise<void> {
-  const request = await canonicalDigest(
-    receipt.normalizedRequest as unknown as JsonValue,
-  );
+  const request = await canonicalRequestDigest(receipt.normalizedRequest);
   const target = await canonicalDigest(
     receipt.normalizedRequest.target as unknown as JsonValue,
   );
