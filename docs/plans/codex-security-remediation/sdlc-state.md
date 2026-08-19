@@ -142,11 +142,14 @@ upstream Codex Security release currently has no patched version.
   lifecycle handle transfer, complete publication snapshots, mandatory
   process-tree ownership, provider pre-probe policy denial, and the narrowed
   Windows capability contract were rechecked with no remaining finding.
-- 2026-08-19 layer 04 implementation: requirements artifact hashes, Poetry
-  marker/source/hash contexts, duplicate Python selections, pnpm peer contexts,
-  and multiple pnpm versions now fail closed instead of collapsing into a weaker
-  capture. OCM component-reference digests include completed transitive
-  references, descriptors finalize dependency-first, and cyclic reference graphs
-  fail explicitly. Lock import 21/21, OCM 4/4, both package typechecks, both
-  staged gates, and the exact `ec8d367..5973985` five-gate impact aggregate
-  passed; diff checks were clean.
+- 2026-08-19 layer 04 implementation: requirements artifact hashes and
+  directives, Poetry marker/source/hash contexts at any nesting depth, malformed
+  mixed entries, pnpm v9 package and snapshot peer contexts, and multiple native
+  selections now fail closed instead of collapsing into a weaker capture; pnpm
+  support is honestly limited to v9. OCM component-reference digests include
+  completed transitive references, require a one-to-one selected package graph,
+  and use one-pass adjacency with iterative dependency-first completion; missing
+  endpoints and cycles fail explicitly. A 5,000-node chain guards the resource
+  boundary. Lock import 23/23, OCM 5/5, both package typechecks, all staged
+  gates, and the exact layer five-gate impact aggregate passed; diff checks were
+  clean.
