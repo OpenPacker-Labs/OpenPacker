@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, type Dirent } from 'node:fs';
-import { lstat, mkdir, open, opendir, realpath } from 'node:fs/promises';
+import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
@@ -20,7 +20,12 @@ import type {
   JsonValue,
   PackProviderArgument,
 } from '@openpacker/contracts';
-import { findExecutable } from '@openpacker/project-io';
+import {
+  assertNamedDirectory,
+  findExecutable,
+  openStableDirectory,
+  stableHandlePath,
+} from '@openpacker/project-io';
 import {
   runInSandbox,
   type RunInSandboxInput,
@@ -232,50 +237,39 @@ export class ManifestPackagePacker implements PackagePacker {
     const outputDirectory = resolve(
       options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
     );
-    await mkdir(outputDirectory, { recursive: true });
-    const outputReal = await realpath(outputDirectory);
-    const outputIdentity = await directoryIdentity(outputDirectory);
-    const existingArtifacts = await checkedProviderOutput(async () => {
-      const artifacts = await collectArtifacts(
-        outputDirectory,
-        outputReal,
-        hostPlan,
-        this.#limits,
-        this.#openFile,
-      );
-      await assertDirectoryIdentity(
-        outputDirectory,
-        outputReal,
-        outputIdentity,
-      );
-      return artifacts;
-    });
-    if (existingArtifacts.length > 0)
-      throw new ProviderError(
-        'OUTPUT_NOT_EMPTY',
-        `${this.providerId} requires an output directory without matching artifacts`,
-      );
-
-    const outcomes: SandboxOutcome[] = [];
-    const environment = { ...hostPlan.environment, ...authorizedEnvironment };
+    const outputAuthority = await openStableDirectory(outputDirectory);
+    const stableOutputDirectory = stableHandlePath(outputAuthority);
+    const outputReal = await realpath(stableOutputDirectory);
+    const outputIdentity = await directoryIdentity(stableOutputDirectory);
+    await assertNamedDirectory(outputDirectory, outputAuthority);
     try {
-      for (const arguments_ of hostPlan.commandArguments) {
-        const outcome = await this.runCommand(
-          [executablePath, ...arguments_],
-          input,
-          options,
-          plan,
-          environment,
-          Object.keys(authorizedEnvironment),
+      const existingArtifacts = await checkedProviderOutput(async () => {
+        const artifacts = await collectArtifacts(
+          stableOutputDirectory,
           outputDirectory,
+          outputReal,
+          hostPlan,
+          this.#limits,
+          this.#openFile,
         );
-        outcomes.push(outcome);
-        if (outcome.exitCode !== 0) break;
-      }
-    } finally {
-      for (const arguments_ of hostPlan.cleanupArguments)
-        outcomes.push(
-          await this.runCommand(
+        await assertDirectoryIdentity(
+          stableOutputDirectory,
+          outputReal,
+          outputIdentity,
+        );
+        return artifacts;
+      });
+      if (existingArtifacts.length > 0)
+        throw new ProviderError(
+          'OUTPUT_NOT_EMPTY',
+          `${this.providerId} requires an output directory without matching artifacts`,
+        );
+
+      const outcomes: SandboxOutcome[] = [];
+      const environment = { ...hostPlan.environment, ...authorizedEnvironment };
+      try {
+        for (const arguments_ of hostPlan.commandArguments) {
+          const outcome = await this.runCommand(
             [executablePath, ...arguments_],
             input,
             options,
@@ -283,64 +277,86 @@ export class ManifestPackagePacker implements PackagePacker {
             environment,
             Object.keys(authorizedEnvironment),
             outputDirectory,
-          ),
+            outputAuthority.fd,
+          );
+          outcomes.push(outcome);
+          if (outcome.exitCode !== 0) break;
+        }
+      } finally {
+        for (const arguments_ of hostPlan.cleanupArguments)
+          outcomes.push(
+            await this.runCommand(
+              [executablePath, ...arguments_],
+              input,
+              options,
+              plan,
+              environment,
+              Object.keys(authorizedEnvironment),
+              outputDirectory,
+              outputAuthority.fd,
+            ),
+          );
+      }
+      const outcome =
+        outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
+      const artifacts = await checkedProviderOutput(async () => {
+        await assertNamedDirectory(outputDirectory, outputAuthority);
+        const currentIdentity = await directoryIdentity(stableOutputDirectory);
+        if (
+          currentIdentity.dev !== outputIdentity.dev ||
+          currentIdentity.ino !== outputIdentity.ino ||
+          (await realpath(stableOutputDirectory)) !== outputReal
+        )
+          throw new ProviderError(
+            'INVALID_RESPONSE',
+            'Delegated provider replaced its output directory',
+          );
+        const collected =
+          outcome.exitCode === 0
+            ? await collectArtifacts(
+                stableOutputDirectory,
+                outputDirectory,
+                outputReal,
+                hostPlan,
+                this.#limits,
+                this.#openFile,
+              )
+            : [];
+        await assertDirectoryIdentity(
+          stableOutputDirectory,
+          outputReal,
+          currentIdentity,
         );
-    }
-    const outcome =
-      outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
-    const artifacts = await checkedProviderOutput(async () => {
-      const currentIdentity = await directoryIdentity(outputDirectory);
-      if (
-        currentIdentity.dev !== outputIdentity.dev ||
-        currentIdentity.ino !== outputIdentity.ino ||
-        (await realpath(outputDirectory)) !== outputReal
-      )
+        return collected;
+      });
+      if (outcome.exitCode === 0 && artifacts.length === 0)
         throw new ProviderError(
           'INVALID_RESPONSE',
-          'Delegated provider replaced its output directory',
+          `${this.providerId} succeeded without a declared artifact`,
         );
-      const collected =
-        outcome.exitCode === 0
-          ? await collectArtifacts(
-              outputDirectory,
-              outputReal,
-              hostPlan,
-              this.#limits,
-              this.#openFile,
-            )
-          : [];
-      await assertDirectoryIdentity(
-        outputDirectory,
-        outputReal,
-        currentIdentity,
-      );
-      return collected;
-    });
-    if (outcome.exitCode === 0 && artifacts.length === 0)
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        `${this.providerId} succeeded without a declared artifact`,
-      );
-    return {
-      ...withTool,
-      performed: true,
-      exitCode: outcome.exitCode,
-      stdout: outcomes
-        .map((item) => item.stdout)
-        .filter(Boolean)
-        .join('\n'),
-      stderr: outcomes
-        .map((item) => item.stderr)
-        .filter(Boolean)
-        .join('\n'),
-      artifacts,
-      sandboxBackend: outcome.backend,
-      sandboxEnforced: outcome.enforced,
-      semanticLoss: [
-        ...plan.semanticLoss,
-        ...outcomes.flatMap((item) => item.losses),
-      ],
-    };
+      return {
+        ...withTool,
+        performed: true,
+        exitCode: outcome.exitCode,
+        stdout: outcomes
+          .map((item) => item.stdout)
+          .filter(Boolean)
+          .join('\n'),
+        stderr: outcomes
+          .map((item) => item.stderr)
+          .filter(Boolean)
+          .join('\n'),
+        artifacts,
+        sandboxBackend: outcome.backend,
+        sandboxEnforced: outcome.enforced,
+        semanticLoss: [
+          ...plan.semanticLoss,
+          ...outcomes.flatMap((item) => item.losses),
+        ],
+      };
+    } finally {
+      await outputAuthority.close();
+    }
   }
 
   private runCommand(
@@ -351,6 +367,7 @@ export class ManifestPackagePacker implements PackagePacker {
     environment: Readonly<Record<string, string>>,
     grantedEnvironment: readonly string[],
     outputDirectory: string,
+    outputDirectoryFd: number,
   ): Promise<SandboxOutcome> {
     return this.#sandboxRun({
       argv: command,
@@ -367,6 +384,7 @@ export class ManifestPackagePacker implements PackagePacker {
       readonlyPaths: [input.project.root],
       network: plan.requiresNetwork,
       profile: 'package-exec',
+      directoryAuthorities: [{ fd: outputDirectoryFd, path: outputDirectory }],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
   }
@@ -441,6 +459,7 @@ function emptyOutcome(plan: PackPlan): PackOutcome {
 
 async function collectArtifacts(
   outputDirectory: string,
+  reportedDirectory: string,
   outputReal: string,
   plan: DelegatedPackHostPlan,
   limits: ManifestPackagePackerLimits,
@@ -544,7 +563,7 @@ async function collectArtifacts(
           `Delegated provider artifacts exceed ${limits.totalArtifactBytes} total bytes`,
         );
       artifacts.push({
-        path,
+        path: join(reportedDirectory, entry.name),
         mediaType: type.mediaType,
         size: Number(after.size),
         digest: `sha256:${hash.digest('hex')}`,
@@ -573,8 +592,8 @@ async function checkedProviderOutput<T>(
 }
 
 async function directoryIdentity(path: string): Promise<DirectoryIdentity> {
-  const info = await lstat(path, { bigint: true });
-  if (!info.isDirectory() || info.isSymbolicLink())
+  const info = await stat(path, { bigint: true });
+  if (!info.isDirectory())
     throw new ProviderError(
       'INVALID_RESPONSE',
       `Output is not a directory: ${path}`,

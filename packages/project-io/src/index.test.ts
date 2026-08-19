@@ -136,6 +136,23 @@ describe('writeFileAtomic', () => {
       expect(await readdir(join(dir, 'nested'))).toEqual(['out.txt']);
     });
   });
+
+  it('does not follow a linked output ancestor', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'project-io-linked-'));
+    const outside = await mkdtemp(join(tmpdir(), 'project-io-outside-'));
+    try {
+      await symlink(outside, join(root, '.opm'), 'dir');
+      await expect(
+        writeFileAtomic(join(root, '.opm', 'pack', 'artifact'), 'blocked'),
+      ).rejects.toThrow();
+      await expect(
+        readFile(join(outside, 'pack', 'artifact')),
+      ).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('detectJsonStyle', () => {

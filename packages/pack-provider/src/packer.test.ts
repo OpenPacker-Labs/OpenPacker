@@ -230,7 +230,7 @@ describe('manifest package packer', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('rejects a preflight swap to empty and restore', async () => {
+  it('retains preflight authority across a swap to empty and restore', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
     const original = join(root, 'out-original');
@@ -241,7 +241,7 @@ describe('manifest package packer', () => {
 
     await expect(
       configured().pack(input(root), { allowBuild: true, outputDirectory }),
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    ).rejects.toMatchObject({ code: 'OUTPUT_NOT_EMPTY' });
   });
 
   it('bounds directory entries before materializing them', async () => {

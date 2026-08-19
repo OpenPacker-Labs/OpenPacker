@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readdir } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import {
   ProviderError,
@@ -89,7 +89,6 @@ export class StandardPackagePacker implements PackagePacker {
     const outputDirectory = resolve(
       options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
     );
-    await mkdir(outputDirectory, { recursive: true });
     const emitted = await this.config.emitter.emit(input.normalized);
     const names = new Set<string>();
     const artifacts: PackArtifact[] = [];
