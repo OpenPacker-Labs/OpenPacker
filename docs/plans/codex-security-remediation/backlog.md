@@ -29,7 +29,8 @@ enforce streaming count, byte, output, and time limits.
 
 ## 04 — Lock and composition fidelity
 
-Status: planned.
+Status: implemented with focused, staged, and exact aggregate gates green;
+independent review pending.
 
 Close findings 11, 12, and 16. Preserve or fail closed on native hash, variant,
 marker, source, and transitive composition semantics.
