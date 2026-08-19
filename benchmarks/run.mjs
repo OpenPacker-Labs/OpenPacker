@@ -82,17 +82,23 @@ function syntheticSolveInput(packageCount) {
   return input;
 }
 
+function cpuMilliseconds(start) {
+  const elapsed = process.cpuUsage(start);
+  return (elapsed.user + elapsed.system) / 1_000;
+}
+
 function measure(name, operation) {
   for (let index = 0; index < 250; index += 1) operation(index);
-  const start = performance.now();
+  const start = process.cpuUsage();
   for (let index = 0; index < iterations; index += 1) operation(index);
-  const milliseconds = performance.now() - start;
+  const milliseconds = cpuMilliseconds(start);
   const threshold = baseline.thresholdsMilliseconds[name];
   if (!(milliseconds <= threshold))
     throw new Error(
       `${name}: ${milliseconds.toFixed(2)}ms exceeds ${threshold}ms threshold`,
     );
   return {
+    clock: 'cpu',
     iterations,
     milliseconds,
     operationsPerSecond: (iterations * 1000) / milliseconds,
@@ -102,15 +108,16 @@ function measure(name, operation) {
 
 async function measureAsync(name, iterations, operation, warmup = 1) {
   for (let index = 0; index < warmup; index += 1) await operation(index);
-  const start = performance.now();
+  const start = process.cpuUsage();
   for (let index = 0; index < iterations; index += 1) await operation(index);
-  const milliseconds = performance.now() - start;
+  const milliseconds = cpuMilliseconds(start);
   const threshold = baseline.thresholdsMilliseconds[name];
   if (!(milliseconds <= threshold))
     throw new Error(
       `${name}: ${milliseconds.toFixed(2)}ms exceeds ${threshold}ms threshold`,
     );
   return {
+    clock: 'cpu',
     iterations,
     milliseconds,
     operationsPerSecond: (iterations * 1000) / milliseconds,
@@ -190,6 +197,7 @@ if (loadMilliseconds > baseline.thresholdsMilliseconds['wasm-load'])
     `wasm-load: ${loadMilliseconds.toFixed(2)}ms exceeds threshold`,
   );
 results['wasm-load'] = {
+  clock: 'wall',
   iterations: 1,
   milliseconds: loadMilliseconds,
   operationsPerSecond: 1000 / loadMilliseconds,
@@ -203,6 +211,7 @@ if (coldMilliseconds > baseline.thresholdsMilliseconds['solver-cold-wasm'])
     `solver-cold-wasm: ${coldMilliseconds.toFixed(2)}ms exceeds threshold`,
   );
 results['solver-cold-wasm'] = {
+  clock: 'wall',
   iterations: 1,
   milliseconds: coldMilliseconds,
   operationsPerSecond: 1000 / coldMilliseconds,
@@ -253,6 +262,7 @@ if (nativeLoadMilliseconds > baseline.thresholdsMilliseconds['native-load'])
     `native-load: ${nativeLoadMilliseconds.toFixed(2)}ms exceeds threshold`,
   );
 results['native-load'] = {
+  clock: 'wall',
   iterations: 1,
   milliseconds: nativeLoadMilliseconds,
   operationsPerSecond: 1000 / nativeLoadMilliseconds,
@@ -270,6 +280,7 @@ if (
 if (canonicalize(nativeSolved) !== canonicalize(solved))
   throw new Error('native and WASM benchmark solves disagree');
 results['solver-cold-native'] = {
+  clock: 'wall',
   iterations: 1,
   milliseconds: nativeColdMilliseconds,
   operationsPerSecond: 1000 / nativeColdMilliseconds,
