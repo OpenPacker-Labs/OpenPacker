@@ -31,6 +31,8 @@ import {
   assertStoreKey,
   ensureStableDirectory,
   openStableDirectory,
+  OPM_DIR,
+  PROJECT_STATE,
   projectPaths,
   readStableFile,
   revalidateStableDirectory,
@@ -83,10 +85,14 @@ async function validateProjectState(
   const state = objectValue(value, 'project state');
   if (state.schemaVersion !== 1) throw invalidState('schemaVersion must be 1');
   const packages = objectValue(state.packages, 'packages');
-  const root = dirname(dirname(resolve(statePath)));
+  // The state file is only ever <root>/.opm/project.json. Validate those
+  // segments directly instead of deriving a root from statePath and
+  // round-tripping it through projectPaths, which was true by construction.
+  const stateDir = dirname(resolve(statePath));
+  if (basename(stateDir) !== OPM_DIR || basename(statePath) !== PROJECT_STATE)
+    throw invalidState(`state path must be <root>/${OPM_DIR}/${PROJECT_STATE}`);
+  const root = dirname(stateDir);
   const paths = projectPaths(root);
-  if (resolve(statePath) !== paths.projectState)
-    throw invalidState(`state path must be ${paths.projectState}`);
   await assertRealDirectory(paths.opmDir, 'project metadata directory');
   const realStoreRoot = await assertRealDirectory(paths.store, 'project store');
   await assertRealDirectory(paths.bin, 'project bin directory');
