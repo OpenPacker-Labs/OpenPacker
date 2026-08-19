@@ -15,7 +15,7 @@ use resolvo::{
 use crate::semantics::{
     PlatformView, evaluate_target_predicate_in, requirement_is_active, requirement_platforms,
 };
-use crate::{RequirementExpression, ResolverError, SolveInput};
+use crate::{LifecycleStatus, RequirementExpression, ResolverError, SolveInput};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct NodeSet(BTreeSet<usize>);
@@ -328,10 +328,13 @@ pub(crate) fn resolve(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {
 
 fn lifecycle_allowed(input: &SolveInput, index: usize) -> bool {
     let package = &input.universe.packages[index];
-    match package.lifecycle.status.as_str() {
-        "yanked" => input.request.policy.allow_yanked,
-        "quarantined" => input.request.policy.allow_quarantined,
-        "revoked" => false,
+    match package.lifecycle.status {
+        LifecycleStatus::Yanked => input.request.policy.allow_yanked,
+        LifecycleStatus::Quarantined => input.request.policy.allow_quarantined,
+        LifecycleStatus::Revoked
+        | LifecycleStatus::Delisted
+        | LifecycleStatus::RemovedFromChannel
+        | LifecycleStatus::Unknown => false,
         _ => package.lifecycle.eligible,
     }
 }

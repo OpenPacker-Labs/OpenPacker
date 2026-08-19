@@ -544,10 +544,13 @@ fn predicate_holds(predicate: &TargetPredicate, platforms: PlatformView<'_>) -> 
 }
 
 fn lifecycle_allowed(package: &PackageInstance, input: &SolveInput) -> bool {
-    match package.lifecycle.status.as_str() {
-        "yanked" => input.request.policy.allow_yanked,
-        "quarantined" => input.request.policy.allow_quarantined,
-        "revoked" => false,
+    match package.lifecycle.status {
+        crate::LifecycleStatus::Yanked => input.request.policy.allow_yanked,
+        crate::LifecycleStatus::Quarantined => input.request.policy.allow_quarantined,
+        crate::LifecycleStatus::Revoked
+        | crate::LifecycleStatus::Delisted
+        | crate::LifecycleStatus::RemovedFromChannel
+        | crate::LifecycleStatus::Unknown => false,
         _ => package.lifecycle.eligible,
     }
 }

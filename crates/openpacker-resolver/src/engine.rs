@@ -10,10 +10,11 @@ use crate::semantics::{
 };
 use crate::{
     CapabilityProvider, DependencyEdge, Digest, ExcludedCandidate, ExplanationEdge,
-    ExplanationGraph, ExplanationNode, PackageInstance, ProofCheck, RequirementExpression,
-    RequirementWitness, ResolutionProof, ResolutionSolution, ResolutionUniverse, ResolverError,
-    SelectedAssignment, SolveInput, SolveOutput, SolveRequest, TargetPredicate, canonical_json,
-    digest_json, digest_projection, parse_json_as, version_satisfies,
+    ExplanationGraph, ExplanationNode, LifecycleStatus, PackageInstance, ProofCheck,
+    RequirementExpression, RequirementWitness, ResolutionProof, ResolutionSolution,
+    ResolutionUniverse, ResolverError, SelectedAssignment, SolveInput, SolveOutput, SolveRequest,
+    TargetPredicate, canonical_json, digest_json, digest_projection, parse_json_as,
+    version_satisfies,
 };
 
 pub const MAX_COMPANION_NODES: usize = 22;
@@ -93,6 +94,22 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
             )));
         }
         validate_digest(&package.metadata_digest, "metadataDigest")?;
+        if package.lifecycle.eligible
+            && matches!(
+                package.lifecycle.status,
+                LifecycleStatus::Yanked
+                    | LifecycleStatus::Quarantined
+                    | LifecycleStatus::Revoked
+                    | LifecycleStatus::Delisted
+                    | LifecycleStatus::RemovedFromChannel
+                    | LifecycleStatus::Unknown
+            )
+        {
+            return Err(ResolverError::InvalidInput(format!(
+                "lifecycle status {} cannot be eligible",
+                package.lifecycle.status
+            )));
+        }
         for digest in &package.source_snapshots {
             validate_digest(digest, "source snapshot digest")?;
         }
@@ -1292,10 +1309,13 @@ fn evaluate_target_predicate_fixed(
 }
 
 fn lifecycle_allowed(package: &PackageInstance, request: &SolveRequest) -> bool {
-    match package.lifecycle.status.as_str() {
-        "yanked" => request.policy.allow_yanked,
-        "quarantined" => request.policy.allow_quarantined,
-        "revoked" => false,
+    match package.lifecycle.status {
+        LifecycleStatus::Yanked => request.policy.allow_yanked,
+        LifecycleStatus::Quarantined => request.policy.allow_quarantined,
+        LifecycleStatus::Revoked
+        | LifecycleStatus::Delisted
+        | LifecycleStatus::RemovedFromChannel
+        | LifecycleStatus::Unknown => false,
         _ => package.lifecycle.eligible,
     }
 }

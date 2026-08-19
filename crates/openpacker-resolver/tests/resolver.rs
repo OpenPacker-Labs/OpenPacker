@@ -63,7 +63,7 @@ fn package(seed: char, name: &str, version: &str) -> PackageInstance {
         cardinality_constraints: Vec::new(),
         artifacts: Vec::new(),
         lifecycle: LifecycleState {
-            status: "published".into(),
+            status: LifecycleStatus::Published,
             eligible: true,
             warnings: Vec::new(),
             derivation_event_ids: Vec::new(),
@@ -464,7 +464,7 @@ fn exhaustive_proof_work_fails_before_enumeration() {
 #[test]
 fn lifecycle_denial_makes_exact_root_unsatisfiable() {
     let mut yanked = package('8', "demo", "1.0.0");
-    yanked.lifecycle.status = "yanked".into();
+    yanked.lifecycle.status = LifecycleStatus::Yanked;
     yanked.lifecycle.eligible = false;
     let input = input(
         vec![yanked],
@@ -482,6 +482,65 @@ fn lifecycle_denial_makes_exact_root_unsatisfiable() {
         solve(&input),
         Err(ResolverError::Unsatisfiable(_))
     ));
+}
+
+#[test]
+fn terminal_unknown_and_inconsistent_lifecycle_states_fail_closed() {
+    let root = requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/demo".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    );
+    for status in [
+        LifecycleStatus::Delisted,
+        LifecycleStatus::RemovedFromChannel,
+        LifecycleStatus::Unknown,
+    ] {
+        let mut candidate = package('8', "demo", "1.0.0");
+        candidate.lifecycle.status = status;
+        candidate.lifecycle.eligible = false;
+        assert!(matches!(
+            solve(&input(vec![candidate], vec![root.clone()])),
+            Err(ResolverError::Unsatisfiable(_))
+        ));
+    }
+
+    let mut inconsistent = package('8', "demo", "1.0.0");
+    inconsistent.lifecycle.status = LifecycleStatus::Delisted;
+    assert!(matches!(
+        solve(&input(vec![inconsistent], vec![root.clone()])),
+        Err(ResolverError::InvalidInput(message)) if message.contains("cannot be eligible")
+    ));
+
+    let published = input(vec![package('8', "demo", "1.0.0")], vec![root]);
+    let mut output = solve(&published).unwrap();
+    let mut delisted = published;
+    delisted.universe.packages[0].lifecycle.status = LifecycleStatus::Delisted;
+    delisted.universe.packages[0].lifecycle.eligible = false;
+    refresh_universe_digest(&mut delisted);
+    output.universe_digest = delisted.universe.canonical_digest.clone();
+    output.proof.universe_digest = output.universe_digest.clone();
+    let checked = check(&delisted, &output).unwrap();
+    assert!(!checked.valid);
+    assert!(
+        checked
+            .diagnostics
+            .iter()
+            .any(|message| message.contains("lifecycle denied"))
+    );
+
+    assert!(
+        serde_json::from_value::<LifecycleState>(json!({
+            "status": "attacker-defined",
+            "eligible": true,
+            "warnings": []
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -841,7 +900,7 @@ fn native_validated_rejects_dependency_conflict_cardinality_target_and_lifecycle
         .iter_mut()
         .find(|package| package.node_id == provider_id)
         .unwrap();
-    provider.lifecycle.status = "yanked".into();
+    provider.lifecycle.status = LifecycleStatus::Yanked;
     provider.lifecycle.eligible = false;
     refresh_universe_digest(&mut denied_lifecycle);
     assert!(matches!(
