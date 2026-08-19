@@ -178,7 +178,7 @@ export function createBwrapBackend(): SandboxBackend {
       });
       return spawnCapture({
         argv,
-        cwd: input.cwd,
+        cwd: '/',
         env: input.hostEnv,
         maximumStdoutBytes: input.maximumStdoutBytes,
         maximumStderrBytes: input.maximumStderrBytes,
@@ -274,8 +274,11 @@ export function buildBwrapArgv(input: {
   }
   for (const path of ro) {
     if (rw.has(path)) continue;
-    if (!existsSync(path)) continue;
-    args.push('--ro-bind', path, path);
+    const authority = input.directoryAuthorities?.find(
+      ({ path: target }) => resolve(target) === path,
+    );
+    if (authority) args.push('--ro-bind-fd', String(authority.childFd), path);
+    else if (existsSync(path)) args.push('--ro-bind', path, path);
   }
 
   // Remask after RW overlays. Host-install `--bind / /` would otherwise

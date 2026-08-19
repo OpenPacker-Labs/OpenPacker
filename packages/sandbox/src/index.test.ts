@@ -429,15 +429,19 @@ describe('@openpacker/sandbox', () => {
       command: ['/usr/bin/true'],
       cwd: '/tmp',
       readwritePaths: ['/tmp'],
-      readonlyPaths: [],
+      readonlyPaths: ['/etc'],
       network: false,
       profile: 'package-exec',
       environment: {},
-      directoryAuthorities: [{ path: '/tmp', childFd: 3 }],
+      directoryAuthorities: [
+        { path: '/tmp', childFd: 3 },
+        { path: '/etc', childFd: 4 },
+      ],
     });
     expect(bwrap).toContain('--unshare-pid');
     expect(bwrap).toContain('--die-with-parent');
     expect(bwrap.join(' ')).toContain('--bind-fd 3 /tmp');
+    expect(bwrap.join(' ')).toContain('--ro-bind-fd 4 /etc');
     expect(() => sandboxPolicyFromInstallOptions({ mode: 'off' })).toThrow(
       /fail-closed/u,
     );

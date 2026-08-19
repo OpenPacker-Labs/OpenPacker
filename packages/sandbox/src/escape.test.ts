@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -67,6 +68,44 @@ describe('jail path validation', () => {
       expect(() => normalizeJailPaths([join(linked, 'new')], 'write')).toThrow(
         /symbolic links/u,
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retains the approved directory when its pathname is swapped', async () => {
+    if (process.platform !== 'linux' && process.platform !== 'darwin') return;
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-swap-'));
+    const granted = join(root, 'package');
+    const moved = join(root, 'approved');
+    mkdirSync(granted);
+    writeFileSync(join(granted, 'proof'), 'stable');
+    try {
+      const outcome = await runInSandbox({
+        argv: ['/usr/bin/true'],
+        cwd: granted,
+        policy: { mode: 'fail-closed' },
+        readwritePaths: [granted],
+        readonlyPaths: [],
+        backend: {
+          id: 'mock',
+          async run(input) {
+            renameSync(granted, moved);
+            symlinkSync(homedir(), granted, 'dir');
+            const authority = input.directoryAuthorities?.find(
+              ({ path }) => path === granted,
+            );
+            expect(authority).toBeDefined();
+            const fdRoot =
+              process.platform === 'linux'
+                ? `/proc/self/fd/${authority!.fd}`
+                : `/dev/fd/${authority!.fd}`;
+            expect(readFileSync(join(fdRoot, 'proof'), 'utf8')).toBe('stable');
+            return { exitCode: 0, stdout: '', stderr: '' };
+          },
+        },
+      });
+      expect(outcome.exitCode).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

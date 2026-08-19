@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
 import {
   createMockBackend,
@@ -8,7 +8,11 @@ import {
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
-import { assertSafeJailPath, normalizeJailPaths } from './paths.js';
+import {
+  assertSafeJailPath,
+  normalizeJailPaths,
+  openStableJailPath,
+} from './paths.js';
 import {
   assertGrantsNotDangerous,
   assertPathNotRootOrHome,
@@ -173,6 +177,7 @@ export async function runInSandbox(
   const jailRoot = defaultJailHomeRoot();
   await mkdir(jailRoot, { recursive: true });
   const jailHome = await mkdtemp(join(jailRoot, 'home-'));
+  const ownedAuthorities: FileHandle[] = [];
   try {
     await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
@@ -197,6 +202,19 @@ export async function runInSandbox(
       [...input.readonlyPaths, ...grantedRead],
       'readonly path',
     );
+    const authorities = [...(input.directoryAuthorities ?? [])];
+    const authorized = new Set(authorities.map(({ path }) => resolve(path)));
+    for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
+      if (authorized.has(path)) continue;
+      try {
+        const handle = await openStableJailPath(path, 'sandbox bind');
+        ownedAuthorities.push(handle);
+        authorities.push({ fd: handle.fd, path });
+        authorized.add(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
 
     const timeoutMs =
       profile === 'package-exec' ? resolved.timeoutMs : resolved.timeoutMs;
@@ -226,9 +244,7 @@ export async function runInSandbox(
           maximumStdoutBytes: resolved.maximumStdoutBytes,
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
-          ...(input.directoryAuthorities === undefined
-            ? {}
-            : { directoryAuthorities: input.directoryAuthorities }),
+          directoryAuthorities: authorities,
           ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });
@@ -320,6 +336,9 @@ export async function runInSandbox(
       throw error;
     }
   } finally {
+    await Promise.all(
+      ownedAuthorities.map(async (handle) => await handle.close()),
+    );
     await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
