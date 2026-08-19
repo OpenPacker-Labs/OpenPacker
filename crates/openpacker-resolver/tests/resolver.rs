@@ -105,7 +105,7 @@ fn set_identity(package: &mut PackageInstance, kind: &str, name: &str, version: 
 }
 
 fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> SolveInput {
-    SolveInput {
+    let mut input = SolveInput {
         request: SolveRequest {
             platforms: None,
             requirement_kind_policy: None,
@@ -159,7 +159,9 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
             canonical_digest: digest('e'),
             extensions: BTreeMap::new(),
         },
-    }
+    };
+    input.universe.canonical_digest = digest_projection(&input.universe, "universe-v1").unwrap();
+    input
 }
 
 fn pin_amendments(input: &mut SolveInput) {
@@ -169,6 +171,11 @@ fn pin_amendments(input: &mut SolveInput) {
         .iter()
         .map(|amendment| digest_json(amendment).unwrap())
         .collect();
+    refresh_universe_digest(input);
+}
+
+fn refresh_universe_digest(input: &mut SolveInput) {
+    input.universe.canonical_digest = digest_projection(&input.universe, "universe-v1").unwrap();
 }
 
 #[test]
@@ -673,6 +680,16 @@ fn universe_rejects_non_canonical_or_versionless_exact_purls() {
 }
 
 #[test]
+fn universe_rejects_a_canonical_digest_unrelated_to_its_contents() {
+    let mut universe = input(vec![package('5', "victim", "1.0.0")], Vec::new()).universe;
+    universe.target_vocabulary_version = "attacker".into();
+    assert!(matches!(
+        validate_universe(&universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("universe-v1")
+    ));
+}
+
+#[test]
 fn native_validated_checks_represented_constraints_without_optimizing() {
     let selected = package('d', "captured", "1.0.0");
     let selected_id = selected.node_id.clone();
@@ -826,6 +843,7 @@ fn native_validated_rejects_dependency_conflict_cardinality_target_and_lifecycle
         .unwrap();
     provider.lifecycle.status = "yanked".into();
     provider.lifecycle.eligible = false;
+    refresh_universe_digest(&mut denied_lifecycle);
     assert!(matches!(
         solve(&denied_lifecycle),
         Err(ResolverError::InvalidProof(message)) if message.contains("lifecycle denied")
@@ -862,6 +880,7 @@ fn unaccepted_amendments_do_not_change_the_solution() {
         .policy
         .accepted_amendment_authorities
         .push("organization".into());
+    refresh_universe_digest(&mut amended);
 
     let plain_output = solve(&plain).unwrap();
     let amended_output = solve(&amended).unwrap();
@@ -1345,6 +1364,7 @@ fn amendment_subject_disambiguates_a_shared_metadata_digest() {
     });
     amended.universe.amendments[0].subject =
         serde_json::to_value(&package('3', "other", "1.0.0").identity).unwrap();
+    refresh_universe_digest(&mut amended);
     assert!(matches!(
         solve(&amended),
         Err(ResolverError::InvalidInput(message)) if message.contains("subject")
