@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { FixtureHttpTransport } from '@openpacker/adapter-core';
+import {
+  FixtureHttpTransport,
+  type HttpTransport,
+} from '@openpacker/adapter-core';
 import {
   NugetCodec,
   NugetV3Provider,
@@ -156,4 +159,32 @@ it('discovers registration metadata through a deterministic NuGet v3 service ind
   const snapshot = await provider.snapshot('2026-08-02T00:00:00Z');
   expect(snapshot.etag).toBe('"nuget-1"');
   expect(snapshot.revision).toMatch(/^sha256:/);
+});
+
+it('bounds aggregate NuGet registration bytes before parsing', async () => {
+  const transport: HttpTransport = {
+    async request(request) {
+      if (request.url.endsWith('/service-index.json'))
+        return {
+          status: 200,
+          headers: {},
+          body: serviceBytes,
+          url: request.url,
+        };
+      return {
+        status: 200,
+        headers: {},
+        body: { byteLength: 64 * 1024 * 1024 + 1 } as Uint8Array,
+        url: request.url,
+      };
+    },
+  };
+  const provider = new NugetV3Provider(
+    transport,
+    { now: () => '2026-08-02T00:00:00Z' },
+    'https://fixtures.openpacker.invalid/nuget/service-index.json',
+  );
+  await expect(provider.enumerate('pkg:nuget/demo.tool')).rejects.toMatchObject(
+    { code: 'UPSTREAM_RESPONSE_TOO_LARGE' },
+  );
 });

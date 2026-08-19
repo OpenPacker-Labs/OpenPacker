@@ -1016,6 +1016,12 @@ export class NugetV3Provider implements CatalogProvider {
       this.#records.set(key, revalidated);
       return revalidated;
     }
+    let registrationBytes = response.body.byteLength;
+    if (registrationBytes > 64 * 1024 * 1024)
+      throw new ProviderError(
+        'UPSTREAM_RESPONSE_TOO_LARGE',
+        'NuGet registration exceeds 64 MiB',
+      );
     const index = json<NugetRegistrationIndex>(response);
     const leaves: NugetRegistrationLeaf[] = [];
     let pageCount = 0;
@@ -1029,10 +1035,14 @@ export class NugetV3Provider implements CatalogProvider {
             'UPSTREAM_RESPONSE_TOO_LARGE',
             'NuGet registration exceeds 256 pages',
           );
-        leaves.push(
-          ...((await this.registrationPage(key, item['@id'], signal)).body
-            .items ?? []),
-        );
+        const page = await this.registrationPage(key, item['@id'], signal);
+        registrationBytes += page.rawBody.byteLength;
+        if (registrationBytes > 64 * 1024 * 1024)
+          throw new ProviderError(
+            'UPSTREAM_RESPONSE_TOO_LARGE',
+            'NuGet registration exceeds 64 MiB',
+          );
+        leaves.push(...(page.body.items ?? []));
       }
       if (leaves.length > 100_000)
         throw new ProviderError(

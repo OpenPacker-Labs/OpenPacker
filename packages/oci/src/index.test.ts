@@ -109,6 +109,26 @@ describe('OCI Distribution client', () => {
     });
   });
 
+  it('bounds time spent reading a stalled registry error body', async () => {
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      maximumAttempts: 1,
+      errorBodyTimeoutMilliseconds: 5,
+      fetch: (async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull: () => new Promise(() => undefined),
+          }),
+          { status: 500 },
+        )) as unknown as typeof fetch,
+    });
+    await expect(client.pullManifest('latest')).rejects.toMatchObject({
+      code: 'REGISTRY_ERROR',
+      message: expect.stringContaining('read deadline'),
+    });
+  });
+
   it('retries safe reads and performs a bounded monolithic upload', async () => {
     const methods: string[] = [];
     let heads = 0;

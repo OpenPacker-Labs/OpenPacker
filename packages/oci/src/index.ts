@@ -641,6 +641,7 @@ export class OciRegistryClient {
     retryDelayMilliseconds?: number;
     monolithicUploadMaximumBytes?: number;
     tagLimits?: Partial<OciTagLimits>;
+    errorBodyTimeoutMilliseconds?: number;
   }) {
     this.registry = new URL(input.registry);
     if (
@@ -662,6 +663,10 @@ export class OciRegistryClient {
     this.monolithicUploadMaximumBytes =
       input.monolithicUploadMaximumBytes ?? 4 * 1024 * 1024;
     this.tagLimits = boundedTagLimits(input.tagLimits);
+    this.errorBodyTimeoutMilliseconds = Math.min(
+      input.errorBodyTimeoutMilliseconds ?? 5_000,
+      5_000,
+    );
     if (
       !Number.isSafeInteger(this.maximumAttempts) ||
       this.maximumAttempts < 1 ||
@@ -682,6 +687,13 @@ export class OciRegistryClient {
       throw new RangeError(
         'monolithicUploadMaximumBytes must be between 0 and 64 MiB',
       );
+    if (
+      !Number.isSafeInteger(this.errorBodyTimeoutMilliseconds) ||
+      this.errorBodyTimeoutMilliseconds < 1
+    )
+      throw new RangeError(
+        'errorBodyTimeoutMilliseconds must be a positive integer',
+      );
   }
 
   private readonly fetchImplementation: typeof fetch;
@@ -690,6 +702,7 @@ export class OciRegistryClient {
   private readonly retryDelayMilliseconds: number;
   private readonly monolithicUploadMaximumBytes: number;
   private readonly tagLimits: OciTagLimits;
+  private readonly errorBodyTimeoutMilliseconds: number;
 
   private endpoint(path: string): URL {
     return new URL(`/v2/${this.repository}/${path}`, this.registry);
@@ -859,7 +872,8 @@ export class OciRegistryClient {
       signal,
     );
     if (response.status === 404) return false;
-    if (!response.ok) throw await registryError(response);
+    if (!response.ok)
+      throw await registryError(response, this.errorBodyTimeoutMilliseconds);
     return true;
   }
 
@@ -876,7 +890,8 @@ export class OciRegistryClient {
       `repository:${this.repository}:push,pull`,
       signal,
     );
-    if (started.status !== 202) throw await registryError(started);
+    if (started.status !== 202)
+      throw await registryError(started, this.errorBodyTimeoutMilliseconds);
     const location = started.headers.get('location');
     if (!location)
       throw new RegistryProtocolError(
@@ -940,7 +955,8 @@ export class OciRegistryClient {
           `repository:${this.repository}:push,pull`,
           signal,
         );
-        if (patched.status !== 202) throw await registryError(patched);
+        if (patched.status !== 202)
+          throw await registryError(patched, this.errorBodyTimeoutMilliseconds);
         const nextLocation = patched.headers.get('location');
         if (nextLocation) upload = new URL(nextLocation, upload);
       }
@@ -1035,7 +1051,7 @@ export class OciRegistryClient {
       (range && response.status !== 206) ||
       !response.body
     )
-      throw await registryError(response);
+      throw await registryError(response, this.errorBodyTimeoutMilliseconds);
     if (range) {
       const expectedEnd = range.offset + expectedRangeLength! - 1;
       const contentRange = response.headers.get('content-range');
@@ -1137,7 +1153,7 @@ export class OciRegistryClient {
       signal,
     );
     if (response.status !== 201 && response.status !== 202)
-      throw await registryError(response);
+      throw await registryError(response, this.errorBodyTimeoutMilliseconds);
   }
 
   async pullManifest(
@@ -1170,7 +1186,8 @@ export class OciRegistryClient {
       `repository:${this.repository}:pull`,
       signal,
     );
-    if (!response.ok || !response.body) throw await registryError(response);
+    if (!response.ok || !response.body)
+      throw await registryError(response, this.errorBodyTimeoutMilliseconds);
     const bytes = await collectStream(response.body, maximumBytes, signal);
     const mediaType =
       response.headers.get('content-type')?.split(';')[0] ??
@@ -1240,7 +1257,8 @@ export class OciRegistryClient {
         `repository:${this.repository}:pull`,
         signal,
       );
-      if (!response.ok || !response.body) throw await registryError(response);
+      if (!response.ok || !response.body)
+        throw await registryError(response, this.errorBodyTimeoutMilliseconds);
       const index = parseJson<OciIndex>(
         await collectStream(response.body, maximumReferrersPageBytes, signal),
       );
@@ -1464,13 +1482,20 @@ function ignoreExists(error: unknown): void {
 
 async function registryError(
   response: Response,
+  timeoutMilliseconds: number,
 ): Promise<RegistryProtocolError> {
+  const deadline = AbortSignal.timeout(timeoutMilliseconds);
   let body: Uint8Array;
   try {
     body = response.body
-      ? await collectStream(response.body, 64 * 1024)
+      ? await collectStream(response.body, 64 * 1024, deadline)
       : new Uint8Array();
   } catch (error) {
+    if (deadline.aborted)
+      return new RegistryProtocolError(
+        'REGISTRY_ERROR',
+        `Registry returned HTTP ${response.status} with an error body that exceeded its read deadline`,
+      );
     if (error instanceof RangeError)
       return new RegistryProtocolError(
         'REGISTRY_ERROR',
