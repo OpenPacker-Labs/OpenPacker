@@ -225,6 +225,33 @@ describe('materialiseTree', () => {
     });
   });
 
+  it('materialises through a symlinked ancestor of the root', async () => {
+    // Stock macOS symlinks /var → /private/var, so every $TMPDIR tree has a
+    // symlinked ancestor; the same holds for symlinked home directories and
+    // automounters on Linux. The prefix is canonicalized once, then all
+    // traversal is fd-relative, so a later swap cannot redirect anything.
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const real = join(dir, 'real');
+      const source = join(real, 'source');
+      const root = join(real, 'node_modules');
+      await mkdir(source, { recursive: true });
+      await writeFile(join(source, 'package.js'), 'safe');
+      const alias = join(dir, 'alias');
+      await symlink(real, alias, 'dir');
+
+      const result = await materialiseTree(
+        join(alias, 'source'),
+        join(alias, 'node_modules', 'pkg'),
+        join(alias, 'node_modules'),
+      );
+      expect(result.files).toBe(1);
+      expect(await readFile(join(root, 'pkg', 'package.js'), 'utf8')).toBe(
+        'safe',
+      );
+    });
+  });
+
   it('refuses a linked ancestor when removing a tree', async () => {
     await withTemp(async (dir) => {
       const outside = join(dir, 'outside');

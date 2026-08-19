@@ -55,7 +55,9 @@ import {
 } from '../src/index.js';
 import { packTarGzip } from '@openpacker/project-io';
 import {
+  openStableDirectory,
   readStableFile,
+  revalidateStableDirectory,
   supportsStableProjectMetadata,
   writeStableFile,
 } from '../src/paths.js';
@@ -395,6 +397,48 @@ describe('fail-closed install paths', () => {
 
     await expect(writing).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
     expect(await readdir(outside)).toEqual([]);
+  });
+
+  it('operates through a symlinked ancestor of the project root', async () => {
+    // Stock macOS symlinks /var → /private/var, so every $TMPDIR project has
+    // a symlinked ancestor; the same holds for symlinked home directories and
+    // automounters on Linux.
+    const base = await mkdtemp(join(tmpdir(), 'opm-alias-'));
+    temps.push(base);
+    const real = join(base, 'real');
+    const alias = join(base, 'alias');
+    await mkdir(real);
+    await symlink(real, alias, 'dir');
+
+    await writeStableFile(join(alias, '.opm', 'metadata.json'), '{"ok":true}');
+    expect(await readStableFile(join(alias, '.opm', 'metadata.json'))).toBe(
+      '{"ok":true}',
+    );
+    expect(await readFile(join(real, '.opm', 'metadata.json'), 'utf8')).toBe(
+      '{"ok":true}',
+    );
+  });
+
+  it('detects a swap of a symlinked ancestor while a handle is held', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'opm-alias-swap-'));
+    temps.push(base);
+    const real = join(base, 'real');
+    const decoy = join(base, 'decoy');
+    const alias = join(base, 'alias');
+    await mkdir(join(real, 'sub'), { recursive: true });
+    await mkdir(join(decoy, 'sub'), { recursive: true });
+    await symlink(real, alias, 'dir');
+
+    const handle = await openStableDirectory(join(alias, 'sub'));
+    try {
+      await rm(alias);
+      await symlink(decoy, alias, 'dir');
+      await expect(
+        revalidateStableDirectory(join(alias, 'sub'), handle),
+      ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    } finally {
+      await handle.close();
+    }
   });
 
   it('refuses network fetches while offline', async () => {

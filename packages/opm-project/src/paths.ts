@@ -4,6 +4,7 @@ import {
   mkdir,
   lstat,
   open,
+  realpath,
   rename,
   rm,
   type FileHandle,
@@ -147,11 +148,46 @@ export function storePathForDigest(root: string, digest: string): string {
   return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
 }
 
+/**
+ * Canonicalize the existing ancestor prefix of a stable target.
+ *
+ * The no-follow component walk refuses symlinked path components, which would
+ * reject every project under a legitimately symlinked ancestor — macOS
+ * `/var` → `/private/var` (all of `$TMPDIR`), symlinked home directories,
+ * automounters. Honor such a stable pre-existing prefix once by realpath-ing
+ * the deepest existing ancestor here; the final component stays lexical so a
+ * symlinked target itself is still refused, and the dev/ino identity
+ * re-checks against the lexical path still detect a later swap of the prefix.
+ */
+async function canonicalizeStableTarget(path: string): Promise<string> {
+  const absolute = resolve(path);
+  const tail: string[] = [basename(absolute)];
+  let candidate = dirname(absolute);
+  for (;;) {
+    try {
+      const canonical = await realpath(candidate);
+      return join(canonical, ...tail.reverse());
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ELOOP' || code === 'ENOTDIR')
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Directory path is linked or unstable: ${path}`,
+        );
+      if (code !== 'ENOENT') throw error;
+    }
+    const parent = dirname(candidate);
+    if (parent === candidate) return absolute;
+    tail.push(basename(candidate));
+    candidate = parent;
+  }
+}
+
 export async function openStableDirectory(
   path: string,
   create = false,
 ): Promise<FileHandle> {
-  const absolute = resolve(path);
+  const absolute = await canonicalizeStableTarget(path);
   const root = parse(absolute).root;
   let handle = await open(
     root,
