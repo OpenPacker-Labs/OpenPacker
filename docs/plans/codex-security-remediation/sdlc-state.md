@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: planned and implementing
-- Current layer: `01-canonical-policy`
+- Phase: implementing; layer 01 independently approved
+- Current layer: `01-canonical-policy` closeout before stacking layer 02
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -68,3 +68,11 @@ upstream Codex Security release currently has no patched version.
   pass.
 - 2026-08-18: `@openai/codex-security@0.1.14` is the latest registry release and
   still depends on `extract-zip@2.0.1`; no upstream patched release exists.
+- 2026-08-18 layer 01: resolver 31/31, policy 18/18, OPM project 139/139,
+  adapter-nix 32 passed with 3 live skips, contracts validated 14 schemas and
+  189 references, staged `agent:check` passed 10/10, and `git diff --check` was
+  clean.
+- 2026-08-18 layer 01 independent review: approved at `99a0f73`; canonical
+  version projections, deny-all empty signer allowlists, deprecation defaults,
+  authority-plus-digest amendments, and exact source-snapshot pins were all
+  rechecked with no remaining findings.

@@ -2,7 +2,7 @@
 
 ## 01 — Canonical identity and policy
 
-Status: in progress.
+Status: independently approved; focused and staged gates green.
 
 Close findings 1, 2, 4, 7, 8, and 22. Recompute package node identity at the
 Rust trust boundary, reject contradictory identities, require verified amendment
