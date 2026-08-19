@@ -69,3 +69,8 @@ test suite and every advertised test type has a mandatory oracle.
 - 2026-08-18: the post-review full offline `npm run verify` passed all required
   TypeScript, Rust, contract, documentation, coverage, specialized test,
   pack-parity, demo, benchmark, golden, browser, Pact, and fuzz gates.
+- 2026-08-18 second review closeout: every specialized Vitest oracle is now
+  required to collect a runnable test, authority commands match exactly, and the
+  root Nix live lane resolves to an explicit workspace script. Focused inventory
+  and the complete offline `npm run verify` passed again without executing a
+  host package manager.
