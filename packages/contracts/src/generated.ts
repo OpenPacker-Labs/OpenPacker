@@ -9439,7 +9439,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           sandboxMode: {
             $comment:
-              'fail-closed refuses when a jail cannot be enforced; degrade-warn continues with SANDBOX_DEGRADED; off is ambient execution (explicit opt-in).',
+              'fail-closed refuses when a jail cannot be enforced; degrade-warn and off are refused fail-closed (TREE_CONTAINMENT_UNAVAILABLE) because ambient execution has no owned process-tree boundary.',
             enum: ['fail-closed', 'degrade-warn', 'off'],
           },
           sandboxRequired: {
