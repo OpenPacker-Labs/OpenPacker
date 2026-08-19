@@ -55,4 +55,6 @@ repository wrapper refuses to start a scanner that declares or can resolve
 
 The scan fails closed at low severity. Codex Security also refuses to evaluate
 that policy when coverage is partial; treat either exit as a failed security
-gate and inspect the external report before changing code.
+gate and inspect the external report before changing code. The wrapper pins the
+scanner's constrained, automatically reviewed `on-request` execution policy so
+its bundled preflight helper can run without granting ambient command access.

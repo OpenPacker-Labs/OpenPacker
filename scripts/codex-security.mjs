@@ -150,7 +150,7 @@ const scan = run(
     '--scan-prompt-file',
     'docs/security/codex-security-scan.md',
     '--codex',
-    'approval_policy="never"',
+    'approval_policy="on-request"',
     ...forwarded,
   ],
   'inherit',
