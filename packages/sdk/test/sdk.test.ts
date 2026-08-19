@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   OpenPackerClient,
   PrexClientError,
@@ -54,6 +54,18 @@ describe('OpenPackerClient', () => {
           authenticate: () => ({ authorization: 'Bearer secret' }),
         }),
     ).toThrow(/require an HTTPS/u);
+  });
+
+  it('rejects per-request credentials on plaintext URLs before fetch', async () => {
+    const fetch = vi.fn();
+    const client = new OpenPackerClient({
+      baseUrl: 'http://127.0.0.1:7337',
+      fetch,
+    });
+    await expect(
+      client.discovery({ headers: { authorization: 'Bearer secret' } }),
+    ).rejects.toThrow(/require an HTTPS/u);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('keeps the browser entrypoint aligned with the primary SDK', async () => {

@@ -794,6 +794,36 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
+  it('refuses a remote catalog artifact before any network request', async () => {
+    const root = await tempProject();
+    const fetch = vi.fn(() => {
+      throw new Error('network must not run');
+    });
+    vi.stubGlobal('fetch', fetch);
+    await writeFile(
+      join(root, '.opm', 'catalog.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        packages: {
+          'pkg:npm/catalog-ssrf@1.0.0': {
+            purl: 'pkg:npm/catalog-ssrf@1.0.0',
+            version: '1.0.0',
+            digest: `sha256:${'0'.repeat(64)}`,
+            size: 1,
+            format: 'tar+gzip',
+            mediaType: 'application/vnd.npm.package+gzip',
+            source: 'https://127.0.0.1/internal.tgz',
+          },
+        },
+      }),
+    );
+
+    await expect(
+      addPackage({ root, spec: 'pkg:npm/catalog-ssrf@1.0.0' }),
+    ).rejects.toMatchObject({ code: expect.stringMatching(/^POLICY_/u) });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('rejects persisted store and bin authority outside the project store', async () => {
     const root = await tempProject();
     await addPackage({

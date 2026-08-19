@@ -801,8 +801,9 @@ async function pinnedHttpsStream(
 function isPrivateAddress(value: string): boolean {
   const address = value.toLowerCase();
   if (address.includes(':')) {
+    const mapped = mappedIpv4Address(address);
     if (address.startsWith('::ffff:'))
-      return isPrivateAddress(address.slice('::ffff:'.length));
+      return mapped === undefined || isPrivateAddress(mapped);
     return (
       address === '::' ||
       address === '::1' ||
@@ -825,6 +826,16 @@ function isPrivateAddress(value: string): boolean {
     (first === 192 && second === 168) ||
     first >= 224
   );
+}
+
+function mappedIpv4Address(value: string): string | undefined {
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(value);
+  if (hex) {
+    const high = parseInt(hex[1]!, 16);
+    const low = parseInt(hex[2]!, 16);
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+  }
+  return /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/iu.exec(value)?.[1];
 }
 
 function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {
@@ -863,15 +874,7 @@ function isLoopback(value: string): boolean {
     if (host === '::1') return true;
     // IPv4-mapped IPv6 reaches the same v4 stack. WHATWG URL rewrites
     // `::ffff:127.0.0.1` to the hex form `::ffff:7f00:1`, so read that.
-    const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(host);
-    const mapped = hex
-      ? [
-          parseInt(hex[1]!, 16) >> 8,
-          parseInt(hex[1]!, 16) & 0xff,
-          parseInt(hex[2]!, 16) >> 8,
-          parseInt(hex[2]!, 16) & 0xff,
-        ].join('.')
-      : /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/iu.exec(host)?.[1];
+    const mapped = mappedIpv4Address(host);
     const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(
       mapped ?? host,
     );

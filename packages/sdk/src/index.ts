@@ -373,6 +373,15 @@ export class OpenPackerClient {
       if (authentication !== undefined)
         for (const [key, value] of new Headers(authentication))
           headers.set(key, value);
+      if (
+        new URL(url).protocol !== 'https:' &&
+        ['authorization', 'proxy-authorization', 'cookie'].some((name) =>
+          headers.has(name),
+        )
+      )
+        throw new TypeError(
+          'Credential-bearing OpenPacker requests require an HTTPS URL',
+        );
       const timeout = options?.timeoutMilliseconds ?? this.#timeoutMilliseconds;
       const { signal, dispose } = combinedSignal(options?.signal, timeout);
       try {

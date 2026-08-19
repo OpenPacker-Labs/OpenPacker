@@ -256,6 +256,7 @@ describe('openpacker CLI', () => {
     try {
       for (const location of [
         { transport: 'https', uri: 'https://127.0.0.1/archive.tar' },
+        { transport: 'https', uri: 'https://[::ffff:7f00:1]/archive.tar' },
         { transport: 'file', uri: pathToFileURL(outside).toString() },
       ]) {
         const fetch = vi.fn(async () =>

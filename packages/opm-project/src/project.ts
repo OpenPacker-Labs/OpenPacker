@@ -937,7 +937,25 @@ async function resolveRequirement(input: {
       continue;
     }
     const source = entry.resolvedSource;
-    // verify digest if we can read offline
+    const sourceUri =
+      source.startsWith('/') || /^[A-Za-z]:/.test(source)
+        ? toFileUrl(source)
+        : source;
+    const entryPurl = entry.purl.includes('@')
+      ? entry.purl
+      : exactPurl(entry.purl, entry.version);
+    const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
+      evaluationTime,
+      dependencyDepth: 0,
+      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+      lifecycleScriptsExecuted: false,
+    });
+    await assertSupplyChainAllowed(policy, facts);
+    if (/^https?:/iu.test(sourceUri))
+      throw new OpmError(
+        'POLICY_DENIED',
+        'Remote catalog artifacts are not authorized; use a configured registry or an explicit source',
+      );
     const bytes = await fetchArtifactBytes(source, input.offline, {
       expectedBytes: entry.size,
     });
@@ -956,20 +974,6 @@ async function resolveRequirement(input: {
     if (bins.length === 0 && ecosystem === 'npm') {
       bins = await discoverBinsFromArchive(bytes, entry.format);
     }
-    const sourceUri =
-      source.startsWith('/') || /^[A-Za-z]:/.test(source)
-        ? toFileUrl(source)
-        : source;
-    const entryPurl = entry.purl.includes('@')
-      ? entry.purl
-      : exactPurl(entry.purl, entry.version);
-    const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
-      evaluationTime,
-      dependencyDepth: 0,
-      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
-      lifecycleScriptsExecuted: false,
-    });
-    await assertSupplyChainAllowed(policy, facts);
     const catalogIntegrity = nativeIntegrityOf(ecosystem, bytes);
     return {
       alias: input.alias,
