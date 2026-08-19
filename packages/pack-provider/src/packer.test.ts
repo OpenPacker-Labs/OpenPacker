@@ -2,6 +2,7 @@ import {
   appendFile,
   mkdtemp,
   mkdir,
+  open,
   rename,
   rm,
   symlink,
@@ -294,25 +295,38 @@ describe('manifest package packer', () => {
     ).rejects.toThrow(/exceed 5 total bytes/u);
   });
 
-  it('bounds an artifact that grows while hashing', async () => {
+  it('bounds an artifact that grows during collection', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
-    let growth: Promise<void> | undefined;
+    let signalOpened!: () => void;
+    let releaseOpen!: () => void;
+    const opened = new Promise<void>((resolvePromise) => {
+      signalOpened = resolvePromise;
+    });
+    const released = new Promise<void>((resolvePromise) => {
+      releaseOpen = resolvePromise;
+    });
+    const growth = opened
+      .then(() => appendFile(join(outputDirectory, 'demo.test'), 'x'))
+      .finally(releaseOpen);
     const packer = configured(
       manifest(),
       async () => '/usr/bin/test-pack',
       async () => {
         await writeFile(join(outputDirectory, 'demo.test'), Buffer.alloc(1024));
-        growth = new Promise<void>((resolvePromise) =>
-          setTimeout(resolvePromise, 5),
-        ).then(() => appendFile(join(outputDirectory, 'demo.test'), 'x'));
         return outcome();
       },
       { artifactBytes: 1024n, readChunkBytes: 1 },
+      async (...arguments_) => {
+        const handle = await open(...arguments_);
+        signalOpened();
+        await released;
+        return handle;
+      },
     );
 
     await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /while hashing/u,
+      /exceeds 1024 bytes/u,
     );
     await growth;
   });
@@ -361,11 +375,13 @@ function configured(
     input: RunInSandboxInput,
   ) => Promise<SandboxOutcome> = async () => outcome(),
   limits?: Partial<ManifestPackagePackerLimits>,
+  openFile?: typeof open,
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
     resolveExecutable,
     sandboxRun,
     ...(limits === undefined ? {} : { limits }),
+    ...(openFile === undefined ? {} : { openFile }),
   });
 }
 

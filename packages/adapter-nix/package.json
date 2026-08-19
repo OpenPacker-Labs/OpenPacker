@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live": "OPENPACKER_LIVE_NIX=1 vitest run test/provider.live.test.ts"
   },
   "dependencies": {
     "@openpacker/adapter-core": "0.1.0",
