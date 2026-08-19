@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertBoundedProviderMetadata,
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   BoundedFetchTransport,
@@ -46,6 +47,14 @@ describe('PURL codec primitives', () => {
     expect(() => parsePurl('pkg:npm/demo?a=1&A=2')).toThrow(
       /Duplicate qualifier/,
     );
+  });
+
+  it('rejects provider identity substitution', () => {
+    expect(() =>
+      assertPackageIdentityMatchesRequest('pkg:npm/demo@1.0.0', {
+        exactPurl: 'pkg:npm/other@1.0.0',
+      }),
+    ).toThrow(/does not match/u);
   });
 });
 
@@ -261,6 +270,33 @@ it('rejects unlisted initial and redirect origins before fetching them', async (
     transport.request({ url: 'https://registry.test/data' }),
   ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   expect(calls).toEqual(['https://registry.test/data']);
+});
+
+it('allows only credential-free loopback HTTP provider traffic', async () => {
+  expect(
+    () =>
+      new BoundedFetchTransport({
+        allowedOrigins: ['http://registry.example'],
+      }),
+  ).toThrowError(
+    expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+  );
+
+  const calls: string[] = [];
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: ['http://127.0.0.1:7337'],
+    fetch: (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response('ok');
+    }) as typeof fetch,
+  });
+  await expect(
+    transport.request({
+      url: 'http://127.0.0.1:7337/data',
+      headers: { authorization: 'Bearer secret' },
+    }),
+  ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+  expect(calls).toEqual([]);
 });
 
 it('preserves HEAD across a 303 serviceability redirect', async () => {

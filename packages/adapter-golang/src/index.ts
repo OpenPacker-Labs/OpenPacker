@@ -11,6 +11,7 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   evaluateSemverRange,
@@ -940,6 +941,10 @@ export class GolangProxyProvider implements CatalogProvider {
         mediaType: 'application/json',
       },
     });
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
+    );
     if (translated.instance.artifacts[0]) {
       const path = modulePathFromParts(parsed.namespace, parsed.name);
       translated.instance.artifacts[0].locations = [

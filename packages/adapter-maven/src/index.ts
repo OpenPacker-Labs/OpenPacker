@@ -1353,6 +1353,11 @@ export class MavenRepositoryProvider implements CatalogProvider {
     if (response.status < 200 || response.status >= 300)
       throw providerErrorForStatus(response.status);
     const body = parseMavenMetadataXml(text(response));
+    if (body.groupId !== parsed.namespace || body.artifactId !== parsed.name)
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `maven-metadata.xml identity does not match ${key}`,
+      );
     const record: ProviderRecord<MavenMetadataDocument> = {
       key,
       endpoint: response.url,

@@ -50,10 +50,10 @@ export class SonatypeProvider implements EnrichmentProvider {
     private readonly secretReference: string,
   ) {
     const protocol = new URL(endpoint).protocol;
-    if (protocol !== 'https:' && protocol !== 'http:')
+    if (protocol !== 'https:')
       throw new ProviderError(
         'INVALID_PROVIDER_ENDPOINT',
-        'Sonatype endpoint must use HTTP(S)',
+        'Sonatype endpoint must use HTTPS',
       );
   }
 

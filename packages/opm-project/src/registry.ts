@@ -1,5 +1,7 @@
 import {
+  assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
+  parsePurl,
   type CatalogProvider,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -79,6 +81,20 @@ export function registryEndpoint(ecosystem: string): string {
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
       `No registry endpoint is configured for "${ecosystem}".`,
+    );
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `Registry endpoint for "${ecosystem}" is not a valid URL.`,
+    );
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password)
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `Registry endpoint for "${ecosystem}" must be HTTPS and contain no credentials.`,
     );
   return endpoint;
 }
@@ -256,7 +272,16 @@ export async function listRegistryVersions(
   const provider = await providerForWithDiscovery(ecosystem, options, [
     'prex.registry.enumerate-versions/1',
   ]);
-  return provider.enumerate(basePurl);
+  const candidates = await provider.enumerate(basePurl);
+  for (const candidate of candidates) {
+    assertPackageIdentityMatchesRequest(basePurl, { exactPurl: candidate });
+    if (parsePurl(candidate).version === undefined)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `Registry enumeration returned a non-exact package identity: ${candidate}.`,
+      );
+  }
+  return candidates;
 }
 
 export interface RegistryArtifact {
@@ -285,6 +310,13 @@ export async function resolveRegistryArtifact(
       'UNRESOLVABLE',
       `The ${ecosystem} registry did not resolve an exact package identity for ${exactPurl}.`,
     );
+  // OCI identities are constructed from the requested repository and replace
+  // a tag qualifier with a digest version; they do not consume a registry-
+  // asserted package name. Other adapters must preserve the requested PURL.
+  if (ecosystem !== 'oci')
+    assertPackageIdentityMatchesRequest(exactPurl, {
+      exactPurl: inspectedPurl,
+    });
   // Fetch the immutable identity established by inspection. In particular,
   // never resolve a mutable OCI tag a second time after it was pinned.
   const record = await provider.fetchArtifactRecord(inspectedPurl);

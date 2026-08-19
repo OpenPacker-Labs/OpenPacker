@@ -168,6 +168,36 @@ it('parses maven-metadata.xml fixture offline', () => {
   expect(metadata.versioning.versions).toEqual(['1.0.0-beta.1', '1.0.0']);
 });
 
+it('rejects substituted Maven metadata identity', async () => {
+  const base = 'https://fixtures.openpacker.invalid/maven';
+  const provider = new MavenRepositoryProvider(
+    new FixtureHttpTransport(
+      new Map([
+        [
+          `${base}/org/example/demo-tool/maven-metadata.xml`,
+          {
+            status: 200,
+            headers: {},
+            body: new TextEncoder().encode(
+              metadataBytes
+                .toString('utf8')
+                .replace(
+                  '<artifactId>demo-tool</artifactId>',
+                  '<artifactId>other-tool</artifactId>',
+                ),
+            ),
+          },
+        ],
+      ]),
+    ),
+    { now: () => '2026-08-02T00:00:00Z' },
+    base,
+  );
+  await expect(
+    provider.enumerate('pkg:maven/org.example/demo-tool'),
+  ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+});
+
 it('discovers Maven Central-style fixture metadata offline', async () => {
   const base = 'https://fixtures.openpacker.invalid/maven';
   const provider = new MavenRepositoryProvider(

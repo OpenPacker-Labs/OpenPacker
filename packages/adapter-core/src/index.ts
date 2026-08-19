@@ -670,6 +670,16 @@ export class BoundedFetchTransport implements HttpTransport {
     assertAllowedProviderUrl(url, this.#allowedOrigins);
     let method = request.method ?? 'GET';
     let headers = { ...(request.headers ?? {}) };
+    if (
+      url.protocol === 'http:' &&
+      Object.keys(headers).some((name) =>
+        SENSITIVE_HEADERS.has(name.toLowerCase()),
+      )
+    )
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'Plaintext loopback provider requests cannot carry credentials',
+      );
     const limit = Math.min(
       request.maximumBytes ?? this.#maximumBytes,
       this.#maximumBytes,
@@ -749,7 +759,8 @@ export class BoundedFetchTransport implements HttpTransport {
 function normalizeAllowedOrigin(value: string): string {
   const url = parseProviderUrl(value);
   if (
-    (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+    (url.protocol !== 'https:' &&
+      !(url.protocol === 'http:' && isLoopbackHostname(url.hostname))) ||
     url.username !== '' ||
     url.password !== '' ||
     url.pathname !== '/' ||
@@ -761,6 +772,12 @@ function normalizeAllowedOrigin(value: string): string {
       `Allowed provider origin must be an HTTP(S) origin: ${value}`,
     );
   return url.origin;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+  );
 }
 
 function parseProviderUrl(value: string, base?: URL): URL {
@@ -1039,6 +1056,30 @@ export function parsePurl(value: string): ParsedPurl {
   if (subpath !== undefined && subpath !== '')
     result.subpath = subpath.split('/').map(decode).join('/');
   return result;
+}
+
+/** Reject provider metadata that substitutes a different requested package. */
+export function assertPackageIdentityMatchesRequest(
+  requestedPurl: string,
+  identity: Pick<PackageIdentity, 'exactPurl'>,
+): void {
+  if (!identity.exactPurl)
+    throw new ProviderError(
+      'INVALID_PROVIDER_METADATA',
+      `Provider returned no exact identity for ${requestedPurl}`,
+    );
+  const requested = parsePurl(requestedPurl);
+  const actual = parsePurl(identity.exactPurl);
+  if (
+    actual.type !== requested.type ||
+    actual.namespace !== requested.namespace ||
+    actual.name !== requested.name ||
+    (requested.version !== undefined && actual.version !== requested.version)
+  )
+    throw new ProviderError(
+      'INVALID_PROVIDER_METADATA',
+      `Provider identity ${identity.exactPurl} does not match ${requestedPurl}`,
+    );
 }
 
 export function formatPurl(purl: ParsedPurl): string {

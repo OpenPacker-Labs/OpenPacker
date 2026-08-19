@@ -10,6 +10,7 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   evaluateRange,
   compareCodePoints,
   formatPurl,
@@ -795,6 +796,10 @@ export class NugetV3Provider implements CatalogProvider {
         mediaType: 'application/json',
       },
     });
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
+    );
     const packageUri =
       leaf.packageContent ??
       (this.#packageBaseAddress === undefined

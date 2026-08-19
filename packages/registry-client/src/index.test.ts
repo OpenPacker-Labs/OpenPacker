@@ -409,6 +409,20 @@ describe('PrexRegistryProvider as an opm source', () => {
     );
   });
 
+  it('rejects a registry distribution that substitutes package identity', async () => {
+    const substituted = await entryFor(manifest('other-tool'));
+    const { transport } = fixtureTransport({
+      ...(await routes()),
+      '/v1/packages/demo-tool/versions/1.2.3': substituted,
+    });
+    const provider = new PrexRegistryProvider(
+      new RegistryClient({ baseUrl: BASE, transport }),
+    );
+    await expect(
+      provider.inspect('pkg:npm/demo-tool@1.2.3'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+  });
+
   it('points at the upstream location rather than pretending to serve bytes', async () => {
     const { transport } = fixtureTransport(await routes());
     const provider = new PrexRegistryProvider(

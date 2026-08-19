@@ -39,6 +39,23 @@ const capabilities = {
 } as const;
 
 describe('OpenPackerClient', () => {
+  it('rejects credentials on plaintext service URLs', () => {
+    expect(
+      () =>
+        new OpenPackerClient({
+          baseUrl: 'http://service.example',
+          headers: { authorization: 'Bearer secret' },
+        }),
+    ).toThrow(/require an HTTPS/u);
+    expect(
+      () =>
+        new OpenPackerClient({
+          baseUrl: 'http://service.example',
+          authenticate: () => ({ authorization: 'Bearer secret' }),
+        }),
+    ).toThrow(/require an HTTPS/u);
+  });
+
   it('keeps the browser entrypoint aligned with the primary SDK', async () => {
     const browser = await import('../src/browser.js');
     expect(browser.OpenPackerClient).toBe(OpenPackerClient);

@@ -135,6 +135,17 @@ describe('registry configuration', () => {
     }
   });
 
+  it('rejects plaintext private registry overrides', () => {
+    const previous = process.env.OPM_REGISTRY_NPM;
+    process.env.OPM_REGISTRY_NPM = 'http://npm.internal.example';
+    try {
+      expect(() => registryEndpoint('npm')).toThrow(/must be HTTPS/u);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_NPM;
+      else process.env.OPM_REGISTRY_NPM = previous;
+    }
+  });
+
   it('refuses an ecosystem it has no registry for', async () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
     // Discovery path: unregistered purl types fail closed at the adapter host.
@@ -256,6 +267,17 @@ describe('artifact resolution', () => {
         now: () => '2026-08-04T00:00:00Z',
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('rejects registry metadata for a different package identity', async () => {
+    const substituted = structuredClone(PACKUMENT);
+    substituted.versions['1.1.0'].name = 'attacker-package';
+    await expect(
+      resolveRegistryArtifact('npm', 'pkg:npm/demo@1.1.0', {
+        transport: new FixtureHttpTransport(npmFixtures(substituted)),
+        now: () => '2026-08-04T00:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
   });
 });
 

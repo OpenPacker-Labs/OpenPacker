@@ -129,6 +129,13 @@ export class OpenPackerClient {
     if (!this.#fetch)
       throw new TypeError('A standard fetch implementation is required');
     this.#headers = new Headers(options.headers);
+    if (
+      this.#baseUrl.protocol !== 'https:' &&
+      (this.#headers.has('authorization') || options.authenticate !== undefined)
+    )
+      throw new TypeError(
+        'Authenticated OpenPacker clients require an HTTPS base URL',
+      );
     if (options.userAgent) this.#headers.set('user-agent', options.userAgent);
     this.#authenticate = options.authenticate;
     this.#retries = positiveInteger(options.retries ?? 0, 'retries', true);

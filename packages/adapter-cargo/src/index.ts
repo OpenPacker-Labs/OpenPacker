@@ -10,6 +10,7 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   evaluateSemverRange,
@@ -531,6 +532,10 @@ export class CargoSparseProvider implements CatalogProvider {
         mediaType: 'application/json',
       },
     });
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
+    );
     if (translated.instance.artifacts[0]) {
       translated.instance.artifacts[0].locations = [
         {
