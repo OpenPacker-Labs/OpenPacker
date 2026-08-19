@@ -170,6 +170,7 @@ describe('service index', () => {
     expect(types).toContain('prex.registry.sync/1');
     // Advertising artifact/1 would promise bytes this registry does not hold.
     expect(types).not.toContain('prex.registry.artifact/1');
+    expect(types).not.toContain('prex.registry.key-lifecycle/1');
     await app.close();
   });
 });
@@ -386,7 +387,10 @@ describe('reading, through the real client', () => {
       payload: await signed(manifest()),
     });
 
-    const client = clientFor(app, { keys: { 'publisher-1': keys.leaf! } });
+    const client = clientFor(app, {
+      keys: { 'publisher-1': keys.leaf!, 'test-registry': keys.root! },
+      clock: () => Date.parse('2026-08-10T00:00:00.000Z'),
+    });
     const entry = await client.entry('com.example.demo', '1.2.3');
     expect(entry.manifest.version).toBe('1.2.3');
     // The wire contract is exercised by a real consumer, not asserted.
@@ -518,6 +522,79 @@ describe('reading, through the real client', () => {
       (await app.inject({ method: 'PATCH', url: route, payload: accepted }))
         .statusCode,
     ).toBe(409);
+    await app.close();
+  });
+
+  it('rejects lifecycle rollback while scoping event ids to each package', async () => {
+    const store = new RegistryStore();
+    store.trustKey('com.example', 'publisher-1', 'registry-configured');
+    store.trustKey('org.other', 'publisher-2', 'registry-configured');
+    const app = registry({
+      store,
+      clock: { now: () => '2026-08-10T00:02:00.000Z' },
+      publisherKeys: {
+        'publisher-1': keys.leaf!,
+        'publisher-2': keys.log!,
+      },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signedWith(
+        'publisher-2',
+        keys.log!,
+        manifest('org.other.demo', '1.0.0'),
+      ),
+    });
+    const firstRoute = '/v1/packages/com.example.demo/versions/1.2.3/status';
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: firstRoute,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'deleted', {
+            eventId: 'shared-event',
+            issuedAt: '2026-08-10T00:01:00.000Z',
+          }),
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: firstRoute,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'active', {
+            eventId: 'older-event',
+            issuedAt: '2026-08-10T00:00:30.000Z',
+          }),
+        })
+      ).statusCode,
+    ).toBe(409);
+    const other = await app.inject({
+      method: 'PATCH',
+      url: '/v1/packages/org.other.demo/versions/1.0.0/status',
+      payload: await signedStatus('org.other.demo', '1.0.0', 'deprecated', {
+        eventId: 'shared-event',
+        issuedAt: '2026-08-10T00:01:00.000Z',
+        keyId: 'publisher-2',
+        key: keys.log!,
+      }),
+    });
+    expect(other.statusCode).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: firstRoute.replace('/status', ''),
+        })
+      ).json().registryMetadata.status,
+    ).toBe('deleted');
     await app.close();
   });
 
@@ -1031,18 +1108,82 @@ describe('key lifecycle', () => {
     expect(response.statusCode).toBe(201);
     await app.close();
   });
+
+  it('does not let a revoked successor rotate authority again', async () => {
+    const app = await signing();
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationFrom(
+            'publisher-1',
+            keys.leaf!,
+            'publisher-2',
+            keys.log!,
+            '2026-08-10T00:01:00.000Z',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationFrom(
+            'publisher-2',
+            keys.log!,
+            'publisher-3',
+            keys.root!,
+            '2026-08-10T00:02:00.000Z',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationFrom(
+        'publisher-2',
+        keys.log!,
+        'attacker',
+        keys.leaf!,
+        '2026-08-10T00:03:00.000Z',
+      ),
+    });
+    expect(rejected.statusCode).toBe(403);
+    expect(rejected.json().detail).toMatch(/revoked/u);
+    await app.close();
+  });
 });
 
 /** A rotation from publisher-1 to `nextKeyId`, signed by publisher-1. */
 async function rotationTo(nextKeyId: string, nextJwk: JsonWebKey) {
+  return rotationFrom(
+    'publisher-1',
+    keys.leaf!,
+    nextKeyId,
+    nextJwk,
+    '2026-08-11T00:00:00.000Z',
+  );
+}
+
+async function rotationFrom(
+  previousKeyId: string,
+  previousJwk: JsonWebKey,
+  nextKeyId: string,
+  nextJwk: JsonWebKey,
+  rotatedAt: string,
+) {
   const { rotationMessage } = await import('../src/keys.js');
   const unsigned = {
-    previousKeyId: 'publisher-1',
+    previousKeyId,
     nextKeyId,
     nextPublicKey: { kty: 'OKP', crv: 'Ed25519', x: nextJwk.x! },
-    rotatedAt: '2026-08-11T00:00:00.000Z',
+    rotatedAt,
   };
-  const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+  const signer = await Ed25519Signer.fromJwk(previousKeyId, previousJwk);
   return {
     ...unsigned,
     signature: await signer.sign(await rotationMessage(unsigned)),

@@ -259,7 +259,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     'prex.registry.package-manifest/1',
     'prex.registry.sync/1',
     'prex.registry.publish/1',
-    'prex.registry.key-lifecycle/1',
+    ...(options.signer ? ['prex.registry.key-lifecycle/1'] : []),
   ];
 
   app.get(WELL_KNOWN, async (_request, reply) =>
@@ -342,6 +342,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           403,
           `Key ${rotation.previousKeyId} is not known to this registry`,
         );
+      if (!mayPublish(rotation.previousKeyId, store.revocations()))
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          403,
+          `Key ${rotation.previousKeyId} is revoked and cannot authorize a successor`,
+        );
       if (!(await verifyRotation(rotation, previous)))
         // Anyone could otherwise nominate a successor to someone else's key.
         throw new PublishError(
@@ -350,15 +356,20 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `The rotation is not signed by ${rotation.previousKeyId}`,
         );
 
-      store.recordRotation(rotation);
-      store.rotateNamespaceKey(rotation.previousKeyId, rotation.nextKeyId);
-      store.revoke({
-        keyId: rotation.previousKeyId,
-        revokedAt: rotation.rotatedAt,
-        effective: 'from-now',
-        reason: 'rotated',
-        replacedBy: rotation.nextKeyId,
-      });
+      if (
+        !store.rotateKey(rotation, {
+          keyId: rotation.previousKeyId,
+          revokedAt: rotation.rotatedAt,
+          effective: 'from-now',
+          reason: 'rotated',
+          replacedBy: rotation.nextKeyId,
+        })
+      )
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          403,
+          `Key ${rotation.previousKeyId} was revoked before rotation could commit`,
+        );
       reply.code(201);
       return sendJson(reply, {
         rotated: rotation.previousKeyId,
@@ -883,6 +894,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           updateDigest: formatDigest(updateDigest),
           update: body.update as unknown as JsonValue,
           signatures: body.signatures,
+          issuedAt: Date.parse(body.update.issuedAt),
           now: clock.now(),
         });
         return sendJson(
@@ -1243,10 +1255,12 @@ function fail(reply: FastifyReply, error: unknown): FastifyReply {
       problem(
         error.code === 'VERSION_EXISTS'
           ? 'SNAPSHOT_MISMATCH'
-          : error.code === 'EVENT_EXISTS'
+          : error.code === 'EVENT_EXISTS' || error.code === 'EVENT_OUT_OF_ORDER'
             ? 'POLICY_DENIED'
             : 'PACKAGE_NOT_FOUND',
-        error.code === 'VERSION_EXISTS' || error.code === 'EVENT_EXISTS'
+        error.code === 'VERSION_EXISTS' ||
+          error.code === 'EVENT_EXISTS' ||
+          error.code === 'EVENT_OUT_OF_ORDER'
           ? 409
           : 404,
         'Registry request failed',

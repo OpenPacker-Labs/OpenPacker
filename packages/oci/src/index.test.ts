@@ -383,8 +383,7 @@ describe('tag listing and bearer authentication', () => {
     });
   });
 
-  it('terminates when a registry keeps pointing at the same page', async () => {
-    // A self-referential next-link would otherwise loop forever.
+  it('rejects a registry that repeats a pagination page', async () => {
     const fetchImplementation = (async () =>
       jsonResponse(
         { tags: ['1.0'] },
@@ -395,7 +394,65 @@ describe('tag listing and bearer authentication', () => {
       repository: 'demo',
       fetch: fetchImplementation,
     });
-    expect(await client.listTags()).toEqual(['1.0']);
+    await expect(client.listTags()).rejects.toMatchObject({
+      code: 'PAGINATION_LOOP',
+    });
+  });
+
+  it('bounds tag pages, tags, response bytes, and cursor length', async () => {
+    const cases = [
+      {
+        limits: { maximumPages: 1 },
+        body: { tags: ['1.0'] },
+        link: '</v2/demo/tags/list?last=1.0>; rel="next"',
+      },
+      { limits: { maximumTags: 1 }, body: { tags: ['1.0', '2.0'] } },
+      { limits: { maximumBytes: 8 }, body: { tags: ['1.0'] } },
+      {
+        limits: { maximumCursorLength: 4 },
+        body: { tags: ['1.0'] },
+        link: '</v2/demo/tags/list?last=abcdef>; rel="next"',
+      },
+    ] as const;
+    for (const item of cases) {
+      const client = new OciRegistryClient({
+        registry: 'https://registry.test',
+        repository: 'demo',
+        tagLimits: item.limits,
+        fetch: async () =>
+          jsonResponse(
+            item.body,
+            'link' in item && item.link ? { link: item.link } : {},
+          ),
+      });
+      await expect(client.listTags()).rejects.toBeTruthy();
+    }
+  });
+
+  it('rejects invalid tags and aborts a stalled listing at the deadline', async () => {
+    const invalid = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: async () => jsonResponse({ tags: ['-invalid'] }),
+    });
+    await expect(invalid.listTags()).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+
+    const stalled = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      tagLimits: { maximumElapsedMilliseconds: 10 },
+      fetch: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal!.reason),
+          ),
+        ),
+    });
+    await expect(stalled.listTags()).rejects.toMatchObject({
+      code: 'PAGINATION_LIMIT',
+    });
   });
 
   it('performs the anonymous bearer handshake and caches the token', async () => {
@@ -430,6 +487,7 @@ describe('tag listing and bearer authentication', () => {
       fetch: fetchImplementation,
       authentication: new BearerTokenAuthentication({
         fetch: fetchImplementation,
+        allowedTokenOrigins: ['https://auth.test'],
       }),
     });
     expect(await client.listTags()).toEqual(['1.0']);
@@ -552,16 +610,18 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     expect(contacted).toEqual([]);
   });
 
-  it('still performs the anonymous flow against any HTTPS realm', async () => {
-    // Anonymous discloses nothing, so compatibility is kept where it is free.
+  it('rejects an unconfigured anonymous token origin before contacting it', async () => {
+    const contacted: string[] = [];
     const fetchImplementation = (async (url: URL | string) =>
       String(url).startsWith('https://auth.elsewhere/')
-        ? new Response(JSON.stringify({ token: 'anon' }), { status: 200 })
+        ? (contacted.push(String(url)),
+          new Response(JSON.stringify({ token: 'anon' }), { status: 200 }))
         : challenge('https://auth.elsewhere/token')) as unknown as typeof fetch;
     const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
-    ).resolves.toMatchObject({ authorization: 'Bearer anon' });
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted).toEqual([]);
   });
 
   it('refuses a plaintext token endpoint even anonymously', async () => {

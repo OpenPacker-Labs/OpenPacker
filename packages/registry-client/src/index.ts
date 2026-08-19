@@ -12,12 +12,14 @@
  */
 
 import { canonicalDigest, formatDigest } from '@openpacker/canonical';
+import { validateContract } from '@openpacker/conformance';
 import type {
   Digest,
   JsonValue,
   PackageManifest,
   PackagePage,
   RegistryEntry,
+  SignedRevocationList,
   VersionList,
 } from '@openpacker/contracts';
 import {
@@ -40,6 +42,8 @@ export interface RegistryDefinitionLike {
 }
 
 export const WELL_KNOWN = '/.well-known/prex-registry';
+const SIGNED_REVOCATION_LIST_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList';
 
 export interface RegistryClientOptions {
   /** Registry base URL. Trailing slash optional. */
@@ -152,13 +156,57 @@ export class RegistryClient {
       this.#revocationsFetchedAt = this.#clock();
       return this.#revocations;
     }
-    const body = (await this.#json(
-      `${this.#baseUrl}/v1/revocations`,
-      signal,
-    )) as unknown as {
-      list?: { serial?: number; revoked?: RevocationEntryLike[] };
-    };
-    const serial = body.list?.serial ?? 0;
+    const value = await this.#json(`${this.#baseUrl}/v1/revocations`, signal);
+    const validation = validateContract(SIGNED_REVOCATION_LIST_SCHEMA, value);
+    if (!validation.valid)
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
+      );
+    const body = value as unknown as SignedRevocationList;
+    const definition = await this.definition(signal);
+    if (body.list.registryId !== definition.registryId)
+      throw new ProviderError(
+        'INVALID_SIGNATURE',
+        `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
+      );
+    const digest = await canonicalDigest(body.list as unknown as JsonValue);
+    if (
+      body.listDigest.algorithm !== digest.algorithm ||
+      body.listDigest.value !== digest.value
+    )
+      throw new ProviderError(
+        'DIGEST_MISMATCH',
+        `Revocation list states ${formatDigest(body.listDigest)} but hashes to ${formatDigest(digest)}`,
+      );
+    const message = new TextEncoder().encode(formatDigest(digest));
+    let signatureVerified = false;
+    for (const signature of body.signatures) {
+      if (signature.role !== 'registry') continue;
+      const key = this.#keys[signature.keyId];
+      if (!key) continue;
+      const verifier = await Ed25519Verifier.fromJwk(signature.keyId, key);
+      if (await verifier.verify(message, signature.signature)) {
+        signatureVerified = true;
+        break;
+      }
+    }
+    if (!signatureVerified)
+      throw new ProviderError(
+        'INVALID_SIGNATURE',
+        'Revocation list has no valid signature from a configured registry key',
+      );
+    const now = this.#clock();
+    const issuedAt = Date.parse(body.list.issuedAt);
+    const expiresAt = body.list.expiresAt
+      ? Date.parse(body.list.expiresAt)
+      : issuedAt + this.#revocationTtl;
+    if (issuedAt > now + 300_000 || expiresAt <= now || expiresAt < issuedAt)
+      throw new ProviderError(
+        'STALE_METADATA',
+        'Registry revocation list is not currently fresh',
+      );
+    const serial = body.list.serial;
     // A replayed older list would pin a client to the state of the world from
     // before a compromise, which is the attack a serial exists to stop.
     if (serial < this.#revocationSerial)
@@ -167,8 +215,8 @@ export class RegistryClient {
         `Registry served revocation serial ${serial} after ${this.#revocationSerial}; refusing to go backwards.`,
       );
     this.#revocationSerial = serial;
-    this.#revocations = { entries: body.list?.revoked ?? [], known: true };
-    this.#revocationsFetchedAt = this.#clock();
+    this.#revocations = { entries: body.list.revoked, known: true };
+    this.#revocationsFetchedAt = now;
     return this.#revocations;
   }
 

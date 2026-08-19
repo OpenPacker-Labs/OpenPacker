@@ -464,12 +464,9 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     );
   }
 
-  /** Where this registry's credentials may be sent. */
-  #credentialOrigins(): ReadonlySet<string> {
-    const registryOrigin = this.#credentialRegistryOrigin!;
+  /** Where this registry may delegate token issuance. */
+  #tokenOrigins(registryOrigin: string): ReadonlySet<string> {
     return new Set([
-      // A registry issuing its own tokens is the common case and is not a
-      // delegation at all.
       registryOrigin,
       ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[registryOrigin] ??
         []),
@@ -527,20 +524,14 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     const requestHeaders: Record<string, string> = {
       accept: 'application/json',
     };
+    if (!this.#tokenOrigins(requestUrl.origin).has(tokenUrl.origin))
+      throw new RegistryProtocolError(
+        'UNAUTHORIZED',
+        `${requestUrl.origin} asked for a token from ${tokenUrl.origin}, ` +
+          `which is not an authorized token endpoint for it. ` +
+          `Pass allowedTokenOrigins if this is intended.`,
+      );
     if (this.#credentials) {
-      // Credentials go only to a token endpoint the caller authorized, never
-      // to one the registry named for itself. A hostile, compromised, or
-      // typo-squatted registry can otherwise answer any request with
-      // `realm="https://attacker/token"` and be handed the user's password.
-      // The anonymous flow below still follows any HTTPS realm, because it
-      // discloses nothing.
-      if (!this.#credentialOrigins().has(tokenUrl.origin))
-        throw new RegistryProtocolError(
-          'UNAUTHORIZED',
-          `${requestUrl.origin} asked for credentials to be sent to ${tokenUrl.origin}, ` +
-            `which is not an authorized token endpoint for it. ` +
-            `Pass allowedTokenOrigins if this is intended.`,
-        );
       requestHeaders.authorization = `Basic ${Buffer.from(
         `${this.#credentials.username}:${this.#credentials.password}`,
       ).toString('base64')}`;
@@ -579,6 +570,33 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
   }
 }
 
+export interface OciTagLimits {
+  maximumPages: number;
+  maximumTags: number;
+  maximumBytes: number;
+  maximumCursorLength: number;
+  maximumElapsedMilliseconds: number;
+}
+
+const TAG_LIMITS: OciTagLimits = {
+  maximumPages: 100,
+  maximumTags: 100_000,
+  maximumBytes: 64 * 1024 * 1024,
+  maximumCursorLength: 4_096,
+  maximumElapsedMilliseconds: 30_000,
+};
+
+function boundedTagLimits(input: Partial<OciTagLimits> = {}): OciTagLimits {
+  return Object.fromEntries(
+    Object.entries(TAG_LIMITS).map(([name, ceiling]) => {
+      const value = input[name as keyof OciTagLimits] ?? ceiling;
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new RangeError(`${name} must be a positive safe integer`);
+      return [name, Math.min(value, ceiling)];
+    }),
+  ) as unknown as OciTagLimits;
+}
+
 export class OciRegistryClient {
   readonly registry: URL;
   readonly repository: string;
@@ -591,6 +609,7 @@ export class OciRegistryClient {
     maximumAttempts?: number;
     retryDelayMilliseconds?: number;
     monolithicUploadMaximumBytes?: number;
+    tagLimits?: Partial<OciTagLimits>;
   }) {
     this.registry = new URL(input.registry);
     if (
@@ -611,6 +630,7 @@ export class OciRegistryClient {
     this.retryDelayMilliseconds = input.retryDelayMilliseconds ?? 50;
     this.monolithicUploadMaximumBytes =
       input.monolithicUploadMaximumBytes ?? 4 * 1024 * 1024;
+    this.tagLimits = boundedTagLimits(input.tagLimits);
     if (
       !Number.isSafeInteger(this.maximumAttempts) ||
       this.maximumAttempts < 1 ||
@@ -638,6 +658,7 @@ export class OciRegistryClient {
   private readonly maximumAttempts: number;
   private readonly retryDelayMilliseconds: number;
   private readonly monolithicUploadMaximumBytes: number;
+  private readonly tagLimits: OciTagLimits;
 
   private endpoint(path: string): URL {
     return new URL(`/v2/${this.repository}/${path}`, this.registry);
@@ -703,44 +724,97 @@ export class OciRegistryClient {
     const tags: string[] = [];
     let next: URL | undefined = this.endpoint('tags/list');
     const seen = new Set<string>();
-    while (next) {
-      // A registry that keeps pointing at pages terminates here rather than
-      // looping forever.
-      if (seen.has(next.href)) break;
-      seen.add(next.href);
-      const response: Response = await this.retryableRequest(
-        next,
-        { method: 'GET', headers: { accept: 'application/json' } },
-        `repository:${this.repository}:pull`,
-        options.signal,
-      );
-      if (response.status === 404)
-        throw new RegistryProtocolError(
-          'NOT_FOUND',
-          `Repository ${this.repository} not found on ${this.registry.origin}`,
+    let bytes = 0;
+    const deadline = AbortSignal.timeout(
+      this.tagLimits.maximumElapsedMilliseconds,
+    );
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, deadline])
+      : deadline;
+    try {
+      for (
+        let page = 0;
+        next && page < this.tagLimits.maximumPages;
+        page += 1
+      ) {
+        if (seen.has(next.href))
+          throw new RegistryProtocolError(
+            'PAGINATION_LOOP',
+            'Registry repeated a tag pagination link',
+          );
+        seen.add(next.href);
+        const response: Response = await this.retryableRequest(
+          next,
+          { method: 'GET', headers: { accept: 'application/json' } },
+          `repository:${this.repository}:pull`,
+          signal,
         );
-      if (response.status < 200 || response.status >= 300)
-        throw new RegistryProtocolError(
-          'UNEXPECTED_STATUS',
-          `Listing tags failed: HTTP ${response.status}`,
+        if (response.status === 404)
+          throw new RegistryProtocolError(
+            'NOT_FOUND',
+            `Repository ${this.repository} not found on ${this.registry.origin}`,
+          );
+        if (!response.ok || !response.body)
+          throw new RegistryProtocolError(
+            'UNEXPECTED_STATUS',
+            `Listing tags failed: HTTP ${response.status}`,
+          );
+        const pageBytes = await collectStream(
+          response.body,
+          this.tagLimits.maximumBytes - bytes,
+          signal,
         );
-      const body = (await response.json()) as { tags?: unknown };
-      if (Array.isArray(body.tags))
-        for (const tag of body.tags)
-          if (typeof tag === 'string') tags.push(tag);
-
-      const link = response.headers.get('link');
-      const match = link?.match(/<([^>]+)>\s*;\s*rel="?next"?/iu);
-      next = match?.[1] ? new URL(match[1], this.registry) : undefined;
-      // Following a next-link to another host would take the listing
-      // somewhere the caller never authorized.
-      if (next && next.origin !== this.registry.origin)
+        bytes += pageBytes.byteLength;
+        const body = parseJson<{ tags?: unknown }>(pageBytes);
+        if (!Array.isArray(body.tags))
+          throw new RegistryProtocolError(
+            'INVALID_RESPONSE',
+            'Registry tag page omitted its tags array',
+          );
+        for (const tag of body.tags) {
+          if (
+            typeof tag !== 'string' ||
+            !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/u.test(tag)
+          )
+            throw new RegistryProtocolError(
+              'INVALID_RESPONSE',
+              'Registry returned an invalid OCI tag',
+            );
+          if (tags.length >= this.tagLimits.maximumTags)
+            throw new RegistryProtocolError(
+              'PAGINATION_LIMIT',
+              'Registry tag count exceeded its configured limit',
+            );
+          tags.push(tag);
+        }
+        const link = response.headers.get('link');
+        const match = link?.match(/<([^>]+)>\s*;\s*rel="?next"?/iu);
+        if (match?.[1] && match[1].length > this.tagLimits.maximumCursorLength)
+          throw new RegistryProtocolError(
+            'PAGINATION_LIMIT',
+            'Registry tag cursor exceeded its configured limit',
+          );
+        next = match?.[1] ? new URL(match[1], this.registry) : undefined;
+        if (next && next.origin !== this.registry.origin)
+          throw new RegistryProtocolError(
+            'UNSAFE_REDIRECT',
+            'Tag pagination pointed at another origin',
+          );
+      }
+      if (next)
         throw new RegistryProtocolError(
-          'UNSAFE_REDIRECT',
-          'Tag pagination pointed at another origin',
+          'PAGINATION_LIMIT',
+          'Registry tag pagination exceeded its configured page limit',
         );
+      return tags;
+    } catch (error) {
+      if (deadline.aborted && !options.signal?.aborted)
+        throw new RegistryProtocolError(
+          'PAGINATION_LIMIT',
+          'Registry tag pagination exceeded its elapsed-time limit',
+        );
+      throw error;
     }
-    return tags;
   }
 
   async blobExists(
