@@ -41,12 +41,15 @@ from `opm.toml`:
 ```toml
 [pack.providers.dev-example-acme]
 manifest = ".opm/providers/acme.json"
+executable = "/opt/acme/bin/acme-pack"
 default_for = ["acme"]
 allow_environment = ["ACME_TOKEN"]
 ```
 
-The key must equal the provider manifest's `id`. `default_for` is optional; use
-`--provider` when several providers support one PURL type:
+The key must equal the provider manifest's `id`. `executable` is an
+operator-approved absolute path; OPM never resolves delegated tools through
+`PATH`. `default_for` is optional; use `--provider` when several providers
+support one PURL type:
 
 ```sh
 opm pack acme --package-version 1.2.3 --provider dev-example-acme --allow-build --offline

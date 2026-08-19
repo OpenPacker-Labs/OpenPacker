@@ -18,7 +18,7 @@ import type {
   OpmLockfile,
   ProjectState,
 } from './types.js';
-import { recordGeneration } from './generations.js';
+import { recordGeneration, stableStoreTreeDigest } from './generations.js';
 import { OpmError } from './types.js';
 import {
   discoverBins,
@@ -54,6 +54,32 @@ import {
 import type { PolicyInput } from '@openpacker/contracts';
 import { digestSandboxPolicy, type SandboxOutcome } from '@openpacker/sandbox';
 import { sandboxPolicyFromProject } from './lifecycle.js';
+import { assertLockPackageAllowed, type PolicyFacts } from './supply-chain.js';
+
+interface VerifiedArtifactCapability {
+  bytes: Uint8Array;
+  provenance: 'direct' | 'registry';
+  facts?: PolicyFacts;
+}
+
+const verifiedArtifacts = new WeakMap<
+  LockPackage,
+  VerifiedArtifactCapability
+>();
+
+/** Bind resolution-verified bytes to the exact in-memory lock entry. */
+export function bindVerifiedArtifactBytes(
+  pkg: LockPackage,
+  bytes: Uint8Array,
+  provenance: VerifiedArtifactCapability['provenance'],
+  facts?: PolicyFacts,
+): void {
+  verifiedArtifacts.set(pkg, {
+    bytes,
+    provenance,
+    ...(facts === undefined ? {} : { facts }),
+  });
+}
 
 export async function emptyProjectState(): Promise<ProjectState> {
   return { schemaVersion: 1, packages: {} };
@@ -154,6 +180,15 @@ async function validateProjectState(
       typeof record.lifecycleScriptsExecuted !== 'boolean'
     )
       throw invalidState(`${alias}.lifecycleScriptsExecuted must be boolean`);
+    const actualTreeDigest = await stableStoreTreeDigest(expectedStore);
+    const treeDigest =
+      record.treeDigest === undefined
+        ? actualTreeDigest
+        : stringValue(record.treeDigest, `${alias}.treeDigest`);
+    if (!/^sha256:[0-9a-f]{64}$/u.test(treeDigest))
+      throw invalidState(`${alias}.treeDigest must be a sha256 digest`);
+    if (actualTreeDigest !== treeDigest)
+      throw invalidState(`${alias}.treeDigest does not match its store tree`);
     if (
       record.sandboxEnforced !== undefined &&
       typeof record.sandboxEnforced !== 'boolean'
@@ -168,6 +203,7 @@ async function validateProjectState(
       alias,
       purl,
       digest,
+      treeDigest,
       storePath: expectedStore,
       bins,
       installedAt,
@@ -461,7 +497,20 @@ export async function materializeLockPackage(input: {
   cached: boolean;
   lifecycleScriptsExecuted: boolean;
   sandboxOutcomes: SandboxOutcome[];
+  treeDigest: string;
 }> {
+  const capability = verifiedArtifacts.get(input.pkg);
+  await assertLockPackageAllowed(
+    input.pkg,
+    input.policy,
+    new Date().toISOString(),
+    {
+      registryArtifactVerified: capability?.provenance === 'registry',
+      ...(capability?.facts === undefined
+        ? {}
+        : { verifiedFacts: capability.facts }),
+    },
+  );
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
@@ -477,7 +526,7 @@ export async function materializeLockPackage(input: {
     );
     const stableArchivePath = `${stableStorePath}.artifact`;
     let cached = false;
-    let bytes = input.bytes;
+    let bytes = input.bytes ?? capability?.bytes;
     if (bytes === undefined && !input.force) {
       try {
         bytes = await fetchArtifactBytes(stableArchivePath, true, {
@@ -489,6 +538,15 @@ export async function materializeLockPackage(input: {
           throw error;
       }
     }
+    if (
+      bytes === undefined &&
+      (input.pkg.source.startsWith('https:') ||
+        input.pkg.source.startsWith('http:'))
+    )
+      throw new OpmError(
+        'UNVERIFIED_ARTIFACT',
+        `Refusing to refetch ${input.pkg.purl} outside its bounded provider transport`,
+      );
     bytes ??= await fetchArtifactBytes(input.pkg.source, input.offline, {
       expectedBytes: input.pkg.size,
     });
@@ -517,6 +575,9 @@ export async function materializeLockPackage(input: {
     const stagedName = `.${basename(storePath)}.materialize-${randomUUID()}`;
     const stagedPath = join(paths.store, stagedName);
     const stableStagedPath = join(stableHandlePath(storeHandle), stagedName);
+    let lifecycleScriptsExecuted = false;
+    let sandboxOutcomes: SandboxOutcome[] = [];
+    let treeDigest: string;
     try {
       await materialize({
         source: bytesSource(bytes),
@@ -529,6 +590,38 @@ export async function materializeLockPackage(input: {
         format: input.pkg.format as ArchiveFormat,
       });
       await revalidateStableDirectory(paths.store, storeHandle);
+
+      // Lifecycle execution is confined to the unpublished quarantine tree.
+      // A failed or partially contained build can never mutate the current CAS
+      // entry that readers and generations already reference.
+      if (input.pkg.ecosystem === 'npm') {
+        const declared = await detectNpmLifecycleScripts(stableStagedPath);
+        if (
+          hasLifecycleScripts(declared) &&
+          lifecycleScriptsAllowed(input.policy, input.pkg.purl)
+        ) {
+          const packageHandle = await open(
+            stableStagedPath,
+            constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+          );
+          try {
+            const result = await runDeclaredLifecycleScripts({
+              declared,
+              packageDir: stagedPath,
+              packageId: input.pkg.purl,
+              policy: input.policy,
+              directoryAuthority: { fd: packageHandle.fd, path: stagedPath },
+            });
+            lifecycleScriptsExecuted = result.executed;
+            sandboxOutcomes = result.outcomes;
+          } finally {
+            await packageHandle.close();
+          }
+        }
+      }
+      treeDigest = await stableStoreTreeDigest(stagedPath);
+      await revalidateStableDirectory(paths.store, storeHandle);
+
       const backupName = `.${basename(storePath)}.replace-${randomUUID()}`;
       const stableBackupPath = join(stableHandlePath(storeHandle), backupName);
       let backedUp = false;
@@ -544,6 +637,18 @@ export async function materializeLockPackage(input: {
         if (backedUp) await rename(stableBackupPath, stableStorePath);
         throw error;
       }
+      try {
+        const publishedTreeDigest = await stableStoreTreeDigest(storePath);
+        if (publishedTreeDigest !== treeDigest)
+          throw new OpmError(
+            'INPUT_CHANGED',
+            `Post-build tree for ${input.pkg.purl} changed during publication`,
+          );
+      } catch (error) {
+        await rm(stableStorePath, { recursive: true, force: true });
+        if (backedUp) await rename(stableBackupPath, stableStorePath);
+        throw error;
+      }
       if (backedUp)
         await rm(stableBackupPath, { recursive: true, force: true });
     } catch (error) {
@@ -555,35 +660,6 @@ export async function materializeLockPackage(input: {
       );
     }
     await revalidateStableDirectory(paths.store, storeHandle);
-
-    let lifecycleScriptsExecuted = false;
-    let sandboxOutcomes: SandboxOutcome[] = [];
-    // Lifecycle scripts: default never run. When allowlisted, run only in jail.
-    if (input.pkg.ecosystem === 'npm') {
-      const declared = await detectNpmLifecycleScripts(stableStorePath);
-      if (
-        hasLifecycleScripts(declared) &&
-        lifecycleScriptsAllowed(input.policy, input.pkg.purl)
-      ) {
-        const packageHandle = await open(
-          stableStorePath,
-          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-        );
-        try {
-          const result = await runDeclaredLifecycleScripts({
-            declared,
-            packageDir: storePath,
-            packageId: input.pkg.purl,
-            policy: input.policy,
-            directoryAuthority: { fd: packageHandle.fd, path: storePath },
-          });
-          lifecycleScriptsExecuted = result.executed;
-          sandboxOutcomes = result.outcomes;
-        } finally {
-          await packageHandle.close();
-        }
-      }
-    }
     if (!cached || input.force)
       await writeStableFileAt(
         storeHandle,
@@ -604,6 +680,7 @@ export async function materializeLockPackage(input: {
       cached,
       lifecycleScriptsExecuted,
       sandboxOutcomes,
+      treeDigest,
     };
   } finally {
     await storeHandle.close();
@@ -631,6 +708,23 @@ export async function installFromLock(input: {
     input.only ??
     Object.keys(input.lock.packages).sort((a, b) => a.localeCompare(b));
 
+  // Evaluate the complete closure before the first package can fetch or
+  // mutate disk. A denied transitive entry must not leave earlier packages
+  // partially installed.
+  const evaluationTime = new Date().toISOString();
+  for (const alias of aliases) {
+    const pkg = input.lock.packages[alias];
+    if (!pkg)
+      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+    const capability = verifiedArtifacts.get(pkg);
+    await assertLockPackageAllowed(pkg, input.policy, evaluationTime, {
+      registryArtifactVerified: capability?.provenance === 'registry',
+      ...(capability?.facts === undefined
+        ? {}
+        : { verifiedFacts: capability.facts }),
+    });
+  }
+
   // Materialise every package first so Python shims can see the full set of
   // store roots (transitive deps must be importable when a console script
   // runs).
@@ -642,6 +736,7 @@ export async function installFromLock(input: {
       pkg: LockPackage;
       lifecycleScriptsExecuted: boolean;
       sandboxOutcomes: SandboxOutcome[];
+      treeDigest: string;
     }
   >();
   for (const alias of aliases) {
@@ -650,19 +745,25 @@ export async function installFromLock(input: {
     if (!pkg) {
       throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
     }
-    const { storePath, bins, lifecycleScriptsExecuted, sandboxOutcomes } =
-      await materializeLockPackage({
-        root: input.root,
-        pkg,
-        offline: input.offline,
-        ...(input.policy === undefined ? {} : { policy: input.policy }),
-      });
+    const {
+      storePath,
+      bins,
+      lifecycleScriptsExecuted,
+      sandboxOutcomes,
+      treeDigest,
+    } = await materializeLockPackage({
+      root: input.root,
+      pkg,
+      offline: input.offline,
+      ...(input.policy === undefined ? {} : { policy: input.policy }),
+    });
     materialised.set(safeAlias, {
       storePath,
       bins,
       pkg,
       lifecycleScriptsExecuted,
       sandboxOutcomes,
+      treeDigest,
     });
   }
 
@@ -680,6 +781,7 @@ export async function installFromLock(input: {
       pkg,
       lifecycleScriptsExecuted,
       sandboxOutcomes: observed,
+      treeDigest,
     },
   ] of materialised) {
     sandboxOutcomes.push(...observed);
@@ -708,6 +810,7 @@ export async function installFromLock(input: {
       alias,
       purl: pkg.purl,
       digest: pkg.digest,
+      treeDigest,
       storePath,
       bins: shims,
       installedAt: new Date().toISOString(),

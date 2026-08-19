@@ -385,6 +385,119 @@ export interface RegistryAuthentication {
   ): Promise<Readonly<Record<string, string>>>;
 }
 
+const NETWORK_TIMEOUT_CEILINGS = {
+  total: 30_000,
+  idle: 5_000,
+} as const;
+
+function boundedTimeout(
+  value: number | undefined,
+  ceiling: number,
+  name: string,
+): number {
+  const resolved = value ?? ceiling;
+  if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > ceiling)
+    throw new RangeError(`${name} must be an integer between 1 and ${ceiling}`);
+  return resolved;
+}
+
+async function fetchWithDeadlines(
+  fetchImplementation: typeof fetch,
+  input: URL,
+  init: RequestInit,
+  callerSignal: AbortSignal | undefined,
+  totalMilliseconds: number,
+  idleMilliseconds: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (callerSignal?.aborted) abortFromCaller();
+  const totalTimer = setTimeout(
+    () =>
+      controller.abort(
+        new DOMException('OCI request timed out', 'TimeoutError'),
+      ),
+    totalMilliseconds,
+  );
+  const dispose = () => {
+    clearTimeout(totalTimer);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  };
+  let response: Response;
+  try {
+    response = await fetchImplementation(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+  if (response.body === null) {
+    dispose();
+    return response;
+  }
+  const reader = response.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(streamController) {
+      const idleTimer = setTimeout(
+        () =>
+          controller.abort(
+            new DOMException('OCI response body stalled', 'TimeoutError'),
+          ),
+        idleMilliseconds,
+      );
+      try {
+        const item = await abortableRead(reader.read(), controller.signal);
+        if (item.done) {
+          dispose();
+          streamController.close();
+        } else if (item.value !== undefined) {
+          streamController.enqueue(item.value);
+        }
+      } catch (error) {
+        dispose();
+        void reader.cancel(error).catch(() => undefined);
+        streamController.error(error);
+      } finally {
+        clearTimeout(idleTimer);
+      }
+    },
+    async cancel(reason) {
+      dispose();
+      controller.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+    },
+  });
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+function abortableRead<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      },
+    );
+  });
+}
+
 function exactHttpsOrigin(value: string, label: string): string {
   const url = new URL(value);
   if (
@@ -418,6 +531,8 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
   readonly #credentialRegistryOrigin: string | undefined;
   readonly #now: () => number;
   readonly #allowedTokenOrigins: ReadonlySet<string>;
+  readonly #requestTimeoutMilliseconds: number;
+  readonly #responseIdleTimeoutMilliseconds: number;
 
   /**
    * Token endpoints that well-known registries legitimately delegate to.
@@ -444,6 +559,8 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       now?: () => number;
       /** Extra origins this caller authorizes to receive its credentials. */
       allowedTokenOrigins?: readonly string[];
+      requestTimeoutMilliseconds?: number;
+      responseIdleTimeoutMilliseconds?: number;
     } = {},
   ) {
     this.#fetch = options.fetch ?? fetch;
@@ -461,6 +578,16 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       (options.allowedTokenOrigins ?? []).map((value) =>
         exactHttpsOrigin(value, 'OCI token origin'),
       ),
+    );
+    this.#requestTimeoutMilliseconds = boundedTimeout(
+      options.requestTimeoutMilliseconds,
+      NETWORK_TIMEOUT_CEILINGS.total,
+      'requestTimeoutMilliseconds',
+    );
+    this.#responseIdleTimeoutMilliseconds = boundedTimeout(
+      options.responseIdleTimeoutMilliseconds,
+      NETWORK_TIMEOUT_CEILINGS.idle,
+      'responseIdleTimeoutMilliseconds',
     );
   }
 
@@ -492,11 +619,14 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     if (cached && cached.expiresAt > this.#now())
       return { authorization: `Bearer ${cached.token}` };
 
-    const probe = await this.#fetch(requestUrl, {
-      method: 'GET',
-      redirect: 'manual',
-      ...(signal ? { signal } : {}),
-    });
+    const probe = await fetchWithDeadlines(
+      this.#fetch,
+      requestUrl,
+      { method: 'GET', redirect: 'manual' },
+      signal,
+      this.#requestTimeoutMilliseconds,
+      this.#responseIdleTimeoutMilliseconds,
+    );
     if (probe.status !== 401) {
       await probe.body?.cancel();
       return {};
@@ -543,12 +673,14 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       ).toString('base64')}`;
     }
 
-    const response = await this.#fetch(tokenUrl, {
-      method: 'GET',
-      headers: requestHeaders,
-      redirect: 'manual',
-      ...(signal ? { signal } : {}),
-    });
+    const response = await fetchWithDeadlines(
+      this.#fetch,
+      tokenUrl,
+      { method: 'GET', headers: requestHeaders, redirect: 'manual' },
+      signal,
+      this.#requestTimeoutMilliseconds,
+      this.#responseIdleTimeoutMilliseconds,
+    );
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel();
       throw new RegistryProtocolError(
@@ -642,6 +774,8 @@ export class OciRegistryClient {
     monolithicUploadMaximumBytes?: number;
     tagLimits?: Partial<OciTagLimits>;
     errorBodyTimeoutMilliseconds?: number;
+    requestTimeoutMilliseconds?: number;
+    responseIdleTimeoutMilliseconds?: number;
   }) {
     this.registry = new URL(input.registry);
     if (this.registry.protocol !== 'https:')
@@ -668,6 +802,16 @@ export class OciRegistryClient {
     this.errorBodyTimeoutMilliseconds = Math.min(
       input.errorBodyTimeoutMilliseconds ?? 5_000,
       5_000,
+    );
+    this.requestTimeoutMilliseconds = boundedTimeout(
+      input.requestTimeoutMilliseconds,
+      NETWORK_TIMEOUT_CEILINGS.total,
+      'requestTimeoutMilliseconds',
+    );
+    this.responseIdleTimeoutMilliseconds = boundedTimeout(
+      input.responseIdleTimeoutMilliseconds,
+      NETWORK_TIMEOUT_CEILINGS.idle,
+      'responseIdleTimeoutMilliseconds',
     );
     if (
       !Number.isSafeInteger(this.maximumAttempts) ||
@@ -705,6 +849,8 @@ export class OciRegistryClient {
   private readonly monolithicUploadMaximumBytes: number;
   private readonly tagLimits: OciTagLimits;
   private readonly errorBodyTimeoutMilliseconds: number;
+  private readonly requestTimeoutMilliseconds: number;
+  private readonly responseIdleTimeoutMilliseconds: number;
 
   private endpoint(path: string): URL {
     return new URL(`/v2/${this.repository}/${path}`, this.registry);
@@ -731,7 +877,14 @@ export class OciRegistryClient {
       headers.set(key, value);
     const request: RequestInit = { ...init, headers, redirect: 'manual' };
     if (signal !== undefined) request.signal = signal;
-    return this.fetchImplementation(url, request);
+    return fetchWithDeadlines(
+      this.fetchImplementation,
+      url,
+      request,
+      signal,
+      this.requestTimeoutMilliseconds,
+      this.responseIdleTimeoutMilliseconds,
+    );
   }
 
   private async retryableRequest(

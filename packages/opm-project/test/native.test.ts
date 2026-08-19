@@ -41,6 +41,7 @@ async function tempProject(files: Record<string, string> = {}) {
   const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
     packages: Record<string, { source: string } & Record<string, unknown>>;
   };
+  delete catalog.packages['pkg:npm/@openpacker/demo-tool@1.1.0'];
   for (const entry of Object.values(catalog.packages))
     entry.source = `file:${fixtureTgz}`;
   await writeFile(

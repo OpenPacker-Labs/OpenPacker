@@ -44,6 +44,7 @@ import {
   installFromLock,
   installProject,
   listInstalled,
+  loadCatalogFile,
   materializeLockPackage,
   parseManifest,
   parsePackageSpec,
@@ -56,6 +57,7 @@ import {
   writeLockfile,
   writeManifestFile,
   discoverBins,
+  defaultSupplyChainPolicyInput,
   whyPackage,
   OpmError,
 } from '../src/index.js';
@@ -91,6 +93,7 @@ async function tempProject(): Promise<string> {
     schemaVersion: number;
     packages: Record<string, { source: string } & Record<string, unknown>>;
   };
+  delete catalog.packages['pkg:npm/@openpacker/demo-tool@1.1.0'];
   for (const entry of Object.values(catalog.packages)) {
     entry.source = `file:${fixtureTgz}`;
   }
@@ -142,6 +145,7 @@ describe('manifest TOML', () => {
       packProviders: {
         'example-acme': {
           manifest: '.opm/providers/acme.json',
+          executable: '/opt/acme/bin/acme-pack',
           defaultFor: ['acme'],
           allowEnvironment: ['ACME_TOKEN'],
         },
@@ -153,6 +157,7 @@ describe('manifest TOML', () => {
     expect(parseManifest(text).packProviders).toEqual({
       'example-acme': {
         manifest: '.opm/providers/acme.json',
+        executable: '/opt/acme/bin/acme-pack',
         defaultFor: ['acme'],
         allowEnvironment: ['ACME_TOKEN'],
       },
@@ -170,6 +175,49 @@ describe('parsePackageSpec', () => {
 
   it('requires ecosystem for bare names', () => {
     expect(() => parsePackageSpec('lodash')).toThrow(/ecosystem/);
+  });
+});
+
+describe('catalog identity', () => {
+  it('rejects key/body, version, and canonical duplicate substitutions', async () => {
+    const root = await tempProject();
+    const path = join(root, 'adversarial-catalog.json');
+    const entry = {
+      purl: 'pkg:npm/victim@1.0.0',
+      version: '1.0.0',
+      digest: `sha256:${'a'.repeat(64)}`,
+      size: 1,
+      format: 'tar',
+      mediaType: 'application/octet-stream',
+      source: 'file:artifact.tar',
+    };
+
+    for (const packages of [
+      { 'pkg:npm/approved@1.0.0': entry },
+      {
+        'pkg:npm/victim@1.0.0': { ...entry, version: '2.0.0' },
+      },
+      {
+        'pkg:npm/%76ictim@1.0.0': entry,
+        'pkg:npm/victim@1.0.0': entry,
+      },
+    ]) {
+      await writeFile(path, JSON.stringify({ schemaVersion: 1, packages }));
+      await expect(loadCatalogFile(path)).rejects.toMatchObject({
+        code: 'INVALID_CATALOG',
+      });
+    }
+  });
+
+  it('does not select an exact catalog PURL outside the manifest range', async () => {
+    const root = await tempProject();
+    await expect(
+      addPackage({
+        root,
+        spec: 'pkg:npm/@openpacker/demo-tool@^2.0.0',
+        offline: true,
+      }),
+    ).rejects.toMatchObject({ code: 'UNRESOLVABLE' });
   });
 });
 
@@ -561,6 +609,80 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'OFFLINE' });
   });
 
+  it('evaluates lock policy before any public install or materialize fetch', async () => {
+    const root = await tempProject();
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const pkg = {
+      alias: 'revoked',
+      purl: 'pkg:npm/revoked@1.0.0',
+      version: '1.0.0',
+      digest,
+      size: 1,
+      format: 'tar' as const,
+      mediaType: 'application/octet-stream',
+      source: 'https://registry.npmjs.org/revoked/-/revoked-1.0.0.tgz',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+      sourceKind: 'registry' as const,
+      lifecycle: { status: 'revoked' as const, eligible: false },
+      publishedAt: '2020-01-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const policy = defaultSupplyChainPolicyInput();
+
+    await expect(
+      installFromLock({
+        root,
+        lock: {
+          schemaVersion: 1,
+          generatedBy: 'opm',
+          packages: { revoked: pkg },
+        },
+        offline: false,
+        policy,
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      materializeLockPackage({ root, pkg, offline: false, policy }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('never refetches a remote lock artifact with ambient fetch', async () => {
+    const root = await tempProject();
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const pkg = {
+      alias: 'remote',
+      purl: 'pkg:npm/remote@1.0.0',
+      version: '1.0.0',
+      digest,
+      size: 1,
+      format: 'tar' as const,
+      mediaType: 'application/octet-stream',
+      source: 'https://registry.npmjs.org/remote/-/remote-1.0.0.tgz',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+      lifecycle: { status: 'published' as const, eligible: true },
+      publishedAt: '2020-01-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    await expect(
+      materializeLockPackage({
+        root,
+        pkg,
+        offline: false,
+        policy: defaultSupplyChainPolicyInput(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNVERIFIED_ARTIFACT' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('rejects a tampered artifact with DIGEST_MISMATCH before extraction', async () => {
     const root = await tempProject();
     const wrongDigest = `sha256:${'b'.repeat(64)}`;
@@ -726,6 +848,70 @@ describe('fail-closed install paths', () => {
       }),
     ).rejects.toBeDefined();
     expect(await readFile(target)).toEqual(original);
+  });
+
+  it('keeps lifecycle failures inside quarantine and preserves the published tree', async () => {
+    const root = await tempProject();
+    const purl = 'pkg:npm/quarantined-build@1.0.0';
+    const packageJson = JSON.stringify({
+      name: 'quarantined-build',
+      version: '1.0.0',
+      scripts: {
+        postinstall:
+          "node -e \"require('fs').writeFileSync('mutated','yes');process.exit(1)\"",
+      },
+    });
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode(packageJson),
+        executable: false,
+      },
+    ]);
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'quarantined-build',
+      purl,
+      version: '1.0.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.npm.package+gzip',
+      source: 'file:unused',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    const first = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      bytes,
+    });
+    const publishedManifest = join(first.storePath, 'package/package.json');
+    expect(await readFile(publishedManifest, 'utf8')).toBe(packageJson);
+
+    await expect(
+      materializeLockPackage({
+        root,
+        pkg,
+        offline: true,
+        force: true,
+        bytes,
+        policy: {
+          ...defaultSupplyChainPolicyInput(),
+          allowLifecycleScripts: true,
+          allowedLifecycleScriptPackages: [purl],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/LIFECYCLE_FAILED|SANDBOX_UNAVAILABLE/u),
+    });
+    expect(await readFile(publishedManifest, 'utf8')).toBe(packageJson);
+    await expect(
+      readFile(join(first.storePath, 'mutated')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects a store directory substituted during materialization', async () => {

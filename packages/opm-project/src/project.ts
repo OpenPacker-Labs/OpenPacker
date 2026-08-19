@@ -9,7 +9,12 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
-import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
+import {
+  canonicalCatalogPurl,
+  loadCatalogs,
+  resolveSource,
+  toFileUrl,
+} from './catalog.js';
 import { codecFor } from './codecs.js';
 import {
   listRegistryVersions,
@@ -30,10 +35,15 @@ import {
   installSystemPackage,
   planSystemInstall,
 } from './system.js';
-import type { InstallOutcome, InstallPlan } from '@openpacker/adapter-core';
+import {
+  assertPackageIdentityMatchesRequest,
+  type InstallOutcome,
+  type InstallPlan,
+} from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
   digestOf,
+  bindVerifiedArtifactBytes,
   fetchArtifactBytes,
   nativeIntegrityOf,
   inferFormat,
@@ -70,6 +80,7 @@ import {
   captureFactsFromSourceUri,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
+  type PolicyFacts,
 } from './supply-chain.js';
 import { providerFor } from './registry.js';
 import { projectNativeFormats } from './native.js';
@@ -834,7 +845,7 @@ async function resolveTransitive(input: {
         instance.identity.purlType,
         artifact.bytes,
       );
-      out[alias] = {
+      const locked: LockPackage = {
         alias,
         purl: artifact.exactPurl,
         version: artifact.version || instance.nativeVersion || '0.0.0',
@@ -852,6 +863,8 @@ async function resolveTransitive(input: {
           : { nativeIntegrity: transitiveIntegrity }),
         ...lockPackageSupplyChainFields(facts),
       };
+      bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
+      out[alias] = locked;
     }
 
     const aliasByNodeId = new Map<string, string>();
@@ -935,17 +948,18 @@ async function resolveRequirement(input: {
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
 }): Promise<LockPackage> {
-  const ecosystem = ecosystemFromPurl(input.req.purl);
+  const requestedPurl = canonicalCatalogPurl(input.req.purl, 'manifest');
+  const ecosystem = ecosystemFromPurl(requestedPurl);
   const versionHint = input.req.version;
   const candidateExact =
     versionHint && !versionHint.startsWith('^') && !versionHint.startsWith('~')
-      ? exactPurl(stripPurlVersion(input.req.purl), versionHint)
-      : input.req.purl.includes('@')
-        ? input.req.purl
+      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      : requestedPurl.includes('@')
+        ? requestedPurl
         : undefined;
   const policy = projectPolicyDocument(input.manifest);
   const evaluationTime = new Date().toISOString();
-  const packageKey = candidateExact ?? stripPurlVersion(input.req.purl);
+  const packageKey = candidateExact ?? stripPurlVersion(requestedPurl);
 
   // 1) Explicit source on requirement
   if (input.req.source) {
@@ -971,7 +985,7 @@ async function resolveRequirement(input: {
       !versionHint.startsWith('~')
         ? versionHint
         : (guessVersionFromBytes(bytes) ?? '0.0.0');
-    const purl = exactPurl(stripPurlVersion(input.req.purl), version);
+    const purl = exactPurl(stripPurlVersion(requestedPurl), version);
     const format = inferFormat(resolved, mediaTypeForEcosystem(ecosystem));
     const mediaType = mediaTypeForEcosystem(ecosystem);
     // discover bins via temp extract for npm
@@ -992,30 +1006,34 @@ async function resolveRequirement(input: {
       reason: 'direct',
     });
     const sourceIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       ...locked,
       ...(sourceIntegrity === undefined
         ? {}
         : { nativeIntegrity: sourceIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
+    bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
+    return result;
   }
 
   // 2) Catalog lookup by exact purl or base+version
   const keys = [
     candidateExact,
     versionHint && !/[~^<>*]/.test(versionHint)
-      ? exactPurl(stripPurlVersion(input.req.purl), versionHint)
+      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
       : undefined,
-    input.req.purl,
-    stripPurlVersion(input.req.purl),
-  ].filter((k): k is string => typeof k === 'string');
+    requestedPurl,
+    stripPurlVersion(requestedPurl),
+  ]
+    .filter((k): k is string => typeof k === 'string')
+    .map((key) => canonicalCatalogPurl(key));
 
   // also try version-suffixed catalog keys for latest if only base purl
   for (const [key, entry] of input.catalog) {
     if (
-      stripPurlVersion(entry.purl) === stripPurlVersion(input.req.purl) ||
-      stripPurlVersion(key) === stripPurlVersion(input.req.purl)
+      stripPurlVersion(entry.purl) === stripPurlVersion(requestedPurl) ||
+      stripPurlVersion(key) === stripPurlVersion(requestedPurl)
     ) {
       if (
         !versionHint ||
@@ -1029,7 +1047,7 @@ async function resolveRequirement(input: {
     }
   }
 
-  for (const key of keys) {
+  for (const key of [...new Set(keys)]) {
     const entry = input.catalog.get(key);
     if (!entry) continue;
     if (
@@ -1047,9 +1065,28 @@ async function resolveRequirement(input: {
       source.startsWith('/') || /^[A-Za-z]:/.test(source)
         ? toFileUrl(source)
         : source;
-    const entryPurl = entry.purl.includes('@')
-      ? entry.purl
-      : exactPurl(entry.purl, entry.version);
+    const selectedCatalogPurl = entry.purl;
+    try {
+      assertPackageIdentityMatchesRequest(
+        candidateExact ?? stripPurlVersion(requestedPurl),
+        { exactPurl: selectedCatalogPurl },
+      );
+      if (
+        versionHint !== undefined &&
+        (versionHint.startsWith('^') || versionHint.startsWith('~')) &&
+        !codecFor(ecosystem).satisfies(entry.version, versionHint)
+      )
+        continue;
+    } catch (error) {
+      if (error instanceof OpmError) throw error;
+      continue;
+    }
+    // Keep the manifest's equivalent spelling in user-facing state while the
+    // catalog map and all comparisons remain canonical.
+    const entryPurl = exactPurl(
+      stripPurlVersion(input.req.purl),
+      entry.version,
+    );
     const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,
@@ -1080,7 +1117,7 @@ async function resolveRequirement(input: {
       bins = await discoverBinsFromArchive(bytes, entry.format);
     }
     const catalogIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       alias: input.alias,
       purl: entryPurl,
       version: entry.version,
@@ -1098,6 +1135,8 @@ async function resolveRequirement(input: {
         : { nativeIntegrity: catalogIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
+    bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
+    return result;
   }
 
   // 4) The ecosystem's registry.
@@ -1118,7 +1157,7 @@ async function resolveRequirement(input: {
         // newest. `enumerate` returns oldest-first.
         const versions = await listRegistryVersions(
           ecosystem,
-          stripPurlVersion(input.req.purl),
+          stripPurlVersion(requestedPurl),
           registryOptions,
         );
         const newest = versions[versions.length - 1];
@@ -1160,6 +1199,7 @@ async function resolveRequirement(input: {
 
     // Capture supply-chain facts from the real inspect path when available.
     let supplyFields: ReturnType<typeof lockPackageSupplyChainFields> = {};
+    let verifiedFacts: PolicyFacts | undefined;
     try {
       const catalog = await providerFor(ecosystem, {
         ...registryOptions,
@@ -1183,6 +1223,7 @@ async function resolveRequirement(input: {
       }
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
+      verifiedFacts = facts;
     } catch (error) {
       if (
         error instanceof OpmError &&
@@ -1207,10 +1248,11 @@ async function resolveRequirement(input: {
       facts.registryId = artifact.registryId;
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
+      verifiedFacts = facts;
     }
 
     const nativeIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       alias: input.alias,
       purl: artifact.exactPurl,
       version: artifact.version || (versionHint ?? '0.0.0'),
@@ -1226,6 +1268,8 @@ async function resolveRequirement(input: {
       ...(nativeIntegrity === undefined ? {} : { nativeIntegrity }),
       ...supplyFields,
     };
+    bindVerifiedArtifactBytes(result, bytes, 'registry', verifiedFacts);
+    return result;
   }
 
   throw new OpmError(

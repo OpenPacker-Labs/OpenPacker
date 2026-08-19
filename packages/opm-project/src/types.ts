@@ -42,6 +42,8 @@ export interface RegistrySource {
 export interface PackProviderSource {
   /** Local provider manifest path, resolved from the project root. */
   manifest: string;
+  /** Absolute executable path explicitly approved by the project operator. */
+  executable: string;
   /** PURL types that select this provider when --provider is omitted. */
   defaultFor?: readonly string[];
   /** Names the provider may receive when the host grants values explicitly. */
@@ -170,6 +172,8 @@ export interface InstalledPackageRecord {
   alias: string;
   purl: string;
   digest: string;
+  /** Digest of the verified extracted tree after any lifecycle build. */
+  treeDigest?: string;
   storePath: string;
   bins: readonly {
     name: string;

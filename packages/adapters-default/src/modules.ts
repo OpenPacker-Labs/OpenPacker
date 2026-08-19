@@ -30,6 +30,7 @@ import {
   NugetCodec,
   NugetProjectFormat,
   NugetV3Provider,
+  parseNugetServiceIndex,
 } from '@openpacker/adapter-nuget';
 import {
   PypiCodec,
@@ -226,10 +227,8 @@ export function defaultAdapterModules(): AdapterModule[] {
             method: 'GET',
             headers: { accept: 'application/json' },
           });
-          const body = JSON.parse(new TextDecoder().decode(response.body)) as {
-            resources?: Array<{ '@id': string; '@type': string | string[] }>;
-          };
-          const resources = (body.resources ?? []).flatMap((resource) => {
+          const body = parseNugetServiceIndex(response.body);
+          const resources = body.resources.flatMap((resource) => {
             const types = Array.isArray(resource['@type'])
               ? resource['@type']
               : [resource['@type']];

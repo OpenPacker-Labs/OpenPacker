@@ -976,7 +976,12 @@ export type PackResponse = {
   nativeBlob: OciDescriptor;
   artifact: ArtifactDescriptor;
 };
-export type PackTool = { name: string; version?: string; path?: string };
+export type PackTool = {
+  name: string;
+  version?: string;
+  path?: string;
+  digest?: Digest;
+};
 export type PackageIdentity = {
   canonicalPurl: string;
   exactPurl?: string;
@@ -7397,7 +7402,12 @@ export const schemaCatalog: Record<string, JsonValue> = {
               required: ['strategy'],
             },
             then: {
-              required: ['provider'],
+              required: ['provider', 'tool'],
+              properties: {
+                tool: {
+                  required: ['path', 'digest'],
+                },
+              },
             },
           },
         ],
@@ -7418,6 +7428,9 @@ export const schemaCatalog: Record<string, JsonValue> = {
           path: {
             type: 'string',
             maxLength: 4096,
+          },
+          digest: {
+            $ref: 'common.schema.json#/$defs/Digest',
           },
         },
         additionalProperties: false,

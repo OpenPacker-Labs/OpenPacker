@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,10 +35,9 @@ describe('configured delegated pack providers', () => {
     const configured = await configurePackProviders({
       root,
       registry,
-      manifest: projectManifest(),
+      manifest: projectManifest(root),
       environment: { ACME_TOKEN: 'secret' },
       dependencies: {
-        resolveExecutable: async () => '/usr/bin/acme-pack',
         sandboxRun: async (input) => {
           if (input.argv[1] === 'identify') {
             const bytes = await readFile(input.argv.at(-1)!);
@@ -66,7 +72,7 @@ describe('configured delegated pack providers', () => {
     });
 
     expect(call?.argv).toEqual([
-      '/usr/bin/acme-pack',
+      join(root, 'acme-pack'),
       'pack',
       '--out',
       outputDirectory,
@@ -93,7 +99,7 @@ describe('configured delegated pack providers', () => {
     const configured = await configurePackProviders({
       root,
       registry: new AdapterRegistry(),
-      manifest: projectManifest(),
+      manifest: projectManifest(root),
     });
 
     expect(configured.authorizedEnvironment['example-acme']).toEqual({});
@@ -101,7 +107,7 @@ describe('configured delegated pack providers', () => {
 
   it('keeps provider manifests at a direct project-owned path', async () => {
     const root = await fixture();
-    const manifest = projectManifest();
+    const manifest = projectManifest(root);
     manifest.packProviders!['example-acme']!.manifest = '../provider.json';
 
     await expect(
@@ -115,7 +121,7 @@ describe('configured delegated pack providers', () => {
 
   it('rejects a configuration key that does not bind the manifest id', async () => {
     const root = await fixture();
-    const manifest = projectManifest();
+    const manifest = projectManifest(root);
     manifest.packProviders = {
       'example-other': manifest.packProviders!['example-acme']!,
     };
@@ -134,6 +140,8 @@ async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'opm-configured-pack-provider-'));
   roots.push(root);
   await writeFile(join(root, 'acme.pack'), 'project');
+  await writeFile(join(root, 'acme-pack'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(root, 'acme-pack'), 0o755);
   await writeFile(
     join(root, 'provider.json'),
     JSON.stringify({
@@ -167,13 +175,14 @@ async function fixture(): Promise<string> {
   return root;
 }
 
-function projectManifest(): OpmManifest {
+function projectManifest(root: string): OpmManifest {
   return {
     project: { name: 'demo', ecosystems: ['acme'] },
     packages: {},
     packProviders: {
       'example-acme': {
         manifest: 'provider.json',
+        executable: join(root, 'acme-pack'),
         defaultFor: ['acme'],
         allowEnvironment: ['ACME_TOKEN'],
       },

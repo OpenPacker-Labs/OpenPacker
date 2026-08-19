@@ -16,7 +16,7 @@ const keys = JSON.parse(
     'utf8',
   ),
 ) as Record<string, JsonWebKey>;
-import { PrexRegistryProvider, RegistryClient } from './index.js';
+import { PrexRegistryProvider, RegistryClient, WELL_KNOWN } from './index.js';
 
 const BASE = 'https://registry.example';
 
@@ -177,6 +177,34 @@ describe('RegistryClient discovery', () => {
       calls.filter((url) => url.endsWith('/.well-known/prex-registry')),
     ).toHaveLength(1);
   });
+
+  it('rejects oversized and excessively nested definitions before use', async () => {
+    const oversized = new RegistryClient({
+      baseUrl: BASE,
+      transport: {
+        async request(request) {
+          return {
+            status: 200,
+            headers: {},
+            body: new Uint8Array(256 * 1024 + 1),
+            url: request.url,
+          };
+        },
+      },
+    });
+    await expect(oversized.definition()).rejects.toThrow(
+      /exceeds 262144 bytes/u,
+    );
+
+    let nested: unknown = 'leaf';
+    for (let depth = 0; depth < 66; depth += 1) nested = { nested };
+    const { transport } = fixtureTransport({
+      '/.well-known/prex-registry': { ...definition(), nested },
+    });
+    await expect(
+      new RegistryClient({ baseUrl: BASE, transport }).definition(),
+    ).rejects.toThrow(/more than 64 levels/u);
+  });
 });
 
 describe('RegistryClient pagination', () => {
@@ -307,6 +335,41 @@ describe('RegistryClient pagination', () => {
     await expect(async () => {
       for await (const _entry of client.listAll()) void _entry;
     }).rejects.toThrow(/milliseconds/u);
+  });
+
+  it('passes the aggregate remaining byte budget to each page request', async () => {
+    const maxima: number[] = [];
+    let page = 0;
+    const transport = {
+      async request(request: HttpRequest): Promise<HttpResponse> {
+        const body = request.url.endsWith(WELL_KNOWN)
+          ? definition()
+          : {
+              packages: [],
+              metadata: {
+                count: 0,
+                nextCursor: page++ === 0 ? 'next' : null,
+              },
+            };
+        if (request.url.includes('/v1/packages'))
+          maxima.push(request.maximumBytes!);
+        return {
+          status: 200,
+          headers: {},
+          body: new TextEncoder().encode(JSON.stringify(body)),
+          url: request.url,
+        };
+      },
+    };
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      paginationLimits: { maximumBytes: 512 },
+    });
+    for await (const _entry of client.listAll()) void _entry;
+    expect(maxima).toHaveLength(2);
+    expect(maxima[0]).toBe(512);
+    expect(maxima[1]).toBeLessThan(512);
   });
 });
 

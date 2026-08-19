@@ -148,7 +148,7 @@ function treeDigest(
   );
 }
 
-async function stableStoreTreeDigest(path: string): Promise<string> {
+export async function stableStoreTreeDigest(path: string): Promise<string> {
   const handle = await openStableDirectory(path);
   try {
     const digest = await storeTreeDigestFromHandle(handle);

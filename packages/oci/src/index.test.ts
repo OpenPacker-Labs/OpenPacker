@@ -501,6 +501,45 @@ describe('tag listing and bearer authentication', () => {
     });
   });
 
+  it('cancels a registry body that exceeds the mandatory idle deadline', async () => {
+    let cancelled = false;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      responseIdleTimeoutMilliseconds: 5,
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+    });
+    await expect(client.listTags()).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+    expect(cancelled).toBe(true);
+  });
+
+  it('applies a mandatory deadline to direct authentication requests', async () => {
+    const authentication = new BearerTokenAuthentication({
+      requestTimeoutMilliseconds: 5,
+      fetch: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const abort = () => reject(init?.signal?.reason);
+          init?.signal?.addEventListener('abort', abort, { once: true });
+          if (init?.signal?.aborted) abort();
+        }),
+    });
+    await expect(
+      authentication.headers(
+        new URL('https://registry.test/v2/demo/tags/list'),
+        'repository:demo:pull',
+      ),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
   it('performs the anonymous bearer handshake and caches the token', async () => {
     let tokenRequests = 0;
     const fetchImplementation = (async (

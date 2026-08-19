@@ -8,6 +8,7 @@ import {
   NugetCodec,
   NugetV3Provider,
   type NugetRegistrationIndex,
+  parseNugetServiceIndex,
 } from './index.js';
 
 const serviceBytes = await readFile(
@@ -34,6 +35,50 @@ const archive = await readFile(
     import.meta.url,
   ),
 );
+
+describe('NuGet service index parser', () => {
+  it('accepts the shared fixture', () => {
+    expect(
+      parseNugetServiceIndex(serviceBytes).resources.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it.each([
+    new TextEncoder().encode(
+      JSON.stringify({ resources: [], padding: 'x'.repeat(256 * 1024) }),
+    ),
+    new TextEncoder().encode(
+      JSON.stringify({
+        resources: [],
+        nested: Array.from({ length: 18 }).reduce((value) => ({ value }), {}),
+      }),
+    ),
+    new TextEncoder().encode(
+      JSON.stringify({
+        resources: Array.from({ length: 257 }, (_, index) => ({
+          '@id': `https://api.nuget.org/${index}`,
+          '@type': 'PackageBaseAddress/3.0.0',
+        })),
+      }),
+    ),
+  ])('rejects oversized or structurally excessive service indices', (bytes) => {
+    expect(() => parseNugetServiceIndex(bytes)).toThrow();
+  });
+
+  it('rejects unsafe resource endpoints', () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({
+        resources: [
+          {
+            '@id': 'http://api.nuget.org/v3/',
+            '@type': 'PackageBaseAddress/3.0.0',
+          },
+        ],
+      }),
+    );
+    expect(() => parseNugetServiceIndex(bytes)).toThrow(/must be HTTPS/u);
+  });
+});
 
 describe('NuGet codec', () => {
   const codec = new NugetCodec();

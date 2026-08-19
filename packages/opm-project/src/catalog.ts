@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { formatPurl, parsePurl } from '@openpacker/adapter-core';
 import type { CatalogPackage, OpmCatalog } from './types.js';
 import { OpmError } from './types.js';
 
@@ -38,6 +39,7 @@ export async function loadCatalogFile(
     );
   }
   const packages: Record<string, CatalogPackage> = {};
+  const canonicalKeys = new Set<string>();
   for (const [key, raw] of Object.entries(
     record.packages as Record<string, unknown>,
   )) {
@@ -80,7 +82,7 @@ export async function loadCatalogFile(
         })
       : undefined;
     const entry: CatalogPackage = {
-      purl: pkg.purl,
+      purl: canonicalCatalogPurl(pkg.purl, path),
       version: pkg.version,
       digest: pkg.digest,
       size: pkg.size,
@@ -88,10 +90,26 @@ export async function loadCatalogFile(
       mediaType: pkg.mediaType,
       source: pkg.source,
     };
+    const canonicalKey = canonicalCatalogPurl(key, path);
+    if (canonicalKey !== entry.purl)
+      throw new OpmError(
+        'INVALID_CATALOG',
+        `Catalog key ${key} does not match body PURL ${pkg.purl} in ${path}`,
+      );
+    const parsed = parsePurl(entry.purl);
+    if (parsed.version === undefined || parsed.version !== entry.version)
+      throw new OpmError(
+        'INVALID_CATALOG',
+        `Catalog entry ${key} version does not match its exact PURL in ${path}`,
+      );
+    if (canonicalKeys.has(canonicalKey))
+      throw new OpmError(
+        'INVALID_CATALOG',
+        `Catalog ${path} contains duplicate canonical PURL ${canonicalKey}`,
+      );
+    canonicalKeys.add(canonicalKey);
     if (bins !== undefined) entry.bins = bins;
-    packages[key] = entry;
-    // also index by purl field
-    packages[pkg.purl] = entry;
+    packages[canonicalKey] = entry;
   }
   return { catalog: { schemaVersion: 1, packages }, baseDir: dirname(path) };
 }
@@ -107,9 +125,13 @@ export async function loadCatalogs(paths: readonly string[]): Promise<{
     try {
       const { catalog, baseDir } = await loadCatalogFile(path);
       for (const [key, entry] of Object.entries(catalog.packages)) {
+        if (packages.has(key))
+          throw new OpmError(
+            'INVALID_CATALOG',
+            `Catalog ${path} duplicates canonical PURL ${key}`,
+          );
         const resolvedSource = resolveSource(entry.source, baseDir);
         packages.set(key, { ...entry, resolvedSource });
-        packages.set(entry.purl, { ...entry, resolvedSource });
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
@@ -117,6 +139,24 @@ export async function loadCatalogs(paths: readonly string[]): Promise<{
     }
   }
   return { packages };
+}
+
+export function canonicalCatalogPurl(value: string, path = 'catalog'): string {
+  try {
+    // Historical manifests commonly spell an npm scope as a literal `@`.
+    // Package URL canonical form percent-encodes it; normalize before parsing
+    // so the two spellings collide instead of becoming distinct identities.
+    const normalized = value.replace(
+      /^pkg:npm\/@([^/]+)\//u,
+      (_match, scope: string) => `pkg:npm/%40${scope}/`,
+    );
+    return formatPurl(parsePurl(normalized));
+  } catch (error) {
+    throw new OpmError(
+      'INVALID_CATALOG',
+      `Invalid package URL ${value} in ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 export function resolveSource(source: string, baseDir: string): string {

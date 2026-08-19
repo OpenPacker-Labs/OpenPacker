@@ -677,8 +677,102 @@ function registrationLeaves(
   );
 }
 
-interface NugetServiceIndex {
+export interface NugetServiceIndex {
   resources: { '@id': string; '@type': string | string[] }[];
+}
+
+const MAX_SERVICE_INDEX_BYTES = 256 * 1024;
+
+export function parseNugetServiceIndex(bytes: Uint8Array): NugetServiceIndex {
+  if (bytes.byteLength > MAX_SERVICE_INDEX_BYTES)
+    throw new ProviderError(
+      'INVALID_PROVIDER_RESPONSE',
+      `NuGet service index exceeds ${MAX_SERVICE_INDEX_BYTES} bytes`,
+    );
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch (error) {
+    throw new ProviderError(
+      'INVALID_PROVIDER_RESPONSE',
+      `NuGet service index is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  assertServiceIndexComplexity(value);
+  if (!isRecord(value) || !Array.isArray(value.resources))
+    invalidServiceIndex('resources must be an array');
+  if (value.resources.length > 256)
+    invalidServiceIndex('resources exceeds 256 entries');
+  const resources = value.resources.map((resource, index) => {
+    if (!isRecord(resource))
+      invalidServiceIndex(`resources[${index}] must be an object`);
+    const id = resource['@id'];
+    const rawTypes = resource['@type'];
+    const types = Array.isArray(rawTypes) ? rawTypes : [rawTypes];
+    if (typeof id !== 'string' || id.length < 1 || id.length > 4096)
+      invalidServiceIndex(`resources[${index}].@id is invalid`);
+    let url: URL;
+    try {
+      url = new URL(id);
+    } catch {
+      invalidServiceIndex(`resources[${index}].@id is not a URL`);
+    }
+    if (url!.protocol !== 'https:' || url!.username || url!.password)
+      invalidServiceIndex(
+        `resources[${index}].@id must be HTTPS without credentials`,
+      );
+    if (
+      types.length < 1 ||
+      types.length > 16 ||
+      types.some(
+        (type) =>
+          typeof type !== 'string' || type.length < 1 || type.length > 128,
+      )
+    )
+      invalidServiceIndex(`resources[${index}].@type is invalid`);
+    return {
+      '@id': id,
+      '@type': Array.isArray(rawTypes)
+        ? (types as string[])
+        : (types[0] as string),
+    };
+  });
+  return { resources };
+}
+
+function assertServiceIndexComplexity(root: unknown): void {
+  const pending: Array<{ value: unknown; depth: number }> = [
+    { value: root, depth: 0 },
+  ];
+  let nodes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    nodes += 1;
+    if (nodes > 4096) invalidServiceIndex('structure exceeds 4096 nodes');
+    if (current.depth > 16) invalidServiceIndex('structure exceeds 16 levels');
+    if (typeof current.value === 'string' && current.value.length > 4096)
+      invalidServiceIndex('string exceeds 4096 characters');
+    if (Array.isArray(current.value)) {
+      if (current.value.length > 512)
+        invalidServiceIndex('array exceeds 512 items');
+      for (const value of current.value)
+        pending.push({ value, depth: current.depth + 1 });
+    } else if (isRecord(current.value)) {
+      for (const value of Object.values(current.value))
+        pending.push({ value, depth: current.depth + 1 });
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidServiceIndex(message: string): never {
+  throw new ProviderError(
+    'INVALID_PROVIDER_RESPONSE',
+    `Invalid NuGet service index: ${message}`,
+  );
 }
 
 export class NugetV3Provider implements CatalogProvider {
@@ -1114,7 +1208,7 @@ export class NugetV3Provider implements CatalogProvider {
         );
       return this.#serviceIndex;
     }
-    const body = json<NugetServiceIndex>(response);
+    const body = parseNugetServiceIndex(response.body);
     const typeMatches = (
       resource: NugetServiceIndex['resources'][number],
       type: string,

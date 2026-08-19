@@ -1,5 +1,6 @@
 import {
   appendFile,
+  chmod,
   mkdtemp,
   mkdir,
   open,
@@ -154,7 +155,8 @@ describe('manifest package packer', () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
     const packer = new ManifestPackagePacker(manifest(), 'test', {
-      resolveExecutable: async () => '/usr/bin/test-pack',
+      executablePath: '/usr/bin/test-pack',
+      inspectExecutable: async () => executableIdentity('/usr/bin/test-pack'),
       sandboxRun: async (sandboxInput) => {
         if (sandboxInput.argv[1] === 'identify') {
           const bytes = await readFile(sandboxInput.argv.at(-1)!);
@@ -210,6 +212,91 @@ describe('manifest package packer', () => {
     expect(backendInput?.hostEnv.LD_PRELOAD).toBeUndefined();
     expect(result.sandboxBackend).toBe('native-bwrap');
     expect(result.sandboxEnforced).toBe(true);
+    expect(result.tool?.digest).toEqual({
+      algorithm: 'sha256',
+      value: 'a'.repeat(64),
+    });
+  });
+
+  it('requires an operator-approved absolute executable path', () => {
+    expect(
+      () =>
+        new ManifestPackagePacker(manifest(), 'test', {
+          executablePath: 'test-pack',
+        }),
+    ).toThrow(/absolute path/u);
+  });
+
+  it('rejects executable symlinks and records verified executable bytes', async () => {
+    const root = await project();
+    const executable = join(root, 'approved-tool');
+    const linked = join(root, 'linked-tool');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n');
+    await chmod(executable, 0o755);
+    await symlink(executable, linked);
+
+    const rejected = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: linked,
+    });
+    await expect(rejected.available()).resolves.toMatchObject({
+      available: false,
+    });
+
+    const accepted = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+    const result = await accepted.pack(input(root), { dryRun: true });
+    expect(result.tool).toEqual({
+      name: 'test-pack',
+      path: executable,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update('#!/bin/sh\nexit 0\n').digest('hex'),
+      },
+    });
+  });
+
+  it('refuses an executable whose stable identity changes during execution', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    let revision = 1n;
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: '/usr/bin/test-pack',
+      inspectExecutable: async () => ({
+        ...executableIdentity('/usr/bin/test-pack'),
+        inode: revision,
+      }),
+      sandboxRun: async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), 'native');
+        revision = 2n;
+        return outcome();
+      },
+    });
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
+  });
+
+  it('orders Unicode artifact names by canonical code units', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'ä.test'), 'umlaut');
+        await writeFile(join(outputDirectory, 'z.test'), 'ascii');
+        return outcome();
+      },
+    );
+    const result = await packer.pack(input(root), {
+      allowBuild: true,
+      outputDirectory,
+    });
+    expect(result.artifacts.map((artifact) => artifact.outputName)).toEqual([
+      'z.test',
+      'ä.test',
+    ]);
   });
 
   it('rejects undeclared environment and artifact symlinks', async () => {
@@ -431,7 +518,12 @@ function configured(
   openFile?: typeof open,
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
-    resolveExecutable,
+    executablePath: '/usr/bin/test-pack',
+    inspectExecutable: async () => {
+      const path = await resolveExecutable(value.executable);
+      if (path === undefined) throw new Error('missing executable');
+      return executableIdentity(path);
+    },
     sandboxRun: async (input_) => {
       if (input_.argv[1] === 'identify') {
         const path = input_.argv.at(-1)!;
@@ -451,6 +543,18 @@ function configured(
     ...(limits === undefined ? {} : { limits }),
     ...(openFile === undefined ? {} : { openFile }),
   });
+}
+
+function executableIdentity(path: string) {
+  return {
+    path,
+    digest: { algorithm: 'sha256' as const, value: 'a'.repeat(64) },
+    device: 1n,
+    inode: 2n,
+    size: 3n,
+    ctimeNanoseconds: 4n,
+    mtimeNanoseconds: 5n,
+  };
 }
 
 function manifest(): DelegatedPackProviderManifest {

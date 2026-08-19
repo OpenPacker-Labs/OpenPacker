@@ -481,6 +481,8 @@ describe('OCI image materialisation', () => {
         bins: [],
         reason: 'direct',
         ecosystem: 'oci',
+        lifecycle: { status: 'published', eligible: true },
+        publishedAt: '2020-01-01T00:00:00.000Z',
       },
       bytes: artifact.bytes,
     });

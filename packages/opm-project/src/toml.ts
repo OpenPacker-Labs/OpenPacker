@@ -85,6 +85,7 @@ export function serializeManifest(manifest: OpmManifest): string {
     const provider = manifest.packProviders![id]!;
     lines.push(`[pack.providers.${packProviderKey(id)}]`);
     lines.push(`manifest = ${tomlString(provider.manifest)}`);
+    lines.push(`executable = ${tomlString(provider.executable)}`);
     if (provider.defaultFor !== undefined && provider.defaultFor.length > 0)
       lines.push(`default_for = ${tomlStringArray(provider.defaultFor)}`);
     if (
@@ -269,6 +270,7 @@ export function parseManifest(text: string): OpmManifest {
     string,
     {
       manifest?: string;
+      executable?: string;
       default_for?: string[];
       allow_environment?: string[];
     }
@@ -423,6 +425,8 @@ export function parseManifest(text: string): OpmManifest {
       const scratch = packProviderScratch.get(packProviderId) ?? {};
       if (key === 'manifest' && typeof value === 'string')
         scratch.manifest = value;
+      else if (key === 'executable' && typeof value === 'string')
+        scratch.executable = value;
       else if (key === 'default_for' && Array.isArray(value))
         scratch.default_for = value;
       else if (key === 'allow_environment' && Array.isArray(value))
@@ -567,8 +571,14 @@ export function parseManifest(text: string): OpmManifest {
           'INVALID_MANIFEST',
           `Pack provider "${id}" is missing required manifest`,
         );
+      if (!scratch.executable)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Pack provider "${id}" is missing required executable`,
+        );
       providers[id] = {
         manifest: scratch.manifest,
+        executable: scratch.executable,
         ...(scratch.default_for === undefined
           ? {}
           : { defaultFor: scratch.default_for }),

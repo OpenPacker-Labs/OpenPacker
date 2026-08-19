@@ -6,6 +6,7 @@ import {
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
   Distribution,
+  Digest,
   PackageIdentity,
   PackageInstance,
   PackageManifest,
@@ -452,7 +453,7 @@ export interface PackOptions {
 export interface PackAvailability {
   available: boolean;
   reason?: string;
-  tool?: { name: string; version?: string; path?: string };
+  tool?: { name: string; version?: string; path?: string; digest?: Digest };
 }
 
 export interface PackPlan {
@@ -464,7 +465,7 @@ export interface PackPlan {
   commands?: readonly (readonly string[])[];
   /** Commands attempted after execution to retire temporary native state. */
   cleanupCommands?: readonly (readonly string[])[];
-  tool?: { name: string; version?: string; path?: string };
+  tool?: { name: string; version?: string; path?: string; digest?: Digest };
   requiresBuild: boolean;
   requiresNetwork: boolean;
   expectedRoles: readonly string[];

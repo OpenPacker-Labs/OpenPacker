@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants, type Dirent } from 'node:fs';
 import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
   formatPurl,
@@ -14,7 +14,7 @@ import {
   type PackPlan,
   type PackagePacker,
 } from '@openpacker/adapter-core';
-import { canonicalBytes } from '@openpacker/canonical';
+import { canonicalBytes, compareCanonicalStrings } from '@openpacker/canonical';
 import type {
   DelegatedPackHostPlan,
   DelegatedPackArtifactIdentity,
@@ -25,7 +25,6 @@ import type {
 import { validateContract } from '@openpacker/conformance';
 import {
   assertNamedDirectory,
-  findExecutable,
   openStableDirectory,
   stableHandlePath,
 } from '@openpacker/project-io';
@@ -35,8 +34,19 @@ import {
   type SandboxOutcome,
 } from '@openpacker/sandbox';
 
-type ResolveExecutable = (name: string) => Promise<string | undefined>;
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
+
+export interface DelegatedExecutableIdentity {
+  path: string;
+  digest: { algorithm: 'sha256'; value: string };
+  device: bigint;
+  inode: bigint;
+  size: bigint;
+  ctimeNanoseconds: bigint;
+  mtimeNanoseconds: bigint;
+}
+
+type InspectExecutable = (path: string) => Promise<DelegatedExecutableIdentity>;
 
 const DEFAULT_LIMITS: ManifestPackagePackerLimits = {
   outputEntries: 4_096,
@@ -55,7 +65,9 @@ export interface ManifestPackagePackerLimits {
 }
 
 export interface ManifestPackagePackerDependencies {
-  resolveExecutable?: ResolveExecutable;
+  /** Absolute executable path explicitly approved by the host operator. */
+  executablePath: string;
+  inspectExecutable?: InspectExecutable;
   sandboxRun?: SandboxRun;
   limits?: Partial<ManifestPackagePackerLimits>;
   openFile?: typeof open;
@@ -65,7 +77,8 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly providerId: string;
   readonly providerManifestDigest: string;
   readonly purlType: string;
-  readonly #resolveExecutable: ResolveExecutable;
+  readonly #executablePath: string;
+  readonly #inspectExecutable: InspectExecutable;
   readonly #sandboxRun: SandboxRun;
   readonly #limits: ManifestPackagePackerLimits;
   readonly #openFile: typeof open;
@@ -73,7 +86,7 @@ export class ManifestPackagePacker implements PackagePacker {
   constructor(
     private readonly manifest: DelegatedPackProviderManifest,
     purlType: string,
-    dependencies: ManifestPackagePackerDependencies = {},
+    dependencies: ManifestPackagePackerDependencies,
   ) {
     if (!manifest.purlTypes.includes(purlType))
       throw new ProviderError(
@@ -85,25 +98,35 @@ export class ManifestPackagePacker implements PackagePacker {
       .update(canonicalBytes(manifest as unknown as JsonValue))
       .digest('hex')}`;
     this.purlType = purlType;
-    this.#resolveExecutable = dependencies.resolveExecutable ?? findExecutable;
+    if (!isAbsolute(dependencies.executablePath))
+      throw new ProviderError(
+        'AUTHORITY_NOT_DECLARED',
+        'Delegated provider executable approval must be an absolute path',
+      );
+    this.#executablePath = dependencies.executablePath;
+    this.#inspectExecutable =
+      dependencies.inspectExecutable ?? inspectDelegatedExecutable;
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
     this.#openFile = dependencies.openFile ?? open;
   }
 
   async available(): Promise<PackAvailability> {
-    const candidate = await this.#resolveExecutable(
-      this.manifest.executable,
-    ).catch(() => undefined);
-    const path = candidate === undefined ? undefined : resolve(candidate);
-    return path === undefined
+    const identity = await this.#inspectExecutable(this.#executablePath).catch(
+      () => undefined,
+    );
+    return identity === undefined
       ? {
           available: false,
-          reason: `${this.manifest.executable} is not on PATH`,
+          reason: `${this.#executablePath} is not a stable executable`,
         }
       : {
           available: true,
-          tool: { name: this.manifest.executable, path },
+          tool: {
+            name: this.manifest.executable,
+            path: identity.path,
+            digest: identity.digest,
+          },
         };
   }
 
@@ -220,21 +243,48 @@ export class ManifestPackagePacker implements PackagePacker {
           'AUTHORITY_NOT_DECLARED',
           `${this.providerId} does not declare environment variable ${name}`,
         );
-    const availability = await this.available();
-    if (!availability.available)
+    const executableIdentity = await this.#inspectExecutable(
+      this.#executablePath,
+    ).catch(() => undefined);
+    if (executableIdentity === undefined)
       throw new ProviderError(
         'UNSUPPORTED_ECOSYSTEM',
-        `${this.providerId} cannot pack here: ${availability.reason}`,
+        `${this.providerId} cannot pack here: ${this.#executablePath} is not a stable executable`,
       );
-    const executablePath = availability.tool?.path;
-    if (executablePath === undefined)
-      throw new ProviderError(
-        'UNSUPPORTED_ECOSYSTEM',
-        `${this.providerId} did not resolve an executable path`,
-      );
-    const withTool = {
+    const executablePath = executableIdentity.path;
+    const tool = {
+      name: this.manifest.executable,
+      path: executablePath,
+      digest: executableIdentity.digest,
+    };
+    const withTool: PackPlan = {
       ...plan,
-      ...(availability.tool === undefined ? {} : { tool: availability.tool }),
+      ...(plan.command === undefined
+        ? {}
+        : {
+            command: plan.command.map((value, index) =>
+              index === 0 ? executablePath : value,
+            ),
+          }),
+      ...(plan.commands === undefined
+        ? {}
+        : {
+            commands: plan.commands.map((command) =>
+              command.map((value, index) =>
+                index === 0 ? executablePath : value,
+              ),
+            ),
+          }),
+      ...(plan.cleanupCommands === undefined
+        ? {}
+        : {
+            cleanupCommands: plan.cleanupCommands.map((command) =>
+              command.map((value, index) =>
+                index === 0 ? executablePath : value,
+              ),
+            ),
+          }),
+      tool,
     };
     if (options.dryRun) return emptyOutcome(withTool);
 
@@ -277,7 +327,8 @@ export class ManifestPackagePacker implements PackagePacker {
             [executablePath, ...arguments_],
             input,
             options,
-            plan,
+            withTool,
+            executableIdentity,
             environment,
             Object.keys(authorizedEnvironment),
             outputDirectory,
@@ -293,7 +344,8 @@ export class ManifestPackagePacker implements PackagePacker {
               [executablePath, ...arguments_],
               input,
               options,
-              plan,
+              withTool,
+              executableIdentity,
               environment,
               Object.keys(authorizedEnvironment),
               outputDirectory,
@@ -360,7 +412,8 @@ export class ManifestPackagePacker implements PackagePacker {
             ],
             input,
             options,
-            plan,
+            withTool,
+            executableIdentity,
             environment,
             Object.keys(authorizedEnvironment),
             outputDirectory,
@@ -439,17 +492,22 @@ export class ManifestPackagePacker implements PackagePacker {
     }
   }
 
-  private runCommand(
+  private async runCommand(
     command: readonly string[],
     input: PackInput,
     options: PackOptions,
     plan: PackPlan,
+    executableIdentity: DelegatedExecutableIdentity,
     environment: Readonly<Record<string, string>>,
     grantedEnvironment: readonly string[],
     outputDirectory: string,
     outputDirectoryFd: number,
   ): Promise<SandboxOutcome> {
-    return this.#sandboxRun({
+    await assertExecutableIdentity(
+      executableIdentity,
+      await this.#inspectExecutable(executableIdentity.path),
+    );
+    const outcome = await this.#sandboxRun({
       argv: command,
       cwd: input.project.root,
       env: environment,
@@ -467,12 +525,123 @@ export class ManifestPackagePacker implements PackagePacker {
       directoryAuthorities: [{ fd: outputDirectoryFd, path: outputDirectory }],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
+    await assertExecutableIdentity(
+      executableIdentity,
+      await this.#inspectExecutable(executableIdentity.path),
+    );
+    return outcome;
   }
+}
+
+async function inspectDelegatedExecutable(
+  path: string,
+): Promise<DelegatedExecutableIdentity> {
+  if (!isAbsolute(path)) unsafeExecutable(path);
+  const before = await lstat(path, { bigint: true });
+  if (
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    (before.mode & 0o111n) === 0n ||
+    before.size > BigInt(Number.MAX_SAFE_INTEGER)
+  )
+    unsafeExecutable(path);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!sameExecutableMetadata(before, opened)) unsafeExecutable(path);
+    const hash = createHash('sha256');
+    const buffer = new Uint8Array(64 * 1024);
+    let offset = 0;
+    while (offset < Number(opened.size)) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.byteLength, Number(opened.size) - offset),
+        offset,
+      );
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      offset += bytesRead;
+    }
+    const [after, namedAfter] = await Promise.all([
+      handle.stat({ bigint: true }),
+      lstat(path, { bigint: true }),
+    ]);
+    if (
+      BigInt(offset) !== opened.size ||
+      !sameExecutableMetadata(opened, after) ||
+      !sameExecutableMetadata(opened, namedAfter)
+    )
+      unsafeExecutable(path);
+    return {
+      path,
+      digest: { algorithm: 'sha256', value: hash.digest('hex') },
+      device: opened.dev,
+      inode: opened.ino,
+      size: opened.size,
+      ctimeNanoseconds: timestampNanoseconds(opened, 'ctime'),
+      mtimeNanoseconds: timestampNanoseconds(opened, 'mtime'),
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+function sameExecutableMetadata(
+  left: Awaited<ReturnType<typeof lstat>>,
+  right: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+  return (
+    left.isFile() &&
+    right.isFile() &&
+    !left.isSymbolicLink() &&
+    !right.isSymbolicLink() &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    timestampNanoseconds(left, 'ctime') ===
+      timestampNanoseconds(right, 'ctime') &&
+    timestampNanoseconds(left, 'mtime') === timestampNanoseconds(right, 'mtime')
+  );
+}
+
+function timestampNanoseconds(
+  info: Awaited<ReturnType<typeof lstat>>,
+  kind: 'ctime' | 'mtime',
+): bigint {
+  const milliseconds = `${kind}Ms` as 'ctimeMs' | 'mtimeMs';
+  const value = info[milliseconds];
+  return typeof value === 'bigint'
+    ? value * 1_000_000n
+    : BigInt(Math.trunc(value * 1_000_000));
+}
+
+async function assertExecutableIdentity(
+  expected: DelegatedExecutableIdentity,
+  actual: DelegatedExecutableIdentity,
+): Promise<void> {
+  if (
+    expected.path !== actual.path ||
+    expected.device !== actual.device ||
+    expected.inode !== actual.inode ||
+    expected.size !== actual.size ||
+    expected.ctimeNanoseconds !== actual.ctimeNanoseconds ||
+    expected.mtimeNanoseconds !== actual.mtimeNanoseconds ||
+    expected.digest.value !== actual.digest.value
+  )
+    unsafeExecutable(expected.path);
+}
+
+function unsafeExecutable(path: string): never {
+  throw new ProviderError(
+    'AUTHORITY_NOT_DECLARED',
+    `Delegated provider executable is not a stable approved regular file: ${path}`,
+  );
 }
 
 export function manifestPackagePackers(
   manifest: DelegatedPackProviderManifest,
-  dependencies: ManifestPackagePackerDependencies = {},
+  dependencies: ManifestPackagePackerDependencies,
 ): ManifestPackagePacker[] {
   return manifest.purlTypes.map(
     (purlType) => new ManifestPackagePacker(manifest, purlType, dependencies),
@@ -599,7 +768,7 @@ async function collectArtifacts(
   } finally {
     await directory.close().catch(() => undefined);
   }
-  entries.sort((left, right) => left.name.localeCompare(right.name));
+  entries.sort((left, right) => compareCanonicalStrings(left.name, right.name));
   for (const entry of entries) {
     if (entry.name === 'opm-pack-receipt.json')
       throw new ProviderError(

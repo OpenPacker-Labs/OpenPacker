@@ -25,13 +25,16 @@ Projects bind providers without embedding credentials:
 ```toml
 [pack.providers.dev-example-acme]
 manifest = ".opm/providers/acme.json"
+executable = "/opt/acme/bin/acme-pack"
 default_for = ["acme"]
 allow_environment = ["ACME_TOKEN"]
 ```
 
-The section key MUST equal the manifest `id`. Relative paths resolve from the
-project root. `default_for` MUST be a subset of the manifest's `purlTypes`, and
-`allow_environment` MUST be a subset of its declared environment authority.
+The section key MUST equal the manifest `id`. Manifest paths resolve from the
+project root. `executable` MUST be an operator-approved absolute path and hosts
+MUST NOT resolve it through `PATH`. `default_for` MUST be a subset of the
+manifest's `purlTypes`, and `allow_environment` MUST be a subset of its declared
+environment authority.
 
 ## Templates
 

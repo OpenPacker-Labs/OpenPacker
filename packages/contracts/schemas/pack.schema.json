@@ -215,7 +215,10 @@
             "properties": { "strategy": { "const": "delegate" } },
             "required": ["strategy"]
           },
-          "then": { "required": ["provider"] }
+          "then": {
+            "required": ["provider", "tool"],
+            "properties": { "tool": { "required": ["path", "digest"] } }
+          }
         }
       ]
     },
@@ -225,7 +228,8 @@
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 255 },
         "version": { "type": "string", "maxLength": 255 },
-        "path": { "type": "string", "maxLength": 4096 }
+        "path": { "type": "string", "maxLength": 4096 },
+        "digest": { "$ref": "common.schema.json#/$defs/Digest" }
       },
       "additionalProperties": false
     }
