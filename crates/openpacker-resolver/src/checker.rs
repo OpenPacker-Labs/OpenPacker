@@ -11,7 +11,7 @@ use crate::{
     SolveOutput, TargetPredicate, digest_json,
     engine::{
         MAX_COMPANION_NODES, build_native_output, build_output, captured_indices,
-        objectives_require_optimization, validate_solve_request,
+        enforce_solution_policy, objectives_require_optimization, validate_solve_request,
     },
     parse_json_as, validate_universe, version_satisfies,
 };
@@ -100,6 +100,9 @@ pub(crate) fn check_amended(
     }
     if output.selected.len() != output_ids.len() {
         diagnostics.push("selected package objects contain duplicate nodeIds".into());
+    }
+    if let Err(error) = enforce_solution_policy(input, output) {
+        diagnostics.push(error.to_string());
     }
 
     for assignment in &output.proof.selected_assignments {

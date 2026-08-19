@@ -183,6 +183,30 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             ));
         }
     }
+    if !matches!(
+        input.request.policy.semantic_loss_maximum.as_str(),
+        "info" | "warning" | "error"
+    ) {
+        return Err(ResolverError::InvalidInput(
+            "semanticLossMaximum must be info, warning, or error".into(),
+        ));
+    }
+    let mut required_evidence = BTreeSet::new();
+    for evidence in &input.request.policy.required_evidence {
+        if !required_evidence.insert(evidence) {
+            return Err(ResolverError::InvalidInput(
+                "requiredEvidence must be unique".into(),
+            ));
+        }
+        // Receipt signatures are established by the signing layer after the
+        // pure solve. Every other evidence kind must be established before a
+        // universe reaches this resolver; this input has no evidence facts.
+        if evidence != "receipt-signature" {
+            return Err(ResolverError::Unsatisfiable(format!(
+                "required evidence is not present in the solve input: {evidence}"
+            )));
+        }
+    }
     if input.request.objectives.is_empty() || input.request.objectives.len() > 16 {
         return Err(ResolverError::InvalidInput(
             "objectives must contain 1..=16 entries".into(),
@@ -250,14 +274,20 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
                 "amendment must declare at least one operation".into(),
             ));
         }
-        if !input
+        let matching_subjects = input
             .universe
             .packages
             .iter()
-            .any(|package| package.metadata_digest == amendment.applies_to_metadata_digest)
-        {
+            .filter(|package| {
+                package.metadata_digest == amendment.applies_to_metadata_digest
+                    && serde_json::from_value::<crate::PackageIdentity>(amendment.subject.clone())
+                        .is_ok_and(|subject| subject == package.identity)
+            })
+            .count();
+        if matching_subjects != 1 {
             return Err(ResolverError::InvalidInput(
-                "amendment appliesToMetadataDigest does not match any universe package".into(),
+                "amendment subject and appliesToMetadataDigest must identify exactly one universe package"
+                    .into(),
             ));
         }
     }
@@ -486,6 +516,7 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         }
         _ => unreachable!("semantics profile was validated"),
     };
+    enforce_solution_policy(input, &output)?;
     // The already-amended universe is checked directly: re-entering the public
     // checker would apply the same amendments a second time.
     let checked = crate::checker::check_amended(input, &output)?;
@@ -493,6 +524,58 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         return Err(ResolverError::InvalidProof(checked.diagnostics.join("; ")));
     }
     Ok(output)
+}
+
+pub(crate) fn enforce_solution_policy(
+    input: &SolveInput,
+    output: &SolveOutput,
+) -> Result<(), ResolverError> {
+    let maximum = severity_rank(&input.request.policy.semantic_loss_maximum)
+        .ok_or_else(|| ResolverError::InvalidInput("invalid semanticLossMaximum".into()))?;
+    let losses = output
+        .solution
+        .semantic_loss
+        .iter()
+        .chain(
+            input
+                .request
+                .requirements
+                .iter()
+                .flat_map(|requirement| requirement.semantic_loss.iter()),
+        )
+        .chain(output.selected.iter().flat_map(|package| {
+            package
+                .requirements
+                .iter()
+                .flat_map(|requirement| requirement.semantic_loss.iter())
+        }));
+    for loss in losses {
+        let severity = loss
+            .get("severity")
+            .and_then(Value::as_str)
+            .and_then(severity_rank)
+            .ok_or_else(|| {
+                ResolverError::InvalidInput("semantic loss has invalid severity".into())
+            })?;
+        if severity > maximum {
+            return Err(ResolverError::Unsatisfiable(format!(
+                "semantic loss exceeds policy maximum: {}",
+                loss.get("code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn severity_rank(value: &str) -> Option<u8> {
+    match value {
+        "info" => Some(0),
+        "warning" => Some(1),
+        "error" => Some(2),
+        _ => None,
+    }
 }
 
 pub(crate) fn captured_indices(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {

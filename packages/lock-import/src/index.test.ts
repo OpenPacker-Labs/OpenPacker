@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
+  completeLockImport,
   detectLockFormat,
   parseRequirementsTxt,
   parsePnpmLock,
@@ -146,12 +147,62 @@ describe('lock-import planning', () => {
     const plan = await planLockCapture(npmLock, { format: 'package-lock' });
     for (const item of plan.packages) {
       expect(item.lifecycle.status).toBe('unknown');
+      expect(item.lifecycle.eligible).toBe(false);
       expect(
         item.lifecycle.warnings.some(
           ({ code }) => code === 'LIFECYCLE_NOT_CAPTURED',
         ),
       ).toBe(true);
     }
+  });
+
+  it('rejects duplicate JSON members before importing a lock', async () => {
+    await expect(
+      planLockCapture(
+        '{"lockfileVersion":3,"lockfileVersion":2,"packages":{}}',
+        { format: 'package-lock' },
+      ),
+    ).rejects.toThrow(/Map keys must be unique|duplicate/u);
+  });
+
+  it('never converts native non-HTTPS locations into executable fetches', async () => {
+    const plan = await planLockCapture(
+      npmLock.replace(
+        'https://fixtures.openpacker.invalid/npm/demo-tool-1.1.0.tgz',
+        'file:///tmp/demo-tool-1.1.0.tgz',
+      ),
+      { format: 'package-lock' },
+    );
+    expect(plan.packages[0]?.artifacts[0]?.locations).toEqual([]);
+    expect(plan.packages[0]?.lifecycle.eligible).toBe(false);
+  });
+
+  it('fails lock completion when requested evidence or loss policy is unmet', async () => {
+    const solveInput = await planNativeLockImport(cargoLock);
+    const resolver = {
+      solve: () => {
+        throw new Error('resolver must not run');
+      },
+      check: () => ({ valid: true, diagnostics: [] }),
+    } as never;
+    const meta = {
+      providerId: 'test',
+      version: '1',
+      resolverBuildDigest: {
+        algorithm: 'sha256' as const,
+        value: '0'.repeat(64),
+      },
+    };
+    solveInput.request.policy.requiredEvidence = ['sigstore'];
+    await expect(
+      completeLockImport(solveInput, resolver, meta),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+
+    solveInput.request.policy.requiredEvidence = [];
+    solveInput.request.policy.semanticLossMaximum = 'info';
+    await expect(
+      completeLockImport(solveInput, resolver, meta),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
   });
 });
 

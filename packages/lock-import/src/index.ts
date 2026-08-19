@@ -137,7 +137,7 @@ function defaultHandlers(
       {
         ecosystem: 'npm',
         codec: npm,
-        parse: (raw) => JSON.parse(asText(raw)) as unknown,
+        parse: (raw) => parseStrictJson(asText(raw)),
       },
     ],
     [
@@ -163,7 +163,7 @@ function defaultHandlers(
         codec: nuget,
         parse: (raw) => ({
           format: 'project.assets.json' as const,
-          data: JSON.parse(asText(raw)) as unknown,
+          data: parseStrictJson(asText(raw)),
         }),
       },
     ],
@@ -174,7 +174,7 @@ function defaultHandlers(
         codec: nuget,
         parse: (raw) => ({
           format: 'packages.lock.json' as const,
-          data: JSON.parse(asText(raw)) as unknown,
+          data: parseStrictJson(asText(raw)),
         }),
       },
     ],
@@ -183,7 +183,7 @@ function defaultHandlers(
       {
         ecosystem: 'pypi',
         codec: pypi,
-        parse: (raw) => JSON.parse(asText(raw)) as unknown,
+        parse: (raw) => parseStrictJson(asText(raw)),
       },
     ],
     [
@@ -552,6 +552,13 @@ function asBytes(raw: string | Uint8Array): Uint8Array {
   return typeof raw === 'string' ? new TextEncoder().encode(raw) : raw;
 }
 
+function parseStrictJson(text: string): unknown {
+  // The YAML parser already in this package detects duplicate mapping keys;
+  // JSON.parse then retains the strict JSON grammar expected by lock formats.
+  parseYaml(text, { schema: 'json', uniqueKeys: true });
+  return JSON.parse(text) as unknown;
+}
+
 export function detectLockFormat(
   raw: string | Uint8Array,
   hint?: LockFormat,
@@ -560,7 +567,7 @@ export function detectLockFormat(
   const text = asText(raw).trim();
   if (text.startsWith('{')) {
     try {
-      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const parsed = parseStrictJson(text) as Record<string, unknown>;
       if (parsed.lockfileVersion === 3 && parsed.packages)
         return 'package-lock';
       if (parsed.version !== undefined && parsed.targets) return 'nuget-assets';
@@ -800,6 +807,23 @@ export async function completeLockImport(
     protocolVersion?: string;
   },
 ): Promise<LockImportResult> {
+  if (solveInput.request.policy.requiredEvidence.length > 0)
+    throw new ProviderError(
+      'POLICY_DENIED',
+      `Lock import cannot satisfy required evidence: ${solveInput.request.policy.requiredEvidence.join(', ')}`,
+    );
+  const severity = { info: 0, warning: 1, error: 2 } as const;
+  const maximum = severity[solveInput.request.policy.semanticLossMaximum];
+  const losses = [
+    ...solveInput.semanticLoss,
+    ...solveInput.universe.packages.flatMap((item) => item.semanticLoss),
+  ];
+  const deniedLoss = losses.find((loss) => severity[loss.severity] > maximum);
+  if (deniedLoss)
+    throw new ProviderError(
+      'POLICY_DENIED',
+      `Semantic loss ${deniedLoss.code} exceeds ${solveInput.request.policy.semanticLossMaximum}`,
+    );
   const embeddedInput = {
     request: solveInput.request,
     universe: solveInput.universe,
@@ -967,6 +991,17 @@ async function minimalInstanceFromLockEntry(
         'No artifact descriptor is captured; OpenPacker holds no sha256 audit digest for this package',
       blocksProfile: [],
     });
+  const resolvedLocation = httpsArtifactLocation(entry.resolved);
+  if (entry.resolved !== undefined && resolvedLocation === undefined)
+    semanticLoss.push({
+      code: 'NATIVE_ARTIFACT_LOCATION_NOT_HTTPS',
+      severity: 'warning',
+      sourceEcosystem: ecosystem,
+      sourcePath: '/',
+      originalMeaning: `The native lock references ${entry.resolved}`,
+      representedMeaning: 'No executable artifact location was imported',
+      blocksProfile: [],
+    });
   const artifacts =
     parsedDigest === undefined
       ? []
@@ -985,17 +1020,7 @@ async function minimalInstanceFromLockEntry(
                 sizeUnknown: true,
               },
             },
-            locations:
-              entry.resolved === undefined
-                ? []
-                : [
-                    {
-                      transport: 'https' as const,
-                      uri: entry.resolved,
-                      priority: 0,
-                      rangeSupported: false,
-                    },
-                  ],
+            locations: resolvedLocation === undefined ? [] : [resolvedLocation],
             referrers: [],
             externalRefs: [],
           },
@@ -1044,7 +1069,7 @@ async function minimalInstanceFromLockEntry(
     artifacts,
     lifecycle: {
       status: 'unknown',
-      eligible: true,
+      eligible: false,
       warnings: [
         {
           code: 'LIFECYCLE_NOT_CAPTURED',
@@ -1065,6 +1090,23 @@ async function minimalInstanceFromLockEntry(
     },
     semanticLoss,
   };
+}
+
+function httpsArtifactLocation(resolved: string | undefined) {
+  if (resolved === undefined) return undefined;
+  try {
+    const url = new URL(resolved);
+    if (url.protocol !== 'https:' || url.username || url.password)
+      return undefined;
+    return {
+      transport: 'https' as const,
+      uri: url.toString(),
+      priority: 0,
+      rangeSupported: false,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function stripUndefined(value: unknown): unknown {

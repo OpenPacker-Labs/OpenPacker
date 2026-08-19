@@ -427,6 +427,50 @@ fn lifecycle_denial_makes_exact_root_unsatisfiable() {
 }
 
 #[test]
+fn solve_and_checker_enforce_evidence_and_semantic_loss_policy() {
+    let mut candidate = package('8', "demo", "1.0.0");
+    candidate.semantic_loss.push(json!({
+        "code": "TEST_WARNING",
+        "severity": "warning"
+    }));
+    let mut solve_input = input(
+        vec![candidate],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    solve_input.request.policy.semantic_loss_maximum = "info".into();
+    assert!(matches!(
+        solve(&solve_input),
+        Err(ResolverError::Unsatisfiable(message)) if message.contains("semantic loss")
+    ));
+
+    solve_input.request.policy.semantic_loss_maximum = "warning".into();
+    let output = solve(&solve_input).unwrap();
+    let mut stricter = solve_input.clone();
+    stricter.request.policy.semantic_loss_maximum = "info".into();
+    assert!(
+        check(&stricter, &output)
+            .unwrap()
+            .diagnostics
+            .iter()
+            .any(|message| message.contains("semantic loss"))
+    );
+
+    solve_input.request.policy.required_evidence = vec!["sigstore".into()];
+    assert!(matches!(
+        solve(&solve_input),
+        Err(ResolverError::Unsatisfiable(message)) if message.contains("sigstore")
+    ));
+}
+
+#[test]
 fn canonical_json_is_stable_and_integer_only() {
     assert_eq!(
         canonical_json(&json!({"z":1,"a":[true,"x"]})).unwrap(),
@@ -754,7 +798,7 @@ fn unaccepted_amendments_do_not_change_the_solution() {
     let mut amended = input(vec![one.clone(), two.clone()], requirements);
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&one.identity).unwrap(),
         applies_to_metadata_digest: one.metadata_digest.clone(),
         operations: vec![
             json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
@@ -915,7 +959,7 @@ fn an_accepted_amendment_redirects_and_retracts_requirements() {
         .push("organization".into());
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&app.identity).unwrap(),
         applies_to_metadata_digest: app.metadata_digest.clone(),
         operations: vec![json!({
             "op": "redirectPackage",
@@ -996,7 +1040,7 @@ fn a_retraction_removes_an_unsatisfiable_requirement() {
         .push("organization".into());
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&app.identity).unwrap(),
         applies_to_metadata_digest: app.metadata_digest.clone(),
         operations: vec![json!({
             "op": "retractRequirement",
@@ -1047,7 +1091,7 @@ fn the_amended_universe_digest_is_universe_v1_over_the_whole_struct() {
         .push("organization".into());
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&one.identity).unwrap(),
         applies_to_metadata_digest: one.metadata_digest.clone(),
         operations: vec![json!({
             "op": "retractRequirement",
@@ -1140,7 +1184,7 @@ fn amended_universe_ordered_sets_sort_by_utf16_code_units() {
         .push("organization".into());
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&one.identity).unwrap(),
         applies_to_metadata_digest: one.metadata_digest.clone(),
         operations: vec![json!({
             "op": "retractRequirement",
@@ -1210,7 +1254,7 @@ fn amendments_must_bind_to_a_real_package() {
     );
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&amended.universe.packages[0].identity).unwrap(),
         applies_to_metadata_digest: digest('9'),
         operations: vec![
             json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
@@ -1219,6 +1263,41 @@ fn amendments_must_bind_to_a_real_package() {
         rest: BTreeMap::new(),
     });
     assert!(solve(&amended).is_err());
+}
+
+#[test]
+fn amendment_subject_disambiguates_a_shared_metadata_digest() {
+    let first = package('1', "first", "1.0.0");
+    let mut second = package('2', "second", "1.0.0");
+    second.metadata_digest = first.metadata_digest.clone();
+    let mut amended = input(
+        vec![first.clone(), second.clone()],
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/first".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: serde_json::to_value(&second.identity).unwrap(),
+        applies_to_metadata_digest: first.metadata_digest.clone(),
+        operations: vec![
+            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
+        ],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    amended.universe.amendments[0].subject =
+        serde_json::to_value(&package('3', "other", "1.0.0").identity).unwrap();
+    assert!(matches!(
+        solve(&amended),
+        Err(ResolverError::InvalidInput(message)) if message.contains("subject")
+    ));
 }
 
 /// Requirements consumed while building resolve against the build platform,

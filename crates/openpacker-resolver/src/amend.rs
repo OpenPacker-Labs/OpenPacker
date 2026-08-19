@@ -152,10 +152,15 @@ pub fn apply_amendments(input: &SolveInput) -> Result<AmendedInput, ResolverErro
             .universe
             .packages
             .iter_mut()
-            .find(|package| package.metadata_digest == amendment.applies_to_metadata_digest)
+            .find(|package| {
+                package.metadata_digest == amendment.applies_to_metadata_digest
+                    && serde_json::from_value::<crate::PackageIdentity>(amendment.subject.clone())
+                        .is_ok_and(|subject| subject == package.identity)
+            })
             .ok_or_else(|| {
                 ResolverError::InvalidInput(
-                    "amendment appliesToMetadataDigest does not match any universe package".into(),
+                    "amendment subject and appliesToMetadataDigest do not match a universe package"
+                        .into(),
                 )
             })?;
         let mut operations = Vec::new();
