@@ -186,7 +186,10 @@ describe('stable executable authority', () => {
           readonlyPaths: [],
           executableAuthority: { fd, path: process.execPath },
         }),
-      ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+      ).rejects.toMatchObject({
+        code: 'TREE_CONTAINMENT_UNAVAILABLE',
+        message: expect.stringContaining('ambient execution is refused'),
+      });
     } finally {
       closeSync(fd);
     }

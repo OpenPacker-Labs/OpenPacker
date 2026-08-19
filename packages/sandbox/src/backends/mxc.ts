@@ -2,7 +2,6 @@ import type { BackendProbe, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
   SandboxBackendError,
-  spawnCapture,
   type OutputLimitKind,
 } from './mock.js';
 
@@ -47,6 +46,13 @@ export async function probeMxc(): Promise<BackendProbe> {
  *
  * Note: MXC is early preview. Callers must treat enforcement as
  * defense-in-depth and record SANDBOX_BACKEND_MXC honesty losses.
+ *
+ * Currently unreachable from runInSandbox: every run synthesizes stable
+ * directory-handle authorities for its binds, and the MXC SDK configures
+ * containment by path strings only, so run() always fails closed with
+ * UNAVAILABLE (see mxcFilesystemPaths). The backend remains for probe
+ * diagnostics and for the day the SDK exposes handle-relative binds; macOS and
+ * Windows package-exec containment is withdrawn until then.
  */
 export async function createMxcBackend(): Promise<SandboxBackend> {
   const probe = await probeMxc();
@@ -231,7 +237,7 @@ export function mxcFilesystemPaths(input: {
   if ((input.directoryAuthorities?.length ?? 0) > 0)
     throw new SandboxBackendError(
       'UNAVAILABLE',
-      'MXC SDK does not expose inherited directory-handle binds',
+      'MXC SDK does not expose inherited directory-handle binds; package-exec containment is withdrawn on platforms without a native backend',
     );
   const readwritePaths = [...input.readwritePaths];
   const readonlyPaths = [...input.readonlyPaths];
@@ -241,6 +247,3 @@ export function mxcFilesystemPaths(input: {
   }
   return { readonlyPaths, readwritePaths };
 }
-
-/** Used only when tests force ambient degraded execution. */
-export { spawnCapture };

@@ -35,11 +35,13 @@ import {
   resolvePolicy,
   runHostInstaller,
   runInSandbox,
+  SandboxBackendError,
   scrubEnvironment,
   SANDBOX_LOSS,
   sandboxPolicyFromInstallOptions,
   sensitiveMaskDirectories,
   sensitiveMaskFiles,
+  type SandboxBackend,
 } from './index.js';
 
 describe('@openpacker/sandbox', () => {
@@ -158,7 +160,38 @@ describe('@openpacker/sandbox', () => {
         readonlyPaths: [],
         backend: createMockBackend({ unavailable: true }),
       }),
-    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
+  });
+
+  it('degrade-warn refuses ambient execution when MXC cannot consume directory authorities', async () => {
+    // macOS/Windows outcome: the only probed backend is MXC, which fails
+    // closed because every run requires stable directory-handle binds.
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const mxc: SandboxBackend = {
+      id: 'mxc',
+      async run() {
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'MXC SDK does not expose inherited directory-handle binds',
+        );
+      },
+    };
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.stdout.write("never")'],
+        cwd,
+        policy: { mode: 'degrade-warn', required: false },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        backend: mxc,
+      }),
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
   });
 
   it('mock backend executes argv with scrubbed env', async () => {
@@ -231,7 +264,10 @@ describe('@openpacker/sandbox', () => {
         readwritePaths: [cwd],
         readonlyPaths: [],
       }),
-    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
   });
 
   it('rejects writable native sandbox helpers', async () => {
