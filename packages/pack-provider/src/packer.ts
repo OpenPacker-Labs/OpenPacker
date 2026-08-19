@@ -48,6 +48,7 @@ export interface ManifestPackagePackerDependencies {
   resolveExecutable?: ResolveExecutable;
   sandboxRun?: SandboxRun;
   limits?: Partial<ManifestPackagePackerLimits>;
+  openFile?: typeof open;
 }
 
 export class ManifestPackagePacker implements PackagePacker {
@@ -56,6 +57,7 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly #resolveExecutable: ResolveExecutable;
   readonly #sandboxRun: SandboxRun;
   readonly #limits: ManifestPackagePackerLimits;
+  readonly #openFile: typeof open;
 
   constructor(
     private readonly manifest: DelegatedPackProviderManifest,
@@ -72,6 +74,7 @@ export class ManifestPackagePacker implements PackagePacker {
     this.#resolveExecutable = dependencies.resolveExecutable ?? findExecutable;
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
+    this.#openFile = dependencies.openFile ?? open;
   }
 
   async available(): Promise<PackAvailability> {
@@ -230,6 +233,7 @@ export class ManifestPackagePacker implements PackagePacker {
         outputReal,
         hostPlan,
         this.#limits,
+        this.#openFile,
       );
       await assertDirectoryIdentity(
         outputDirectory,
@@ -294,6 +298,7 @@ export class ManifestPackagePacker implements PackagePacker {
               outputReal,
               hostPlan,
               this.#limits,
+              this.#openFile,
             )
           : [];
       await assertDirectoryIdentity(
@@ -431,6 +436,7 @@ async function collectArtifacts(
   outputReal: string,
   plan: DelegatedPackHostPlan,
   limits: ManifestPackagePackerLimits,
+  openFile: typeof open,
 ): Promise<PackArtifact[]> {
   const artifacts: PackArtifact[] = [];
   let totalBytes = 0n;
@@ -483,7 +489,10 @@ async function collectArtifacts(
         'INVALID_RESPONSE',
         `Artifact exceeds ${limits.artifactBytes} bytes: ${entry.name}`,
       );
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const handle = await openFile(
+      path,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
     try {
       const opened = await handle.stat({ bigint: true });
       if (opened.dev !== before.dev || opened.ino !== before.ino)
