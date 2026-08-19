@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   buildSeatbeltProfile,
   createMockBackend,
   digestSandboxPolicy,
+  findTrustedSandboxHelper,
   isDeniedCredential,
   isPathInside,
   JailPathError,
@@ -176,6 +177,63 @@ describe('@openpacker/sandbox', () => {
     expect(outcome.backend).toBe('off');
     expect(outcome.degraded).toBe(true);
     expect(outcome.enforced).toBe(false);
+  });
+
+  it('rejects writable native sandbox helpers', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'op-sandbox-helper-'));
+    const helper = join(directory, 'bwrap');
+    await writeFile(helper, '#!/bin/sh\nexit 0\n');
+    await chmod(helper, 0o777);
+    expect(findTrustedSandboxHelper('bwrap', [directory])).toBeUndefined();
+  });
+
+  it('bounds backend and ambient output', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-output-'));
+    for (const mode of ['fail-closed', 'off'] as const) {
+      const outcome = await runInSandbox({
+        argv: [
+          process.execPath,
+          '-e',
+          'process.stdout.write("x".repeat(4096))',
+        ],
+        cwd,
+        policy: {
+          mode,
+          maximumStdoutBytes: 64,
+          maximumStderrBytes: 64,
+          maximumOutputBytes: 96,
+        },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        ...(mode === 'fail-closed' ? { backend: createMockBackend() } : {}),
+      });
+      expect(outcome.exitCode).toBe(125);
+      expect(outcome.outputLimitExceeded).toBe('stdout');
+      expect(Buffer.byteLength(outcome.stdout)).toBeLessThanOrEqual(64);
+    }
+  });
+
+  it('kills the process tree when output exceeds policy', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-tree-'));
+    const marker = join(cwd, 'escaped');
+    const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
+    const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); process.stdout.write('x'.repeat(4096)); setInterval(() => {}, 1000)`;
+    const outcome = await runInSandbox({
+      argv: [process.execPath, '-e', parent],
+      cwd,
+      policy: {
+        mode: 'fail-closed',
+        maximumStdoutBytes: 64,
+        maximumStderrBytes: 64,
+        maximumOutputBytes: 96,
+      },
+      readwritePaths: [cwd],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(outcome.outputLimitExceeded).toBe('stdout');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('host installer helper records ambient loss when unsandboxed is allowed', async () => {

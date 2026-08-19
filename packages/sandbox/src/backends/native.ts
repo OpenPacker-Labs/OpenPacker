@@ -1,10 +1,4 @@
-import {
-  accessSync,
-  constants,
-  existsSync,
-  lstatSync,
-  realpathSync,
-} from 'node:fs';
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { SandboxBackendError, spawnCapture } from './mock.js';
@@ -29,15 +23,45 @@ function regularFile(path: string): string | undefined {
   return undefined;
 }
 
-function which(bin: string): string | undefined {
-  const pathEnv = process.env.PATH ?? '';
-  const sep = platform() === 'win32' ? ';' : ':';
-  for (const dir of pathEnv.split(sep)) {
-    if (!dir) continue;
-    const candidate = resolve(dir, bin);
+interface TrustedSandboxHelper {
+  path: string;
+  device: number;
+  inode: number;
+  ctimeMs: number;
+  mtimeMs: number;
+}
+
+export function findTrustedSandboxHelper(
+  bin: 'bwrap' | 'sandbox-exec',
+  directories: readonly string[] = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
+): TrustedSandboxHelper | undefined {
+  for (const directory of directories) {
     try {
-      accessSync(candidate, constants.X_OK);
-      return candidate;
+      const path = realpathSync(resolve(directory, bin));
+      const file = statSync(path);
+      if (
+        !file.isFile() ||
+        file.uid !== 0 ||
+        (file.mode & 0o111) === 0 ||
+        (file.mode & 0o022) !== 0
+      )
+        continue;
+      let ancestor = dirname(path);
+      for (;;) {
+        const info = statSync(ancestor);
+        if (info.uid !== 0 || (info.mode & 0o022) !== 0)
+          throw new Error('sandbox helper has a writable ancestor');
+        const parent = dirname(ancestor);
+        if (parent === ancestor) break;
+        ancestor = parent;
+      }
+      return {
+        path,
+        device: file.dev,
+        inode: file.ino,
+        ctimeMs: file.ctimeMs,
+        mtimeMs: file.mtimeMs,
+      };
     } catch {
       // try next
     }
@@ -45,21 +69,39 @@ function which(bin: string): string | undefined {
   return undefined;
 }
 
+function assertTrustedSandboxHelper(helper: TrustedSandboxHelper): void {
+  const current = statSync(helper.path);
+  if (
+    !current.isFile() ||
+    current.uid !== 0 ||
+    (current.mode & 0o111) === 0 ||
+    (current.mode & 0o022) !== 0 ||
+    current.dev !== helper.device ||
+    current.ino !== helper.inode ||
+    current.ctimeMs !== helper.ctimeMs ||
+    current.mtimeMs !== helper.mtimeMs
+  )
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'Native sandbox helper identity changed before execution',
+    );
+}
+
 export function probeNativeBackends(): BackendProbe[] {
   const probes: BackendProbe[] = [];
   if (platform() === 'linux') {
-    const bwrap = which('bwrap');
+    const bwrap = findTrustedSandboxHelper('bwrap');
     probes.push(
       bwrap
         ? { id: 'native-bwrap', available: true }
         : {
             id: 'native-bwrap',
             available: false,
-            reason: 'bwrap not found on PATH',
+            reason: 'trusted bwrap not found in system paths',
           },
     );
   } else if (platform() === 'darwin') {
-    const se = which('sandbox-exec');
+    const se = findTrustedSandboxHelper('sandbox-exec');
     probes.push(
       se
         ? { id: 'native-seatbelt', available: true }
@@ -107,15 +149,19 @@ export function packageExecRoRoots(): string[] {
  * Bubblewrap backend (Linux).
  */
 export function createBwrapBackend(): SandboxBackend {
-  const bwrap = which('bwrap');
-  if (!bwrap) {
-    throw new SandboxBackendError('UNAVAILABLE', 'bwrap not found on PATH');
+  const helper = findTrustedSandboxHelper('bwrap');
+  if (!helper) {
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'trusted bwrap not found in system paths',
+    );
   }
   return {
     id: 'native-bwrap',
     async run(input) {
+      assertTrustedSandboxHelper(helper);
       const argv = buildBwrapArgv({
-        bwrap,
+        bwrap: helper.path,
         command: input.argv,
         cwd: input.cwd,
         readwritePaths: input.readwritePaths,
@@ -129,6 +175,9 @@ export function createBwrapBackend(): SandboxBackend {
         argv,
         cwd: input.cwd,
         env: input.hostEnv,
+        maximumStdoutBytes: input.maximumStdoutBytes,
+        maximumStderrBytes: input.maximumStderrBytes,
+        maximumOutputBytes: input.maximumOutputBytes,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -245,16 +294,17 @@ export function buildBwrapArgv(input: {
 }
 
 export function createSeatbeltBackend(): SandboxBackend {
-  const se = which('sandbox-exec');
-  if (!se) {
+  const helper = findTrustedSandboxHelper('sandbox-exec');
+  if (!helper) {
     throw new SandboxBackendError(
       'UNAVAILABLE',
-      'sandbox-exec not found on PATH',
+      'trusted sandbox-exec not found in system paths',
     );
   }
   return {
     id: 'native-seatbelt',
     async run(input) {
+      assertTrustedSandboxHelper(helper);
       const cwdPath = resolve(input.cwd);
       const rw = [...input.readwritePaths];
       const ro = [...input.readonlyPaths];
@@ -268,7 +318,7 @@ export function createSeatbeltBackend(): SandboxBackend {
       });
       return spawnCapture({
         argv: [
-          se,
+          helper.path,
           '-p',
           profile,
           '/usr/bin/env',
@@ -280,6 +330,9 @@ export function createSeatbeltBackend(): SandboxBackend {
         ],
         cwd: input.cwd,
         env: input.hostEnv,
+        maximumStdoutBytes: input.maximumStdoutBytes,
+        maximumStderrBytes: input.maximumStderrBytes,
+        maximumOutputBytes: input.maximumOutputBytes,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -342,8 +395,9 @@ ${net}
 }
 
 export function createNativeBackend(): SandboxBackend | undefined {
-  if (platform() === 'linux' && which('bwrap')) return createBwrapBackend();
-  if (platform() === 'darwin' && which('sandbox-exec'))
+  if (platform() === 'linux' && findTrustedSandboxHelper('bwrap'))
+    return createBwrapBackend();
+  if (platform() === 'darwin' && findTrustedSandboxHelper('sandbox-exec'))
     return createSeatbeltBackend();
   return undefined;
 }

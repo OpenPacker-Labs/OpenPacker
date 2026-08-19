@@ -1,5 +1,10 @@
 import type { BackendProbe, SandboxBackend } from '../types.js';
-import { SandboxBackendError, spawnCapture } from './mock.js';
+import {
+  BoundedOutput,
+  SandboxBackendError,
+  spawnCapture,
+  type OutputLimitKind,
+} from './mock.js';
 
 /**
  * Probe whether @microsoft/mxc-sdk can load and reports platform support.
@@ -110,7 +115,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           on: (event: string, cb: (...args: unknown[]) => void) => void;
           kill?: (signal?: NodeJS.Signals) => void;
         };
-        return await collectChild(child, input.signal);
+        return await collectChild(child, input, input.signal);
       }
 
       // Last resort: do not pretend — surface unavailability.
@@ -139,11 +144,20 @@ async function collectChild(
     on: (event: string, cb: (...args: unknown[]) => void) => void;
     kill?: (signal?: NodeJS.Signals) => void;
   },
+  limits: {
+    maximumStdoutBytes: number;
+    maximumStderrBytes: number;
+    maximumOutputBytes: number;
+  },
   signal?: AbortSignal,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  outputLimitExceeded?: OutputLimitKind;
+}> {
   return await new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
+    const output = new BoundedOutput(limits);
     const onAbort = () => {
       try {
         child.kill?.('SIGTERM');
@@ -153,10 +167,10 @@ async function collectChild(
     };
     signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout?.on('data', (d: unknown) => {
-      stdout += String(d);
+      if (!output.push('stdout', d)) child.kill?.('SIGKILL');
     });
     child.stderr?.on('data', (d: unknown) => {
-      stderr += String(d);
+      if (!output.push('stderr', d)) child.kill?.('SIGKILL');
     });
     child.on('error', (err: unknown) => {
       signal?.removeEventListener('abort', onAbort);
@@ -164,11 +178,7 @@ async function collectChild(
     });
     child.on('close', (code: unknown) => {
       signal?.removeEventListener('abort', onAbort);
-      resolve({
-        exitCode: typeof code === 'number' ? code : 1,
-        stdout,
-        stderr,
-      });
+      resolve(output.result(typeof code === 'number' ? code : 1));
     });
   });
 }
