@@ -131,6 +131,56 @@ describe('openpackerd', () => {
     });
   });
 
+  it('requires forensic intent for every lifecycle-denied artifact subject', async () => {
+    const descriptor = {
+      descriptorId: 'quarantined-artifact',
+      digest: digest('9'),
+      size: 1,
+      mediaType: 'application/octet-stream',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+      locations: ['https://fixtures.openpacker.dev/quarantined.tgz'],
+      rangeSupported: false,
+    };
+    const denied = {
+      ...universe.packages[0]!,
+      lifecycle: {
+        status: 'quarantined' as const,
+        eligible: false,
+        warnings: [],
+      },
+      artifacts: [descriptor],
+    };
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe: { ...universe, packages: [denied] },
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const subject = { type: 'artifact' as const, descriptor };
+    await expect(
+      operations.materialize({ subject } as never, {} as never),
+    ).rejects.toMatchObject({ code: 'LIFECYCLE_DENIED' });
+    await expect(
+      operations.materialize({ subject, forensic: true } as never, {} as never),
+    ).resolves.toMatchObject({ descriptor });
+  });
+
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {
     const keys = JSON.parse(
       await readFile(

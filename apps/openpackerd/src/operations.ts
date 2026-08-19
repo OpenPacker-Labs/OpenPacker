@@ -412,10 +412,10 @@ export function createReferenceOperations(
 
     async materialize(input) {
       const { descriptor, package: owner } = findArtifact(input, instances());
-      if (owner?.lifecycle.status === 'yanked' && input.forensic !== true)
+      if (owner?.lifecycle.eligible === false && input.forensic !== true)
         throw operationError(
           'LIFECYCLE_DENIED',
-          'Yanked artifacts require explicit forensic materialization',
+          `${owner.lifecycle.status} artifacts require explicit forensic materialization`,
         );
       return {
         meta: options.meta,
@@ -917,7 +917,19 @@ function findArtifact(
   packages: readonly PackageInstance[],
 ): { descriptor: ArtifactDescriptor; package?: PackageInstance } {
   const subject = input.subject;
-  if (subject.type === 'artifact') return { descriptor: subject.descriptor };
+  if (subject.type === 'artifact') {
+    const owner = packages.find((item) =>
+      item.artifacts.some(
+        (artifact) =>
+          formatDigest(artifact.digest) ===
+          formatDigest(subject.descriptor.digest),
+      ),
+    );
+    return {
+      descriptor: subject.descriptor,
+      ...(owner === undefined ? {} : { package: owner }),
+    };
+  }
   let owner: PackageInstance | undefined;
   let selectedDescriptor: ArtifactDescriptor | undefined;
   if (subject.type === 'purl')
