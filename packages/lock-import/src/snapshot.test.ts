@@ -5,9 +5,11 @@ import { planLockCapture } from './index.js';
 
 /**
  * Characterization snapshots for native lockfile import. They pin the whole
- * capture plan for a real fixture so any change in translation, ordering, or
- * semantic-loss reporting shows up as a deliberate, reviewable snapshot diff
- * (update with `vitest run -u`), never a silent drift.
+ * capture plan for a real fixture so any change in translation, membership,
+ * or semantic-loss reporting shows up as a deliberate, reviewable snapshot
+ * diff (update with `vitest run -u`), never a silent drift. Ordering is
+ * deliberately normalized away: purls and loss codes are sorted before
+ * snapshotting because enumeration order carries no meaning.
  */
 describe('lock-import capture plan snapshots', () => {
   configureDefaultAdapters();
