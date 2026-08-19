@@ -53,6 +53,6 @@ the reviewed patch removes that dependency and disables ZIP plugins. The
 repository wrapper refuses to start a scanner that declares or can resolve
 `extract-zip`, while keeping scanner dependencies outside OpenPacker's graph.
 
-The scan fails closed at high severity. Codex Security also refuses to evaluate
+The scan fails closed at low severity. Codex Security also refuses to evaluate
 that policy when coverage is partial; treat either exit as a failed security
 gate and inspect the external report before changing code.

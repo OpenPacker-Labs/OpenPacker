@@ -40,6 +40,7 @@ if (process.argv[2] === 'info') {
     const args = await readFile(capture, 'utf8');
     assert.match(args, /approval_policy="never"/u);
     assert.match(args, /--auth\nchatgpt/u);
+    assert.match(args, /--fail-on-severity\nlow/u);
 
     for (const override of [
       '--codex=model="other"',

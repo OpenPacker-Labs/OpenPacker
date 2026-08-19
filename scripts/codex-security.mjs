@@ -144,7 +144,7 @@ const scan = run(
     '--auth',
     'chatgpt',
     '--fail-on-severity',
-    'high',
+    'low',
     '--knowledge-base',
     'docs/security',
     '--scan-prompt-file',
