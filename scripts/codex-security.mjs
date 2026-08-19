@@ -4,6 +4,7 @@ import {
   accessSync,
   constants,
   existsSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   statSync,
@@ -91,13 +92,25 @@ function verifyScannerDependencies(cli) {
         if (manifest.dependencies?.['extract-zip'] !== undefined) {
           fail('reviewed scanner must not depend on vulnerable extract-zip.');
         }
+        let resolvable = true;
         try {
           createRequire(manifestPath).resolve('extract-zip');
         } catch (error) {
-          if (error?.code === 'MODULE_NOT_FOUND') return;
-          fail(`unable to resolve scanner dependencies: ${error.message}`);
+          if (error?.code !== 'MODULE_NOT_FOUND') {
+            fail(`unable to resolve scanner dependencies: ${error.message}`);
+          }
+          resolvable = false;
         }
-        fail('vulnerable extract-zip is reachable from the scanner package.');
+        if (resolvable) {
+          fail('vulnerable extract-zip is reachable from the scanner package.');
+        }
+        const nested = findNestedExtractZip(join(directory, 'node_modules'));
+        if (nested !== undefined) {
+          fail(
+            `vulnerable extract-zip is nested in the scanner tree: ${nested}.`,
+          );
+        }
+        return;
       }
     }
     const parent = dirname(directory);
@@ -105,6 +118,39 @@ function verifyScannerDependencies(cli) {
     directory = parent;
   }
   fail('unable to locate the reviewed scanner package manifest.');
+}
+
+/**
+ * Bounded DFS over node_modules trees for a copy of extract-zip hidden inside
+ * a dependency's own node_modules, which bare package resolution cannot see.
+ * Symlinks are not followed; the scan gives up after 5000 directories.
+ */
+function findNestedExtractZip(nodeModules) {
+  const stack = [nodeModules];
+  let visited = 0;
+  while (stack.length > 0) {
+    if ((visited += 1) > 5000) return undefined;
+    const directory = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
+      const path = join(directory, entry.name);
+      if (
+        entry.name === 'extract-zip' &&
+        existsSync(join(path, 'package.json'))
+      ) {
+        return path;
+      }
+      if (entry.name.startsWith('@')) stack.push(path);
+      stack.push(join(path, 'node_modules'));
+    }
+  }
+  return undefined;
 }
 
 const forwarded = process.argv.slice(2);

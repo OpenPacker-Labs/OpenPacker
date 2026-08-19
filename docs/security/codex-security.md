@@ -50,8 +50,10 @@ does not support `npm audit --global`. Audit it separately before packing each
 upgrade. Version 0.1.14 otherwise reports the upstream
 [`extract-zip` path-traversal advisory](https://github.com/advisories/GHSA-jmr9-qjv8-65gv);
 the reviewed patch removes that dependency and disables ZIP plugins. The
-repository wrapper refuses to start a scanner that declares or can resolve
-`extract-zip`, while keeping scanner dependencies outside OpenPacker's graph.
+repository wrapper refuses to start a scanner that declares, can resolve, or
+nests an `extract-zip` copy in its install tree, while keeping scanner
+dependencies outside OpenPacker's graph. This check is defense-in-depth for the
+reviewed install, not proof about an installation that changed after review.
 
 The scan fails closed at low severity. Codex Security also refuses to evaluate
 that policy when coverage is partial; treat either exit as a failed security

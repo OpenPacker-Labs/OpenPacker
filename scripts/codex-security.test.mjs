@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -80,6 +80,33 @@ if (process.argv[2] === 'info') {
       vulnerable.stderr,
       /must not depend on vulnerable extract-zip/u,
     );
+    await assert.rejects(readFile(capture, 'utf8'));
+
+    // A copy hidden inside a dependency's own node_modules is evasion too:
+    // bare package resolution cannot see it, so the wrapper walks the tree.
+    await writeFile(
+      manifest,
+      JSON.stringify({ name: '@openai/codex-security', dependencies: {} }),
+    );
+    const nestedCopy = join(
+      directory,
+      'node_modules',
+      'some-dep',
+      'node_modules',
+      'extract-zip',
+    );
+    await mkdir(nestedCopy, { recursive: true });
+    await writeFile(
+      join(nestedCopy, 'package.json'),
+      '{"name":"extract-zip","version":"2.0.1"}',
+    );
+    const nested = spawnSync(
+      process.execPath,
+      ['scripts/codex-security.mjs', '--dry-run'],
+      { cwd: process.cwd(), encoding: 'utf8', env: environment },
+    );
+    assert.notEqual(nested.status, 0);
+    assert.match(nested.stderr, /nested in the scanner tree/u);
     await assert.rejects(readFile(capture, 'utf8'));
   } finally {
     await rm(directory, { recursive: true, force: true });
