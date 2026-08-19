@@ -2,9 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layers 01 and 02 independently approved
-- Current layer: `03-filesystem-resources` implemented and awaiting independent
-  review
+- Phase: implementing; layers 01 through 03 independently approved
+- Current layer: `04-lock-composition` next
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -138,3 +137,7 @@ upstream Codex Security release currently has no patched version.
   3/3, and Nix 32 passed with 3 opt-in live skips. Contract validation, package
   typechecks, and the exact layer impact aggregate passed with process
   authority; diff checks were clean.
+- 2026-08-19 layer 03 independent review: approved at `d584ebd` after stable
+  lifecycle handle transfer, complete publication snapshots, mandatory
+  process-tree ownership, provider pre-probe policy denial, and the narrowed
+  Windows capability contract were rechecked with no remaining finding.

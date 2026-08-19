@@ -20,8 +20,8 @@ use.
 
 ## 03 — Filesystem and resource containment
 
-Status: implemented with focused and aggregate gates green; independent review
-pending.
+Status: independently approved; focused, staged, and exact aggregate gates
+green.
 
 Close findings 9, 10, 14, 15, 18, 19, 20, and 23. Pin sandbox helpers, validate
 persisted paths, verify cached content, reject link-ancestor escapes, and
