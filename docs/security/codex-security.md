@@ -33,8 +33,9 @@ npm run security:codex
 The scan uses [`codex-security-scan.md`](codex-security-scan.md) for
 repository-specific safety constraints. The wrapper pins the reviewed CLI, SDK,
 bundled plugin, and Codex runtime versions, rejects custom plugins and Codex
-overrides, selects stored ChatGPT authentication, forces
-`approval_policy="never"`, and accepts no runtime option except `--dry-run`.
+overrides, selects stored ChatGPT authentication, uses deep mode, constrains
+subprocess approval to the scanner's reviewed preflight requests, and accepts no
+runtime option except `--dry-run`.
 
 Codex Security keeps credentials, working state, and reports outside the
 repository by default. Set `CODEX_SECURITY_STATE_DIR` to an owned private

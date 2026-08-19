@@ -39,6 +39,7 @@ if (process.argv[2] === 'info') {
     assert.equal(accepted.status, 0, `${accepted.stdout}\n${accepted.stderr}`);
     const args = await readFile(capture, 'utf8');
     assert.match(args, /approval_policy="on-request"/u);
+    assert.match(args, /--mode\ndeep/u);
     assert.match(args, /--auth\nchatgpt/u);
     assert.match(args, /--fail-on-severity\nlow/u);
 

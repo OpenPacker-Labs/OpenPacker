@@ -141,6 +141,8 @@ const scan = run(
     'scan',
     '.',
     '--headless',
+    '--mode',
+    'deep',
     '--auth',
     'chatgpt',
     '--fail-on-severity',
