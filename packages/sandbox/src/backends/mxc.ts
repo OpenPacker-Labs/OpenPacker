@@ -1,5 +1,10 @@
 import type { BackendProbe, SandboxBackend } from '../types.js';
-import { SandboxBackendError, spawnCapture } from './mock.js';
+import {
+  BoundedOutput,
+  SandboxBackendError,
+  spawnCapture,
+  type OutputLimitKind,
+} from './mock.js';
 
 /**
  * Probe whether @microsoft/mxc-sdk can load and reports platform support.
@@ -55,6 +60,11 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   return {
     id: 'mxc',
     async run(input) {
+      if ((input.directoryAuthorities?.length ?? 0) > 0)
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'MXC SDK does not expose inherited directory-handle binds',
+        );
       // Prefer config-based spawn when present; fall back to a constrained
       // host spawn only if the SDK surface differs — but never silently drop
       // the jail: if we cannot configure MXC, fail.
@@ -110,7 +120,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           on: (event: string, cb: (...args: unknown[]) => void) => void;
           kill?: (signal?: NodeJS.Signals) => void;
         };
-        return await collectChild(child, input.signal);
+        return await collectMxcChild(child, input, input.signal);
       }
 
       // Last resort: do not pretend — surface unavailability.
@@ -132,44 +142,71 @@ function quoteCommandLine(argv: readonly string[]): string {
     .join(' ');
 }
 
-async function collectChild(
+export async function collectMxcChild(
   child: {
     stdout?: NodeJS.ReadableStream | null;
     stderr?: NodeJS.ReadableStream | null;
     on: (event: string, cb: (...args: unknown[]) => void) => void;
     kill?: (signal?: NodeJS.Signals) => void;
   },
+  limits: {
+    maximumStdoutBytes: number;
+    maximumStderrBytes: number;
+    maximumOutputBytes: number;
+  },
   signal?: AbortSignal,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  outputLimitExceeded?: OutputLimitKind;
+}> {
   return await new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    const onAbort = () => {
+    const output = new BoundedOutput(limits);
+    let aborted = false;
+    let terminationTimer: ReturnType<typeof setTimeout> | undefined;
+    const terminate = () => {
+      if (terminationTimer) return;
       try {
-        child.kill?.('SIGTERM');
+        child.kill?.('SIGKILL');
       } catch {
-        // ignore
+        // The close/error event remains authoritative.
       }
+      terminationTimer = setTimeout(
+        () =>
+          reject(
+            new SandboxBackendError(
+              'TERMINATION_FAILED',
+              'MXC process did not terminate after kill',
+            ),
+          ),
+        5_000,
+      );
+    };
+    const onAbort = () => {
+      aborted = true;
+      terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout?.on('data', (d: unknown) => {
-      stdout += String(d);
+      if (!output.push('stdout', d)) terminate();
     });
     child.stderr?.on('data', (d: unknown) => {
-      stderr += String(d);
+      if (!output.push('stderr', d)) terminate();
     });
     child.on('error', (err: unknown) => {
       signal?.removeEventListener('abort', onAbort);
+      if (terminationTimer) clearTimeout(terminationTimer);
       reject(err);
     });
     child.on('close', (code: unknown) => {
       signal?.removeEventListener('abort', onAbort);
-      resolve({
-        exitCode: typeof code === 'number' ? code : 1,
-        stdout,
-        stderr,
-      });
+      if (terminationTimer) clearTimeout(terminationTimer);
+      resolve(
+        output.result(aborted ? 124 : typeof code === 'number' ? code : 1),
+      );
     });
+    if (signal?.aborted) onAbort();
   });
 }
 

@@ -1,11 +1,24 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createHash } from 'node:crypto';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   addPackage,
   activateGeneration,
@@ -40,6 +53,14 @@ import {
   whyPackage,
   OpmError,
 } from '../src/index.js';
+import { packTarGzip } from '@openpacker/project-io';
+import {
+  openStableDirectory,
+  readStableFile,
+  revalidateStableDirectory,
+  supportsStableProjectMetadata,
+  writeStableFile,
+} from '../src/paths.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureCatalog = join(repoRoot, 'fixtures/opm/catalog.json');
@@ -47,6 +68,7 @@ const fixtureTgz = join(repoRoot, 'fixtures/opm/demo-tool-1.1.0.tgz');
 
 const temps: string[] = [];
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -145,6 +167,12 @@ describe('parsePackageSpec', () => {
 });
 
 describe('path containment', () => {
+  it('withdraws project metadata mutation where stable handles are unavailable', () => {
+    expect(supportsStableProjectMetadata('linux')).toBe(true);
+    expect(supportsStableProjectMetadata('darwin')).toBe(true);
+    expect(supportsStableProjectMetadata('win32')).toBe(false);
+  });
+
   it('rejects unsafe aliases and store keys', () => {
     expect(() => assertSafeSegment('../evil', 'package alias')).toThrow(
       /Invalid package alias/,
@@ -196,6 +224,28 @@ describe('path containment', () => {
         bins: [{ name: '../evil', path: 'package/bin/x.js' }],
       }),
     ).rejects.toBeInstanceOf(OpmError);
+  });
+
+  it('guarantees shim mode 0o755 regardless of umask', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-shim-mode-'));
+    temps.push(dir);
+    const storeRoot = join(dir, 'store');
+    await mkdir(join(storeRoot, 'package', 'lib'), { recursive: true });
+    await writeFile(join(storeRoot, 'package', 'lib', 'tool.js'), '#!x\n');
+    // vitest runs each file in its own fork, and tests within a file are
+    // sequential, so tightening the process umask here cannot race.
+    const previous = process.umask(0o077);
+    try {
+      await writeBinShims({
+        binDir: join(dir, 'bin'),
+        storeRoot,
+        bins: [{ name: 'tool', path: 'package/lib/tool.js' }],
+      });
+    } finally {
+      process.umask(previous);
+    }
+    const info = await lstat(join(dir, 'bin', 'tool'));
+    expect(info.mode & 0o777).toBe(0o755);
   });
 
   it('writes a Python launcher that puts every store root on PYTHONPATH', async () => {
@@ -258,10 +308,207 @@ describe('path containment', () => {
 });
 
 describe('fail-closed install paths', () => {
+  it('bounds metadata allocation when a file grows during read', async () => {
+    const root = await tempProject();
+    const path = join(root, '.opm/growing.json');
+    await writeFile(path, new Uint8Array(64 * 1024));
+    const probe = await open(path);
+    const prototype = Object.getPrototypeOf(probe) as {
+      read: (...args: unknown[]) => Promise<unknown>;
+    };
+    await probe.close();
+    const original = prototype.read;
+    const read = vi
+      .spyOn(prototype, 'read')
+      .mockImplementationOnce(async function (
+        this: unknown,
+        ...args: unknown[]
+      ) {
+        await appendFile(path, new Uint8Array(2 * 1024 * 1024));
+        return await Reflect.apply(original, this, args);
+      });
+    try {
+      await expect(readStableFile(path, 1024 * 1024)).rejects.toMatchObject({
+        code: 'INPUT_CHANGED',
+      });
+      expect(read.mock.calls[0]?.[2]).toBe(64 * 1024);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('refuses a linked project state without reading outside the project', async () => {
+    const root = await tempProject();
+    const outside = join(root, 'outside-state.json');
+    const statePath = join(root, '.opm/project.json');
+    await writeFile(outside, 'outside');
+    await rm(statePath);
+    await symlink(outside, statePath);
+
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    expect(await readFile(outside, 'utf8')).toBe('outside');
+  });
+
+  it.each(['bin', 'links'])(
+    'validates a linked %s directory even for an empty project state',
+    async (name) => {
+      const root = await tempProject();
+      const managed = join(root, '.opm', name);
+      const outside = join(root, `outside-${name}`);
+      await rm(managed, { recursive: true });
+      await mkdir(outside);
+      await writeFile(join(outside, 'marker'), 'untouched');
+      await symlink(outside, managed, 'dir');
+
+      await expect(
+        readProjectState(join(root, '.opm/project.json')),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(await readdir(outside)).toEqual(['marker']);
+    },
+  );
+
+  it('replaces a linked final shim without changing its target', async () => {
+    const root = await tempProject();
+    const outside = join(root, 'outside-shim');
+    const shim = join(root, '.opm/bin/demo-tool');
+    await writeFile(outside, 'untouched');
+    await symlink(outside, shim);
+
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    expect((await lstat(shim)).isFile()).toBe(true);
+    expect(await readFile(outside, 'utf8')).toBe('untouched');
+  });
+
+  it('detects an ancestor swap during stable publication', async () => {
+    const root = await tempProject();
+    const bin = join(root, '.opm/bin');
+    const outside = join(root, 'outside-bin');
+    const backup = join(root, '.opm/bin-original');
+    await mkdir(outside);
+
+    let settled = false;
+    const writing = writeStableFile(
+      join(bin, 'large-shim'),
+      new Uint8Array(16 * 1024 * 1024),
+      0o755,
+    );
+    void writing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    let observed = false;
+    while (!settled && !observed) {
+      observed = (await readdir(bin)).some((entry) => entry.endsWith('.tmp'));
+      if (!observed)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(observed).toBe(true);
+    await rename(bin, backup);
+    await symlink(outside, bin, 'dir');
+
+    await expect(writing).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it('operates through a symlinked ancestor of the project root', async () => {
+    // Stock macOS symlinks /var → /private/var, so every $TMPDIR project has
+    // a symlinked ancestor; the same holds for symlinked home directories and
+    // automounters on Linux.
+    const base = await mkdtemp(join(tmpdir(), 'opm-alias-'));
+    temps.push(base);
+    const real = join(base, 'real');
+    const alias = join(base, 'alias');
+    await mkdir(real);
+    await symlink(real, alias, 'dir');
+
+    await writeStableFile(join(alias, '.opm', 'metadata.json'), '{"ok":true}');
+    expect(await readStableFile(join(alias, '.opm', 'metadata.json'))).toBe(
+      '{"ok":true}',
+    );
+    expect(await readFile(join(real, '.opm', 'metadata.json'), 'utf8')).toBe(
+      '{"ok":true}',
+    );
+  });
+
+  it('detects a swap of a symlinked ancestor while a handle is held', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'opm-alias-swap-'));
+    temps.push(base);
+    const real = join(base, 'real');
+    const decoy = join(base, 'decoy');
+    const alias = join(base, 'alias');
+    await mkdir(join(real, 'sub'), { recursive: true });
+    await mkdir(join(decoy, 'sub'), { recursive: true });
+    await symlink(real, alias, 'dir');
+
+    const handle = await openStableDirectory(join(alias, 'sub'));
+    try {
+      await rm(alias);
+      await symlink(decoy, alias, 'dir');
+      await expect(
+        revalidateStableDirectory(join(alias, 'sub'), handle),
+      ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    } finally {
+      await handle.close();
+    }
+  });
+
   it('refuses network fetches while offline', async () => {
     await expect(
       fetchArtifactBytes('https://registry.example.invalid/pkg.tgz', true),
     ).rejects.toMatchObject({ code: 'OFFLINE' });
+  });
+
+  it('bounds and cancels remote artifact collection', async () => {
+    let canceled = false;
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(2));
+            },
+            cancel() {
+              canceled = true;
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(
+      fetchArtifactBytes('https://packages.example/artifact', false, {
+        maximumBytes: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'SIZE_LIMIT' });
+    expect(canceled).toBe(true);
+  });
+
+  it('rejects oversized and linked local artifact sources', async () => {
+    const root = await tempProject();
+    const artifact = join(root, 'artifact.tgz');
+    const linked = join(root, 'linked.tgz');
+    await writeFile(artifact, 'too large');
+    await symlink(artifact, linked);
+    await expect(
+      fetchArtifactBytes(artifact, true, { maximumBytes: 1 }),
+    ).rejects.toMatchObject({ code: 'SIZE_LIMIT' });
+    await expect(fetchArtifactBytes(linked, true)).rejects.toMatchObject({
+      code: 'UNSAFE_SOURCE',
+    });
+    await expect(fetchArtifactBytes(root, true)).rejects.toMatchObject({
+      code: 'UNSAFE_SOURCE',
+    });
   });
 
   it('refuses an explicit network source while offline', async () => {
@@ -327,6 +574,112 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'SIZE_MISMATCH' });
   });
 
+  it('rebuilds store trees only from a verified canonical artifact cache', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    const storePath = join(root, '.opm/store', pkg.storeKey);
+    await mkdir(storePath, { recursive: true });
+    await writeFile(join(storePath, 'malicious'), 'unverified');
+
+    const first = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      bytes,
+    });
+    await expect(readFile(join(storePath, 'malicious'))).rejects.toThrow();
+    const bin = first.bins[0];
+    if (!bin) throw new Error('fixture must declare a bin');
+    const target = join(storePath, ...bin.path.split('/'));
+    const original = await readFile(target);
+    await writeFile(target, 'tampered');
+
+    const cached = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+    });
+    expect(cached.cached).toBe(true);
+    expect(await readFile(target)).toEqual(original);
+
+    await chmod(`${storePath}.artifact`, 0o644);
+    await writeFile(`${storePath}.artifact`, new Uint8Array(bytes.byteLength));
+    await expect(
+      materializeLockPackage({ root, pkg, offline: true }),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
+  it('rejects a store directory substituted during materialization', async () => {
+    const root = await tempProject();
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode(
+          JSON.stringify({ name: 'swap-test', version: '1.0.0' }),
+        ),
+        executable: false,
+      },
+      {
+        path: 'package/large.bin',
+        contents: new Uint8Array(randomBytes(8 * 1024 * 1024)),
+        executable: false,
+      },
+    ]);
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const store = join(root, '.opm/store');
+    const backup = join(root, '.opm/store-original');
+    const materialising = materializeLockPackage({
+      root,
+      pkg: {
+        alias: 'swap-test',
+        purl: 'pkg:npm/swap-test@1.0.0',
+        version: '1.0.0',
+        digest,
+        size: bytes.byteLength,
+        format: 'tar+gzip',
+        mediaType: 'application/vnd.openpacker.package.tgz',
+        source: 'file:unused',
+        storeKey: storeKeyFromDigest(digest),
+        bins: [],
+        reason: 'direct',
+        ecosystem: 'npm',
+      },
+      offline: true,
+      bytes,
+    });
+    void materialising.catch(() => undefined);
+    let observed = false;
+    while (!observed) {
+      observed = (await readdir(store)).some((entry) =>
+        entry.startsWith(`.${storeKeyFromDigest(digest)}.`),
+      );
+      if (!observed)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    await rename(store, backup);
+    await mkdir(store);
+
+    await expect(materialising).rejects.toMatchObject({
+      code: 'INPUT_CHANGED',
+    });
+    expect(await readdir(store)).toEqual([]);
+  });
+
   it('rejects adding from a catalog entry whose digest does not match the bytes', async () => {
     const root = await tempProject();
     const catalogPath = join(root, '.opm/catalog.json');
@@ -345,9 +698,86 @@ describe('fail-closed install paths', () => {
       }),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
+
+  it('rejects persisted store and bin authority outside the project store', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const valid = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { storePath: string; bins: Array<{ target: string }> }
+      >;
+    };
+    const record = Object.values(valid.packages)[0]!;
+    const originalStore = record.storePath;
+    record.storePath = root;
+    await writeFile(statePath, JSON.stringify(valid));
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+
+    record.storePath = originalStore;
+    record.bins[0]!.target = join(root, 'opm.toml');
+    await writeFile(statePath, JSON.stringify(valid));
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+  });
+
+  it('rejects a linked digest-named store directory', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<string, { storePath: string }>;
+    };
+    const storePath = Object.values(state.packages)[0]!.storePath;
+    const outside = join(root, 'outside');
+    await mkdir(outside);
+    await writeFile(join(outside, 'marker'), 'untouched');
+    await rm(storePath, { recursive: true });
+    await symlink(outside, storePath, 'dir');
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+    expect(await readFile(join(outside, 'marker'), 'utf8')).toBe('untouched');
+  });
+
+  it('treats a missing persisted bin target as invalid state, not absent state', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const state = await readProjectState(statePath);
+    const target = Object.values(state?.packages ?? {})[0]?.bins[0]?.target;
+    if (!target) throw new Error('fixture must declare a bin target');
+    await rm(target);
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+  });
 });
 
 describe('project lifecycle offline', () => {
+  it('refuses list when stable project metadata is unavailable', async () => {
+    const root = await tempProject();
+    await expect(listInstalled(root, 'win32')).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+  });
+
   it('init add install list remove uninstall sync', async () => {
     const root = await tempProject();
 

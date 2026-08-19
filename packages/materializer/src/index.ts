@@ -285,9 +285,13 @@ function parseTar(
 ): InspectedArchiveEntry[] {
   const entries: InspectedArchiveEntry[] = [];
   let offset = 0;
+  let count = 0;
   while (offset + 512 <= bytes.byteLength) {
     const header = bytes.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
+    count += 1;
+    if (count > limits.maximumFiles)
+      throw unsafe('FILE_COUNT_LIMIT', `${count}`);
     verifyTarChecksum(header);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
@@ -440,6 +444,7 @@ function validateEntries(
   if (entries.length > limits.maximumFiles)
     throw unsafe('FILE_COUNT_LIMIT', `${entries.length}`);
   const paths = new Set<string>();
+  const types = new Map<string, InspectedArchiveEntry['type']>();
   const folded = new Set<string>();
   let expanded = 0;
   for (const entry of entries) {
@@ -447,6 +452,7 @@ function validateEntries(
     const fold = entry.path.toLowerCase();
     if (folded.has(fold)) throw unsafe('CASE_COLLISION', entry.path);
     paths.add(entry.path);
+    types.set(entry.path, entry.type);
     folded.add(fold);
     expanded += entry.data.byteLength;
     if (
@@ -459,8 +465,7 @@ function validateEntries(
     const parts = entry.path.split('/');
     for (let length = 1; length < parts.length; length += 1) {
       const ancestor = parts.slice(0, length).join('/');
-      const parent = entries.find(({ path }) => path === ancestor);
-      if (parent?.type === 'file')
+      if (types.get(ancestor) === 'file')
         throw unsafe('FILE_AS_DIRECTORY', entry.path);
     }
   }

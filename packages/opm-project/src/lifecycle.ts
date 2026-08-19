@@ -132,6 +132,7 @@ export async function runLifecycleScript(input: {
   shell?: readonly string[];
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
+  directoryAuthority?: { fd: number; path: string };
 }): Promise<SandboxOutcome> {
   if (!lifecycleScriptsAllowed(input.policy, input.packageId)) {
     throw new OpmError(
@@ -162,6 +163,9 @@ export async function runLifecycleScript(input: {
     readwritePaths: [input.packageDir],
     readonlyPaths: [],
     network: grants?.network === true,
+    ...(input.directoryAuthority === undefined
+      ? {}
+      : { directoryAuthorities: [input.directoryAuthority] }),
     ...(input.backend === undefined ? {} : { backend: input.backend }),
   });
 
@@ -190,6 +194,7 @@ export async function runDeclaredLifecycleScripts(input: {
   packageDir: string;
   packageId: string;
   policy: PolicyInput | undefined;
+  directoryAuthority?: { fd: number; path: string };
 }): Promise<{ executed: boolean; outcomes: SandboxOutcome[] }> {
   if (!hasLifecycleScripts(input.declared)) {
     return { executed: false, outcomes: [] };
@@ -207,6 +212,9 @@ export async function runDeclaredLifecycleScripts(input: {
       packageDir: input.packageDir,
       packageId: input.packageId,
       policy: input.policy,
+      ...(input.directoryAuthority === undefined
+        ? {}
+        : { directoryAuthority: input.directoryAuthority }),
     });
     outcomes.push(outcome);
     if (outcome.exitCode !== 0) {

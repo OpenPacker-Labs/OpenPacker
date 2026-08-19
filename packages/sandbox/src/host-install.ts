@@ -6,18 +6,26 @@ import { loss } from './policy.js';
 export interface HostInstallerSandboxOptions {
   mode?: 'fail-closed' | 'degrade-warn' | 'off';
   prefer?: 'auto' | 'mxc' | 'native';
+  /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
 }
 
 export function sandboxPolicyFromInstallOptions(
   sandbox?: HostInstallerSandboxOptions,
 ): SandboxPolicy {
+  if (
+    sandbox?.allowHostUnsandboxedInstall === true ||
+    (sandbox?.mode !== undefined && sandbox.mode !== 'fail-closed')
+  )
+    throw new HostInstallerSandboxError(
+      'Host installers require fail-closed containment; ambient and degraded execution are disabled',
+    );
   const mode = sandbox?.mode ?? 'fail-closed';
   return {
     mode,
     prefer: sandbox?.prefer ?? 'auto',
     allowHostUnsandboxedInstall: sandbox?.allowHostUnsandboxedInstall ?? false,
-    required: mode === 'fail-closed',
+    required: true,
     // Host installers need broader FS; never claim package-exec strength.
     minimalPath: false,
     projectWrite: true,
@@ -57,11 +65,6 @@ export interface HostInstallerRunInput {
   offline?: boolean;
   signal?: AbortSignal;
   ecosystem: string;
-  ambientExecute: () => Promise<{
-    stdout: string;
-    stderr: string;
-    exitCode?: number;
-  }>;
 }
 
 export interface HostInstallerRunResult {
@@ -83,13 +86,11 @@ export function planSandboxSummary(sandbox?: HostInstallerSandboxOptions): {
   allowAmbient: boolean;
 } {
   const policy = sandboxPolicyFromInstallOptions(sandbox);
-  const allowAmbient =
-    policy.allowHostUnsandboxedInstall === true || policy.mode === 'off';
   return {
     mode: policy.mode ?? 'fail-closed',
     prefer: policy.prefer ?? 'auto',
-    willEnforce: !allowAmbient,
-    allowAmbient,
+    willEnforce: true,
+    allowAmbient: false,
   };
 }
 
@@ -97,41 +98,6 @@ export async function runHostInstaller(
   input: HostInstallerRunInput,
 ): Promise<HostInstallerRunResult> {
   const summary = planSandboxSummary(input.sandbox);
-  if (summary.allowAmbient) {
-    try {
-      const result = await input.ambientExecute();
-      return {
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode ?? 0,
-        sandboxEnforced: false,
-        sandboxBackend: 'off',
-        containmentLimited: true,
-        profile: 'ambient',
-        extraLosses: [notSandboxedLoss(input.ecosystem)],
-        willEnforce: false,
-      };
-    } catch (error) {
-      const failure = error as {
-        code?: number;
-        stdout?: string;
-        stderr?: string;
-        message?: string;
-      };
-      return {
-        stdout: failure.stdout ?? '',
-        stderr: failure.stderr ?? failure.message ?? String(error),
-        exitCode: failure.code ?? 1,
-        sandboxEnforced: false,
-        sandboxBackend: 'off',
-        containmentLimited: true,
-        profile: 'ambient',
-        extraLosses: [notSandboxedLoss(input.ecosystem)],
-        willEnforce: false,
-      };
-    }
-  }
-
   const policy = sandboxPolicyFromInstallOptions(input.sandbox);
   const [file, ...args] = input.argv;
   if (!file) {
@@ -160,14 +126,10 @@ export async function runHostInstaller(
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
 
-  if (!outcome.enforced && outcome.backend === 'none') {
-    // host-install never sets enforced true; check backend for availability
-  }
+  // host-install never sets enforced true; backend availability is the check.
   if (outcome.backend === 'none') {
     throw new HostInstallerSandboxError(
-      `Install requires a sandbox backend and none is available. ` +
-        `Set sandbox.allowHostUnsandboxedInstall to run ambient ` +
-        `(records ${SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED}).`,
+      'Install requires an OS-owned sandbox backend and none is available',
     );
   }
 

@@ -50,6 +50,9 @@ export function resolvePolicy(policy: SandboxPolicy): {
   allowDangerousGrants: boolean;
   legacyFatRoot: boolean;
   timeoutMs: number;
+  maximumStdoutBytes: number;
+  maximumStderrBytes: number;
+  maximumOutputBytes: number;
 } {
   const mode = policy.mode ?? DEFAULT_SANDBOX_POLICY.mode;
   const enabled =
@@ -57,6 +60,14 @@ export function resolvePolicy(policy: SandboxPolicy): {
   const required =
     policy.required ??
     (mode === 'fail-closed' ? true : DEFAULT_SANDBOX_POLICY.required);
+  const byteLimit = (value: number | undefined, fallback: number) => {
+    const resolved = value ?? fallback;
+    if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > fallback)
+      throw new RangeError(
+        `Sandbox output limit must be between 1 and ${fallback}`,
+      );
+    return resolved;
+  };
   return {
     enabled: mode === 'off' ? false : enabled,
     mode,
@@ -75,6 +86,18 @@ export function resolvePolicy(policy: SandboxPolicy): {
       DEFAULT_SANDBOX_POLICY.allowDangerousGrants,
     legacyFatRoot: policy.legacyFatRoot ?? DEFAULT_SANDBOX_POLICY.legacyFatRoot,
     timeoutMs: policy.timeoutMs ?? DEFAULT_SANDBOX_POLICY.timeoutMs,
+    maximumStdoutBytes: byteLimit(
+      policy.maximumStdoutBytes,
+      DEFAULT_SANDBOX_POLICY.maximumStdoutBytes,
+    ),
+    maximumStderrBytes: byteLimit(
+      policy.maximumStderrBytes,
+      DEFAULT_SANDBOX_POLICY.maximumStderrBytes,
+    ),
+    maximumOutputBytes: byteLimit(
+      policy.maximumOutputBytes,
+      DEFAULT_SANDBOX_POLICY.maximumOutputBytes,
+    ),
   };
 }
 
@@ -102,6 +125,9 @@ export async function digestSandboxPolicy(
     allowDangerousGrants: resolved.allowDangerousGrants,
     legacyFatRoot: resolved.legacyFatRoot,
     timeoutMs: resolved.timeoutMs,
+    maximumStdoutBytes: resolved.maximumStdoutBytes,
+    maximumStderrBytes: resolved.maximumStderrBytes,
+    maximumOutputBytes: resolved.maximumOutputBytes,
     packages: packages as Record<string, Record<string, unknown>>,
   } as import('@openpacker/contracts').JsonValue);
 }

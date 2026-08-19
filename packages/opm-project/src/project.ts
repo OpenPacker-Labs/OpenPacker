@@ -45,8 +45,10 @@ import {
   writeProjectState,
 } from './install.js';
 import {
+  assertStableProjectMetadataSupported,
   assertSafeSegment,
   CATALOG_NAME,
+  ensureStableDirectory,
   LOCK_NAME,
   MANIFEST_NAME,
   parentDirs,
@@ -122,10 +124,10 @@ export async function initProject(input: {
   const manifest = defaultManifest(name);
   await mkdir(paths.root, { recursive: true });
   await writeFile(paths.manifest, serializeManifest(manifest), 'utf8');
-  await mkdir(paths.opmDir, { recursive: true });
-  await mkdir(paths.store, { recursive: true });
-  await mkdir(paths.bin, { recursive: true });
-  await mkdir(paths.links, { recursive: true });
+  await ensureStableDirectory(paths.opmDir);
+  await ensureStableDirectory(paths.store);
+  await ensureStableDirectory(paths.bin);
+  await ensureStableDirectory(paths.links);
   if (!(await fileExists(paths.lock))) {
     await writeLockfile(paths.lock, emptyLockfile());
   }
@@ -435,7 +437,10 @@ export async function uninstallProject(input: {
   return { schemaVersion: 1, packages: {} };
 }
 
-export async function listInstalled(root: string): Promise<
+export async function listInstalled(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<
   {
     alias: string;
     purl: string;
@@ -444,6 +449,7 @@ export async function listInstalled(root: string): Promise<
     bins: string[];
   }[]
 > {
+  assertStableProjectMetadataSupported(platform);
   const paths = projectPaths(root);
   const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
   const state = (await readProjectState(paths.projectState)) ?? {
@@ -869,7 +875,9 @@ async function resolveRequirement(input: {
     }
     const source = entry.resolvedSource;
     // verify digest if we can read offline
-    const bytes = await fetchArtifactBytes(source, input.offline);
+    const bytes = await fetchArtifactBytes(source, input.offline, {
+      expectedBytes: entry.size,
+    });
     const actual = digestOf(bytes);
     if (actual !== entry.digest) {
       throw new OpmError(

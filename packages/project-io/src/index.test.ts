@@ -1,4 +1,16 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +26,7 @@ import {
   ProjectIoError,
   readTextFile,
   removeTree,
+  supportsStableTreeLayout,
   writeFileAtomic,
 } from './index.js';
 
@@ -169,6 +182,12 @@ describe('applySpanEdits', () => {
 });
 
 describe('materialiseTree', () => {
+  it('advertises only platforms with stable fd-relative traversal', () => {
+    expect(supportsStableTreeLayout('linux')).toBe(true);
+    expect(supportsStableTreeLayout('darwin')).toBe(true);
+    expect(supportsStableTreeLayout('win32')).toBe(false);
+  });
+
   it('refuses a destination outside its root', async () => {
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');
@@ -178,6 +197,75 @@ describe('materialiseTree', () => {
       await expect(
         materialiseTree(dir, join(root, '..', '..', 'escaped'), root),
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    });
+  });
+
+  it.each(['root', 'scope'])('refuses a linked %s ancestor', async (kind) => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'node_modules');
+      const outside = join(dir, 'outside');
+      await mkdir(source);
+      await writeFile(join(source, 'package.js'), 'safe');
+      await mkdir(outside);
+      await writeFile(join(outside, 'marker'), 'untouched');
+      if (kind === 'root') await symlink(outside, root, 'dir');
+      else {
+        await mkdir(root);
+        await symlink(outside, join(root, '@scope'), 'dir');
+      }
+      const destination =
+        kind === 'root' ? join(root, 'pkg') : join(root, '@scope', 'pkg');
+      await expect(
+        materialiseTree(source, destination, root),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(await readFile(join(outside, 'marker'), 'utf8')).toBe('untouched');
+      await expect(readFile(join(outside, 'package.js'))).rejects.toThrow();
+    });
+  });
+
+  it('materialises through a symlinked ancestor of the root', async () => {
+    // Stock macOS symlinks /var → /private/var, so every $TMPDIR tree has a
+    // symlinked ancestor; the same holds for symlinked home directories and
+    // automounters on Linux. The prefix is canonicalized once, then all
+    // traversal is fd-relative, so a later swap cannot redirect anything.
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const real = join(dir, 'real');
+      const source = join(real, 'source');
+      const root = join(real, 'node_modules');
+      await mkdir(source, { recursive: true });
+      await writeFile(join(source, 'package.js'), 'safe');
+      const alias = join(dir, 'alias');
+      await symlink(real, alias, 'dir');
+
+      const result = await materialiseTree(
+        join(alias, 'source'),
+        join(alias, 'node_modules', 'pkg'),
+        join(alias, 'node_modules'),
+      );
+      expect(result.files).toBe(1);
+      expect(await readFile(join(root, 'pkg', 'package.js'), 'utf8')).toBe(
+        'safe',
+      );
+    });
+  });
+
+  it('refuses a linked ancestor when removing a tree', async () => {
+    await withTemp(async (dir) => {
+      const outside = join(dir, 'outside');
+      const linked = join(dir, 'linked');
+      await mkdir(join(outside, 'victim'), { recursive: true });
+      await writeFile(join(outside, 'victim', 'marker'), 'untouched');
+      await symlink(outside, linked, 'dir');
+
+      await expect(removeTree(join(linked, 'victim'))).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+      expect(await readFile(join(outside, 'victim', 'marker'), 'utf8')).toBe(
+        'untouched',
+      );
     });
   });
 
@@ -204,6 +292,202 @@ describe('materialiseTree', () => {
       await expect(
         readFile(join(destination, 'stale.js'), 'utf8'),
       ).rejects.toThrow();
+    });
+  });
+
+  it('refuses source files changed while they are copied', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'out');
+      const file = join(source, 'large.bin');
+      await mkdir(source);
+      await writeFile(file, new Uint8Array(16 * 1024 * 1024));
+      const changing = await open(file, 'r+');
+      let running = true;
+      let revision = 0;
+      const mutate = (async () => {
+        while (running) {
+          await changing.write(Uint8Array.of(revision++ & 0xff), 0, 1, 0);
+          await changing.sync();
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      })();
+      try {
+        await expect(
+          materialiseTree(source, join(root, 'pkg'), root),
+        ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      } finally {
+        running = false;
+        await mutate;
+        await changing.close();
+      }
+    });
+  });
+
+  it('refuses source directory entries added after enumeration', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'out');
+      await mkdir(source);
+      await writeFile(
+        join(source, 'large.bin'),
+        new Uint8Array(16 * 1024 * 1024),
+      );
+      const materialising = materialiseTree(source, join(root, 'pkg'), root);
+      void materialising.catch(() => undefined);
+      let stagedFile: string | undefined;
+      while (stagedFile === undefined) {
+        const staging = (await readdir(root).catch(() => [] as string[])).find(
+          (entry) => entry.startsWith('.pkg.openpacker-'),
+        );
+        if (staging) {
+          const candidate = join(root, staging, 'large.bin');
+          if (await lstat(candidate).catch(() => undefined))
+            stagedFile = candidate;
+        }
+        if (stagedFile === undefined)
+          await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      await writeFile(join(source, 'late.js'), 'not part of a stable input');
+      await expect(materialising).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+    });
+  });
+
+  it('refuses entries added to staging before publication', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'out');
+      const destination = join(root, 'pkg');
+      await mkdir(source);
+      await writeFile(
+        join(source, 'large.bin'),
+        new Uint8Array(16 * 1024 * 1024),
+      );
+      const materialising = materialiseTree(source, destination, root);
+      void materialising.catch(() => undefined);
+      let staging: string | undefined;
+      while (staging === undefined) {
+        const candidate = (
+          await readdir(root).catch(() => [] as string[])
+        ).find((entry) => entry.startsWith('.pkg.openpacker-'));
+        if (
+          candidate &&
+          (await lstat(join(root, candidate, 'large.bin')).catch(
+            () => undefined,
+          ))
+        )
+          staging = candidate;
+        if (staging === undefined)
+          await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      await writeFile(join(root, staging, 'attacker'), 'not copied');
+      await expect(materialising).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+      await expect(lstat(destination)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+  });
+
+  it('rechecks staging after removing the previous destination', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'out');
+      const destination = join(root, 'pkg');
+      const old = join(destination, 'old');
+      await mkdir(source);
+      await mkdir(old, { recursive: true });
+      await writeFile(
+        join(source, 'large.bin'),
+        new Uint8Array(4 * 1024 * 1024),
+      );
+      const oldCount = 2_000;
+      await Promise.all(
+        Array.from({ length: oldCount }, async (_, index) =>
+          writeFile(join(old, String(index)), 'old'),
+        ),
+      );
+
+      let settled = false;
+      const materialising = materialiseTree(source, destination, root);
+      void materialising.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      let mutated = false;
+      while (!settled && !mutated) {
+        const staging = (await readdir(root).catch(() => [] as string[])).find(
+          (entry) => entry.startsWith('.pkg.openpacker-'),
+        );
+        if (staging) {
+          const remaining = await readdir(old).catch(() => [] as string[]);
+          if (remaining.length < oldCount) {
+            await writeFile(join(root, staging, 'attacker'), 'late mutation');
+            mutated = true;
+          }
+        }
+        if (!mutated)
+          await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(mutated).toBe(true);
+      await expect(materialising).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+    });
+  });
+
+  it('refuses a substituted staging directory before publication', async () => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'out');
+      const destination = join(root, 'pkg');
+      await mkdir(source);
+      await writeFile(
+        join(source, 'large.bin'),
+        new Uint8Array(16 * 1024 * 1024),
+      );
+
+      let settled = false;
+      const materialising = materialiseTree(source, destination, root);
+      void materialising.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      let staging: string | undefined;
+      while (!settled && staging === undefined) {
+        const entries = await readdir(root).catch(() => [] as string[]);
+        staging = entries.find((entry) => entry.startsWith('.pkg.openpacker-'));
+        if (staging === undefined)
+          await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(staging).toBeDefined();
+      const stagedPath = join(root, staging!);
+      await rename(stagedPath, `${stagedPath}.original`);
+      await mkdir(stagedPath);
+      await writeFile(join(stagedPath, 'attacker'), 'not published');
+
+      await expect(materialising).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+      await expect(lstat(destination)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     });
   });
 });

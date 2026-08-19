@@ -115,20 +115,26 @@ describe('installing', () => {
     expect(calls.some(([, verb]) => verb === 'install')).toBe(false);
   });
 
-  it('surfaces a failure as an outcome rather than a throw', async () => {
-    const provider = new WingetSystemProvider(async (_file, args) => {
-      if (args[0] === '--version') return { stdout: 'v1.8', stderr: '' };
-      throw Object.assign(new Error('exit 1'), {
-        code: 1,
-        stderr: 'No package found matching input criteria.',
-      });
-    }, windows);
-    // Ambient path so unit tests hit the injected execute mock (not live bwrap).
-    const outcome = await provider.install('pkg:winget/Nope/Nope', {
-      sandbox: { allowHostUnsandboxedInstall: true },
-    });
-    expect(outcome.exitCode).toBe(1);
-    expect(outcome.stderr).toMatch(/No package found/u);
+  it('refuses the legacy ambient option before executing an install', async () => {
+    const { calls, execute } = fakeWinget({ 'winget --version': 'v1.8' });
+    const provider = new WingetSystemProvider(execute, windows);
+    await expect(
+      provider.install('pkg:winget/Nope/Nope', {
+        sandbox: { allowHostUnsandboxedInstall: true },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses degraded containment before executing an install', async () => {
+    const { calls, execute } = fakeWinget({ 'winget --version': 'v1.8' });
+    const provider = new WingetSystemProvider(execute, windows);
+    await expect(
+      provider.install('pkg:winget/Nope/Nope', {
+        sandbox: { mode: 'degrade-warn', prefer: 'mxc' },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(calls).toEqual([]);
   });
 
   it('refuses to run where winget does not exist', async () => {

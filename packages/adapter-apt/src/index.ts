@@ -71,12 +71,10 @@ const APT_LOSS: readonly SemanticLoss[] = [
 export function hostInstallerInput(
   options: InstallOptions,
   argv: readonly string[],
-  ambientExecute: HostInstallerRunInput['ambientExecute'],
 ): HostInstallerRunInput {
   return {
     argv,
     ecosystem: 'deb',
-    ambientExecute,
     ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
     ...(options.offline === undefined ? {} : { offline: options.offline }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -235,14 +233,7 @@ export class AptSystemProvider implements InstallerProvider {
 
     try {
       const result = await runHostInstaller(
-        hostInstallerInput(options, plan.command, async () => {
-          const [file, ...args] = plan.command;
-          return this.execute(
-            file!,
-            args,
-            options.signal ? { signal: options.signal } : {},
-          );
-        }),
+        hostInstallerInput(options, plan.command),
       );
       const { installed } = await this.versions(
         aptName(exactPurl).name,

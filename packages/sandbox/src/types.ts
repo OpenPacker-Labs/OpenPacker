@@ -43,7 +43,7 @@ export interface SandboxPolicy {
   prefer?: SandboxPrefer;
   /** When true (default under fail-closed), unavailable jail is deny. */
   required?: boolean;
-  /** Permit host installers without a jail (explicit ambient system install). */
+  /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
   /**
    * When true, package-exec may write the project tree (opmx). Default false.
@@ -74,6 +74,12 @@ export interface SandboxPolicy {
   packages?: Readonly<Record<string, PackageGrants>>;
   /** Max wall-clock ms for a sandboxed process (default 600_000). 0 = none. */
   timeoutMs?: number;
+  /** Raw stdout byte limit (default 1 MiB). */
+  maximumStdoutBytes?: number;
+  /** Raw stderr byte limit (default 1 MiB). */
+  maximumStderrBytes?: number;
+  /** Combined raw output byte limit (default 2 MiB). */
+  maximumOutputBytes?: number;
 }
 
 export interface RunInSandboxInput {
@@ -97,6 +103,8 @@ export interface RunInSandboxInput {
    */
   backend?: SandboxBackend;
   signal?: AbortSignal;
+  /** Open directory handles the backend must use instead of reopening paths. */
+  directoryAuthorities?: readonly { fd: number; path: string }[];
 }
 
 export interface SandboxOutcome {
@@ -116,6 +124,8 @@ export interface SandboxOutcome {
   losses: SemanticLoss[];
   /** True when mode was off or degrade-warn ran without a jail. */
   degraded: boolean;
+  /** Set when the process tree was terminated for exceeding raw output policy. */
+  outputLimitExceeded?: 'stdout' | 'stderr' | 'combined';
 }
 
 export interface BackendProbe {
@@ -140,8 +150,17 @@ export interface SandboxBackend {
     profile: SandboxProfile;
     legacyFatRoot?: boolean;
     timeoutMs?: number;
+    maximumStdoutBytes: number;
+    maximumStderrBytes: number;
+    maximumOutputBytes: number;
     signal?: AbortSignal;
-  }): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+    directoryAuthorities?: readonly { fd: number; path: string }[];
+  }): Promise<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    outputLimitExceeded?: 'stdout' | 'stderr' | 'combined';
+  }>;
 }
 
 export const DEFAULT_SANDBOX_POLICY: Readonly<
@@ -159,6 +178,9 @@ export const DEFAULT_SANDBOX_POLICY: Readonly<
       | 'allowDangerousGrants'
       | 'legacyFatRoot'
       | 'timeoutMs'
+      | 'maximumStdoutBytes'
+      | 'maximumStderrBytes'
+      | 'maximumOutputBytes'
     >
   >
 > = {
@@ -173,6 +195,9 @@ export const DEFAULT_SANDBOX_POLICY: Readonly<
   allowDangerousGrants: false,
   legacyFatRoot: false,
   timeoutMs: 600_000,
+  maximumStdoutBytes: 1024 * 1024,
+  maximumStderrBytes: 1024 * 1024,
+  maximumOutputBytes: 2 * 1024 * 1024,
 };
 
 /** Semantic loss codes from ADR 0036 / hardening contracts. */

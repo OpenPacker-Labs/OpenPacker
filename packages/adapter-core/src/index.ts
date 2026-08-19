@@ -250,12 +250,12 @@ export interface InstallOptions {
   prefix?: string;
   /**
    * Sandbox policy for the install process (ADR 0036).
-   * When omitted, implementations should fail closed unless
-   * allowHostUnsandboxedInstall is true.
+   * Host installers accept only fail-closed mode.
    */
   sandbox?: {
     mode?: 'fail-closed' | 'degrade-warn' | 'off';
     prefer?: 'auto' | 'mxc' | 'native';
+    /** @deprecated Host installers always refuse ambient execution. */
     allowHostUnsandboxedInstall?: boolean;
   };
 }

@@ -1,4 +1,23 @@
-import { dirname, join, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import {
+  mkdir,
+  lstat,
+  open,
+  realpath,
+  rename,
+  rm,
+  type FileHandle,
+} from 'node:fs/promises';
+import {
+  basename,
+  dirname,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { OpmError } from './types.js';
 
 export const MANIFEST_NAME = 'opm.toml';
@@ -127,6 +146,301 @@ export function resolveContained(root: string, ...parts: string[]): string {
 
 export function storePathForDigest(root: string, digest: string): string {
   return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
+}
+
+/**
+ * Canonicalize the existing ancestor prefix of a stable target.
+ *
+ * The no-follow component walk refuses symlinked path components, which would
+ * reject every project under a legitimately symlinked ancestor — macOS
+ * `/var` → `/private/var` (all of `$TMPDIR`), symlinked home directories,
+ * automounters. Honor such a stable pre-existing prefix once by realpath-ing
+ * the deepest existing ancestor here; the final component stays lexical so a
+ * symlinked target itself is still refused, and the dev/ino identity
+ * re-checks against the lexical path still detect a later swap of the prefix.
+ */
+async function canonicalizeStableTarget(path: string): Promise<string> {
+  const absolute = resolve(path);
+  const tail: string[] = [basename(absolute)];
+  let candidate = dirname(absolute);
+  for (;;) {
+    try {
+      const canonical = await realpath(candidate);
+      return join(canonical, ...tail.reverse());
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ELOOP' || code === 'ENOTDIR')
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Directory path is linked or unstable: ${path}`,
+        );
+      if (code !== 'ENOENT') throw error;
+    }
+    const parent = dirname(candidate);
+    if (parent === candidate) return absolute;
+    tail.push(basename(candidate));
+    candidate = parent;
+  }
+}
+
+export async function openStableDirectory(
+  path: string,
+  create = false,
+): Promise<FileHandle> {
+  const absolute = await canonicalizeStableTarget(path);
+  const root = parse(absolute).root;
+  let handle = await open(
+    root,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+      const child = join(stableHandlePath(handle), part);
+      if (create)
+        await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        });
+      const next = await open(
+        child,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      if (!(await next.stat()).isDirectory()) {
+        await next.close();
+        throw new OpmError('UNSAFE_PATH', `Not a directory: ${path}`);
+      }
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    if (
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+    )
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Directory path is linked or unstable: ${path}`,
+      );
+    throw error;
+  }
+}
+
+export function stableHandlePath(handle: FileHandle): string {
+  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
+  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
+  throw new OpmError(
+    'UNSAFE_PATH',
+    'Stable no-follow filesystem handles are unavailable on this platform',
+  );
+}
+
+export function supportsStableProjectMetadata(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'linux' || platform === 'darwin';
+}
+
+export function assertStableProjectMetadataSupported(
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (!supportsStableProjectMetadata(platform))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      'Stable no-follow project metadata is unavailable on this platform',
+    );
+}
+
+export async function ensureStableDirectory(path: string): Promise<void> {
+  const handle = await openStableDirectory(path, true);
+  try {
+    await assertNamedDirectory(path, handle);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function readStableFile(
+  path: string,
+  maximumBytes = 4 * 1024 * 1024,
+): Promise<string> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await assertNamedDirectory(dirname(path), parent);
+    const contents = await readStableFileAt(
+      parent,
+      basename(path),
+      maximumBytes,
+      path,
+    );
+    await assertNamedDirectory(dirname(path), parent);
+    return contents;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+      throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
+    throw error;
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function readStableFileAt(
+  parent: FileHandle,
+  name: string,
+  maximumBytes = 4 * 1024 * 1024,
+  displayPath = name,
+): Promise<string> {
+  assertSafeSegment(name, 'metadata file name');
+  const file = await open(
+    join(stableHandlePath(parent), name),
+    constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+  );
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(maximumBytes))
+      throw new OpmError(
+        'INVALID_STATE',
+        `Metadata file is special or exceeds ${maximumBytes} bytes: ${displayPath}`,
+      );
+    const buffer = Buffer.alloc(Number(before.size));
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const { bytesRead } = await file.read(
+        buffer,
+        offset,
+        buffer.byteLength - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const after = await file.stat({ bigint: true });
+    if (
+      BigInt(offset) !== before.size ||
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.size !== before.size ||
+      after.ctimeNs !== before.ctimeNs ||
+      after.mtimeNs !== before.mtimeNs
+    )
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata file changed while it was read: ${displayPath}`,
+      );
+    return buffer.toString('utf8');
+  } finally {
+    await file.close();
+  }
+}
+
+export async function writeStableFile(
+  path: string,
+  contents: string | Uint8Array,
+  mode = 0o644,
+): Promise<void> {
+  const parent = await openStableDirectory(dirname(path), true);
+  try {
+    await writeStableFileAt(parent, basename(path), contents, mode, path);
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function writeStableFileAt(
+  parent: FileHandle,
+  name: string,
+  contents: string | Uint8Array,
+  mode = 0o644,
+  displayPath = name,
+): Promise<void> {
+  assertSafeSegment(name, 'metadata file name');
+  const directory = stableHandlePath(parent);
+  const temporary = join(directory, `.${name}.${randomUUID()}.tmp`);
+  let file: FileHandle | undefined;
+  try {
+    file = await open(
+      temporary,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      mode,
+    );
+    await file.writeFile(contents);
+    // O_CREAT applies mode through the umask; chmod the open handle so a
+    // requested mode (0o755 bin shims) holds regardless of the umask.
+    await file.chmod(mode);
+    await file.sync();
+    const opened = await file.stat({ bigint: true });
+    const named = await lstat(temporary, { bigint: true });
+    if (opened.dev !== named.dev || opened.ino !== named.ino)
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata staging file changed before publication: ${displayPath}`,
+      );
+    const published = join(directory, name);
+    await rename(temporary, published);
+    const publishedInfo = await lstat(published, { bigint: true });
+    if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata file changed during publication: ${displayPath}`,
+      );
+  } finally {
+    await file?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+export async function revalidateStableDirectory(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  await assertNamedDirectory(path, handle);
+}
+
+export async function removeStableFile(path: string): Promise<void> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await rm(join(stableHandlePath(parent), basename(path)), { force: true });
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function removeStableTree(path: string): Promise<void> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await rm(join(stableHandlePath(parent), basename(path)), {
+      recursive: true,
+      force: true,
+    });
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+async function assertNamedDirectory(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  const [opened, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(resolve(path), { bigint: true }),
+  ]);
+  if (
+    !named.isDirectory() ||
+    named.isSymbolicLink() ||
+    opened.dev !== named.dev ||
+    opened.ino !== named.ino
+  )
+    throw new OpmError(
+      'INPUT_CHANGED',
+      `Directory changed while it was in use: ${path}`,
+    );
 }
 
 export function findProjectRoot(

@@ -222,6 +222,12 @@ export async function runInSandbox(
           network,
           profile,
           legacyFatRoot: resolved.legacyFatRoot,
+          maximumStdoutBytes: resolved.maximumStdoutBytes,
+          maximumStderrBytes: resolved.maximumStderrBytes,
+          maximumOutputBytes: resolved.maximumOutputBytes,
+          ...(input.directoryAuthorities === undefined
+            ? {}
+            : { directoryAuthorities: input.directoryAuthorities }),
           ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });
@@ -321,7 +327,12 @@ async function runAmbient(
   input: RunInSandboxInput,
   grantEnv: readonly string[] | undefined,
   resolved: ReturnType<typeof resolvePolicy>,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  outputLimitExceeded?: 'stdout' | 'stderr' | 'combined';
+}> {
   const jailRoot = defaultJailHomeRoot();
   await mkdir(jailRoot, { recursive: true });
   const jailHome = await mkdtemp(join(jailRoot, 'ambient-'));
@@ -339,6 +350,9 @@ async function runAmbient(
       env,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       ...(resolved.timeoutMs > 0 ? { timeoutMs: resolved.timeoutMs } : {}),
+      maximumStdoutBytes: resolved.maximumStdoutBytes,
+      maximumStderrBytes: resolved.maximumStderrBytes,
+      maximumOutputBytes: resolved.maximumOutputBytes,
     });
   } finally {
     await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);

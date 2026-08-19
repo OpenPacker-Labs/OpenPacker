@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { OciRegistryProvider, parseOciPurl } from './provider.js';
+import {
+  OCI_MATERIALIZATION_LIMITS,
+  OciRegistryProvider,
+  parseOciPurl,
+} from './provider.js';
 
 /**
  * The registry is faked, so these pin the decisions rather than the network:
@@ -191,18 +195,21 @@ describe('materialise image layout', () => {
       },
     ],
   };
-  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
-
-  function materializeFetch(): typeof fetch {
+  function materializeFetch(
+    candidate: typeof manifest = manifest,
+    onBlob = () => undefined,
+  ): typeof fetch {
+    const candidateBytes = new TextEncoder().encode(JSON.stringify(candidate));
     return (async (url: URL | string) => {
       const href = String(url);
       if (href.includes('/manifests/'))
-        return new Response(manifestBytes, {
+        return new Response(candidateBytes, {
           status: 200,
           headers: {
             'content-type': 'application/vnd.oci.image.manifest.v1+json',
           },
         });
+      onBlob();
       if (href.includes(`/blobs/${encodeURIComponent(configDigest)}`))
         return new Response(configBytes, { status: 200 });
       if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
@@ -237,6 +244,52 @@ describe('materialise image layout', () => {
     expect(text).toContain('index.json');
     expect(text).toContain(configDigest.slice('sha256:'.length));
     expect(text).toContain(layerDigest.slice('sha256:'.length));
+  });
+
+  it('rejects excessive layer count before fetching any blob', async () => {
+    let blobRequests = 0;
+    const provider = new OciRegistryProvider({
+      fetch: materializeFetch(
+        {
+          ...manifest,
+          layers: Array.from(
+            { length: OCI_MATERIALIZATION_LIMITS.maximumLayers + 1 },
+            () => manifest.layers[0]!,
+          ),
+        },
+        () => {
+          blobRequests += 1;
+        },
+      ),
+    });
+    await expect(
+      provider.fetchArtifactRecord('pkg:oci/library/demo?tag=1.0'),
+    ).rejects.toThrow(/more than 256 layers/u);
+    expect(blobRequests).toBe(0);
+  });
+
+  it('rejects oversized aggregate layout before fetching any blob', async () => {
+    let blobRequests = 0;
+    const provider = new OciRegistryProvider({
+      fetch: materializeFetch(
+        {
+          ...manifest,
+          layers: [
+            {
+              ...manifest.layers[0]!,
+              size: OCI_MATERIALIZATION_LIMITS.maximumLayoutBytes,
+            },
+          ],
+        },
+        () => {
+          blobRequests += 1;
+        },
+      ),
+    });
+    await expect(
+      provider.fetchArtifactRecord('pkg:oci/library/demo?tag=1.0'),
+    ).rejects.toThrow(/archive exceeds 536870912 bytes/u);
+    expect(blobRequests).toBe(0);
   });
 
   it('selects the host platform from a multi-arch index', async () => {

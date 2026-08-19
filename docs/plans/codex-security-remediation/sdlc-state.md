@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layers 01 and 02 independently approved
-- Current layer: stack `03-filesystem-resources` on approved layer 02
+- Phase: implementing; layers 01 through 03 independently approved
+- Current layer: `04-lock-composition` next
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -86,3 +86,58 @@ upstream Codex Security release currently has no patched version.
   rotation, status rollback/collision, anonymous token egress, tag exhaustion,
   revocation authenticity, signer-role separation, redirects, and token body
   bounds were adversarially rechecked with no remaining finding.
+- 2026-08-19 layer 03 implementation: sandbox helpers are fixed to trusted
+  system paths and all execution funnels enforce hard output budgets; TAR and
+  OCI materialization enforce count and aggregate limits before allocation or
+  blob fetch; OPM artifact reads are bounded, abortable, regular-file-only and
+  no-follow; canonical artifact bytes are digest-verified before every store
+  reconstruction; project state paths are derived and realpath-confined; and
+  native layouts traverse stable no-follow directory handles. Sandbox 32/32,
+  materializer 17/17, OCI 45/45, project I/O 20/20, npm adapter 16/16, and OPM
+  project 144/144 passed. All three incremental staged gates and the exact
+  `970e2a8..4c0d0bf` 12-gate impact aggregate were green; diff checks were
+  clean.
+- 2026-08-19 layer 03 review remediation: the first independent review found
+  remaining project metadata/link ancestor races, staged-layout publication and
+  source-copy races, incomplete process-tree termination, an undocumented
+  Windows layout limitation, and vacuous TAR count coverage. Shared stable
+  file/directory operations now cover project state, generations, shims, links,
+  store publication and collection; layout publication and copy inputs are
+  identity-checked before and after use; timeout, abort and output limits
+  terminate and await descendant trees (including MXC jobs); Windows layout
+  projection fails closed and is documented; and adversarial race/early-limit
+  regressions close each oracle. Materializer 18/18, project I/O 24/24, OPM
+  project 149/149, sandbox 36/36, and the amended exact 12-gate layer aggregate
+  passed with process authority; diff checks were clean.
+- 2026-08-19 layer 03 second review remediation: the amended review found
+  Windows project-state capability overclaim, a growing-file allocation gap,
+  store/generation authority handoffs, validation-wide absent-state handling,
+  incomplete directory/staging snapshots, and best-effort descendant killing.
+  Windows project mutation is now explicitly withdrawn while packing remains;
+  metadata reads allocate only the snapshotted bounded size; store and
+  generation transactions retain one fd-relative authority through completion;
+  only the state-file open maps ENOENT to absence; layout compares complete
+  source and staged tree snapshots; and production execution requires Bubblewrap
+  PID-namespace or MXC job ownership (the mock process group is test-only). OPM
+  project 153/153, project I/O 26/26, sandbox 35/35, and the exact amended
+  12-gate layer aggregate passed with process authority.
+- 2026-08-19 layer 03 third review remediation: lifecycle execution now passes
+  an inherited stable directory handle to Bubblewrap and binds it with
+  `--bind-fd`; staged layouts revalidate complete source and destination trees
+  after old-destination removal and again after publication; host installers
+  reject the legacy ambient option before execution and all four providers now
+  route installs only through OS-owned containment; and Windows documentation no
+  longer claims `opm list` support. Directory-handle accessibility after exec
+  has a real child-process oracle. The final review edge makes containment
+  required for host installers and rejects `degrade-warn` and `off` during
+  planning, before availability probes or backend selection, so missing
+  containment is policy denial rather than a claimed attempted install; public
+  types mark the removed ambient option deprecated and refused. Sandbox 36/36,
+  OPM project 154/154, project I/O 27/27, apt 14/14, WinGet 11/11, Chocolatey
+  3/3, and Nix 32 passed with 3 opt-in live skips. Contract validation, package
+  typechecks, and the exact layer impact aggregate passed with process
+  authority; diff checks were clean.
+- 2026-08-19 layer 03 independent review: approved at `d584ebd` after stable
+  lifecycle handle transfer, complete publication snapshots, mandatory
+  process-tree ownership, provider pre-probe policy denial, and the narrowed
+  Windows capability contract were rechecked with no remaining finding.

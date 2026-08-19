@@ -9439,7 +9439,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           sandboxMode: {
             $comment:
-              'fail-closed refuses when a jail cannot be enforced; degrade-warn continues with SANDBOX_DEGRADED; off is ambient execution (explicit opt-in).',
+              'fail-closed refuses when a jail cannot be enforced; degrade-warn and off are refused fail-closed (TREE_CONTAINMENT_UNAVAILABLE) because ambient execution has no owned process-tree boundary.',
             enum: ['fail-closed', 'degrade-warn', 'off'],
           },
           sandboxRequired: {
@@ -9454,7 +9454,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           allowHostUnsandboxedInstall: {
             $comment:
-              'Permit host installers (apt/winget/…) to run without a jail. Emits SYSTEM_INSTALL_NOT_SANDBOXED. Default false.',
+              'Deprecated compatibility field. Ambient host install is always refused because it has no owned process-tree boundary.',
             type: 'boolean',
           },
           sandboxPackageGrants: {

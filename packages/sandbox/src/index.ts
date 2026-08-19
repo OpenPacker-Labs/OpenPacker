@@ -63,6 +63,7 @@ export {
   createBwrapBackend,
   createNativeBackend,
   createSeatbeltBackend,
+  findTrustedSandboxHelper,
   probeNativeBackends,
 } from './backends/native.js';
 

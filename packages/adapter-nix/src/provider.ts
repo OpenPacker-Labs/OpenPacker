@@ -309,14 +309,6 @@ export class NixStoreProvider implements InstallerProvider {
         ...(options.offline === undefined ? {} : { offline: options.offline }),
         ecosystem: 'nix',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ambientExecute: async () => {
-          const [file, ...args] = plan.command;
-          return this.execute(
-            file!,
-            args,
-            options.signal ? { signal: options.signal } : {},
-          );
-        },
       });
       return {
         ...plan,
