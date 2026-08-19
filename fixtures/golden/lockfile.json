@@ -142,7 +142,7 @@
   "protocolVersion": "1.0-draft",
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "4b24d265169c31285f0c47c743622f3edba1914acf5dc661eb40ceab23b26a77"
+    "value": "f15261331a9b02c8ca450baf2d2269eb10853f9844a9155bf51b4801cd4f2814"
   },
   "rootRequirements": [
     {
@@ -206,7 +206,7 @@
   "semanticsProfile": "prex-calculus-subset-v1",
   "solutionDigest": {
     "algorithm": "sha256",
-    "value": "ceca985bd0f357653e4a43a2f28a9a89abd2d9e4db442d2fa9a2b3fe7dd5a62a"
+    "value": "5b066e9dd09df88a41c61793aa5d4bc8617fc81c3f7c7854f3d58d8e3aef0618"
   },
   "sourceSnapshotDigests": [
     {

@@ -10,9 +10,11 @@ import { gzipSync } from 'node:zlib';
 import {
   canonicalBytes,
   canonicalDigest,
+  canonicalProjectionDigest,
   formatDigest,
   sha256,
 } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import {
   descriptorForBytes,
   streamFromBytes,
@@ -146,6 +148,38 @@ async function artifact(
   });
 }
 
+function completeExpression(input) {
+  if (input.type === 'package') return { qualifiers: {}, ...input };
+  if (input.type === 'capability') return { attributes: {}, ...input };
+  if (input.type === 'allOf' || input.type === 'anyOf')
+    return {
+      ...input,
+      expressions: input.expressions.map(completeExpression),
+    };
+  if (input.type === 'not')
+    return { ...input, expression: completeExpression(input.expression) };
+  if (input.type === 'conditional')
+    return {
+      ...input,
+      then: completeExpression(input.then),
+      ...(input.else === undefined
+        ? {}
+        : { else: completeExpression(input.else) }),
+    };
+  return input;
+}
+
+async function refreshUniverseDigest(universe) {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    ({ id }) => id === 'universe-v1',
+  );
+  assert.ok(projection);
+  universe.canonicalDigest = await canonicalProjectionDigest(
+    universe,
+    projection,
+  );
+}
+
 async function instance({
   exactPurl,
   purlType,
@@ -199,6 +233,7 @@ async function instance({
       authority: requirement.authority ?? 'native',
       semanticLoss: [],
       ...requirement,
+      expression: completeExpression(requirement.expression),
     })),
     capabilities: capabilities.map((capability) => ({
       providerNodeId: nodeId,
@@ -208,7 +243,7 @@ async function instance({
     })),
     conflicts: conflicts.map((expression, index) => ({
       id: `${nodeId}:c${index}`,
-      expression,
+      expression: completeExpression(expression),
       scope: 'solution',
       source,
     })),
@@ -217,6 +252,7 @@ async function instance({
       scope: 'solution',
       source,
       ...constraint,
+      selector: completeExpression(constraint.selector),
     })),
     artifacts,
     lifecycle: { status, eligible: status === 'published', warnings: [] },
@@ -472,7 +508,8 @@ async function fixtureUniverse(output) {
     lifecycleRoot,
     targetVocabularyVersion: '1',
   };
-  const universe = { ...body, canonicalDigest: await canonicalDigest(body) };
+  const universe = { ...body };
+  await refreshUniverseDigest(universe);
   const cas = new FilesystemArtifactStore(join(output, 'cas'));
   await cas.initialize();
   for (const [descriptor, bytes] of [
@@ -1046,6 +1083,15 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
 
     const request = solveRequest(evaluationTime);
     const goldenUniverse = structuredClone(fixture.universe);
+    for (const { artifacts } of goldenUniverse.packages)
+      for (const { locations } of artifacts)
+        for (const location of locations)
+          if (location.uri.startsWith(pathToFileURL(output).href))
+            location.uri = location.uri.replace(
+              pathToFileURL(output).href,
+              'file:///OPENPACKER_DEMO_OUTPUT',
+            );
+    await refreshUniverseDigest(goldenUniverse);
     const sdkSolved = (await client.solve(request)).data;
     assert.equal(
       embedded.check(
@@ -1583,6 +1629,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
           actions: ['yanked'],
         },
       ],
+      new Map([[yank.eventId, 'publisher']]),
     );
     const universeInitial = fixture.universe.packages.find(
       ({ nodeId }) => nodeId === initial.nodeId,
@@ -1590,6 +1637,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     assert.ok(universeInitial);
     universeInitial.lifecycle = reduction.state;
     fixture.universe.lifecycleRoot = reduction.root;
+    await refreshUniverseDigest(fixture.universe);
     await client.lifecycleApply(yank);
     await assert.rejects(
       () =>
@@ -1602,6 +1650,11 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
       await client.materialize({
         subject: { type: 'purl', exactPurl: initial.identity.exactPurl },
         forensic: true,
+        policy: {
+          ...request.policy,
+          allowYanked: true,
+          permitForensicDigestMaterialization: true,
+        },
       })
     ).data;
     assert.equal(

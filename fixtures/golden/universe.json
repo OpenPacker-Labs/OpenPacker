@@ -1,7 +1,7 @@
 {
   "canonicalDigest": {
     "algorithm": "sha256",
-    "value": "1b2e7c5ef274a50b37c3d812e58582766ab09b2e971a8638e2b7236b8cadc2ae"
+    "value": "58968dea8732e38a9e83d55acda9c8bab8d2770e677fbf0a83ff9899da999915"
   },
   "lifecycleRoot": {
     "algorithm": "sha256",
@@ -23,6 +23,7 @@
           "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
@@ -117,7 +118,11 @@
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
-          "selector": { "name": "compression/zstd", "type": "capability" },
+          "selector": {
+            "attributes": {},
+            "name": "compression/zstd",
+            "type": "capability"
+          },
           "source": {
             "type": "overlay",
             "uri": "https://openpacker.dev/fixtures/overlay"
@@ -128,6 +133,7 @@
         {
           "expression": {
             "purl": "pkg:npm/conflicting-demo",
+            "qualifiers": {},
             "type": "package"
           },
           "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:c0",
@@ -181,6 +187,7 @@
           "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
@@ -197,6 +204,7 @@
           "authority": "native",
           "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
+            "attributes": {},
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
@@ -215,6 +223,7 @@
           "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
@@ -230,7 +239,11 @@
         {
           "authority": "native",
           "dependerNodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
-          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "expression": {
+            "purl": "pkg:npm/optional-demo",
+            "qualifiers": {},
+            "type": "package"
+          },
           "id": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9:r3",
           "kind": "optional",
           "optional": true,
@@ -300,7 +313,11 @@
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
-          "selector": { "name": "compression/zstd", "type": "capability" },
+          "selector": {
+            "attributes": {},
+            "name": "compression/zstd",
+            "type": "capability"
+          },
           "source": {
             "type": "overlay",
             "uri": "https://openpacker.dev/fixtures/overlay"
@@ -311,6 +328,7 @@
         {
           "expression": {
             "purl": "pkg:npm/conflicting-demo",
+            "qualifiers": {},
             "type": "package"
           },
           "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:c0",
@@ -364,6 +382,7 @@
           "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
@@ -380,6 +399,7 @@
           "authority": "native",
           "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
+            "attributes": {},
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
@@ -398,6 +418,7 @@
           "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
@@ -413,7 +434,11 @@
         {
           "authority": "native",
           "dependerNodeId": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f",
-          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "expression": {
+            "purl": "pkg:npm/optional-demo",
+            "qualifiers": {},
+            "type": "package"
+          },
           "id": "sha256:896797d38f75e186d0088d5d3a5a399e63d9a312646f7f0a25d81c6d02691b8f:r3",
           "kind": "optional",
           "optional": true,
@@ -483,7 +508,11 @@
           "maximum": 1,
           "minimum": 1,
           "scope": "solution",
-          "selector": { "name": "compression/zstd", "type": "capability" },
+          "selector": {
+            "attributes": {},
+            "name": "compression/zstd",
+            "type": "capability"
+          },
           "source": {
             "type": "overlay",
             "uri": "https://openpacker.dev/fixtures/overlay"
@@ -494,6 +523,7 @@
         {
           "expression": {
             "purl": "pkg:npm/conflicting-demo",
+            "qualifiers": {},
             "type": "package"
           },
           "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:c0",
@@ -547,6 +577,7 @@
           "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
             "purl": "pkg:cargo/openpacker-zstd-wasm",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
@@ -563,6 +594,7 @@
           "authority": "native",
           "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
+            "attributes": {},
             "name": "compression/zstd",
             "type": "capability",
             "vers": "vers:generic/>=1"
@@ -581,6 +613,7 @@
           "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
           "expression": {
             "purl": "pkg:npm/openpacker-native-helper",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:npm/>=1.0.0"
           },
@@ -596,7 +629,11 @@
         {
           "authority": "native",
           "dependerNodeId": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382",
-          "expression": { "purl": "pkg:npm/optional-demo", "type": "package" },
+          "expression": {
+            "purl": "pkg:npm/optional-demo",
+            "qualifiers": {},
+            "type": "package"
+          },
           "id": "sha256:e86a6ad23bc97f7b11cf0294fa0d9648c773d99c0f4f09b31b7ad782a774c382:r3",
           "kind": "optional",
           "optional": true,
@@ -746,6 +783,7 @@
           "dependerNodeId": "sha256:24faa1c2a2d0ddce2a8d1a99449a048b671baab4a231940826f56a05f899347c",
           "expression": {
             "purl": "pkg:cargo/openpacker-native-helper",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:cargo/>=1.0.0"
           },
@@ -898,6 +936,7 @@
           "dependerNodeId": "sha256:8879bdfdc453e74997664012b88315b7b03f5b6c22349ec048db1599de2678a0",
           "expression": {
             "purl": "pkg:nuget/openpacker.native.helper",
+            "qualifiers": {},
             "type": "package",
             "vers": "vers:nuget/>=1.0.0"
           },

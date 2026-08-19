@@ -21,17 +21,17 @@
       "kind": "snapshot"
     },
     {
-      "digest": "sha256:2a028b0b241e416c0cb1b56addf1ae3ff686c90abf7ceb5a15e30996a9438632",
+      "digest": "sha256:9733063dd9e81dd4e8706967ebe62ee3fb1fc4e2ed49a0b21e6a04e83e9390c0",
       "file": "fixtures/golden/universe.json",
       "kind": "universe"
     },
     {
-      "digest": "sha256:7a8a14b4e77a5913086c122e9c72a98d8dbe99f0197cbfb224445e1364515efe",
+      "digest": "sha256:55665587046c012f597cd7bdd58eba299143c36f39a4f6427bb5d9c13a1f87e6",
       "file": "fixtures/golden/solution.json",
       "kind": "solution"
     },
     {
-      "digest": "sha256:67b3e3912aafc2e4c3ef833d375a2b2b4b45c43916591013d62a152245ad1e31",
+      "digest": "sha256:6a244862b87ffe2ab85ed424f6de87f48a911f752ecd5ab406df3f6277a440f4",
       "file": "fixtures/golden/proof.json",
       "kind": "proof"
     },
@@ -41,17 +41,17 @@
       "kind": "explanation"
     },
     {
-      "digest": "sha256:f9f5f1085032ef4546dc753f327b4339293b3e21a39df19a2cee02d642e01c63",
+      "digest": "sha256:6d33a057c798555426ea98edf79e3a1b779614de42acf6e93e38492868833ea9",
       "file": "fixtures/golden/unsatisfiable.json",
       "kind": "unsatisfiable"
     },
     {
-      "digest": "sha256:ed921ad07ee161cca69914ed5d476063fc9deed4744f2c101d774efbc7033169",
+      "digest": "sha256:a1f6e82554862ad887b74ddcc98f9ecbdb031259f5f3b61cb5301d9864bfb5d9",
       "file": "fixtures/golden/receipt.json",
       "kind": "receipt"
     },
     {
-      "digest": "sha256:76acb229013addd7b0d0de79f7c4890c7cecdad15393e1402e91a8070f51ddde",
+      "digest": "sha256:7ac683c96eeb34042146a90660423a9f7d73a465a9577b5da8a8dfce6dcce65f",
       "file": "fixtures/golden/lockfile.json",
       "kind": "lockfile"
     },
@@ -61,17 +61,17 @@
       "kind": "lifecycle"
     },
     {
-      "digest": "sha256:1b22c3908e2a1986f1ac033f50086c8f8052d939cbc810a928bc5e9021556069",
+      "digest": "sha256:9d989504a11f8e6c5a8e85ca9b2e258565ea1fb0805fe01b530e0b9c9b4e8d12",
       "file": "fixtures/golden/event.json",
       "kind": "event"
     },
     {
-      "digest": "sha256:e8fa8c1267f612b266a7f20a2c52aa6517c55cf8638512a571616f4052ce9015",
+      "digest": "sha256:689e7c1029e4b1cefb536efa90ed457056d2b6d799588f7d3ebde0a71eff8d62",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
     {
-      "digest": "sha256:42ae4d0d1ad4b23f96388508a5153a0ad13bb365762d68e35b1dd236e2863c3d",
+      "digest": "sha256:a7b65e2e6f8a482ef159fb6864ced7d963f8f41dc29c1239a1394e30b1baf747",
       "file": "fixtures/golden/ocm.json",
       "kind": "ocm"
     },

@@ -10,12 +10,6 @@
       "size": 768
     },
     {
-      "artifactType": "application/vnd.openpacker.overlay.v1+json",
-      "digest": "sha256:2ea208f65208ba6b4840323c52d9cc56a6efa8a16ec446a86c91ce6f0690e1b6",
-      "mediaType": "application/vnd.oci.image.manifest.v1+json",
-      "size": 648
-    },
-    {
       "artifactType": "application/vnd.openpacker.offline-sigstore-fixture.v1+json",
       "digest": "sha256:4fa03c148dcb691bb14c47a95b3b3b8e22f48d13f4df2624e09aefbd716e861e",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
@@ -28,8 +22,14 @@
       "size": 636
     },
     {
+      "artifactType": "application/vnd.openpacker.overlay.v1+json",
+      "digest": "sha256:b995b61ab8b04d0b6d9bdaacfcc8720308d38c6c6d26a6333935334e5363a320",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 648
+    },
+    {
       "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
-      "digest": "sha256:a8ab20ba02ad79283a36a50aeb28f243eb5cd57995678ef8e48c29daa7a05084",
+      "digest": "sha256:d0850b8a83bca3e70b4d8e9ac8db43eca432d870b02a559c8a918ebc0b2e7fa5",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
       "size": 653
     },

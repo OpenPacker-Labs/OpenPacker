@@ -2,13 +2,13 @@
   "receipt": {
     "artifactSetDigest": {
       "algorithm": "sha256",
-      "value": "57925a8ec641df59065563af08b267aa599681fc0874fb7d7fabe619fd5ffd7d"
+      "value": "c7308727d3473a45fbb0474759e84d62751a93896d5a21a6dfb6b185855677d7"
     },
     "evaluationTime": "2026-08-02T00:00:00Z",
     "evidenceRefs": [],
     "explanationDigest": {
       "algorithm": "sha256",
-      "value": "7c0abfffaf5d3577f164e7d80d9033991d9f474aee3686bbe8be43cd0f787941"
+      "value": "7e670b1cd87e25ea8157e46fcbdd13852006ef9d4b4f43db801d2be05aba596b"
     },
     "externalRefs": [],
     "lifecycleRoot": {
@@ -115,13 +115,13 @@
     },
     "proofDigest": {
       "algorithm": "sha256",
-      "value": "9f5e16fddff6e87c2d726cd05ad0c5ad59475315c0ef0a803c1661cc953868c8"
+      "value": "a54a2b63b32dc56f1da7642c46f046b38300d22ebd057c0a40fc358a5167a689"
     },
     "protocolVersion": "1.0-draft",
     "receiptVersion": "1",
     "requestDigest": {
       "algorithm": "sha256",
-      "value": "6b1b7cbe20a965ee7e1418addd4a8675da4541d02671551b0b120f198cec57a3"
+      "value": "f6a6eec864a63c8adf2b8d04f7e5ed9daa25427d2c7352aab9fca42f309260e3"
     },
     "resolver": {
       "buildDigest": {
@@ -135,7 +135,7 @@
     "semanticsProfile": "prex-calculus-subset-v1",
     "solutionDigest": {
       "algorithm": "sha256",
-      "value": "ceca985bd0f357653e4a43a2f28a9a89abd2d9e4db442d2fa9a2b3fe7dd5a62a"
+      "value": "5b066e9dd09df88a41c61793aa5d4bc8617fc81c3f7c7854f3d58d8e3aef0618"
     },
     "sourceSnapshots": [
       {
@@ -202,18 +202,18 @@
     },
     "universeDigest": {
       "algorithm": "sha256",
-      "value": "16f31616a67df4dcbd213b63ea7c7a0573fee1ebbdd7bd96ce656ca5fe0b4902"
+      "value": "7df30630919dd3a174a69c69a78fafb168b9ce8f024a5e94eafa893ef69a21d3"
     }
   },
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "4b24d265169c31285f0c47c743622f3edba1914acf5dc661eb40ceab23b26a77"
+    "value": "f15261331a9b02c8ca450baf2d2269eb10853f9844a9155bf51b4801cd4f2814"
   },
   "signatures": [
     {
       "algorithm": "ed25519",
       "keyId": "root",
-      "signature": "pT4d9ZhlI-w1ckQ25JYS-95BxKeNNj9Hj3YeyYw1T1nMhhc0G2Y1QojGCZeWCbfMH0vKdbL_uphCWTK6CnBcCQ"
+      "signature": "bzCHlwo1jCVfoRBYBZHd9RpAHCG3cKTWXm3sRxNUqEIl12h9D4uZ4GSVD__iP8pZq17VnelR1JqYGrL8kF76AA"
     }
   ]
 }
