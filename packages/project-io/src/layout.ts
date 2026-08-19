@@ -508,12 +508,25 @@ export async function collectFiles(
   root: string,
   prefix = '',
 ): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
+  const rootHandle = await openStableDirectory(root, false);
+  try {
+    return await collectFilesFromHandle(rootHandle, prefix, root);
+  } finally {
+    await rootHandle.close();
+  }
+}
+
+/** Collect a stable tree through authority the caller already retained. */
+export async function collectFilesFromHandle(
+  rootHandle: FileHandle,
+  prefix = '',
+  displayRoot = '<directory handle>',
+): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
   const out: {
     path: string;
     contents: Uint8Array;
     executable: boolean;
   }[] = [];
-  const rootHandle = await openStableDirectory(root, false);
   const snapshots = new Map<string, TreeEntrySnapshot>();
   let totalBytes = 0;
   const walkOne = async (directory: FileHandle, at: string): Promise<void> => {
@@ -541,7 +554,7 @@ export async function collectFiles(
         if (!before.isFile() || before.size > 512n * 1024n * 1024n)
           throw unsafe(from);
         const size = Number(before.size);
-        if (totalBytes > 1024 * 1024 * 1024 - size) throw unsafe(root);
+        if (totalBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
         const contents = new Uint8Array(size);
         let offset = 0;
         while (offset < size) {
@@ -577,14 +590,11 @@ export async function collectFiles(
       }
     }
     const afterDirectory = await directory.stat({ bigint: true });
-    if (!sameMetadata(beforeDirectory, afterDirectory)) throw unsafe(root);
+    if (!sameMetadata(beforeDirectory, afterDirectory))
+      throw unsafe(displayRoot);
     snapshots.set(at, snapshot('directory', beforeDirectory));
   };
-  try {
-    await walkOne(rootHandle, '');
-    await assertTreeSnapshot(rootHandle, snapshots);
-  } finally {
-    await rootHandle.close();
-  }
+  await walkOne(rootHandle, '');
+  await assertTreeSnapshot(rootHandle, snapshots);
   return out;
 }

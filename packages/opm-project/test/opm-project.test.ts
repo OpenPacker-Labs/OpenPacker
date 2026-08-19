@@ -27,6 +27,7 @@ import {
   readStoreReferences,
   environmentScript,
   environmentVariables,
+  generationDigest,
   shellQuote,
   listGenerations,
   readEnvironmentState,
@@ -959,6 +960,31 @@ describe('environment generations', () => {
     await installProject({ root, offline: true });
     // An install that changes nothing would otherwise grow the ledger forever.
     expect(await listGenerations(root)).toHaveLength(1);
+  });
+
+  it('rebuilds a legacy v1 generation tree baseline when activating it', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [current] = await listGenerations(root);
+    if (!current) throw new Error('expected generation');
+    const { generationDigest: _currentDigest, ...currentBody } = current;
+    const body = {
+      ...currentBody,
+      generationVersion: '1' as const,
+      members: current.members.map(
+        ({ treeDigest: _treeDigest, ...member }) => member,
+      ),
+    };
+    const legacy = { ...body, generationDigest: generationDigest(body) };
+
+    const state = await activateGeneration({ root, generation: legacy });
+    expect(state.packages['demo-tool']?.purl).toBe(
+      'pkg:npm/@openpacker/demo-tool@1.1.0',
+    );
   });
 
   it('rejects an existing lock with a direct package absent from the manifest', async () => {

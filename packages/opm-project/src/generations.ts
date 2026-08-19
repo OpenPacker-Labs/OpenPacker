@@ -25,7 +25,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
-import { collectFiles } from '@openpacker/project-io';
+import { collectFilesFromHandle } from '@openpacker/project-io';
 
 /**
  * The environment ledger.
@@ -46,11 +46,12 @@ export interface GenerationMember {
   purl: string;
   digest: string;
   storePath: string;
-  treeDigest: string;
+  /** Required by generation v2; absent only on legacy v1 records. */
+  treeDigest?: string;
 }
 
 export interface Generation {
-  generationVersion: '1';
+  generationVersion: '1' | '2';
   environmentName: string;
   sequence: number;
   createdAt: string;
@@ -121,8 +122,17 @@ const canonical = (value: unknown): string =>
 const sha256 = (text: string): string =>
   `sha256:${createHash('sha256').update(text).digest('hex')}`;
 
-async function storeTreeDigest(path: string): Promise<string> {
-  const files = await collectFiles(path);
+async function storeTreeDigestFromHandle(handle: FileHandle): Promise<string> {
+  return treeDigest(await collectFilesFromHandle(handle));
+}
+
+function treeDigest(
+  files: readonly {
+    path: string;
+    contents: Uint8Array;
+    executable: boolean;
+  }[],
+): string {
   return sha256(
     canonical(
       files
@@ -136,6 +146,17 @@ async function storeTreeDigest(path: string): Promise<string> {
         .sort((left, right) => (left.path < right.path ? -1 : 1)),
     ),
   );
+}
+
+async function stableStoreTreeDigest(path: string): Promise<string> {
+  const handle = await openStableDirectory(path);
+  try {
+    const digest = await storeTreeDigestFromHandle(handle);
+    await revalidateStableDirectory(path, handle);
+    return digest;
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -322,6 +343,19 @@ function parseGeneration(text: string, digest: string): Generation {
       'DIGEST_MISMATCH',
       `Generation ${digest} does not match its recorded digest`,
     );
+  if (
+    generation.generationVersion !== '1' &&
+    generation.generationVersion !== '2'
+  )
+    throw new OpmError('INVALID_STATE', 'Unsupported generation version');
+  if (
+    generation.generationVersion === '2' &&
+    generation.members.some((member) => member.treeDigest === undefined)
+  )
+    throw new OpmError(
+      'INVALID_STATE',
+      'Generation v2 is missing a tree digest',
+    );
   return generation;
 }
 
@@ -393,7 +427,7 @@ export async function recordGeneration(input: {
         purl: record.purl,
         digest: record.digest,
         storePath: record.storePath,
-        treeDigest: await storeTreeDigest(record.storePath),
+        treeDigest: await stableStoreTreeDigest(record.storePath),
       })),
     )
   ).sort((left, right) => (left.alias < right.alias ? -1 : 1));
@@ -408,7 +442,7 @@ export async function recordGeneration(input: {
     });
 
   const body: Omit<Generation, 'generationDigest'> = {
-    generationVersion: '1',
+    generationVersion: '2',
     environmentName,
     sequence: highest + 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
@@ -713,6 +747,7 @@ export async function activateGeneration(input: {
     alias: string;
     bins: Awaited<ReturnType<typeof discoverBins>>;
     handle: FileHandle;
+    treeDigest: string;
   }[] = [];
   const aliases = new Set<string>();
   const binNames = new Set<string>();
@@ -771,7 +806,7 @@ export async function activateGeneration(input: {
             'UNSAFE_PATH',
             `Generation store path changed while validating ${expected}`,
           );
-        const actualTreeDigest = await storeTreeDigest(expected);
+        const actualTreeDigest = await storeTreeDigestFromHandle(handle);
         const [handleAfter, namedAfter] = await Promise.all([
           handle.stat({ bigint: true }),
           lstat(expected, { bigint: true }),
@@ -787,10 +822,11 @@ export async function activateGeneration(input: {
             'UNSAFE_PATH',
             `Generation store path changed while validating ${expected}`,
           );
-        if (actualTreeDigest !== member.treeDigest)
+        const expectedTreeDigest = member.treeDigest ?? actualTreeDigest;
+        if (actualTreeDigest !== expectedTreeDigest)
           throw new OpmError(
             'DIGEST_MISMATCH',
-            `Generation ${input.generation.sequence} store tree does not match ${member.treeDigest}`,
+            `Generation ${input.generation.sequence} store tree does not match ${expectedTreeDigest}`,
           );
         const bins = await discoverBins(stableHandlePath(handle), ecosystem);
         for (const bin of bins) {
@@ -802,13 +838,20 @@ export async function activateGeneration(input: {
             );
           binNames.add(name);
         }
-        prepared.push({ member, alias, bins, handle });
+        prepared.push({
+          member,
+          alias,
+          bins,
+          handle,
+          treeDigest: expectedTreeDigest,
+        });
       } catch (error) {
         await handle.close();
         throw error;
       }
     }
 
+    await revalidatePreparedTrees(prepared);
     await ensureStableDirectory(paths.bin);
     await ensureStableDirectory(paths.links);
     const previous = await readProjectState(paths.projectState);
@@ -847,10 +890,22 @@ export async function activateGeneration(input: {
         installedAt: input.generation.createdAt,
       };
     }
+    await revalidatePreparedTrees(prepared);
     await writeProjectState(paths.projectState, state);
     return state;
   } finally {
     await Promise.all(prepared.map(({ handle }) => handle.close()));
     await store.close();
   }
+}
+
+async function revalidatePreparedTrees(
+  prepared: readonly { handle: FileHandle; treeDigest: string }[],
+): Promise<void> {
+  for (const item of prepared)
+    if ((await storeTreeDigestFromHandle(item.handle)) !== item.treeDigest)
+      throw new OpmError(
+        'DIGEST_MISMATCH',
+        'Generation store tree changed during activation',
+      );
 }

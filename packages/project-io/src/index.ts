@@ -300,6 +300,7 @@ export {
 
 export {
   collectFiles,
+  collectFilesFromHandle,
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,

@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applySpanEdits,
   collectFiles,
+  collectFilesFromHandle,
   detectJsonStyle,
   editJsonFile,
   editTomlArray,
@@ -24,11 +25,33 @@ import {
   findExecutable,
   matchFileStyle,
   ProjectIoError,
+  openStableDirectory,
   readTextFile,
   removeTree,
   supportsStableTreeLayout,
   writeFileAtomic,
 } from './index.js';
+
+describe('stable tree collection', () => {
+  it('keeps reading the authorized tree after its pathname is replaced', async () => {
+    await withTemp(async (dir) => {
+      const tree = join(dir, 'tree');
+      const original = join(dir, 'original');
+      await mkdir(tree);
+      await writeFile(join(tree, 'value'), 'authorized');
+      const handle = await openStableDirectory(tree);
+      try {
+        await rename(tree, original);
+        await mkdir(tree);
+        await writeFile(join(tree, 'value'), 'replacement');
+        const files = await collectFilesFromHandle(handle);
+        expect(new TextDecoder().decode(files[0]?.contents)).toBe('authorized');
+      } finally {
+        await handle.close();
+      }
+    });
+  });
+});
 
 describe('findExecutable', () => {
   it('resolves a PATH binary without executing it', async () => {
