@@ -519,7 +519,13 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       );
     const service = field('service');
     if (service) tokenUrl.searchParams.set('service', service);
-    tokenUrl.searchParams.set('scope', field('scope') ?? scope);
+    const challengedScope = field('scope');
+    if (challengedScope !== undefined && challengedScope !== scope)
+      throw new RegistryProtocolError(
+        'UNAUTHORIZED',
+        `Registry ${requestUrl.origin} requested token scope ${challengedScope} instead of ${scope}`,
+      );
+    tokenUrl.searchParams.set('scope', scope);
 
     const requestHeaders: Record<string, string> = {
       accept: 'application/json',
@@ -1459,9 +1465,22 @@ function ignoreExists(error: unknown): void {
 async function registryError(
   response: Response,
 ): Promise<RegistryProtocolError> {
+  let body: Uint8Array;
+  try {
+    body = response.body
+      ? await collectStream(response.body, 64 * 1024)
+      : new Uint8Array();
+  } catch (error) {
+    if (error instanceof RangeError)
+      return new RegistryProtocolError(
+        'REGISTRY_ERROR',
+        `Registry returned HTTP ${response.status} with an oversized error body`,
+      );
+    throw error;
+  }
   return new RegistryProtocolError(
     'REGISTRY_ERROR',
-    `Registry returned HTTP ${response.status}: ${(await response.text()).slice(0, 1024)}`,
+    `Registry returned HTTP ${response.status}: ${new TextDecoder().decode(body).slice(0, 1024)}`,
   );
 }
 

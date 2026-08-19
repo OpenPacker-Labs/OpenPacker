@@ -286,9 +286,10 @@ describe('OCI image materialisation', () => {
   };
   const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
 
-  function ociFetch(): typeof fetch {
+  function ociFetch(requests: string[] = []): typeof fetch {
     return (async (url: URL | string) => {
       const href = String(url);
+      requests.push(href);
       if (href.includes('/manifests/'))
         return new Response(manifestBytes, {
           status: 200,
@@ -314,11 +315,20 @@ describe('OCI image materialisation', () => {
   });
 
   it('resolves and materialises a layout into the project store', async () => {
+    const requests: string[] = [];
     const artifact = await resolveRegistryArtifact(
       'oci',
       'pkg:oci/library/demo?tag=1.0',
-      { fetch: ociFetch(), now: () => '2026-08-04T00:00:00Z' },
+      { fetch: ociFetch(requests), now: () => '2026-08-04T00:00:00Z' },
     );
+    expect(
+      requests.filter((request) => request.endsWith('/manifests/1.0')),
+    ).toHaveLength(2);
+    expect(
+      requests.some((request) =>
+        /\/manifests\/sha256(?:%3A|:)[0-9a-f]{64}$/u.test(request),
+      ),
+    ).toBe(true);
     expect(artifact.mediaType).toBe('application/vnd.oci.image.layout.v1.tar');
     expect(artifact.digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(artifact.bytes.byteLength).toBeGreaterThan(0);

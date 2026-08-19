@@ -279,7 +279,15 @@ export async function resolveRegistryArtifact(
     'prex.registry.artifact/1',
   ]);
   const inspection = await provider.inspect(exactPurl);
-  const record = await provider.fetchArtifactRecord(exactPurl);
+  const inspectedPurl = inspection.package.identity.exactPurl;
+  if (!inspectedPurl)
+    throw new OpmError(
+      'UNRESOLVABLE',
+      `The ${ecosystem} registry did not resolve an exact package identity for ${exactPurl}.`,
+    );
+  // Fetch the immutable identity established by inspection. In particular,
+  // never resolve a mutable OCI tag a second time after it was pinned.
+  const record = await provider.fetchArtifactRecord(inspectedPurl);
   const descriptor = record.body as {
     digest?: { algorithm?: string; value?: string };
     size?: number;
@@ -316,7 +324,7 @@ export async function resolveRegistryArtifact(
     );
 
   return {
-    exactPurl: inspection.package.identity.exactPurl ?? exactPurl,
+    exactPurl: inspectedPurl,
     version: inspection.package.nativeVersion ?? '',
     digest: `${algorithm}:${value}`,
     size: descriptor.size ?? 0,
