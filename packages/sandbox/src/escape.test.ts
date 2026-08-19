@@ -5,6 +5,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -52,6 +54,22 @@ describe('jail path validation', () => {
   it('normalises grant paths', () => {
     const paths = normalizeJailPaths(['/tmp/a', '/tmp/a', '/tmp/b'], 'write');
     expect(paths).toEqual([resolve('/tmp/a'), resolve('/tmp/b')]);
+  });
+
+  it('rejects a package-local alias to the user home', () => {
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-link-'));
+    const linked = join(root, 'package');
+    symlinkSync(homedir(), linked, 'dir');
+    try {
+      expect(() => normalizeJailPaths([linked], 'write')).toThrow(
+        /symbolic links/u,
+      );
+      expect(() => normalizeJailPaths([join(linked, 'new')], 'write')).toThrow(
+        /symbolic links/u,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

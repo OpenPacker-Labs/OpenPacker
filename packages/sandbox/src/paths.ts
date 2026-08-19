@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
 
 /**
  * Credential directories masked inside native jails.
@@ -110,8 +111,24 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
   const parts = value.replaceAll('\\', '/').split('/');
   if (parts.some((part) => part === '..'))
     throw new JailPathError(kind, 'path must not contain ".." segments');
-  // Resolve relative grants against cwd for a stable absolute form.
-  return resolve(value);
+  // Bind helpers follow symlinked ancestors. Refuse any alias rather than
+  // letting an apparently package-local grant resolve to / or $HOME.
+  const absolute = resolve(value);
+  let existing = absolute;
+  for (;;) {
+    try {
+      if (realpathSync.native(existing) !== existing)
+        throw new JailPathError(kind, 'path must not contain symbolic links');
+      break;
+    } catch (error) {
+      if (error instanceof JailPathError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = dirname(existing);
+      if (parent === existing) break;
+      existing = parent;
+    }
+  }
+  return absolute;
 }
 
 export function normalizeJailPaths(

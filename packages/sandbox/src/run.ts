@@ -8,7 +8,7 @@ import {
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
-import { normalizeJailPaths } from './paths.js';
+import { assertSafeJailPath, normalizeJailPaths } from './paths.js';
 import {
   assertGrantsNotDangerous,
   assertPathNotRootOrHome,
@@ -84,6 +84,7 @@ export async function runInSandbox(
   assertGrantsNotDangerous(grantedWrite, resolved.allowDangerousGrants);
   assertGrantsNotDangerous(grantedRead, resolved.allowDangerousGrants);
   if (profile === 'package-exec') {
+    assertSafeJailPath(input.cwd, 'package-exec cwd');
     assertPathNotRootOrHome(
       input.cwd,
       resolved.allowDangerousGrants,
