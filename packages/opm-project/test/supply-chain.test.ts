@@ -467,6 +467,34 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
     );
   });
 
+  it('refuses a direct https source with no lifecycle evidence (withdrawn default)', async () => {
+    // captureFactsFromSourceUri no longer fabricates a lifecycle state, and an
+    // explicit https tarball has no registry to reduce one from. The policy
+    // fails closed (indeterminate) rather than assuming eligibility.
+    const policy = policyDocumentFromPolicyInput(baseInput);
+    const facts = captureFactsFromSourceUri(
+      'pkg:npm/demo@1.0.0',
+      'https://cdn.example.invalid/demo/-/demo-1.0.0.tgz',
+      { evaluationTime: '2026-08-04T00:00:00.000Z' },
+    );
+    expect(facts.lifecycle).toBeUndefined();
+    const result = await evaluatePolicy(policy, facts);
+    expect(result.decision).toBe('indeterminate');
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'lifecycle.eligibility',
+          status: 'not-provided',
+        }),
+      ]),
+    );
+    await expect(assertSupplyChainAllowed(policy, facts)).rejects.toMatchObject(
+      {
+        code: 'POLICY_INDETERMINATE',
+      },
+    );
+  });
+
   it('denies unallowlisted lifecycle script execution', async () => {
     const policy = policyDocumentFromPolicyInput({
       ...baseInput,

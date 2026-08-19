@@ -327,6 +327,13 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 `--offline` refuses every network step. A miss after the local sources is a hard
 error, not a silent empty lock.
 
+Explicit non-`file:` sources carry no registry lifecycle evidence, and opm no
+longer assumes one: an `https:` tarball, a git URL, or an online catalog
+`resolvedSource` fails closed with `POLICY_INDETERMINATE`. Only `file:` sources
+and registry-resolved packages — whose lifecycle comes from the registry
+inspection — install as direct dependencies. This is an explicit capability
+withdrawal, not a fallback to assuming eligibility.
+
 Locks record the **proof-checked closure**, not just the direct requirement. A
 range is solved; it is not stored as a hint.
 
