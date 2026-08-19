@@ -150,6 +150,6 @@ upstream Codex Security release currently has no patched version.
   completed transitive references, require a one-to-one selected package graph,
   and use one-pass adjacency with iterative dependency-first completion; missing
   endpoints and cycles fail explicitly. A 5,000-node chain guards the resource
-  boundary. Lock import 23/23, OCM 5/5, both package typechecks, all staged
-  gates, and the exact layer five-gate impact aggregate passed; diff checks were
+  boundary. Lock import 24/24, OCM 5/5, both package typechecks, all staged
+  gates, and the exact layer six-gate impact aggregate passed; diff checks were
   clean.
