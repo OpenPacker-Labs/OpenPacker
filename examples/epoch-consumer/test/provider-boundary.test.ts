@@ -50,6 +50,23 @@ describe('real openpackerd Epoch boundary', () => {
       expect(receipt.externalRefs[0]?.locator).toBe(
         `urn:epoch:blob:${receipt.openPackerDigest}`,
       );
+
+      const replayClient = {
+        solve: () => client.solve(request),
+        verify: client.verify.bind(client),
+        receipt: client.receipt.bind(client),
+      } as unknown as typeof client;
+      await expect(
+        consumeResolution({
+          client: replayClient,
+          request: {
+            ...request,
+            evaluationTime: '2026-08-03T00:00:00.000Z',
+          },
+          port: new InMemoryEpochConsumerPort(),
+          receiptVerifiers: new Map([['root', verifier]]),
+        }),
+      ).rejects.toThrow(/does not bind the requested solve input/u);
     } finally {
       await server.close();
     }

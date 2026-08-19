@@ -140,6 +140,8 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
             evaluation_time: "2026-08-02T00:00:00Z".into(),
             provider_policy: None,
             timeout_milliseconds: None,
+            resource_limits: None,
+            context: None,
             extensions: BTreeMap::new(),
         },
         universe: ResolutionUniverse {
@@ -170,7 +172,7 @@ fn pin_amendments(input: &mut SolveInput) {
 fn resolvo_default_matches_oracle_and_is_deterministic() {
     let one = package('1', "demo", "1.0.0");
     let two = package('2', "demo", "2.0.0");
-    let input = input(
+    let mut input = input(
         vec![one, two.clone()],
         vec![requirement(
             "root",
@@ -182,9 +184,16 @@ fn resolvo_default_matches_oracle_and_is_deterministic() {
             false,
         )],
     );
+    input.request.context = Some(json!({ "idempotencyKey": "solve-nonce" }));
+    input.request.resource_limits = Some(json!({ "graphNodes": 1000 }));
     let first = solve(&input).unwrap();
     let second = solve(&input).unwrap();
     assert_eq!(first, second);
+    assert_eq!(first.normalized_request.context, input.request.context);
+    assert_eq!(
+        first.normalized_request.resource_limits,
+        input.request.resource_limits
+    );
     assert_eq!(first.solution.selected_node_ids, vec![two.node_id]);
     assert_eq!(
         brute_force_oracle(&input).unwrap().selected_node_ids,
