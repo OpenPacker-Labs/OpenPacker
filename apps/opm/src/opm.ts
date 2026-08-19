@@ -64,6 +64,7 @@ interface Parsed {
   command: string;
   positionals: string[];
   options: Map<string, string | true>;
+  optionValues: Map<string, string[]>;
 }
 
 /** Reported as the producer of any manifest opm writes. */
@@ -157,6 +158,7 @@ export async function runOpm(
           }
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
+        const offline = offlineOverride(args);
         const result = await addPackage({
           allowElevation: args.options.has('allow-elevation'),
           dryRun: args.options.has('dry-run'),
@@ -165,7 +167,7 @@ export async function runOpm(
           ...(ecosystemOpt !== undefined ? { ecosystem: ecosystemOpt } : {}),
           ...(source !== undefined ? { source } : {}),
           ...(alias !== undefined ? { alias } : {}),
-          offline: args.options.has('offline'),
+          ...(offline === undefined ? {} : { offline }),
         });
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
@@ -181,19 +183,21 @@ export async function runOpm(
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
+        const offline = offlineOverride(args);
         await removePackage({
           root,
           alias,
-          offline: args.options.has('offline'),
+          ...(offline === undefined ? {} : { offline }),
         });
         io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
       case 'install': {
         const root = await requireOpmRoot(cwd);
+        const offline = offlineOverride(args);
         const result = await installProject({
           root,
-          offline: args.options.has('offline'),
+          ...(offline === undefined ? {} : { offline }),
         });
         const count = Object.keys(result.state.packages).length;
         io.stdout.write(
@@ -222,10 +226,11 @@ export async function runOpm(
       case 'sync':
       case 'update': {
         const root = await requireOpmRoot(cwd);
+        const offline = offlineOverride(args);
         // update = sync for v1 (re-resolve from manifest)
         const result = await syncProject({
           root,
-          offline: args.options.has('offline'),
+          ...(offline === undefined ? {} : { offline }),
         });
         const count = Object.keys(result.lock.packages).length;
         io.stdout.write(
@@ -410,7 +415,7 @@ export async function runOpm(
             ? await configurePackProviders({
                 root,
                 manifest: projectManifest,
-                environment: process.env,
+                environment: explicitlyGrantedEnvironment(args),
               })
             : undefined;
         const result = await packProject({
@@ -428,7 +433,7 @@ export async function runOpm(
               }),
           allowBuild: args.options.has('allow-build'),
           allowNetwork: args.options.has('allow-network'),
-          offline: args.options.has('offline'),
+          offline: offlineOverride(args) ?? projectManifest.options.offline,
           dryRun: args.options.has('dry-run'),
           nativeMetadata: {
             ...(option(args, 'os') === undefined
@@ -595,7 +600,13 @@ function usage(message: string): UsageError {
 
 function parseArgs(argv: string[]): Parsed {
   const options = new Map<string, string | true>();
+  const optionValues = new Map<string, string[]>();
   const positionals: string[] = [];
+  const setOption = (key: string, value: string | true) => {
+    options.set(key, value);
+    if (typeof value === 'string')
+      optionValues.set(key, [...(optionValues.get(key) ?? []), value]);
+  };
   let command = '';
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
@@ -606,7 +617,7 @@ function parseArgs(argv: string[]): Parsed {
     if (arg.startsWith('--')) {
       const eq = arg.indexOf('=');
       if (eq !== -1) {
-        options.set(arg.slice(2, eq), arg.slice(eq + 1));
+        setOption(arg.slice(2, eq), arg.slice(eq + 1));
       } else {
         const key = arg.slice(2);
         const next = argv[i + 1];
@@ -615,10 +626,10 @@ function parseArgs(argv: string[]): Parsed {
           !next.startsWith('-') &&
           !isBooleanFlag(key)
         ) {
-          options.set(key, next);
+          setOption(key, next);
           i += 1;
         } else {
-          options.set(key, true);
+          setOption(key, true);
         }
       }
       continue;
@@ -628,17 +639,17 @@ function parseArgs(argv: string[]): Parsed {
       const long = shortToLong(key);
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith('-') && !isBooleanFlag(long)) {
-        options.set(long, next);
+        setOption(long, next);
         i += 1;
       } else {
-        options.set(long, true);
+        setOption(long, true);
       }
       continue;
     }
     if (command === '') command = arg;
     else positionals.push(arg);
   }
-  return { command, positionals, options };
+  return { command, positionals, options, optionValues };
 }
 
 function shortToLong(short: string): string {
@@ -657,6 +668,7 @@ function isBooleanFlag(key: string): boolean {
     key === 'help' ||
     key === 'force' ||
     key === 'offline' ||
+    key === 'online' ||
     key === 'json' ||
     key === 'dry-run' ||
     key === 'delegate' ||
@@ -739,17 +751,20 @@ async function runHostInstall(
   cwd = process.cwd(),
 ): Promise<number> {
   let sandbox = hostSandboxFromPolicy();
+  let committedOffline = false;
   const root = await findOpmRoot(cwd);
   if (root) {
     try {
       const manifest = await readManifestFile(projectPaths(root).manifest);
       sandbox = hostSandboxFromPolicy(manifest.policy);
+      committedOffline = manifest.options.offline;
     } catch {
       sandbox = hostSandboxFromPolicy();
     }
   }
+  const offline = offlineOverride(args) ?? committedOffline;
   const options = {
-    offline: args.options.has('offline'),
+    offline,
     dryRun: args.options.has('dry-run'),
     allowElevation: args.options.has('allow-elevation'),
     sandbox,
@@ -796,6 +811,31 @@ function option(args: Parsed, name: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function offlineOverride(args: Parsed): boolean | undefined {
+  const offline = args.options.has('offline');
+  const online = args.options.has('online');
+  if (offline && online) throw usage('Pass only one of --offline or --online');
+  return offline ? true : online ? false : undefined;
+}
+
+function explicitlyGrantedEnvironment(
+  args: Parsed,
+): Readonly<Record<string, string>> {
+  const names = args.optionValues.get('allow-env') ?? [];
+  if (args.options.has('allow-env') && names.length === 0)
+    throw usage('opm pack --allow-env requires an environment variable name');
+  const environment: Record<string, string> = {};
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
+      throw usage(`Invalid --allow-env name: ${name}`);
+    const value = process.env[name];
+    if (value === undefined)
+      throw usage(`Environment variable ${name} is not set`);
+    environment[name] = value;
+  }
+  return environment;
+}
+
 /**
  * Which registry a browse command should read.
  *
@@ -823,12 +863,12 @@ function help(): string {
 
 Usage:
   opm init [--name <name>] [--path <dir>]
-  opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline]
+  opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
   opm remove <alias>
-  opm install [--offline]
+  opm install [--offline|--online]
   opm uninstall [alias]
-  opm sync [--offline]
-  opm update [--offline]
+  opm sync [--offline|--online]
+  opm update [--offline|--online]
   opm list
   opm why <alias>
 
@@ -848,6 +888,7 @@ Pack a project:
   Standard packing is the default. OCI targets require explicit --os and --arch.
   Delegated providers come from [pack.providers.<id>] in opm.toml.
   Provider builds require --allow-build; network additionally requires --allow-network.
+  Provider environment is empty unless each name is granted with --allow-env NAME.
 
 Host/profile installers use the same verbs when the registry advertises
 install (capability discovery). Examples:

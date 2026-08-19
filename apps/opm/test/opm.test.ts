@@ -235,11 +235,19 @@ describe('opm + opmx CLI', () => {
     expect(cap.err).toMatch(/No packages installed/);
   });
 
-  it('exits 8 on an offline add with a network source', async () => {
+  it('preserves committed offline mode without a CLI flag', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-offline-'));
     temps.push(root);
     let cap = capture();
     expect(await runOpm(['init', '--name', 'cli-demo'], cap.io, root)).toBe(0);
+    const manifestPath = join(root, 'opm.toml');
+    await writeFile(
+      manifestPath,
+      (await readFile(manifestPath, 'utf8')).replace(
+        'offline = false',
+        'offline = true',
+      ),
+    );
     cap = capture();
     expect(
       await runOpm(
@@ -248,7 +256,6 @@ describe('opm + opmx CLI', () => {
           'pkg:npm/@openpacker/demo-tool@1.1.0',
           '--source',
           'https://registry.example.invalid/demo.tgz',
-          '--offline',
         ],
         cap.io,
         root,
