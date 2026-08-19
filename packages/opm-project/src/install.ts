@@ -745,16 +745,38 @@ export async function materializeLockPackage(input: {
   }
 }
 
+/**
+ * Replay a committed lockfile into the project store, bins, and links.
+ *
+ * TRUST ASSUMPTION: this function does not bind the lock to any manifest. The
+ * caller must already have verified that the lock was produced from the
+ * current manifest and policy — `installProject` enforces that binding one
+ * level up (`assertLockMatchesManifest`: manifest digest plus direct
+ * requirement closure, and a fresh re-resolution comparison in the online
+ * path). Anyone replaying a lock from another source must establish the same
+ * binding, or pass `expectedManifestDigest` so a lock that carries a
+ * `manifestDigest` is checked against it before anything is installed.
+ */
 export async function installFromLock(input: {
   root: string;
   lock: OpmLockfile;
   offline: boolean;
   only?: readonly string[];
   policy?: PolicyInput;
+  expectedManifestDigest?: string;
 }): Promise<ProjectState> {
   const root = input.root;
   const offline = input.offline;
   const lock = input.lock;
+  if (
+    input.expectedManifestDigest !== undefined &&
+    lock.manifestDigest !== undefined &&
+    lock.manifestDigest !== input.expectedManifestDigest
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      'Lock manifest digest does not match the caller-supplied manifest digest',
+    );
   const lockPackages = lock.packages;
   const callerOnly = input.only;
   const only = callerOnly === undefined ? undefined : [...callerOnly];
