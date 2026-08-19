@@ -303,6 +303,39 @@ describe('OCI Distribution client', () => {
       ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     },
   );
+
+  it('rejects oversized referrer manifests before fetching them', async () => {
+    const subject = await ociDescriptor(
+      new TextEncoder().encode('subject'),
+      'application/vnd.test.subject',
+    );
+    let requests = 0;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      fetch: async () => {
+        requests += 1;
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 2,
+            mediaType: OCI_MEDIA_TYPES.index,
+            manifests: [
+              {
+                digest: `sha256:${'a'.repeat(64)}`,
+                mediaType: OCI_MEDIA_TYPES.manifest,
+                size: 1024 * 1024 + 1,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await expect(client.listReferrers(subject)).rejects.toMatchObject({
+      code: 'PAGINATION_LIMIT',
+    });
+    expect(requests).toBe(1);
+  });
 });
 
 describe('tag listing and bearer authentication', () => {

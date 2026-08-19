@@ -1110,9 +1110,12 @@ export class OciRegistryClient {
     signal?: AbortSignal,
   ): Promise<OciDescriptor[]> {
     validateOciDescriptor(subject);
-    const maximumReferrers = 1_000;
-    const maximumReferrerManifestBytes = 4 * 1024 * 1024;
+    const maximumReferrers = 256;
+    const maximumReferrerManifestBytes = 1024 * 1024;
+    const maximumReferrerBytes = 64 * 1024 * 1024;
+    const maximumReferrersPageBytes = 4 * 1024 * 1024;
     const output: OciDescriptor[] = [];
+    let referrerBytes = 0;
     const visited = new Set<string>();
     let next: URL | undefined = this.endpoint(
       `referrers/${encodeURIComponent(subject.digest)}`,
@@ -1132,8 +1135,10 @@ export class OciRegistryClient {
         `repository:${this.repository}:pull`,
         signal,
       );
-      if (!response.ok) throw await registryError(response);
-      const index = (await response.json()) as OciIndex;
+      if (!response.ok || !response.body) throw await registryError(response);
+      const index = parseJson<OciIndex>(
+        await collectStream(response.body, maximumReferrersPageBytes, signal),
+      );
       if (
         index.schemaVersion !== 2 ||
         index.mediaType !== OCI_MEDIA_TYPES.index ||
@@ -1143,8 +1148,20 @@ export class OciRegistryClient {
           'INVALID_RESPONSE',
           'Invalid referrers index',
         );
-      for (const descriptor of index.manifests)
+      for (const descriptor of index.manifests) {
         validateOciDescriptor(descriptor);
+        if (descriptor.size > maximumReferrerManifestBytes)
+          throw new RegistryProtocolError(
+            'PAGINATION_LIMIT',
+            `Referrer manifest exceeds ${maximumReferrerManifestBytes} bytes`,
+          );
+        referrerBytes += descriptor.size;
+        if (referrerBytes > maximumReferrerBytes)
+          throw new RegistryProtocolError(
+            'PAGINATION_LIMIT',
+            `Registry referrers exceed ${maximumReferrerBytes} bytes`,
+          );
+      }
       if (output.length + index.manifests.length > maximumReferrers)
         throw new RegistryProtocolError(
           'PAGINATION_LIMIT',
