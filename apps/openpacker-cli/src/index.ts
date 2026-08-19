@@ -800,9 +800,18 @@ async function pinnedHttpsStream(
 function isPrivateAddress(value: string): boolean {
   const address = value.toLowerCase();
   if (address.includes(':')) {
-    const mapped = mappedIpv4Address(address);
     if (address.startsWith('::ffff:'))
-      return mapped === undefined || isPrivateAddress(mapped);
+      return classifyEmbeddedIpv4(address.slice('::ffff:'.length));
+    // NAT64 (64:ff9b::/96) and the deprecated IPv4-compatible form (::/96)
+    // embed a full IPv4 address in their low 32 bits; classify by it.
+    for (const prefix of ['64:ff9b::', '64:ff9b:0:0:0:0:']) {
+      if (address.startsWith(prefix))
+        return classifyEmbeddedIpv4(address.slice(prefix.length));
+    }
+    if (address.startsWith('::')) {
+      const embedded = embeddedIpv4Address(address.slice(2));
+      if (embedded !== undefined) return isPrivateAddress(embedded);
+    }
     return (
       address === '::' ||
       address === '::1' ||
@@ -827,14 +836,25 @@ function isPrivateAddress(value: string): boolean {
   );
 }
 
-function mappedIpv4Address(value: string): string | undefined {
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(value);
+/** Fail closed when an address family known to embed IPv4 cannot be parsed. */
+function classifyEmbeddedIpv4(suffix: string): boolean {
+  const embedded = embeddedIpv4Address(suffix);
+  return embedded === undefined || isPrivateAddress(embedded);
+}
+
+function embeddedIpv4Address(value: string): string | undefined {
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(value);
   if (hex) {
     const high = parseInt(hex[1]!, 16);
     const low = parseInt(hex[2]!, 16);
     return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
   }
-  return /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/iu.exec(value)?.[1];
+  return /^(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(value)?.[1];
+}
+
+function mappedIpv4Address(value: string): string | undefined {
+  if (!value.startsWith('::ffff:')) return undefined;
+  return embeddedIpv4Address(value.slice('::ffff:'.length));
 }
 
 function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {

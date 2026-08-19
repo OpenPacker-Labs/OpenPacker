@@ -292,11 +292,18 @@ describe('openpacker CLI', () => {
     const outside = join(root, 'outside.tar');
     await writeFile(outside, 'not an archive');
     try {
-      for (const location of [
+      const locations = [
         { transport: 'https', uri: 'https://127.0.0.1/archive.tar' },
         { transport: 'https', uri: 'https://[::ffff:7f00:1]/archive.tar' },
+        // NAT64 64:ff9b::/96 embedding a loopback, hex and dotted forms
+        { transport: 'https', uri: 'https://[64:ff9b::7f00:1]/archive.tar' },
+        { transport: 'https', uri: 'https://[64:ff9b::10.0.0.1]/archive.tar' },
+        // Deprecated IPv4-compatible ::/96 forms embedding a private address
+        { transport: 'https', uri: 'https://[::a00:1]/archive.tar' },
+        { transport: 'https', uri: 'https://[::10.0.0.1]/archive.tar' },
         { transport: 'file', uri: pathToFileURL(outside).toString() },
-      ]) {
+      ];
+      for (const [index, location] of locations.entries()) {
         const fetch = vi.fn(async () =>
           Response.json({
             descriptor: {
@@ -315,7 +322,7 @@ describe('openpacker CLI', () => {
         );
         vi.stubGlobal('fetch', fetch);
         const output = io();
-        const destination = join(root, `install-${location.transport}`);
+        const destination = join(root, `install-${index}`);
         expect(
           await runCli(
             [
