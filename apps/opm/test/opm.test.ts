@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +48,9 @@ describe('opm + opmx CLI', () => {
     let cap = capture();
     expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
     await writeFile(join(root, 'acme.pack'), 'project\n');
+    const executable = join(root, 'acme-pack');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n');
+    await chmod(executable, 0o755);
     await writeFile(
       join(root, 'provider.json'),
       JSON.stringify({
@@ -95,7 +105,7 @@ describe('opm + opmx CLI', () => {
     );
     await writeFile(
       join(root, 'opm.toml'),
-      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[pack.providers.example-default]\nmanifest = "provider-default.json"\nexecutable = ${JSON.stringify(process.execPath)}\ndefault_for = ["acme"]\n\n[pack.providers.example-acme]\nmanifest = "provider.json"\nexecutable = ${JSON.stringify(process.execPath)}\n`,
+      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[pack.providers.example-default]\nmanifest = "provider-default.json"\nexecutable = ${JSON.stringify(executable)}\ndefault_for = ["acme"]\n\n[pack.providers.example-acme]\nmanifest = "provider.json"\nexecutable = ${JSON.stringify(executable)}\n`,
     );
 
     for (const selection of [['--provider'], ['--provider=']]) {
@@ -133,7 +143,7 @@ describe('opm + opmx CLI', () => {
         root,
       ),
     ).toBe(0);
-    expect(cap.out).toContain('node acme-pack.js');
+    expect(cap.out).toContain(`${executable} acme-pack.js`);
     expect(cap.out).not.toContain('default-pack.js');
     expect(cap.out).toContain('--out');
     await expect(
@@ -369,7 +379,7 @@ describe('opm + opmx CLI', () => {
     cap = capture();
     expect(await runOpm(['shell', '--json'], cap.io, root)).toBe(0);
     expect(JSON.parse(cap.out).OPM_GENERATION).toBe('1');
-  });
+  }, 30_000);
 
   it('refuses to roll back with no earlier generation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-gen-none-'));

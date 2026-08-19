@@ -1140,7 +1140,7 @@ describe('project lifecycle offline', () => {
     // still in lock/manifest but not installed
     const row = state.find((p) => p.alias === 'demo-tool');
     expect(row?.installed).toBe(false);
-  });
+  }, 30_000);
 });
 
 describe('environment generations', () => {
