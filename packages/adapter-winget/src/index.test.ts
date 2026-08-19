@@ -126,6 +126,17 @@ describe('installing', () => {
     expect(calls.some(([, verb]) => verb === 'install')).toBe(false);
   });
 
+  it('refuses degraded containment before executing an install', async () => {
+    const { calls, execute } = fakeWinget({ 'winget --version': 'v1.8' });
+    const provider = new WingetSystemProvider(execute, windows);
+    await expect(
+      provider.install('pkg:winget/Nope/Nope', {
+        sandbox: { mode: 'degrade-warn', prefer: 'mxc' },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(calls.some(([, verb]) => verb === 'install')).toBe(false);
+  });
+
   it('refuses to run where winget does not exist', async () => {
     const provider = new WingetSystemProvider(
       fakeWinget().execute,

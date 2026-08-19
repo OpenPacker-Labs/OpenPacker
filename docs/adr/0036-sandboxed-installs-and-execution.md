@@ -51,8 +51,8 @@ policy rather than claim “MXC-secure” as a product fact.
    network, write paths, env). They do not inherit credentials or home by
    default.
 6. **Host installers stay capability-honest (ADR 0031).** Plans expose argv and
-   the sandbox profile. Ambient system install is refused even when a legacy
-   policy requests it; a host installer must run in an OS-owned process tree.
+   the sandbox profile. `degrade-warn`, `off`, and ambient system install are
+   refused; a host installer must run fail-closed in an OS-owned process tree.
 7. **Adopt MXC as preferred primitive (ADR 0030 outcome 1);** OpenPacker owns
    policy semantics and PREX honesty. Native backends are first-class fallbacks,
    not afterthoughts.

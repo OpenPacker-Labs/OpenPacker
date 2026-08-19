@@ -6,6 +6,7 @@ import { loss } from './policy.js';
 export interface HostInstallerSandboxOptions {
   mode?: 'fail-closed' | 'degrade-warn' | 'off';
   prefer?: 'auto' | 'mxc' | 'native';
+  /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
 }
 
@@ -17,7 +18,7 @@ export function sandboxPolicyFromInstallOptions(
     mode,
     prefer: sandbox?.prefer ?? 'auto',
     allowHostUnsandboxedInstall: sandbox?.allowHostUnsandboxedInstall ?? false,
-    required: mode === 'fail-closed',
+    required: true,
     // Host installers need broader FS; never claim package-exec strength.
     minimalPath: false,
     projectWrite: true,
@@ -92,10 +93,10 @@ export async function runHostInstaller(
   const summary = planSandboxSummary(input.sandbox);
   if (
     input.sandbox?.allowHostUnsandboxedInstall === true ||
-    input.sandbox?.mode === 'off'
+    (input.sandbox?.mode !== undefined && input.sandbox.mode !== 'fail-closed')
   )
     throw new HostInstallerSandboxError(
-      'Ambient host installers are disabled because they have no owned process-tree boundary',
+      'Host installers require fail-closed containment; ambient and degraded execution are disabled',
     );
 
   const policy = sandboxPolicyFromInstallOptions(input.sandbox);

@@ -43,7 +43,7 @@ export interface SandboxPolicy {
   prefer?: SandboxPrefer;
   /** When true (default under fail-closed), unavailable jail is deny. */
   required?: boolean;
-  /** Permit host installers without a jail (explicit ambient system install). */
+  /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
   /**
    * When true, package-exec may write the project tree (opmx). Default false.

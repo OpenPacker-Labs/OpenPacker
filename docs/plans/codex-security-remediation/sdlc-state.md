@@ -129,7 +129,11 @@ upstream Codex Security release currently has no patched version.
   reject the legacy ambient option before execution and all four providers now
   route installs only through OS-owned containment; and Windows documentation no
   longer claims `opm list` support. Directory-handle accessibility after exec
-  has a real child-process oracle. Sandbox 36/36, OPM project 154/154, project
-  I/O 27/27, apt 14/14, WinGet 10/10, Chocolatey 3/3, and Nix 32 passed with 3
-  opt-in live skips. Contract validation, package typechecks, and the exact
-  layer impact aggregate passed with process authority; diff checks were clean.
+  has a real child-process oracle. The final review edge makes containment
+  required for host installers and rejects `degrade-warn` and `off` before
+  backend selection, so missing containment is policy denial rather than a
+  claimed attempted install; public types mark the removed ambient option
+  deprecated and refused. Sandbox 36/36, OPM project 154/154, project I/O 27/27,
+  apt 14/14, WinGet 11/11, Chocolatey 3/3, and Nix 32 passed with 3 opt-in live
+  skips. Contract validation, package typechecks, and the exact layer impact
+  aggregate passed with process authority; diff checks were clean.

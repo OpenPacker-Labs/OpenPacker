@@ -441,9 +441,12 @@ describe('@openpacker/sandbox', () => {
     expect(bwrap.join(' ')).toContain('--bind-fd 3 /tmp');
     expect(sandboxPolicyFromInstallOptions({ mode: 'off' })).toMatchObject({
       mode: 'off',
-      required: false,
+      required: true,
       legacyFatRoot: true,
     });
+    expect(
+      sandboxPolicyFromInstallOptions({ mode: 'degrade-warn' }),
+    ).toMatchObject({ mode: 'degrade-warn', required: true });
     expect(notSandboxedLoss('apt').code).toBe(
       SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
     );
