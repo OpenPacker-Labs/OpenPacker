@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use crate::{ResolverError, VersionConstraint};
+use crate::{PackageIdentity, ResolverError, VersionConstraint};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Purl {
     kind: String,
     namespace: Option<String>,
@@ -310,7 +310,7 @@ fn normalize_pypi_name(name: &str) -> Result<String, ResolverError> {
     Ok(output)
 }
 
-pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
+fn canonical_purl(value: &str) -> Result<Purl, ResolverError> {
     let mut purl = parse_purl(value)?;
     let policy = purl_policy(purl.kind.as_str());
     match policy.namespace {
@@ -349,6 +349,10 @@ pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
             VersionPolicy::Preserve => Some(version.trim().to_owned()),
         };
     }
+    Ok(purl)
+}
+
+fn format_purl(purl: Purl) -> String {
     let mut path = purl
         .namespace
         .iter()
@@ -383,7 +387,42 @@ pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
                 .join("/"),
         );
     }
-    Ok(format!("pkg:{}/{path}", purl.kind))
+    format!("pkg:{}/{path}", purl.kind)
+}
+
+pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
+    Ok(format_purl(canonical_purl(value)?))
+}
+
+pub(crate) fn validate_package_identity(identity: &PackageIdentity) -> Result<(), ResolverError> {
+    let exact = identity
+        .exact_purl
+        .as_deref()
+        .ok_or_else(|| invalid("package identity has no exactPurl"))?;
+    let parsed = canonical_purl(exact)?;
+    if parsed.version.is_none() || format_purl(parsed.clone()) != exact {
+        return Err(invalid("exactPurl must be canonical and versioned"));
+    }
+    let mut base = parsed.clone();
+    base.version = None;
+    let checks = [
+        (
+            identity.canonical_purl == format_purl(base),
+            "canonicalPurl",
+        ),
+        (identity.purl_type == parsed.kind, "purlType"),
+        (identity.namespace == parsed.namespace, "namespace"),
+        (identity.name == parsed.name, "name"),
+        (identity.version == parsed.version, "version"),
+        (identity.qualifiers == parsed.qualifiers, "qualifiers"),
+        (identity.subpath == parsed.subpath, "subpath"),
+    ];
+    if let Some((_, field)) = checks.into_iter().find(|(matches, _)| !matches) {
+        return Err(invalid(format!(
+            "package identity {field} contradicts exactPurl"
+        )));
+    }
+    Ok(())
 }
 
 fn comparison(clause: &str) -> Result<(Value, String), ResolverError> {

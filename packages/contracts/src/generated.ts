@@ -1126,6 +1126,7 @@ export type PolicyInput = {
   acceptedAmendmentAuthorities?: Array<
     'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture'
   >;
+  acceptedAmendmentDigests?: Array<Digest>;
 };
 export type PositiveLimit = number;
 export type Problem = {
@@ -1787,6 +1788,7 @@ export const DIGEST_PROJECTIONS = {
       orderedSetPaths: [
         '/environment/installed',
         '/environment/locked',
+        '/policy/acceptedAmendmentDigests',
         '/policy/requiredEvidence',
         '/requirements',
       ],
@@ -9450,7 +9452,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           acceptedAmendmentAuthorities: {
             $comment:
-              'Absent or empty means amendments are ignored with a warning; solutions are then identical to an amendment-free universe.',
+              'Authority labels are claims, not proof. An amendment is admitted only when its authority and exact digest are both accepted.',
             type: 'array',
             maxItems: 5,
             uniqueItems: true,
@@ -9462,6 +9464,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
                 'user',
                 'test-fixture',
               ],
+            },
+          },
+          acceptedAmendmentDigests: {
+            $comment:
+              'Exact canonical amendment digests independently pinned by the policy authority.',
+            type: 'array',
+            maxItems: 10000,
+            uniqueItems: true,
+            items: {
+              $ref: 'common.schema.json#/$defs/Digest',
             },
           },
         },

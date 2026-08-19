@@ -400,6 +400,10 @@ pub struct PolicyInput {
     /// request digest of any existing solve.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepted_amendment_authorities: Vec<String>,
+    /// Exact amendment bytes trusted by the caller. Authority labels alone
+    /// are claims made by the universe and never grant amendment power.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_amendment_digests: Vec<Digest>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
 }

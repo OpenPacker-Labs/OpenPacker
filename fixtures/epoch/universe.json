@@ -2,7 +2,7 @@
   "universeVersion": "1",
   "packages": [
     {
-      "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "nodeId": "sha256:a9ec3147fae3bd774345ea614d7f982bb72941e6adf775392e87a766d5b280b9",
       "identity": {
         "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
         "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
@@ -51,7 +51,7 @@
       "semanticLoss": []
     },
     {
-      "nodeId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "nodeId": "sha256:339d8473dd44056b1f2fe3c1a41d48e63b23b152b4055fefc1670d6d73a9eb3d",
       "identity": {
         "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
         "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.1.0",

@@ -569,7 +569,7 @@
         },
         "extensions": { "$ref": "common.schema.json#/$defs/Extensions" },
         "acceptedAmendmentAuthorities": {
-          "$comment": "Absent or empty means amendments are ignored with a warning; solutions are then identical to an amendment-free universe.",
+          "$comment": "Authority labels are claims, not proof. An amendment is admitted only when its authority and exact digest are both accepted.",
           "type": "array",
           "maxItems": 5,
           "uniqueItems": true,
@@ -582,6 +582,13 @@
               "test-fixture"
             ]
           }
+        },
+        "acceptedAmendmentDigests": {
+          "$comment": "Exact canonical amendment digests independently pinned by the policy authority.",
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/Digest" }
         }
       },
       "additionalProperties": false

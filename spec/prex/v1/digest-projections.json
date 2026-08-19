@@ -10,6 +10,7 @@
       "orderedSetPaths": [
         "/environment/installed",
         "/environment/locked",
+        "/policy/acceptedAmendmentDigests",
         "/policy/requiredEvidence",
         "/requirements"
       ]

@@ -31,16 +31,17 @@ fn requirement(id: &str, expression: RequirementExpression, optional: bool) -> R
 
 fn package(seed: char, name: &str, version: &str) -> PackageInstance {
     let canonical_purl = format!("pkg:npm/{name}");
-    let node_id = format!("sha256:{}", seed.to_string().repeat(64));
-    PackageInstance {
-        node_id: node_id.clone(),
+    let exact_purl = normalize_purl(&format!("{canonical_purl}@{version}")).unwrap();
+    let identity_version = exact_purl.rsplit_once('@').unwrap().1.to_owned();
+    let mut package = PackageInstance {
+        node_id: String::new(),
         identity: PackageIdentity {
             canonical_purl: canonical_purl.clone(),
-            exact_purl: Some(format!("{canonical_purl}@{version}")),
+            exact_purl: Some(exact_purl.clone()),
             purl_type: "npm".into(),
             namespace: None,
             name: name.into(),
-            version: Some(version.into()),
+            version: Some(identity_version),
             qualifiers: BTreeMap::new(),
             subpath: None,
             native_coordinates: Vec::new(),
@@ -70,7 +71,32 @@ fn package(seed: char, name: &str, version: &str) -> PackageInstance {
         native_semantics: json!({"version":"1","data":{}}),
         semantic_loss: Vec::new(),
         extensions: BTreeMap::new(),
-    }
+    };
+    package.node_id = digest_json(&json!({
+        "identity": { "exactPurl": exact_purl, "qualifiers": {} },
+        "nativeSemantics": { "version": "1" },
+    }))
+    .unwrap()
+    .as_string();
+    package
+}
+
+fn set_identity(package: &mut PackageInstance, kind: &str, name: &str, version: &str) {
+    let exact_purl = normalize_purl(&format!("pkg:{kind}/{name}@{version}")).unwrap();
+    package.identity.canonical_purl = normalize_purl(&format!("pkg:{kind}/{name}")).unwrap();
+    package.identity.exact_purl = Some(exact_purl.clone());
+    package.identity.purl_type = kind.into();
+    package.identity.namespace = None;
+    package.identity.name = name.into();
+    package.identity.version = Some(exact_purl.rsplit_once('@').unwrap().1.to_owned());
+    package.identity.qualifiers.clear();
+    package.identity.subpath = None;
+    package.node_id = digest_json(&json!({
+        "identity": { "exactPurl": exact_purl, "qualifiers": {} },
+        "nativeSemantics": { "version": "1" },
+    }))
+    .unwrap()
+    .as_string();
 }
 
 fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> SolveInput {
@@ -92,6 +118,7 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
                 required_evidence: Vec::new(),
                 accepted_overlay_authorities: vec!["test-fixture".into()],
                 accepted_amendment_authorities: Vec::new(),
+                accepted_amendment_digests: Vec::new(),
                 extensions: BTreeMap::new(),
             },
             semantics: SemanticsInput {
@@ -126,6 +153,15 @@ fn input(packages: Vec<PackageInstance>, requirements: Vec<Requirement>) -> Solv
             extensions: BTreeMap::new(),
         },
     }
+}
+
+fn pin_amendments(input: &mut SolveInput) {
+    input.request.policy.accepted_amendment_digests = input
+        .universe
+        .amendments
+        .iter()
+        .map(|amendment| digest_json(amendment).unwrap())
+        .collect();
 }
 
 #[test]
@@ -199,9 +235,7 @@ fn companion_enforces_capability_target_conflict_cardinality_and_optional() {
         source: source(),
     });
     let mut cargo = package('4', "cargo-zstd", "1.0.0");
-    cargo.identity.purl_type = "cargo".into();
-    cargo.identity.canonical_purl = "pkg:cargo/zstd-wasm".into();
-    cargo.identity.exact_purl = Some("pkg:cargo/zstd-wasm@1.0.0".into());
+    set_identity(&mut cargo, "cargo", "zstd-wasm", "1.0.0");
     cargo.capabilities.push(Capability {
         name: "compression/zstd".into(),
         version: Some("1".into()),
@@ -241,7 +275,9 @@ fn companion_enforces_capability_target_conflict_cardinality_and_optional() {
         )],
     );
     let output = solve(&input).unwrap();
-    assert_eq!(output.solution.selected_node_ids, vec![app_id, cargo_id]);
+    let mut expected = vec![app_id, cargo_id];
+    expected.sort();
+    assert_eq!(output.solution.selected_node_ids, expected);
     let selected = serde_json::to_value(&output.selected[0]).unwrap();
     for pointer in [
         "/requirements/1/expression",
@@ -332,17 +368,14 @@ fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
     let mut packages = Vec::new();
     for index in 1..=23 {
         let mut candidate = candidate.clone();
-        let value = format!("{index:064x}");
         let version = format!("{index}.0.0");
-        candidate.node_id = format!("sha256:{value}");
-        candidate.identity.exact_purl = Some(format!("pkg:npm/demo@{version}"));
-        candidate.identity.version = Some(version.clone());
+        set_identity(&mut candidate, "npm", "demo", &version);
         candidate.native_version = version.clone();
         candidate.normalized_version = version;
         candidate.version_sort_key = format!("{index:04}");
         candidate.metadata_digest = Digest {
             algorithm: "sha256".into(),
-            value,
+            value: format!("{index:064x}"),
         };
         packages.push(candidate);
     }
@@ -482,13 +515,29 @@ fn native_capture_requires_unique_resolvable_exact_locks() {
         Err(ResolverError::InvalidInput(message)) if message.contains("duplicate node")
     ));
 
-    let mut duplicate_identity = package('c', "captured", "1.0.0");
-    duplicate_identity.identity.exact_purl = Some(exact_purl.clone());
+    let duplicate_identity = package('c', "captured", "1.0.0");
     native.universe.packages.push(duplicate_identity);
     native.request.environment.locked = vec![exact_purl];
     assert!(matches!(
         solve(&native),
-        Err(ResolverError::InvalidInput(message)) if message.contains("ambiguous")
+        Err(ResolverError::InvalidInput(message)) if message.contains("duplicate nodeId")
+    ));
+}
+
+#[test]
+fn universe_rejects_asserted_node_ids_and_contradictory_identity_fields() {
+    let mut forged_node = package('1', "victim", "1.0.0");
+    forged_node.node_id = format!("sha256:{}", "a".repeat(64));
+    assert!(matches!(
+        validate_universe(&input(vec![forged_node], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("package-node-v1")
+    ));
+
+    let mut contradictory = package('2', "victim", "1.0.0");
+    contradictory.identity.name = "attacker".into();
+    assert!(matches!(
+        validate_universe(&input(vec![contradictory], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("name contradicts")
     ));
 }
 
@@ -677,12 +726,17 @@ fn unaccepted_amendments_do_not_change_the_solution() {
         authority: "organization".into(),
         rest: BTreeMap::new(),
     });
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
 
     let plain_output = solve(&plain).unwrap();
     let amended_output = solve(&amended).unwrap();
 
-    // Policy admits no amendment authority, so the amendment contributes
-    // nothing: the solution and its digest are byte-identical.
+    // A matching asserted authority without an independently pinned digest
+    // grants no power: the solution and its digest are byte-identical.
     assert_eq!(
         amended_output.solution.solution_digest,
         plain_output.solution.solution_digest
@@ -721,12 +775,8 @@ fn an_accepted_amendment_redirects_and_retracts_requirements() {
         },
         false,
     ));
-    let mut old_libc = package('4', "libc", "2.39");
-    old_libc.identity.canonical_purl = "pkg:npm/libc".into();
-    old_libc.identity.exact_purl = Some("pkg:npm/libc@2.39".into());
-    let mut patched = package('5', "libc", "2.40");
-    patched.identity.canonical_purl = "pkg:npm/libc".into();
-    patched.identity.exact_purl = Some("pkg:npm/libc@2.40".into());
+    let old_libc = package('4', "libc", "2.39");
+    let patched = package('5', "libc", "2.40");
 
     let root = vec![requirement(
         "root",
@@ -769,6 +819,7 @@ fn an_accepted_amendment_redirects_and_retracts_requirements() {
         authority: "organization".into(),
         rest: BTreeMap::new(),
     });
+    pin_amendments(&mut amended);
     let output = solve(&amended).unwrap();
 
     assert!(
@@ -849,6 +900,7 @@ fn a_retraction_removes_an_unsatisfiable_requirement() {
         authority: "organization".into(),
         rest: BTreeMap::new(),
     });
+    pin_amendments(&mut amended);
     let output = solve(&amended).unwrap();
     let checked = check(&amended, &output).unwrap();
     assert!(checked.valid, "{:?}", checked.diagnostics);
@@ -899,6 +951,7 @@ fn the_amended_universe_digest_is_universe_v1_over_the_whole_struct() {
         authority: "organization".into(),
         rest: BTreeMap::new(),
     });
+    pin_amendments(&mut amended);
 
     let applied = apply_amendments(&amended).unwrap();
     // Recompute independently: serialize the amended universe, drop the
@@ -991,6 +1044,7 @@ fn amended_universe_ordered_sets_sort_by_utf16_code_units() {
         authority: "organization".into(),
         rest: BTreeMap::new(),
     });
+    pin_amendments(&mut amended);
 
     let applied = apply_amendments(&amended).unwrap();
 
