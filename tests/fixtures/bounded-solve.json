@@ -50,12 +50,13 @@
     },
     "packages": [
       {
-        "nodeId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "nodeId": "sha256:b1cb01f21611be022caf8c5caca7842d5110485fcdaccd0d1688f8230badd4bb",
         "identity": {
           "canonicalPurl": "pkg:npm/demo",
           "exactPurl": "pkg:npm/demo@1.0.0",
           "purlType": "npm",
           "name": "demo",
+          "version": "1.0.0",
           "qualifiers": {},
           "nativeCoordinates": [],
           "aliases": [],
@@ -65,7 +66,7 @@
         },
         "nativeVersion": "1.0.0",
         "normalizedVersion": "1.0.0",
-        "versionSortKey": "0001.0000.0000",
+        "versionSortKey": "1.0.0",
         "requirements": [],
         "capabilities": [],
         "conflicts": [],
