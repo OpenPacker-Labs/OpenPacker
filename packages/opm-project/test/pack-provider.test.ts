@@ -79,6 +79,7 @@ describe('configured delegated pack providers', () => {
     ]);
     expect(result.receipt?.provider).toEqual({
       id: 'example-acme',
+      artifactIdentity: 'provider-attested',
       manifestDigest: {
         algorithm: 'sha256',
         value: expect.stringMatching(/^[0-9a-f]{64}$/u),

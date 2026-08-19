@@ -954,7 +954,11 @@ export type PackReceipt = {
   strategy: 'delegate' | 'standard';
   target: Distribution;
   normalizedManifestDigest: Digest;
-  provider?: { id: DelegatedProviderId; manifestDigest: Digest };
+  provider?: {
+    id: DelegatedProviderId;
+    manifestDigest: Digest;
+    artifactIdentity: 'provider-attested';
+  };
   tool?: PackTool;
   commands: Array<Array<string>>;
   sandbox?: { backend?: string; enforced: boolean };
@@ -2837,7 +2841,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         DelegatedPackArtifactIdentity: {
           $comment:
-            'One bounded JSON object emitted by the provider identity command on stdout. The host checks both fields against the requested target and bytes it already hashed.',
+            'One bounded provider attestation emitted by the identity command. The host checks the claimed target and independently hashed bytes, but this is not host-native format validation.',
           type: 'object',
           required: [
             'delegatedPackArtifactIdentityVersion',
@@ -7319,13 +7323,18 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           provider: {
             type: 'object',
-            required: ['id', 'manifestDigest'],
+            required: ['id', 'manifestDigest', 'artifactIdentity'],
             properties: {
               id: {
                 $ref: 'delegated-pack-provider.schema.json#/$defs/DelegatedProviderId',
               },
               manifestDigest: {
                 $ref: 'common.schema.json#/$defs/Digest',
+              },
+              artifactIdentity: {
+                const: 'provider-attested',
+                $comment:
+                  'The delegated executable attested the requested native identity. The host independently verified artifact bytes and digest, but did not parse the native format.',
               },
             },
             additionalProperties: false,

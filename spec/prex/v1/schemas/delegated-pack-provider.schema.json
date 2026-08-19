@@ -361,7 +361,7 @@
       "additionalProperties": false
     },
     "DelegatedPackArtifactIdentity": {
-      "$comment": "One bounded JSON object emitted by the provider identity command on stdout. The host checks both fields against the requested target and bytes it already hashed.",
+      "$comment": "One bounded provider attestation emitted by the identity command. The host checks the claimed target and independently hashed bytes, but this is not host-native format validation.",
       "type": "object",
       "required": [
         "delegatedPackArtifactIdentityVersion",

@@ -25,8 +25,8 @@ The boundary is intentionally asymmetric:
 - providers declare detection markers, argument templates, requested authority,
   environment names, artifact patterns and a sandboxed identity probe;
 - the host validates, grants authority, expands templates, resolves tools,
-  executes through `runInSandbox`, contains outputs, hashes bytes, and accepts
-  each artifact only when the probe's exact PURL and digest match the request;
+  executes through `runInSandbox`, contains outputs, hashes bytes, and records
+  each matching probe result explicitly as `provider-attested` identity;
 - no provider manifest contains a command string or secret value;
 - no WIT guest receives ambient process authority merely because it can plan.
 
@@ -40,9 +40,11 @@ tool support becomes data that can be tested independently. The host has one
 execution funnel and one receipt path, while a future WASM component can replace
 declarative planning without changing authorization or execution semantics.
 
-Provider manifest version 2 makes the identity probe mandatory. Version 1 is
-rejected because suffix and hash checks alone cannot bind native identity to a
-receipt target.
+Provider manifest version 2 makes the identity probe mandatory. It prevents an
+accidental target mismatch but is not independent native-format validation: the
+same delegated executable produced and attested the artifact. Receipts say
+`provider-attested`; only a separately trusted standard emitter or format
+verifier may claim native validation.
 
 Provider distribution, signatures, remote fetching and a marketplace remain out
 of scope. A project names local provider files explicitly.

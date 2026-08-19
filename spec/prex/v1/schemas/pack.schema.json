@@ -183,13 +183,17 @@
         },
         "provider": {
           "type": "object",
-          "required": ["id", "manifestDigest"],
+          "required": ["id", "manifestDigest", "artifactIdentity"],
           "properties": {
             "id": {
               "$ref": "delegated-pack-provider.schema.json#/$defs/DelegatedProviderId"
             },
             "manifestDigest": {
               "$ref": "common.schema.json#/$defs/Digest"
+            },
+            "artifactIdentity": {
+              "const": "provider-attested",
+              "$comment": "The delegated executable attested the requested native identity. The host independently verified artifact bytes and digest, but did not parse the native format."
             }
           },
           "additionalProperties": false

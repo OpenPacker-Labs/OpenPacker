@@ -144,6 +144,7 @@ export async function packProject(input: {
       ? {
           id: packer.providerId,
           manifestDigest: parseDigest(packer.providerManifestDigest!),
+          artifactIdentity: 'provider-attested',
         }
       : undefined,
   );
