@@ -22,9 +22,9 @@ coverage, conformance/security/integration/e2e/compat/browser/fuzz gates, Rust
 format/clippy/tests, benchmarks, and the offline demo. Live public-provider and
 registry interoperability stays in explicit opt-in jobs and cannot replace an
 offline mandatory check. Coverage is enforced independently for every app,
-example, and package at 80% production files and 70% functions; the test
-inventory gate requires a unit suite per workspace and a non-empty oracle for
-each applicable specialized test type.
+example, and package at 100% production-file instrumentation and 70% functions;
+the test inventory gate requires a runnable suite per workspace and a
+command-bound oracle for each applicable specialized test type.
 
 Generate reviewed protocol goldens only after a successful production-path demo
 with `npm run golden:generate`, then require `npm run golden:check` to compare
