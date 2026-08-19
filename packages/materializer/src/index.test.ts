@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -398,6 +405,47 @@ describe('safe materialization', () => {
       ).rejects.toThrow('cancelled fixture');
       expect(cancelled).toBe(true);
       expect(await readdir(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a staging directory replaced before publication', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-materialize-race-'));
+    const bytes = tar([{ name: 'safe', data: 'ok' }]);
+    const descriptor = await fixtureSource(bytes).descriptor;
+    let opened!: () => void;
+    let release!: () => void;
+    const sourceOpened = new Promise<void>((resolve) => (opened = resolve));
+    const continueOpen = new Promise<void>((resolve) => (release = resolve));
+    const source: ArtifactSource = {
+      async stat(value) {
+        return { descriptor: value, rangeSupported: false };
+      },
+      async open() {
+        opened();
+        await continueOpen;
+        return streamFromBytes(bytes);
+      },
+      async listReferrers() {
+        return [];
+      },
+    };
+    try {
+      const pending = materialize({
+        source,
+        descriptor,
+        destination: join(root, 'prefix'),
+        format: 'tar',
+      });
+      await sourceOpened;
+      const staging = (await readdir(root)).find((name) =>
+        name.startsWith('.prefix.openpacker-'),
+      )!;
+      await rename(join(root, staging), join(root, `${staging}.original`));
+      await mkdir(join(root, staging));
+      release();
+      await expect(pending).rejects.toMatchObject({ code: 'UNSAFE_STAGING' });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

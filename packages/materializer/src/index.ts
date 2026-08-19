@@ -1,16 +1,25 @@
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
-  chmod,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   rename,
   rm,
   rmdir,
-  writeFile,
+  type FileHandle,
 } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import {
   collectStream,
   streamFromBytes,
@@ -152,28 +161,37 @@ export async function materialize(input: {
   const limits = input.limits ?? DEFAULT_MATERIALIZATION_LIMITS;
   validateLimits(limits);
   input.signal?.throwIfAborted();
-  if (await exists(input.destination)) {
-    if (!input.managedDestination)
-      throw new MaterializationError(
-        'DESTINATION_EXISTS',
-        'Destination already exists; materialization never merges or overwrites prefixes',
-      );
-    const stat = await lstat(input.destination);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
-    if ((await readdir(input.destination)).length > 0)
-      throw new MaterializationError(
-        'DESTINATION_EXISTS',
-        'Managed destination must be empty before atomic materialization',
-      );
-    await rmdir(input.destination);
-  }
   const parent = resolve(dirname(input.destination));
-  await mkdir(parent, { recursive: true });
-  const staging = await mkdtemp(
-    join(parent, `.${basename(input.destination)}.openpacker-`),
+  const parentHandle = await openStableDirectory(parent);
+  const target = join(
+    directoryHandlePath(parentHandle),
+    basename(input.destination),
   );
+  const staging = await mkdtemp(
+    join(
+      directoryHandlePath(parentHandle),
+      `.${basename(input.destination)}.openpacker-`,
+    ),
+  );
+  const stagingHandle = await openDirectory(staging);
+  let published = false;
   try {
+    if (await exists(target)) {
+      if (!input.managedDestination)
+        throw new MaterializationError(
+          'DESTINATION_EXISTS',
+          'Destination already exists; materialization never merges or overwrites prefixes',
+        );
+      const targetStat = await lstat(target);
+      if (!targetStat.isDirectory() || targetStat.isSymbolicLink())
+        throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
+      if ((await readdir(target)).length > 0)
+        throw new MaterializationError(
+          'DESTINATION_EXISTS',
+          'Managed destination must be empty before atomic materialization',
+        );
+      await rmdir(target);
+    }
     const bytes = await verifiedDownload(
       input.source,
       input.descriptor,
@@ -189,17 +207,16 @@ export async function materialize(input: {
     const files: MaterializedFile[] = [];
     for (const entry of entries.filter(({ type }) => type === 'directory')) {
       input.signal?.throwIfAborted();
-      await mkdir(join(staging, ...entry.path.split('/')), {
-        recursive: true,
-        mode: 0o755,
-      });
+      await ensureStageDirectory(stagingHandle, entry.path.split('/'));
     }
     for (const entry of entries.filter(({ type }) => type === 'file')) {
       input.signal?.throwIfAborted();
-      const path = join(staging, ...entry.path.split('/'));
-      await mkdir(dirname(path), { recursive: true, mode: 0o755 });
-      await writeFile(path, entry.data, { flag: 'wx', mode: entry.mode });
-      await chmod(path, entry.mode);
+      await writeStageFile(
+        stagingHandle,
+        entry.path.split('/'),
+        entry.data,
+        entry.mode,
+      );
       files.push({
         path: entry.path,
         size: entry.data.byteLength,
@@ -208,7 +225,10 @@ export async function materialize(input: {
       });
     }
     input.signal?.throwIfAborted();
-    await rename(staging, input.destination);
+    await assertNamedDirectory(staging, stagingHandle);
+    await rename(staging, target);
+    published = true;
+    await assertNamedDirectory(target, stagingHandle);
     files.sort((left, right) => compareCanonicalStrings(left.path, right.path));
     return {
       manifestVersion: '1',
@@ -220,9 +240,122 @@ export async function materialize(input: {
       lifecycleScriptsExecuted: false,
     };
   } catch (error) {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    await rm(published ? target : staging, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
+    throw error;
+  } finally {
+    await Promise.all([stagingHandle.close(), parentHandle.close()]);
+  }
+}
+
+async function openStableDirectory(path: string): Promise<FileHandle> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  let handle = await openDirectory(root);
+  try {
+    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+      const child = join(directoryHandlePath(handle), part);
+      await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      const next = await openDirectory(child);
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
     throw error;
   }
+}
+
+async function openDirectory(path: string): Promise<FileHandle> {
+  const handle = await open(
+    path,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  if (!(await handle.stat()).isDirectory()) {
+    await handle.close();
+    throw unsafe('UNSAFE_STAGING', path);
+  }
+  return handle;
+}
+
+async function ensureStageDirectory(
+  root: FileHandle,
+  parts: readonly string[],
+): Promise<void> {
+  let current = root;
+  const opened: FileHandle[] = [];
+  try {
+    for (const part of parts) {
+      const child = join(directoryHandlePath(current), part);
+      await mkdir(child, { mode: 0o755 }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        },
+      );
+      current = await openDirectory(child);
+      opened.push(current);
+    }
+  } finally {
+    await Promise.all(opened.reverse().map(async (handle) => handle.close()));
+  }
+}
+
+async function writeStageFile(
+  root: FileHandle,
+  parts: readonly string[],
+  bytes: Uint8Array,
+  mode: number,
+): Promise<void> {
+  const name = parts.at(-1)!;
+  await ensureStageDirectory(root, parts.slice(0, -1));
+  let parent = root;
+  const opened: FileHandle[] = [];
+  try {
+    for (const part of parts.slice(0, -1)) {
+      parent = await openDirectory(join(directoryHandlePath(parent), part));
+      opened.push(parent);
+    }
+    const file = await open(
+      join(directoryHandlePath(parent), name),
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      mode,
+    );
+    try {
+      await file.write(bytes);
+      await file.chmod(mode);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await Promise.all(opened.reverse().map(async (handle) => handle.close()));
+  }
+}
+
+async function assertNamedDirectory(path: string, handle: FileHandle) {
+  const [held, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(path, { bigint: true }),
+  ]);
+  if (held.dev !== named.dev || held.ino !== named.ino)
+    throw unsafe('UNSAFE_STAGING', path);
+}
+
+function directoryHandlePath(handle: FileHandle): string {
+  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
+  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
+  throw unsafe(
+    'UNSAFE_STAGING',
+    'Stable materialization handles are unavailable on this platform',
+  );
 }
 
 async function verifiedDownload(

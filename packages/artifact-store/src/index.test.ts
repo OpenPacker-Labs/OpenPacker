@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -77,6 +77,50 @@ describe('filesystem artifact store', () => {
       await expect(store.stat(descriptor)).rejects.toMatchObject({
         code: 'DIGEST_MISMATCH',
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses linked CAS objects and stops at the declared size', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-cas-'));
+    try {
+      const store = new FilesystemArtifactStore(root);
+      const expected = new TextEncoder().encode('x');
+      const descriptor = await descriptorForBytes({
+        bytes: expected,
+        descriptorId: 'bounded',
+        mediaType: 'application/octet-stream',
+        artifactType: 'application/vnd.openpacker.package',
+        nativeRole: 'package',
+      });
+      let pulls = 0;
+      let cancelled = false;
+      await expect(
+        store.putBlob(
+          new ReadableStream({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(2));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          descriptor,
+        ),
+      ).rejects.toMatchObject({ code: 'SIZE_MISMATCH' });
+      expect(pulls).toBeLessThanOrEqual(2);
+      expect(cancelled).toBe(true);
+
+      await store.initialize();
+      const outside = join(root, 'outside');
+      await writeFile(outside, expected);
+      await symlink(
+        outside,
+        join(root, 'blobs', 'sha256', descriptor.digest.value),
+      );
+      await expect(store.stat(descriptor)).rejects.toBeDefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

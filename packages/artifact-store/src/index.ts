@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
   open,
   mkdir,
   link,
   rm,
-  stat as fileStat,
+  lstat,
   writeFile,
   readFile,
 } from 'node:fs/promises';
@@ -15,6 +16,8 @@ import type {
   ArtifactStore,
   ByteRange,
 } from '@openpacker/artifact-model';
+
+const MAXIMUM_BLOB_BYTES = 1024 * 1024 * 1024;
 import {
   ArtifactIntegrityError,
   digestString,
@@ -60,49 +63,12 @@ export class FilesystemArtifactStore implements ArtifactStore {
   ): Promise<ArtifactStat> {
     signal?.throwIfAborted();
     try {
-      const actual = await fileStat(this.blobPath(descriptor));
-      if (!actual.isFile())
-        throw new ArtifactIntegrityError(
-          'ARTIFACT_NOT_FOUND',
-          descriptor,
-          'CAS object is not a regular file',
-        );
-      if (actual.size !== descriptor.size)
-        throw new ArtifactIntegrityError(
-          'SIZE_MISMATCH',
-          descriptor,
-          `CAS object has ${actual.size} bytes, expected ${descriptor.size}`,
-        );
-      const handle = await open(this.blobPath(descriptor), 'r');
-      const hash = createHash('sha256');
+      const handle = await this.openVerifiedHandle(descriptor, signal);
       try {
-        const buffer = new Uint8Array(64 * 1024);
-        let position = 0;
-        while (position < descriptor.size) {
-          signal?.throwIfAborted();
-          const { bytesRead } = await handle.read(
-            buffer,
-            0,
-            Math.min(buffer.length, descriptor.size - position),
-            position,
-          );
-          if (bytesRead === 0) break;
-          hash.update(buffer.subarray(0, bytesRead));
-          position += bytesRead;
-        }
-        if (
-          position !== descriptor.size ||
-          hash.digest('hex') !== descriptor.digest.value
-        )
-          throw new ArtifactIntegrityError(
-            'DIGEST_MISMATCH',
-            descriptor,
-            'CAS object content does not match its digest',
-          );
+        return { descriptor, rangeSupported: true };
       } finally {
         await handle.close();
       }
-      return { descriptor, rangeSupported: true };
     } catch (error) {
       if (error instanceof ArtifactIntegrityError) throw error;
       if (
@@ -127,13 +93,12 @@ export class FilesystemArtifactStore implements ArtifactStore {
     signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
     validateRange(range);
-    await this.stat(descriptor, signal);
     const start = range?.offset ?? 0;
     if (start > descriptor.size)
       throw new RangeError('Range starts after artifact end');
     const available = descriptor.size - start;
     const length = Math.min(range?.length ?? available, available);
-    const handle = await open(this.blobPath(descriptor), 'r');
+    const handle = await this.openVerifiedHandle(descriptor, signal);
     let position = start;
     let remaining = length;
     return new ReadableStream<Uint8Array>({
@@ -179,6 +144,71 @@ export class FilesystemArtifactStore implements ArtifactStore {
     });
   }
 
+  private async openVerifiedHandle(
+    descriptor: ArtifactDescriptor,
+    signal?: AbortSignal,
+  ) {
+    const path = this.blobPath(descriptor);
+    const handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
+    try {
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile())
+        throw new ArtifactIntegrityError(
+          'ARTIFACT_NOT_FOUND',
+          descriptor,
+          'CAS object is not a regular file',
+        );
+      if (before.size !== BigInt(descriptor.size))
+        throw new ArtifactIntegrityError(
+          'SIZE_MISMATCH',
+          descriptor,
+          `CAS object has ${before.size} bytes, expected ${descriptor.size}`,
+        );
+      const hash = createHash('sha256');
+      const buffer = new Uint8Array(64 * 1024);
+      let position = 0;
+      while (position < descriptor.size) {
+        signal?.throwIfAborted();
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          Math.min(buffer.length, descriptor.size - position),
+          position,
+        );
+        if (bytesRead === 0) break;
+        hash.update(buffer.subarray(0, bytesRead));
+        position += bytesRead;
+      }
+      const [after, named] = await Promise.all([
+        handle.stat({ bigint: true }),
+        lstat(path, { bigint: true }),
+      ]);
+      if (
+        position !== descriptor.size ||
+        hash.digest('hex') !== descriptor.digest.value ||
+        before.dev !== after.dev ||
+        before.ino !== after.ino ||
+        before.size !== after.size ||
+        before.ctimeNs !== after.ctimeNs ||
+        before.mtimeNs !== after.mtimeNs ||
+        after.dev !== named.dev ||
+        after.ino !== named.ino
+      )
+        throw new ArtifactIntegrityError(
+          'DIGEST_MISMATCH',
+          descriptor,
+          'CAS object content or identity changed during verification',
+        );
+      return handle;
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      throw error;
+    }
+  }
+
   async putBlob(
     stream: ReadableStream<Uint8Array>,
     expected?: ArtifactDescriptor,
@@ -200,9 +230,17 @@ export class FilesystemArtifactStore implements ArtifactStore {
         const { done, value } = await reader.read();
         if (done) break;
         if (!value) continue;
+        if (value.byteLength > MAXIMUM_BLOB_BYTES - size)
+          throw new RangeError(
+            `Artifact exceeded the ${MAXIMUM_BLOB_BYTES} byte store limit`,
+          );
+        if (expected !== undefined && value.byteLength > expected.size - size)
+          throw new ArtifactIntegrityError(
+            'SIZE_MISMATCH',
+            expected,
+            `Artifact exceeded its declared ${expected.size} bytes`,
+          );
         size += value.byteLength;
-        if (!Number.isSafeInteger(size))
-          throw new RangeError('Artifact exceeds safe integer size');
         hash.update(value);
         await handle.write(value);
       }
@@ -252,6 +290,7 @@ export class FilesystemArtifactStore implements ArtifactStore {
       }
       return descriptor;
     } catch (error) {
+      await reader.cancel(error).catch(() => undefined);
       await handle.close().catch(() => undefined);
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
