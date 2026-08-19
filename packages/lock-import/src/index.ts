@@ -474,7 +474,10 @@ export function parseRequirementsTxt(text: string): {
   for (const rawLine of text.split(/\r?\n/u)) {
     lineNumber += 1;
     const uncommented = rawLine.split('#')[0]!;
-    if (/(?:^|\s)--hash(?:=|\s|$)/u.test(uncommented))
+    // `--hash` anywhere on the line, not just as a whitespace-delimited token:
+    // `idna==3.7--hash=sha256:x` would otherwise smuggle a hash into the
+    // version token.
+    if (/--hash/u.test(uncommented))
       throw new ProviderError(
         'INVALID_LOCKFILE',
         `requirements.txt line ${lineNumber} contains an artifact hash that cannot be represented losslessly`,

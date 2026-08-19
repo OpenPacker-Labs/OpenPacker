@@ -170,6 +170,10 @@ describe('requirements.txt import', () => {
     expect(() =>
       parseRequirementsTxt('idna==3.7 --hash=sha256:abc --hash=sha256:def\n'),
     ).toThrow(/artifact hash.*losslessly/u);
+    // No space before the option: the hash must not slip into the version.
+    expect(() => parseRequirementsTxt('idna==3.7--hash=sha256:abc\n')).toThrow(
+      /artifact hash.*losslessly/u,
+    );
   });
 
   it('normalises names the way PyPI does', () => {
