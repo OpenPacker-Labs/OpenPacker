@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
+import { packageNodeId } from '@openpacker/adapter-core';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import type {
   JsonValue,
@@ -30,13 +31,21 @@ const source = {
   uri: 'https://fixtures.openpacker.dev/catalog',
 };
 
-function packageInstance(character: string, version: string): PackageInstance {
-  const nodeId = `sha256:${character.repeat(64)}`;
+async function packageInstance(
+  character: string,
+  version: string,
+): Promise<PackageInstance> {
+  const exactPurl = `pkg:npm/%40openpacker/demo-tool@${version}`;
+  const nodeId = await packageNodeId({
+    exactPurl,
+    qualifiers: {},
+    nativeSemanticsVersion: 'npm-v1',
+  });
   return {
     nodeId,
     identity: {
       canonicalPurl: 'pkg:npm/%40openpacker/demo-tool',
-      exactPurl: `pkg:npm/%40openpacker/demo-tool@${version}`,
+      exactPurl,
       purlType: 'npm',
       namespace: '@openpacker',
       name: 'demo-tool',
@@ -79,7 +88,10 @@ const snapshot = {
 };
 const universe: ResolutionUniverse = {
   universeVersion: '1',
-  packages: [packageInstance('1', '1.0.0'), packageInstance('2', '1.1.0')],
+  packages: await Promise.all([
+    packageInstance('1', '1.0.0'),
+    packageInstance('2', '1.1.0'),
+  ]),
   overlays: [],
   sourceSnapshots: [snapshot],
   lifecycleRoot: digest('d'),
@@ -239,7 +251,7 @@ describe('openpackerd', () => {
     expect(solved.statusCode, solved.body).toBe(200);
     const response = solved.json();
     expect(response.solution.selectedNodeIds).toEqual([
-      `sha256:${'2'.repeat(64)}`,
+      universe.packages[1]!.nodeId,
     ]);
     expect(response.signedReceipt.signatures).toHaveLength(1);
     for (const profile of [
@@ -251,13 +263,16 @@ describe('openpackerd', () => {
         url: '/v1/solve',
         payload: {
           ...request,
-          environment: { installed: [], locked: [`sha256:${'2'.repeat(64)}`] },
+          environment: {
+            installed: [],
+            locked: [universe.packages[1]!.nodeId],
+          },
           semantics: { ...request.semantics, profile },
         },
       });
       expect(native.statusCode, native.body).toBe(200);
       expect(native.json().solution.selectedNodeIds).toEqual([
-        `sha256:${'2'.repeat(64)}`,
+        universe.packages[1]!.nodeId,
       ]);
       expect(native.json().solution.semanticLoss).toEqual(
         expect.arrayContaining([

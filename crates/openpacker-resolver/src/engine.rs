@@ -66,7 +66,19 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
     let mut requirement_ids = BTreeSet::new();
     let mut requirement_count = 0usize;
     for package in &universe.packages {
-        validate_sha256(&package.node_id, "nodeId")?;
+        crate::normalize::validate_package_identity(&package.identity)?;
+        crate::normalize::validate_package_versions(
+            &package.identity,
+            &package.normalized_version,
+            &package.version_sort_key,
+        )?;
+        let expected_node_id = package_node_id(package)?;
+        if package.node_id != expected_node_id {
+            return Err(ResolverError::InvalidInput(format!(
+                "nodeId does not match package-node-v1 projection for {}",
+                package.identity.exact_purl.as_deref().unwrap_or("package")
+            )));
+        }
         if !ids.insert(&package.node_id) {
             return Err(ResolverError::InvalidInput(format!(
                 "duplicate nodeId {}",
@@ -139,6 +151,24 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
         }
     }
     Ok(())
+}
+
+fn package_node_id(package: &PackageInstance) -> Result<String, ResolverError> {
+    let version = package
+        .native_semantics
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ResolverError::InvalidInput("nativeSemantics.version must be a string".into())
+        })?;
+    let projection = json!({
+        "identity": {
+            "exactPurl": package.identity.exact_purl,
+            "qualifiers": package.identity.qualifiers,
+        },
+        "nativeSemantics": { "version": version },
+    });
+    Ok(digest_json(&projection)?.as_string())
 }
 
 pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverError> {
@@ -231,6 +261,15 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             ));
         }
     }
+    let mut amendment_digests = BTreeSet::new();
+    for digest in &input.request.policy.accepted_amendment_digests {
+        validate_digest(digest, "acceptedAmendmentDigests")?;
+        if !amendment_digests.insert(digest.as_string()) {
+            return Err(ResolverError::InvalidInput(
+                "acceptedAmendmentDigests must be unique".into(),
+            ));
+        }
+    }
     if let Some(platforms) = &input.request.platforms {
         if platforms
             .host
@@ -276,12 +315,23 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
 /// nothing but are still recorded in the explanation.
 pub fn partition_amendments(input: &SolveInput) -> (Vec<usize>, Vec<usize>) {
     let accepted = &input.request.policy.accepted_amendment_authorities;
+    let accepted_digests: BTreeSet<_> = input
+        .request
+        .policy
+        .accepted_amendment_digests
+        .iter()
+        .map(Digest::as_string)
+        .collect();
     let (admitted, ignored): (Vec<_>, Vec<_>) = input
         .universe
         .amendments
         .iter()
         .enumerate()
-        .partition(|(_, amendment)| accepted.contains(&amendment.authority));
+        .partition(|(_, amendment)| {
+            accepted.contains(&amendment.authority)
+                && digest_json(amendment)
+                    .is_ok_and(|digest| accepted_digests.contains(&digest.as_string()))
+        });
     (
         admitted.into_iter().map(|(index, _)| index).collect(),
         ignored.into_iter().map(|(index, _)| index).collect(),
@@ -310,21 +360,6 @@ fn validate_digest(digest: &Digest, field: &str) -> Result<(), ResolverError> {
         )));
     }
     Ok(())
-}
-
-fn validate_sha256(value: &str, field: &str) -> Result<(), ResolverError> {
-    let Some(value) = value.strip_prefix("sha256:") else {
-        return Err(ResolverError::InvalidInput(format!(
-            "{field} must be a canonical sha256 digest"
-        )));
-    };
-    validate_digest(
-        &Digest {
-            algorithm: "sha256".into(),
-            value: value.into(),
-        },
-        field,
-    )
 }
 
 fn validate_expression(

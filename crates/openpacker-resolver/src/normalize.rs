@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use crate::{ResolverError, VersionConstraint};
+use crate::{PackageIdentity, ResolverError, VersionConstraint};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Purl {
     kind: String,
     namespace: Option<String>,
@@ -310,7 +310,7 @@ fn normalize_pypi_name(name: &str) -> Result<String, ResolverError> {
     Ok(output)
 }
 
-pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
+fn canonical_purl(value: &str) -> Result<Purl, ResolverError> {
     let mut purl = parse_purl(value)?;
     let policy = purl_policy(purl.kind.as_str());
     match policy.namespace {
@@ -349,6 +349,10 @@ pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
             VersionPolicy::Preserve => Some(version.trim().to_owned()),
         };
     }
+    Ok(purl)
+}
+
+fn format_purl(purl: Purl) -> String {
     let mut path = purl
         .namespace
         .iter()
@@ -383,7 +387,105 @@ pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
                 .join("/"),
         );
     }
-    Ok(format!("pkg:{}/{path}", purl.kind))
+    format!("pkg:{}/{path}", purl.kind)
+}
+
+pub fn normalize_purl(value: &str) -> Result<String, ResolverError> {
+    Ok(format_purl(canonical_purl(value)?))
+}
+
+pub(crate) fn validate_package_identity(identity: &PackageIdentity) -> Result<(), ResolverError> {
+    let exact = identity
+        .exact_purl
+        .as_deref()
+        .ok_or_else(|| invalid("package identity has no exactPurl"))?;
+    let parsed = canonical_purl(exact)?;
+    if parsed.version.is_none() || format_purl(parsed.clone()) != exact {
+        return Err(invalid("exactPurl must be canonical and versioned"));
+    }
+    let mut base = parsed.clone();
+    base.version = None;
+    let checks = [
+        (
+            identity.canonical_purl == format_purl(base),
+            "canonicalPurl",
+        ),
+        (identity.purl_type == parsed.kind, "purlType"),
+        (identity.namespace == parsed.namespace, "namespace"),
+        (identity.name == parsed.name, "name"),
+        (identity.version == parsed.version, "version"),
+        (identity.qualifiers == parsed.qualifiers, "qualifiers"),
+        (identity.subpath == parsed.subpath, "subpath"),
+    ];
+    if let Some((_, field)) = checks.into_iter().find(|(matches, _)| !matches) {
+        return Err(invalid(format!(
+            "package identity {field} contradicts exactPurl"
+        )));
+    }
+    Ok(())
+}
+
+fn nix_version_sort_key(version: &str) -> String {
+    let mut components = Vec::new();
+    let mut current = String::new();
+    let mut digits = None;
+    for character in version.chars() {
+        if matches!(character, '.' | '-') {
+            if !current.is_empty() {
+                components.push(std::mem::take(&mut current));
+            }
+            digits = None;
+            continue;
+        }
+        let is_digit = character.is_ascii_digit();
+        if digits.is_some_and(|value| value != is_digit) {
+            components.push(std::mem::take(&mut current));
+        }
+        digits = Some(is_digit);
+        current.push(character);
+    }
+    if !current.is_empty() {
+        components.push(current);
+    }
+    components
+        .into_iter()
+        .map(|component| {
+            if component.bytes().all(|byte| byte.is_ascii_digit()) {
+                format!("{component:0>12}")
+            } else {
+                component
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+pub(crate) fn validate_package_versions(
+    identity: &PackageIdentity,
+    normalized_version: &str,
+    version_sort_key: &str,
+) -> Result<(), ResolverError> {
+    let exact = identity
+        .exact_purl
+        .as_deref()
+        .ok_or_else(|| invalid("package identity has no exactPurl"))?;
+    let parsed = canonical_purl(exact)?;
+    let version = parsed
+        .version
+        .as_deref()
+        .ok_or_else(|| invalid("exactPurl has no version"))?;
+    if normalized_version != version {
+        return Err(invalid("normalizedVersion contradicts exactPurl"));
+    }
+    let expected_sort_key = if parsed.kind == "nix" {
+        nix_version_sort_key(version)
+    } else {
+        version.to_owned()
+    };
+    if version_sort_key != expected_sort_key {
+        return Err(invalid("versionSortKey contradicts exactPurl"));
+    }
+    Ok(())
 }
 
 fn comparison(clause: &str) -> Result<(Value, String), ResolverError> {
@@ -494,6 +596,14 @@ mod tests {
         assert_eq!(
             parse_vers(vers.vers.as_deref().unwrap()).unwrap().vers,
             vers.vers
+        );
+    }
+
+    #[test]
+    fn nix_sort_keys_are_derived_from_the_exact_version() {
+        assert_eq!(
+            nix_version_sort_key("2.10pre3"),
+            "000000000002.000000000010.pre.000000000003"
         );
     }
 }

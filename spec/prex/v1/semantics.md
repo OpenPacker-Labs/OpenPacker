@@ -181,10 +181,15 @@ fact. The `PackageInstance` it applies to is preserved verbatim, and
 written against.
 
 Amendments apply only when `policy.acceptedAmendmentAuthorities` admits their
-authority. When that list is absent or empty, amendments contribute nothing and
-the resulting `solutionDigest` MUST be identical to the same universe without
-them; implementations MUST still record that an amendment was present and
-ignored, in the explanation graph rather than the solution.
+authority AND `policy.acceptedAmendmentDigests` pins the amendment's canonical
+digest: the SHA-256 digest, per `canonicalization.md`, of the complete
+`UniverseAmendment` value with no projection applied (no paths excluded, no
+arrays reordered). When either condition fails — the authority list is absent or
+empty, or the digest pin list does not contain the amendment's digest — the
+amendment contributes nothing and the resulting `solutionDigest` MUST be
+identical to the same universe without it; implementations MUST still record
+that an amendment was present and ignored, in the explanation graph rather than
+the solution.
 
 Admitted amendments compile into a **derived universe**: the original package
 facts are left intact and the amended universe is what search, proof

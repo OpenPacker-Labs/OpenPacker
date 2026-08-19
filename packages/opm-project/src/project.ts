@@ -676,6 +676,9 @@ async function resolveTransitive(input: {
           dependencyDepth: 1,
           fromRegistryArtifactRecord: true,
           lifecycleScriptsExecuted: false,
+          lifecycle: instance.lifecycle,
+          semanticLoss: instance.semanticLoss,
+          sourceSnapshotDigests: instance.sourceSnapshots,
           ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
         },
       );

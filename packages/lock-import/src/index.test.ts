@@ -68,11 +68,12 @@ describe('lock-import planning', () => {
     );
     expect(input.universe.packages).toHaveLength(2);
     for (const purl of input.request.environment.locked) {
-      expect(
-        input.universe.packages.some(
-          (item) => item.identity.exactPurl === purl,
-        ),
-      ).toBe(true);
+      const item = input.universe.packages.find(
+        (candidate) => candidate.identity.exactPurl === purl,
+      );
+      expect(item).toBeDefined();
+      expect(item?.identity.version).toBe(item?.nativeVersion);
+      expect(item?.identity.canonicalPurl).not.toContain('@');
     }
   });
 

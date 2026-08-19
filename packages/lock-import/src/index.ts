@@ -853,7 +853,8 @@ async function minimalInstanceFromLockEntry(
           ? {}
           : { namespace: parsed.namespace }),
         name: parsed.name,
-        qualifiers: {},
+        qualifiers: parsed.qualifiers,
+        ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
       }),
       exactPurl,
       purlType: parsed.type,
@@ -861,7 +862,9 @@ async function minimalInstanceFromLockEntry(
         ? {}
         : { namespace: parsed.namespace }),
       name: parsed.name,
+      version: parsed.version,
       qualifiers: { ...parsed.qualifiers },
+      ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
       nativeCoordinates: [
         {
           ecosystem,

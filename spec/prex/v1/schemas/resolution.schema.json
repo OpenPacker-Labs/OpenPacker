@@ -409,7 +409,7 @@
           "$ref": "common.schema.json#/$defs/Extensions"
         },
         "amendments": {
-          "$comment": "Authority-gated supersessions. Ignored unless policy.acceptedAmendmentAuthorities admits their authority.",
+          "$comment": "Authority- and digest-gated supersessions. Ignored unless policy accepts both the amendment authority and its canonical digest (SHA-256 over the canonicalization.md canonical bytes of the full amendment value, no projection) pinned in policy.acceptedAmendmentDigests.",
           "type": "array",
           "maxItems": 10000,
           "items": {
@@ -759,7 +759,7 @@
           "$ref": "common.schema.json#/$defs/Extensions"
         },
         "acceptedAmendmentAuthorities": {
-          "$comment": "Absent or empty means amendments are ignored with a warning; solutions are then identical to an amendment-free universe.",
+          "$comment": "Authority labels are claims, not proof. An amendment is admitted only when its authority and exact digest are both accepted.",
           "type": "array",
           "maxItems": 5,
           "uniqueItems": true,
@@ -771,6 +771,15 @@
               "user",
               "test-fixture"
             ]
+          }
+        },
+        "acceptedAmendmentDigests": {
+          "$comment": "Exact canonical amendment digests independently pinned by the policy authority.",
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/Digest"
           }
         }
       },

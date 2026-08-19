@@ -137,6 +137,40 @@ describe('supply-chain capture from npm inspect (real provider path)', () => {
     expect(facts.publishedAt).toBeUndefined();
     expect(facts.lifecycleScriptsDeclared).toBe(false);
   });
+
+  it('preserves provider lifecycle and semantic-loss facts', async () => {
+    const provider = await providerFor('npm', { transport: npmTransport() });
+    const inspection = await provider.inspect('pkg:npm/demo@1.1.0');
+    inspection.package.lifecycle = {
+      status: 'revoked',
+      eligible: false,
+      warnings: [],
+    };
+    inspection.package.semanticLoss = [
+      {
+        code: 'TEST_LOSS',
+        severity: 'error',
+        message: 'must survive capture',
+        path: '/package',
+        source: { type: 'metadata', uri: 'test://inspection' },
+        reversible: false,
+      },
+    ];
+    const facts = captureFactsFromInspection(inspection, {
+      evaluationTime: '2026-08-04T00:00:00.000Z',
+    });
+    expect(facts.lifecycle?.status).toBe('revoked');
+    expect(facts.semanticLoss?.[0]?.code).toBe('TEST_LOSS');
+    expect(facts.sourceSnapshotDigests).toEqual(
+      inspection.package.sourceSnapshots,
+    );
+    await expect(
+      assertSupplyChainAllowed(
+        policyDocumentFromPolicyInput(defaultSupplyChainPolicyInput()),
+        facts,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+  });
 });
 
 describe('project policy governance (committed opm.toml)', () => {
@@ -429,6 +463,34 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
     await expect(assertSupplyChainAllowed(policy, facts)).rejects.toMatchObject(
       {
         code: 'POLICY_DENIED',
+      },
+    );
+  });
+
+  it('refuses a direct https source with no lifecycle evidence (withdrawn default)', async () => {
+    // captureFactsFromSourceUri no longer fabricates a lifecycle state, and an
+    // explicit https tarball has no registry to reduce one from. The policy
+    // fails closed (indeterminate) rather than assuming eligibility.
+    const policy = policyDocumentFromPolicyInput(baseInput);
+    const facts = captureFactsFromSourceUri(
+      'pkg:npm/demo@1.0.0',
+      'https://cdn.example.invalid/demo/-/demo-1.0.0.tgz',
+      { evaluationTime: '2026-08-04T00:00:00.000Z' },
+    );
+    expect(facts.lifecycle).toBeUndefined();
+    const result = await evaluatePolicy(policy, facts);
+    expect(result.decision).toBe('indeterminate');
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'lifecycle.eligibility',
+          status: 'not-provided',
+        }),
+      ]),
+    );
+    await expect(assertSupplyChainAllowed(policy, facts)).rejects.toMatchObject(
+      {
+        code: 'POLICY_INDETERMINATE',
       },
     );
   });
