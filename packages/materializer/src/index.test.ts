@@ -255,6 +255,50 @@ describe('safe materialization', () => {
     }
   });
 
+  it('owns streamed chunks before hashing and assembling the archive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-owned-stream-'));
+    const destination = join(root, 'prefix');
+    const bytes = tar([{ name: 'proof', data: 'immutable\n' }]);
+    const descriptor = await descriptorForBytes({
+      bytes,
+      descriptorId: 'mutable-stream',
+      mediaType: 'application/x-tar',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+    });
+    const first = bytes.slice(0, 512);
+    const second = bytes.slice(512);
+    let pull = 0;
+    const source: ArtifactSource = {
+      async stat(value) {
+        return { descriptor: value, rangeSupported: false };
+      },
+      async open() {
+        return new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (pull++ === 0) controller.enqueue(first);
+            else if (pull === 2) {
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              first.fill(0);
+              controller.enqueue(second);
+            } else controller.close();
+          },
+        });
+      },
+      async listReferrers() {
+        return [];
+      },
+    };
+    try {
+      await materialize({ source, descriptor, destination, format: 'tar' });
+      expect(await readFile(join(destination, 'proof'), 'utf8')).toBe(
+        'immutable\n',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('atomically replaces only an explicitly managed empty prefix', async () => {
     const root = await mkdtemp(join(tmpdir(), 'openpacker-managed-prefix-'));
     const destination = join(root, 'prefix');
@@ -353,6 +397,13 @@ describe('safe materialization', () => {
         maximumExpandedBytes: 4,
       }),
     ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
+    const one = tar([{ name: 'one', data: '1' }]);
+    await expect(
+      inspectArchive(one, 'tar', {
+        ...DEFAULT_MATERIALIZATION_LIMITS,
+        maximumMemoryBytes: one.byteLength * 2,
+      }),
+    ).rejects.toMatchObject({ code: 'MEMORY_LIMIT' });
     await expect(
       inspectArchive(
         storedZipEntries([

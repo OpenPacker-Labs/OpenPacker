@@ -35,15 +35,17 @@ export interface MaterializationLimits {
   maximumExpandedBytes: number;
   maximumCompressedBytes: number;
   maximumCompressionRatio: number;
+  maximumMemoryBytes: number;
   maximumPathBytes: number;
   maximumDepth: number;
 }
 
 export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumFiles: 10_000,
-  maximumExpandedBytes: 1024 * 1024 * 1024,
-  maximumCompressedBytes: 512 * 1024 * 1024,
-  maximumCompressionRatio: 100,
+  maximumExpandedBytes: 64 * 1024 * 1024,
+  maximumCompressedBytes: 64 * 1024 * 1024,
+  maximumCompressionRatio: 20,
+  maximumMemoryBytes: 192 * 1024 * 1024,
   maximumPathBytes: 4096,
   maximumDepth: 128,
 };
@@ -129,6 +131,11 @@ export async function inspectArchive(
     bytes.byteLength * limits.maximumCompressionRatio,
   );
   const gzipLimit = Math.min(limits.maximumExpandedBytes, ratioLimit);
+  assertMemoryBudget(
+    bytes.byteLength,
+    format === 'tar+gzip' ? gzipLimit : bytes.byteLength,
+    limits,
+  );
   const expanded =
     format === 'tar+gzip'
       ? await decompress(
@@ -143,6 +150,7 @@ export async function inspectArchive(
       : bytes;
   if (format === 'tar+gzip')
     validateRatio(expanded.byteLength, bytes.byteLength, limits);
+  assertMemoryBudget(bytes.byteLength, expanded.byteLength, limits);
   const entries =
     format === 'zip'
       ? await parseZip(bytes, limits, signal)
@@ -385,8 +393,9 @@ async function verifiedDownload(
           'SIZE_MISMATCH',
           'Artifact stream exceeded its declared or configured size',
         );
-      hash.update(item.value);
-      chunks.push(item.value);
+      const chunk = Uint8Array.from(item.value);
+      hash.update(chunk);
+      chunks.push(chunk);
     }
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
@@ -411,6 +420,11 @@ async function verifiedDownload(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  if (createHash('sha256').update(bytes).digest('hex') !== digest)
+    throw new MaterializationError(
+      'DIGEST_MISMATCH',
+      'Artifact bytes changed after stream verification',
+    );
   return bytes;
 }
 
@@ -567,6 +581,7 @@ async function parseZip(
       if (expandedSize > limits.maximumExpandedBytes - declaredExpanded)
         throw unsafe('EXPANDED_SIZE_LIMIT', path);
       declaredExpanded += expandedSize;
+      assertMemoryBudget(bytes.byteLength, declaredExpanded, limits);
     }
     if (!directory) validateRatio(expandedSize, compressedSize, limits);
     let data: Uint8Array;
@@ -585,6 +600,7 @@ async function parseZip(
       if (data.byteLength > limits.maximumExpandedBytes - actualExpanded)
         throw unsafe('EXPANDED_SIZE_LIMIT', path);
       actualExpanded += data.byteLength;
+      assertMemoryBudget(bytes.byteLength, actualExpanded, limits);
     }
     validateRatio(data.byteLength, compressedSize, limits);
     if (!directory && crc32(data) !== crc) throw unsafe('CRC_MISMATCH', path);
@@ -676,6 +692,15 @@ function validateRatio(
     (compressed === 0 || expanded / compressed > limits.maximumCompressionRatio)
   )
     throw unsafe('COMPRESSION_RATIO_LIMIT', `${expanded}/${compressed}`);
+}
+
+function assertMemoryBudget(
+  compressed: number,
+  expanded: number,
+  limits: MaterializationLimits,
+): void {
+  if (compressed + expanded * 2 > limits.maximumMemoryBytes)
+    throw unsafe('MEMORY_LIMIT', `${compressed}+2*${expanded}`);
 }
 
 function validateLimits(limits: MaterializationLimits): void {
