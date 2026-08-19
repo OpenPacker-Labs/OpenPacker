@@ -368,6 +368,9 @@ export async function writeStableFileAt(
       mode,
     );
     await file.writeFile(contents);
+    // O_CREAT applies mode through the umask; chmod the open handle so a
+    // requested mode (0o755 bin shims) holds regardless of the umask.
+    await file.chmod(mode);
     await file.sync();
     const opened = await file.stat({ bigint: true });
     const named = await lstat(temporary, { bigint: true });

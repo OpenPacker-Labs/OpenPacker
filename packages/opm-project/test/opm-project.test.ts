@@ -226,6 +226,28 @@ describe('path containment', () => {
     ).rejects.toBeInstanceOf(OpmError);
   });
 
+  it('guarantees shim mode 0o755 regardless of umask', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-shim-mode-'));
+    temps.push(dir);
+    const storeRoot = join(dir, 'store');
+    await mkdir(join(storeRoot, 'package', 'lib'), { recursive: true });
+    await writeFile(join(storeRoot, 'package', 'lib', 'tool.js'), '#!x\n');
+    // vitest runs each file in its own fork, and tests within a file are
+    // sequential, so tightening the process umask here cannot race.
+    const previous = process.umask(0o077);
+    try {
+      await writeBinShims({
+        binDir: join(dir, 'bin'),
+        storeRoot,
+        bins: [{ name: 'tool', path: 'package/lib/tool.js' }],
+      });
+    } finally {
+      process.umask(previous);
+    }
+    const info = await lstat(join(dir, 'bin', 'tool'));
+    expect(info.mode & 0o777).toBe(0o755);
+  });
+
   it('writes a Python launcher that puts every store root on PYTHONPATH', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'opm-py-shim-'));
     temps.push(dir);
