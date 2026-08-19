@@ -4,9 +4,11 @@ import {
   accessSync,
   constants,
   existsSync,
+  readFileSync,
   realpathSync,
   statSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { delimiter, dirname, extname, isAbsolute, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -74,12 +76,44 @@ function run(cli, args, stdio) {
   );
 }
 
+function verifyScannerDependencies(cli) {
+  let directory = dirname(cli);
+  for (let depth = 0; depth < 3; depth += 1) {
+    const manifestPath = join(directory, 'package.json');
+    if (existsSync(manifestPath)) {
+      let manifest;
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      } catch (error) {
+        fail(`unable to inspect scanner package: ${error.message}`);
+      }
+      if (manifest.name === '@openai/codex-security') {
+        if (manifest.dependencies?.['extract-zip'] !== undefined) {
+          fail('reviewed scanner must not depend on vulnerable extract-zip.');
+        }
+        try {
+          createRequire(manifestPath).resolve('extract-zip');
+        } catch (error) {
+          if (error?.code === 'MODULE_NOT_FOUND') return;
+          fail(`unable to resolve scanner dependencies: ${error.message}`);
+        }
+        fail('vulnerable extract-zip is reachable from the scanner package.');
+      }
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  fail('unable to locate the reviewed scanner package manifest.');
+}
+
 const forwarded = process.argv.slice(2);
 if (forwarded.some((value) => value !== '--dry-run')) {
   fail('only --dry-run is accepted by the repository scan wrapper.');
 }
 
 const cli = executable();
+verifyScannerDependencies(cli);
 const identity = run(cli, ['info', '--format', 'json'], 'pipe');
 if (identity.error || identity.status !== 0) {
   fail(

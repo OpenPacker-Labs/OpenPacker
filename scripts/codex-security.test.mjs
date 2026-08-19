@@ -9,6 +9,11 @@ test('pins identity and denies scan-policy overrides', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'openpacker-codex-security-'));
   const cli = join(directory, 'codex-security.js');
   const capture = join(directory, 'args.json');
+  const manifest = join(directory, 'package.json');
+  await writeFile(
+    manifest,
+    JSON.stringify({ name: '@openai/codex-security', dependencies: {} }),
+  );
   await writeFile(
     cli,
     `const { writeFileSync } = require('node:fs');
@@ -54,6 +59,26 @@ if (process.argv[2] === 'info') {
       );
       assert.notEqual(denied.status, 0);
     }
+
+    await rm(capture);
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        name: '@openai/codex-security',
+        dependencies: { 'extract-zip': '2.0.1' },
+      }),
+    );
+    const vulnerable = spawnSync(
+      process.execPath,
+      ['scripts/codex-security.mjs', '--dry-run'],
+      { cwd: process.cwd(), encoding: 'utf8', env: environment },
+    );
+    assert.notEqual(vulnerable.status, 0);
+    assert.match(
+      vulnerable.stderr,
+      /must not depend on vulnerable extract-zip/u,
+    );
+    await assert.rejects(readFile(capture, 'utf8'));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

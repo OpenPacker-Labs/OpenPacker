@@ -1,0 +1,56 @@
+diff --git a/sdk/typescript/package.json b/sdk/typescript/package.json
+index e29413c..c5b8a84 100644
+--- a/sdk/typescript/package.json
++++ b/sdk/typescript/package.json
+@@ -59,7 +59,6 @@
+     "@openai/codex": "0.148.0-alpha.8",
+     "@openai/codex-sdk": "0.148.0-alpha.8",
+     "ajv": "8.20.0",
+-    "extract-zip": "2.0.1",
+     "fast-uri": "3.1.5",
+     "fflate": "0.8.2",
+     "incur": "0.4.13",
+diff --git a/sdk/typescript/src/runtime.ts b/sdk/typescript/src/runtime.ts
+index 13c41f2..30bd875 100644
+--- a/sdk/typescript/src/runtime.ts
++++ b/sdk/typescript/src/runtime.ts
+@@ -28,7 +28,6 @@ import { fileURLToPath } from "node:url";
+ import { promisify } from "node:util";
+ import { crc32 } from "node:zlib";
+ import { setTimeout as delay } from "node:timers/promises";
+-import extractZip from "extract-zip";
+ import { parse } from "smol-toml";
+ import {
+   CodexSecurityError,
+@@ -40,6 +39,31 @@ import {
+ import type { JsonObject } from "./config.js";
+ import { resolveTrustedExecutable } from "./trusted-executable.js";
+ 
++interface DisabledZipOptions {
++  dir: string;
++  defaultDirMode?: number;
++  defaultFileMode?: number;
++  onEntry?: (
++    entry: {
++      fileName: string;
++      externalFileAttributes: number;
++      uncompressedSize: number;
++      versionMadeBy: number;
++      crc32: number;
++    },
++    archive: { entryCount: number },
++  ) => void;
++}
++
++async function extractZip(
++  _archive: string,
++  _options: DisabledZipOptions,
++): Promise<void> {
++  throw new PluginBootstrapError(
++    "Plugin ZIP installation is disabled because extract-zip has no patched release; use a plugin directory.",
++  );
++}
++
+ const execFile = promisify(execFileCallback);
+ 
+ export const MARKETPLACE_NAME = "codex-security-sdk";
