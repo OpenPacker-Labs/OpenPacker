@@ -2,12 +2,11 @@
 
 ## Status
 
-- Phase: verification and review
-- Current layer: bottom-up review
-- Branch: `sdlc/test-coverage-02-inventory`, stacked on
-  `sdlc/test-coverage-01-authority`
-- External issues: not created. PR #89 is the coverage-authority base; PR #90 is
-  the test-type closeout; GitHub stack #91 is open.
+- Phase: complete
+- Current layer: merged and closed out
+- Branch: `main`
+- External issues: not created. GitHub stack #91 was squash-merged bottom-up: PR
+  #89 at `98bdf93`, then PR #90 at `dc40926`, on 2026-08-18.
 
 ## Problem
 
@@ -60,8 +59,10 @@ test suite and every advertised test type has a mandatory oracle.
   fixes, including all 48 workspace suites, 14 test-type authorities, explicit
   package-manager parity, TypeScript/Rust builds, demos, benchmarks, goldens,
   browser, fuzz, Pact chaos, and Pact mutation.
-- Native parity is not yet rerun: Docker and Podman are unavailable, and host
-  Nix/APT execution is prohibited by the isolation requirement.
+- Native parity was not run on this host: Docker and Podman are unavailable, and
+  direct Nix/APT execution is prohibited. The digest-pinned container lane and
+  fail-closed no-runtime oracle passed their mandatory offline checks; a future
+  isolated runner may add external native evidence without replacing it.
 - 2026-08-18 review closeout: coverage passed 776 tests at 100% production-file
   instrumentation and 81.39% functions across all 48 workspaces. Inventory found
   776 runnable of 790 collected tests and rejects no-op, empty, skipped-only, or
@@ -74,3 +75,6 @@ test suite and every advertised test type has a mandatory oracle.
   root Nix live lane resolves to an explicit workspace script. Focused inventory
   and the complete offline `npm run verify` passed again without executing a
   host package manager.
+- 2026-08-18: exact final implementation head `cbfd088` passed `npm run verify`
+  and independent review with no remaining findings before the stack was
+  squash-merged as PRs #89 and #90.
