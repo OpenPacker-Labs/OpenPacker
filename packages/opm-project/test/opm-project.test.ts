@@ -44,9 +44,11 @@ import {
   installFromLock,
   installProject,
   listInstalled,
+  lockPackageFromSource,
   loadCatalogFile,
   materializeLockPackage,
   parseManifest,
+  parseLockfile,
   parsePackageSpec,
   removePackage,
   serializeManifest,
@@ -58,6 +60,7 @@ import {
   writeManifestFile,
   discoverBins,
   defaultSupplyChainPolicyInput,
+  captureFactsFromSourceUri,
   whyPackage,
   OpmError,
 } from '../src/index.js';
@@ -70,6 +73,11 @@ import {
   supportsStableProjectMetadata,
   writeStableFile,
 } from '../src/paths.js';
+import {
+  bindManifestSourceAuthority,
+  bindVerifiedArtifactBytes,
+  sealVerifiedArtifactBinding,
+} from '../src/install.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureCatalog = join(repoRoot, 'fixtures/opm/catalog.json');
@@ -464,7 +472,8 @@ describe('fail-closed install paths', () => {
 
     await addPackage({
       root,
-      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source: fixtureTgz,
       offline: true,
     });
 
@@ -609,7 +618,7 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'OFFLINE' });
   });
 
-  it('evaluates lock policy before any public install or materialize fetch', async () => {
+  it('does not treat persisted lifecycle claims as policy authority', async () => {
     const root = await tempProject();
     const digest = `sha256:${'a'.repeat(64)}`;
     const pkg = {
@@ -644,14 +653,14 @@ describe('fail-closed install paths', () => {
         offline: false,
         policy,
       }),
-    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
     await expect(
       materializeLockPackage({ root, pkg, offline: false, policy }),
-    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('never refetches a remote lock artifact with ambient fetch', async () => {
+  it('fails closed before ambient refetch when remote provenance cannot be replayed', async () => {
     const root = await tempProject();
     const digest = `sha256:${'a'.repeat(64)}`;
     const pkg = {
@@ -679,40 +688,43 @@ describe('fail-closed install paths', () => {
         offline: false,
         policy: defaultSupplyChainPolicyInput(),
       }),
-    ).rejects.toMatchObject({ code: 'UNVERIFIED_ARTIFACT' });
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it('rejects a tampered artifact with DIGEST_MISMATCH before extraction', async () => {
     const root = await tempProject();
     const wrongDigest = `sha256:${'b'.repeat(64)}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest: wrongDigest,
+      size: 406,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(wrongDigest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    bindManifestSourceAuthority(pkg);
     await expect(
       materializeLockPackage({
         root,
-        pkg: {
-          alias: 'demo-tool',
-          purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
-          version: '1.1.0',
-          digest: wrongDigest,
-          size: 406,
-          format: 'tar+gzip',
-          mediaType: 'application/vnd.openpacker.package.tgz',
-          source: `file:${fixtureTgz}`,
-          storeKey: storeKeyFromDigest(wrongDigest),
-          bins: [],
-          reason: 'direct',
-          ecosystem: 'npm',
-        },
+        pkg,
         offline: true,
       }),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
-  it('refuses lock digest and policy claims that do not survive fresh resolution', async () => {
+  it('refuses a tampered lock digest and ignores unsigned policy claims', async () => {
     const root = await tempProject();
     await addPackage({
       root,
-      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source: fixtureTgz,
       offline: true,
     });
     const paths = projectPaths(root);
@@ -729,7 +741,347 @@ describe('fail-closed install paths', () => {
     await writeLockfile(paths.lock, lock);
 
     await expect(installProject({ root, offline: true })).rejects.toMatchObject(
-      { code: 'INVALID_LOCK' },
+      { code: 'DIGEST_MISMATCH' },
+    );
+  });
+
+  it('does not trust hand-authored policy claims even when artifact bytes are cached', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      source: fixtureTgz,
+      offline: true,
+    });
+    const serialized = JSON.parse(
+      await readFile(projectPaths(root).lock, 'utf8'),
+    ) as {
+      packages: Record<string, Record<string, unknown>>;
+    };
+    Object.assign(serialized.packages['demo-tool']!, {
+      evidence: [{ type: 'slsa', status: 'valid' }],
+      signerIdentity: 'trusted@example.test',
+      sigstoreIssuer: 'https://issuer.example.test',
+      exactSourceSnapshot: true,
+      sourceSnapshotDigests: [{ algorithm: 'sha256', value: 'a'.repeat(64) }],
+    });
+
+    // The lock parser deliberately has no assertion-carrying fields for these
+    // claims. They cannot become policy authority by being hand-authored next
+    // to otherwise valid, cached package bytes.
+    const forged = parseLockfile(JSON.stringify(serialized));
+    expect(forged.packages['demo-tool']).not.toHaveProperty('evidence');
+    await expect(
+      installFromLock({
+        root,
+        lock: forged,
+        offline: true,
+        policy: {
+          ...defaultSupplyChainPolicyInput(),
+          requiredEvidence: ['slsa'],
+          acceptedIdentities: ['trusted@example.test'],
+          acceptedIssuers: ['https://issuer.example.test'],
+          requireExactSourceSnapshot: true,
+          requiredSourceSnapshotDigests: [
+            { algorithm: 'sha256', value: 'a'.repeat(64) },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
+  });
+
+  it('does not let a registry lock rewrite its source to an unbound path', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const paths = projectPaths(root);
+    const lock = await readLockfile(paths.lock);
+    const pkg = lock?.packages['demo-tool'];
+    if (!lock || !pkg) throw new Error('expected cached lock package');
+    pkg.source = `file:${fixtureTgz}`;
+    pkg.sourceKind = 'registry';
+    pkg.registryId = 'urn:attacker:registry';
+    pkg.lifecycle = { status: 'published', eligible: true };
+    await writeLockfile(paths.lock, lock);
+    const storePath = join(paths.store, pkg.storeKey);
+    await uninstallProject({ root, alias: 'demo-tool' });
+    await rm(storePath, { recursive: true, force: true });
+
+    // The manifest did not authorize a direct source. Neither the rewritten
+    // path nor the adjacent registry/lifecycle assertions may weaken policy.
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      { code: 'POLICY_INDETERMINATE' },
+    );
+    await expect(lstat(storePath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('invalidates verified facts after custom serialization and identity mutation', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: 'https://registry.npmjs.org/demo-tool/-/demo-tool-1.1.0.tgz',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+      sourceKind: 'registry' as const,
+    };
+    const facts = captureFactsFromSourceUri(pkg.purl, pkg.source, {
+      evaluationTime: '2026-08-19T00:00:00.000Z',
+      fromRegistryArtifactRecord: true,
+      lifecycle: { status: 'published', eligible: true },
+    });
+    facts.publishedAt = '2020-01-01T00:00:00.000Z';
+    bindVerifiedArtifactBytes(pkg, bytes, 'registry', facts);
+    sealVerifiedArtifactBinding(pkg);
+    expect(() =>
+      Object.defineProperty(pkg, 'toJSON', {
+        value: () => ({ source: pkg.source, purl: pkg.purl }),
+      }),
+    ).toThrow(TypeError);
+    expect(() => {
+      pkg.purl = 'pkg:npm/attacker@1.1.0';
+    }).toThrow(TypeError);
+    expect(() => {
+      pkg.source = `file:${fixtureTgz}`;
+    }).toThrow(TypeError);
+  });
+
+  it('invalidates manifest source authority when a returned lock is mutated', async () => {
+    const root = await tempProject();
+    const added = await addPackage({
+      root,
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source: fixtureTgz,
+      offline: true,
+    });
+    const pkg = added.lock.packages['demo-tool'];
+    if (!pkg) throw new Error('expected lock package');
+    bindManifestSourceAuthority(pkg);
+    expect(() => {
+      pkg.source = `file:${join(root, 'attacker-controlled.tgz')}`;
+    }).toThrow(TypeError);
+  });
+
+  it('deep-freezes shallow-frozen lock data and rejects cycles', async () => {
+    const root = await tempProject();
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const pkg = Object.freeze({
+      alias: 'demo',
+      purl: 'pkg:npm/demo@1.0.0',
+      version: '1.0.0',
+      digest,
+      size: 1,
+      format: 'tar' as const,
+      mediaType: 'application/octet-stream',
+      source: 'file:demo.tar',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [{ name: 'demo', path: 'package/demo.js' }],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    });
+    bindManifestSourceAuthority(pkg);
+    expect(() => {
+      pkg.bins[0]!.path = '../escape';
+    }).toThrow(TypeError);
+
+    const cyclic = { ...pkg, bins: [] as unknown[] };
+    cyclic.bins.push(cyclic.bins);
+    await expect(
+      materializeLockPackage({
+        root,
+        pkg: cyclic as unknown as typeof pkg,
+        offline: true,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_LOCK' });
+  });
+
+  it('freezes unbound public lock inputs before the first await', async () => {
+    const root = await tempProject();
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const pkg = {
+      alias: 'unbound',
+      purl: 'pkg:npm/unbound@1.0.0',
+      version: '1.0.0',
+      digest,
+      size: 1,
+      format: 'tar' as const,
+      mediaType: 'application/octet-stream',
+      source: 'file:unbound.tar',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    const installing = installFromLock({
+      root,
+      offline: true,
+      lock: {
+        schemaVersion: 1,
+        generatedBy: 'opm',
+        packages: { unbound: pkg },
+      },
+    });
+    expect(() => {
+      pkg.source = `file:${fixtureTgz}`;
+    }).toThrow(TypeError);
+    await expect(installing).rejects.toMatchObject({
+      code: 'POLICY_INDETERMINATE',
+    });
+  });
+
+  it('copies caller bytes before the first async policy gate', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo',
+      purl: 'pkg:npm/demo@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    bindManifestSourceAuthority(pkg);
+    const materialising = materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      bytes,
+    });
+    bytes.fill(0);
+    await expect(materialising).resolves.toMatchObject({ cached: false });
+  });
+
+  it('materializes a public source package without private authority hooks', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const pkg = lockPackageFromSource({
+      alias: 'demo',
+      purl: 'pkg:npm/demo@1.1.0',
+      version: '1.1.0',
+      ecosystem: 'npm',
+      bytes,
+      source: `file:${fixtureTgz}`,
+      format: 'tar+gzip',
+      mediaType: 'application/vnd.openpacker.package.tgz',
+    });
+
+    await expect(
+      materializeLockPackage({ root, pkg, offline: true }),
+    ).resolves.toMatchObject({ cached: false });
+    await expect(
+      installFromLock({
+        root,
+        offline: true,
+        lock: {
+          schemaVersion: 1,
+          generatedBy: 'opm',
+          packages: { demo: pkg },
+        },
+      }),
+    ).resolves.toMatchObject({
+      packages: { demo: { digest: pkg.digest } },
+    });
+  });
+
+  it('reads public source constructor accessors exactly once', async () => {
+    const root = await tempProject();
+    const goodBytes = new Uint8Array(await readFile(fixtureTgz));
+    const badBytes = new Uint8Array(goodBytes.byteLength);
+    let byteReads = 0;
+    let sourceReads = 0;
+    const source = `file:${fixtureTgz}`;
+    const input = {
+      alias: 'demo',
+      purl: 'pkg:npm/demo@1.1.0',
+      version: '1.1.0',
+      ecosystem: 'npm',
+      get bytes() {
+        return byteReads++ === 0 ? goodBytes : badBytes;
+      },
+      get source() {
+        return sourceReads++ === 0
+          ? source
+          : 'https://attacker.invalid/demo.tgz';
+      },
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+    };
+
+    const pkg = lockPackageFromSource(input);
+    expect(byteReads).toBe(1);
+    expect(sourceReads).toBe(1);
+    expect(pkg.source).toBe(source);
+    expect(pkg.digest).toBe(
+      `sha256:${createHash('sha256').update(goodBytes).digest('hex')}`,
+    );
+    await expect(
+      materializeLockPackage({ root, pkg, offline: true }),
+    ).resolves.toMatchObject({ cached: false });
+  });
+
+  it('snapshots lifecycle policy before the first await', async () => {
+    const root = await tempProject();
+    const purl = 'pkg:npm/policy-race@1.0.0';
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode(
+          JSON.stringify({
+            name: 'policy-race',
+            version: '1.0.0',
+            scripts: {
+              postinstall:
+                "node -e \"require('fs').writeFileSync('ran','yes')\"",
+            },
+          }),
+        ),
+        executable: false,
+      },
+    ]);
+    const pkg = lockPackageFromSource({
+      alias: 'policy-race',
+      purl,
+      version: '1.0.0',
+      ecosystem: 'npm',
+      bytes,
+      source: 'file:policy-race.tgz',
+      format: 'tar+gzip',
+      mediaType: 'application/vnd.npm.package+gzip',
+    });
+    const policy = {
+      ...defaultSupplyChainPolicyInput(),
+      allowedLifecycleScriptPackages: [] as string[],
+    };
+    const materialising = materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      policy,
+    });
+    policy.allowLifecycleScripts = true;
+    policy.allowedLifecycleScriptPackages.push(purl);
+    const result = await materialising;
+    await expect(readFile(join(result.storePath, 'ran'))).rejects.toMatchObject(
+      { code: 'ENOENT' },
     );
   });
 
@@ -737,23 +1089,25 @@ describe('fail-closed install paths', () => {
     const root = await tempProject();
     const bytes = await readFile(fixtureTgz);
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength + 1,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    bindManifestSourceAuthority(pkg);
     await expect(
       materializeLockPackage({
         root,
-        pkg: {
-          alias: 'demo-tool',
-          purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
-          version: '1.1.0',
-          digest,
-          size: bytes.byteLength + 1,
-          format: 'tar+gzip',
-          mediaType: 'application/vnd.openpacker.package.tgz',
-          source: `file:${fixtureTgz}`,
-          storeKey: storeKeyFromDigest(digest),
-          bins: [],
-          reason: 'direct',
-          ecosystem: 'npm',
-        },
+        pkg,
         offline: true,
       }),
     ).rejects.toMatchObject({ code: 'SIZE_MISMATCH' });
@@ -777,6 +1131,7 @@ describe('fail-closed install paths', () => {
       reason: 'direct' as const,
       ecosystem: 'npm',
     };
+    bindManifestSourceAuthority(pkg);
     const storePath = join(root, '.opm/store', pkg.storeKey);
     await mkdir(storePath, { recursive: true });
     await writeFile(join(storePath, 'malicious'), 'unverified');
@@ -827,6 +1182,7 @@ describe('fail-closed install paths', () => {
       reason: 'direct' as const,
       ecosystem: 'npm',
     };
+    bindManifestSourceAuthority(pkg);
     const { storePath, bins } = await materializeLockPackage({
       root,
       pkg,
@@ -883,6 +1239,7 @@ describe('fail-closed install paths', () => {
       reason: 'direct' as const,
       ecosystem: 'npm',
     };
+    bindManifestSourceAuthority(pkg);
     const first = await materializeLockPackage({
       root,
       pkg,
@@ -933,22 +1290,24 @@ describe('fail-closed install paths', () => {
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     const store = join(root, '.opm/store');
     const backup = join(root, '.opm/store-original');
+    const pkg = {
+      alias: 'swap-test',
+      purl: 'pkg:npm/swap-test@1.0.0',
+      version: '1.0.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: 'file:unused',
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    bindManifestSourceAuthority(pkg);
     const materialising = materializeLockPackage({
       root,
-      pkg: {
-        alias: 'swap-test',
-        purl: 'pkg:npm/swap-test@1.0.0',
-        version: '1.0.0',
-        digest,
-        size: bytes.byteLength,
-        format: 'tar+gzip',
-        mediaType: 'application/vnd.openpacker.package.tgz',
-        source: 'file:unused',
-        storeKey: storeKeyFromDigest(digest),
-        bins: [],
-        reason: 'direct',
-        ecosystem: 'npm',
-      },
+      pkg,
       offline: true,
       bytes,
     });
@@ -1091,6 +1450,39 @@ describe('fail-closed install paths', () => {
 });
 
 describe('project lifecycle offline', () => {
+  it('reinstalls a committed lock from cached bytes after resolution inputs disappear', async () => {
+    const root = await tempProject();
+    const source = join(root, 'vendor', 'demo-tool.tgz');
+    await mkdir(dirname(source), { recursive: true });
+    await writeFile(source, await readFile(fixtureTgz));
+    await addPackage({
+      root,
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source,
+      offline: true,
+    });
+
+    const paths = projectPaths(root);
+    const lock = await readLockfile(paths.lock);
+    const pkg = lock?.packages['demo-tool'];
+    if (!pkg) throw new Error('expected cached lock package');
+    const storePath = join(paths.store, pkg.storeKey);
+    expect((await lstat(`${storePath}.artifact`)).isFile()).toBe(true);
+
+    await uninstallProject({ root, alias: 'demo-tool' });
+    await rm(storePath, { recursive: true, force: true });
+    await rm(source);
+    await rm(paths.catalog);
+
+    // installProject reads a new lock object, so no in-memory resolution
+    // capability survives. The missing source and catalog prove it can only
+    // use the digest-checked canonical archive cache.
+    const installed = await installProject({ root, offline: true });
+    expect(installed.lock).toEqual(lock);
+    expect(installed.state.packages['demo-tool']?.digest).toBe(pkg.digest);
+    expect((await lstat(storePath)).isDirectory()).toBe(true);
+  });
+
   it('refuses list when stable project metadata is unavailable', async () => {
     const root = await tempProject();
     await expect(listInstalled(root, 'win32')).rejects.toMatchObject({
@@ -1103,7 +1495,8 @@ describe('project lifecycle offline', () => {
 
     const added = await addPackage({
       root,
-      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source: fixtureTgz,
       offline: true,
     });
     expect(added.alias).toBe('demo-tool');
@@ -1149,6 +1542,7 @@ describe('environment generations', () => {
     await addPackage({
       root,
       spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      source: fixtureTgz,
       offline: true,
     });
 
@@ -1178,7 +1572,8 @@ describe('environment generations', () => {
     const root = await tempProject();
     await addPackage({
       root,
-      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      spec: 'pkg:npm/demo-tool@1.1.0',
+      source: fixtureTgz,
       offline: true,
     });
     await installProject({ root, offline: true });

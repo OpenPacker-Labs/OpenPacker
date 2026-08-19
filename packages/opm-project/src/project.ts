@@ -42,6 +42,7 @@ import {
 } from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
+  bindManifestSourceAuthority,
   digestOf,
   bindVerifiedArtifactBytes,
   fetchArtifactBytes,
@@ -51,6 +52,7 @@ import {
   lockPackageFromSource,
   mediaTypeForEcosystem,
   readProjectState,
+  sealVerifiedArtifactBinding,
   uninstallAll,
   uninstallPackages,
   writeProjectState,
@@ -442,6 +444,25 @@ export async function installProject(input: {
   }
   assertLockMatchesManifest(input.root, manifest, lock);
   const offline = input.offline ?? manifest.options.offline;
+  if (offline) {
+    for (const [alias, requirement] of Object.entries(manifest.packages)) {
+      const pkg = lock.packages[alias];
+      if (pkg !== undefined && requirement.source !== undefined)
+        bindManifestSourceAuthority(pkg);
+    }
+    const state = await installFromLock({
+      root: input.root,
+      lock,
+      offline: true,
+      ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    });
+    const native = await projectNativeFormats({
+      root: input.root,
+      manifest,
+      lock,
+    });
+    return { lock, state, native };
+  }
   const verifiedLock = await resolveManifestToLock({
     root: input.root,
     manifest,
@@ -694,6 +715,8 @@ export async function resolveManifestToLock(input: {
       if (pkg) pkg.dependencies = dependencies;
     }
   }
+  for (const pkg of Object.values(lock.packages))
+    sealVerifiedArtifactBinding(pkg);
   return lock;
 }
 

@@ -6,6 +6,7 @@ import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { storeKeyFromDigest } from './paths.js';
 import {
   bindVerifiedArtifactBytes,
+  sealVerifiedArtifactBinding,
   inferFormat,
   materializeLockPackage,
 } from './install.js';
@@ -188,6 +189,7 @@ async function materialiseExact(
     ...lockPackageSupplyChainFields(facts),
   };
   bindVerifiedArtifactBytes(pkg, artifact.bytes, 'registry', facts);
+  sealVerifiedArtifactBinding(pkg);
   const { storePath, bins, cached } = await materializeLockPackage({
     root: cacheRoot,
     pkg,

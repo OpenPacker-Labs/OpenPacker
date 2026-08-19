@@ -26,9 +26,10 @@ import {
   type SourceKind,
   type TrustTier,
 } from '@openpacker/policy';
-import { stripPurlVersion } from './spec.js';
+import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+import { assertPlainLockPackageData } from './lock-authority.js';
 
 export type {
   PolicyDocument,
@@ -298,26 +299,25 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
 export function policyFactsFromLockPackage(
   pkg: LockPackage,
   evaluationTime: string,
-  options: { registryArtifactVerified?: boolean } = {},
+  options: {
+    registryArtifactVerified?: boolean;
+    sourceVerified?: boolean;
+  } = {},
 ): PolicyFacts {
   const source = sourceFactsFromUri(pkg.source);
+  const provider = lockPackageProvider(pkg);
   return {
     evidence: [],
     packageId: pkg.purl,
-    provider: pkg.ecosystem,
+    provider,
     artifactSize: pkg.size,
     evaluationTime,
     dependencyDepth: pkg.reason === 'transitive' ? 1 : 0,
     lifecycleScriptsExecuted: false,
-    ...source,
-    ...(options.registryArtifactVerified === true &&
-    pkg.sourceKind === 'registry'
+    ...(options.sourceVerified === true ? source : {}),
+    ...(options.registryArtifactVerified === true
       ? { sourceKind: 'registry' as const }
       : {}),
-    ...(pkg.trustLevel === undefined ? {} : { trustLevel: pkg.trustLevel }),
-    ...(pkg.publishedAt === undefined ? {} : { publishedAt: pkg.publishedAt }),
-    ...(pkg.registryId === undefined ? {} : { registryId: pkg.registryId }),
-    ...(pkg.lifecycle === undefined ? {} : { lifecycle: pkg.lifecycle }),
   };
 }
 
@@ -328,9 +328,12 @@ export async function assertLockPackageAllowed(
   evaluationTime: string,
   options: {
     registryArtifactVerified?: boolean;
+    sourceVerified?: boolean;
     verifiedFacts?: PolicyFacts;
   } = {},
 ): Promise<void> {
+  assertPlainLockPackageData(pkg);
+  const provider = lockPackageProvider(pkg);
   const policy = policyDocumentFromPolicyInput(
     policyInput ?? defaultSupplyChainPolicyInput(),
   );
@@ -341,13 +344,23 @@ export async function assertLockPackageAllowed(
       : {
           ...options.verifiedFacts,
           packageId: pkg.purl,
-          provider: pkg.ecosystem,
+          provider,
           artifactSize: pkg.size,
           evaluationTime,
           dependencyDepth: pkg.reason === 'transitive' ? 1 : 0,
           lifecycleScriptsExecuted: false,
         },
   );
+}
+
+function lockPackageProvider(pkg: LockPackage): string {
+  const provider = ecosystemFromPurl(pkg.purl);
+  if (pkg.ecosystem !== provider)
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${pkg.alias}" ecosystem does not match its PURL`,
+    );
+  return provider;
 }
 
 function uriScheme(uri: string): string | undefined {

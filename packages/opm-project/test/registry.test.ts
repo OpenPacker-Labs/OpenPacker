@@ -8,6 +8,7 @@ import {
   DEFAULT_REGISTRY_ENDPOINTS,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
+  captureFactsFromSourceUri,
   inferFormat,
   listRegistryVersions,
   materializeLockPackage,
@@ -23,6 +24,10 @@ import {
   storeKeyFromDigest,
   type OpmManifest,
 } from '../src/index.js';
+import {
+  bindVerifiedArtifactBytes,
+  sealVerifiedArtifactBinding,
+} from '../src/install.js';
 
 /**
  * Registry resolution, driven through a fixture transport.
@@ -465,25 +470,34 @@ describe('OCI image materialisation', () => {
 
     const root = await mkdtemp(join(tmpdir(), 'opm-oci-'));
     const storeKey = storeKeyFromDigest(artifact.digest);
+    const pkg = {
+      alias: 'demo',
+      purl: artifact.exactPurl,
+      version: artifact.version,
+      digest: artifact.digest,
+      size: artifact.bytes.byteLength,
+      format: 'tar' as const,
+      mediaType: artifact.mediaType,
+      source: artifact.uri,
+      storeKey,
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'oci',
+      lifecycle: { status: 'published' as const, eligible: true },
+      publishedAt: '2020-01-01T00:00:00.000Z',
+    };
+    const facts = captureFactsFromSourceUri(pkg.purl, pkg.source, {
+      evaluationTime: '2026-08-04T00:00:00Z',
+      fromRegistryArtifactRecord: true,
+      lifecycle: pkg.lifecycle,
+    });
+    facts.publishedAt = pkg.publishedAt;
+    bindVerifiedArtifactBytes(pkg, artifact.bytes, 'registry', facts);
+    sealVerifiedArtifactBinding(pkg);
     const { storePath } = await materializeLockPackage({
       root,
       offline: true,
-      pkg: {
-        alias: 'demo',
-        purl: artifact.exactPurl,
-        version: artifact.version,
-        digest: artifact.digest,
-        size: artifact.bytes.byteLength,
-        format: 'tar',
-        mediaType: artifact.mediaType,
-        source: artifact.uri,
-        storeKey,
-        bins: [],
-        reason: 'direct',
-        ecosystem: 'oci',
-        lifecycle: { status: 'published', eligible: true },
-        publishedAt: '2020-01-01T00:00:00.000Z',
-      },
+      pkg,
       bytes: artifact.bytes,
     });
 
