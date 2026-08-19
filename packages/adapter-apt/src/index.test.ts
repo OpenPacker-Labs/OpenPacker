@@ -58,6 +58,23 @@ describe('availability', () => {
   });
 });
 
+it('parses installed and candidate versions from apt-cache', async () => {
+  const apt = new AptSystemProvider(
+    fakeApt({
+      'apt-cache policy curl': {
+        stdout:
+          '  Installed: 8.5.0-2ubuntu10.11\n  Candidate: 8.5.0-2ubuntu10.12',
+      },
+    }).execute,
+    linux,
+    () => false,
+  );
+  expect(await apt.versions('curl')).toEqual({
+    installed: '8.5.0-2ubuntu10.11',
+    candidate: '8.5.0-2ubuntu10.12',
+  });
+});
+
 describe('planning', () => {
   it('builds an argv, never a shell string', async () => {
     const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
