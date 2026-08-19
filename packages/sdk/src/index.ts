@@ -52,6 +52,7 @@ export interface PrexClientOptions {
   ) => HeadersInit | void | Promise<HeadersInit | void>;
   retries?: number;
   timeoutMilliseconds?: number;
+  maximumResponseBytes?: number;
   userAgent?: string;
 }
 
@@ -115,6 +116,16 @@ const JSON_HEADERS = {
   'content-type': 'application/json',
 };
 
+const DEFAULT_MAXIMUM_RESPONSE_BYTES = 64 * 1024 * 1024;
+const MAXIMUM_EVENT_PAGE_BYTES = 16 * 1024 * 1024;
+const MAXIMUM_ERROR_BYTES = 1024 * 1024;
+
+interface ControlledResponse {
+  response: Response;
+  signal: AbortSignal;
+  dispose: () => void;
+}
+
 export class OpenPackerClient {
   readonly #baseUrl: URL;
   readonly #fetch: typeof fetch;
@@ -122,6 +133,7 @@ export class OpenPackerClient {
   readonly #authenticate: PrexClientOptions['authenticate'];
   readonly #retries: number;
   readonly #timeoutMilliseconds: number;
+  readonly #maximumResponseBytes: number;
 
   constructor(options: PrexClientOptions = {}) {
     this.#baseUrl = new URL(options.baseUrl ?? 'http://127.0.0.1:7337/');
@@ -142,6 +154,10 @@ export class OpenPackerClient {
     this.#timeoutMilliseconds = positiveInteger(
       options.timeoutMilliseconds ?? 30_000,
       'timeoutMilliseconds',
+    );
+    this.#maximumResponseBytes = positiveInteger(
+      options.maximumResponseBytes ?? DEFAULT_MAXIMUM_RESPONSE_BYTES,
+      'maximumResponseBytes',
     );
   }
 
@@ -306,28 +322,41 @@ export class OpenPackerClient {
     positiveInteger(limit, 'limit');
     const headers = new Headers(options?.headers);
     headers.set('accept', 'application/x-ndjson');
-    const response = await this.#fetchResponse(
+    const controlled = await this.#fetchResponse(
       'GET',
       `/v1/events?cursor=${encodeURIComponent(String(cursor))}&limit=${encodeURIComponent(String(limit))}`,
       undefined,
       { ...options, headers },
     );
-    if (!response.ok) throw await errorFrom(response);
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(
-      await response.arrayBuffer(),
-    );
-    const events = text
-      .split('\n')
-      .map(eventJson)
-      .filter((line): line is string => line !== undefined)
-      .map((line) => ({
-        event: parseCanonicalJson(line) as unknown as OpenPackerCloudEvent,
-        rawBytes: new TextEncoder().encode(line),
-      }));
-    const rawCursor = response.headers.get('x-openpacker-next-cursor');
-    if (rawCursor === null || !/^(0|[1-9][0-9]*)$/u.test(rawCursor))
-      throw new TypeError('PREX event response omitted a valid next cursor');
-    return { events, nextCursor: Number(rawCursor) };
+    const { response, signal } = controlled;
+    try {
+      const rawBytes = await readBoundedResponse(
+        response,
+        response.ok
+          ? Math.min(this.#maximumResponseBytes, MAXIMUM_EVENT_PAGE_BYTES)
+          : Math.min(this.#maximumResponseBytes, MAXIMUM_ERROR_BYTES),
+        signal,
+      );
+      if (!response.ok) throw errorFromBytes(response, rawBytes);
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(rawBytes);
+      const events = text
+        .split('\n')
+        .map(eventJson)
+        .filter((line): line is string => line !== undefined)
+        .map((line) => ({
+          event: parseCanonicalJson(line) as unknown as OpenPackerCloudEvent,
+          rawBytes: new TextEncoder().encode(line),
+        }));
+      const rawCursor = response.headers.get('x-openpacker-next-cursor');
+      if (rawCursor === null || !/^(0|[1-9][0-9]*)$/u.test(rawCursor))
+        throw new TypeError('PREX event response omitted a valid next cursor');
+      const nextCursor = Number(rawCursor);
+      if (!Number.isSafeInteger(nextCursor))
+        throw new TypeError('PREX event response next cursor is not safe');
+      return { events, nextCursor };
+    } finally {
+      controlled.dispose();
+    }
   }
 
   async #request<T>(
@@ -336,12 +365,23 @@ export class OpenPackerClient {
     body?: unknown,
     options?: RequestOptions,
   ): Promise<RawResponse<T>> {
-    const response = await this.#fetchResponse(method, path, body, options);
-    const rawBytes = new Uint8Array(await response.arrayBuffer());
-    if (!response.ok) throw errorFromBytes(response, rawBytes);
-    const data = parseJson<T>(rawBytes);
-    assertSupportedProtocolVersion(data, response);
-    return { data, rawBytes, response };
+    const controlled = await this.#fetchResponse(method, path, body, options);
+    const { response, signal } = controlled;
+    try {
+      const rawBytes = await readBoundedResponse(
+        response,
+        response.ok
+          ? this.#maximumResponseBytes
+          : Math.min(this.#maximumResponseBytes, MAXIMUM_ERROR_BYTES),
+        signal,
+      );
+      if (!response.ok) throw errorFromBytes(response, rawBytes);
+      const data = parseJson<T>(rawBytes);
+      assertSupportedProtocolVersion(data, response);
+      return { data, rawBytes, response };
+    } finally {
+      controlled.dispose();
+    }
   }
 
   async #fetchResponse(
@@ -349,7 +389,7 @@ export class OpenPackerClient {
     path: string,
     body?: unknown,
     options?: RequestOptions,
-  ): Promise<Response> {
+  ): Promise<ControlledResponse> {
     const url = new URL(path.replace(/^\//u, ''), this.#baseUrl).href;
     const attempts = 1 + this.#retries;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -382,8 +422,12 @@ export class OpenPackerClient {
         throw new TypeError(
           'Credential-bearing OpenPacker requests require an HTTPS URL',
         );
-      const timeout = options?.timeoutMilliseconds ?? this.#timeoutMilliseconds;
+      const timeout = positiveInteger(
+        options?.timeoutMilliseconds ?? this.#timeoutMilliseconds,
+        'timeoutMilliseconds',
+      );
       const { signal, dispose } = combinedSignal(options?.signal, timeout);
+      let handedOff = false;
       try {
         const requestBody =
           body === undefined
@@ -398,8 +442,11 @@ export class OpenPackerClient {
         if (
           !canRetry(method, options, response.status) ||
           attempt + 1 === attempts
-        )
-          return response;
+        ) {
+          handedOff = true;
+          return { response, signal, dispose };
+        }
+        void response.body?.cancel();
       } catch (error) {
         if (
           signal.aborted ||
@@ -408,7 +455,7 @@ export class OpenPackerClient {
         )
           throw error;
       } finally {
-        dispose();
+        if (!handedOff) dispose();
       }
     }
     throw new Error('Unreachable retry state');
@@ -476,10 +523,6 @@ function assertSupportedProtocolVersion(
     throw new UnsupportedProtocolVersionError(version);
 }
 
-async function errorFrom(response: Response): Promise<PrexClientError> {
-  return errorFromBytes(response, new Uint8Array(await response.arrayBuffer()));
-}
-
 function errorFromBytes(
   response: Response,
   bytes: Uint8Array,
@@ -491,6 +534,68 @@ function errorFromBytes(
     /* Preserve non-JSON upstream bytes for diagnostics. */
   }
   return new PrexClientError(response.status, problem, bytes, response);
+}
+
+async function readBoundedResponse(
+  response: Response,
+  maximumBytes: number,
+  signal: AbortSignal,
+): Promise<Uint8Array> {
+  const declaredLength = response.headers.get('content-length');
+  if (
+    declaredLength !== null &&
+    /^(0|[1-9][0-9]*)$/u.test(declaredLength) &&
+    BigInt(declaredLength) > BigInt(maximumBytes)
+  ) {
+    void response.body?.cancel();
+    throw new RangeError(`PREX response exceeds ${maximumBytes} bytes`);
+  }
+  if (response.body === null) return new Uint8Array();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await withAbort(reader.read(), signal);
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes)
+        throw new RangeError(`PREX response exceeds ${maximumBytes} bytes`);
+      chunks.push(value);
+    }
+  } catch (error) {
+    void reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function canRetry(

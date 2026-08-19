@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
@@ -133,6 +135,26 @@ describe('openpackerd', () => {
       code: 'PROVIDER_CAPABILITY_MISSING',
       status: 501,
     });
+  });
+
+  it('rejects duplicate keys in a standalone universe before validation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpackerd-universe-'));
+    const path = join(root, 'universe.json');
+    try {
+      await writeFile(
+        path,
+        '{"universeVersion":"1","universeVersion":"2","packages":[],"overlays":[],"sourceSnapshots":[],"lifecycleRoot":{"algorithm":"sha256","value":"' +
+          '0'.repeat(64) +
+          '"},"targetVocabularyVersion":"1","canonicalDigest":{"algorithm":"sha256","value":"' +
+          '0'.repeat(64) +
+          '"}}',
+      );
+      await expect(createStandaloneReferenceOperations(path)).rejects.toThrow(
+        /Duplicate object member/u,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('returns deterministic resolver exhaustion as a rate limit', async () => {

@@ -186,6 +186,55 @@ describe('OpenPackerClient', () => {
     expect(cursors).toEqual(['0', '4']);
   });
 
+  it('rejects event cursors that cannot be represented exactly', async () => {
+    const client = new OpenPackerClient({
+      fetch: async () =>
+        new Response('', {
+          headers: {
+            'x-openpacker-next-cursor': '9007199254740993',
+          },
+        }),
+    });
+    await expect(client.eventPage()).rejects.toThrow(/cursor is not safe/u);
+  });
+
+  it('bounds streamed response bodies', async () => {
+    let cancelled = false;
+    const client = new OpenPackerClient({
+      maximumResponseBytes: 4,
+      fetch: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('abc'));
+              controller.enqueue(new TextEncoder().encode('def'));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+    });
+    await expect(client.health()).rejects.toThrow(/exceeds 4 bytes/u);
+    expect(cancelled).toBe(true);
+  });
+
+  it('keeps the request deadline active while consuming the body', async () => {
+    const client = new OpenPackerClient({
+      fetch: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              /* Keep the body pending until the client deadline aborts it. */
+            },
+          }),
+        ),
+    });
+    await expect(
+      client.health({ timeoutMilliseconds: 1 }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
   it('exposes every normative and OpenPacker extension route', async () => {
     const paths: string[] = [];
     const client = new OpenPackerClient({

@@ -145,6 +145,44 @@ describe('openpacker CLI', () => {
     expect(JSON.parse(unsat.err).error.exitCode).toBe(EXIT_CODES.unsatisfiable);
   });
 
+  it('rejects duplicate keys in request, policy, and target JSON', async () => {
+    const request = io();
+    request.stdin = Readable.from([
+      '{"universeDigest":"a","universeDigest":"b"}',
+    ]);
+    expect(await runCli(['solve', '--input', '-'], request)).toBe(
+      EXIT_CODES.invalidInput,
+    );
+
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-cli-json-'));
+    try {
+      const policy = join(root, 'policy.json');
+      await writeFile(policy, '{"allowYanked":false,"allowYanked":true}');
+      const policyResult = io();
+      expect(
+        await runCli(
+          ['normalize', 'pkg:npm/demo', '--policy-file', policy],
+          policyResult,
+        ),
+      ).toBe(EXIT_CODES.invalidInput);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+
+    const target = io();
+    expect(
+      await runCli(
+        [
+          'normalize',
+          'pkg:npm/demo',
+          '--target',
+          '{"os":"linux","os":"windows","architecture":"x64"}',
+        ],
+        target,
+      ),
+    ).toBe(EXIT_CODES.invalidInput);
+  });
+
   it('lists the complete command groups', async () => {
     const output = io();
     expect(await runCli(['--help'], output)).toBe(EXIT_CODES.success);

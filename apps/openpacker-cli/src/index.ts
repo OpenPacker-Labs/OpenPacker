@@ -16,6 +16,7 @@ import {
   canonicalDigest,
   compareCanonicalStrings,
   formatDigest,
+  parseCanonicalJson,
   parseDigest,
 } from '@openpacker/canonical';
 import { validateContract } from '@openpacker/conformance';
@@ -294,7 +295,7 @@ async function inputObject(
     throw new UsageError('This command requires --input <file|->');
   const text =
     source === '-' ? await readStdin(io.stdin) : await readFile(source, 'utf8');
-  const value = JSON.parse(text) as unknown;
+  const value = parseCanonicalJson(text);
   if (typeof value !== 'object' || value === null)
     throw new InputError('Input must be a JSON object');
   return value as JsonValue;
@@ -316,7 +317,7 @@ async function importLockInput(
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) {
     try {
-      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const parsed = parseCanonicalJson(trimmed) as Record<string, unknown>;
       if (typeof parsed.lockfile === 'string') {
         const result: Record<string, JsonValue> = {
           ...(parsed as unknown as Record<string, JsonValue>),
@@ -370,9 +371,7 @@ async function optionalPolicy(
   args: ParsedArguments,
 ): Promise<JsonValue | undefined> {
   const path = option(args, 'policy-file');
-  return path
-    ? (JSON.parse(await readFile(path, 'utf8')) as JsonValue)
-    : undefined;
+  return path ? parseCanonicalJson(await readFile(path, 'utf8')) : undefined;
 }
 
 function receiptVerifyInput(
@@ -706,7 +705,7 @@ function inferNormalizeType(value: string): string {
 }
 
 function parseTarget(value: string): JsonValue {
-  if (value.startsWith('{')) return JSON.parse(value) as JsonValue;
+  if (value.startsWith('{')) return parseCanonicalJson(value);
   const [os, architecture, ...extra] = value.split('/');
   if (!os || !architecture || extra.length)
     throw new UsageError('--target must be JSON or os/architecture');

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
-import { canonicalDigest } from '@openpacker/canonical';
+import { canonicalDigest, parseCanonicalJson } from '@openpacker/canonical';
 import type { JsonValue, ResolutionUniverse } from '@openpacker/contracts';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import * as bindings from '@openpacker/embedded/wasm-node';
@@ -21,7 +21,9 @@ export async function createStandaloneReferenceOperations(
 ): Promise<PrexOperations> {
   ensureReferenceAdapters();
   const universe = universePath
-    ? (JSON.parse(await readFile(universePath, 'utf8')) as ResolutionUniverse)
+    ? (parseCanonicalJson(
+        await readFile(universePath, 'utf8'),
+      ) as unknown as ResolutionUniverse)
     : await emptyUniverse();
   const resolver = createEmbeddedResolver(bindings);
   resolver.validateUniverse(universe);
