@@ -118,6 +118,7 @@ export class Federation {
         // not match would launder an upstream's contradiction into this
         // registry's own answer.
         await this.#verifyEntry(client, entry);
+        this.#assertExactIdentity(name, version, entry);
         return { entry: this.#tag(entry, source.id), sourceId: source.id };
       } catch {
         // Not here, or not reachable. Try the next source.
@@ -206,6 +207,29 @@ export class Federation {
       );
   }
 
+  #assertExactIdentity(
+    name: string,
+    version: string,
+    entry: RegistryEntry,
+  ): void {
+    if (entry.manifest.name !== name || entry.manifest.version !== version)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        `Federated registry returned ${entry.manifest.name}@${entry.manifest.version} for ${name}@${version}`,
+      );
+    for (const distribution of entry.manifest.distributions) {
+      if (
+        distribution.version !== version ||
+        typeof distribution.exactPurl !== 'string' ||
+        exactPurlVersion(distribution.exactPurl) !== distribution.version
+      )
+        throw new ProviderError(
+          'INVALID_PROVIDER_RESPONSE',
+          `Federated distribution ${distribution.exactPurl} is not bound to ${name}@${version}`,
+        );
+    }
+  }
+
   async #clientFor(id: string, url: string): Promise<RegistryClient> {
     const existing = this.#clients.get(id);
     if (existing) return existing;
@@ -218,6 +242,17 @@ export class Federation {
 
   async #client(id: string, url: string) {
     return (await this.#clientFor(id, url)).definition();
+  }
+}
+
+function exactPurlVersion(exactPurl: string): string | undefined {
+  const identity = exactPurl.split(/[?#]/u, 1)[0] ?? '';
+  const separator = identity.lastIndexOf('@');
+  if (separator < 4 || separator === identity.length - 1) return undefined;
+  try {
+    return decodeURIComponent(identity.slice(separator + 1));
+  } catch {
+    return undefined;
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "problem": {
     "code": "UNSATISFIABLE",
-    "message": "UNSATISFIABLE: {\"code\":\"UNSATISFIABLE\",\"message\":\"no assignment satisfies all hard requirements\",\"universeDigest\":{\"algorithm\":\"sha256\",\"value\":\"c23c11a2c949419531d059518532ad78f41a24a89aa50a20d55a35509380d874\"},\"unsatCore\":[\"root-capability\",\"root-conflict\",\"root-nuget\",\"root-tool\"]}"
+    "message": "UNSATISFIABLE: {\"code\":\"UNSATISFIABLE\",\"message\":\"no assignment satisfies all hard requirements\",\"universeDigest\":{\"algorithm\":\"sha256\",\"value\":\"7df30630919dd3a174a69c69a78fafb168b9ce8f024a5e94eafa893ef69a21d3\"},\"unsatCore\":[\"root-capability\",\"root-conflict\",\"root-nuget\",\"root-tool\"]}"
   },
   "request": {
     "environment": { "installed": [], "locked": [] },

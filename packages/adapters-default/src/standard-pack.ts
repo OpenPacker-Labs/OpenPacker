@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { NormalizedPackInput } from '@openpacker/adapter-core';
 import { ProviderError } from '@openpacker/adapter-core';
-import { canonicalBytes } from '@openpacker/canonical';
+import { canonicalBytes, compareCanonicalStrings } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTar, packTarGzip, packZip } from '@openpacker/project-io';
 import { parse as parseYaml } from 'yaml';
@@ -595,7 +595,7 @@ function writeNarDirectory(
   const entries = [
     ...[...node.directories].map(([name, child]) => ({ name, child })),
     ...[...node.files].map(([name, file]) => ({ name, file })),
-  ].sort((left, right) => left.name.localeCompare(right.name));
+  ].sort((left, right) => compareCanonicalStrings(left.name, right.name));
   for (const entry of entries) {
     out.push(
       narString('entry'),

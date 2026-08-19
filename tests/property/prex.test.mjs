@@ -241,6 +241,9 @@ const lifecycleEvents = [
   lifecycleEvent('yank', 'yanked', '2026-02-01T00:00:00Z'),
   lifecycleEvent('restore', 'restored', '2026-03-01T00:00:00Z'),
 ];
+const verifiedLifecycleAuthorities = new Map(
+  lifecycleEvents.map(({ eventId, authority }) => [eventId, authority]),
+);
 const lifecycleRules = [
   {
     authority: 'registry',
@@ -255,6 +258,7 @@ test('lifecycle reduction is independent of input order', async () => {
     { packagePurl: identity.canonicalPurl, exactPurl: identity.exactPurl },
     '2026-04-01T00:00:00Z',
     lifecycleRules,
+    verifiedLifecycleAuthorities,
   );
   await fc.assert(
     fc.asyncProperty(
@@ -272,6 +276,7 @@ test('lifecycle reduction is independent of input order', async () => {
             },
             '2026-04-01T00:00:00Z',
             lifecycleRules,
+            verifiedLifecycleAuthorities,
           ),
           expected,
         );

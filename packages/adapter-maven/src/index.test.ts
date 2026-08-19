@@ -55,6 +55,17 @@ describe('Maven codec', () => {
     ).toBe('pkg:maven/org.example/demo-tool@1.0.0?type=war');
   });
 
+  it('rejects URL syntax in every repository path component', () => {
+    for (const purl of [
+      'pkg:maven/org%2F..%2Fadmin/demo@1.0.0',
+      'pkg:maven/org.example/demo%3Fquery@1.0.0',
+      'pkg:maven/org.example/demo@1.0.0%23fragment',
+      'pkg:maven/org.example/demo@1.0.0?classifier=%2E%2E',
+      'pkg:maven/org.example/demo@1.0.0?type=jar%2F..',
+    ])
+      expect(() => codec.canonicalizePurl(purl), purl).toThrow(/Maven/u);
+  });
+
   it('parses native coordinates as groupId:artifactId', () => {
     expect(codec.parseNativeCoordinate('org.example:demo-tool:1.0.0')).toEqual({
       ecosystem: 'maven',
@@ -166,6 +177,36 @@ it('parses maven-metadata.xml fixture offline', () => {
     artifactId: 'demo-tool',
   });
   expect(metadata.versioning.versions).toEqual(['1.0.0-beta.1', '1.0.0']);
+});
+
+it('rejects substituted Maven metadata identity', async () => {
+  const base = 'https://fixtures.openpacker.invalid/maven';
+  const provider = new MavenRepositoryProvider(
+    new FixtureHttpTransport(
+      new Map([
+        [
+          `${base}/org/example/demo-tool/maven-metadata.xml`,
+          {
+            status: 200,
+            headers: {},
+            body: new TextEncoder().encode(
+              metadataBytes
+                .toString('utf8')
+                .replace(
+                  '<artifactId>demo-tool</artifactId>',
+                  '<artifactId>other-tool</artifactId>',
+                ),
+            ),
+          },
+        ],
+      ]),
+    ),
+    { now: () => '2026-08-02T00:00:00Z' },
+    base,
+  );
+  await expect(
+    provider.enumerate('pkg:maven/org.example/demo-tool'),
+  ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
 });
 
 it('discovers Maven Central-style fixture metadata offline', async () => {

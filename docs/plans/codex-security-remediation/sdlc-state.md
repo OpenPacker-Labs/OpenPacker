@@ -2,7 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layers 01 through 04 independently approved
+- Phase: layer 05 code approved; final native verification, deep scan, and
+  delivery blocked on external process/network authority
 - Current layer: `05-scan-closeout`
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
@@ -11,8 +12,8 @@
   `sdlc/codex-security-05-scan-closeout`
 - External issues: not created; the local Codex Security report is the one-shot
   finding authority and contains sensitive operational detail.
-- Dispatch: coordinator-only implementation because delegation permission was
-  not separately granted; independent reviewer remains mandatory.
+- Dispatch: coordinator plus explicitly authorized security-boundary
+  implementers; independent reviewer remains mandatory.
 
 ## Problem
 
@@ -155,3 +156,35 @@ upstream Codex Security release currently has no patched version.
 - 2026-08-19 layer 04 independent review: approved at `88457fe` after native
   variant, marker, hash, snapshot, endpoint, cycle, and deep-chain cases were
   independently rechecked with no remaining finding.
+- 2026-08-19 layer 05 pre-review aggregate: exact committed head `9a99b94`
+  passed `npm run verify` across 48 workspaces, including 959 unit tests with 14
+  opt-in skips, 43 security files with 567 tests and 3 opt-in skips, Pact
+  baseline/mutation/chaos, 31,497 fuzz cases, 19 golden files, 6 lock imports,
+  isolated package-manager parity, Rust, conformance, integration, E2E,
+  compatibility, browser, demos, and benchmarks.
+- 2026-08-19 layer 05 review remediation: delegated executables are capped,
+  copied from a no-follow source into unnamed `O_TMPFILE` storage, hashed,
+  executed from a private standalone snapshot through Bubblewrap
+  `--ro-bind-data`, and reopened with an independent read offset for every pack,
+  cleanup, and identity command. Unsupported backends and runtime sibling
+  dependencies fail closed. Offline installation now replays only a
+  manifest-matching lock from digest-verified cached bytes; exact explicit
+  manifest sources bind immutable lock projections, while unverified registry,
+  lifecycle, evidence, signer, issuer, trust, and snapshot claims remain
+  indeterminate. Public package, policy, bytes, closure, and scalar inputs are
+  owned or frozen before asynchronous use.
+- 2026-08-19 layer 05 focused evidence: pack-provider 29/29; sandbox authority
+  12 passed with 7 native-only skips; OPM project 187/189 with only the two
+  managed-seccomp `/bin/sh` EPERM cases unavailable; all three package
+  typechecks; 14 schemas and 189 API references; documentation smoke across 122
+  files; generated mirrors and `git diff --check` clean. Independent review
+  approved the exact working tree with no remaining code, security, contract, or
+  documentation finding and separately proved the composed O_TMPFILE to
+  Bubblewrap handoff.
+- 2026-08-19 closeout blocker: the approval service refused native/full gate,
+  commit-hook, push, and fresh Codex Security network authority after the
+  account usage limit was reached (reset reported as 2026-08-20 14:18 local).
+  The interrupted/cancelled deep runs produced no authoritative final report.
+  Final exact-head `npm run verify`, a fresh complete Codex Security report,
+  incremental commits, stacked PR submission, bottom-up squash merge, and
+  deployment therefore remain pending and must not be reported as complete.

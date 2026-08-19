@@ -1,8 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import { packageNodeId } from '@openpacker/adapter-core';
+import { canonicalProjectionDigest } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import type {
   JsonValue,
@@ -14,6 +18,8 @@ import {
   assertDaemonBindAddress,
   assertDaemonPort,
   createOpenPackerDaemon,
+  sourceSnapshotDigest,
+  SqliteStateStore,
 } from '../src/index.js';
 import { runDaemon } from '../src/cli.js';
 import {
@@ -86,7 +92,7 @@ const snapshot = {
   recordsDigest: digest('b'),
   evidenceRefs: [],
 };
-const universe: ResolutionUniverse = {
+const universeBody: Omit<ResolutionUniverse, 'canonicalDigest'> = {
   universeVersion: '1',
   packages: await Promise.all([
     packageInstance('1', '1.0.0'),
@@ -96,12 +102,54 @@ const universe: ResolutionUniverse = {
   sourceSnapshots: [snapshot],
   lifecycleRoot: digest('d'),
   targetVocabularyVersion: '1',
-  canonicalDigest: digest('e'),
+};
+const universe: ResolutionUniverse = {
+  ...universeBody,
+  canonicalDigest: await canonicalProjectionDigest(
+    universeBody as unknown as JsonValue,
+    DIGEST_PROJECTIONS.projections.find(({ id }) => id === 'universe-v1')!,
+  ),
 };
 
 describe('openpackerd', () => {
   it('keeps the CLI import-safe for coverage and embedding', () => {
     expect(runDaemon).toBeTypeOf('function');
+  });
+
+  it('rejects DNS-rebinding authorities and cross-origin browser requests', async () => {
+    const app = createOpenPackerDaemon({
+      operations: await createStandaloneReferenceOperations(),
+    });
+    try {
+      const rebound = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: { host: '127.0.0.1.attacker.example' },
+      });
+      expect(rebound.statusCode).toBe(403);
+
+      const crossOrigin = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: {
+          host: '127.0.0.1:7337',
+          origin: 'https://attacker.example',
+        },
+      });
+      expect(crossOrigin.statusCode).toBe(403);
+
+      const loopback = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: {
+          host: '[::1]:7337',
+          origin: 'http://localhost:7337',
+        },
+      });
+      expect(loopback.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
   });
 
   it('boots the standalone reference operations with an empty universe', async () => {
@@ -129,6 +177,290 @@ describe('openpackerd', () => {
       code: 'PROVIDER_CAPABILITY_MISSING',
       status: 501,
     });
+  });
+
+  it('rejects duplicate keys in a standalone universe before validation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpackerd-universe-'));
+    const path = join(root, 'universe.json');
+    try {
+      await writeFile(
+        path,
+        '{"universeVersion":"1","universeVersion":"2","packages":[],"overlays":[],"sourceSnapshots":[],"lifecycleRoot":{"algorithm":"sha256","value":"' +
+          '0'.repeat(64) +
+          '"},"targetVocabularyVersion":"1","canonicalDigest":{"algorithm":"sha256","value":"' +
+          '0'.repeat(64) +
+          '"}}',
+      );
+      await expect(createStandaloneReferenceOperations(path)).rejects.toThrow(
+        /Duplicate object member/u,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('returns deterministic resolver exhaustion as a rate limit', async () => {
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const resolver = createEmbeddedResolver({
+      ...bindings,
+      solve_json: () => {
+        throw new Error(
+          'RESOURCE_LIMIT: exhaustive resolution proof requires 2000 work units (limit 1000)',
+        );
+      },
+    });
+    const operations = createReferenceOperations({
+      universe,
+      resolver,
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations });
+    const request = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../fixtures/protocol/solve/request.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as SolveRequest;
+    const started = Date.now();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/solve',
+      payload: request,
+    });
+    expect(response.statusCode).toBe(429);
+    expect(response.json()).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryable: true,
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    await app.close();
+  });
+
+  it('requires forensic intent for every lifecycle-denied artifact subject', async () => {
+    const descriptor = {
+      descriptorId: 'quarantined-artifact',
+      digest: digest('9'),
+      size: 1,
+      mediaType: 'application/octet-stream',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+      locations: ['https://fixtures.openpacker.dev/quarantined.tgz'],
+      rangeSupported: false,
+    };
+    const denied = {
+      ...universe.packages[0]!,
+      lifecycle: {
+        status: 'quarantined' as const,
+        eligible: false,
+        warnings: [],
+      },
+      artifacts: [descriptor],
+    };
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const operations = createReferenceOperations({
+      universe: { ...universe, packages: [denied] },
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const subject = { type: 'artifact' as const, descriptor };
+    await expect(
+      operations.materialize({ subject } as never, {} as never),
+    ).rejects.toMatchObject({ code: 'LIFECYCLE_DENIED' });
+    await expect(
+      operations.materialize({ subject, forensic: true } as never, {} as never),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    const policy = {
+      allowYanked: false,
+      allowQuarantined: true,
+      semanticLossMaximum: 'warning' as const,
+      requiredEvidence: [],
+      permitForensicDigestMaterialization: true,
+    };
+    await expect(
+      operations.materialize(
+        { subject, forensic: true, policy } as never,
+        {} as never,
+      ),
+    ).resolves.toMatchObject({ descriptor });
+    await expect(
+      operations.materialize(
+        {
+          subject: {
+            type: 'artifact',
+            descriptor: { ...descriptor, digest: digest('8') },
+          },
+          forensic: true,
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+  });
+
+  it('rejects a catalog snapshot whose claimed root was not recomputed', async () => {
+    const store = new SqliteStateStore(':memory:');
+    const operations = createReferenceOperations({
+      universe,
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: async () => {
+          throw new Error('not reached');
+        },
+        pack: async () => {
+          throw new Error('not reached');
+        },
+        publish: async () => {
+          throw new Error('not reached');
+        },
+      },
+    });
+    const forged = { ...snapshot, providerId: 'attacker' };
+    await expect(
+      operations.catalogImport(forged, { store } as never),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+    expect(
+      store.getSnapshot('sha256', snapshot.rootDigest.value),
+    ).toBeUndefined();
+
+    const rootDigest = await sourceSnapshotDigest(snapshot);
+    const wrongId = {
+      ...snapshot,
+      rootDigest,
+      snapshotId: `sha256:${'a'.repeat(64)}`,
+    };
+    await expect(
+      operations.catalogImport(wrongId, { store } as never),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
+  it('enforces materialization policy facts and fails closed when lifecycle is unknown', async () => {
+    const descriptor = {
+      descriptorId: 'policy-artifact',
+      digest: digest('7'),
+      size: 2,
+      mediaType: 'application/octet-stream',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+      locations: [
+        {
+          transport: 'https' as const,
+          uri: 'https://fixtures.openpacker.dev/package.tgz',
+          priority: 0,
+          rangeSupported: false,
+        },
+      ],
+      referrers: [],
+      externalRefs: [],
+    };
+    const owner = { ...universe.packages[0]!, artifacts: [descriptor] };
+    const unavailable = async (): Promise<never> => {
+      throw new Error('not reached');
+    };
+    const operations = createReferenceOperations({
+      universe: { ...universe, packages: [owner] },
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const basePolicy = {
+      allowYanked: false,
+      allowQuarantined: false,
+      semanticLossMaximum: 'warning' as const,
+      requiredEvidence: [],
+    };
+    const subject = { type: 'artifact' as const, descriptor };
+    await expect(
+      operations.materialize(
+        { subject, policy: { ...basePolicy, maximumArtifactSize: 1 } },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject,
+          policy: { ...basePolicy, allowedProviderIds: ['other'] },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject,
+          policy: {
+            ...basePolicy,
+            allowedArtifactSourceSchemes: ['file'],
+          },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject: {
+            type: 'artifact',
+            descriptor: { ...descriptor, digest: digest('6') },
+          },
+          policy: basePolicy,
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
   });
 
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {
@@ -254,6 +586,47 @@ describe('openpackerd', () => {
       universe.packages[1]!.nodeId,
     ]);
     expect(response.signedReceipt.signatures).toHaveLength(1);
+    const projection = (id: string) => {
+      const value = DIGEST_PROJECTIONS.projections.find(
+        (candidate) => candidate.id === id,
+      );
+      if (!value) throw new Error(`missing projection ${id}`);
+      return value;
+    };
+    expect(response.requestDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.normalizedRequest,
+        projection('request-v1'),
+      ),
+    );
+    expect(response.universeDigest).toEqual(
+      await canonicalProjectionDigest(universe, projection('universe-v1')),
+    );
+    expect(response.solution.solutionDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.solution,
+        projection('solution-v1'),
+      ),
+    );
+    expect(response.signedReceipt.receipt.proofDigest).toEqual(
+      await canonicalProjectionDigest(response.proof, projection('proof-v1')),
+    );
+    expect(response.signedReceipt.receipt.explanationDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.explanation,
+        projection('explanation-v1'),
+      ),
+    );
+    expect(response.signedReceipt.receipt.artifactSetDigest).toEqual(
+      await canonicalProjectionDigest(
+        {
+          items: response.selected.flatMap(
+            (item: PackageInstance) => item.artifacts,
+          ),
+        },
+        projection('artifact-set-v1'),
+      ),
+    );
     for (const profile of [
       'native-capture-v1',
       'native-validated-v1',

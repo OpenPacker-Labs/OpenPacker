@@ -80,6 +80,7 @@ function registry(
       'publisher-1',
       'dns-txt',
       '2026-08-10T00:00:00.000Z',
+      namespace.startsWith('org.other') ? 'dns:other.org' : 'dns:example.com',
     );
   return createRegistry({
     registryId: 'urn:openpacker:registry:test',
@@ -95,16 +96,30 @@ describe('holder attribution', () => {
   it('attributes every namespace under one domain to one holder', () => {
     // The MCP survey found one domain behind 75 namespaces. Per-proof records
     // make that invisible; per-holder records make it a lookup.
-    expect(holderOf('com.example.tools', 'dns-txt')).toBe('dns:example.com');
-    expect(holderOf('com.example.cli', 'dns-txt')).toBe('dns:example.com');
-    expect(holderOf('com.example', 'https-well-known')).toBe('dns:example.com');
+    expect(holderOf('com.example.tools', 'dns-txt', 'dns:example.com')).toBe(
+      'dns:example.com',
+    );
+    expect(holderOf('com.example.cli', 'dns-txt', 'dns:example.com')).toBe(
+      'dns:example.com',
+    );
+    expect(holderOf('com.example', 'https-well-known', 'dns:example.com')).toBe(
+      'dns:example.com',
+    );
   });
 
   it('stops a forge namespace at the account, not the forge', () => {
     // io.github.acme is not authority over io.github.someone-else — collapsing
     // them would let one account speak for every other on the same forge.
-    expect(holderOf('io.github.acme.tool', 'dns-txt')).toBe('github:acme');
-    expect(holderOf('io.github.other.tool', 'dns-txt')).toBe('github:other');
+    expect(holderOf('io.github.acme.tool', 'dns-txt', 'github:acme')).toBe(
+      'github:acme',
+    );
+    expect(holderOf('io.github.other.tool', 'dns-txt', 'github:other')).toBe(
+      'github:other',
+    );
+  });
+
+  it('refuses to guess a DNS holder without proof-verifier identity', () => {
+    expect(() => holderOf('uk.co.alpha', 'dns-txt')).toThrow(/verified/u);
   });
 
   it('names an operator decision as one rather than dressing it as a proof', () => {
@@ -208,6 +223,102 @@ describe('publish quota', () => {
     expect(Number(third.headers['retry-after'])).toBeGreaterThan(0);
   });
 
+  it('isolates registrants beneath a multi-label public suffix', async () => {
+    const store = new RegistryStore();
+    store.trustKey(
+      'uk.co.alpha',
+      'publisher-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:alpha.co.uk',
+    );
+    store.trustKey(
+      'uk.co.alpha.tools',
+      'publisher-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:alpha.co.uk',
+    );
+    store.trustKey(
+      'uk.co.beta',
+      'publisher-2',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:beta.co.uk',
+    );
+    const app = registry(
+      { store, quota: { limit: 1, windowSeconds: 3600 } },
+      [],
+    );
+
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/publish',
+          payload: await publishBody(
+            'uk.co.alpha.tools.one',
+            '1.0.0',
+            'uk.co.alpha.tools',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/publish',
+          payload: await publishBody('uk.co.alpha.two', '1.0.0', 'uk.co.alpha'),
+        })
+      ).statusCode,
+    ).toBe(429);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/publish',
+          payload: await publishBody(
+            'uk.co.beta.one',
+            '1.0.0',
+            'uk.co.beta',
+            'publisher-2',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    await app.close();
+  });
+
+  it('admits no more concurrent publishes than the holder quota', async () => {
+    const store = new RegistryStore();
+    const app = registry({ quota: { limit: 2, windowSeconds: 3600 }, store }, [
+      'com.example',
+    ]);
+    const bodies = await Promise.all(
+      Array.from({ length: 6 }, (_, index) =>
+        publishBody(`com.example.concurrent-${index}`, '1.0.0', 'com.example'),
+      ),
+    );
+    const responses = await Promise.all(
+      bodies.map((payload) =>
+        app.inject({ method: 'POST', url: '/v1/publish', payload }),
+      ),
+    );
+    expect(
+      responses.filter((response) => response.statusCode === 201),
+    ).toHaveLength(2);
+    expect(
+      responses.filter((response) => response.statusCode === 429),
+    ).toHaveLength(4);
+    expect(
+      Array.from({ length: 6 }, (_, index) =>
+        store.versions(`com.example.concurrent-${index}`),
+      ).filter((versions) => versions.length > 0),
+    ).toHaveLength(2);
+    await app.close();
+  });
+
   it('does not charge a retry of a publish it already stored', async () => {
     const app = registry({ quota: { limit: 2, windowSeconds: 3600 } });
     const body = await publishBody('com.example.a', '1.0.0', 'com.example');
@@ -252,6 +363,7 @@ describe('publish quota', () => {
       'publisher-1',
       'dns-txt',
       '2026-08-10T00:00:00.000Z',
+      'dns:example.com',
     );
     const allowed = await app.inject({
       method: 'POST',

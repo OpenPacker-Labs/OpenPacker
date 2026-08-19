@@ -14,7 +14,10 @@ import type {
   ProviderInspection,
   ProviderRecord,
 } from '@openpacker/adapter-core';
-import { ProviderError } from '@openpacker/adapter-core';
+import {
+  assertPackageIdentityMatchesRequest,
+  ProviderError,
+} from '@openpacker/adapter-core';
 import type {
   PackageIdentity,
   PackageInstance,
@@ -131,6 +134,7 @@ export class PrexRegistryProvider implements CatalogProvider {
       },
       nativeVersion: distribution.version,
     } as unknown as PackageInstance;
+    assertPackageIdentityMatchesRequest(exactPurl, instance.identity);
     return {
       package: instance,
       record: this.#record(exactPurl, entry as never),

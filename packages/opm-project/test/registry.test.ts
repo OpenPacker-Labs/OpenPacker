@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
@@ -8,18 +8,26 @@ import {
   DEFAULT_REGISTRY_ENDPOINTS,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
+  captureFactsFromSourceUri,
   inferFormat,
   listRegistryVersions,
   materializeLockPackage,
   providerFor,
+  registryOptionsForEcosystem,
   registryEndpoint,
+  resolveManifestToLock,
   resolveRegistryArtifact,
   searchRegistry,
   selectToolBin,
   fetchTool,
   OpmError,
   storeKeyFromDigest,
+  type OpmManifest,
 } from '../src/index.js';
+import {
+  bindVerifiedArtifactBytes,
+  sealVerifiedArtifactBinding,
+} from '../src/install.js';
 
 /**
  * Registry resolution, driven through a fixture transport.
@@ -135,12 +143,124 @@ describe('registry configuration', () => {
     }
   });
 
+  it('rejects plaintext private registry overrides', () => {
+    const previous = process.env.OPM_REGISTRY_NPM;
+    process.env.OPM_REGISTRY_NPM = 'http://npm.internal.example';
+    try {
+      expect(() => registryEndpoint('npm')).toThrow(/must be HTTPS/u);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_NPM;
+      else process.env.OPM_REGISTRY_NPM = previous;
+    }
+  });
+
+  it('rejects an unsafe project registry before constructing a provider', () => {
+    expect(() =>
+      registryOptionsForEcosystem('npm', {
+        registries: {
+          mirror: {
+            id: 'mirror',
+            url: 'http://user:secret@mirror.example',
+            defaultFor: ['npm'],
+          },
+        },
+      }),
+    ).toThrow(/must be HTTPS/u);
+  });
+
   it('refuses an ecosystem it has no registry for', async () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
     // Discovery path: unregistered purl types fail closed at the adapter host.
     await expect(providerFor('cocoapods')).rejects.toThrow(
       /No adapter is registered|No registry|UNSUPPORTED_ECOSYSTEM/u,
     );
+  });
+});
+
+describe('project registry authority', () => {
+  it('uses the configured endpoint for direct and transitive packages and locks its identity', async () => {
+    const endpoint = 'https://mirror.example';
+    const packageDocument = (name: string, dependencies = {}) => ({
+      name,
+      'dist-tags': { latest: '1.0.0' },
+      versions: {
+        '1.0.0': {
+          name,
+          version: '1.0.0',
+          dependencies,
+          dist: {
+            tarball: `${endpoint}/${name}/-/${name}-1.0.0.tgz`,
+            integrity: TARBALL_SRI,
+          },
+        },
+      },
+    });
+    const response = (body: unknown) => ({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: new TextEncoder().encode(JSON.stringify(body)),
+    });
+    const artifact = {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+      body: TARBALL,
+    };
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [
+          `${endpoint}/demo`,
+          response(packageDocument('demo', { child: '1.0.0' })),
+        ],
+        [`${endpoint}/child`, response(packageDocument('child'))],
+        [`${endpoint}/demo/-/demo-1.0.0.tgz`, artifact],
+        [`${endpoint}/child/-/child-1.0.0.tgz`, artifact],
+      ]),
+    );
+    const manifest: OpmManifest = {
+      project: { name: 'authority-test', ecosystems: ['npm'] },
+      packages: {
+        demo: {
+          alias: 'demo',
+          purl: 'pkg:npm/demo',
+          version: '1.0.0',
+          bins: [{ name: 'demo', path: 'bin.js' }],
+        },
+      },
+      registries: {
+        mirror: { id: 'mirror', url: endpoint, defaultFor: ['npm'] },
+      },
+      options: { offline: false, layout: 'opm' },
+      policy: {
+        allowYanked: false,
+        allowQuarantined: false,
+        semanticLossMaximum: 'error',
+        requiredEvidence: [],
+      },
+    };
+    const root = await mkdtemp(join(tmpdir(), 'opm-authority-'));
+    try {
+      const lock = await resolveManifestToLock({
+        root,
+        manifest,
+        offline: false,
+        registryOptions: {
+          transport,
+          now: () => '2026-08-04T00:00:00Z',
+        },
+      });
+      expect(transport.requests.length).toBeGreaterThan(0);
+      expect(
+        transport.requests.every(({ url }) => url.startsWith(`${endpoint}/`)),
+      ).toBe(true);
+      expect(
+        Object.values(lock.packages).map(({ registryId }) => registryId),
+      ).toEqual(expect.arrayContaining([endpoint, endpoint]));
+      expect(Object.values(lock.packages).map(({ purl }) => purl)).toContain(
+        'pkg:npm/child@1.0.0',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -257,6 +377,17 @@ describe('artifact resolution', () => {
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
   });
+
+  it('rejects registry metadata for a different package identity', async () => {
+    const substituted = structuredClone(PACKUMENT);
+    substituted.versions['1.1.0'].name = 'attacker-package';
+    await expect(
+      resolveRegistryArtifact('npm', 'pkg:npm/demo@1.1.0', {
+        transport: new FixtureHttpTransport(npmFixtures(substituted)),
+        now: () => '2026-08-04T00:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+  });
 });
 
 describe('OCI image materialisation', () => {
@@ -286,9 +417,10 @@ describe('OCI image materialisation', () => {
   };
   const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
 
-  function ociFetch(): typeof fetch {
+  function ociFetch(requests: string[] = []): typeof fetch {
     return (async (url: URL | string) => {
       const href = String(url);
+      requests.push(href);
       if (href.includes('/manifests/'))
         return new Response(manifestBytes, {
           status: 200,
@@ -314,11 +446,20 @@ describe('OCI image materialisation', () => {
   });
 
   it('resolves and materialises a layout into the project store', async () => {
+    const requests: string[] = [];
     const artifact = await resolveRegistryArtifact(
       'oci',
       'pkg:oci/library/demo?tag=1.0',
-      { fetch: ociFetch(), now: () => '2026-08-04T00:00:00Z' },
+      { fetch: ociFetch(requests), now: () => '2026-08-04T00:00:00Z' },
     );
+    expect(
+      requests.filter((request) => request.endsWith('/manifests/1.0')),
+    ).toHaveLength(2);
+    expect(
+      requests.some((request) =>
+        /\/manifests\/sha256(?:%3A|:)[0-9a-f]{64}$/u.test(request),
+      ),
+    ).toBe(true);
     expect(artifact.mediaType).toBe('application/vnd.oci.image.layout.v1.tar');
     expect(artifact.digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(artifact.bytes.byteLength).toBeGreaterThan(0);
@@ -329,23 +470,34 @@ describe('OCI image materialisation', () => {
 
     const root = await mkdtemp(join(tmpdir(), 'opm-oci-'));
     const storeKey = storeKeyFromDigest(artifact.digest);
+    const pkg = {
+      alias: 'demo',
+      purl: artifact.exactPurl,
+      version: artifact.version,
+      digest: artifact.digest,
+      size: artifact.bytes.byteLength,
+      format: 'tar' as const,
+      mediaType: artifact.mediaType,
+      source: artifact.uri,
+      storeKey,
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'oci',
+      lifecycle: { status: 'published' as const, eligible: true },
+      publishedAt: '2020-01-01T00:00:00.000Z',
+    };
+    const facts = captureFactsFromSourceUri(pkg.purl, pkg.source, {
+      evaluationTime: '2026-08-04T00:00:00Z',
+      fromRegistryArtifactRecord: true,
+      lifecycle: pkg.lifecycle,
+    });
+    facts.publishedAt = pkg.publishedAt;
+    bindVerifiedArtifactBytes(pkg, artifact.bytes, 'registry', facts);
+    sealVerifiedArtifactBinding(pkg);
     const { storePath } = await materializeLockPackage({
       root,
       offline: true,
-      pkg: {
-        alias: 'demo',
-        purl: artifact.exactPurl,
-        version: artifact.version,
-        digest: artifact.digest,
-        size: artifact.bytes.byteLength,
-        format: 'tar',
-        mediaType: artifact.mediaType,
-        source: artifact.uri,
-        storeKey,
-        bins: [],
-        reason: 'direct',
-        ecosystem: 'oci',
-      },
+      pkg,
       bytes: artifact.bytes,
     });
 

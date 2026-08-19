@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type {
   LockPackage,
@@ -9,10 +9,16 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
-import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
+import {
+  canonicalCatalogPurl,
+  loadCatalogs,
+  resolveSource,
+  toFileUrl,
+} from './catalog.js';
 import { codecFor } from './codecs.js';
 import {
   listRegistryVersions,
+  registryOptionsForEcosystem,
   resolveRegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
@@ -29,10 +35,16 @@ import {
   installSystemPackage,
   planSystemInstall,
 } from './system.js';
-import type { InstallOutcome, InstallPlan } from '@openpacker/adapter-core';
+import {
+  assertPackageIdentityMatchesRequest,
+  type InstallOutcome,
+  type InstallPlan,
+} from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
+  bindManifestSourceAuthority,
   digestOf,
+  bindVerifiedArtifactBytes,
   fetchArtifactBytes,
   nativeIntegrityOf,
   inferFormat,
@@ -40,6 +52,7 @@ import {
   lockPackageFromSource,
   mediaTypeForEcosystem,
   readProjectState,
+  sealVerifiedArtifactBinding,
   uninstallAll,
   uninstallPackages,
   writeProjectState,
@@ -53,7 +66,9 @@ import {
   MANIFEST_NAME,
   parentDirs,
   projectPaths,
+  readStableFile,
   storeKeyFromDigest,
+  writeStableFile,
 } from './paths.js';
 import {
   ecosystemFromPurl,
@@ -66,8 +81,8 @@ import {
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
   lockPackageSupplyChainFields,
-  priorTrustFromLock,
   projectPolicyDocument,
+  type PolicyFacts,
 } from './supply-chain.js';
 import { providerFor } from './registry.js';
 import { projectNativeFormats } from './native.js';
@@ -76,6 +91,7 @@ import { discoverNpmBins } from './bins.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { materialize } from '@openpacker/materializer';
+import { canonicalize } from '@openpacker/canonical';
 import {
   descriptorForBytes,
   streamFromBytes,
@@ -123,7 +139,7 @@ export async function initProject(input: {
   const name = input.name ?? defaultName(input.root);
   const manifest = defaultManifest(name);
   await mkdir(paths.root, { recursive: true });
-  await writeFile(paths.manifest, serializeManifest(manifest), 'utf8');
+  await writeStableFile(paths.manifest, serializeManifest(manifest));
   await ensureStableDirectory(paths.opmDir);
   await ensureStableDirectory(paths.store);
   await ensureStableDirectory(paths.bin);
@@ -146,14 +162,14 @@ function defaultName(root: string): string {
 }
 
 export async function readManifestFile(path: string): Promise<OpmManifest> {
-  return parseManifest(await readFile(path, 'utf8'));
+  return parseManifest(await readStableFile(path));
 }
 
 export async function writeManifestFile(
   path: string,
   manifest: OpmManifest,
 ): Promise<void> {
-  await writeFile(path, serializeManifest(manifest), 'utf8');
+  await writeStableFile(path, serializeManifest(manifest));
 }
 
 export async function addPackage(input: {
@@ -321,12 +337,27 @@ export async function removePackage(input: {
   await writeManifestFile(paths.manifest, manifest);
 
   const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
-  delete lock.packages[input.alias];
+  const previousAliases = Object.keys(lock.packages);
+  const removed = lock.packages[input.alias];
+  if (removed) removed.reason = 'transitive';
+  const reachable = new Set(Object.keys(manifest.packages));
+  const queue = [...reachable];
+  while (queue.length > 0) {
+    const pkg = lock.packages[queue.shift()!];
+    for (const dependency of pkg?.dependencies ?? [])
+      if (!reachable.has(dependency)) {
+        reachable.add(dependency);
+        queue.push(dependency);
+      }
+  }
+  for (const alias of previousAliases)
+    if (!reachable.has(alias)) delete lock.packages[alias];
+  lock.manifestDigest = manifestDigest(manifest);
   await writeLockfile(paths.lock, lock);
 
   const state = await uninstallPackages({
     root: input.root,
-    aliases: [input.alias],
+    aliases: previousAliases.filter((alias) => !lock.packages[alias]),
   });
 
   // Removing from opm.toml and leaving the entry in package.json would let the
@@ -411,19 +442,141 @@ export async function installProject(input: {
       ...(synced.native === undefined ? {} : { native: synced.native }),
     };
   }
+  assertLockMatchesManifest(input.root, manifest, lock);
   const offline = input.offline ?? manifest.options.offline;
+  if (offline) {
+    for (const [alias, requirement] of Object.entries(manifest.packages)) {
+      const pkg = lock.packages[alias];
+      if (pkg !== undefined && requirement.source !== undefined)
+        bindManifestSourceAuthority(pkg);
+    }
+    const state = await installFromLock({
+      root: input.root,
+      lock,
+      offline: true,
+      ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    });
+    const native = await projectNativeFormats({
+      root: input.root,
+      manifest,
+      lock,
+    });
+    return { lock, state, native };
+  }
+  const verifiedLock = await resolveManifestToLock({
+    root: input.root,
+    manifest,
+    offline,
+  });
+  if (
+    canonicalize(JSON.parse(serializeLockfile(lock))) !==
+    canonicalize(JSON.parse(serializeLockfile(verifiedLock)))
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      'Lock claims do not match a fresh resolution of the committed manifest',
+    );
   const state = await installFromLock({
     root: input.root,
-    lock,
+    lock: verifiedLock,
     offline,
     ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,
     manifest,
-    lock,
+    lock: verifiedLock,
   });
-  return { lock, state, native };
+  return { lock: verifiedLock, state, native };
+}
+
+function assertLockMatchesManifest(
+  root: string,
+  manifest: OpmManifest,
+  lock: OpmLockfile,
+): void {
+  if (lock.manifestDigest !== manifestDigest(manifest))
+    throw new OpmError(
+      'INVALID_LOCK',
+      'Lock was not produced from the current manifest and policy',
+    );
+  for (const [alias, requirement] of Object.entries(manifest.packages)) {
+    const pkg = lock.packages[alias];
+    if (!pkg || pkg.reason !== 'direct')
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock does not contain direct manifest requirement ${alias}`,
+      );
+    if (stripPurlVersion(pkg.purl) !== stripPurlVersion(requirement.purl))
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match manifest PURL ${requirement.purl}`,
+      );
+    const exactRequirement =
+      stripPurlVersion(requirement.purl) !== requirement.purl
+        ? requirement.purl
+        : requirement.version !== undefined &&
+            /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(requirement.version)
+          ? exactPurl(requirement.purl, requirement.version)
+          : undefined;
+    if (exactRequirement !== undefined && pkg.purl !== exactRequirement)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match manifest version ${requirement.version}`,
+      );
+    if (
+      requirement.source !== undefined &&
+      pkg.source !== requirement.source &&
+      pkg.source !== normalizedRequirementSource(requirement.source, root)
+    )
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match its manifest source`,
+      );
+  }
+  for (const [alias, pkg] of Object.entries(lock.packages))
+    if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock contains undeclared direct package ${alias}`,
+      );
+
+  const reachable = new Set(Object.keys(manifest.packages));
+  const queue = [...reachable];
+  while (queue.length > 0) {
+    const alias = queue.shift()!;
+    const pkg = lock.packages[alias];
+    if (!pkg)
+      throw new OpmError('INVALID_LOCK', `Lock dependency ${alias} is missing`);
+    for (const dependency of pkg.dependencies ?? []) {
+      if (!lock.packages[dependency])
+        throw new OpmError(
+          'INVALID_LOCK',
+          `Lock dependency ${alias} -> ${dependency} is missing`,
+        );
+      if (!reachable.has(dependency)) {
+        reachable.add(dependency);
+        queue.push(dependency);
+      }
+    }
+  }
+  for (const alias of Object.keys(lock.packages))
+    if (!reachable.has(alias))
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock contains package ${alias} outside the manifest dependency closure`,
+      );
+}
+
+function manifestDigest(manifest: OpmManifest): string {
+  return digestOf(new TextEncoder().encode(serializeManifest(manifest)));
+}
+
+function normalizedRequirementSource(source: string, root: string): string {
+  const resolved = resolveSource(source, root);
+  return resolved.startsWith('/') || /^[A-Za-z]:/u.test(resolved)
+    ? toFileUrl(resolved)
+    : resolved;
 }
 
 export async function uninstallProject(input: {
@@ -521,8 +674,7 @@ export async function resolveManifestToLock(input: {
 
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
-  const priorLock = await readLockfile(paths.lock);
-
+  lock.manifestDigest = manifestDigest(input.manifest);
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
     const locked = await resolveRequirement({
       root: input.root,
@@ -531,7 +683,6 @@ export async function resolveManifestToLock(input: {
       offline: input.offline,
       catalog,
       manifest: input.manifest,
-      ...(priorLock === undefined ? {} : { priorLock }),
       ...(input.registryOptions === undefined
         ? {}
         : { registryOptions: input.registryOptions }),
@@ -551,14 +702,21 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
-      ...(priorLock === undefined ? {} : { priorLock }),
       ...(input.registryOptions === undefined
         ? {}
         : { registryOptions: input.registryOptions }),
     });
-    for (const [alias, pkg] of Object.entries(transitive))
+    for (const [alias, pkg] of Object.entries(transitive.packages))
       if (!lock.packages[alias]) lock.packages[alias] = pkg;
+    for (const [alias, dependencies] of Object.entries(
+      transitive.dependencies,
+    )) {
+      const pkg = lock.packages[alias];
+      if (pkg) pkg.dependencies = dependencies;
+    }
   }
+  for (const pkg of Object.values(lock.packages))
+    sealVerifiedArtifactBinding(pkg);
   return lock;
 }
 
@@ -599,18 +757,27 @@ function nativeRangeFor(
 async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
-  priorLock?: OpmLockfile | undefined;
   registryOptions?: RegistryOptions | undefined;
-}): Promise<Record<string, LockPackage>> {
+}): Promise<{
+  packages: Record<string, LockPackage>;
+  dependencies: Record<string, string[]>;
+}> {
   const resolvable = input.direct.filter((pkg) =>
     requireAdapterRegistry().has(pkg.ecosystem),
   );
-  if (resolvable.length === 0) return {};
+  if (resolvable.length === 0) return { packages: {}, dependencies: {} };
 
   const policy = projectPolicyDocument(input.manifest);
   const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
+  const dependencies: Record<string, string[]> = {};
   try {
+    const optionsFor = (ecosystem: string) =>
+      registryOptionsForEcosystem(
+        ecosystem,
+        input.manifest,
+        input.registryOptions ?? {},
+      );
     const graph = await resolveGraph({
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
@@ -618,14 +785,20 @@ async function resolveTransitive(input: {
           ? {}
           : { range: nativeRangeFor(pkg, input.manifest)! }),
       })),
-      ...(input.registryOptions === undefined
-        ? {}
-        : { options: input.registryOptions }),
+      optionsFor,
     });
-    if (graph.packages.length === 0) return {};
+    if (graph.packages.length === 0) return { packages: {}, dependencies: {} };
 
     const solved = await solveGraph({
       graph,
+      policy: {
+        allowYanked: policy.allowYanked,
+        allowQuarantined: policy.allowQuarantined,
+        requiredEvidence: policy.requiredEvidence,
+        semanticLossMaximum: policy.semanticLossMaximum,
+        acceptedOverlayAuthorities: input.manifest.policy
+          ?.acceptedOverlayAuthorities ?? ['publisher'],
+      },
       // Pin each root to the version the direct pass already locked. Left
       // unpinned, the closure can select a different release of a package the
       // lock has already decided, and that second copy lands as a transitive
@@ -641,6 +814,11 @@ async function resolveTransitive(input: {
       const exact = instance.identity.exactPurl;
       if (exact === undefined || directPurls.has(exact)) continue;
       const alias = aliasForPurl(exact);
+      if (out[alias] && out[alias].purl !== exact)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected packages collide on lock alias ${alias}`,
+        );
       if (out[alias]) continue;
       // `inspect` describes a package; the downloadable artifact and its
       // published digest come from the artifact record, which is what the
@@ -648,7 +826,7 @@ async function resolveTransitive(input: {
       const artifact = await resolveRegistryArtifact(
         instance.identity.purlType,
         exact,
-        input.registryOptions ?? {},
+        optionsFor(instance.identity.purlType),
       );
       // Same standard as the direct path: the digest that goes in the lock is
       // re-derived from the bytes in hand, not copied from what the provider
@@ -670,10 +848,6 @@ async function resolveTransitive(input: {
 
       // A dependency nobody asked for directly is the case blockExoticSources
       // exists for, so it is evaluated at its real depth rather than skipped.
-      const priorTrust = priorTrustFromLock(
-        input.priorLock,
-        artifact.exactPurl,
-      );
       const facts = captureFactsFromSourceUri(
         artifact.exactPurl,
         artifact.uri,
@@ -685,16 +859,16 @@ async function resolveTransitive(input: {
           lifecycle: instance.lifecycle,
           semanticLoss: instance.semanticLoss,
           sourceSnapshotDigests: instance.sourceSnapshots,
-          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
         },
       );
+      facts.registryId = artifact.registryId;
       await assertSupplyChainAllowed(policy, facts);
 
       const transitiveIntegrity = nativeIntegrityOf(
         instance.identity.purlType,
         artifact.bytes,
       );
-      out[alias] = {
+      const locked: LockPackage = {
         alias,
         purl: artifact.exactPurl,
         version: artifact.version || instance.nativeVersion || '0.0.0',
@@ -712,7 +886,41 @@ async function resolveTransitive(input: {
           : { nativeIntegrity: transitiveIntegrity }),
         ...lockPackageSupplyChainFields(facts),
       };
+      bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
+      out[alias] = locked;
     }
+
+    const aliasByNodeId = new Map<string, string>();
+    const directByPurl = new Map(
+      input.direct.map((pkg) => [pkg.purl, pkg.alias]),
+    );
+    for (const instance of solved.selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined) continue;
+      const alias = directByPurl.get(exact) ?? aliasForPurl(exact);
+      const pkg =
+        input.direct.find((candidate) => candidate.alias === alias) ??
+        out[alias];
+      if (pkg === undefined || pkg.purl !== exact)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected package ${exact} has no unique lock entry`,
+        );
+      aliasByNodeId.set(instance.nodeId, alias);
+      dependencies[alias] ??= [];
+    }
+    for (const edge of solved.dependencyEdges) {
+      const from = aliasByNodeId.get(edge.fromNodeId);
+      const to = aliasByNodeId.get(edge.toNodeId);
+      if (from === undefined || to === undefined)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          'Selected dependency edge has no lock entry',
+        );
+      dependencies[from]!.push(to);
+    }
+    for (const alias of Object.keys(dependencies))
+      dependencies[alias] = [...new Set(dependencies[alias])].sort();
   } catch (error) {
     // Soft-fail at the project boundary: a transitive walk must not make a
     // previously installable direct set unusable. Unit tests exercise the
@@ -728,9 +936,9 @@ async function resolveTransitive(input: {
         error.code === 'SIZE_MISMATCH')
     )
       throw error;
-    return {};
+    return { packages: {}, dependencies: {} };
   }
-  return out;
+  return { packages: out, dependencies };
 }
 
 /** A filesystem-safe alias for a transitive package. */
@@ -761,21 +969,20 @@ async function resolveRequirement(input: {
     }
   >;
   manifest: OpmManifest;
-  priorLock?: OpmLockfile | undefined;
   registryOptions?: RegistryOptions | undefined;
 }): Promise<LockPackage> {
-  const ecosystem = ecosystemFromPurl(input.req.purl);
+  const requestedPurl = canonicalCatalogPurl(input.req.purl, 'manifest');
+  const ecosystem = ecosystemFromPurl(requestedPurl);
   const versionHint = input.req.version;
   const candidateExact =
     versionHint && !versionHint.startsWith('^') && !versionHint.startsWith('~')
-      ? exactPurl(stripPurlVersion(input.req.purl), versionHint)
-      : input.req.purl.includes('@')
-        ? input.req.purl
+      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      : requestedPurl.includes('@')
+        ? requestedPurl
         : undefined;
   const policy = projectPolicyDocument(input.manifest);
   const evaluationTime = new Date().toISOString();
-  const packageKey = candidateExact ?? stripPurlVersion(input.req.purl);
-  const priorTrust = priorTrustFromLock(input.priorLock, packageKey);
+  const packageKey = candidateExact ?? stripPurlVersion(requestedPurl);
 
   // 1) Explicit source on requirement
   if (input.req.source) {
@@ -790,7 +997,6 @@ async function resolveRequirement(input: {
     const facts = captureFactsFromSourceUri(packageKey, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,
-      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
       lifecycleScriptsExecuted: false,
     });
     await assertSupplyChainAllowed(policy, facts);
@@ -802,7 +1008,7 @@ async function resolveRequirement(input: {
       !versionHint.startsWith('~')
         ? versionHint
         : (guessVersionFromBytes(bytes) ?? '0.0.0');
-    const purl = exactPurl(stripPurlVersion(input.req.purl), version);
+    const purl = exactPurl(stripPurlVersion(requestedPurl), version);
     const format = inferFormat(resolved, mediaTypeForEcosystem(ecosystem));
     const mediaType = mediaTypeForEcosystem(ecosystem);
     // discover bins via temp extract for npm
@@ -823,30 +1029,34 @@ async function resolveRequirement(input: {
       reason: 'direct',
     });
     const sourceIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       ...locked,
       ...(sourceIntegrity === undefined
         ? {}
         : { nativeIntegrity: sourceIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
+    bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
+    return result;
   }
 
   // 2) Catalog lookup by exact purl or base+version
   const keys = [
     candidateExact,
     versionHint && !/[~^<>*]/.test(versionHint)
-      ? exactPurl(stripPurlVersion(input.req.purl), versionHint)
+      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
       : undefined,
-    input.req.purl,
-    stripPurlVersion(input.req.purl),
-  ].filter((k): k is string => typeof k === 'string');
+    requestedPurl,
+    stripPurlVersion(requestedPurl),
+  ]
+    .filter((k): k is string => typeof k === 'string')
+    .map((key) => canonicalCatalogPurl(key));
 
   // also try version-suffixed catalog keys for latest if only base purl
   for (const [key, entry] of input.catalog) {
     if (
-      stripPurlVersion(entry.purl) === stripPurlVersion(input.req.purl) ||
-      stripPurlVersion(key) === stripPurlVersion(input.req.purl)
+      stripPurlVersion(entry.purl) === stripPurlVersion(requestedPurl) ||
+      stripPurlVersion(key) === stripPurlVersion(requestedPurl)
     ) {
       if (
         !versionHint ||
@@ -860,7 +1070,7 @@ async function resolveRequirement(input: {
     }
   }
 
-  for (const key of keys) {
+  for (const key of [...new Set(keys)]) {
     const entry = input.catalog.get(key);
     if (!entry) continue;
     if (
@@ -874,7 +1084,43 @@ async function resolveRequirement(input: {
       continue;
     }
     const source = entry.resolvedSource;
-    // verify digest if we can read offline
+    const sourceUri =
+      source.startsWith('/') || /^[A-Za-z]:/.test(source)
+        ? toFileUrl(source)
+        : source;
+    const selectedCatalogPurl = entry.purl;
+    try {
+      assertPackageIdentityMatchesRequest(
+        candidateExact ?? stripPurlVersion(requestedPurl),
+        { exactPurl: selectedCatalogPurl },
+      );
+      if (
+        versionHint !== undefined &&
+        (versionHint.startsWith('^') || versionHint.startsWith('~')) &&
+        !codecFor(ecosystem).satisfies(entry.version, versionHint)
+      )
+        continue;
+    } catch (error) {
+      if (error instanceof OpmError) throw error;
+      continue;
+    }
+    // Keep the manifest's equivalent spelling in user-facing state while the
+    // catalog map and all comparisons remain canonical.
+    const entryPurl = exactPurl(
+      stripPurlVersion(input.req.purl),
+      entry.version,
+    );
+    const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
+      evaluationTime,
+      dependencyDepth: 0,
+      lifecycleScriptsExecuted: false,
+    });
+    await assertSupplyChainAllowed(policy, facts);
+    if (/^https?:/iu.test(sourceUri))
+      throw new OpmError(
+        'POLICY_DENIED',
+        'Remote catalog artifacts are not authorized; use a configured registry or an explicit source',
+      );
     const bytes = await fetchArtifactBytes(source, input.offline, {
       expectedBytes: entry.size,
     });
@@ -893,22 +1139,8 @@ async function resolveRequirement(input: {
     if (bins.length === 0 && ecosystem === 'npm') {
       bins = await discoverBinsFromArchive(bytes, entry.format);
     }
-    const sourceUri =
-      source.startsWith('/') || /^[A-Za-z]:/.test(source)
-        ? toFileUrl(source)
-        : source;
-    const entryPurl = entry.purl.includes('@')
-      ? entry.purl
-      : exactPurl(entry.purl, entry.version);
-    const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
-      evaluationTime,
-      dependencyDepth: 0,
-      ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
-      lifecycleScriptsExecuted: false,
-    });
-    await assertSupplyChainAllowed(policy, facts);
     const catalogIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       alias: input.alias,
       purl: entryPurl,
       version: entry.version,
@@ -926,6 +1158,8 @@ async function resolveRequirement(input: {
         : { nativeIntegrity: catalogIntegrity }),
       ...lockPackageSupplyChainFields(facts),
     };
+    bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
+    return result;
   }
 
   // 4) The ecosystem's registry.
@@ -934,7 +1168,11 @@ async function resolveRequirement(input: {
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
   if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
-    const registryOptions = input.registryOptions ?? {};
+    const registryOptions = registryOptionsForEcosystem(
+      ecosystem,
+      input.manifest,
+      input.registryOptions ?? {},
+    );
     const target =
       candidateExact ??
       (await (async () => {
@@ -942,7 +1180,7 @@ async function resolveRequirement(input: {
         // newest. `enumerate` returns oldest-first.
         const versions = await listRegistryVersions(
           ecosystem,
-          stripPurlVersion(input.req.purl),
+          stripPurlVersion(requestedPurl),
           registryOptions,
         );
         const newest = versions[versions.length - 1];
@@ -984,19 +1222,16 @@ async function resolveRequirement(input: {
 
     // Capture supply-chain facts from the real inspect path when available.
     let supplyFields: ReturnType<typeof lockPackageSupplyChainFields> = {};
+    let verifiedFacts: PolicyFacts | undefined;
     try {
       const catalog = await providerFor(ecosystem, {
         ...registryOptions,
         offline: input.offline,
       });
-      const registryId = (
-        await requireAdapterRegistry().definitionFor(ecosystem)
-      ).registryId;
       const { facts } = await captureFactsFromCatalog(catalog, target, {
         evaluationTime,
         dependencyDepth: 0,
-        registryId,
-        ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
+        registryId: artifact.registryId,
       });
       // Prefer artifact URI for source kind when inspect did not set one.
       if (facts.sourceKind === undefined) {
@@ -1011,6 +1246,7 @@ async function resolveRequirement(input: {
       }
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
+      verifiedFacts = facts;
     } catch (error) {
       if (
         error instanceof OpmError &&
@@ -1029,16 +1265,17 @@ async function resolveRequirement(input: {
           // resolveRegistryArtifact already checked against this ecosystem's
           // allowlist — that, not the URI's shape, is what makes it a registry.
           fromRegistryArtifactRecord: true,
-          ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
           lifecycleScriptsExecuted: false,
         },
       );
+      facts.registryId = artifact.registryId;
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
+      verifiedFacts = facts;
     }
 
     const nativeIntegrity = nativeIntegrityOf(ecosystem, bytes);
-    return {
+    const result: LockPackage = {
       alias: input.alias,
       purl: artifact.exactPurl,
       version: artifact.version || (versionHint ?? '0.0.0'),
@@ -1054,6 +1291,8 @@ async function resolveRequirement(input: {
       ...(nativeIntegrity === undefined ? {} : { nativeIntegrity }),
       ...supplyFields,
     };
+    bindVerifiedArtifactBytes(result, bytes, 'registry', verifiedFacts);
+    return result;
   }
 
   throw new OpmError(

@@ -13,7 +13,7 @@
         }
       ],
       "licenses": [{ "expression": "MIT" }],
-      "name": "@openpacker/demo-tool",
+      "name": "demo-tool",
       "purl": "pkg:npm/%40openpacker/demo-tool@1.0.0",
       "type": "library",
       "version": "1.0.0"

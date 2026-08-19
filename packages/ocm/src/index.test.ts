@@ -108,6 +108,12 @@ describe('OCM mapping', () => {
         selectedCapabilityProviders: [],
         dependencyEdges: [
           {
+            fromNodeId: 'root',
+            toNodeId: 'app',
+            requirementId: 'root-app',
+            witnessType: 'package',
+          },
+          {
             fromNodeId: 'app',
             toNodeId: 'dep',
             requirementId: 'package-edge',
@@ -129,6 +135,7 @@ describe('OCM mapping', () => {
         satisfiedRequirementIds: [
           'capability-edge',
           'package-edge',
+          'root-app',
           'transitive-edge',
         ],
         excludedCandidates: [],
@@ -263,6 +270,17 @@ describe('OCM mapping', () => {
             fromNodeId: 'app',
             toNodeId: 'missing',
             requirementId: 'missing-dep',
+            witnessType: 'package',
+          },
+        ],
+      ),
+      solutionFor(
+        ['app'],
+        [
+          {
+            fromNodeId: 'root',
+            toNodeId: 'missing',
+            requirementId: 'missing-root-target',
             witnessType: 'package',
           },
         ],

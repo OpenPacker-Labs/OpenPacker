@@ -248,3 +248,37 @@ describe('NugetProjectFormat — packages.lock.json', () => {
     }
   });
 });
+
+describe('NugetProjectFormat — pack', () => {
+  it('rejects a target framework that escapes the project', async () => {
+    const fixture = await project({
+      'app.csproj': CSPROJ.replace('net9.0', '../../../outside'),
+    });
+    try {
+      await expect(
+        fixture.format.pack!(fixture.detected),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects traversal in package metadata before writing', async () => {
+    const fixture = await project({
+      'app.csproj': CSPROJ.replace(
+        '    <Nullable>enable</Nullable>',
+        '    <Nullable>enable</Nullable>\n    <PackageId>Demo</PackageId>\n    <Version>../../../victim</Version>',
+      ),
+    });
+    try {
+      await expect(
+        fixture.format.pack!(fixture.detected),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      await expect(
+        readFile(join(fixture.dir, 'victim.nupkg')),
+      ).rejects.toThrow();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

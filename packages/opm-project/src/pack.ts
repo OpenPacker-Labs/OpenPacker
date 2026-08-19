@@ -128,7 +128,26 @@ export async function packProject(input: {
       'INTERNAL_ERROR',
       'Performed pack has no normalized input',
     );
-  const receipt = receiptFor(outcome, target, normalized.digest);
+  if (
+    input.strategy === 'delegate' &&
+    packer.providerManifestDigest === undefined
+  )
+    throw new OpmError(
+      'INVALID_RESPONSE',
+      `Delegated provider ${packer.providerId} has no manifest digest`,
+    );
+  const receipt = receiptFor(
+    outcome,
+    target,
+    normalized.digest,
+    input.strategy === 'delegate'
+      ? {
+          id: packer.providerId,
+          manifestDigest: parseDigest(packer.providerManifestDigest!),
+          artifactIdentity: 'provider-attested',
+        }
+      : undefined,
+  );
   const bytes = canonicalBytes(receipt as unknown as JsonValue);
   const receiptPath = join(outputDirectory, PACK_RECEIPT);
   await writeFileAtomic(receiptPath, bytes);
@@ -151,12 +170,15 @@ function receiptFor(
   outcome: PackOutcome,
   target: Distribution,
   normalizedManifestDigest: PackReceipt['normalizedManifestDigest'],
+  provider?: PackReceipt['provider'],
 ): PackReceipt {
+  const descriptorIds = new Set<string>();
   return {
     packReceiptVersion: '1',
     strategy: outcome.strategy,
     target,
     normalizedManifestDigest,
+    ...(provider === undefined ? {} : { provider }),
     ...(outcome.tool === undefined ? {} : { tool: outcome.tool }),
     commands: (
       outcome.commands ??
@@ -172,20 +194,28 @@ function receiptFor(
             enforced: outcome.sandboxEnforced,
           },
         }),
-    artifacts: outcome.artifacts.map((artifact) => ({
-      descriptorId: artifact.exactPurl ?? artifact.digest,
-      digest: parseDigest(artifact.digest),
-      size: artifact.size,
-      mediaType: artifact.mediaType,
-      artifactType: artifact.mediaType,
-      ...(artifact.outputName === undefined
-        ? {}
-        : { fileName: basename(artifact.outputName) }),
-      nativeRole: artifact.nativeRole,
-      locations: [],
-      referrers: [],
-      externalRefs: [],
-    })),
+    artifacts: outcome.artifacts.map((artifact) => {
+      if (descriptorIds.has(artifact.digest))
+        throw new OpmError(
+          'INVALID_RESPONSE',
+          `Pack returned duplicate artifact digest ${artifact.digest}`,
+        );
+      descriptorIds.add(artifact.digest);
+      return {
+        descriptorId: artifact.digest,
+        digest: parseDigest(artifact.digest),
+        size: artifact.size,
+        mediaType: artifact.mediaType,
+        artifactType: artifact.mediaType,
+        ...(artifact.outputName === undefined
+          ? {}
+          : { fileName: basename(artifact.outputName) }),
+        nativeRole: artifact.nativeRole,
+        locations: [],
+        referrers: [],
+        externalRefs: [],
+      };
+    }),
     semanticLoss: [...outcome.semanticLoss],
   };
 }

@@ -1794,6 +1794,19 @@
       "levels": ["PREX-N"]
     },
     {
+      "name": "delegated-pack-provider-without-identity-command",
+      "file": "pack-provider/example.json",
+      "mutations": [
+        {
+          "operation": "remove",
+          "path": "/identityCommand"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
       "name": "delegated-pack-provider-invalid-authority",
       "file": "pack-provider/example.json",
       "mutations": [
@@ -1906,6 +1919,40 @@
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackHostPlan",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-artifact-identity",
+      "file": "pack-provider/artifact-identity.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackArtifactIdentity",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-artifact-identity-without-digest",
+      "file": "pack-provider/artifact-identity.json",
+      "mutations": [
+        {
+          "operation": "remove",
+          "path": "/artifactDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackArtifactIdentity",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-pack-artifact-identity-without-version",
+      "file": "pack-provider/artifact-identity.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/exactPurl",
+          "value": "pkg:acme/demo"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackArtifactIdentity",
       "valid": false,
       "levels": ["PREX-N"]
     },

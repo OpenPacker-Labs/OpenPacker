@@ -38,6 +38,7 @@
     "@openpacker/embedded": "0.1.0",
     "@openpacker/events": "0.1.0",
     "@openpacker/lock-import": "0.1.0",
+    "@openpacker/policy": "0.1.0",
     "@openpacker/receipts": "0.1.0",
     "@openpacker/trust": "0.1.0",
     "fastify": "5.11.2"

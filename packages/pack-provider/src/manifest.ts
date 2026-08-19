@@ -5,7 +5,10 @@ import type {
   DelegatedPackProviderManifest,
   JsonValue,
 } from '@openpacker/contracts';
-import { validateContract } from '@openpacker/conformance';
+import {
+  parseAndValidateContract,
+  validateContract,
+} from '@openpacker/conformance';
 
 const MAX_MANIFEST_BYTES = 1_048_576;
 const MANIFEST_SCHEMA =
@@ -24,23 +27,33 @@ export async function loadDelegatedPackProvider(
     const opened = await handle.stat({ bigint: true });
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       invalid(`Provider manifest changed while opening: ${path}`);
-    const text = await handle.readFile('utf8');
+    const bytes = Buffer.alloc(Number(opened.size));
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const { bytesRead } = await handle.read(
+        bytes,
+        offset,
+        bytes.byteLength - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
     const after = await handle.stat({ bigint: true });
     if (
+      BigInt(offset) !== opened.size ||
       opened.size !== after.size ||
       opened.mtimeNs !== after.mtimeNs ||
       opened.ctimeNs !== after.ctimeNs
     )
       invalid(`Provider manifest changed while reading: ${path}`);
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch (error) {
-      invalid(
-        `Provider manifest is not JSON: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    return parseDelegatedPackProvider(value);
+    const result = parseAndValidateContract(
+      MANIFEST_SCHEMA,
+      bytes.toString('utf8'),
+    );
+    if (!result.valid || result.value === undefined)
+      invalid(validationMessage(result.errors));
+    return result.value as DelegatedPackProviderManifest;
   } finally {
     await handle.close();
   }
@@ -50,16 +63,19 @@ export function parseDelegatedPackProvider(
   value: unknown,
 ): DelegatedPackProviderManifest {
   const result = validateContract(MANIFEST_SCHEMA, value as JsonValue);
-  if (!result.valid)
-    invalid(
-      `Provider does not match ${MANIFEST_SCHEMA}: ${result.errors
-        .map(
-          (error) =>
-            `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`,
-        )
-        .join('; ')}`,
-    );
+  if (!result.valid) invalid(validationMessage(result.errors));
   return value as DelegatedPackProviderManifest;
+}
+
+function validationMessage(
+  errors: readonly { instancePath: string; message?: string }[],
+): string {
+  return `Provider does not match ${MANIFEST_SCHEMA}: ${errors
+    .map(
+      (error) =>
+        `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`,
+    )
+    .join('; ')}`;
 }
 
 function invalid(message: string): never {

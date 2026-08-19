@@ -74,6 +74,26 @@ describe('normalized pack input', () => {
     ).rejects.toMatchObject({ code: 'INVALID_TARGET' });
   });
 
+  it('orders distinct Unicode names with the repository canonical order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-normalize-unicode-'));
+    roots.push(root);
+    for (const name of ['ä.txt', 'z.txt', 'é.txt', 'e\u0301.txt', 'Z.txt'])
+      await writeFile(join(root, name), name);
+
+    const packed = await normalizeProjectPack({
+      root,
+      package: manifest,
+      target,
+    });
+    expect(packed.manifest.tree.entries.map((entry) => entry.path)).toEqual([
+      'Z.txt',
+      'e\u0301.txt',
+      'z.txt',
+      'ä.txt',
+      'é.txt',
+    ]);
+  });
+
   it('fails when an ancestor is swapped to a symlink and restored', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-normalize-swap-'));
     const outside = await mkdtemp(join(tmpdir(), 'opm-normalize-outside-'));

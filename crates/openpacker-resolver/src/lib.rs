@@ -12,7 +12,7 @@ mod resolvo_engine;
 mod semantics;
 
 pub use amend::{AppliedAmendment, apply_amendments};
-pub use canonical::{canonical_json, digest_json, parse_json, parse_json_as};
+pub use canonical::{canonical_json, digest_json, digest_projection, parse_json, parse_json_as};
 pub use checker::{check, check_json};
 pub use engine::{solve, solve_json, validate_universe, validate_universe_json};
 pub use error::ResolverError;

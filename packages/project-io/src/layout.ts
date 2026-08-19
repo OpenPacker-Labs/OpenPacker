@@ -508,29 +508,93 @@ export async function collectFiles(
   root: string,
   prefix = '',
 ): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
+  const rootHandle = await openStableDirectory(root, false);
+  try {
+    return await collectFilesFromHandle(rootHandle, prefix, root);
+  } finally {
+    await rootHandle.close();
+  }
+}
+
+/** Collect a stable tree through authority the caller already retained. */
+export async function collectFilesFromHandle(
+  rootHandle: FileHandle,
+  prefix = '',
+  displayRoot = '<directory handle>',
+): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
   const out: {
     path: string;
     contents: Uint8Array;
     executable: boolean;
   }[] = [];
-  const { readFile } = await import('node:fs/promises');
-  const walkOne = async (directory: string, at: string): Promise<void> => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const from = join(directory, entry.name);
+  const snapshots = new Map<string, TreeEntrySnapshot>();
+  let totalBytes = 0;
+  const walkOne = async (directory: FileHandle, at: string): Promise<void> => {
+    const beforeDirectory = await directory.stat({ bigint: true });
+    const directoryPath = handlePath(directory);
+    for (const entry of await readdir(directoryPath, { withFileTypes: true })) {
+      const from = join(directoryPath, entry.name);
       const path = at === '' ? entry.name : `${at}/${entry.name}`;
       if (entry.isDirectory()) {
-        await walkOne(from, path);
+        const child = await openDirectory(from, false);
+        try {
+          await walkOne(child, path);
+        } finally {
+          await child.close();
+        }
         continue;
       }
-      if (!entry.isFile()) continue;
-      const info = await stat(from);
-      out.push({
-        path: prefix === '' ? path : `${prefix}/${path}`,
-        contents: new Uint8Array(await readFile(from)),
-        executable: (info.mode & 0o111) !== 0,
-      });
+      if (!entry.isFile()) throw unsafe(from);
+      const file = await open(
+        from,
+        constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+      );
+      try {
+        const before = await file.stat({ bigint: true });
+        if (!before.isFile() || before.size > 512n * 1024n * 1024n)
+          throw unsafe(from);
+        const size = Number(before.size);
+        if (totalBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
+        const contents = new Uint8Array(size);
+        let offset = 0;
+        while (offset < size) {
+          const { bytesRead } = await file.read(
+            contents,
+            offset,
+            size - offset,
+            offset,
+          );
+          if (bytesRead === 0) break;
+          offset += bytesRead;
+        }
+        const [after, named] = await Promise.all([
+          file.stat({ bigint: true }),
+          lstat(from, { bigint: true }),
+        ]);
+        if (
+          offset !== size ||
+          !sameMetadata(before, after) ||
+          after.dev !== named.dev ||
+          after.ino !== named.ino
+        )
+          throw unsafe(from);
+        totalBytes += size;
+        snapshots.set(path, snapshot('file', before));
+        out.push({
+          path: prefix === '' ? path : `${prefix}/${path}`,
+          contents,
+          executable: (before.mode & 0o111n) !== 0n,
+        });
+      } finally {
+        await file.close();
+      }
     }
+    const afterDirectory = await directory.stat({ bigint: true });
+    if (!sameMetadata(beforeDirectory, afterDirectory))
+      throw unsafe(displayRoot);
+    snapshots.set(at, snapshot('directory', beforeDirectory));
   };
-  await walkOne(root, '');
+  await walkOne(rootHandle, '');
+  await assertTreeSnapshot(rootHandle, snapshots);
   return out;
 }

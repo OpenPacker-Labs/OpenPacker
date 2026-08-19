@@ -1,18 +1,23 @@
 import {
   appendFile,
+  chmod,
   mkdtemp,
   mkdir,
   open,
+  readFile,
   rename,
   rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { constants, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DelegatedPackProviderManifest } from '@openpacker/contracts';
 import {
+  createMockBackend,
   runInSandbox,
   type RunInSandboxInput,
   type SandboxBackend,
@@ -28,10 +33,39 @@ const directorySwap = vi.hoisted(() => ({
   original: undefined as string | undefined,
 }));
 
+const snapshotOpen = vi.hoisted(() => ({
+  calls: [] as { path: string; flags: number }[],
+  failUnnamed: false,
+  failReader: false,
+  writerFd: undefined as number | undefined,
+}));
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
+    async open(path: Parameters<typeof actual.open>[0], ...args: unknown[]) {
+      const flags = args[0];
+      if (typeof path === 'string' && typeof flags === 'number')
+        snapshotOpen.calls.push({ path, flags });
+      if (
+        snapshotOpen.failUnnamed &&
+        typeof flags === 'number' &&
+        (flags & 0x40_0000) !== 0
+      )
+        throw Object.assign(new Error('unnamed files unavailable'), {
+          code: 'EOPNOTSUPP',
+        });
+      if (
+        snapshotOpen.failReader &&
+        path === `/proc/self/fd/${snapshotOpen.writerFd}`
+      )
+        throw Object.assign(new Error('reader reopen failed'), { code: 'EIO' });
+      const handle = await Reflect.apply(actual.open, actual, [path, ...args]);
+      if (typeof flags === 'number' && (flags & 0x40_0000) !== 0)
+        snapshotOpen.writerFd = handle.fd;
+      return handle;
+    },
     async opendir(path: string) {
       if (path !== directorySwap.output || directorySwap.original === undefined)
         return actual.opendir(path);
@@ -55,6 +89,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const roots: string[] = [];
 
 afterEach(async () => {
+  snapshotOpen.calls.length = 0;
+  snapshotOpen.failUnnamed = false;
+  snapshotOpen.failReader = false;
+  snapshotOpen.writerFd = undefined;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -85,12 +123,12 @@ describe('manifest package packer', () => {
     expect(plan.requiresNetwork).toBe(true);
   });
 
-  it('refuses build authority before resolving or running a tool', async () => {
+  it('requires execution consent before resolving or running any provider', async () => {
     const root = await project();
     let resolved = false;
     let ran = false;
     const packer = configured(
-      { ...manifest(), authority: { ...manifest().authority, build: true } },
+      manifest(),
       async () => {
         resolved = true;
         return '/usr/bin/test-pack';
@@ -124,6 +162,7 @@ describe('manifest package packer', () => {
     );
 
     const result = await packer.pack(input(root), {
+      allowBuild: true,
       outputDirectory,
       authorizedEnvironment: { TEST_TOKEN: 'secret' },
     });
@@ -147,6 +186,35 @@ describe('manifest package packer', () => {
     ]);
   });
 
+  it('rejects a native artifact whose provider-reported identity differs from the target', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: '/usr/bin/test-pack',
+      inspectExecutable: async () => executableIdentity('/usr/bin/test-pack'),
+      sandboxRun: async (sandboxInput) => {
+        if (sandboxInput.argv[1] === 'identify') {
+          const bytes = await readFile(sandboxInput.argv.at(-1)!);
+          return outcome(
+            JSON.stringify({
+              delegatedPackArtifactIdentityVersion: '1',
+              exactPurl: 'pkg:test/other@9.9.9',
+              artifactDigest: `sha256:${createHash('sha256')
+                .update(bytes)
+                .digest('hex')}`,
+            }),
+          );
+        }
+        await writeFile(join(outputDirectory, 'demo.test'), 'native bytes');
+        return outcome();
+      },
+    });
+
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
   it('binds the resolved path and keeps loader env inside a fail-closed jail', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
@@ -168,6 +236,7 @@ describe('manifest package packer', () => {
     );
 
     const result = await packer.pack(input(root), {
+      allowBuild: true,
       outputDirectory,
       authorizedEnvironment: { LD_PRELOAD: '/tmp/evil.so' },
       sandbox: { mode: 'off' },
@@ -178,6 +247,301 @@ describe('manifest package packer', () => {
     expect(backendInput?.hostEnv.LD_PRELOAD).toBeUndefined();
     expect(result.sandboxBackend).toBe('native-bwrap');
     expect(result.sandboxEnforced).toBe(true);
+    expect(result.tool?.digest).toEqual({
+      algorithm: 'sha256',
+      value: 'a'.repeat(64),
+    });
+  });
+
+  it('requires an operator-approved absolute executable path', () => {
+    expect(
+      () =>
+        new ManifestPackagePacker(manifest(), 'test', {
+          executablePath: 'test-pack',
+        }),
+    ).toThrow(/absolute path/u);
+  });
+
+  it('rejects executable symlinks and records verified executable bytes', async () => {
+    const root = await project();
+    const executable = join(root, 'approved-tool');
+    const linked = join(root, 'linked-tool');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n');
+    await chmod(executable, 0o755);
+    await symlink(executable, linked);
+
+    const rejected = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: linked,
+    });
+    await expect(rejected.available()).resolves.toMatchObject({
+      available: false,
+    });
+
+    const accepted = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+    const result = await accepted.pack(input(root), { dryRun: true });
+    expect(result.tool).toEqual({
+      name: 'test-pack',
+      path: executable,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update('#!/bin/sh\nexit 0\n').digest('hex'),
+      },
+    });
+  });
+
+  it('creates the executable snapshot with O_TMPFILE and no pathname', async () => {
+    const root = await project();
+    const executable = join(root, 'approved-tool');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    snapshotOpen.calls.length = 0;
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+
+    await expect(
+      packer.pack(input(root), { dryRun: true }),
+    ).resolves.toMatchObject({ performed: false });
+    expect(
+      snapshotOpen.calls.find(({ flags }) => (flags & 0x40_0000) !== 0),
+    ).toEqual({
+      path: tmpdir(),
+      flags: 0x40_0000 | constants.O_DIRECTORY | constants.O_RDWR,
+    });
+    expect(
+      snapshotOpen.calls.some(({ flags }) => (flags & constants.O_CREAT) !== 0),
+    ).toBe(false);
+  });
+
+  it('fails closed instead of creating a named snapshot fallback', async () => {
+    const root = await project();
+    const executable = join(root, 'approved-tool');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    snapshotOpen.calls.length = 0;
+    snapshotOpen.failUnnamed = true;
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+
+    await expect(packer.available()).resolves.toMatchObject({
+      available: false,
+    });
+    expect(
+      snapshotOpen.calls.some(({ flags }) => (flags & 0x40_0000) !== 0),
+    ).toBe(true);
+    expect(
+      snapshotOpen.calls.some(({ flags }) => (flags & constants.O_CREAT) !== 0),
+    ).toBe(false);
+  });
+
+  it('closes the unnamed writer when reopening the reader fails', async () => {
+    const root = await project();
+    const executable = join(root, 'approved-tool');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    snapshotOpen.failReader = true;
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+
+    await expect(packer.available()).resolves.toMatchObject({
+      available: false,
+    });
+    expect(snapshotOpen.writerFd).toBeDefined();
+    await expect(
+      readFile(`/proc/self/fd/${snapshotOpen.writerFd}`, 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses an executable whose stable identity changes during execution', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    let revision = 1n;
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: '/usr/bin/test-pack',
+      inspectExecutable: async () => ({
+        ...executableIdentity('/usr/bin/test-pack'),
+        inode: revision,
+      }),
+      sandboxRun: async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), 'native');
+        revision = 2n;
+        return outcome();
+      },
+    });
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
+  });
+
+  it('executes the approved handle when its pathname is swapped and restored', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const executable = join(root, 'approved-tool');
+    const original = join(root, 'approved-original');
+    const attacker = join(root, 'attacker-tool');
+    const marker = join(root, 'attacker-ran');
+    await writeFile(
+      executable,
+      '#!/bin/sh\n' +
+        '[ "$1" = pack ] || exit 9\n' +
+        'while [ "$1" != --out ]; do shift; done\n' +
+        'shift\nmkdir -p "$1"\nprintf native > "$1/demo.test"\n',
+    );
+    await writeFile(
+      attacker,
+      `#!/bin/sh\nprintf attacker > ${JSON.stringify(marker)}\n`,
+    );
+    await Promise.all([chmod(executable, 0o755), chmod(attacker, 0o755)]);
+
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+      sandboxRun: async (sandboxInput) => {
+        await expect(
+          readFile(
+            `/proc/self/fdinfo/${sandboxInput.executableAuthority!.fd}`,
+            'utf8',
+          ),
+        ).resolves.toMatch(/^pos:\s+0$/mu);
+        expect(() =>
+          writeSync(
+            sandboxInput.executableAuthority!.fd,
+            Buffer.from('attacker'),
+          ),
+        ).toThrow(expect.objectContaining({ code: 'EBADF' }));
+        await rename(executable, original);
+        await rename(attacker, executable);
+        try {
+          return await runInSandbox({
+            ...sandboxInput,
+            backend: createMockBackend(),
+          });
+        } finally {
+          await rename(executable, attacker);
+          await rename(original, executable);
+        }
+      },
+    });
+
+    await expect(
+      packer.pack(input(root), {
+        allowBuild: true,
+        outputDirectory,
+      }),
+    ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
+    await expect(
+      readFile(join(outputDirectory, 'demo.test'), 'utf8'),
+    ).resolves.toBe('native');
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('executes immutable approved bytes during an in-place mutate and restore', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const executable = join(root, 'approved-tool');
+    const marker = join(root, 'attacker-ran');
+    const approvedBytes =
+      '#!/bin/sh\n' +
+      '[ "$1" = pack ] || exit 9\n' +
+      'while [ "$1" != --out ]; do shift; done\n' +
+      'shift\nmkdir -p "$1"\nprintf native > "$1/demo.test"\n';
+    const attackerBytes = `#!/bin/sh\nprintf attacker > ${JSON.stringify(marker)}\n`;
+    await writeFile(executable, approvedBytes, { mode: 0o755 });
+
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+      sandboxRun: async (sandboxInput) => {
+        await writeFile(executable, attackerBytes);
+        try {
+          return await runInSandbox({
+            ...sandboxInput,
+            backend: createMockBackend(),
+          });
+        } finally {
+          await writeFile(executable, approvedBytes);
+        }
+      },
+    });
+
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
+    await expect(
+      readFile(join(outputDirectory, 'demo.test'), 'utf8'),
+    ).resolves.toBe('native');
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not expose mutable sibling resources to standalone providers', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const executable = join(root, 'standalone-tool');
+    const sibling = join(root, 'provider-resource');
+    const marker = join(root, 'sibling-ran');
+    await writeFile(
+      executable,
+      '#!/bin/sh\n' +
+        'resource="$(cat "$(dirname "$0")/provider-resource")" || exit 8\n' +
+        `[ "$resource" != malicious ] || printf pwned > ${JSON.stringify(marker)}\n`,
+      { mode: 0o755 },
+    );
+    await writeFile(sibling, 'approved');
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+      sandboxRun: async (sandboxInput) => {
+        await writeFile(sibling, 'malicious');
+        return await runInSandbox({
+          ...sandboxInput,
+          backend: createMockBackend(),
+        });
+      },
+    });
+
+    const result = await packer.pack(input(root), {
+      allowBuild: true,
+      outputDirectory,
+    });
+    expect(result.exitCode).not.toBe(0);
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses impractically large delegated executables before copying them', async () => {
+    const root = await project();
+    const executable = join(root, 'oversized-tool');
+    const handle = await open(executable, 'w', 0o755);
+    try {
+      await handle.truncate(64 * 1_024 * 1_024 + 1);
+    } finally {
+      await handle.close();
+    }
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      executablePath: executable,
+    });
+    await expect(packer.available()).resolves.toMatchObject({
+      available: false,
+    });
+  });
+
+  it('orders Unicode artifact names by canonical code units', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'ä.test'), 'umlaut');
+        await writeFile(join(outputDirectory, 'z.test'), 'ascii');
+        return outcome();
+      },
+    );
+    const result = await packer.pack(input(root), {
+      allowBuild: true,
+      outputDirectory,
+    });
+    expect(result.artifacts.map((artifact) => artifact.outputName)).toEqual([
+      'z.test',
+      'ä.test',
+    ]);
   });
 
   it('rejects undeclared environment and artifact symlinks', async () => {
@@ -197,11 +561,12 @@ describe('manifest package packer', () => {
 
     await expect(
       packer.pack(input(root), {
+        allowBuild: true,
         authorizedEnvironment: { OTHER_TOKEN: 'no' },
       }),
     ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
     await expect(
-      packer.pack(input(root), { outputDirectory }),
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -223,11 +588,29 @@ describe('manifest package packer', () => {
     );
 
     await expect(
-      packer.pack(input(root), { outputDirectory }),
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('rejects a preflight swap to empty and restore', async () => {
+  it('reserves the host receipt name from delegated providers', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), 'native');
+        await writeFile(join(outputDirectory, 'opm-pack-receipt.json'), '{}');
+        return outcome();
+      },
+    );
+
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('retains preflight authority across a swap to empty and restore', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
     const original = join(root, 'out-original');
@@ -237,8 +620,8 @@ describe('manifest package packer', () => {
     directorySwap.original = original;
 
     await expect(
-      configured().pack(input(root), { outputDirectory }),
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+      configured().pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'OUTPUT_NOT_EMPTY' });
   });
 
   it('bounds directory entries before materializing them', async () => {
@@ -258,9 +641,9 @@ describe('manifest package packer', () => {
       { outputEntries: 2 },
     );
 
-    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 2 entries/u,
-    );
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 2 entries/u);
   });
 
   it('bounds individual and aggregate artifact bytes', async () => {
@@ -275,9 +658,9 @@ describe('manifest package packer', () => {
       },
       { artifactBytes: 4n },
     );
-    await expect(single.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 4 bytes/u,
-    );
+    await expect(
+      single.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 4 bytes/u);
 
     await rm(outputDirectory, { recursive: true, force: true });
     const aggregate = configured(
@@ -291,7 +674,7 @@ describe('manifest package packer', () => {
       { artifactBytes: 10n, totalArtifactBytes: 5n },
     );
     await expect(
-      aggregate.pack(input(root), { outputDirectory }),
+      aggregate.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toThrow(/exceed 5 total bytes/u);
   });
 
@@ -325,9 +708,9 @@ describe('manifest package packer', () => {
       },
     );
 
-    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 1024 bytes/u,
-    );
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 1024 bytes/u);
     await growth;
   });
 
@@ -358,10 +741,12 @@ describe('manifest package packer', () => {
       { readChunkBytes: 1 },
     );
 
-    const result = await packer.pack(input(root), { outputDirectory }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+    const result = await packer
+      .pack(input(root), { allowBuild: true, outputDirectory })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
     await attack;
     expect(result).toMatchObject({ code: 'INVALID_RESPONSE' });
   });
@@ -378,16 +763,48 @@ function configured(
   openFile?: typeof open,
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
-    resolveExecutable,
-    sandboxRun,
+    executablePath: '/usr/bin/test-pack',
+    inspectExecutable: async () => {
+      const path = await resolveExecutable(value.executable);
+      if (path === undefined) throw new Error('missing executable');
+      return executableIdentity(path);
+    },
+    sandboxRun: async (input_) => {
+      if (input_.argv[1] === 'identify') {
+        const path = input_.argv.at(-1)!;
+        const bytes = await readFile(path);
+        return outcome(
+          JSON.stringify({
+            delegatedPackArtifactIdentityVersion: '1',
+            exactPurl: 'pkg:test/demo@1.0.0',
+            artifactDigest: `sha256:${createHash('sha256')
+              .update(bytes)
+              .digest('hex')}`,
+          }),
+        );
+      }
+      return sandboxRun(input_);
+    },
     ...(limits === undefined ? {} : { limits }),
     ...(openFile === undefined ? {} : { openFile }),
   });
 }
 
+function executableIdentity(path: string) {
+  return {
+    path,
+    digest: { algorithm: 'sha256' as const, value: 'a'.repeat(64) },
+    device: 1n,
+    inode: 2n,
+    size: 3n,
+    ctimeNanoseconds: 4n,
+    mtimeNanoseconds: 5n,
+  };
+}
+
 function manifest(): DelegatedPackProviderManifest {
   return {
-    delegatedPackProviderVersion: '1',
+    delegatedPackProviderVersion: '2',
     id: 'example.test',
     purlTypes: ['test'],
     detection: { manifestNames: ['test.pack'] },
@@ -403,6 +820,9 @@ function manifest(): DelegatedPackProviderManifest {
         ],
       },
     ],
+    identityCommand: {
+      arguments: ['identify', '--artifact', '{artifactPath}'],
+    },
     environment: { TEST_MODE: 'pack' },
     authority: {
       build: false,
@@ -433,10 +853,10 @@ async function project(): Promise<string> {
   return root;
 }
 
-function outcome(): SandboxOutcome {
+function outcome(stdout = ''): SandboxOutcome {
   return {
     exitCode: 0,
-    stdout: '',
+    stdout,
     stderr: '',
     backend: 'mock',
     profile: 'package-exec',

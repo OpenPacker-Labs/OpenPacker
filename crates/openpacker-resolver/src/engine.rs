@@ -10,10 +10,11 @@ use crate::semantics::{
 };
 use crate::{
     CapabilityProvider, DependencyEdge, Digest, ExcludedCandidate, ExplanationEdge,
-    ExplanationGraph, ExplanationNode, PackageInstance, ProofCheck, RequirementExpression,
-    RequirementWitness, ResolutionProof, ResolutionSolution, ResolutionUniverse, ResolverError,
-    SelectedAssignment, SolveInput, SolveOutput, SolveRequest, TargetPredicate, canonical_json,
-    digest_json, parse_json_as, version_satisfies,
+    ExplanationGraph, ExplanationNode, LifecycleStatus, PackageInstance, ProofCheck,
+    RequirementExpression, RequirementWitness, ResolutionProof, ResolutionSolution,
+    ResolutionUniverse, ResolverError, SelectedAssignment, SolveInput, SolveOutput, SolveRequest,
+    TargetPredicate, canonical_json, digest_json, digest_projection, parse_json_as,
+    version_satisfies,
 };
 
 pub const MAX_COMPANION_NODES: usize = 22;
@@ -22,6 +23,7 @@ pub const MAX_REQUIREMENTS: usize = 1_000_000;
 pub const MAX_ALTERNATIVES: usize = 10_000;
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 pub const MAX_PREDICATE_DEPTH: usize = 64;
+pub const MAX_EXHAUSTIVE_WORK: u64 = 10_000_000;
 
 const SUPPORTED_REQUIREMENT_KINDS: [&str; 11] = [
     "runtime",
@@ -92,6 +94,22 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
             )));
         }
         validate_digest(&package.metadata_digest, "metadataDigest")?;
+        if package.lifecycle.eligible
+            && matches!(
+                package.lifecycle.status,
+                LifecycleStatus::Yanked
+                    | LifecycleStatus::Quarantined
+                    | LifecycleStatus::Revoked
+                    | LifecycleStatus::Delisted
+                    | LifecycleStatus::RemovedFromChannel
+                    | LifecycleStatus::Unknown
+            )
+        {
+            return Err(ResolverError::InvalidInput(format!(
+                "lifecycle status {} cannot be eligible",
+                package.lifecycle.status
+            )));
+        }
         for digest in &package.source_snapshots {
             validate_digest(digest, "source snapshot digest")?;
         }
@@ -150,6 +168,14 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
             }
         }
     }
+    let expected_universe_digest = digest_projection(universe, "universe-v1")?;
+    if universe.canonical_digest != expected_universe_digest {
+        return Err(ResolverError::InvalidInput(format!(
+            "canonicalDigest {} does not match the universe-v1 projection {}",
+            universe.canonical_digest.as_string(),
+            expected_universe_digest.as_string(),
+        )));
+    }
     Ok(())
 }
 
@@ -181,6 +207,30 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             return Err(ResolverError::UnsupportedSemantics(
                 input.request.semantics.profile.clone(),
             ));
+        }
+    }
+    if !matches!(
+        input.request.policy.semantic_loss_maximum.as_str(),
+        "info" | "warning" | "error"
+    ) {
+        return Err(ResolverError::InvalidInput(
+            "semanticLossMaximum must be info, warning, or error".into(),
+        ));
+    }
+    let mut required_evidence = BTreeSet::new();
+    for evidence in &input.request.policy.required_evidence {
+        if !required_evidence.insert(evidence) {
+            return Err(ResolverError::InvalidInput(
+                "requiredEvidence must be unique".into(),
+            ));
+        }
+        // Receipt signatures are established by the signing layer after the
+        // pure solve. Every other evidence kind must be established before a
+        // universe reaches this resolver; this input has no evidence facts.
+        if evidence != "receipt-signature" {
+            return Err(ResolverError::Unsatisfiable(format!(
+                "required evidence is not present in the solve input: {evidence}"
+            )));
         }
     }
     if input.request.objectives.is_empty() || input.request.objectives.len() > 16 {
@@ -250,14 +300,20 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
                 "amendment must declare at least one operation".into(),
             ));
         }
-        if !input
+        let matching_subjects = input
             .universe
             .packages
             .iter()
-            .any(|package| package.metadata_digest == amendment.applies_to_metadata_digest)
-        {
+            .filter(|package| {
+                package.metadata_digest == amendment.applies_to_metadata_digest
+                    && serde_json::from_value::<crate::PackageIdentity>(amendment.subject.clone())
+                        .is_ok_and(|subject| subject == package.identity)
+            })
+            .count();
+        if matching_subjects != 1 {
             return Err(ResolverError::InvalidInput(
-                "amendment appliesToMetadataDigest does not match any universe package".into(),
+                "amendment subject and appliesToMetadataDigest must identify exactly one universe package"
+                    .into(),
             ));
         }
     }
@@ -307,7 +363,100 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             actual: input.universe.packages.len(),
         });
     }
+    if input.request.semantics.profile == "prex-calculus-subset-v1"
+        && (objectives_require_optimization(&input.request)
+            || !crate::resolvo_engine::supports(input))
+    {
+        enforce_exhaustive_work_limit(input)?;
+    }
     Ok(())
+}
+
+pub(crate) fn enforce_exhaustive_work_limit(input: &SolveInput) -> Result<(), ResolverError> {
+    let nodes = input.universe.packages.len();
+    if nodes > MAX_COMPANION_NODES {
+        return Ok(());
+    }
+    let node_work = u64::try_from(nodes.max(1)).unwrap_or(u64::MAX);
+    let mut structure =
+        node_work.saturating_add(u64::try_from(input.request.objectives.len()).unwrap_or(u64::MAX));
+    for requirement in &input.request.requirements {
+        structure = structure.saturating_add(expression_work(&requirement.expression));
+    }
+    for package in &input.universe.packages {
+        for requirement in &package.requirements {
+            structure = structure.saturating_add(expression_work(&requirement.expression));
+        }
+        for conflict in &package.conflicts {
+            structure = structure.saturating_add(expression_work(&conflict.expression));
+        }
+        for constraint in &package.cardinality_constraints {
+            structure = structure
+                .saturating_add(expression_work(&constraint.selector).saturating_mul(node_work));
+        }
+        for capability in &package.capabilities {
+            if let Some(predicate) = &capability.target_predicate {
+                structure = structure.saturating_add(predicate_work(predicate));
+            }
+        }
+    }
+    let assignments = 1u64 << nodes;
+    let required = assignments
+        .saturating_mul(node_work)
+        .saturating_mul(structure.max(1));
+    let requested = input
+        .request
+        .resource_limits
+        .as_ref()
+        .and_then(|limits| limits.get("graphNodes"))
+        .map(|value| {
+            value.as_u64().filter(|limit| *limit > 0).ok_or_else(|| {
+                ResolverError::InvalidInput(
+                    "resourceLimits.graphNodes must be a positive integer".into(),
+                )
+            })
+        })
+        .transpose()?;
+    let limit = requested
+        .unwrap_or(MAX_EXHAUSTIVE_WORK)
+        .min(MAX_EXHAUSTIVE_WORK);
+    if required > limit {
+        return Err(ResolverError::ExhaustiveWorkLimit { limit, required });
+    }
+    Ok(())
+}
+
+fn expression_work(expression: &RequirementExpression) -> u64 {
+    match expression {
+        RequirementExpression::AllOf { expressions }
+        | RequirementExpression::AnyOf { expressions } => {
+            expressions.iter().fold(1u64, |work, item| {
+                work.saturating_add(expression_work(item))
+            })
+        }
+        RequirementExpression::Not { expression } => {
+            1u64.saturating_add(expression_work(expression))
+        }
+        RequirementExpression::Conditional {
+            when,
+            then,
+            otherwise,
+        } => 1u64
+            .saturating_add(predicate_work(when))
+            .saturating_add(expression_work(then))
+            .saturating_add(otherwise.as_deref().map_or(0, expression_work)),
+        _ => 1,
+    }
+}
+
+fn predicate_work(predicate: &TargetPredicate) -> u64 {
+    match predicate {
+        TargetPredicate::AllOf { predicates } | TargetPredicate::AnyOf { predicates } => predicates
+            .iter()
+            .fold(1u64, |work, item| work.saturating_add(predicate_work(item))),
+        TargetPredicate::Not { predicate } => 1u64.saturating_add(predicate_work(predicate)),
+        _ => 1,
+    }
 }
 
 /// Amendments the policy admits, and those present but ignored. Admitted
@@ -486,6 +635,7 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         }
         _ => unreachable!("semantics profile was validated"),
     };
+    enforce_solution_policy(input, &output)?;
     // The already-amended universe is checked directly: re-entering the public
     // checker would apply the same amendments a second time.
     let checked = crate::checker::check_amended(input, &output)?;
@@ -493,6 +643,58 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         return Err(ResolverError::InvalidProof(checked.diagnostics.join("; ")));
     }
     Ok(output)
+}
+
+pub(crate) fn enforce_solution_policy(
+    input: &SolveInput,
+    output: &SolveOutput,
+) -> Result<(), ResolverError> {
+    let maximum = severity_rank(&input.request.policy.semantic_loss_maximum)
+        .ok_or_else(|| ResolverError::InvalidInput("invalid semanticLossMaximum".into()))?;
+    let losses = output
+        .solution
+        .semantic_loss
+        .iter()
+        .chain(
+            input
+                .request
+                .requirements
+                .iter()
+                .flat_map(|requirement| requirement.semantic_loss.iter()),
+        )
+        .chain(output.selected.iter().flat_map(|package| {
+            package
+                .requirements
+                .iter()
+                .flat_map(|requirement| requirement.semantic_loss.iter())
+        }));
+    for loss in losses {
+        let severity = loss
+            .get("severity")
+            .and_then(Value::as_str)
+            .and_then(severity_rank)
+            .ok_or_else(|| {
+                ResolverError::InvalidInput("semantic loss has invalid severity".into())
+            })?;
+        if severity > maximum {
+            return Err(ResolverError::Unsatisfiable(format!(
+                "semantic loss exceeds policy maximum: {}",
+                loss.get("code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn severity_rank(value: &str) -> Option<u8> {
+    match value {
+        "info" => Some(0),
+        "warning" => Some(1),
+        "error" => Some(2),
+        _ => None,
+    }
 }
 
 pub(crate) fn captured_indices(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {
@@ -544,6 +746,7 @@ fn companion_resolve(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {
             actual: input.universe.packages.len(),
         });
     }
+    enforce_exhaustive_work_limit(input)?;
     let mut best: Option<Vec<usize>> = None;
     let count = 1u64 << input.universe.packages.len();
     for mask in 0..count {
@@ -679,8 +882,8 @@ pub(crate) fn build_output(
         .iter()
         .map(|index| input.universe.packages[*index].clone())
         .collect();
-    let request_digest = digest_json(&input.request)?;
-    let universe_digest = digest_json(&input.universe)?;
+    let request_digest = digest_projection(&input.request, "request-v1")?;
+    let universe_digest = digest_projection(&input.universe, "universe-v1")?;
     let witness_platforms = RequirementPlatforms::new(&input.request);
     let mut witnesses = Vec::new();
     let mut satisfied = Vec::new();
@@ -794,7 +997,7 @@ pub(crate) fn build_output(
     solution
         .source_snapshot_digests
         .sort_by(|a, b| a.value.cmp(&b.value));
-    solution.solution_digest = digest_json(&solution)?;
+    solution.solution_digest = digest_projection(&solution, "solution-v1")?;
     let proof = ResolutionProof {
         applied_amendment_digests: Vec::new(),
         proof_version: "1".into(),
@@ -961,7 +1164,7 @@ pub(crate) fn build_native_output(
     }
 
     output.solution.solution_digest = zero_digest();
-    output.solution.solution_digest = digest_json(&output.solution)?;
+    output.solution.solution_digest = digest_projection(&output.solution, "solution-v1")?;
     output.explanation = explanation(input, &output.solution, &output.proof);
     Ok(output)
 }
@@ -1106,10 +1309,13 @@ fn evaluate_target_predicate_fixed(
 }
 
 fn lifecycle_allowed(package: &PackageInstance, request: &SolveRequest) -> bool {
-    match package.lifecycle.status.as_str() {
-        "yanked" => request.policy.allow_yanked,
-        "quarantined" => request.policy.allow_quarantined,
-        "revoked" => false,
+    match package.lifecycle.status {
+        LifecycleStatus::Yanked => request.policy.allow_yanked,
+        LifecycleStatus::Quarantined => request.policy.allow_quarantined,
+        LifecycleStatus::Revoked
+        | LifecycleStatus::Delisted
+        | LifecycleStatus::RemovedFromChannel
+        | LifecycleStatus::Unknown => false,
         _ => package.lifecycle.eligible,
     }
 }

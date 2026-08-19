@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   OpenPackerClient,
   PrexClientError,
@@ -39,6 +39,35 @@ const capabilities = {
 } as const;
 
 describe('OpenPackerClient', () => {
+  it('rejects credentials on plaintext service URLs', () => {
+    expect(
+      () =>
+        new OpenPackerClient({
+          baseUrl: 'http://service.example',
+          headers: { authorization: 'Bearer secret' },
+        }),
+    ).toThrow(/require an HTTPS/u);
+    expect(
+      () =>
+        new OpenPackerClient({
+          baseUrl: 'http://service.example',
+          authenticate: () => ({ authorization: 'Bearer secret' }),
+        }),
+    ).toThrow(/require an HTTPS/u);
+  });
+
+  it('rejects per-request credentials on plaintext URLs before fetch', async () => {
+    const fetch = vi.fn();
+    const client = new OpenPackerClient({
+      baseUrl: 'http://127.0.0.1:7337',
+      fetch,
+    });
+    await expect(
+      client.discovery({ headers: { authorization: 'Bearer secret' } }),
+    ).rejects.toThrow(/require an HTTPS/u);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('keeps the browser entrypoint aligned with the primary SDK', async () => {
     const browser = await import('../src/browser.js');
     expect(browser.OpenPackerClient).toBe(OpenPackerClient);
@@ -155,6 +184,55 @@ describe('OpenPackerClient', () => {
       found.push(item);
     expect(found).toHaveLength(1);
     expect(cursors).toEqual(['0', '4']);
+  });
+
+  it('rejects event cursors that cannot be represented exactly', async () => {
+    const client = new OpenPackerClient({
+      fetch: async () =>
+        new Response('', {
+          headers: {
+            'x-openpacker-next-cursor': '9007199254740993',
+          },
+        }),
+    });
+    await expect(client.eventPage()).rejects.toThrow(/cursor is not safe/u);
+  });
+
+  it('bounds streamed response bodies', async () => {
+    let cancelled = false;
+    const client = new OpenPackerClient({
+      maximumResponseBytes: 4,
+      fetch: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('abc'));
+              controller.enqueue(new TextEncoder().encode('def'));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+    });
+    await expect(client.health()).rejects.toThrow(/exceeds 4 bytes/u);
+    expect(cancelled).toBe(true);
+  });
+
+  it('keeps the request deadline active while consuming the body', async () => {
+    const client = new OpenPackerClient({
+      fetch: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              /* Keep the body pending until the client deadline aborts it. */
+            },
+          }),
+        ),
+    });
+    await expect(
+      client.health({ timeoutMilliseconds: 1 }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 
   it('exposes every normative and OpenPacker extension route', async () => {

@@ -1,0 +1,5 @@
+{
+  "delegatedPackArtifactIdentityVersion": "1",
+  "exactPurl": "pkg:acme/demo@1.0.0",
+  "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

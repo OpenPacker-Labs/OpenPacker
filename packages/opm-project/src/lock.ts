@@ -1,7 +1,22 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { parseCanonicalJson } from '@openpacker/canonical';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
+import { readStableFile, writeStableFile } from './paths.js';
 import type { LockPackage, OpmLockfile } from './types.js';
 import { OpmError } from './types.js';
+
+const LIFECYCLE_STATUSES = new Set([
+  'published',
+  'yanked',
+  'deprecated',
+  'quarantined',
+  'revoked',
+  'delisted',
+  'restored',
+  'promoted',
+  'removed-from-channel',
+  'ownership-transferred',
+  'unknown',
+]);
 
 export function emptyLockfile(): OpmLockfile {
   return {
@@ -25,6 +40,9 @@ export function serializeLockfile(lock: OpmLockfile): string {
     {
       schemaVersion: lock.schemaVersion,
       generatedBy: lock.generatedBy,
+      ...(lock.manifestDigest === undefined
+        ? {}
+        : { manifestDigest: lock.manifestDigest }),
       packages,
     },
     null,
@@ -35,7 +53,7 @@ export function serializeLockfile(lock: OpmLockfile): string {
 export function parseLockfile(text: string): OpmLockfile {
   let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    value = parseCanonicalJson(text);
   } catch (error) {
     throw new OpmError(
       'INVALID_LOCK',
@@ -74,6 +92,9 @@ export function parseLockfile(text: string): OpmLockfile {
   return {
     schemaVersion: 1,
     generatedBy: 'opm',
+    ...(typeof record.manifestDigest === 'string'
+      ? { manifestDigest: record.manifestDigest }
+      : {}),
     packages,
   };
 }
@@ -161,8 +182,32 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       `Package "${alias}" has invalid registryId`,
     );
   }
+  if (pkg.lifecycle !== undefined && !isLifecycleState(pkg.lifecycle))
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid lifecycle`,
+    );
+  if (
+    pkg.nativeIntegrity !== undefined &&
+    !isNativeIntegrity(pkg.nativeIntegrity)
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid nativeIntegrity`,
+    );
+  if (
+    pkg.dependencies !== undefined &&
+    (!Array.isArray(pkg.dependencies) ||
+      pkg.dependencies.some(
+        (dependency) => typeof dependency !== 'string' || dependency === '',
+      ))
+  )
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid dependencies`,
+    );
   return {
-    alias: typeof pkg.alias === 'string' ? pkg.alias : alias,
+    alias,
     purl: requiredString('purl'),
     version: requiredString('version'),
     digest: requiredString('digest'),
@@ -174,6 +219,9 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     bins,
     reason,
     ecosystem: requiredString('ecosystem'),
+    ...(Array.isArray(pkg.dependencies)
+      ? { dependencies: [...new Set(pkg.dependencies as string[])].sort() }
+      : {}),
     ...(isTrustTier(pkg.trustLevel) ? { trustLevel: pkg.trustLevel } : {}),
     ...(typeof pkg.publishedAt === 'string'
       ? { publishedAt: pkg.publishedAt }
@@ -182,14 +230,47 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       ? { registryId: pkg.registryId }
       : {}),
     ...(isSourceKind(pkg.sourceKind) ? { sourceKind: pkg.sourceKind } : {}),
+    ...(isLifecycleState(pkg.lifecycle) ? { lifecycle: pkg.lifecycle } : {}),
+    ...(isNativeIntegrity(pkg.nativeIntegrity)
+      ? { nativeIntegrity: pkg.nativeIntegrity }
+      : {}),
   };
+}
+
+function isNativeIntegrity(
+  value: unknown,
+): value is NonNullable<LockPackage['nativeIntegrity']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false;
+  const integrity = value as Record<string, unknown>;
+  return (
+    typeof integrity.algorithm === 'string' &&
+    integrity.algorithm !== '' &&
+    typeof integrity.value === 'string' &&
+    integrity.value !== '' &&
+    typeof integrity.encoding === 'string' &&
+    integrity.encoding !== ''
+  );
+}
+
+function isLifecycleState(
+  value: unknown,
+): value is NonNullable<LockPackage['lifecycle']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false;
+  const lifecycle = value as Record<string, unknown>;
+  return (
+    typeof lifecycle.eligible === 'boolean' &&
+    typeof lifecycle.status === 'string' &&
+    LIFECYCLE_STATUSES.has(lifecycle.status)
+  );
 }
 
 export async function readLockfile(
   path: string,
 ): Promise<OpmLockfile | undefined> {
   try {
-    return parseLockfile(await readFile(path, 'utf8'));
+    return parseLockfile(await readStableFile(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -200,5 +281,5 @@ export async function writeLockfile(
   path: string,
   lock: OpmLockfile,
 ): Promise<void> {
-  await writeFile(path, serializeLockfile(lock), 'utf8');
+  await writeStableFile(path, serializeLockfile(lock));
 }

@@ -56,6 +56,8 @@ const rules = [
     ] as LifecycleEvent['action'][],
   },
 ];
+const verified = (events: readonly LifecycleEvent[]) =>
+  new Map(events.map((item) => [item.eventId, item.authority]));
 
 test('lifecycle reduction is stable, authorized, time-aware, and restore-safe', async () => {
   const events = [
@@ -75,12 +77,14 @@ test('lifecycle reduction is stable, authorized, time-aware, and restore-safe', 
     target,
     '2026-06-01T00:00:00Z',
     rules,
+    verified(events),
   );
   const second = await reduceLifecycle(
     [...events].reverse(),
     target,
     '2026-06-01T00:00:00Z',
     rules,
+    verified(events),
   );
   expect(first.root).toEqual(second.root);
   expect(first.state).toMatchObject({ status: 'restored', eligible: true });
@@ -98,6 +102,7 @@ test('lifecycle reduction is stable, authorized, time-aware, and restore-safe', 
           target,
           '2026-06-01T00:00:00Z',
           rules,
+          new Map([['yank', 'registry']]),
         )
       ).state,
     ),
@@ -118,7 +123,39 @@ test('informational ownership events do not erase a denial', async () => {
     },
     '2026-06-01T00:00:00Z',
     rules,
+    new Map([
+      ['publish', 'registry'],
+      ['revoke', 'registry'],
+      ['transfer', 'registry'],
+    ]),
   );
   expect(result.state).toMatchObject({ status: 'revoked', eligible: false });
   expect(result.state.derivationEventIds).toContain('transfer');
+});
+
+test('self-declared registry authority cannot restore a denied release', async () => {
+  const events = [
+    event('publish', 'published', '2026-01-01T00:00:00Z'),
+    event('revoke', 'revoked', '2026-02-01T00:00:00Z'),
+    event('forged', 'restored', '2026-03-01T00:00:00Z'),
+  ];
+  const result = await reduceLifecycle(
+    events,
+    {
+      packagePurl: identity.canonicalPurl,
+      exactPurl: identity.exactPurl,
+      digest,
+    },
+    '2026-06-01T00:00:00Z',
+    rules,
+    new Map([
+      ['publish', 'registry'],
+      ['revoke', 'registry'],
+    ]),
+  );
+  expect(result.state).toMatchObject({ status: 'revoked', eligible: false });
+  expect(result.history.at(-1)).toMatchObject({
+    accepted: false,
+    reason: 'unauthorized',
+  });
 });

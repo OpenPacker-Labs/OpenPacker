@@ -1,4 +1,4 @@
-import type { PolicyInput } from '@openpacker/contracts';
+import type { LifecycleState, PolicyInput } from '@openpacker/contracts';
 import type { SourceKind, TrustTier } from '@openpacker/policy';
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
@@ -40,11 +40,17 @@ export interface RegistrySource {
 }
 
 export interface PackProviderSource {
-  /** Local provider manifest path, resolved from the project root. */
+  /**
+   * Local provider manifest path, relative to and contained beneath the
+   * project root (e.g. `.opm/providers/acme.json`). Absolute paths and `..`
+   * escapes fail closed; the host opens the file with no-follow semantics.
+   */
   manifest: string;
+  /** Absolute executable path explicitly approved by the project operator. */
+  executable: string;
   /** PURL types that select this provider when --provider is omitted. */
   defaultFor?: readonly string[];
-  /** Names, never values, that this project authorizes from the host env. */
+  /** Names the provider may receive when the host grants values explicitly. */
   allowEnvironment?: readonly string[];
 }
 
@@ -127,6 +133,8 @@ export interface LockPackage {
   bins: readonly BinDeclaration[];
   reason: 'direct' | 'transitive';
   ecosystem: string;
+  /** Lock aliases this package requires in the selected closure. */
+  dependencies?: readonly string[];
   /** Captured trust tier for no-downgrade on upgrade. */
   trustLevel?: TrustTier;
   /** Registry-reported publish time when captured. */
@@ -135,6 +143,8 @@ export interface LockPackage {
   registryId?: string;
   /** How the package source was obtained. */
   sourceKind?: SourceKind;
+  /** Registry lifecycle state captured when the lock was resolved. */
+  lifecycle?: LifecycleState;
   /**
    * The ecosystem's own integrity value over the same archive bytes.
    *
@@ -157,6 +167,8 @@ export interface NativeIntegrity {
 export interface OpmLockfile {
   schemaVersion: 1;
   generatedBy: 'opm';
+  /** Digest of the exact manifest and policy that produced this lock. */
+  manifestDigest?: string;
   packages: Record<string, LockPackage>;
 }
 
@@ -164,6 +176,8 @@ export interface InstalledPackageRecord {
   alias: string;
   purl: string;
   digest: string;
+  /** Digest of the verified extracted tree after any lifecycle build. */
+  treeDigest?: string;
   storePath: string;
   bins: readonly {
     name: string;

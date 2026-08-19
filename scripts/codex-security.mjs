@@ -4,9 +4,12 @@ import {
   accessSync,
   constants,
   existsSync,
+  readdirSync,
+  readFileSync,
   realpathSync,
   statSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { delimiter, dirname, extname, isAbsolute, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -74,12 +77,89 @@ function run(cli, args, stdio) {
   );
 }
 
+function verifyScannerDependencies(cli) {
+  let directory = dirname(cli);
+  for (let depth = 0; depth < 3; depth += 1) {
+    const manifestPath = join(directory, 'package.json');
+    if (existsSync(manifestPath)) {
+      let manifest;
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      } catch (error) {
+        fail(`unable to inspect scanner package: ${error.message}`);
+      }
+      if (manifest.name === '@openai/codex-security') {
+        if (manifest.dependencies?.['extract-zip'] !== undefined) {
+          fail('reviewed scanner must not depend on vulnerable extract-zip.');
+        }
+        let resolvable = true;
+        try {
+          createRequire(manifestPath).resolve('extract-zip');
+        } catch (error) {
+          if (error?.code !== 'MODULE_NOT_FOUND') {
+            fail(`unable to resolve scanner dependencies: ${error.message}`);
+          }
+          resolvable = false;
+        }
+        if (resolvable) {
+          fail('vulnerable extract-zip is reachable from the scanner package.');
+        }
+        const nested = findNestedExtractZip(join(directory, 'node_modules'));
+        if (nested !== undefined) {
+          fail(
+            `vulnerable extract-zip is nested in the scanner tree: ${nested}.`,
+          );
+        }
+        return;
+      }
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  fail('unable to locate the reviewed scanner package manifest.');
+}
+
+/**
+ * Bounded DFS over node_modules trees for a copy of extract-zip hidden inside
+ * a dependency's own node_modules, which bare package resolution cannot see.
+ * Symlinks are not followed; the scan gives up after 5000 directories.
+ */
+function findNestedExtractZip(nodeModules) {
+  const stack = [nodeModules];
+  let visited = 0;
+  while (stack.length > 0) {
+    if ((visited += 1) > 5000) return undefined;
+    const directory = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
+      const path = join(directory, entry.name);
+      if (
+        entry.name === 'extract-zip' &&
+        existsSync(join(path, 'package.json'))
+      ) {
+        return path;
+      }
+      if (entry.name.startsWith('@')) stack.push(path);
+      stack.push(join(path, 'node_modules'));
+    }
+  }
+  return undefined;
+}
+
 const forwarded = process.argv.slice(2);
 if (forwarded.some((value) => value !== '--dry-run')) {
   fail('only --dry-run is accepted by the repository scan wrapper.');
 }
 
 const cli = executable();
+verifyScannerDependencies(cli);
 const identity = run(cli, ['info', '--format', 'json'], 'pipe');
 if (identity.error || identity.status !== 0) {
   fail(
@@ -107,10 +187,12 @@ const scan = run(
     'scan',
     '.',
     '--headless',
+    '--mode',
+    'deep',
     '--auth',
     'chatgpt',
     '--fail-on-severity',
-    'high',
+    'low',
     '--knowledge-base',
     'docs/security',
     '--scan-prompt-file',

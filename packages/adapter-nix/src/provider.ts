@@ -13,6 +13,7 @@ import {
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   HostInstallerSandboxError,
+  findHostExecutable,
   planSandboxSummary,
   runHostInstaller,
 } from '@openpacker/sandbox';
@@ -129,23 +130,16 @@ export class NixStoreProvider implements InstallerProvider {
         maxBuffer: 64 * 1024 * 1024,
       }),
     private readonly codec = new NixCodec(),
+    private readonly findExecutable: (
+      name: string,
+    ) => Promise<string | undefined> = findHostExecutable,
   ) {}
 
-  async available(signal?: AbortSignal): Promise<InstallerAvailability> {
-    try {
-      const { stdout } = await this.execute(
-        'nix',
-        ['--version'],
-        signal ? { signal } : {},
-      );
-      const version = /nix.*?([0-9]+\.[0-9]+(?:\.[0-9]+)?)/u.exec(stdout)?.[1];
-      return {
-        available: true,
-        tool: { name: 'nix', ...(version ? { version } : {}) },
-      };
-    } catch {
-      return { available: false, reason: 'nix is not on PATH' };
-    }
+  async available(_signal?: AbortSignal): Promise<InstallerAvailability> {
+    const path = await this.findExecutable('nix');
+    return path
+      ? { available: true, tool: { name: 'nix', path } }
+      : { available: false, reason: 'nix is not on PATH' };
   }
 
   /** Attributes matching a query, as `nix search` reports them. */
@@ -154,8 +148,9 @@ export class NixStoreProvider implements InstallerProvider {
     flake = 'nixpkgs',
     signal?: AbortSignal,
   ): Promise<{ attribute: string; version?: string; description?: string }[]> {
+    const executable = await this.nativeExecutable();
     const { stdout } = await this.execute(
-      'nix',
+      executable,
       [
         'search',
         assertInstallable(flake),
@@ -191,10 +186,11 @@ export class NixStoreProvider implements InstallerProvider {
     signal?: AbortSignal,
   ): Promise<{ path: string; references: string[]; narSize?: number }[]> {
     const target = installableFromPurl(installable);
+    const executable = await this.nativeExecutable();
     const opts = signal ? { signal } : {};
     // Realise into the store (idempotent when already present).
     await this.execute(
-      'nix',
+      executable,
       [
         'build',
         target,
@@ -205,7 +201,7 @@ export class NixStoreProvider implements InstallerProvider {
       opts,
     );
     const { stdout } = await this.execute(
-      'nix',
+      executable,
       [
         'path-info',
         target,
@@ -228,6 +224,16 @@ export class NixStoreProvider implements InstallerProvider {
       references: value?.references ?? [],
       ...(value?.narSize === undefined ? {} : { narSize: value.narSize }),
     }));
+  }
+
+  private async nativeExecutable(): Promise<string> {
+    const executable = await this.findExecutable('nix');
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'nix was not found in a trusted host directory',
+      );
+    return executable;
   }
 
   /** PREX instances for an installable (or PURL) and everything it needs. */
@@ -294,24 +300,34 @@ export class NixStoreProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallOutcome> {
     const plan = await this.plan(exactPurl, options);
+    if (options.dryRun)
+      return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
     const availability = await this.available(options.signal);
     if (!availability.available)
       throw new ProviderError(
         'UNSUPPORTED_ECOSYSTEM',
         `nix cannot run here: ${availability.reason}`,
       );
-    if (options.dryRun)
-      return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
+    const executable = availability.tool?.path;
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'nix did not resolve to an executable path',
+      );
+    const executionPlan: InstallPlan = {
+      ...plan,
+      command: [executable, ...plan.command.slice(1)],
+    };
     try {
       const result = await runHostInstaller({
-        argv: plan.command,
+        argv: executionPlan.command,
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         ...(options.offline === undefined ? {} : { offline: options.offline }),
         ecosystem: 'nix',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
       return {
-        ...plan,
+        ...executionPlan,
         performed: true,
         exitCode: result.exitCode,
         stdout: result.stdout,

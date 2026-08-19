@@ -11,6 +11,7 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   compareCodePoints,
   evaluateRange,
   formatPurl,
@@ -1488,6 +1489,10 @@ export class PypiJsonProvider implements CatalogProvider {
           mediaType: 'application/json',
         },
       },
+    );
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
     );
     return { package: translated.instance, record, warnings: [] };
   }

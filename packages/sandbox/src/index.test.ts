@@ -1,5 +1,12 @@
 import { constants } from 'node:fs';
-import { chmod, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,12 +20,14 @@ import {
   createMockBackend,
   digestSandboxPolicy,
   findTrustedSandboxHelper,
+  findHostExecutable,
   isDeniedCredential,
   isPathInside,
   JailPathError,
   limitedContainmentLoss,
   matchPackageGrant,
   mxcFilesystemPaths,
+  quoteCommandLine,
   networkToolMaskFiles,
   notSandboxedLoss,
   planSandboxSummary,
@@ -26,14 +35,31 @@ import {
   resolvePolicy,
   runHostInstaller,
   runInSandbox,
+  SandboxBackendError,
   scrubEnvironment,
   SANDBOX_LOSS,
   sandboxPolicyFromInstallOptions,
   sensitiveMaskDirectories,
   sensitiveMaskFiles,
+  type SandboxBackend,
 } from './index.js';
 
 describe('@openpacker/sandbox', () => {
+  it('does not trust a package-manager executable from project PATH', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'opm-host-path-'));
+    const name = `opm-project-manager-${process.pid}`;
+    try {
+      const executable = join(directory, name);
+      await writeFile(executable, '#!/bin/sh\n');
+      await chmod(executable, 0o755);
+      await expect(
+        findHostExecutable(name, { PATH: directory }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('defaults to fail-closed and auto prefer', () => {
     const resolved = resolvePolicy({});
     expect(resolved.mode).toBe('fail-closed');
@@ -134,7 +160,38 @@ describe('@openpacker/sandbox', () => {
         readonlyPaths: [],
         backend: createMockBackend({ unavailable: true }),
       }),
-    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
+  });
+
+  it('degrade-warn refuses ambient execution when MXC cannot consume directory authorities', async () => {
+    // macOS/Windows outcome: the only probed backend is MXC, which fails
+    // closed because every run requires stable directory-handle binds.
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const mxc: SandboxBackend = {
+      id: 'mxc',
+      async run() {
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'MXC SDK does not expose inherited directory-handle binds',
+        );
+      },
+    };
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.stdout.write("never")'],
+        cwd,
+        policy: { mode: 'degrade-warn', required: false },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        backend: mxc,
+      }),
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
   });
 
   it('mock backend executes argv with scrubbed env', async () => {
@@ -207,7 +264,10 @@ describe('@openpacker/sandbox', () => {
         readwritePaths: [cwd],
         readonlyPaths: [],
       }),
-    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'TREE_CONTAINMENT_UNAVAILABLE',
+      message: expect.stringContaining('ambient execution is refused'),
+    });
   });
 
   it('rejects writable native sandbox helpers', async () => {
@@ -288,6 +348,22 @@ describe('@openpacker/sandbox', () => {
       cwd: '/proj',
     });
     expect(writable.readwritePaths).toContain('/proj');
+  });
+
+  it('refuses stable directory authorities in MXC filesystem planning', () => {
+    expect(() =>
+      mxcFilesystemPaths({
+        cwd: '/tmp',
+        readwritePaths: ['/tmp'],
+        readonlyPaths: [],
+        directoryAuthorities: [{ fd: 3, path: '/tmp' }],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'UNAVAILABLE',
+        message: expect.stringContaining('directory-handle'),
+      }),
+    );
   });
 
   it('refuses dangerous write grants unless allowed', () => {
@@ -428,15 +504,19 @@ describe('@openpacker/sandbox', () => {
       command: ['/usr/bin/true'],
       cwd: '/tmp',
       readwritePaths: ['/tmp'],
-      readonlyPaths: [],
+      readonlyPaths: ['/etc'],
       network: false,
       profile: 'package-exec',
       environment: {},
-      directoryAuthorities: [{ path: '/tmp', childFd: 3 }],
+      directoryAuthorities: [
+        { path: '/tmp', childFd: 3 },
+        { path: '/etc', childFd: 4 },
+      ],
     });
     expect(bwrap).toContain('--unshare-pid');
     expect(bwrap).toContain('--die-with-parent');
     expect(bwrap.join(' ')).toContain('--bind-fd 3 /tmp');
+    expect(bwrap.join(' ')).toContain('--ro-bind-fd 4 /etc');
     expect(() => sandboxPolicyFromInstallOptions({ mode: 'off' })).toThrow(
       /fail-closed/u,
     );
@@ -450,4 +530,20 @@ describe('@openpacker/sandbox', () => {
       SANDBOX_LOSS.SYSTEM_LIMITED,
     );
   });
+});
+
+it('refuses MXC command-string expansion and ambiguous quoting', () => {
+  for (const argument of [
+    '$(touch owned)',
+    '`touch owned`',
+    '$HOME',
+    '%USERPROFILE%',
+    'line\nbreak',
+    'double"quote',
+    "single'quote",
+    'trailing\\',
+  ])
+    expect(() => quoteCommandLine(['/bin/tool', argument])).toThrowError(
+      expect.objectContaining({ code: 'POLICY_DENIED' }),
+    );
 });

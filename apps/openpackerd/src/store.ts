@@ -125,11 +125,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
   }
 
   async putSnapshot(snapshot: SourceSnapshot | JsonValue): Promise<string> {
-    const source = snapshot as SourceSnapshot;
-    const digest =
-      source.rootDigest?.algorithm === 'sha256'
-        ? source.rootDigest
-        : await canonicalDigest(snapshot as JsonValue);
+    const digest = await verifySourceSnapshot(snapshot);
     return this.#put(
       'snapshot',
       digest.algorithm,
@@ -243,6 +239,37 @@ export class SqliteStateStore implements OpenPackerStateStore {
       .get(kind, algorithm, digest) as { bytes: Uint8Array } | undefined;
     return row ? Uint8Array.from(row.bytes) : undefined;
   }
+}
+
+export async function sourceSnapshotDigest(
+  snapshot: SourceSnapshot | JsonValue,
+): Promise<{ algorithm: 'sha256'; value: string }> {
+  const source = snapshot as SourceSnapshot;
+  if (source.rootDigest?.algorithm !== 'sha256')
+    return await canonicalDigest(snapshot as JsonValue);
+  const {
+    snapshotId: _snapshotId,
+    rootDigest: _rootDigest,
+    evidenceRefs: _evidenceRefs,
+    authenticationScopeRef: _authenticationScopeRef,
+    extensions: _extensions,
+    ...payload
+  } = source;
+  return await canonicalDigest(payload as unknown as JsonValue);
+}
+
+export async function verifySourceSnapshot(
+  snapshot: SourceSnapshot | JsonValue,
+): Promise<{ algorithm: 'sha256'; value: string }> {
+  const source = snapshot as SourceSnapshot;
+  const digest = await sourceSnapshotDigest(snapshot);
+  if (
+    source.rootDigest?.algorithm !== 'sha256' ||
+    formatDigest(source.rootDigest) !== formatDigest(digest) ||
+    source.snapshotId !== formatDigest(digest)
+  )
+    throw new Error('Snapshot id or root digest does not match its content');
+  return digest;
 }
 
 function validateDigest(algorithm: string, digest: string): void {

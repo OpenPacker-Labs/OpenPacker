@@ -12,7 +12,12 @@ import type {
   NormalizedPackFile,
   NormalizedPackInput,
 } from '@openpacker/adapter-core';
-import { canonicalBytes, canonicalDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalBytes,
+  canonicalDigest,
+  compareCanonicalStrings,
+  sha256,
+} from '@openpacker/canonical';
 import type {
   Digest,
   Distribution,
@@ -172,7 +177,9 @@ async function captureProject(
       directories,
     );
     if (!sameDirectory(directoryBefore, directoryAfter)) changed(prefix || '.');
-    entries.sort((left, right) => left.name.localeCompare(right.name));
+    entries.sort((left, right) =>
+      compareCanonicalStrings(left.name, right.name),
+    );
     for (const entry of entries) {
       const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
       const absolute = resolve(directory, entry.name);

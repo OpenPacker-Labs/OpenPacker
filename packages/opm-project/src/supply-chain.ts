@@ -26,9 +26,10 @@ import {
   type SourceKind,
   type TrustTier,
 } from '@openpacker/policy';
-import { stripPurlVersion } from './spec.js';
+import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+import { assertPlainLockPackageData } from './lock-authority.js';
 
 export type {
   PolicyDocument,
@@ -168,8 +169,12 @@ export function captureFactsFromInspection(
       const dist = versionMeta.dist;
       if (dist && typeof dist === 'object' && dist !== null) {
         const tarball = (dist as Record<string, unknown>).tarball;
-        if (typeof tarball === 'string')
+        if (typeof tarball === 'string') {
           Object.assign(facts, sourceFactsFromUri(tarball));
+          // The inspected provider record, not its hostname, establishes
+          // registry provenance.
+          facts.sourceKind = 'registry';
+        }
       }
     }
   }
@@ -284,17 +289,78 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
   try {
     const url = new URL(uri);
     const protocol = url.protocol.replace(':', '');
-    const host = url.hostname;
-    if (
-      host === 'registry.npmjs.org' ||
-      host.endsWith('.npmjs.org') ||
-      host === 'registry.yarnpkg.com'
-    )
-      return { sourceKind: 'registry', sourceScheme: protocol };
     return { sourceKind: 'tarball', sourceScheme: protocol };
   } catch {
     return { sourceKind: 'exotic' };
   }
+}
+
+/** Reconstruct the complete policy surface before materializing a lock item. */
+export function policyFactsFromLockPackage(
+  pkg: LockPackage,
+  evaluationTime: string,
+  options: {
+    registryArtifactVerified?: boolean;
+    sourceVerified?: boolean;
+  } = {},
+): PolicyFacts {
+  const source = sourceFactsFromUri(pkg.source);
+  const provider = lockPackageProvider(pkg);
+  return {
+    evidence: [],
+    packageId: pkg.purl,
+    provider,
+    artifactSize: pkg.size,
+    evaluationTime,
+    dependencyDepth: pkg.reason === 'transitive' ? 1 : 0,
+    lifecycleScriptsExecuted: false,
+    ...(options.sourceVerified === true ? source : {}),
+    ...(options.registryArtifactVerified === true
+      ? { sourceKind: 'registry' as const }
+      : {}),
+  };
+}
+
+/** Policy gate shared by public lock installation and direct materialization. */
+export async function assertLockPackageAllowed(
+  pkg: LockPackage,
+  policyInput: PolicyInput | undefined,
+  evaluationTime: string,
+  options: {
+    registryArtifactVerified?: boolean;
+    sourceVerified?: boolean;
+    verifiedFacts?: PolicyFacts;
+  } = {},
+): Promise<void> {
+  assertPlainLockPackageData(pkg);
+  const provider = lockPackageProvider(pkg);
+  const policy = policyDocumentFromPolicyInput(
+    policyInput ?? defaultSupplyChainPolicyInput(),
+  );
+  await assertSupplyChainAllowed(
+    policy,
+    options.verifiedFacts === undefined
+      ? policyFactsFromLockPackage(pkg, evaluationTime, options)
+      : {
+          ...options.verifiedFacts,
+          packageId: pkg.purl,
+          provider,
+          artifactSize: pkg.size,
+          evaluationTime,
+          dependencyDepth: pkg.reason === 'transitive' ? 1 : 0,
+          lifecycleScriptsExecuted: false,
+        },
+  );
+}
+
+function lockPackageProvider(pkg: LockPackage): string {
+  const provider = ecosystemFromPurl(pkg.purl);
+  if (pkg.ecosystem !== provider)
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${pkg.alias}" ecosystem does not match its PURL`,
+    );
+  return provider;
 }
 
 function uriScheme(uri: string): string | undefined {
@@ -371,7 +437,7 @@ export function lockPackageSupplyChainFields(
   facts: PolicyFacts,
 ): Pick<
   LockPackage,
-  'trustLevel' | 'publishedAt' | 'registryId' | 'sourceKind'
+  'trustLevel' | 'publishedAt' | 'registryId' | 'sourceKind' | 'lifecycle'
 > {
   return {
     ...(facts.trustLevel !== undefined && isTrustTier(facts.trustLevel)
@@ -384,5 +450,6 @@ export function lockPackageSupplyChainFields(
     ...(facts.sourceKind !== undefined && isSourceKind(facts.sourceKind)
       ? { sourceKind: facts.sourceKind }
       : {}),
+    ...(facts.lifecycle === undefined ? {} : { lifecycle: facts.lifecycle }),
   };
 }

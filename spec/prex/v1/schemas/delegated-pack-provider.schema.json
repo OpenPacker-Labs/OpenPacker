@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json",
   "title": "PREX delegated pack provider manifest and host plan",
+  "description": "Delegated providers plan execution of an operator-approved standalone executable. The configured absolute source path is host configuration outside this manifest; hosts execute a bounded immutable snapshot at a private sandbox path, so sibling modules, resources, relative runtime layouts, and configured-path argv[0] semantics are unsupported.",
   "$defs": {
     "DelegatedProviderId": {
       "type": "string",
@@ -22,6 +23,7 @@
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
     "PackProviderExecutable": {
+      "$comment": "Logical executable name used by provider plans and receipts, not an executable path. The host separately selects an approved absolute standalone source and executes its immutable snapshot at a private path.",
       "type": "string",
       "minLength": 1,
       "maxLength": 255,
@@ -65,6 +67,25 @@
           "type": "array",
           "maxItems": 255,
           "items": { "$ref": "#/$defs/PackProviderArgument" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PackProviderIdentityCommandTemplate": {
+      "$comment": "Executed once per captured artifact. The host expands artifactPath only after opening and hashing that artifact.",
+      "type": "object",
+      "required": ["arguments"],
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 255,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "pattern": "^(?:[^{}]|\\{(?:projectRoot|manifestPath|outputDirectory|packageName|packageVersion|artifactPath)\\})+$"
+          }
         }
       },
       "additionalProperties": false
@@ -171,12 +192,13 @@
         "detection",
         "executable",
         "commands",
+        "identityCommand",
         "authority",
         "artifacts"
       ],
       "properties": {
         "$schema": { "type": "string", "format": "uri" },
-        "delegatedPackProviderVersion": { "const": "1" },
+        "delegatedPackProviderVersion": { "const": "2" },
         "id": { "$ref": "#/$defs/DelegatedProviderId" },
         "displayName": { "type": "string", "maxLength": 255 },
         "purlTypes": {
@@ -198,6 +220,9 @@
           "type": "array",
           "maxItems": 64,
           "items": { "$ref": "#/$defs/PackProviderCommandTemplate" }
+        },
+        "identityCommand": {
+          "$ref": "#/$defs/PackProviderIdentityCommandTemplate"
         },
         "environment": {
           "type": "object",
@@ -286,6 +311,7 @@
         "executable",
         "commandArguments",
         "cleanupArguments",
+        "identityArgumentTemplates",
         "environment",
         "authority",
         "artifacts"
@@ -314,6 +340,12 @@
             "items": { "type": "string", "maxLength": 8192 }
           }
         },
+        "identityArgumentTemplates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 255,
+          "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+        },
         "environment": {
           "type": "object",
           "maxProperties": 128,
@@ -326,6 +358,29 @@
           "minItems": 1,
           "maxItems": 64,
           "items": { "$ref": "#/$defs/PackProviderArtifactPattern" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DelegatedPackArtifactIdentity": {
+      "$comment": "One bounded provider attestation emitted by the identity command. The host checks the claimed target and independently hashed bytes, but this is not host-native format validation.",
+      "type": "object",
+      "required": [
+        "delegatedPackArtifactIdentityVersion",
+        "exactPurl",
+        "artifactDigest"
+      ],
+      "properties": {
+        "delegatedPackArtifactIdentityVersion": { "const": "1" },
+        "exactPurl": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 4096,
+          "pattern": "^pkg:[a-z][a-z0-9+.-]*/.+@[^@]+$"
+        },
+        "artifactDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
         }
       },
       "additionalProperties": false

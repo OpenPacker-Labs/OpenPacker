@@ -3,6 +3,7 @@ import {
   canonicalDigest,
   formatDigest,
 } from '@openpacker/canonical';
+import { randomUUID } from 'node:crypto';
 import { validateContract } from '@openpacker/conformance';
 import type {
   ArtifactDescriptor,
@@ -17,7 +18,10 @@ import {
   verifyCloudEvent,
   type OpenPackerCloudEvent,
 } from '@openpacker/events';
-import { verifySignedReceipt } from '@openpacker/receipts';
+import {
+  canonicalRequestDigest,
+  verifySignedReceipt,
+} from '@openpacker/receipts';
 import type { OpenPackerClient, RawEvent } from '@openpacker/sdk';
 import type { Verifier } from '@openpacker/trust';
 
@@ -110,12 +114,36 @@ export async function consumeResolution(input: {
   port: EpochConsumerPort;
   receiptVerifiers: ReadonlyMap<string, Verifier>;
 }): Promise<EpochOwnedEnvelope> {
-  const solved = await input.client.solve(input.request);
+  const idempotencyKey = input.request.context?.idempotencyKey ?? randomUUID();
+  const solved = await input.client.solve({
+    ...input.request,
+    context: { ...input.request.context, idempotencyKey },
+  });
   const signed = solved.data.signedReceipt;
   if (!signed)
     throw new Error('OpenPacker did not return the required signed receipt');
   assertSignedReceiptSchema(signed);
   await verifySignedReceipt(signed, input.receiptVerifiers);
+  if (
+    signed.receipt.normalizedRequest.context?.idempotencyKey !== idempotencyKey
+  )
+    throw new Error('Signed receipt does not bind the requested solve input');
+  const requestDigest = formatDigest(
+    await canonicalRequestDigest(solved.data.normalizedRequest),
+  );
+  if (
+    formatDigest(solved.data.requestDigest) !== requestDigest ||
+    formatDigest(signed.receipt.requestDigest) !== requestDigest ||
+    formatDigest(signed.receipt.universeDigest) !==
+      formatDigest(solved.data.universeDigest) ||
+    formatDigest(signed.receipt.solutionDigest) !==
+      formatDigest(solved.data.solution.solutionDigest) ||
+    !equalBytes(
+      canonicalBytes(signed.receipt as unknown as JsonValue),
+      canonicalBytes(solved.data.unsignedReceipt as unknown as JsonValue),
+    )
+  )
+    throw new Error('Signed receipt does not bind the returned solve result');
   const verification = await input.client.verify({
     subject: signed,
     checks: ['prex-receipt-signature'],

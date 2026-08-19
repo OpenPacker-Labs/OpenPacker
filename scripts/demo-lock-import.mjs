@@ -40,6 +40,13 @@ const summary = [];
 for (const [name, relative] of fixtures) {
   const raw = await readFile(join(root, relative), 'utf8');
   const plan = await planNativeLockImport(raw);
+  if (name === 'pypi') {
+    if (
+      !plan.semanticLoss.some((loss) => loss.code === 'PYPI_ENVIRONMENT_MARKER')
+    )
+      throw new Error('pypi: missing PYPI_ENVIRONMENT_MARKER');
+    plan.request.policy.semanticLossMaximum = 'error';
+  }
   const result = await completeLockImport(plan, resolver, {
     providerId: 'org.openpacker.demo.lock-import',
     version: '0.1.0',

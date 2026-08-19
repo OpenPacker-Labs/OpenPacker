@@ -33,6 +33,7 @@ import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import {
   RegistryStore,
   RegistryStoreError,
+  type RotationQuotaPolicy,
   type StoredEntry,
 } from './store.js';
 import {
@@ -51,7 +52,6 @@ import {
   type ServiceabilityRecord,
 } from './serviceability.js';
 import {
-  holderOf,
   quotaState,
   redirectDigest,
   redirectMessage,
@@ -79,6 +79,8 @@ const REDIRECT_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedPackageRedirect';
 const STATUS_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate';
+const KEY_ROTATION_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/KeyRotation';
 /**
  * Publishes per holder per hour, by default.
  *
@@ -89,6 +91,14 @@ const STATUS_SCHEMA =
  * namespace, which costs one DNS record.
  */
 const DEFAULT_QUOTA: QuotaPolicy = { limit: 120, windowSeconds: 3600 };
+const DEFAULT_ROTATION_QUOTA: RotationQuotaPolicy = {
+  limit: 12,
+  windowSeconds: 3600,
+  maximumChainLength: 32,
+  maximumActiveRotationsPerHolder: 256,
+  maximumActiveRevocations: 10_000,
+  reservedEmergencyRevocations: 1_000,
+};
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
 const STATUS_FRESHNESS_MILLISECONDS = 5 * 60 * 1000;
@@ -136,6 +146,8 @@ export interface RegistryOptions {
   serviceabilityTransport?: HttpTransport;
   /** Publish allowance, charged per namespace holder. See DEFAULT_QUOTA. */
   quota?: QuotaPolicy;
+  /** Holder-attributed key-rotation budgets and reserved emergency capacity. */
+  rotationQuota?: Partial<RotationQuotaPolicy>;
   /**
    * Conversions between manifest versions, for read-time negotiation.
    *
@@ -154,6 +166,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   const validator = createPrexValidator();
   const serviceabilityTtl = options.serviceabilityTtlMilliseconds ?? 86_400_000;
   const quota = options.quota ?? DEFAULT_QUOTA;
+  const rotationQuota = checkedRotationQuota(options.rotationQuota);
   const migrations = options.manifestMigrations ?? [];
   // Checks are triggered by reads, so at most one is in flight per package —
   // otherwise a popular package under load would fan out one request per
@@ -329,11 +342,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   app.post('/v1/keys/rotations', async (request, reply) => {
     try {
       const rotation = request.body as KeyRotation;
-      if (!rotation?.previousKeyId || !rotation.nextKeyId)
+      assertValid(
+        KEY_ROTATION_SCHEMA,
+        rotation as unknown as JsonValue,
+        validator,
+      );
+      if (rotation.previousKeyId === rotation.nextKeyId)
         throw new PublishError(
           'INVALID_REQUEST',
           400,
-          'A rotation names the key it succeeds and the key taking over',
+          'A rotation must introduce a distinct successor key id',
         );
       const previous = publisherKeyFor(rotation.previousKeyId);
       if (!previous)
@@ -348,6 +366,32 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           403,
           `Key ${rotation.previousKeyId} is revoked and cannot authorize a successor`,
         );
+      if (publisherKeyFor(rotation.nextKeyId))
+        throw new PublishError(
+          'INVALID_REQUEST',
+          409,
+          `Key id ${rotation.nextKeyId} is already known to this registry`,
+        );
+      if (previous.x === rotation.nextPublicKey.x)
+        throw new PublishError(
+          'POLICY_DENIED',
+          403,
+          'A rotation must replace the predecessor key material',
+        );
+      const nowValue = clock.now();
+      assertFreshRotation(rotation.rotatedAt, nowValue);
+      try {
+        await Ed25519Verifier.fromJwk(
+          rotation.nextKeyId,
+          rotation.nextPublicKey,
+        );
+      } catch {
+        throw new PublishError(
+          'INVALID_REQUEST',
+          400,
+          'The successor is not an importable Ed25519 public key',
+        );
+      }
       if (!(await verifyRotation(rotation, previous)))
         // Anyone could otherwise nominate a successor to someone else's key.
         throw new PublishError(
@@ -356,20 +400,67 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `The rotation is not signed by ${rotation.previousKeyId}`,
         );
 
-      if (
-        !store.rotateKey(rotation, {
-          keyId: rotation.previousKeyId,
-          revokedAt: rotation.rotatedAt,
-          effective: 'from-now',
-          reason: 'rotated',
-          replacedBy: rotation.nextKeyId,
-        })
-      )
+      const revocation = {
+        keyId: rotation.previousKeyId,
+        revokedAt: rotation.rotatedAt,
+        effective: 'from-now' as const,
+        reason: 'rotated' as const,
+        replacedBy: rotation.nextKeyId,
+      };
+      const result = store.rotateKeyWithinQuota(
+        rotation,
+        revocation,
+        rotationQuota,
+        Date.parse(nowValue),
+      );
+      if (!result.rotated) {
+        if (result.reason === 'rate') {
+          const state = quotaState(
+            result.recent,
+            rotationQuota,
+            Date.parse(nowValue),
+          );
+          throw new QuotaError(
+            `${result.holderId} has rotated keys ${rotationQuota.limit} times in the last ${rotationQuota.windowSeconds} seconds`,
+            retryAfterSeconds(state, Date.parse(nowValue)),
+          );
+        }
+        if (result.reason === 'holder-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `${result.holderId} has exhausted its active key-rotation allowance`,
+          );
+        if (result.reason === 'chain-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            'This key-rotation chain has reached its configured maximum length',
+          );
+        if (result.reason === 'global-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            503,
+            'Routine key-rotation capacity is exhausted; emergency revocation capacity remains reserved',
+          );
+        if (result.reason === 'unattributed')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `Key ${rotation.previousKeyId} has no fully verified holder attribution`,
+          );
+        if (result.reason === 'next-key-exists')
+          throw new PublishError(
+            'INVALID_REQUEST',
+            409,
+            `Key id ${rotation.nextKeyId} became known before rotation could commit`,
+          );
         throw new PublishError(
           'INVALID_SIGNATURE',
           403,
           `Key ${rotation.previousKeyId} was revoked before rotation could commit`,
         );
+      }
       reply.code(201);
       return sendJson(reply, {
         rotated: rotation.previousKeyId,
@@ -550,7 +641,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     try {
       const limit = boundedLimit(request.query.limit);
       const after = decodeCursor(request.query.cursor);
-      const { entries, hasMore } = store.list({
+      const { entries, hasMore, lastReadSequence } = store.list({
         limit,
         ...(request.query.search === undefined
           ? {}
@@ -566,7 +657,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // The cursor is the last row *read*, not the last row returned: purlType
       // filtering happens after the page is taken, and using the filtered tail
       // would replay rows that were already skipped.
-      const lastRead = entries.at(-1)?.sequence ?? after;
+      const lastRead = lastReadSequence ?? after;
       const local = entries.map((entry) => toRegistryEntry(entry, options));
 
       // Upstreams are consulted only once the local pages are exhausted, so a
@@ -716,9 +807,13 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `application/vnd.prex.manifest.v${served.packageManifestVersion}+json`,
         );
       }
-      // Local wins; only then is an upstream asked. An upstream that starts
-      // publishing a name this registry already serves must not take it over.
-      const relayed = await federation?.find(name, version);
+      // Ownership is by name, not by exact version. Once this registry has
+      // published any version, an upstream cannot fill a missing version under
+      // that locally-held namespace.
+      const relayed =
+        store.versions(name).length === 0
+          ? await federation?.find(name, version)
+          : undefined;
       if (relayed)
         return sendJson(reply, relayed.entry as unknown as JsonValue);
       return sendProblem(
@@ -782,6 +877,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           'This registry requires a signed manifest. Start it with ' +
             'anonymousPublish only if you accept being the only thing anyone can check.',
         );
+      if (signatures.some((signature) => signature.role === 'registry'))
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          400,
+          'Publishers may only submit publisher-role signatures; registry claims are minted by the registry',
+        );
 
       const message = new TextEncoder().encode(formatDigest(digest));
       for (const signature of signatures) {
@@ -831,18 +932,31 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `${body.manifest.name} was ${moved.redirect.reason}d to ${moved.redirect.to}; publish there`,
         );
 
-      assertQuota(store, holder, quota, clock);
-
-      const stored = store.publish({
-        manifest: body.manifest,
-        manifestDigest: formatDigest(digest),
-        signatures: await counterSign(signatures, message, options.signer),
-        now: clock.now(),
-      });
-      // Charged only once the publish actually happened. Charging on the way in
-      // would let a rejected request — a bad signature, a name someone else
-      // holds — spend the allowance of the publisher whose name was borrowed.
-      if (stored.created) store.recordPublish(holder, Date.parse(clock.now()));
+      const nowValue = clock.now();
+      const atEpochMs = Date.parse(nowValue);
+      const storedOrQuota = store.publishWithinQuota(
+        {
+          manifest: body.manifest,
+          manifestDigest: formatDigest(digest),
+          signatures: await counterSign(signatures, message, options.signer),
+          now: nowValue,
+        },
+        {
+          holderId: holder,
+          atEpochMs,
+          windowSeconds: quota.windowSeconds,
+          limit: quota.limit,
+        },
+      );
+      if ('quotaExceeded' in storedOrQuota) {
+        const state = quotaState(storedOrQuota.quotaExceeded, quota, atEpochMs);
+        throw new QuotaError(
+          `${holder} has published ${quota.limit} times in the last ` +
+            `${quota.windowSeconds} seconds`,
+          retryAfterSeconds(state, atEpochMs),
+        );
+      }
+      const stored = storedOrQuota;
       reply.code(stored.created ? 201 : 200);
       return sendJson(reply, {
         entry: toRegistryEntry(stored.entry, options),
@@ -910,9 +1024,9 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   /**
    * Accept a consumer's report that something did not work.
    *
-   * Corroboration only: it brings the next first-party check forward and
-   * cannot set state. A registry that let anonymous reports mark a package
-   * unreachable would be offering "report a competitor" as a feature.
+   * Anonymous reports cannot mutate first-party scheduling. Otherwise a
+   * caller can turn one cheap request into repeated outbound traffic to a
+   * publisher-selected origin by resetting a fresh check's timestamp.
    */
   app.post<{ Params: { name: string; version: string } }>(
     '/v1/packages/:name/versions/:version/observations',
@@ -924,11 +1038,11 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           reply,
           problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
         );
-      store.expireServiceability(name, version);
       reply.code(202);
       return sendJson(reply, {
         accepted: true,
-        effect: 'The next read will re-check this package first-hand.',
+        effect:
+          'First-party checks retain the registry-controlled serviceability TTL.',
       } as unknown as JsonValue);
     },
   );
@@ -953,7 +1067,7 @@ async function counterSign(
 ): Promise<readonly unknown[]> {
   const publisher = signatures.map((signature) => ({
     ...signature,
-    role: signature.role ?? 'publisher',
+    role: 'publisher',
   }));
   if (!signer) return publisher;
   return [
@@ -983,12 +1097,19 @@ function assertNamespace(
   const candidates = namespacesOf(packageName);
   for (const namespace of candidates) {
     const permitted = new Set(store.keysFor(namespace));
-    if (signatures.some((signature) => permitted.has(signature.keyId)))
+    if (permitted.size === 0) continue;
+    if (signatures.some((signature) => permitted.has(signature.keyId))) {
       // The most specific matching namespace is the one that governs, and its
       // holder is who the publish is charged to.
-      return (
-        store.holderForNamespace(namespace) ?? holderOf(namespace, 'dns-txt')
+      const holder = store.holderForNamespace(namespace);
+      if (holder !== undefined) return holder;
+      throw new PublishError(
+        'POLICY_DENIED',
+        403,
+        `Namespace ${namespace} has no verified holder attribution; re-verify its namespace proof`,
       );
+    }
+    break;
   }
   throw new PublishError(
     'POLICY_DENIED',
@@ -1011,6 +1132,21 @@ function assertFreshStatusUpdate(issuedAt: string, nowValue: string): void {
       'POLICY_DENIED',
       403,
       'Lifecycle updates must be issued within the last five minutes',
+    );
+}
+
+function assertFreshRotation(rotatedAt: string, nowValue: string): void {
+  const rotated = Date.parse(rotatedAt);
+  const now = Date.parse(nowValue);
+  if (
+    !Number.isFinite(rotated) ||
+    !Number.isFinite(now) ||
+    Math.abs(now - rotated) > STATUS_FRESHNESS_MILLISECONDS
+  )
+    throw new PublishError(
+      'POLICY_DENIED',
+      403,
+      'Key rotations must be issued within five minutes of registry time',
     );
 }
 
@@ -1070,9 +1206,11 @@ function holdsName(
   packageName: string,
   keyId: string,
 ): boolean {
-  return namespacesOf(packageName).some((namespace) =>
-    store.keysFor(namespace).includes(keyId),
-  );
+  for (const namespace of namespacesOf(packageName)) {
+    const keys = store.keysFor(namespace);
+    if (keys.length > 0) return keys.includes(keyId);
+  }
+  return false;
 }
 
 /**
@@ -1082,26 +1220,6 @@ function holdsName(
  * is the only time the answer actually changes. Any other number sends a client
  * back to be refused again, and a client refused twice retries harder.
  */
-function assertQuota(
-  store: RegistryStore,
-  holderId: string,
-  policy: QuotaPolicy,
-  clock: { now: () => string },
-): void {
-  const now = Date.parse(clock.now());
-  const state = quotaState(
-    store.recentPublishes(holderId, now - policy.windowSeconds * 1000),
-    policy,
-    now,
-  );
-  if (state.remaining > 0) return;
-  throw new QuotaError(
-    `${holderId} has published ${policy.limit} times in the last ` +
-      `${policy.windowSeconds} seconds`,
-    retryAfterSeconds(state, now),
-  );
-}
-
 /** `com.example.tool` → `com.example.tool`, `com.example`, `com`. */
 function namespacesOf(name: string): string[] {
   const parts = name.split('.');
@@ -1170,6 +1288,31 @@ function boundedLimit(value?: string): number {
       'limit must be a positive integer',
     );
   return Math.min(parsed, MAXIMUM_LIMIT);
+}
+
+function checkedRotationQuota(
+  overrides?: Partial<RotationQuotaPolicy>,
+): RotationQuotaPolicy {
+  const policy = { ...DEFAULT_ROTATION_QUOTA, ...overrides };
+  for (const [name, value] of Object.entries(policy))
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new TypeError(`${name} must be a positive safe integer`);
+  if (policy.maximumActiveRevocations > 10_000)
+    throw new TypeError(
+      'maximumActiveRevocations cannot exceed the revocation-list contract limit',
+    );
+  if (policy.reservedEmergencyRevocations >= policy.maximumActiveRevocations)
+    throw new TypeError(
+      'reservedEmergencyRevocations must leave capacity for routine rotations',
+    );
+  if (
+    policy.maximumActiveRotationsPerHolder >
+    policy.maximumActiveRevocations - policy.reservedEmergencyRevocations
+  )
+    throw new TypeError(
+      'maximumActiveRotationsPerHolder cannot exceed routine rotation capacity',
+    );
+  return policy;
 }
 
 function assertTimestamp(value: string): string {

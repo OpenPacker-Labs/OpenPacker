@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { FixtureHttpTransport } from '@openpacker/adapter-core';
+import {
+  FixtureHttpTransport,
+  type HttpTransport,
+} from '@openpacker/adapter-core';
 import {
   NugetCodec,
   NugetV3Provider,
   type NugetRegistrationIndex,
+  parseNugetServiceIndex,
 } from './index.js';
 
 const serviceBytes = await readFile(
@@ -32,6 +36,50 @@ const archive = await readFile(
   ),
 );
 
+describe('NuGet service index parser', () => {
+  it('accepts the shared fixture', () => {
+    expect(
+      parseNugetServiceIndex(serviceBytes).resources.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it.each([
+    new TextEncoder().encode(
+      JSON.stringify({ resources: [], padding: 'x'.repeat(256 * 1024) }),
+    ),
+    new TextEncoder().encode(
+      JSON.stringify({
+        resources: [],
+        nested: Array.from({ length: 18 }).reduce((value) => ({ value }), {}),
+      }),
+    ),
+    new TextEncoder().encode(
+      JSON.stringify({
+        resources: Array.from({ length: 257 }, (_, index) => ({
+          '@id': `https://api.nuget.org/${index}`,
+          '@type': 'PackageBaseAddress/3.0.0',
+        })),
+      }),
+    ),
+  ])('rejects oversized or structurally excessive service indices', (bytes) => {
+    expect(() => parseNugetServiceIndex(bytes)).toThrow();
+  });
+
+  it('rejects unsafe resource endpoints', () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({
+        resources: [
+          {
+            '@id': 'http://api.nuget.org/v3/',
+            '@type': 'PackageBaseAddress/3.0.0',
+          },
+        ],
+      }),
+    );
+    expect(() => parseNugetServiceIndex(bytes)).toThrow(/must be HTTPS/u);
+  });
+});
+
 describe('NuGet codec', () => {
   const codec = new NugetCodec();
   it('normalizes four-part versions and uses NuGet interval semantics', () => {
@@ -42,6 +90,12 @@ describe('NuGet codec', () => {
     expect(codec.satisfies('2.0.0', '[1.0,2.0)')).toBe(false);
     expect(codec.satisfies('2.5.0', '2.0')).toBe(true);
     expect(codec.satisfies('3.0.0', '2.*')).toBe(false);
+  });
+
+  it('rejects decoded registration path traversal IDs', () => {
+    expect(() =>
+      codec.canonicalizePurl('pkg:nuget/%2E%2E%2Fadmin@1.0.0'),
+    ).toThrow(/package ID/u);
   });
 
   it('captures target-framework lock data', () => {
@@ -156,4 +210,32 @@ it('discovers registration metadata through a deterministic NuGet v3 service ind
   const snapshot = await provider.snapshot('2026-08-02T00:00:00Z');
   expect(snapshot.etag).toBe('"nuget-1"');
   expect(snapshot.revision).toMatch(/^sha256:/);
+});
+
+it('bounds aggregate NuGet registration bytes before parsing', async () => {
+  const transport: HttpTransport = {
+    async request(request) {
+      if (request.url.endsWith('/service-index.json'))
+        return {
+          status: 200,
+          headers: {},
+          body: serviceBytes,
+          url: request.url,
+        };
+      return {
+        status: 200,
+        headers: {},
+        body: { byteLength: 64 * 1024 * 1024 + 1 } as Uint8Array,
+        url: request.url,
+      };
+    },
+  };
+  const provider = new NugetV3Provider(
+    transport,
+    { now: () => '2026-08-02T00:00:00Z' },
+    'https://fixtures.openpacker.invalid/nuget/service-index.json',
+  );
+  await expect(provider.enumerate('pkg:nuget/demo.tool')).rejects.toMatchObject(
+    { code: 'UPSTREAM_RESPONSE_TOO_LARGE' },
+  );
 });

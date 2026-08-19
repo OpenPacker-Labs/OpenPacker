@@ -14,6 +14,7 @@ import {
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   HostInstallerSandboxError,
+  findHostExecutable,
   planSandboxSummary,
   runHostInstaller,
 } from '@openpacker/sandbox';
@@ -92,28 +93,21 @@ export class ChocolateyProvider implements InstallerProvider {
         maxBuffer: 8 * 1024 * 1024,
       }),
     private readonly currentPlatform: () => string = platform,
+    private readonly findExecutable: (
+      name: string,
+    ) => Promise<string | undefined> = findHostExecutable,
   ) {}
 
-  async available(signal?: AbortSignal): Promise<InstallerAvailability> {
+  async available(_signal?: AbortSignal): Promise<InstallerAvailability> {
     if (this.currentPlatform() !== 'win32')
       return {
         available: false,
         reason: `chocolatey is Windows-oriented; this host is ${this.currentPlatform()}`,
       };
-    try {
-      const { stdout } = await this.execute(
-        'choco',
-        ['--version'],
-        signal ? { signal } : {},
-      );
-      const version = stdout.trim().split(/\s+/u)[0];
-      return {
-        available: true,
-        tool: { name: 'choco', ...(version ? { version } : {}) },
-      };
-    } catch {
-      return { available: false, reason: 'choco is not on PATH' };
-    }
+    const path = await this.findExecutable('choco');
+    return path
+      ? { available: true, tool: { name: 'choco', path } }
+      : { available: false, reason: 'choco is not on PATH' };
   }
 
   async plan(
@@ -149,12 +143,6 @@ export class ChocolateyProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallOutcome> {
     const plan = await this.plan(exactPurl, options);
-    const availability = await this.available(options.signal);
-    if (!availability.available)
-      throw new ProviderError(
-        'UNSUPPORTED_ECOSYSTEM',
-        `chocolatey cannot run here: ${availability.reason}`,
-      );
     if (options.dryRun)
       return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
     if (plan.requiresElevation && !options.allowElevation)
@@ -163,16 +151,32 @@ export class ChocolateyProvider implements InstallerProvider {
         `Installing ${exactPurl} needs elevation. Re-run with elevation allowed; ` +
           `the command would be: ${plan.command.join(' ')}`,
       );
+    const availability = await this.available(options.signal);
+    if (!availability.available)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        `chocolatey cannot run here: ${availability.reason}`,
+      );
+    const executable = availability.tool?.path;
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'choco did not resolve to an executable path',
+      );
+    const executionPlan: InstallPlan = {
+      ...plan,
+      command: [executable, ...plan.command.slice(1)],
+    };
     try {
       const result = await runHostInstaller({
-        argv: plan.command,
+        argv: executionPlan.command,
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         ...(options.offline === undefined ? {} : { offline: options.offline }),
         ecosystem: 'chocolatey',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
       return {
-        ...plan,
+        ...executionPlan,
         performed: true,
         exitCode: result.exitCode,
         stdout: result.stdout,

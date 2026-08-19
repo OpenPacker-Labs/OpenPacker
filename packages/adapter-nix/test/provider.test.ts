@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { installableFromPurl, NixStoreProvider } from '../src/index.js';
+import {
+  installableFromPurl,
+  NixCodec,
+  NixStoreProvider,
+} from '../src/index.js';
 
 /**
  * Offline fixtures pin argv and shape decisions. Live Nix coverage lives in
@@ -9,6 +13,7 @@ import { installableFromPurl, NixStoreProvider } from '../src/index.js';
 // nixbase32 excludes e, o, u and t; this is the alphabet itself.
 const OUT = '0123456789abcdfghijklmnpqrsvwxyz';
 const LIBC = 'c9dd4k6m8p0r2v6x8z0b2d4f6h8j0l1n';
+const findNix = async () => 'nix';
 
 function nix(responses: Record<string, string>) {
   const calls: string[][] = [];
@@ -47,17 +52,33 @@ function withRealise(pathInfo: string) {
 
 describe('availability', () => {
   it('reports the nix it found', async () => {
-    const { execute } = nix({ 'nix --version': 'nix (Nix) 2.24.9' });
-    expect(await new NixStoreProvider(execute).available()).toMatchObject({
-      available: true,
-      tool: { name: 'nix', version: '2.24.9' },
+    const { calls, execute } = nix({
+      'nix --version': 'nix (Nix) 2.24.9',
     });
+    expect(
+      await new NixStoreProvider(
+        execute,
+        new NixCodec(),
+        async () => '/nix/var/nix/profiles/default/bin/nix',
+      ).available(),
+    ).toMatchObject({
+      available: true,
+      tool: {
+        name: 'nix',
+        path: '/nix/var/nix/profiles/default/bin/nix',
+      },
+    });
+    expect(calls).toEqual([]);
   });
 
   it('reports absence instead of throwing', async () => {
-    const provider = new NixStoreProvider(async () => {
-      throw new Error('ENOENT');
-    });
+    const provider = new NixStoreProvider(
+      async () => {
+        throw new Error('must not execute');
+      },
+      new NixCodec(),
+      async () => undefined,
+    );
     expect((await provider.available()).available).toBe(false);
   });
 });
@@ -81,7 +102,11 @@ describe('resolution is delegated to nix', () => {
     // --recursive is what makes this dependency resolution: nix has already
     // computed the graph, and the useful thing is to record it.
     const { calls, execute } = nix(withRealise(closureJson));
-    const closure = await new NixStoreProvider(execute).closure('nixpkgs#jq');
+    const closure = await new NixStoreProvider(
+      execute,
+      new NixCodec(),
+      findNix,
+    ).closure('nixpkgs#jq');
     expect(calls[0]?.[0]).toBe('nix');
     expect(calls[0]).toContain('build');
     expect(calls[0]).toContain('--no-link');
@@ -96,7 +121,9 @@ describe('resolution is delegated to nix', () => {
 
   it('accepts a PURL and realises the mapped installable', async () => {
     const { calls, execute } = nix(withRealise(closureJson));
-    await new NixStoreProvider(execute).closure('pkg:nix/jq');
+    await new NixStoreProvider(execute, new NixCodec(), findNix).closure(
+      'pkg:nix/jq',
+    );
     expect(calls[0]).toContain('nixpkgs#jq');
   });
 
@@ -104,6 +131,8 @@ describe('resolution is delegated to nix', () => {
     const { execute } = nix(withRealise(closureJson));
     const { instances, semanticLoss } = await new NixStoreProvider(
       execute,
+      new NixCodec(),
+      findNix,
     ).resolve('nixpkgs#jq');
     expect(instances).toHaveLength(2);
     // Nix did the solving; the record must say so rather than implying
@@ -125,7 +154,11 @@ describe('resolution is delegated to nix', () => {
       ),
     );
     expect(
-      (await new NixStoreProvider(execute).closure('nixpkgs#jq')).length,
+      (
+        await new NixStoreProvider(execute, new NixCodec(), findNix).closure(
+          'nixpkgs#jq',
+        )
+      ).length,
     ).toBe(1);
   });
 

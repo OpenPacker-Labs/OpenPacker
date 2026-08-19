@@ -332,6 +332,19 @@ test('blockExoticSources blocks transitive git/tarball but can allow direct', as
     dependencyDepth: 0,
   });
   expect(direct.decision).toBe('allow');
+
+  const missing = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    dependencyDepth: 2,
+  });
+  expect(missing.decision).toBe('indeterminate');
+  expect(missing.checks).toContainEqual(
+    expect.objectContaining({
+      code: 'supply-chain.exotic-source',
+      status: 'not-provided',
+    }),
+  );
 });
 
 test('lifecycle script execution is denied unless allowlisted', async () => {
@@ -357,9 +370,32 @@ test('lifecycle script execution is denied unless allowlisted', async () => {
       lifecycle: eligible,
       packageId: 'pkg:npm/esbuild',
       lifecycleScriptsExecuted: true,
+      sandboxEnforced: true,
+      sandboxBackend: 'bubblewrap',
     },
   );
   expect(allowlisted.decision).toBe('allow');
+
+  const missingSandboxEvidence = await evaluatePolicy(
+    {
+      ...baseSupply,
+      allowLifecycleScripts: false,
+      allowedLifecycleScriptPackages: ['pkg:npm/esbuild'],
+    },
+    {
+      evidence: [],
+      lifecycle: eligible,
+      packageId: 'pkg:npm/esbuild',
+      lifecycleScriptsExecuted: true,
+    },
+  );
+  expect(missingSandboxEvidence.decision).toBe('indeterminate');
+  expect(missingSandboxEvidence.checks).toContainEqual(
+    expect.objectContaining({
+      code: 'sandbox.enforcement',
+      status: 'not-provided',
+    }),
+  );
 
   const declaredOnly = await evaluatePolicy(
     { ...baseSupply, allowLifecycleScripts: false },
@@ -620,6 +656,8 @@ test('a lifecycle-script allowlist does not extend to look-alike names', async (
     lifecycle: eligible,
     packageId,
     lifecycleScriptsExecuted: true,
+    sandboxEnforced: true,
+    sandboxBackend: 'bubblewrap' as const,
   });
   expect((await evaluatePolicy(policy, ran('pkg:npm/esbuild'))).decision).toBe(
     'allow',

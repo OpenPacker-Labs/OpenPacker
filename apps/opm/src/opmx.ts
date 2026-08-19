@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   OpmError,
+  activateGeneration,
   projectPaths,
-  readProjectState,
+  readEnvironmentState,
+  readGeneration,
   requireOpmRoot,
   resolveExecutable,
   fetchTool,
@@ -75,7 +77,17 @@ export async function runOpmx(
     } catch {
       projectPolicy = undefined;
     }
-    const state = await readProjectState(paths.projectState);
+    const environment = await readEnvironmentState(root);
+    if (!environment)
+      throw new OpmError(
+        'INVALID_STATE',
+        'No verified environment generation is active; run: opm install',
+      );
+    const generation = await readGeneration(
+      root,
+      environment.currentGenerationDigest,
+    );
+    const state = await activateGeneration({ root, generation });
     if (!state || Object.keys(state.packages).length === 0) {
       throw new OpmError(
         'NOT_FOUND',

@@ -9,16 +9,29 @@
  * change, write back with everything else byte-identical.
  */
 
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
   access,
+  lstat,
+  open,
   readFile,
   rename,
-  writeFile,
   mkdir,
   rm,
+  type FileHandle,
 } from 'node:fs/promises';
-import { delimiter, dirname, extname, join } from 'node:path';
+import {
+  basename,
+  delimiter,
+  dirname,
+  extname,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 
 /** Resolve a command without executing project- or PATH-controlled code. */
 export async function findExecutable(
@@ -91,38 +104,100 @@ export async function readTextFile(path: string): Promise<TextFile> {
  * Write via a temporary file in the same directory, then rename.
  *
  * A half-written `package.json` is worse than an unmodified one, and rename is
- * the only step that is atomic on both POSIX and Windows. Matches how the opm
- * store and the generation ledger already write.
+ * the atomic publication step on supported POSIX hosts. Windows is refused by
+ * the stable-directory boundary below rather than falling back to pathnames.
  */
 export async function writeFileAtomic(
   path: string,
   contents: string | Uint8Array,
 ): Promise<void> {
-  const directory = dirname(path);
-  await mkdir(directory, { recursive: true });
-  // Same directory, so rename cannot cross a filesystem boundary.
-  const temporary = join(
-    directory,
-    `.${basenameOf(path)}.opm-${process.pid}-${writeCounter()}.tmp`,
+  const directory = resolve(dirname(path));
+  const name = basename(path);
+  const parent = await openStableDirectory(directory);
+  const parentPath = stableHandlePath(parent);
+  const temporary = `.${name}.opm-${randomUUID()}.tmp`;
+  try {
+    await assertNamedDirectory(directory, parent);
+    const temporaryPath = join(parentPath, temporary);
+    const file = await open(
+      temporaryPath,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.writeFile(contents);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await assertNamedDirectory(directory, parent);
+    await rename(temporaryPath, join(parentPath, name));
+    await assertNamedDirectory(directory, parent);
+  } catch (error) {
+    await rm(join(parentPath, temporary), { force: true }).catch(
+      () => undefined,
+    );
+    throw error;
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function openStableDirectory(path: string): Promise<FileHandle> {
+  if (process.platform !== 'linux' && process.platform !== 'darwin')
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      path,
+      'Atomic project writes require stable directory handles on this platform',
+    );
+  const root = parse(path).root;
+  let handle = await open(
+    root,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
   );
   try {
-    await writeFile(temporary, contents);
-    await rename(temporary, path);
+    for (const part of relative(root, path).split(sep).filter(Boolean)) {
+      const child = join(stableHandlePath(handle), part);
+      await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      const next = await open(
+        child,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      await handle.close();
+      handle = next;
+    }
+    return handle;
   } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await handle.close().catch(() => undefined);
     throw error;
   }
 }
 
-let counter = 0;
-function writeCounter(): number {
-  counter += 1;
-  return counter;
+export async function assertNamedDirectory(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  const [opened, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(path, { bigint: true }),
+  ]);
+  if (opened.dev !== named.dev || opened.ino !== named.ino)
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      path,
+      `Atomic write parent changed during publication: ${path}`,
+    );
 }
 
-function basenameOf(path: string): string {
-  const parts = path.split(/[\\/]/u);
-  return parts[parts.length - 1] || 'file';
+export function stableHandlePath(handle: FileHandle): string {
+  return process.platform === 'linux'
+    ? `/proc/self/fd/${handle.fd}`
+    : `/dev/fd/${handle.fd}`;
 }
 
 /** Restore a file's original line endings and trailing-newline habit. */
@@ -225,6 +300,7 @@ export {
 
 export {
   collectFiles,
+  collectFilesFromHandle,
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,

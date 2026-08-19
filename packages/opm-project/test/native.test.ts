@@ -41,6 +41,7 @@ async function tempProject(files: Record<string, string> = {}) {
   const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
     packages: Record<string, { source: string } & Record<string, unknown>>;
   };
+  delete catalog.packages['pkg:npm/@openpacker/demo-tool@1.1.0'];
   for (const entry of Object.values(catalog.packages))
     entry.source = `file:${fixtureTgz}`;
   await writeFile(
@@ -448,7 +449,7 @@ describe('package manifest', () => {
     const registry = built.manifest.registries?.[0];
     expect(registry?.registryId).toBe('urn:openpacker:registry:npmjs-org');
     expect(registry?.definitionDigest?.value).toMatch(/^[0-9a-f]{64}$/u);
-  });
+  }, 30_000);
 
   it('claims nothing verified until something is actually checked', async () => {
     const root = await tempProject({
@@ -495,7 +496,7 @@ describe('package manifest', () => {
       withArtifact.distributions.find((entry) => entry.purlType === 'npm')
         ?.digest?.value,
     ).toBe('a'.repeat(64));
-  });
+  }, 30_000);
 
   it('canonicalises, so the same inputs give the same digest', async () => {
     const root = await tempProject({

@@ -24,6 +24,7 @@ import type {
 } from '@openpacker/contracts';
 import {
   BoundedFetchTransport,
+  encodeUrlPathComponent,
   ProviderError,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -85,6 +86,14 @@ const PAGINATION_LIMITS: PaginationLimits = {
   maximumCursorLength: 4096,
   maximumElapsedMilliseconds: 30_000,
 };
+
+const RESPONSE_BYTES = {
+  definition: 256 * 1024,
+  revocations: 2 * 1024 * 1024,
+  packagePage: 4 * 1024 * 1024,
+  versions: 1024 * 1024,
+  entry: 8 * 1024 * 1024,
+} as const;
 
 export interface ListOptions {
   search?: string;
@@ -160,7 +169,11 @@ export class RegistryClient {
       this.#revocationsFetchedAt = this.#clock();
       return this.#revocations;
     }
-    const value = await this.#json(`${this.#baseUrl}/v1/revocations`, signal);
+    const value = await this.#json(
+      `${this.#baseUrl}/v1/revocations`,
+      RESPONSE_BYTES.revocations,
+      signal,
+    );
     const validation = validateContract(SIGNED_REVOCATION_LIST_SCHEMA, value);
     if (!validation.valid)
       throw new ProviderError(
@@ -227,7 +240,11 @@ export class RegistryClient {
   /** The registry's service index, fetched once and reused. */
   async definition(signal?: AbortSignal): Promise<RegistryDefinitionLike> {
     if (this.#definition) return this.#definition;
-    const body = await this.#json(`${this.#baseUrl}${WELL_KNOWN}`, signal);
+    const body = await this.#json(
+      `${this.#baseUrl}${WELL_KNOWN}`,
+      RESPONSE_BYTES.definition,
+      signal,
+    );
     const definition = body as unknown as RegistryDefinitionLike;
     if (definition.registryDefinitionVersion !== '1')
       throw new ProviderError(
@@ -274,6 +291,7 @@ export class RegistryClient {
 
   async #listPage(
     options: ListOptions = {},
+    maximumBytes = RESPONSE_BYTES.packagePage,
   ): Promise<{ page: PackagePage; bytes: number }> {
     await this.#require(
       options.updatedSince === undefined
@@ -291,7 +309,11 @@ export class RegistryClient {
       ['cursor', options.cursor],
     ] as const)
       if (value !== undefined && value !== '') url.searchParams.set(key, value);
-    const response = await this.#jsonDocument(url.toString(), options.signal);
+    const response = await this.#jsonDocument(
+      url.toString(),
+      Math.min(maximumBytes, RESPONSE_BYTES.packagePage),
+      options.signal,
+    );
     const page = response.value as unknown as PackagePage;
     if (!Array.isArray(page.packages) || !page.metadata)
       throw new ProviderError(
@@ -322,13 +344,19 @@ export class RegistryClient {
     for (;;) {
       if (pages >= limits.maximumPages)
         throw paginationLimit(`more than ${limits.maximumPages} pages`);
+      const remainingBytes = limits.maximumBytes - bytes;
+      if (remainingBytes <= 0)
+        throw paginationLimit(`more than ${limits.maximumBytes} bytes`);
       let result: { page: PackagePage; bytes: number };
       try {
-        result = await this.#listPage({
-          ...options,
-          signal,
-          ...(cursor === undefined ? {} : { cursor }),
-        });
+        result = await this.#listPage(
+          {
+            ...options,
+            signal,
+            ...(cursor === undefined ? {} : { cursor }),
+          },
+          remainingBytes,
+        );
       } catch (error) {
         if (deadline.aborted && !options.signal?.aborted)
           throw paginationLimit(
@@ -369,7 +397,8 @@ export class RegistryClient {
       signal,
     );
     return (await this.#json(
-      `${this.#baseUrl}/v1/packages/${encodePathSegment(name)}/versions`,
+      `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions`,
+      RESPONSE_BYTES.versions,
       signal,
     )) as VersionList;
   }
@@ -386,7 +415,8 @@ export class RegistryClient {
       signal,
     );
     return (await this.#json(
-      `${this.#baseUrl}/v1/packages/${encodePathSegment(name)}/versions/${encodePathSegment(version)}`,
+      `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions/${encodeUrlPathComponent(version, 'registry package version')}`,
+      RESPONSE_BYTES.entry,
       signal,
     )) as RegistryEntry;
   }
@@ -468,18 +498,24 @@ export class RegistryClient {
     };
   }
 
-  async #json(url: string, signal?: AbortSignal): Promise<JsonValue> {
-    return (await this.#jsonDocument(url, signal)).value;
+  async #json(
+    url: string,
+    maximumBytes: number,
+    signal?: AbortSignal,
+  ): Promise<JsonValue> {
+    return (await this.#jsonDocument(url, maximumBytes, signal)).value;
   }
 
   async #jsonDocument(
     url: string,
+    maximumBytes: number,
     signal?: AbortSignal,
   ): Promise<{ value: JsonValue; bytes: number }> {
     const response = await this.#transport.request({
       url,
       method: 'GET',
       headers: { accept: 'application/json' },
+      maximumBytes,
       ...(signal ? { signal } : {}),
     });
     if (response.status === 404)
@@ -490,11 +526,21 @@ export class RegistryClient {
         `Registry returned ${response.status} for ${url}`,
       );
     try {
+      if (response.body.byteLength > maximumBytes)
+        throw new ProviderError(
+          'INVALID_PROVIDER_RESPONSE',
+          `Registry response exceeds ${maximumBytes} bytes: ${url}`,
+        );
+      const value = JSON.parse(
+        new TextDecoder('utf-8', { fatal: true }).decode(response.body),
+      ) as JsonValue;
+      assertJsonComplexity(value);
       return {
-        value: JSON.parse(new TextDecoder().decode(response.body)) as JsonValue,
+        value,
         bytes: response.body.byteLength,
       };
     } catch (error) {
+      if (error instanceof ProviderError) throw error;
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
         `Registry returned a body that is not JSON: ${
@@ -503,6 +549,40 @@ export class RegistryClient {
       );
     }
   }
+}
+
+function assertJsonComplexity(root: JsonValue): void {
+  const pending: Array<{ value: JsonValue; depth: number }> = [
+    { value: root, depth: 0 },
+  ];
+  let nodes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    nodes += 1;
+    if (nodes > 200_000) invalidStructure('more than 200000 values');
+    if (current.depth > 64) invalidStructure('more than 64 levels');
+    if (typeof current.value === 'string' && current.value.length > 1_048_576)
+      invalidStructure('a string longer than 1048576 characters');
+    if (Array.isArray(current.value)) {
+      if (current.value.length > 100_000)
+        invalidStructure('an array longer than 100000 items');
+      for (const value of current.value)
+        pending.push({ value, depth: current.depth + 1 });
+    } else if (current.value !== null && typeof current.value === 'object') {
+      const values = Object.values(current.value);
+      if (values.length > 1024)
+        invalidStructure('an object with more than 1024 properties');
+      for (const value of values)
+        pending.push({ value, depth: current.depth + 1 });
+    }
+  }
+}
+
+function invalidStructure(detail: string): never {
+  throw new ProviderError(
+    'INVALID_PROVIDER_RESPONSE',
+    `Registry JSON structure contains ${detail}`,
+  );
 }
 
 function paginationLimits(
@@ -546,18 +626,6 @@ export interface EntryVerification {
 }
 
 export type { PackageManifest, PackagePage, RegistryEntry, VersionList };
-
-/**
- * Percent-encode a path segment without encoding the `/` inside a scoped npm
- * name away — registries route on the whole name, so `@scope/pkg` stays one
- * segment pair rather than becoming `%2F`.
- */
-function encodePathSegment(value: string): string {
-  return value
-    .split('/')
-    .map((part) => encodeURIComponent(part))
-    .join('/');
-}
 
 function isLoopback(url: URL): boolean {
   const host = url.hostname.replace(/^\[|\]$/gu, '');

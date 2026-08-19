@@ -104,6 +104,7 @@ function registry(overrides: Record<string, unknown> = {}) {
     'publisher-1',
     'dns-txt',
     '2026-08-10T00:00:00.000Z',
+    'dns:example.com',
   );
   return createRegistry({
     registryId: 'urn:openpacker:registry:test',

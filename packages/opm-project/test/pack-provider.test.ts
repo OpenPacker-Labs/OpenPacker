@@ -1,7 +1,17 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdapterRegistry, setAdapterRegistry } from '@openpacker/adapter-host';
 import type { RunInSandboxInput, SandboxOutcome } from '@openpacker/sandbox';
 import { configurePackProviders } from '../src/pack-providers.js';
@@ -11,6 +21,7 @@ import type { OpmManifest } from '../src/types.js';
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -26,11 +37,22 @@ describe('configured delegated pack providers', () => {
     const configured = await configurePackProviders({
       root,
       registry,
-      manifest: projectManifest(),
+      manifest: projectManifest(root),
       environment: { ACME_TOKEN: 'secret' },
       dependencies: {
-        resolveExecutable: async () => '/usr/bin/acme-pack',
         sandboxRun: async (input) => {
+          if (input.argv[1] === 'identify') {
+            const bytes = await readFile(input.argv.at(-1)!);
+            return outcome(
+              JSON.stringify({
+                delegatedPackArtifactIdentityVersion: '1',
+                exactPurl: 'pkg:acme/demo@1.0.0',
+                artifactDigest: `sha256:${createHash('sha256')
+                  .update(bytes)
+                  .digest('hex')}`,
+              }),
+            );
+          }
           call = input;
           await mkdir(outputDirectory, { recursive: true });
           await writeFile(join(outputDirectory, 'demo.acme'), 'native');
@@ -47,11 +69,12 @@ describe('configured delegated pack providers', () => {
       version: '1.0.0',
       outputDirectory,
       offline: true,
+      allowBuild: true,
       authorizedEnvironment: configured.authorizedEnvironment,
     });
 
     expect(call?.argv).toEqual([
-      '/usr/bin/acme-pack',
+      join(root, 'acme-pack'),
       'pack',
       '--out',
       outputDirectory,
@@ -62,11 +85,116 @@ describe('configured delegated pack providers', () => {
       'distribution',
       'receipt',
     ]);
+    expect(result.receipt?.provider).toEqual({
+      id: 'example-acme',
+      artifactIdentity: 'provider-attested',
+      manifestDigest: {
+        algorithm: 'sha256',
+        value: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      },
+    });
+  });
+
+  it('does not treat ambient host secrets as project consent', async () => {
+    const root = await fixture();
+    vi.stubEnv('ACME_TOKEN', 'ambient-secret');
+    const configured = await configurePackProviders({
+      root,
+      registry: new AdapterRegistry(),
+      manifest: projectManifest(root),
+    });
+
+    expect(configured.authorizedEnvironment['example-acme']).toEqual({});
+  });
+
+  it('keeps provider manifests at a direct project-owned path', async () => {
+    const root = await fixture();
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest = '../provider.json';
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('loads a provider manifest from a nested contained path', async () => {
+    const root = await fixture();
+    await mkdir(join(root, '.opm', 'providers'), { recursive: true });
+    await rename(
+      join(root, 'provider.json'),
+      join(root, '.opm', 'providers', 'acme.json'),
+    );
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest =
+      '.opm/providers/acme.json';
+
+    const configured = await configurePackProviders({
+      root,
+      manifest,
+      registry: new AdapterRegistry(),
+    });
+
+    expect(configured.authorizedEnvironment['example-acme']).toEqual({});
+  });
+
+  it('fails closed when a manifest path component is a symlink', async () => {
+    const root = await fixture();
+    await mkdir(join(root, '.opm'));
+    const outside = join(root, 'outside');
+    await mkdir(outside);
+    await rename(join(root, 'provider.json'), join(outside, 'acme.json'));
+    await symlink(outside, join(root, '.opm', 'providers'));
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest =
+      '.opm/providers/acme.json';
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('rejects absolute provider manifest paths', async () => {
+    const root = await fixture();
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest = join(
+      root,
+      'provider.json',
+    );
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('rejects a symlinked provider manifest file', async () => {
+    const root = await fixture();
+    await rename(join(root, 'provider.json'), join(root, 'real.json'));
+    await symlink(join(root, 'real.json'), join(root, 'provider.json'));
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest: projectManifest(root),
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_MANIFEST' });
   });
 
   it('rejects a configuration key that does not bind the manifest id', async () => {
     const root = await fixture();
-    const manifest = projectManifest();
+    const manifest = projectManifest(root);
     manifest.packProviders = {
       'example-other': manifest.packProviders!['example-acme']!,
     };
@@ -85,10 +213,12 @@ async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'opm-configured-pack-provider-'));
   roots.push(root);
   await writeFile(join(root, 'acme.pack'), 'project');
+  await writeFile(join(root, 'acme-pack'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(root, 'acme-pack'), 0o755);
   await writeFile(
     join(root, 'provider.json'),
     JSON.stringify({
-      delegatedPackProviderVersion: '1',
+      delegatedPackProviderVersion: '2',
       id: 'example-acme',
       purlTypes: ['acme'],
       detection: { manifestNames: ['acme.pack'] },
@@ -98,6 +228,9 @@ async function fixture(): Promise<string> {
           arguments: ['pack', '--out', '{outputDirectory}'],
         },
       ],
+      identityCommand: {
+        arguments: ['identify', '--artifact', '{artifactPath}'],
+      },
       authority: {
         build: false,
         network: 'never',
@@ -115,13 +248,14 @@ async function fixture(): Promise<string> {
   return root;
 }
 
-function projectManifest(): OpmManifest {
+function projectManifest(root: string): OpmManifest {
   return {
     project: { name: 'demo', ecosystems: ['acme'] },
     packages: {},
     packProviders: {
       'example-acme': {
         manifest: 'provider.json',
+        executable: join(root, 'acme-pack'),
         defaultFor: ['acme'],
         allowEnvironment: ['ACME_TOKEN'],
       },
@@ -130,10 +264,10 @@ function projectManifest(): OpmManifest {
   };
 }
 
-function outcome(): SandboxOutcome {
+function outcome(stdout = ''): SandboxOutcome {
   return {
     exitCode: 0,
-    stdout: '',
+    stdout,
     stderr: '',
     backend: 'mock',
     profile: 'package-exec',

@@ -566,22 +566,31 @@ export async function evaluatePolicy(
     }
   }
 
-  if (policy.blockExoticSources && facts.sourceKind !== undefined) {
+  if (policy.blockExoticSources) {
     const depth = facts.dependencyDepth ?? 0;
+    const sourceKind = facts.sourceKind;
     const block =
       (depth === 0 && policy.blockExoticSources.direct === true) ||
       (depth > 0 && policy.blockExoticSources.transitive === true);
-    if (block && EXOTIC_KINDS.has(facts.sourceKind))
+    if (!block) {
+      // The policy does not constrain this dependency depth.
+    } else if (sourceKind === undefined)
+      checks.push({
+        code: 'supply-chain.exotic-source',
+        status: 'not-provided',
+        message: `Source kind is required at dependency depth ${depth}`,
+      });
+    else if (EXOTIC_KINDS.has(sourceKind))
       deny(
         'supply-chain.exotic-source',
         true,
-        `Exotic source kind "${facts.sourceKind}" blocked at dependency depth ${depth}`,
+        `Exotic source kind "${sourceKind}" blocked at dependency depth ${depth}`,
       );
-    else if (block)
+    else
       checks.push({
         code: 'supply-chain.exotic-source',
         status: 'valid',
-        message: `Source kind ${facts.sourceKind} allowed at depth ${depth}`,
+        message: `Source kind ${sourceKind} allowed at depth ${depth}`,
       });
   }
 
@@ -614,12 +623,17 @@ export async function evaluatePolicy(
   const sandboxMode = policy.sandboxMode ?? 'fail-closed';
   const sandboxRequired =
     policy.sandboxRequired ?? sandboxMode === 'fail-closed';
-  if (
-    facts.sandboxEnforced === false &&
-    (facts.lifecycleScriptsExecuted === true ||
-      facts.sandboxBackend === 'none' ||
-      facts.sandboxDegraded === true)
-  ) {
+  const sandboxEvidenceRequired =
+    facts.lifecycleScriptsExecuted === true ||
+    facts.sandboxBackend === 'none' ||
+    facts.sandboxDegraded === true;
+  if (sandboxEvidenceRequired && facts.sandboxEnforced === undefined) {
+    checks.push({
+      code: 'sandbox.enforcement',
+      status: 'not-provided',
+      message: 'Execution occurred without sandbox enforcement evidence',
+    });
+  } else if (facts.sandboxEnforced === false && sandboxEvidenceRequired) {
     if (sandboxMode === 'off') {
       checks.push({
         code: 'sandbox.disabled',

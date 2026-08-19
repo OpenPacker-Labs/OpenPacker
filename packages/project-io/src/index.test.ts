@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applySpanEdits,
   collectFiles,
+  collectFilesFromHandle,
   detectJsonStyle,
   editJsonFile,
   editTomlArray,
@@ -24,11 +25,33 @@ import {
   findExecutable,
   matchFileStyle,
   ProjectIoError,
+  openStableDirectory,
   readTextFile,
   removeTree,
   supportsStableTreeLayout,
   writeFileAtomic,
 } from './index.js';
+
+describe('stable tree collection', () => {
+  it('keeps reading the authorized tree after its pathname is replaced', async () => {
+    await withTemp(async (dir) => {
+      const tree = join(dir, 'tree');
+      const original = join(dir, 'original');
+      await mkdir(tree);
+      await writeFile(join(tree, 'value'), 'authorized');
+      const handle = await openStableDirectory(tree);
+      try {
+        await rename(tree, original);
+        await mkdir(tree);
+        await writeFile(join(tree, 'value'), 'replacement');
+        const files = await collectFilesFromHandle(handle);
+        expect(new TextDecoder().decode(files[0]?.contents)).toBe('authorized');
+      } finally {
+        await handle.close();
+      }
+    });
+  });
+});
 
 describe('findExecutable', () => {
   it('resolves a PATH binary without executing it', async () => {
@@ -135,6 +158,23 @@ describe('writeFileAtomic', () => {
       const { readdir } = await import('node:fs/promises');
       expect(await readdir(join(dir, 'nested'))).toEqual(['out.txt']);
     });
+  });
+
+  it('does not follow a linked output ancestor', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'project-io-linked-'));
+    const outside = await mkdtemp(join(tmpdir(), 'project-io-outside-'));
+    try {
+      await symlink(outside, join(root, '.opm'), 'dir');
+      await expect(
+        writeFileAtomic(join(root, '.opm', 'pack', 'artifact'), 'blocked'),
+      ).rejects.toThrow();
+      await expect(
+        readFile(join(outside, 'pack', 'artifact')),
+      ).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -529,6 +569,10 @@ describe('TOML and tree helpers', () => {
       expect(await collectFiles(join(dir, 'tree'), 'package')).toMatchObject([
         { path: 'package/bin/tool', executable: true },
       ]);
+      await symlink(file, join(dir, 'tree', 'linked'));
+      await expect(collectFiles(join(dir, 'tree'))).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
       await removeTree(join(dir, 'tree'));
       await removeTree(join(dir, 'tree'));
       await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -579,6 +623,22 @@ describe('archives', () => {
     // Reversed input order too: archive order must not depend on the caller.
     expect(packTarGzip(entries)).toEqual(packTarGzip([...entries].reverse()));
     expect(packZip(entries)).toEqual(packZip([...entries].reverse()));
+    for (const path of ['../escape', '/absolute', 'file:stream', 'a\\b']) {
+      expect(() => packZip([{ path, contents: new Uint8Array() }])).toThrow(
+        /Unsafe/u,
+      );
+    }
+    for (const path of [
+      '__proto__',
+      'nested/__proto__/file',
+      'constructor/file',
+      'prototype/file',
+    ]) {
+      expect(() => packZip([{ path, contents: new Uint8Array(1) }])).toThrow(
+        /Unsafe/u,
+      );
+    }
+    expect(() => packTarGzip([...entries, entries[0]!])).toThrow(/duplicate/u);
   });
 
   it('uses the ustar prefix rather than truncating a long path', async () => {

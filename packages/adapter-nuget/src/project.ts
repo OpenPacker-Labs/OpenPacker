@@ -316,6 +316,7 @@ export class NugetProjectFormat implements ProjectFormat {
 
     const bytes = packZip(entries);
     const fileName = `${id}.${version}.nupkg`;
+    assertPackFileName(fileName, project.manifestPath);
     const outputPath = join(options.outputDirectory ?? project.root, fileName);
     await writeFileAtomic(outputPath, bytes);
 
@@ -328,6 +329,30 @@ export class NugetProjectFormat implements ProjectFormat {
       semanticLoss: [packLoss(built.length === 0)],
     };
   }
+}
+
+function assertPackFileName(fileName: string, manifestPath: string): void {
+  if (
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.includes('/') ||
+    fileName.includes('\\') ||
+    fileName.includes('\0')
+  )
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      manifestPath,
+      `Package metadata produced an unsafe artifact filename: ${fileName}`,
+    );
+}
+
+function assertFrameworkSegment(framework: string, manifestPath: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/u.test(framework))
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      manifestPath,
+      `TargetFramework is not a safe path segment: ${framework}`,
+    );
 }
 
 interface ParsedReference {
@@ -694,7 +719,9 @@ function firstTargetFramework(text: string): string | undefined {
 
 function targetFramework(project: DetectedProject): string | undefined {
   const value = project.metadata?.targetFramework;
-  return typeof value === 'string' ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  assertFrameworkSegment(value, project.manifestPath);
+  return value;
 }
 
 function integrityLoss(entry: NativeLockEntry): SemanticLoss {

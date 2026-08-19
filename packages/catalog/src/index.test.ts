@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatDigest } from '@openpacker/canonical';
-import type { PackageInstance } from '@openpacker/contracts';
+import { canonicalDigest, formatDigest } from '@openpacker/canonical';
+import type { JsonValue, PackageInstance } from '@openpacker/contracts';
 import {
   CatalogSnapshotBuilder,
   InMemoryCatalogStore,
@@ -110,6 +110,33 @@ describe('catalog snapshots', () => {
     (bundle.records[0]!.rawMetadata as { name: string }).name = 'tampered';
     await expect(verifyCatalogSnapshot(bundle)).rejects.toThrow(
       /Record digest mismatch/,
+    );
+  });
+
+  it('recomputes an imported snapshot root instead of trusting its labels', async () => {
+    const builder = new CatalogSnapshotBuilder(
+      'fixture',
+      'npm-registry',
+      'https://fixtures.test',
+      '2026-08-02T00:00:00Z',
+      '2026-08-02T00:00:00Z',
+    );
+    builder.add({
+      key: 'pkg:npm/a@1.0.0',
+      package: packageInstance('a'),
+      rawMetadata: { name: 'a' },
+      provenance,
+      semanticLoss: [],
+    });
+    const bundle = await builder.build();
+    bundle.snapshot.rootDigest = digest('f');
+    bundle.snapshot.snapshotId = formatDigest(bundle.snapshot.rootDigest);
+    const { bundleDigest: _ignored, ...payload } = bundle;
+    bundle.bundleDigest = await canonicalDigest(
+      payload as unknown as JsonValue,
+    );
+    await expect(verifyCatalogSnapshot(bundle)).rejects.toThrow(
+      /Snapshot root digest mismatch/u,
     );
   });
 

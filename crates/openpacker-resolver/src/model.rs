@@ -224,10 +224,44 @@ pub struct PackageIdentity {
     pub extensions: Extensions,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LifecycleStatus {
+    Published,
+    Yanked,
+    Deprecated,
+    Quarantined,
+    Revoked,
+    Delisted,
+    Restored,
+    Promoted,
+    RemovedFromChannel,
+    OwnershipTransferred,
+    Unknown,
+}
+
+impl std::fmt::Display for LifecycleStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Published => "published",
+            Self::Yanked => "yanked",
+            Self::Deprecated => "deprecated",
+            Self::Quarantined => "quarantined",
+            Self::Revoked => "revoked",
+            Self::Delisted => "delisted",
+            Self::Restored => "restored",
+            Self::Promoted => "promoted",
+            Self::RemovedFromChannel => "removed-from-channel",
+            Self::OwnershipTransferred => "ownership-transferred",
+            Self::Unknown => "unknown",
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LifecycleState {
-    pub status: String,
+    pub status: LifecycleStatus,
     pub eligible: bool,
     #[serde(default)]
     pub warnings: Vec<Value>,
@@ -309,6 +343,10 @@ pub struct SolveRequest {
     pub provider_policy: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_milliseconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_limits: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: Extensions,
 }

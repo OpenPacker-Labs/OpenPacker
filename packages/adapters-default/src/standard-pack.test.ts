@@ -116,6 +116,17 @@ describe('standard pack emitters', () => {
     );
   });
 
+  it('orders Unicode NAR entries by canonical code units', async () => {
+    const input = normalized('nix');
+    input.files = [
+      { path: 'ä', contents: new Uint8Array([1]), executable: false },
+      { path: 'z', contents: new Uint8Array([2]), executable: false },
+    ];
+    const artifact = (await standardEmitters.nix.emit(input))[0]!;
+    const values = narStrings(artifact.bytes);
+    expect(values.indexOf('z')).toBeLessThan(values.indexOf('ä'));
+  });
+
   it('emits an internally complete OCI digest graph', async () => {
     const artifact = (await standardEmitters.oci.emit(normalized('oci')))[0]!;
     const entries = await inspectArchive(artifact.bytes, 'tar');

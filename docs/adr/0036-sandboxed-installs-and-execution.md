@@ -96,3 +96,18 @@ emit `SYSTEM_INSTALL_CONTAINMENT_LIMITED`. Bin shims re-enter via `opmx` (or
 refuse ambient without `OPENPACKER_ALLOW_AMBIENT_SHIMS=1`).
 
 **Defense-in-depth, not a microVM or finished OS security product.**
+
+## Amendment (2026-08-19) — macOS/Windows containment withdrawal
+
+The backend ladder in decision 3 assumed MXC could enforce the package-exec
+profile wherever Bubblewrap is absent. Once every run began synthesizing stable
+directory-handle authorities for its binds (no-follow, swap-resistant
+containment), that stopped being true: the MXC SDK configures containment by
+path strings only and cannot consume inherited directory handles, so the MXC
+backend now fails closed with `UNAVAILABLE` on every real run. Package-exec
+containment on macOS and Windows is therefore **withdrawn**: `fail-closed`
+policies refuse with exit 78, and `degrade-warn`/`off` refuse with
+`TREE_CONTAINMENT_UNAVAILABLE` because ambient execution is not a security
+boundary and is never a fallback. The withdrawal lifts when the SDK exposes
+handle-relative binds; the `ambient` profile row above describes intent, not an
+executable mode.

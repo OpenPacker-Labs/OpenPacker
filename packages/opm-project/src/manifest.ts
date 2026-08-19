@@ -28,6 +28,10 @@ import type {
 import { hasResource } from '@openpacker/adapter-host';
 import { requireAdapterRegistry } from './adapters.js';
 import { nativeName } from './native.js';
+import {
+  registryDefinitionFor,
+  registryOptionsForEcosystem,
+} from './registry.js';
 import { stripPurlVersion } from './spec.js';
 import { OpmError } from './types.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
@@ -74,9 +78,10 @@ export async function buildPackageManifest(input: {
   const semanticLoss: SemanticLoss[] = [];
 
   for (const ecosystem of ecosystems) {
-    const definition = await registry
-      .definitionFor(ecosystem)
-      .catch(() => undefined);
+    const definition = await registryDefinitionFor(
+      ecosystem,
+      registryOptionsForEcosystem(ecosystem, input.manifest),
+    ).catch(() => undefined);
     if (definition) {
       const ref: RegistryRef = {
         registryId: definition.registryId,

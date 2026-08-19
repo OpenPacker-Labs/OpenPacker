@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readdir, type FileHandle } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, readdir, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
@@ -14,14 +15,17 @@ import {
   projectPaths,
   readStableFile,
   readStableFileAt,
+  revalidateStableDirectory,
   removeStableFile,
   removeStableTree,
   resolveContained,
   stableHandlePath,
+  storePathForDigest,
   writeStableFile,
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
+import { collectFilesFromHandle } from '@openpacker/project-io';
 
 /**
  * The environment ledger.
@@ -42,10 +46,12 @@ export interface GenerationMember {
   purl: string;
   digest: string;
   storePath: string;
+  /** Required by generation v2; absent only on legacy v1 records. */
+  treeDigest?: string;
 }
 
 export interface Generation {
-  generationVersion: '1';
+  generationVersion: '1' | '2';
   environmentName: string;
   sequence: number;
   createdAt: string;
@@ -115,6 +121,43 @@ const canonical = (value: unknown): string =>
 
 const sha256 = (text: string): string =>
   `sha256:${createHash('sha256').update(text).digest('hex')}`;
+
+async function storeTreeDigestFromHandle(handle: FileHandle): Promise<string> {
+  return treeDigest(await collectFilesFromHandle(handle));
+}
+
+function treeDigest(
+  files: readonly {
+    path: string;
+    contents: Uint8Array;
+    executable: boolean;
+  }[],
+): string {
+  return sha256(
+    canonical(
+      files
+        .map((file) => ({
+          path: file.path,
+          executable: file.executable,
+          digest: `sha256:${createHash('sha256')
+            .update(file.contents)
+            .digest('hex')}`,
+        }))
+        .sort((left, right) => (left.path < right.path ? -1 : 1)),
+    ),
+  );
+}
+
+export async function stableStoreTreeDigest(path: string): Promise<string> {
+  const handle = await openStableDirectory(path);
+  try {
+    const digest = await storeTreeDigestFromHandle(handle);
+    await revalidateStableDirectory(path, handle);
+    return digest;
+  } finally {
+    await handle.close();
+  }
+}
 
 /**
  * The digest of a generation excludes the field that carries it, so it stays
@@ -300,6 +343,19 @@ function parseGeneration(text: string, digest: string): Generation {
       'DIGEST_MISMATCH',
       `Generation ${digest} does not match its recorded digest`,
     );
+  if (
+    generation.generationVersion !== '1' &&
+    generation.generationVersion !== '2'
+  )
+    throw new OpmError('INVALID_STATE', 'Unsupported generation version');
+  if (
+    generation.generationVersion === '2' &&
+    generation.members.some((member) => member.treeDigest === undefined)
+  )
+    throw new OpmError(
+      'INVALID_STATE',
+      'Generation v2 is missing a tree digest',
+    );
   return generation;
 }
 
@@ -364,14 +420,17 @@ export async function recordGeneration(input: {
     0,
   );
 
-  const members: GenerationMember[] = Object.values(input.packages)
-    .map((record) => ({
-      alias: record.alias,
-      purl: record.purl,
-      digest: record.digest,
-      storePath: record.storePath,
-    }))
-    .sort((left, right) => (left.alias < right.alias ? -1 : 1));
+  const members: GenerationMember[] = (
+    await Promise.all(
+      Object.values(input.packages).map(async (record) => ({
+        alias: record.alias,
+        purl: record.purl,
+        digest: record.digest,
+        storePath: record.storePath,
+        treeDigest: await stableStoreTreeDigest(record.storePath),
+      })),
+    )
+  ).sort((left, right) => (left.alias < right.alias ? -1 : 1));
 
   // Edges go to the store ledger, not into the generation record: gc forgets
   // non-retained generations, and edges kept there would be forgotten with
@@ -383,7 +442,7 @@ export async function recordGeneration(input: {
     });
 
   const body: Omit<Generation, 'generationDigest'> = {
-    generationVersion: '1',
+    generationVersion: '2',
     environmentName,
     sequence: highest + 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
@@ -422,10 +481,7 @@ export async function recordGeneration(input: {
   return generation;
 }
 
-/**
- * Point the environment at an earlier generation. The record is never
- * rewritten, so rolling back is itself reversible.
- */
+/** Activate an earlier generation, then atomically point the environment at it. */
 export async function switchGeneration(input: {
   root: string;
   target: string | number;
@@ -445,6 +501,7 @@ export async function switchGeneration(input: {
       'NOT_FOUND',
       `Generation ${target.sequence} is no longer retained`,
     );
+  await activateGeneration({ root: input.root, generation: target });
   await writeEnvironmentState(input.root, {
     ...state,
     currentGenerationDigest: target.generationDigest,
@@ -684,75 +741,171 @@ export async function activateGeneration(input: {
   generation: Generation;
 }): Promise<ProjectState> {
   const paths = environmentPaths(input.root);
-  await ensureStableDirectory(paths.bin);
-  await ensureStableDirectory(paths.links);
-
-  const previous = await readProjectState(paths.projectState);
-  for (const record of Object.values(previous?.packages ?? {}))
-    await removeBinShims(
-      paths.bin,
-      record.bins.map((bin) => bin.name),
-    );
-
-  const state: ProjectState = { schemaVersion: 1, packages: {} };
-  for (const member of input.generation.members) {
-    const alias = assertSafeSegment(member.alias, 'package alias');
-    // The store path is content-addressed and immutable, so if it is gone the
-    // generation is genuinely unrestorable — say so rather than half-restore.
-    // Every other generation field is validated; the store path must be too,
-    // even though the record is digest-verified. Comparing against the
-    // contained resolution is the check — passing a basename would make it
-    // unconditionally true.
-    if (
-      member.storePath !==
-      resolveContained(paths.store, basename(member.storePath))
-    )
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Generation store path escapes the project store: ${member.storePath}`,
-      );
-    const ecosystem = (() => {
-      try {
-        return member.purl.startsWith('pkg:')
-          ? member.purl.slice('pkg:'.length).split('/')[0]!
-          : 'npm';
-      } catch {
-        return 'npm';
+  const store = await openStableDirectory(paths.store);
+  const prepared: {
+    member: GenerationMember;
+    alias: string;
+    bins: Awaited<ReturnType<typeof discoverBins>>;
+    handle: FileHandle;
+    treeDigest: string;
+  }[] = [];
+  const aliases = new Set<string>();
+  const binNames = new Set<string>();
+  try {
+    // Validate the complete target before changing the currently active view.
+    // A missing final member must not leave the first members half-activated.
+    for (const member of input.generation.members) {
+      const alias = assertSafeSegment(member.alias, 'package alias');
+      if (aliases.has(alias))
+        throw new OpmError(
+          'INVALID_STATE',
+          `Generation ${input.generation.sequence} declares duplicate alias ${alias}`,
+        );
+      aliases.add(alias);
+      const expected = storePathForDigest(input.root, member.digest);
+      if (member.storePath !== expected)
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Generation store path is not derived from its digest: ${member.storePath}`,
+        );
+      const handle = await open(
+        join(stableHandlePath(store), basename(expected)),
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      ).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ELOOP')
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path is linked: ${expected}`,
+          );
+        if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+          throw new OpmError(
+            'NOT_FOUND',
+            `Generation ${input.generation.sequence} needs ${expected}, which is no longer in the store`,
+          );
+        throw error;
+      });
+      const ecosystem = /^pkg:([^/]+)\//u.exec(member.purl)?.[1];
+      if (!ecosystem) {
+        await handle.close();
+        throw new OpmError(
+          'INVALID_STATE',
+          `Generation ${input.generation.sequence} has invalid purl ${member.purl}`,
+        );
       }
-    })();
-    const bins = await discoverBins(member.storePath, ecosystem).catch(() => {
-      throw new OpmError(
-        'NOT_FOUND',
-        `Generation ${input.generation.sequence} needs ${member.storePath}, which is no longer in the store`,
-      );
-    });
-    const shims = await writeBinShims({
-      binDir: paths.bin,
-      storeRoot: member.storePath,
-      bins,
-    });
-    await writeStableFile(
-      resolveContained(paths.links, alias),
-      `${JSON.stringify(
-        {
+      try {
+        await revalidateStableDirectory(paths.store, store);
+        const [handleBefore, namedBefore] = await Promise.all([
+          handle.stat({ bigint: true }),
+          lstat(expected, { bigint: true }),
+        ]);
+        if (
+          handleBefore.dev !== namedBefore.dev ||
+          handleBefore.ino !== namedBefore.ino
+        )
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path changed while validating ${expected}`,
+          );
+        const actualTreeDigest = await storeTreeDigestFromHandle(handle);
+        const [handleAfter, namedAfter] = await Promise.all([
+          handle.stat({ bigint: true }),
+          lstat(expected, { bigint: true }),
+        ]);
+        await revalidateStableDirectory(paths.store, store);
+        if (
+          handleBefore.dev !== handleAfter.dev ||
+          handleBefore.ino !== handleAfter.ino ||
+          handleAfter.dev !== namedAfter.dev ||
+          handleAfter.ino !== namedAfter.ino
+        )
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path changed while validating ${expected}`,
+          );
+        const expectedTreeDigest = member.treeDigest ?? actualTreeDigest;
+        if (actualTreeDigest !== expectedTreeDigest)
+          throw new OpmError(
+            'DIGEST_MISMATCH',
+            `Generation ${input.generation.sequence} store tree does not match ${expectedTreeDigest}`,
+          );
+        const bins = await discoverBins(stableHandlePath(handle), ecosystem);
+        for (const bin of bins) {
+          const name = assertSafeSegment(bin.name, 'bin name');
+          if (binNames.has(name))
+            throw new OpmError(
+              'INVALID_STATE',
+              `Generation ${input.generation.sequence} declares duplicate bin ${name}`,
+            );
+          binNames.add(name);
+        }
+        prepared.push({
+          member,
           alias,
-          purl: member.purl,
-          storePath: member.storePath,
-          digest: member.digest,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    state.packages[alias] = {
-      alias,
-      purl: member.purl,
-      digest: member.digest,
-      storePath: member.storePath,
-      bins: shims,
-      installedAt: input.generation.createdAt,
-    };
+          bins,
+          handle,
+          treeDigest: expectedTreeDigest,
+        });
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
+    }
+
+    await revalidatePreparedTrees(prepared);
+    await ensureStableDirectory(paths.bin);
+    await ensureStableDirectory(paths.links);
+    const previous = await readProjectState(paths.projectState);
+    for (const record of Object.values(previous?.packages ?? {}))
+      await removeBinShims(
+        paths.bin,
+        record.bins.map((bin) => bin.name),
+      );
+
+    const state: ProjectState = { schemaVersion: 1, packages: {} };
+    for (const { member, alias, bins } of prepared) {
+      const shims = await writeBinShims({
+        binDir: paths.bin,
+        storeRoot: member.storePath,
+        bins,
+      });
+      await writeStableFile(
+        resolveContained(paths.links, alias),
+        `${JSON.stringify(
+          {
+            alias,
+            purl: member.purl,
+            storePath: member.storePath,
+            digest: member.digest,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      state.packages[alias] = {
+        alias,
+        purl: member.purl,
+        digest: member.digest,
+        storePath: member.storePath,
+        bins: shims,
+        installedAt: input.generation.createdAt,
+      };
+    }
+    await revalidatePreparedTrees(prepared);
+    await writeProjectState(paths.projectState, state);
+    return state;
+  } finally {
+    await Promise.all(prepared.map(({ handle }) => handle.close()));
+    await store.close();
   }
-  await writeProjectState(paths.projectState, state);
-  return state;
+}
+
+async function revalidatePreparedTrees(
+  prepared: readonly { handle: FileHandle; treeDigest: string }[],
+): Promise<void> {
+  for (const item of prepared)
+    if ((await storeTreeDigestFromHandle(item.handle)) !== item.treeDigest)
+      throw new OpmError(
+        'DIGEST_MISMATCH',
+        'Generation store tree changed during activation',
+      );
 }

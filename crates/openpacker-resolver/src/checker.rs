@@ -7,11 +7,11 @@ use crate::semantics::{
     requirement_platforms,
 };
 use crate::{
-    Digest, PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
-    SolveOutput, TargetPredicate, digest_json,
+    PackageInstance, ProofCheckResult, RequirementExpression, ResolverError, SolveInput,
+    SolveOutput, TargetPredicate, digest_json, digest_projection,
     engine::{
         MAX_COMPANION_NODES, build_native_output, build_output, captured_indices,
-        objectives_require_optimization, validate_solve_request,
+        enforce_solution_policy, objectives_require_optimization, validate_solve_request,
     },
     parse_json_as, validate_universe, version_satisfies,
 };
@@ -72,10 +72,10 @@ pub(crate) fn check_amended(
     if output.normalized_request != input.request {
         diagnostics.push("normalizedRequest differs from checked request".into());
     }
-    if output.request_digest != digest_json(&input.request)? {
+    if output.request_digest != digest_projection(&input.request, "request-v1")? {
         diagnostics.push("requestDigest mismatch".into());
     }
-    if output.universe_digest != digest_json(&input.universe)? {
+    if output.universe_digest != digest_projection(&input.universe, "universe-v1")? {
         diagnostics.push("universeDigest mismatch".into());
     }
     if output.proof.request_digest != output.request_digest {
@@ -100,6 +100,9 @@ pub(crate) fn check_amended(
     }
     if output.selected.len() != output_ids.len() {
         diagnostics.push("selected package objects contain duplicate nodeIds".into());
+    }
+    if let Err(error) = enforce_solution_policy(input, output) {
+        diagnostics.push(error.to_string());
     }
 
     for assignment in &output.proof.selected_assignments {
@@ -271,9 +274,7 @@ fn verify_solution_digest(
     output: &SolveOutput,
     diagnostics: &mut Vec<String>,
 ) -> Result<(), ResolverError> {
-    let mut unsigned = output.solution.clone();
-    unsigned.solution_digest = zero_digest();
-    if output.solution.solution_digest != digest_json(&unsigned)? {
+    if output.solution.solution_digest != digest_projection(&output.solution, "solution-v1")? {
         diagnostics.push("solutionDigest mismatch".into());
     }
     Ok(())
@@ -543,10 +544,13 @@ fn predicate_holds(predicate: &TargetPredicate, platforms: PlatformView<'_>) -> 
 }
 
 fn lifecycle_allowed(package: &PackageInstance, input: &SolveInput) -> bool {
-    match package.lifecycle.status.as_str() {
-        "yanked" => input.request.policy.allow_yanked,
-        "quarantined" => input.request.policy.allow_quarantined,
-        "revoked" => false,
+    match package.lifecycle.status {
+        crate::LifecycleStatus::Yanked => input.request.policy.allow_yanked,
+        crate::LifecycleStatus::Quarantined => input.request.policy.allow_quarantined,
+        crate::LifecycleStatus::Revoked
+        | crate::LifecycleStatus::Delisted
+        | crate::LifecycleStatus::RemovedFromChannel
+        | crate::LifecycleStatus::Unknown => false,
         _ => package.lifecycle.eligible,
     }
 }
@@ -623,11 +627,4 @@ fn selected_indices(
     }
     indices.sort_unstable();
     indices
-}
-
-fn zero_digest() -> Digest {
-    Digest {
-        algorithm: "sha256".into(),
-        value: "0".repeat(64),
-    }
 }

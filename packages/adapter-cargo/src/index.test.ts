@@ -37,6 +37,12 @@ describe('Cargo codec', () => {
     expect(codec.satisfies('0.3.0', '0.2.3')).toBe(false);
   });
 
+  it('rejects decoded sparse-index traversal names', () => {
+    expect(() =>
+      codec.canonicalizePurl('pkg:cargo/%2E%2E%2Fadmin@1.0.0'),
+    ).toThrow(/crate name/u);
+  });
+
   it('parses and captures Cargo.lock without invoking Cargo', () => {
     const parsed = parseCargoLock(cargoLockText);
     const capture = codec.translateLockResult(parsed, {

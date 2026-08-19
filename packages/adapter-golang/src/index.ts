@@ -11,9 +11,11 @@ import type {
   VersionConstraint,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   evaluateSemverRange,
+  encodeUrlPathComponent,
   formatPurl,
   header,
   packageNodeId,
@@ -144,7 +146,15 @@ function isPseudoVersion(version: string): boolean {
 
 /** Encode a module path/version for proxy.golang.org-style paths. */
 export function encodeGoModulePath(path: string): string {
-  return path.replace(/[A-Z]/g, (character) => `!${character.toLowerCase()}`);
+  return path
+    .split('/')
+    .map((part) =>
+      encodeUrlPathComponent(
+        part.replace(/[A-Z]/g, (character) => `!${character.toLowerCase()}`),
+        'Go module path segment',
+      ).replaceAll('%21', '!'),
+    )
+    .join('/');
 }
 
 export function modulePathFromParts(
@@ -415,8 +425,7 @@ export class GolangCodec
         `Expected golang PURL, received ${parsed.type}`,
       );
     const path = modulePathFromParts(parsed.namespace, parsed.name);
-    if (path.length === 0)
-      throw new ProviderError('INVALID_PURL', 'Go PURL path is empty');
+    encodeGoModulePath(path);
     return formatPurl({
       ...parsed,
       type: 'golang',
@@ -940,6 +949,10 @@ export class GolangProxyProvider implements CatalogProvider {
         mediaType: 'application/json',
       },
     });
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
+    );
     if (translated.instance.artifacts[0]) {
       const path = modulePathFromParts(parsed.namespace, parsed.name);
       translated.instance.artifacts[0].locations = [

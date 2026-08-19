@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -143,6 +150,51 @@ function storedZip(name: string, text: string): Uint8Array {
   return output;
 }
 
+function storedZipEntries(
+  entries: readonly { name: string; text: string }[],
+): Uint8Array {
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let localOffset = 0;
+  for (const entry of entries) {
+    const archive = storedZip(entry.name, entry.text);
+    const view = new DataView(
+      archive.buffer,
+      archive.byteOffset,
+      archive.byteLength,
+    );
+    const eocd = archive.byteLength - 22;
+    const centralOffset = view.getUint32(eocd + 16, true);
+    const central = archive.slice(centralOffset, eocd);
+    new DataView(
+      central.buffer,
+      central.byteOffset,
+      central.byteLength,
+    ).setUint32(42, localOffset, true);
+    const local = archive.slice(0, centralOffset);
+    locals.push(local);
+    centrals.push(central);
+    localOffset += local.byteLength;
+  }
+  const centralSize = centrals.reduce(
+    (total, central) => total + central.byteLength,
+    0,
+  );
+  const output = new Uint8Array(localOffset + centralSize + 22);
+  let offset = 0;
+  for (const part of [...locals, ...centrals]) {
+    output.set(part, offset);
+    offset += part.byteLength;
+  }
+  const eocd = new DataView(output.buffer, offset, 22);
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, centralSize, true);
+  eocd.setUint32(16, localOffset, true);
+  return output;
+}
+
 describe('safe materialization', () => {
   it.each([
     '../escape',
@@ -150,6 +202,8 @@ describe('safe materialization', () => {
     'C:\\Windows\\system32',
     '\\\\server\\share',
     'a/../../b',
+    'file:stream',
+    'dir/file:$DATA',
   ])('rejects unsafe path %s', (path) => {
     expect(() => validateArchivePath(path)).toThrow();
   });
@@ -196,6 +250,50 @@ describe('safe materialization', () => {
           format: 'tar',
         }),
       ).rejects.toMatchObject({ code: 'DESTINATION_EXISTS' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('owns streamed chunks before hashing and assembling the archive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-owned-stream-'));
+    const destination = join(root, 'prefix');
+    const bytes = tar([{ name: 'proof', data: 'immutable\n' }]);
+    const descriptor = await descriptorForBytes({
+      bytes,
+      descriptorId: 'mutable-stream',
+      mediaType: 'application/x-tar',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+    });
+    const first = bytes.slice(0, 512);
+    const second = bytes.slice(512);
+    let pull = 0;
+    const source: ArtifactSource = {
+      async stat(value) {
+        return { descriptor: value, rangeSupported: false };
+      },
+      async open() {
+        return new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (pull++ === 0) controller.enqueue(first);
+            else if (pull === 2) {
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              first.fill(0);
+              controller.enqueue(second);
+            } else controller.close();
+          },
+        });
+      },
+      async listReferrers() {
+        return [];
+      },
+    };
+    try {
+      await materialize({ source, descriptor, destination, format: 'tar' });
+      expect(await readFile(join(destination, 'proof'), 'utf8')).toBe(
+        'immutable\n',
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -299,6 +397,23 @@ describe('safe materialization', () => {
         maximumExpandedBytes: 4,
       }),
     ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
+    const one = tar([{ name: 'one', data: '1' }]);
+    await expect(
+      inspectArchive(one, 'tar', {
+        ...DEFAULT_MATERIALIZATION_LIMITS,
+        maximumMemoryBytes: one.byteLength * 2,
+      }),
+    ).rejects.toMatchObject({ code: 'MEMORY_LIMIT' });
+    await expect(
+      inspectArchive(
+        storedZipEntries([
+          { name: 'one', text: '123456' },
+          { name: 'two', text: '123456' },
+        ]),
+        'zip',
+        { ...DEFAULT_MATERIALIZATION_LIMITS, maximumExpandedBytes: 10 },
+      ),
+    ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
   });
 
   it('rejects a file used as an ancestor before materialization', async () => {
@@ -398,6 +513,47 @@ describe('safe materialization', () => {
       ).rejects.toThrow('cancelled fixture');
       expect(cancelled).toBe(true);
       expect(await readdir(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a staging directory replaced before publication', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-materialize-race-'));
+    const bytes = tar([{ name: 'safe', data: 'ok' }]);
+    const descriptor = await fixtureSource(bytes).descriptor;
+    let opened!: () => void;
+    let release!: () => void;
+    const sourceOpened = new Promise<void>((resolve) => (opened = resolve));
+    const continueOpen = new Promise<void>((resolve) => (release = resolve));
+    const source: ArtifactSource = {
+      async stat(value) {
+        return { descriptor: value, rangeSupported: false };
+      },
+      async open() {
+        opened();
+        await continueOpen;
+        return streamFromBytes(bytes);
+      },
+      async listReferrers() {
+        return [];
+      },
+    };
+    try {
+      const pending = materialize({
+        source,
+        descriptor,
+        destination: join(root, 'prefix'),
+        format: 'tar',
+      });
+      await sourceOpened;
+      const staging = (await readdir(root)).find((name) =>
+        name.startsWith('.prefix.openpacker-'),
+      )!;
+      await rename(join(root, staging), join(root, `${staging}.original`));
+      await mkdir(join(root, staging));
+      release();
+      await expect(pending).rejects.toMatchObject({ code: 'UNSAFE_STAGING' });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

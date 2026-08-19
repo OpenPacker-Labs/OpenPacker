@@ -26,6 +26,7 @@ import {
   editJsonFile,
   materialiseTree,
   packTarGzip,
+  ProjectIoError,
   writeFileAtomic,
 } from '@openpacker/project-io';
 
@@ -309,6 +310,7 @@ export class NpmProjectFormat implements ProjectFormat {
     );
 
     const fileName = `${name.replace('@', '').replace('/', '-')}-${version}.tgz`;
+    assertPackFileName(fileName, project.manifestPath);
     const outputPath = join(options.outputDirectory ?? project.root, fileName);
     await writeFileAtomic(outputPath, bytes);
 
@@ -321,6 +323,21 @@ export class NpmProjectFormat implements ProjectFormat {
       semanticLoss: [packLoss()],
     };
   }
+}
+
+function assertPackFileName(fileName: string, manifestPath: string): void {
+  if (
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.includes('/') ||
+    fileName.includes('\\') ||
+    fileName.includes('\0')
+  )
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      manifestPath,
+      `Package metadata produced an unsafe artifact filename: ${fileName}`,
+    );
 }
 
 function scopeOfField(

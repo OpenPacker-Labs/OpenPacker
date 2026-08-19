@@ -55,6 +55,17 @@ describe('delegated pack provider manifest', () => {
     expect(() =>
       parseDelegatedPackProvider({ ...provider(), $schema: 'not a uri' }),
     ).toThrow(/does not match/u);
+    expect(() =>
+      parseDelegatedPackProvider({
+        ...provider(),
+        delegatedPackProviderVersion: '1',
+      }),
+    ).toThrow(/does not match/u);
+    const { identityCommand: _identityCommand, ...withoutIdentity } =
+      provider();
+    expect(() => parseDelegatedPackProvider(withoutIdentity)).toThrow(
+      /does not match/u,
+    );
   });
 
   it('does not follow a provider manifest symlink', async () => {
@@ -68,11 +79,25 @@ describe('delegated pack provider manifest', () => {
       code: 'INVALID_PROVIDER_MANIFEST',
     });
   });
+
+  it('rejects duplicate JSON members before schema validation', async () => {
+    const root = await temporaryRoot();
+    const path = join(root, 'provider.json');
+    const text = JSON.stringify(provider()).replace(
+      '"id":"example.test"',
+      '"id":"example.test","id":"attacker.test"',
+    );
+    await writeFile(path, text);
+
+    await expect(loadDelegatedPackProvider(path)).rejects.toThrow(
+      /Duplicate object member: id/u,
+    );
+  });
 });
 
 function provider() {
   return {
-    delegatedPackProviderVersion: '1' as const,
+    delegatedPackProviderVersion: '2' as const,
     id: 'example.test',
     purlTypes: ['test'],
     detection: { manifestNames: ['test.pack'] },
@@ -87,6 +112,9 @@ function provider() {
         ],
       },
     ],
+    identityCommand: {
+      arguments: ['identify', '--artifact', '{artifactPath}'],
+    },
     authority: {
       build: false,
       network: 'consent' as const,

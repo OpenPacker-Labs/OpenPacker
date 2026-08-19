@@ -173,6 +173,23 @@ describe('supply-chain capture from npm inspect (real provider path)', () => {
   });
 });
 
+describe('explicit source provenance', () => {
+  it('does not infer registry authority from an official-looking hostname', () => {
+    const source = 'https://registry.npmjs.org/victim/-/victim-1.0.0.tgz';
+    expect(
+      captureFactsFromSourceUri('pkg:npm/victim@1.0.0', source, {
+        evaluationTime: '2026-08-04T00:00:00.000Z',
+      }).sourceKind,
+    ).toBe('tarball');
+    expect(
+      captureFactsFromSourceUri('pkg:npm/victim@1.0.0', source, {
+        evaluationTime: '2026-08-04T00:00:00.000Z',
+        fromRegistryArtifactRecord: true,
+      }).sourceKind,
+    ).toBe('registry');
+  });
+});
+
 describe('project policy governance (committed opm.toml)', () => {
   it('round-trips [policy] supply-chain knobs without env expansion', () => {
     const text = `

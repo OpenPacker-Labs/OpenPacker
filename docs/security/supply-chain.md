@@ -121,6 +121,15 @@ release. **First install** (no prior tier in the lock) skips the no-downgrade
 check — there is nothing to compare — and allows the candidate when other checks
 pass.
 
+Persisted capture fields are upgrade history, not self-authenticating evidence.
+An offline lock replay reconstructs package identity, dependency depth, and byte
+size from the immutable package projection and re-hashes cached bytes. Source
+classification is used only when that exact projection is bound to an explicit
+current-manifest source. Registry lifecycle, signer, issuer, evidence-status,
+and source-snapshot assertions are accepted only from a verifier capability
+bound to the same immutable projection; when that capability cannot be replayed,
+policies requiring those facts fail closed.
+
 ## Adapter obligations
 
 When a Registry Definition advertises `package-metadata`, inspect SHOULD

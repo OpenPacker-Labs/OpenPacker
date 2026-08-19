@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   type AdapterRegistry,
   getAdapterRegistry,
@@ -10,6 +10,11 @@ import {
 } from '@openpacker/pack-provider';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+import {
+  assertContainedRelativePath,
+  openStableDirectory,
+  stableHandlePath,
+} from './paths.js';
 
 export interface ConfiguredPackProviders {
   authorizedEnvironment: Readonly<
@@ -25,7 +30,9 @@ export async function configurePackProviders(input: {
   dependencies?: ManifestPackagePackerDependencies;
 }): Promise<ConfiguredPackProviders> {
   const registry = input.registry ?? getAdapterRegistry();
-  const environment = input.environment ?? process.env;
+  // Ambient process.env is not consent. Embedders may pass an already
+  // authorized value map; the CLI passes none until it grows an explicit grant.
+  const environment = input.environment ?? {};
   const loaded = [];
   const defaults = new Map<string, string>();
 
@@ -33,14 +40,27 @@ export async function configurePackProviders(input: {
     input.manifest.packProviders ?? {},
   )) {
     let provider;
-    const path = resolve(input.root, source.manifest);
+    // Manifest paths may span several segments (`.opm/providers/acme.json`)
+    // but must stay contained beneath the project root. The loader still gets
+    // a path, but one anchored at a stable no-follow directory handle, so a
+    // symlinked or swapped intermediate component fails closed instead of
+    // redirecting the read.
+    const displayPath = join(
+      input.root,
+      assertContainedRelativePath(source.manifest, 'pack provider manifest'),
+    );
+    const directory = await openStableDirectory(dirname(displayPath));
     try {
-      provider = await loadDelegatedPackProvider(path);
+      provider = await loadDelegatedPackProvider(
+        join(stableHandlePath(directory), basename(displayPath)),
+      );
     } catch (error) {
       throw new OpmError(
         'INVALID_MANIFEST',
-        `Cannot load pack provider ${id} from ${path}: ${message(error)}`,
+        `Cannot load pack provider ${id} from ${displayPath}: ${message(error)}`,
       );
+    } finally {
+      await directory.close();
     }
     if (provider.id !== id)
       throw new OpmError(
@@ -82,10 +102,10 @@ export async function configurePackProviders(input: {
   > = {};
   for (const item of loaded) {
     authorizedEnvironment[item.provider.id] = item.authorized;
-    for (const packer of manifestPackagePackers(
-      item.provider,
-      input.dependencies,
-    ))
+    for (const packer of manifestPackagePackers(item.provider, {
+      ...(input.dependencies ?? {}),
+      executablePath: item.source.executable,
+    }))
       registry.registerPackProvider(packer, {
         makeDefault: item.source.defaultFor?.includes(packer.purlType) === true,
       });

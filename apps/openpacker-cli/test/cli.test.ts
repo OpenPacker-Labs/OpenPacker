@@ -1,4 +1,8 @@
 import { Readable } from 'node:stream';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_CODES, runCli, type CliIo } from '../src/index.js';
 
@@ -141,6 +145,44 @@ describe('openpacker CLI', () => {
     expect(JSON.parse(unsat.err).error.exitCode).toBe(EXIT_CODES.unsatisfiable);
   });
 
+  it('rejects duplicate keys in request, policy, and target JSON', async () => {
+    const request = io();
+    request.stdin = Readable.from([
+      '{"universeDigest":"a","universeDigest":"b"}',
+    ]);
+    expect(await runCli(['solve', '--input', '-'], request)).toBe(
+      EXIT_CODES.invalidInput,
+    );
+
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-cli-json-'));
+    try {
+      const policy = join(root, 'policy.json');
+      await writeFile(policy, '{"allowYanked":false,"allowYanked":true}');
+      const policyResult = io();
+      expect(
+        await runCli(
+          ['normalize', 'pkg:npm/demo', '--policy-file', policy],
+          policyResult,
+        ),
+      ).toBe(EXIT_CODES.invalidInput);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+
+    const target = io();
+    expect(
+      await runCli(
+        [
+          'normalize',
+          'pkg:npm/demo',
+          '--target',
+          '{"os":"linux","os":"windows","architecture":"x64"}',
+        ],
+        target,
+      ),
+    ).toBe(EXIT_CODES.invalidInput);
+  });
+
   it('lists the complete command groups', async () => {
     const output = io();
     expect(await runCli(['--help'], output)).toBe(EXIT_CODES.success);
@@ -242,6 +284,62 @@ describe('openpacker CLI', () => {
       expect(requested).toBe(item.path);
       expect(output.out).toContain(digest);
       vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects private HTTPS and out-of-root file artifacts before reading them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-cli-location-'));
+    const outside = join(root, 'outside.tar');
+    await writeFile(outside, 'not an archive');
+    try {
+      const locations = [
+        { transport: 'https', uri: 'https://127.0.0.1/archive.tar' },
+        { transport: 'https', uri: 'https://[::ffff:7f00:1]/archive.tar' },
+        // NAT64 64:ff9b::/96 embedding a loopback, hex and dotted forms
+        { transport: 'https', uri: 'https://[64:ff9b::7f00:1]/archive.tar' },
+        { transport: 'https', uri: 'https://[64:ff9b::10.0.0.1]/archive.tar' },
+        // Deprecated IPv4-compatible ::/96 forms embedding a private address
+        { transport: 'https', uri: 'https://[::a00:1]/archive.tar' },
+        { transport: 'https', uri: 'https://[::10.0.0.1]/archive.tar' },
+        { transport: 'file', uri: pathToFileURL(outside).toString() },
+      ];
+      for (const [index, location] of locations.entries()) {
+        const fetch = vi.fn(async () =>
+          Response.json({
+            descriptor: {
+              descriptorId: 'fixture',
+              mediaType: 'application/x-tar',
+              artifactType: 'package',
+              digest: { algorithm: 'sha256', value: '0'.repeat(64) },
+              size: 0,
+              nativeRole: 'native-package',
+              fileName: 'archive.tar',
+              locations: [{ ...location, priority: 0, rangeSupported: false }],
+              referrers: [],
+              externalRefs: [],
+            },
+          }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const output = io();
+        const destination = join(root, `install-${index}`);
+        expect(
+          await runCli(
+            [
+              'materialize',
+              'pkg:npm/demo@1.0.0',
+              '--install-prefix',
+              destination,
+            ],
+            output,
+          ),
+        ).toBe(EXIT_CODES.invalidInput);
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(output.err).toMatch(/private or local|outside/u);
+        vi.unstubAllGlobals();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 

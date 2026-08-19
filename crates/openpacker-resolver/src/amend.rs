@@ -8,8 +8,8 @@
 use serde_json::{Value, json};
 
 use crate::{
-    Digest, RequirementExpression, ResolverError, SolveInput, UniverseAmendment, canonical_json,
-    digest_json,
+    Digest, RequirementExpression, ResolverError, SolveInput, UniverseAmendment, digest_json,
+    digest_projection,
 };
 
 /// One applied operation, kept so the proof and explanation can name it.
@@ -152,10 +152,15 @@ pub fn apply_amendments(input: &SolveInput) -> Result<AmendedInput, ResolverErro
             .universe
             .packages
             .iter_mut()
-            .find(|package| package.metadata_digest == amendment.applies_to_metadata_digest)
+            .find(|package| {
+                package.metadata_digest == amendment.applies_to_metadata_digest
+                    && serde_json::from_value::<crate::PackageIdentity>(amendment.subject.clone())
+                        .is_ok_and(|subject| subject == package.identity)
+            })
             .ok_or_else(|| {
                 ResolverError::InvalidInput(
-                    "amendment appliesToMetadataDigest does not match any universe package".into(),
+                    "amendment subject and appliesToMetadataDigest do not match a universe package"
+                        .into(),
                 )
             })?;
         let mut operations = Vec::new();
@@ -271,42 +276,5 @@ pub fn apply_amendments(input: &SolveInput) -> Result<AmendedInput, ResolverErro
 /// of fields: a mirror would silently produce a wrong digest the first time a
 /// field is added and the copy is not updated.
 fn universe_digest(universe: &crate::ResolutionUniverse) -> Result<Digest, ResolverError> {
-    let mut value = serde_json::to_value(universe)
-        .map_err(|error| ResolverError::InvalidInput(error.to_string()))?;
-    let object = value
-        .as_object_mut()
-        .ok_or_else(|| ResolverError::InvalidInput("universe must be an object".into()))?;
-    // universe-v1 excludes the self-referential digest and canonicalizes the
-    // declared set paths before hashing.
-    object.remove("canonicalDigest");
-    for path in [
-        "amendments",
-        "overlays",
-        "packages",
-        "recipes",
-        "sourceSnapshots",
-    ] {
-        if let Some(Value::Array(items)) = object.get_mut(path) {
-            // Ordered sets sort by UTF-16 code units, not by UTF-8 bytes. The
-            // normative implementation compares canonical JSON with JavaScript
-            // string comparison, and the two orders disagree whenever a
-            // non-BMP character meets one in U+E000..U+FFFF — the same hazard
-            // `canonical.rs` already guards for object keys. Sorting by bytes
-            // here would put this crate's universe digest at odds with every
-            // other conforming implementation.
-            let mut sortable: Vec<(Vec<u16>, Value)> = std::mem::take(items)
-                .into_iter()
-                .map(|item| {
-                    let key = String::from_utf8(canonical_json(&item)?)
-                        .map_err(|error| ResolverError::InvalidInput(error.to_string()))?
-                        .encode_utf16()
-                        .collect();
-                    Ok((key, item))
-                })
-                .collect::<Result<_, ResolverError>>()?;
-            sortable.sort_by(|left, right| left.0.cmp(&right.0));
-            *items = sortable.into_iter().map(|(_, item)| item).collect();
-        }
-    }
-    digest_json(&value)
+    digest_projection(universe, "universe-v1")
 }

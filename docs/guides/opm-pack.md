@@ -1,5 +1,9 @@
 # Packing with `opm`
 
+`opm pack` currently requires Linux or macOS. Windows is refused before output
+publication because Node does not expose the no-follow, handle-relative
+filesystem primitive used by every artifact and receipt writer.
+
 `opm pack` writes target-native package files and `opm-pack-receipt.json`.
 Standardized packing is the default and does not need the target package manager
 installed:
@@ -37,16 +41,37 @@ from `opm.toml`:
 ```toml
 [pack.providers.dev-example-acme]
 manifest = ".opm/providers/acme.json"
+executable = "/opt/acme/bin/acme-pack"
 default_for = ["acme"]
 allow_environment = ["ACME_TOKEN"]
 ```
 
-The key must equal the provider manifest's `id`. `default_for` is optional; use
-`--provider` when several providers support one PURL type:
+The key must equal the provider manifest's `id`. `manifest` is relative to the
+project root and must stay contained beneath it — absolute paths and `..`
+escapes fail closed, and the file is opened with no-follow semantics.
+`executable` is an operator-approved absolute path; OPM never resolves delegated
+tools through `PATH`. `default_for` is optional; use `--provider` when several
+providers support one PURL type:
 
 ```sh
 opm pack acme --package-version 1.2.3 --provider dev-example-acme --allow-build --offline
 ```
+
+The approved executable must be standalone. OPM copies its bounded, no-follow
+bytes into an unnamed immutable snapshot and hashes that snapshot. The sandbox
+copies those bytes from an inherited read-only descriptor into a private
+mode-`0500` executable and executes that private path. The configured path
+remains the selection and receipt source path, while the receipt digest
+identifies the exact bytes that ran. It is not preserved as `argv[0]`, and OPM
+does not expose its parent directory.
+
+Providers therefore cannot depend on sibling modules or resources, relative
+loader paths, or runtime trees such as an nvm installation. Use an approved
+self-contained bundle or standalone wrapper. OPM fails closed instead of
+reopening the configured path or broadening filesystem authority. Native
+delegation currently requires Linux `O_TMPFILE` support and fails closed when
+unnamed snapshot storage is unavailable. This does not restrict the standardized
+emitters listed above.
 
 Provider manifests map to the standard `package-build` WIT plan interface; the
 host retains execution authority. Native compilation or project-controlled

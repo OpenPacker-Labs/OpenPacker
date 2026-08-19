@@ -1,4 +1,7 @@
 import type { SemanticLoss } from '@openpacker/contracts';
+import { constants } from 'node:fs';
+import { access, realpath, stat } from 'node:fs/promises';
+import { extname, isAbsolute, join, relative } from 'node:path';
 import { runInSandbox } from './run.js';
 import { SANDBOX_LOSS, type SandboxPolicy } from './types.js';
 import { loss } from './policy.js';
@@ -8,6 +11,64 @@ export interface HostInstallerSandboxOptions {
   prefer?: 'auto' | 'mxc' | 'native';
   /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
+}
+
+/** Resolve a host installer without executing PATH-controlled code. */
+export async function findHostExecutable(
+  name: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<string | undefined> {
+  const extensions =
+    process.platform === 'win32' && extname(name) === ''
+      ? (environment.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')
+      : [''];
+  for (const directory of trustedHostDirectories(environment)) {
+    for (const extension of extensions) {
+      const candidate = join(directory, `${name}${extension}`);
+      try {
+        await access(candidate, constants.X_OK);
+        const [trustedDirectory, resolved] = await Promise.all([
+          realpath(directory),
+          realpath(candidate),
+        ]);
+        const inside = relative(trustedDirectory, resolved);
+        if (inside.startsWith('..') || isAbsolute(inside)) continue;
+        const info = await stat(resolved);
+        if (!info.isFile()) continue;
+        if (
+          process.platform !== 'win32' &&
+          (info.uid !== 0 || (info.mode & 0o022) !== 0)
+        )
+          continue;
+        return resolved;
+      } catch {
+        // Continue through fixed host locations without running anything.
+      }
+    }
+  }
+  return undefined;
+}
+
+function trustedHostDirectories(environment: NodeJS.ProcessEnv): string[] {
+  if (process.platform !== 'win32')
+    return [
+      '/usr/bin',
+      '/usr/sbin',
+      '/bin',
+      '/sbin',
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '/nix/var/nix/profiles/default/bin',
+    ];
+  return [
+    environment.SystemRoot && join(environment.SystemRoot, 'System32'),
+    environment.ProgramFiles,
+    environment['ProgramFiles(x86)'],
+    environment.ProgramData &&
+      join(environment.ProgramData, 'chocolatey', 'bin'),
+    environment.LOCALAPPDATA &&
+      join(environment.LOCALAPPDATA, 'Microsoft', 'WindowsApps'),
+  ].filter((value): value is string => typeof value === 'string');
 }
 
 export function sandboxPolicyFromInstallOptions(

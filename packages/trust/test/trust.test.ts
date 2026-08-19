@@ -234,6 +234,116 @@ describe('TUF delegation scope', () => {
 });
 
 describe('TUF', () => {
+  test('persists rollback state for every verified delegated role', async () => {
+    const fixture = await tufFixture();
+    const decode = (bytes: Uint8Array) =>
+      JSON.parse(new TextDecoder().decode(bytes)) as SignedMetadata<
+        TargetsMetadata | SnapshotMetadata
+      >;
+    const originalTargets = decode(fixture.files.targets)
+      .signed as TargetsMetadata;
+    const originalSnapshot = decode(fixture.files.snapshot)
+      .signed as SnapshotMetadata;
+    const seenRole = {
+      name: 'seen',
+      keyids: ['root'],
+      threshold: 1,
+      paths: ['tools/*'],
+      terminating: false,
+    };
+    const targets = await signed<TargetsMetadata>({
+      ...originalTargets,
+      delegations: {
+        ...originalTargets.delegations!,
+        roles: [seenRole, ...originalTargets.delegations!.roles],
+      },
+    });
+    const targetsFile = await file(targets, 1);
+    const delegated = async (version: number) =>
+      file(
+        await signed<TargetsMetadata>({
+          _type: 'targets',
+          spec_version: '1.0.31',
+          version,
+          expires: '2027-01-01T00:00:00Z',
+          targets: {},
+        }),
+        version,
+      );
+    const newer = await delegated(5);
+    const snapshot = async (
+      version: number,
+      seen: Awaited<ReturnType<typeof delegated>>,
+    ) => {
+      const metadata = await signed<SnapshotMetadata>({
+        _type: 'snapshot',
+        spec_version: '1.0.31',
+        version,
+        expires: '2027-01-01T00:00:00Z',
+        meta: {
+          'targets.json': targetsFile.meta,
+          'seen.json': seen.meta,
+          'tools.json': originalSnapshot.meta['tools.json']!,
+        },
+      });
+      return file(metadata, version);
+    };
+    const timestamp = async (
+      version: number,
+      snapshotFile: Awaited<ReturnType<typeof snapshot>>,
+    ) =>
+      encode(
+        await signed<TimestampMetadata>({
+          _type: 'timestamp',
+          spec_version: '1.0.31',
+          version,
+          expires: '2027-01-01T00:00:00Z',
+          meta: { 'snapshot.json': snapshotFile.meta },
+        }),
+      );
+    const firstSnapshot = await snapshot(1, newer);
+    const first = await verifyTufTarget(
+      fixture.trusted,
+      {
+        ...fixture.files,
+        timestamp: await timestamp(1, firstSnapshot),
+        snapshot: firstSnapshot.bytes,
+        targets: targetsFile.bytes,
+        delegated: { ...fixture.files.delegated, seen: newer.bytes },
+        delegatedFileNames: {
+          ...fixture.files.delegatedFileNames,
+          seen: '5.seen.json',
+        },
+      },
+      fixture.targetPath,
+      fixture.targetBytes,
+      '2026-01-01T00:00:00Z',
+    );
+    expect(first.state.metadataVersions.seen).toBe(5);
+
+    const older = await delegated(1);
+    const secondSnapshot = await snapshot(2, older);
+    await expect(
+      verifyTufTarget(
+        first.state,
+        {
+          ...fixture.files,
+          timestamp: await timestamp(2, secondSnapshot),
+          snapshot: secondSnapshot.bytes,
+          targets: targetsFile.bytes,
+          delegated: { ...fixture.files.delegated, seen: older.bytes },
+          delegatedFileNames: {
+            ...fixture.files.delegatedFileNames,
+            seen: '1.seen.json',
+          },
+        },
+        fixture.targetPath,
+        fixture.targetBytes,
+        '2026-01-01T00:00:00Z',
+      ),
+    ).rejects.toMatchObject({ code: 'rollback' });
+  });
+
   test('verifies delegated consistent snapshots and rejects attacks', async () => {
     const fixture = await tufFixture();
     await expect(

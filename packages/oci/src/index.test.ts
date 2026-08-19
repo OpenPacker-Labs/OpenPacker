@@ -93,6 +93,52 @@ describe('OCI image layout', () => {
 });
 
 describe('OCI Distribution client', () => {
+  it('rejects plaintext registry origins', () => {
+    expect(
+      () =>
+        new OciRegistryClient({
+          registry: 'http://registry.example',
+          repository: 'openpacker/demo',
+        }),
+    ).toThrow(/must use HTTPS/u);
+  });
+
+  it('bounds registry error bodies before decoding diagnostics', async () => {
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      maximumAttempts: 1,
+      fetch: (async () =>
+        new Response('x'.repeat(70 * 1024), {
+          status: 500,
+        })) as unknown as typeof fetch,
+    });
+    await expect(client.pullManifest('latest')).rejects.toMatchObject({
+      code: 'REGISTRY_ERROR',
+      message: expect.stringContaining('oversized error body'),
+    });
+  });
+
+  it('bounds time spent reading a stalled registry error body', async () => {
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      maximumAttempts: 1,
+      errorBodyTimeoutMilliseconds: 5,
+      fetch: (async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull: () => new Promise(() => undefined),
+          }),
+          { status: 500 },
+        )) as unknown as typeof fetch,
+    });
+    await expect(client.pullManifest('latest')).rejects.toMatchObject({
+      code: 'REGISTRY_ERROR',
+      message: expect.stringContaining('read deadline'),
+    });
+  });
+
   it('retries safe reads and performs a bounded monolithic upload', async () => {
     const methods: string[] = [];
     let heads = 0;
@@ -455,6 +501,45 @@ describe('tag listing and bearer authentication', () => {
     });
   });
 
+  it('cancels a registry body that exceeds the mandatory idle deadline', async () => {
+    let cancelled = false;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      responseIdleTimeoutMilliseconds: 5,
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+    });
+    await expect(client.listTags()).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+    expect(cancelled).toBe(true);
+  });
+
+  it('applies a mandatory deadline to direct authentication requests', async () => {
+    const authentication = new BearerTokenAuthentication({
+      requestTimeoutMilliseconds: 5,
+      fetch: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const abort = () => reject(init?.signal?.reason);
+          init?.signal?.addEventListener('abort', abort, { once: true });
+          if (init?.signal?.aborted) abort();
+        }),
+    });
+    await expect(
+      authentication.headers(
+        new URL('https://registry.test/v2/demo/tags/list'),
+        'repository:demo:pull',
+      ),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
   it('performs the anonymous bearer handshake and caches the token', async () => {
     let tokenRequests = 0;
     const fetchImplementation = (async (
@@ -494,6 +579,31 @@ describe('tag listing and bearer authentication', () => {
     expect(await client.listTags()).toEqual(['1.0']);
     // Second listing reuses the cached token rather than re-authenticating.
     expect(tokenRequests).toBe(1);
+  });
+
+  it('rejects a registry challenge that widens the requested token scope', async () => {
+    const contacted: string[] = [];
+    const auth = new BearerTokenAuthentication({
+      fetch: (async (url: URL | string) => {
+        contacted.push(String(url));
+        return new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate':
+              'Bearer realm="https://registry.test/token",scope="repository:other:pull,push"',
+          },
+        });
+      }) as unknown as typeof fetch,
+    });
+    await expect(
+      auth.headers(
+        new URL('https://registry.test/v2/demo/manifests/latest'),
+        'repository:demo:pull',
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted).toEqual([
+      'https://registry.test/v2/demo/manifests/latest',
+    ]);
   });
 });
 

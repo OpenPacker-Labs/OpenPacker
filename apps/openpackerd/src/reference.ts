@@ -1,8 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
-import { canonicalDigest } from '@openpacker/canonical';
-import type { JsonValue, ResolutionUniverse } from '@openpacker/contracts';
+import {
+  canonicalDigest,
+  canonicalProjectionDigest,
+  parseCanonicalJson,
+} from '@openpacker/canonical';
+import {
+  DIGEST_PROJECTIONS,
+  type JsonValue,
+  type ResolutionUniverse,
+} from '@openpacker/contracts';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import {
@@ -21,7 +29,9 @@ export async function createStandaloneReferenceOperations(
 ): Promise<PrexOperations> {
   ensureReferenceAdapters();
   const universe = universePath
-    ? (JSON.parse(await readFile(universePath, 'utf8')) as ResolutionUniverse)
+    ? (parseCanonicalJson(
+        await readFile(universePath, 'utf8'),
+      ) as unknown as ResolutionUniverse)
     : await emptyUniverse();
   const resolver = createEmbeddedResolver(bindings);
   resolver.validateUniverse(universe);
@@ -65,8 +75,15 @@ async function emptyUniverse(): Promise<ResolutionUniverse> {
     lifecycleRoot,
     targetVocabularyVersion: '1',
   };
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    ({ id }) => id === 'universe-v1',
+  );
+  if (!projection) throw new Error('Missing universe-v1 projection');
   return {
     ...body,
-    canonicalDigest: await canonicalDigest(body as unknown as JsonValue),
+    canonicalDigest: await canonicalProjectionDigest(
+      body as unknown as JsonValue,
+      projection,
+    ),
   };
 }

@@ -1,26 +1,24 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
-import {
-  createMockBackend,
-  SandboxBackendError,
-  spawnCapture,
-} from './backends/mock.js';
+import { createMockBackend, SandboxBackendError } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
-import { normalizeJailPaths } from './paths.js';
+import {
+  assertSafeJailPath,
+  normalizeJailPaths,
+  openStableJailPath,
+} from './paths.js';
 import {
   assertGrantsNotDangerous,
   assertPathNotRootOrHome,
   backendLosses,
   digestSandboxPolicy,
-  loss,
   matchPackageGrant,
   mergeGrants,
   resolvePolicy,
 } from './policy.js';
 import {
-  SANDBOX_LOSS,
   type BackendProbe,
   type RunInSandboxInput,
   type SandboxBackend,
@@ -84,6 +82,7 @@ export async function runInSandbox(
   assertGrantsNotDangerous(grantedWrite, resolved.allowDangerousGrants);
   assertGrantsNotDangerous(grantedRead, resolved.allowDangerousGrants);
   if (profile === 'package-exec') {
+    assertSafeJailPath(input.cwd, 'package-exec cwd');
     assertPathNotRootOrHome(
       input.cwd,
       resolved.allowDangerousGrants,
@@ -114,25 +113,13 @@ export async function runInSandbox(
   const network = Boolean(input.network || packageGrants.network);
 
   if (!resolved.enabled || resolved.mode === 'off') {
-    const result = await runAmbient(input, packageGrants.env, resolved);
-    return {
-      ...result,
-      backend: 'off',
-      profile: 'ambient',
-      enforced: false,
-      containmentLimited: true,
-      policyDigest,
-      degraded: true,
-      losses: [
-        ...backendLosses('off', 'ambient', false, true),
-        loss(
-          SANDBOX_LOSS.DEGRADED,
-          'warning',
-          'sandbox disabled by policy',
-          'ambient execution; not a security boundary',
-        ),
-      ],
-    };
+    // Ambient execution is not a security boundary and this host cannot bound
+    // the process tree without a backend, so "off" refuses instead of
+    // degrading.
+    throw new SandboxBackendError(
+      'TREE_CONTAINMENT_UNAVAILABLE',
+      'Sandbox disabled by policy, and ambient execution is refused: no OS-owned tree containment is available to bound the process tree',
+    );
   }
 
   let backend: SandboxBackend | undefined = input.backend;
@@ -156,22 +143,19 @@ export async function runInSandbox(
         losses: backendLosses('none', profile, false, false),
       };
     }
-    const result = await runAmbient(input, packageGrants.env, resolved);
-    return {
-      ...result,
-      backend: 'none',
-      profile: 'ambient',
-      enforced: false,
-      containmentLimited: true,
-      policyDigest,
-      degraded: true,
-      losses: backendLosses('none', 'ambient', false, true),
-    };
+    // Degrade modes cannot fall back to ambient execution: it is not a
+    // security boundary and no owned tree containment exists to bound the
+    // process tree.
+    throw new SandboxBackendError(
+      'TREE_CONTAINMENT_UNAVAILABLE',
+      'No containment backend is available, and ambient execution is refused: no OS-owned tree containment is available to bound the process tree',
+    );
   }
 
   const jailRoot = defaultJailHomeRoot();
   await mkdir(jailRoot, { recursive: true });
   const jailHome = await mkdtemp(join(jailRoot, 'home-'));
+  const ownedAuthorities: FileHandle[] = [];
   try {
     await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
@@ -196,6 +180,15 @@ export async function runInSandbox(
       [...input.readonlyPaths, ...grantedRead],
       'readonly path',
     );
+    const authorities = [...(input.directoryAuthorities ?? [])];
+    const authorized = new Set(authorities.map(({ path }) => resolve(path)));
+    for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
+      if (authorized.has(path)) continue;
+      const handle = await openStableJailPath(path, 'sandbox bind');
+      ownedAuthorities.push(handle);
+      authorities.push({ fd: handle.fd, path });
+      authorized.add(path);
+    }
 
     const timeoutMs =
       profile === 'package-exec' ? resolved.timeoutMs : resolved.timeoutMs;
@@ -225,9 +218,10 @@ export async function runInSandbox(
           maximumStdoutBytes: resolved.maximumStdoutBytes,
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
-          ...(input.directoryAuthorities === undefined
+          directoryAuthorities: authorities,
+          ...(input.executableAuthority === undefined
             ? {}
-            : { directoryAuthorities: input.directoryAuthorities }),
+            : { executableAuthority: input.executableAuthority }),
           ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });
@@ -304,57 +298,20 @@ export async function runInSandbox(
             losses: backendLosses('none', profile, false, false),
           };
         }
-        const result = await runAmbient(input, packageGrants.env, resolved);
-        return {
-          ...result,
-          backend: 'none',
-          profile: 'ambient',
-          enforced: false,
-          containmentLimited: true,
-          policyDigest,
-          degraded: true,
-          losses: backendLosses('none', 'ambient', false, true),
-        };
+        // Degrade modes cannot fall back to ambient execution: it is not a
+        // security boundary and no owned tree containment exists to bound the
+        // process tree.
+        throw new SandboxBackendError(
+          'TREE_CONTAINMENT_UNAVAILABLE',
+          `${error.message}; ambient execution is refused: no OS-owned tree containment is available to bound the process tree`,
+        );
       }
       throw error;
     }
   } finally {
-    await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
-  }
-}
-
-async function runAmbient(
-  input: RunInSandboxInput,
-  grantEnv: readonly string[] | undefined,
-  resolved: ReturnType<typeof resolvePolicy>,
-): Promise<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  outputLimitExceeded?: 'stdout' | 'stderr' | 'combined';
-}> {
-  const jailRoot = defaultJailHomeRoot();
-  await mkdir(jailRoot, { recursive: true });
-  const jailHome = await mkdtemp(join(jailRoot, 'ambient-'));
-  try {
-    await mkdir(join(jailHome, 'tmp'), { recursive: true });
-    const env = scrubEnvironment({
-      ...(input.env === undefined ? {} : { extra: input.env }),
-      ...(grantEnv === undefined ? {} : { grantEnv }),
-      jailHome,
-      minimalPath: false,
-    });
-    return await spawnCapture({
-      argv: input.argv,
-      cwd: input.cwd,
-      env,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      ...(resolved.timeoutMs > 0 ? { timeoutMs: resolved.timeoutMs } : {}),
-      maximumStdoutBytes: resolved.maximumStdoutBytes,
-      maximumStderrBytes: resolved.maximumStderrBytes,
-      maximumOutputBytes: resolved.maximumOutputBytes,
-    });
-  } finally {
+    await Promise.all(
+      ownedAuthorities.map(async (handle) => await handle.close()),
+    );
     await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }

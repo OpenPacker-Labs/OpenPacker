@@ -1,5 +1,15 @@
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import {
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
+import { constants, realpathSync } from 'node:fs';
+import { open, type FileHandle } from 'node:fs/promises';
 
 /**
  * Credential directories masked inside native jails.
@@ -110,8 +120,77 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
   const parts = value.replaceAll('\\', '/').split('/');
   if (parts.some((part) => part === '..'))
     throw new JailPathError(kind, 'path must not contain ".." segments');
-  // Resolve relative grants against cwd for a stable absolute form.
-  return resolve(value);
+  // Bind helpers follow symlinked ancestors. Refuse any alias rather than
+  // letting an apparently package-local grant resolve to / or $HOME.
+  const absolute = resolve(value);
+  let existing = absolute;
+  for (;;) {
+    try {
+      if (realpathSync.native(existing) !== existing)
+        throw new JailPathError(kind, 'path must not contain symbolic links');
+      break;
+    } catch (error) {
+      if (error instanceof JailPathError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = dirname(existing);
+      if (parent === existing) break;
+      existing = parent;
+    }
+  }
+  return absolute;
+}
+
+/** Open a grant through retained no-follow ancestors for bind-fd backends. */
+export async function openStableJailPath(
+  value: string,
+  kind = 'path',
+): Promise<FileHandle> {
+  const absolute = assertSafeJailPath(value, kind);
+  if (process.platform !== 'linux' && process.platform !== 'darwin')
+    throw new JailPathError(
+      kind,
+      'stable jail grants are unavailable on this platform',
+    );
+  const root = parse(absolute).root;
+  let handle = await open(
+    root,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    const parts = relative(root, absolute).split(sep).filter(Boolean);
+    for (const [index, part] of parts.entries()) {
+      const last = index === parts.length - 1;
+      const next = await open(
+        join(stableHandlePath(handle), part),
+        constants.O_RDONLY |
+          constants.O_NOFOLLOW |
+          (last ? constants.O_NONBLOCK : constants.O_DIRECTORY),
+      );
+      const info = await next.stat();
+      if (
+        (!last && !info.isDirectory()) ||
+        (last && !info.isDirectory() && !info.isFile())
+      ) {
+        await next.close();
+        throw new JailPathError(
+          kind,
+          'grant must name a regular file or directory',
+        );
+      }
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+function stableHandlePath(handle: FileHandle): string {
+  return process.platform === 'linux'
+    ? `/proc/self/fd/${handle.fd}`
+    : `/dev/fd/${handle.fd}`;
 }
 
 export function normalizeJailPaths(

@@ -221,6 +221,92 @@ pub fn digest_json<T: Serialize>(value: &T) -> Result<Digest, ResolverError> {
     })
 }
 
+pub fn digest_projection<T: Serialize>(
+    value: &T,
+    projection: &str,
+) -> Result<Digest, ResolverError> {
+    let mut value = serde_json::to_value(value)?;
+    let (excluded, ordered): (&[&[&str]], &[&[&str]]) = match projection {
+        "request-v1" => (
+            &[&["context"]],
+            &[
+                &["environment", "installed"],
+                &["environment", "locked"],
+                &["policy", "acceptedAmendmentDigests"],
+                &["policy", "requiredEvidence"],
+                &["requirements"],
+            ],
+        ),
+        "universe-v1" => (
+            &[&["canonicalDigest"]],
+            &[
+                &["amendments"],
+                &["overlays"],
+                &["packages"],
+                &["recipes"],
+                &["sourceSnapshots"],
+            ],
+        ),
+        "solution-v1" => (
+            &[&["solutionDigest"]],
+            &[
+                &["dependencyEdges"],
+                &["excludedCandidates"],
+                &["satisfiedRequirementIds"],
+                &["selectedCapabilityProviders"],
+                &["selectedNodeIds"],
+                &["semanticLoss"],
+                &["sourceSnapshotDigests"],
+            ],
+        ),
+        _ => {
+            return Err(ResolverError::Canonical(format!(
+                "unknown digest projection: {projection}"
+            )));
+        }
+    };
+    for path in excluded {
+        if let Some(parent) = object_at_mut(&mut value, &path[..path.len().saturating_sub(1)]) {
+            if let Some(key) = path.last() {
+                parent.remove(*key);
+            }
+        }
+    }
+    for path in ordered {
+        let Some(array) = value_at_mut(&mut value, path).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let mut sortable: Vec<(Vec<u16>, Value)> = std::mem::take(array)
+            .into_iter()
+            .map(|item| {
+                let key = String::from_utf8(canonical_json(&item)?)
+                    .map_err(|error| ResolverError::Canonical(error.to_string()))?
+                    .encode_utf16()
+                    .collect();
+                Ok((key, item))
+            })
+            .collect::<Result<_, ResolverError>>()?;
+        sortable.sort_by(|left, right| left.0.cmp(&right.0));
+        *array = sortable.into_iter().map(|(_, item)| item).collect();
+    }
+    digest_json(&value)
+}
+
+fn value_at_mut<'a>(value: &'a mut Value, path: &[&str]) -> Option<&'a mut Value> {
+    let mut current = value;
+    for key in path {
+        current = current.as_object_mut()?.get_mut(*key)?;
+    }
+    Some(current)
+}
+
+fn object_at_mut<'a>(
+    value: &'a mut Value,
+    path: &[&str],
+) -> Option<&'a mut serde_json::Map<String, Value>> {
+    value_at_mut(value, path)?.as_object_mut()
+}
+
 fn write_value(value: &Value, output: &mut String) -> Result<(), ResolverError> {
     match value {
         Value::Null => output.push_str("null"),
@@ -283,6 +369,40 @@ mod tests {
         assert_eq!(
             String::from_utf8(canonical_json(&value).unwrap()).unwrap(),
             "{\"𐀀\":2,\"\":1}"
+        );
+    }
+
+    #[test]
+    fn named_projections_exclude_self_fields_and_sort_declared_sets() {
+        let request = json!({
+            "context": {"trace": "ignored"},
+            "environment": {"installed": ["b", "a"], "locked": []},
+            "policy": {"acceptedAmendmentDigests": [], "requiredEvidence": []},
+            "requirements": [{"id": "b"}, {"id": "a"}]
+        });
+        let reordered = json!({
+            "context": {"trace": "different"},
+            "environment": {"installed": ["a", "b"], "locked": []},
+            "policy": {"acceptedAmendmentDigests": [], "requiredEvidence": []},
+            "requirements": [{"id": "a"}, {"id": "b"}]
+        });
+        assert_eq!(
+            digest_projection(&request, "request-v1").unwrap(),
+            digest_projection(&reordered, "request-v1").unwrap()
+        );
+
+        let universe = json!({"packages": ["b", "a"], "canonicalDigest": "old"});
+        let changed = json!({"packages": ["a", "b"], "canonicalDigest": "new"});
+        assert_eq!(
+            digest_projection(&universe, "universe-v1").unwrap(),
+            digest_projection(&changed, "universe-v1").unwrap()
+        );
+
+        let solution = json!({"selectedNodeIds": ["b", "a"], "solutionDigest": "old"});
+        let changed = json!({"selectedNodeIds": ["a", "b"], "solutionDigest": "new"});
+        assert_eq!(
+            digest_projection(&solution, "solution-v1").unwrap(),
+            digest_projection(&changed, "solution-v1").unwrap()
         );
     }
 }

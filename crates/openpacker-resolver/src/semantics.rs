@@ -200,11 +200,23 @@ pub fn version_satisfies(version: &str, vers: &str) -> bool {
         .strip_prefix("vers:")
         .and_then(|value| value.split_once('/'))
         .unwrap_or(("generic", vers));
-    expression.split("||").any(|alternative| {
-        alternative
-            .split('|')
-            .filter(|part| !part.is_empty())
-            .all(|clause| compare_clause(version, clause.trim(), scheme))
+    if expression.trim().is_empty() {
+        return false;
+    }
+    let mut alternatives = expression.split("||");
+    if alternatives
+        .clone()
+        .any(|alternative| alternative.trim().is_empty())
+    {
+        return false;
+    }
+    alternatives.any(|alternative| {
+        let clauses = alternative.split('|').collect::<Vec<_>>();
+        !clauses.is_empty()
+            && clauses.iter().all(|clause| {
+                let clause = clause.trim();
+                !clause.is_empty() && compare_clause(version, clause, scheme)
+            })
     })
 }
 
@@ -392,5 +404,8 @@ mod tests {
         ));
         assert!(version_satisfies("1.0.0-RC.1", "vers:nuget/=1.0.0-rc.1"));
         assert!(!version_satisfies("1.0.0-01", "vers:npm/<2.0.0"));
+        for invalid in ["", "vers:npm/", "vers:npm/||>=1", "vers:npm/>=1||"] {
+            assert!(!version_satisfies("1.0.0", invalid), "{invalid}");
+        }
     }
 }

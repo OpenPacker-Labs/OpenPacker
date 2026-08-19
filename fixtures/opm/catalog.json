@@ -15,21 +15,6 @@
           "path": "package/bin/demo-tool.js"
         }
       ]
-    },
-    "pkg:npm/@openpacker/demo-tool@1.1.0": {
-      "purl": "pkg:npm/@openpacker/demo-tool@1.1.0",
-      "version": "1.1.0",
-      "digest": "sha256:0166c22d436cab8d564f055a5deca73eda79bc943ca62042e9f4b93c08735513",
-      "size": 406,
-      "format": "tar+gzip",
-      "mediaType": "application/vnd.npm.package+gzip",
-      "source": "file:demo-tool-1.1.0.tgz",
-      "bins": [
-        {
-          "name": "demo-tool",
-          "path": "package/bin/demo-tool.js"
-        }
-      ]
     }
   }
 }

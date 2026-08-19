@@ -26,13 +26,20 @@ const windows = () => 'win32';
 
 describe('availability', () => {
   it('reports the winget it found', async () => {
-    const { execute } = fakeWinget({ 'winget --version': 'v1.8.1911' });
+    const { calls, execute } = fakeWinget({
+      'winget --version': 'v1.8.1911',
+    });
     expect(
-      await new WingetSystemProvider(execute, windows).available(),
+      await new WingetSystemProvider(
+        execute,
+        windows,
+        async () => 'C:\\Program Files\\winget.exe',
+      ).available(),
     ).toMatchObject({
       available: true,
-      tool: { name: 'winget', version: '1.8.1911' },
+      tool: { name: 'winget', path: 'C:\\Program Files\\winget.exe' },
     });
+    expect(calls).toEqual([]);
   });
 
   it('reports that it is Windows-only rather than throwing', async () => {
@@ -49,6 +56,23 @@ describe('availability', () => {
 });
 
 describe('planning', () => {
+  it('runs metadata queries through the resolved trusted executable', async () => {
+    const path = 'C:\\Program Files\\WindowsApps\\winget.exe';
+    const { calls, execute } = fakeWinget({
+      [`${path} show --id Git.Git`]: 'Version\n2.45.1\n2.44.0\n',
+    });
+    const provider = new WingetSystemProvider(
+      execute,
+      windows,
+      async () => path,
+    );
+    await expect(provider.versions('pkg:winget/Git/Git')).resolves.toEqual([
+      '2.44.0',
+      '2.45.1',
+    ]);
+    expect(calls[0]?.[0]).toBe(path);
+  });
+
   it('builds an argv from a Publisher.Package identifier', async () => {
     const provider = new WingetSystemProvider(fakeWinget().execute, windows);
     const plan = await provider.plan('pkg:winget/Git/Git@2.45.1');

@@ -1,5 +1,13 @@
-import { canonicalDigest } from '@openpacker/canonical';
-import type { PackageInstance } from '@openpacker/contracts';
+import {
+  canonicalDigest,
+  canonicalProjectionDigest,
+} from '@openpacker/canonical';
+import {
+  DIGEST_PROJECTIONS,
+  type JsonValue,
+  type PackageInstance,
+  type PolicyInput,
+} from '@openpacker/contracts';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { providerFor, type RegistryOptions } from './registry.js';
@@ -427,6 +435,7 @@ export async function resolveGraph(input: {
   roots: readonly { purl: string; range?: string }[];
   bounds?: ResolutionBounds;
   options?: RegistryOptions;
+  optionsFor?: (ecosystem: string) => RegistryOptions;
   host?: HostEnvironment;
 }): Promise<ResolvedGraph> {
   const bounds = { ...DEFAULT_BOUNDS, ...(input.bounds ?? {}) };
@@ -454,6 +463,7 @@ export async function resolveGraph(input: {
       );
     const item = queue.shift()!;
     const ecosystem = ecosystemFromPurl(item.purl);
+    const ecosystemOptions = input.optionsFor?.(ecosystem) ?? options;
 
     let candidates: string[];
     try {
@@ -461,7 +471,7 @@ export async function resolveGraph(input: {
         ecosystem,
         item.purl,
         item.range,
-        options,
+        ecosystemOptions,
       );
     } catch (error) {
       unresolved.push({
@@ -485,7 +495,7 @@ export async function resolveGraph(input: {
       candidates = candidates.slice(0, bounds.candidatesPerPackage);
     }
 
-    const provider = await providerFor(ecosystem, options, [
+    const provider = await providerFor(ecosystem, ecosystemOptions, [
       'prex.registry.package-metadata/1',
     ]);
     for (const candidate of candidates) {
@@ -602,8 +612,17 @@ export async function solveGraph(input: {
   graph: ResolvedGraph;
   rootRequirements: readonly { purl: string; vers?: string }[];
   evaluationTime?: string;
+  policy?: Pick<
+    PolicyInput,
+    | 'allowYanked'
+    | 'allowQuarantined'
+    | 'requiredEvidence'
+    | 'semanticLossMaximum'
+    | 'acceptedOverlayAuthorities'
+  >;
 }): Promise<{
   selected: PackageInstance[];
+  dependencyEdges: { fromNodeId: string; toNodeId: string }[];
   solutionDigest: string;
   proofValid: boolean;
 }> {
@@ -622,7 +641,7 @@ export async function solveGraph(input: {
       'prefer-highest-native-version',
       'canonical-lexical-tie-break',
     ],
-    policy: {
+    policy: input.policy ?? {
       acceptedOverlayAuthorities: ['publisher'],
       allowQuarantined: false,
       allowYanked: false,
@@ -689,12 +708,50 @@ export async function solveGraph(input: {
   const byNodeId = new Map(
     input.graph.packages.map((instance) => [instance.nodeId, instance]),
   );
+  const selected = solved.solution.selectedNodeIds
+    .map((nodeId) => byNodeId.get(nodeId))
+    .filter((instance): instance is PackageInstance => instance !== undefined);
+  const selectedByPurl = new Map<string, PackageInstance>();
+  for (const instance of selected) {
+    const exact = instance.identity.exactPurl;
+    if (exact === undefined)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        'Selected package lacks an exact PURL',
+      );
+    const base = stripPurlVersion(exact);
+    if (selectedByPurl.has(base))
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `Selected closure contains multiple versions of ${base}`,
+      );
+    selectedByPurl.set(base, instance);
+  }
+  const dependencyEdges: { fromNodeId: string; toNodeId: string }[] = [];
+  for (const instance of selected)
+    for (const requirement of instance.requirements ?? []) {
+      if (
+        requirement.optional ||
+        !INSTALLED_KINDS.has(requirement.kind) ||
+        requirement.expression.type !== 'package'
+      )
+        continue;
+      const dependency = selectedByPurl.get(
+        stripPurlVersion(requirement.expression.purl),
+      );
+      if (dependency === undefined)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Selected closure omits required package ${requirement.expression.purl}`,
+        );
+      dependencyEdges.push({
+        fromNodeId: instance.nodeId,
+        toNodeId: dependency.nodeId,
+      });
+    }
   return {
-    selected: solved.solution.selectedNodeIds
-      .map((nodeId) => byNodeId.get(nodeId))
-      .filter(
-        (instance): instance is PackageInstance => instance !== undefined,
-      ),
+    selected,
+    dependencyEdges,
     solutionDigest: solved.solution.solutionDigest as unknown as string,
     proofValid: checked.valid,
   };
@@ -704,13 +761,72 @@ export async function solveGraph(input: {
 export async function universeFrom(
   graph: ResolvedGraph,
 ): Promise<Record<string, unknown>> {
+  const packages = graph.packages.map((instance) => ({
+    ...instance,
+    requirements: instance.requirements.map((requirement) => ({
+      ...requirement,
+      expression: completeExpression(requirement.expression),
+    })),
+    capabilities: instance.capabilities.map((capability) => ({
+      attributes: {},
+      ...capability,
+    })),
+    conflicts: instance.conflicts.map((conflict) => ({
+      ...conflict,
+      expression: completeExpression(conflict.expression),
+    })),
+    cardinalityConstraints: instance.cardinalityConstraints.map(
+      (constraint) => ({
+        ...constraint,
+        selector: completeExpression(constraint.selector),
+      }),
+    ),
+  }));
   const body = {
     universeVersion: '1',
-    packages: graph.packages,
+    packages,
     overlays: [],
     sourceSnapshots: [],
     lifecycleRoot: await canonicalDigest([]),
     targetVocabularyVersion: '1',
   };
-  return { ...body, canonicalDigest: await canonicalDigest(body) };
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    ({ id }) => id === 'universe-v1',
+  );
+  if (!projection)
+    throw new OpmError('INTERNAL_ERROR', 'Missing universe-v1 projection');
+  const universeDigest = await canonicalProjectionDigest(
+    body as unknown as JsonValue,
+    projection,
+  );
+  return {
+    ...body,
+    canonicalDigest: universeDigest,
+  };
+}
+
+function completeExpression(input: JsonValue): JsonValue {
+  if (typeof input !== 'object' || input === null || Array.isArray(input))
+    return input;
+  if (input.type === 'package') return { qualifiers: {}, ...input };
+  if (input.type === 'capability') return { attributes: {}, ...input };
+  if (input.type === 'allOf' || input.type === 'anyOf')
+    return {
+      ...input,
+      expressions: (input.expressions as JsonValue[]).map(completeExpression),
+    };
+  if (input.type === 'not')
+    return {
+      ...input,
+      expression: completeExpression(input.expression as JsonValue),
+    };
+  if (input.type === 'conditional')
+    return {
+      ...input,
+      then: completeExpression(input.then as JsonValue),
+      ...(input.else === undefined
+        ? {}
+        : { else: completeExpression(input.else) }),
+    };
+  return input;
 }

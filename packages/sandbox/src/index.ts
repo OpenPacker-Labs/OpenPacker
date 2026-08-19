@@ -65,12 +65,14 @@ export {
   createSeatbeltBackend,
   findTrustedSandboxHelper,
   probeNativeBackends,
+  reopenExecutableAuthority,
 } from './backends/native.js';
 
 export {
   createMxcBackend,
   mxcFilesystemPaths,
   probeMxc,
+  quoteCommandLine,
 } from './backends/mxc.js';
 
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
@@ -80,6 +82,7 @@ export {
   limitedContainmentLoss,
   notSandboxedLoss,
   planSandboxSummary,
+  findHostExecutable,
   runHostInstaller,
   sandboxPolicyFromInstallOptions,
   sandboxedSystemLoss,

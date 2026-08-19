@@ -52,7 +52,17 @@ export async function importNativeLockExample(
 ): Promise<LockImportResult> {
   ensureAdapters();
   const raw = await readFile(absoluteLockPath, 'utf8');
-  const plan = await planNativeLockImport(raw);
+  const plan = await planNativeLockImport(raw, {
+    // The example captures every committed native lock and reports its losses;
+    // accepting error-severity capture loss is explicit, not a default bypass.
+    policy: {
+      allowYanked: false,
+      allowQuarantined: false,
+      semanticLossMaximum: 'error',
+      requiredEvidence: [],
+      acceptedOverlayAuthorities: [],
+    },
+  });
   const resolver = createEmbeddedResolver(bindings);
   return completeLockImport(plan, resolver, {
     providerId: meta.providerId ?? 'org.openpacker.example.lock-import',

@@ -2,6 +2,19 @@ import { expect, it } from 'vitest';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
 import { SonatypeProvider } from './index.js';
 
+it('rejects plaintext endpoints before resolving credentials', () => {
+  expect(
+    () =>
+      new SonatypeProvider(
+        new FixtureHttpTransport(new Map()),
+        { resolve: async () => ({ authorization: 'Bearer fixture' }) },
+        { now: () => '2026-08-02T00:00:00Z' },
+        'http://sonatype.test',
+        'secret://sonatype/test',
+      ),
+  ).toThrow(/must use HTTPS/u);
+});
+
 it('uses a secret reference and reports coordinate mismatches without rewriting identity', async () => {
   const requested = 'pkg:nuget/demo@1.0.0';
   const body = new TextEncoder().encode(

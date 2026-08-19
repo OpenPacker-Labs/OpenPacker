@@ -252,12 +252,22 @@ export async function mapSolutionToOcm(input: {
     selectedPurls.add(exactPurl);
     selected.set(nodeId, item);
   }
+  const selectedEdges = [] as ResolutionSolution['dependencyEdges'];
   for (const edge of input.solution.dependencyEdges) {
+    if (edge.fromNodeId === 'root') {
+      if (!selected.has(edge.toNodeId))
+        throw new OcmValidationError(
+          'INVALID_DEPENDENCY_EDGE',
+          `Root dependency edge ${edge.requirementId} has no selected target`,
+        );
+      continue;
+    }
     if (!selected.has(edge.fromNodeId) || !selected.has(edge.toNodeId))
       throw new OcmValidationError(
         'INVALID_DEPENDENCY_EDGE',
         `Dependency edge ${edge.requirementId} does not connect two selected packages`,
       );
+    selectedEdges.push(edge);
   }
   const ordered = [...selected.values()].sort((left, right) =>
     compareCanonicalStrings(
@@ -294,7 +304,7 @@ export async function mapSolutionToOcm(input: {
     dependencies.set(nodeId, new Map());
     parents.set(nodeId, new Set());
   }
-  for (const edge of input.solution.dependencyEdges) {
+  for (const edge of selectedEdges) {
     const requirements = dependencies.get(edge.fromNodeId)!;
     const requirementIds = requirements.get(edge.toNodeId) ?? [];
     requirementIds.push(edge.requirementId);

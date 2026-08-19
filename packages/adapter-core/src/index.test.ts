@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertBoundedProviderMetadata,
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   BoundedFetchTransport,
@@ -46,6 +47,14 @@ describe('PURL codec primitives', () => {
     expect(() => parsePurl('pkg:npm/demo?a=1&A=2')).toThrow(
       /Duplicate qualifier/,
     );
+  });
+
+  it('rejects provider identity substitution', () => {
+    expect(() =>
+      assertPackageIdentityMatchesRequest('pkg:npm/demo@1.0.0', {
+        exactPurl: 'pkg:npm/other@1.0.0',
+      }),
+    ).toThrow(/does not match/u);
   });
 });
 
@@ -185,13 +194,34 @@ it('bounds redirects and retries while stripping cross-origin credentials', asyn
   });
   const response = await transport.request({
     url: 'https://registry.test/data',
-    headers: { authorization: 'Bearer secret', 'x-api-key': 'secret' },
+    headers: {
+      accept: 'application/json',
+      authorization: 'Bearer secret',
+      'x-api-key': 'secret',
+      'x-vendor-token': 'secret',
+    },
   });
   expect(new TextDecoder().decode(response.body)).toBe('ok');
   expect(calls).toHaveLength(3);
   expect(calls[0]!.headers.get('authorization')).toBe('Bearer secret');
   expect(calls[1]!.headers.has('authorization')).toBe(false);
   expect(calls[1]!.headers.has('x-api-key')).toBe(false);
+  expect(calls[1]!.headers.has('x-vendor-token')).toBe(false);
+  expect(calls[1]!.headers.get('accept')).toBe('application/json');
+});
+
+it('enforces an intrinsic provider deadline through body consumption', async () => {
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: ['https://fixture.test'],
+    timeoutMilliseconds: 10,
+    fetch: (async () =>
+      new Response(
+        new ReadableStream({ start: () => undefined }),
+      )) as typeof fetch,
+  });
+  await expect(
+    transport.request({ url: 'https://fixture.test/stalled' }),
+  ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
 });
 
 it('maps status, corruption, limits, and cancellation to stable failures', async () => {
@@ -223,6 +253,16 @@ it('maps status, corruption, limits, and cancellation to stable failures', async
       headers: {},
       body: new TextEncoder().encode('{broken'),
       url: 'https://fixture.test/broken',
+    }),
+  ).toThrowError(
+    expect.objectContaining({ code: 'INVALID_PROVIDER_METADATA' }),
+  );
+  expect(() =>
+    json({
+      status: 200,
+      headers: {},
+      body: new TextEncoder().encode('{"version":"1","version":"2"}'),
+      url: 'https://fixture.test/duplicate',
     }),
   ).toThrowError(
     expect.objectContaining({ code: 'INVALID_PROVIDER_METADATA' }),
@@ -261,6 +301,33 @@ it('rejects unlisted initial and redirect origins before fetching them', async (
     transport.request({ url: 'https://registry.test/data' }),
   ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   expect(calls).toEqual(['https://registry.test/data']);
+});
+
+it('allows only credential-free loopback HTTP provider traffic', async () => {
+  expect(
+    () =>
+      new BoundedFetchTransport({
+        allowedOrigins: ['http://registry.example'],
+      }),
+  ).toThrowError(
+    expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+  );
+
+  const calls: string[] = [];
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: ['http://127.0.0.1:7337'],
+    fetch: (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response('ok');
+    }) as typeof fetch,
+  });
+  await expect(
+    transport.request({
+      url: 'http://127.0.0.1:7337/data',
+      headers: { authorization: 'Bearer secret' },
+    }),
+  ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+  expect(calls).toEqual([]);
 });
 
 it('preserves HEAD across a 303 serviceability redirect', async () => {

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { readSync } from 'node:fs';
 import type { SandboxBackend } from '../types.js';
 
 /**
@@ -23,21 +24,60 @@ export function createMockBackend(options?: {
   return {
     id,
     async run(input) {
+      const directoryFds =
+        input.directoryAuthorities?.map(({ fd }) => fd) ?? [];
+      const executableChildFd = 3 + directoryFds.length;
       return await spawnCapture({
-        argv: input.argv,
+        argv:
+          input.executableAuthority === undefined
+            ? input.argv
+            : executableHandleArgv(
+                input.executableAuthority.fd,
+                executableChildFd,
+                input.argv.slice(1),
+              ),
         cwd: input.cwd,
         env: input.env,
         maximumStdoutBytes: input.maximumStdoutBytes,
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
-        ...(input.directoryAuthorities === undefined
-          ? {}
-          : { inheritedFds: input.directoryAuthorities.map(({ fd }) => fd) }),
+        inheritedFds: [
+          ...directoryFds,
+          ...(input.executableAuthority === undefined
+            ? []
+            : [input.executableAuthority.fd]),
+        ],
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
   };
+}
+
+function executableHandleArgv(
+  parentFd: number,
+  childFd: number,
+  arguments_: readonly string[],
+): string[] {
+  const path = stableChildHandlePath(childFd);
+  const header = Buffer.alloc(4_096);
+  const bytesRead = readSync(parentFd, header, 0, header.byteLength, 0);
+  const firstLine = header
+    .subarray(0, bytesRead)
+    .toString('utf8')
+    .split('\n', 1)[0];
+  if (!firstLine?.startsWith('#!')) return [path, ...arguments_];
+  const interpreter = firstLine.slice(2).trim().split(/\s+/u).filter(Boolean);
+  if (interpreter.length === 0)
+    throw new SandboxBackendError(
+      'INVALID_EXECUTABLE',
+      'Executable authority has an empty shebang',
+    );
+  return [...interpreter, path, ...arguments_];
+}
+
+function stableChildHandlePath(fd: number): string {
+  return process.platform === 'linux' ? `/proc/self/fd/${fd}` : `/dev/fd/${fd}`;
 }
 
 export class SandboxBackendError extends Error {
@@ -166,7 +206,7 @@ export async function spawnCapture(input: {
   )
     throw new SandboxBackendError(
       'INVALID_FD_AUTHORITY',
-      'At most 16 valid directory handles may be inherited',
+      'At most 16 valid handles may be inherited',
     );
 
   const timeoutMs = input.timeoutMs ?? 0;

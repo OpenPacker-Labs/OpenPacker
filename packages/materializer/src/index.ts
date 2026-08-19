@@ -1,16 +1,25 @@
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
-  chmod,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   rename,
   rm,
   rmdir,
-  writeFile,
+  type FileHandle,
 } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import {
   collectStream,
   streamFromBytes,
@@ -26,15 +35,17 @@ export interface MaterializationLimits {
   maximumExpandedBytes: number;
   maximumCompressedBytes: number;
   maximumCompressionRatio: number;
+  maximumMemoryBytes: number;
   maximumPathBytes: number;
   maximumDepth: number;
 }
 
 export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumFiles: 10_000,
-  maximumExpandedBytes: 1024 * 1024 * 1024,
-  maximumCompressedBytes: 512 * 1024 * 1024,
-  maximumCompressionRatio: 100,
+  maximumExpandedBytes: 64 * 1024 * 1024,
+  maximumCompressedBytes: 64 * 1024 * 1024,
+  maximumCompressionRatio: 32,
+  maximumMemoryBytes: 192 * 1024 * 1024,
   maximumPathBytes: 4096,
   maximumDepth: 128,
 };
@@ -94,6 +105,8 @@ export function validateArchivePath(
   // checks below. Both are refused on every platform, because an archive that
   // only extracts safely on Linux is not safely extractable.
   for (const part of parts) {
+    if (part.includes(':'))
+      throw unsafe('WINDOWS_ALTERNATE_DATA_STREAM', input);
     if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))
       throw unsafe('WINDOWS_RESERVED_NAME', input);
     if (/[ .]$/u.test(part)) throw unsafe('WINDOWS_TRAILING_CHARACTER', input);
@@ -118,6 +131,11 @@ export async function inspectArchive(
     bytes.byteLength * limits.maximumCompressionRatio,
   );
   const gzipLimit = Math.min(limits.maximumExpandedBytes, ratioLimit);
+  assertMemoryBudget(
+    bytes.byteLength,
+    format === 'tar+gzip' ? gzipLimit : bytes.byteLength,
+    limits,
+  );
   const expanded =
     format === 'tar+gzip'
       ? await decompress(
@@ -132,6 +150,7 @@ export async function inspectArchive(
       : bytes;
   if (format === 'tar+gzip')
     validateRatio(expanded.byteLength, bytes.byteLength, limits);
+  assertMemoryBudget(bytes.byteLength, expanded.byteLength, limits);
   const entries =
     format === 'zip'
       ? await parseZip(bytes, limits, signal)
@@ -152,28 +171,37 @@ export async function materialize(input: {
   const limits = input.limits ?? DEFAULT_MATERIALIZATION_LIMITS;
   validateLimits(limits);
   input.signal?.throwIfAborted();
-  if (await exists(input.destination)) {
-    if (!input.managedDestination)
-      throw new MaterializationError(
-        'DESTINATION_EXISTS',
-        'Destination already exists; materialization never merges or overwrites prefixes',
-      );
-    const stat = await lstat(input.destination);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
-    if ((await readdir(input.destination)).length > 0)
-      throw new MaterializationError(
-        'DESTINATION_EXISTS',
-        'Managed destination must be empty before atomic materialization',
-      );
-    await rmdir(input.destination);
-  }
   const parent = resolve(dirname(input.destination));
-  await mkdir(parent, { recursive: true });
-  const staging = await mkdtemp(
-    join(parent, `.${basename(input.destination)}.openpacker-`),
+  const parentHandle = await openStableDirectory(parent);
+  const target = join(
+    directoryHandlePath(parentHandle),
+    basename(input.destination),
   );
+  const staging = await mkdtemp(
+    join(
+      directoryHandlePath(parentHandle),
+      `.${basename(input.destination)}.openpacker-`,
+    ),
+  );
+  const stagingHandle = await openDirectory(staging);
+  let published = false;
   try {
+    if (await exists(target)) {
+      if (!input.managedDestination)
+        throw new MaterializationError(
+          'DESTINATION_EXISTS',
+          'Destination already exists; materialization never merges or overwrites prefixes',
+        );
+      const targetStat = await lstat(target);
+      if (!targetStat.isDirectory() || targetStat.isSymbolicLink())
+        throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
+      if ((await readdir(target)).length > 0)
+        throw new MaterializationError(
+          'DESTINATION_EXISTS',
+          'Managed destination must be empty before atomic materialization',
+        );
+      await rmdir(target);
+    }
     const bytes = await verifiedDownload(
       input.source,
       input.descriptor,
@@ -189,17 +217,16 @@ export async function materialize(input: {
     const files: MaterializedFile[] = [];
     for (const entry of entries.filter(({ type }) => type === 'directory')) {
       input.signal?.throwIfAborted();
-      await mkdir(join(staging, ...entry.path.split('/')), {
-        recursive: true,
-        mode: 0o755,
-      });
+      await ensureStageDirectory(stagingHandle, entry.path.split('/'));
     }
     for (const entry of entries.filter(({ type }) => type === 'file')) {
       input.signal?.throwIfAborted();
-      const path = join(staging, ...entry.path.split('/'));
-      await mkdir(dirname(path), { recursive: true, mode: 0o755 });
-      await writeFile(path, entry.data, { flag: 'wx', mode: entry.mode });
-      await chmod(path, entry.mode);
+      await writeStageFile(
+        stagingHandle,
+        entry.path.split('/'),
+        entry.data,
+        entry.mode,
+      );
       files.push({
         path: entry.path,
         size: entry.data.byteLength,
@@ -208,7 +235,10 @@ export async function materialize(input: {
       });
     }
     input.signal?.throwIfAborted();
-    await rename(staging, input.destination);
+    await assertNamedDirectory(staging, stagingHandle);
+    await rename(staging, target);
+    published = true;
+    await assertNamedDirectory(target, stagingHandle);
     files.sort((left, right) => compareCanonicalStrings(left.path, right.path));
     return {
       manifestVersion: '1',
@@ -220,9 +250,122 @@ export async function materialize(input: {
       lifecycleScriptsExecuted: false,
     };
   } catch (error) {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    await rm(published ? target : staging, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
+    throw error;
+  } finally {
+    await Promise.all([stagingHandle.close(), parentHandle.close()]);
+  }
+}
+
+async function openStableDirectory(path: string): Promise<FileHandle> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  let handle = await openDirectory(root);
+  try {
+    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+      const child = join(directoryHandlePath(handle), part);
+      await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      const next = await openDirectory(child);
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
     throw error;
   }
+}
+
+async function openDirectory(path: string): Promise<FileHandle> {
+  const handle = await open(
+    path,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  if (!(await handle.stat()).isDirectory()) {
+    await handle.close();
+    throw unsafe('UNSAFE_STAGING', path);
+  }
+  return handle;
+}
+
+async function ensureStageDirectory(
+  root: FileHandle,
+  parts: readonly string[],
+): Promise<void> {
+  let current = root;
+  const opened: FileHandle[] = [];
+  try {
+    for (const part of parts) {
+      const child = join(directoryHandlePath(current), part);
+      await mkdir(child, { mode: 0o755 }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        },
+      );
+      current = await openDirectory(child);
+      opened.push(current);
+    }
+  } finally {
+    await Promise.all(opened.reverse().map(async (handle) => handle.close()));
+  }
+}
+
+async function writeStageFile(
+  root: FileHandle,
+  parts: readonly string[],
+  bytes: Uint8Array,
+  mode: number,
+): Promise<void> {
+  const name = parts.at(-1)!;
+  await ensureStageDirectory(root, parts.slice(0, -1));
+  let parent = root;
+  const opened: FileHandle[] = [];
+  try {
+    for (const part of parts.slice(0, -1)) {
+      parent = await openDirectory(join(directoryHandlePath(parent), part));
+      opened.push(parent);
+    }
+    const file = await open(
+      join(directoryHandlePath(parent), name),
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      mode,
+    );
+    try {
+      await file.write(bytes);
+      await file.chmod(mode);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await Promise.all(opened.reverse().map(async (handle) => handle.close()));
+  }
+}
+
+async function assertNamedDirectory(path: string, handle: FileHandle) {
+  const [held, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(path, { bigint: true }),
+  ]);
+  if (held.dev !== named.dev || held.ino !== named.ino)
+    throw unsafe('UNSAFE_STAGING', path);
+}
+
+function directoryHandlePath(handle: FileHandle): string {
+  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
+  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
+  throw unsafe(
+    'UNSAFE_STAGING',
+    'Stable materialization handles are unavailable on this platform',
+  );
 }
 
 async function verifiedDownload(
@@ -250,8 +393,9 @@ async function verifiedDownload(
           'SIZE_MISMATCH',
           'Artifact stream exceeded its declared or configured size',
         );
-      hash.update(item.value);
-      chunks.push(item.value);
+      const chunk = Uint8Array.from(item.value);
+      hash.update(chunk);
+      chunks.push(chunk);
     }
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
@@ -276,6 +420,11 @@ async function verifiedDownload(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  if (createHash('sha256').update(bytes).digest('hex') !== digest)
+    throw new MaterializationError(
+      'DIGEST_MISMATCH',
+      'Artifact bytes changed after stream verification',
+    );
   return bytes;
 }
 
@@ -360,6 +509,12 @@ async function parseZip(
     throw unsafe('ARCHIVE_LIMIT', 'zip central directory');
   const entries: InspectedArchiveEntry[] = [];
   const ranges: Array<[number, number]> = [];
+  const paths = new Set<string>();
+  const pathTypes = new Map<string, 'file' | 'directory'>();
+  const foldedPaths = new Set<string>();
+  const requiredDirectories = new Set<string>();
+  let declaredExpanded = 0;
+  let actualExpanded = 0;
   let cursor = centralOffset;
   for (let index = 0; index < count; index += 1) {
     if (
@@ -387,6 +542,9 @@ async function parseZip(
       );
     const rawName = utf8.decode(nameBytes);
     const path = validateArchivePath(rawName, limits);
+    if (paths.has(path)) throw unsafe('DUPLICATE_PATH', path);
+    const foldedPath = path.toLowerCase();
+    if (foldedPaths.has(foldedPath)) throw unsafe('CASE_COLLISION', path);
     const unixMode = externalAttributes >>> 16;
     const fileType = unixMode & 0o170000;
     if (fileType === 0o120000) throw unsafe('SYMLINK_REJECTED', path);
@@ -407,8 +565,24 @@ async function parseZip(
     ranges.push([dataStart, dataEnd]);
     const compressed = bytes.subarray(dataStart, dataEnd);
     const directory = rawName.endsWith('/') || fileType === 0o040000;
-    if (!directory && expandedSize > limits.maximumExpandedBytes)
-      throw unsafe('EXPANDED_SIZE_LIMIT', path);
+    const parts = path.split('/');
+    for (let length = 1; length < parts.length; length += 1) {
+      const ancestor = parts.slice(0, length).join('/');
+      if (pathTypes.get(ancestor) === 'file')
+        throw unsafe('FILE_AS_DIRECTORY', path);
+      requiredDirectories.add(ancestor);
+    }
+    if (!directory && requiredDirectories.has(path))
+      throw unsafe('FILE_AS_DIRECTORY', path);
+    paths.add(path);
+    pathTypes.set(path, directory ? 'directory' : 'file');
+    foldedPaths.add(foldedPath);
+    if (!directory) {
+      if (expandedSize > limits.maximumExpandedBytes - declaredExpanded)
+        throw unsafe('EXPANDED_SIZE_LIMIT', path);
+      declaredExpanded += expandedSize;
+      assertMemoryBudget(bytes.byteLength, declaredExpanded, limits);
+    }
     if (!directory) validateRatio(expandedSize, compressedSize, limits);
     let data: Uint8Array;
     if (directory) data = new Uint8Array();
@@ -422,6 +596,12 @@ async function parseZip(
       );
     if (!directory && data.byteLength !== expandedSize)
       throw unsafe('SIZE_MISMATCH', path);
+    if (!directory) {
+      if (data.byteLength > limits.maximumExpandedBytes - actualExpanded)
+        throw unsafe('EXPANDED_SIZE_LIMIT', path);
+      actualExpanded += data.byteLength;
+      assertMemoryBudget(bytes.byteLength, actualExpanded, limits);
+    }
     validateRatio(data.byteLength, compressedSize, limits);
     if (!directory && crc32(data) !== crc) throw unsafe('CRC_MISMATCH', path);
     entries.push({
@@ -512,6 +692,15 @@ function validateRatio(
     (compressed === 0 || expanded / compressed > limits.maximumCompressionRatio)
   )
     throw unsafe('COMPRESSION_RATIO_LIMIT', `${expanded}/${compressed}`);
+}
+
+function assertMemoryBudget(
+  compressed: number,
+  expanded: number,
+  limits: MaterializationLimits,
+): void {
+  if (compressed + expanded * 2 > limits.maximumMemoryBytes)
+    throw unsafe('MEMORY_LIMIT', `${compressed}+2*${expanded}`);
 }
 
 function validateLimits(limits: MaterializationLimits): void {

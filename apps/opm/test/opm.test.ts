@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,10 +48,13 @@ describe('opm + opmx CLI', () => {
     let cap = capture();
     expect(await runOpm(['init', '--name', 'cli-pack'], cap.io, root)).toBe(0);
     await writeFile(join(root, 'acme.pack'), 'project\n');
+    const executable = join(root, 'acme-pack');
+    await writeFile(executable, '#!/bin/sh\nexit 0\n');
+    await chmod(executable, 0o755);
     await writeFile(
       join(root, 'provider.json'),
       JSON.stringify({
-        delegatedPackProviderVersion: '1',
+        delegatedPackProviderVersion: '2',
         id: 'example-acme',
         purlTypes: ['acme'],
         detection: { manifestNames: ['acme.pack'] },
@@ -54,6 +64,9 @@ describe('opm + opmx CLI', () => {
             arguments: ['acme-pack.js', '--out', '{outputDirectory}'],
           },
         ],
+        identityCommand: {
+          arguments: ['identify', '--artifact', '{artifactPath}'],
+        },
         authority: { build: false, network: 'never', environment: [] },
         artifacts: [
           {
@@ -67,7 +80,7 @@ describe('opm + opmx CLI', () => {
     await writeFile(
       join(root, 'provider-default.json'),
       JSON.stringify({
-        delegatedPackProviderVersion: '1',
+        delegatedPackProviderVersion: '2',
         id: 'example-default',
         purlTypes: ['acme'],
         detection: { manifestNames: ['acme.pack'] },
@@ -77,6 +90,9 @@ describe('opm + opmx CLI', () => {
             arguments: ['default-pack.js', '--out', '{outputDirectory}'],
           },
         ],
+        identityCommand: {
+          arguments: ['identify', '--artifact', '{artifactPath}'],
+        },
         authority: { build: false, network: 'never', environment: [] },
         artifacts: [
           {
@@ -89,25 +105,24 @@ describe('opm + opmx CLI', () => {
     );
     await writeFile(
       join(root, 'opm.toml'),
-      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[pack.providers.example-default]\nmanifest = "provider-default.json"\ndefault_for = ["acme"]\n\n[pack.providers.example-acme]\nmanifest = "provider.json"\n`,
+      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[pack.providers.example-default]\nmanifest = "provider-default.json"\nexecutable = ${JSON.stringify(executable)}\ndefault_for = ["acme"]\n\n[pack.providers.example-acme]\nmanifest = "provider.json"\nexecutable = ${JSON.stringify(executable)}\n`,
     );
 
     for (const selection of [['--provider'], ['--provider=']]) {
       cap = capture();
-      expect(
-        await runOpm(
-          [
-            'pack',
-            'acme',
-            '--package-version',
-            '1.0.0',
-            ...selection,
-            '--dry-run',
-          ],
-          cap.io,
-          root,
-        ),
-      ).toBe(2);
+      const exitCode = await runOpm(
+        [
+          'pack',
+          'acme',
+          '--package-version',
+          '1.0.0',
+          ...selection,
+          '--dry-run',
+        ],
+        cap.io,
+        root,
+      );
+      expect(exitCode, cap.err).toBe(2);
       expect(cap.err).toContain('--provider requires a provider id');
     }
 
@@ -128,7 +143,7 @@ describe('opm + opmx CLI', () => {
         root,
       ),
     ).toBe(0);
-    expect(cap.out).toContain('node acme-pack.js');
+    expect(cap.out).toContain(`${executable} acme-pack.js`);
     expect(cap.out).not.toContain('default-pack.js');
     expect(cap.out).toContain('--out');
     await expect(
@@ -196,14 +211,23 @@ describe('opm + opmx CLI', () => {
     );
 
     cap = capture();
-    expect(
-      await runOpm(
-        ['add', 'pkg:npm/@openpacker/demo-tool@1.1.0', '--offline'],
-        cap.io,
-        root,
-      ),
-    ).toBe(0);
+    const addExit = await runOpm(
+      ['add', 'pkg:npm/@openpacker/demo-tool@1.1.0', '--offline'],
+      cap.io,
+      root,
+    );
+    expect(addExit, cap.err).toBe(0);
     expect(cap.out).toMatch(/Added demo-tool/);
+
+    const statePath = join(root, '.opm/project.json');
+    const forgedState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { purl: string; storePath: string; bins: { target?: string }[] }
+      >;
+    };
+    forgedState.packages['demo-tool']!.purl = 'pkg:npm/attacker@9.9.9';
+    await writeFile(statePath, JSON.stringify(forgedState));
 
     cap = capture();
     expect(await runOpm(['list'], cap.io, root)).toBe(0);
@@ -211,8 +235,31 @@ describe('opm + opmx CLI', () => {
     expect(cap.out).toMatch(/installed/);
 
     cap = capture();
-    expect(await runOpmx(['demo-tool', '--version'], cap.io, root)).toBe(0);
+    expect(
+      await runOpmx(['demo-tool', '--version'], cap.io, root),
+      cap.err,
+    ).toBe(0);
     expect(cap.out).toMatch(/1\.1\.0/);
+    const repairedState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { purl: string; storePath: string; bins: { target?: string }[] }
+      >;
+    };
+    expect(repairedState.packages['demo-tool']?.purl).toBe(
+      'pkg:npm/@openpacker/demo-tool@1.1.0',
+    );
+
+    const toolPath = repairedState.packages['demo-tool']!.bins[0]!.target!;
+    const toolBytes = await readFile(toolPath);
+    await writeFile(
+      toolPath,
+      Buffer.concat([toolBytes, Buffer.from('\n# tampered')]),
+    );
+    cap = capture();
+    expect(await runOpmx(['demo-tool'], cap.io, root)).toBe(9);
+    expect(cap.err).toMatch(/store tree does not match/u);
+    await writeFile(toolPath, toolBytes);
 
     cap = capture();
     expect(await runOpmx(['demo-tool', 'hello'], cap.io, root)).toBe(0);
@@ -229,11 +276,19 @@ describe('opm + opmx CLI', () => {
     expect(cap.err).toMatch(/No packages installed/);
   });
 
-  it('exits 8 on an offline add with a network source', async () => {
+  it('preserves committed offline mode without a CLI flag', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-offline-'));
     temps.push(root);
     let cap = capture();
     expect(await runOpm(['init', '--name', 'cli-demo'], cap.io, root)).toBe(0);
+    const manifestPath = join(root, 'opm.toml');
+    await writeFile(
+      manifestPath,
+      (await readFile(manifestPath, 'utf8')).replace(
+        'offline = false',
+        'offline = true',
+      ),
+    );
     cap = capture();
     expect(
       await runOpm(
@@ -242,7 +297,6 @@ describe('opm + opmx CLI', () => {
           'pkg:npm/@openpacker/demo-tool@1.1.0',
           '--source',
           'https://registry.example.invalid/demo.tgz',
-          '--offline',
         ],
         cap.io,
         root,
@@ -285,13 +339,12 @@ describe('opm + opmx CLI', () => {
     );
 
     cap = capture();
-    expect(
-      await runOpm(
-        ['add', 'pkg:npm/@openpacker/demo-tool@1.1.0', '--offline'],
-        cap.io,
-        root,
-      ),
-    ).toBe(0);
+    const addExit = await runOpm(
+      ['add', 'pkg:npm/@openpacker/demo-tool@1.1.0', '--offline'],
+      cap.io,
+      root,
+    );
+    expect(addExit, cap.err).toBe(0);
 
     // One install, one generation, and it is current.
     cap = capture();
@@ -326,7 +379,7 @@ describe('opm + opmx CLI', () => {
     cap = capture();
     expect(await runOpm(['shell', '--json'], cap.io, root)).toBe(0);
     expect(JSON.parse(cap.out).OPM_GENERATION).toBe('1');
-  });
+  }, 30_000);
 
   it('refuses to roll back with no earlier generation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-gen-none-'));

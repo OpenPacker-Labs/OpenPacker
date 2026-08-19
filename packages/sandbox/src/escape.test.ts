@@ -1,11 +1,19 @@
 import {
   accessSync,
+  closeSync,
   constants,
   existsSync,
+  fchmodSync,
+  fsyncSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
   unlinkSync,
+  writeSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -19,6 +27,7 @@ import {
   JailPathError,
   normalizeJailPaths,
   packageExecRoRoots,
+  reopenExecutableAuthority,
   runInSandbox,
   scrubEnvironment,
 } from './index.js';
@@ -53,6 +62,94 @@ describe('jail path validation', () => {
     const paths = normalizeJailPaths(['/tmp/a', '/tmp/a', '/tmp/b'], 'write');
     expect(paths).toEqual([resolve('/tmp/a'), resolve('/tmp/b')]);
   });
+
+  it('rejects a package-local alias to the user home', () => {
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-link-'));
+    const linked = join(root, 'package');
+    symlinkSync(homedir(), linked, 'dir');
+    try {
+      expect(() => normalizeJailPaths([linked], 'write')).toThrow(
+        /symbolic links/u,
+      );
+      expect(() => normalizeJailPaths([join(linked, 'new')], 'write')).toThrow(
+        /symbolic links/u,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retains the approved directory when its pathname is swapped', async () => {
+    if (process.platform !== 'linux' && process.platform !== 'darwin') return;
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-swap-'));
+    const granted = join(root, 'package');
+    const moved = join(root, 'approved');
+    mkdirSync(granted);
+    writeFileSync(join(granted, 'proof'), 'stable');
+    try {
+      const outcome = await runInSandbox({
+        argv: ['/usr/bin/true'],
+        cwd: granted,
+        policy: { mode: 'fail-closed' },
+        readwritePaths: [granted],
+        readonlyPaths: [],
+        backend: {
+          id: 'mock',
+          async run(input) {
+            renameSync(granted, moved);
+            symlinkSync(homedir(), granted, 'dir');
+            const authority = input.directoryAuthorities?.find(
+              ({ path }) => path === granted,
+            );
+            expect(authority).toBeDefined();
+            const fdRoot =
+              process.platform === 'linux'
+                ? `/proc/self/fd/${authority!.fd}`
+                : `/dev/fd/${authority!.fd}`;
+            expect(readFileSync(join(fdRoot, 'proof'), 'utf8')).toBe('stable');
+            return { exitCode: 0, stdout: '', stderr: '' };
+          },
+        },
+      });
+      expect(outcome.exitCode).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a missing grant before a backend can make it appear', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-missing-'));
+    const missing = join(root, 'late');
+    let backendRan = false;
+    try {
+      await expect(
+        runInSandbox({
+          argv: ['/usr/bin/true'],
+          cwd: root,
+          policy: { mode: 'fail-closed' },
+          readwritePaths: [missing],
+          readonlyPaths: [],
+          backend: {
+            id: 'mock',
+            async run() {
+              backendRan = true;
+              mkdirSync(missing);
+              return { exitCode: 0, stdout: '', stderr: '' };
+            },
+          },
+        }),
+      ).rejects.toMatchObject({
+        code:
+          process.platform === 'linux' || process.platform === 'darwin'
+            ? 'ENOENT'
+            : 'UNSAFE_JAIL_PATH',
+      });
+      expect(backendRan).toBe(false);
+      expect(existsSync(missing)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('credential scrubbing (hardened)', () => {
@@ -73,6 +170,64 @@ describe('credential scrubbing (hardened)', () => {
     expect(env.PATH).not.toContain('/evil/bin');
     expect(env.PATH).toContain('/usr/bin');
     expect(env.npm_package_name).toBe('x');
+  });
+});
+
+describe('stable executable authority', () => {
+  it('refuses ambient fallback instead of reopening the configured path', async () => {
+    const fd = openSync(process.execPath, constants.O_RDONLY);
+    try {
+      await expect(
+        runInSandbox({
+          argv: [process.execPath, '-e', 'process.exit(0)'],
+          cwd: process.cwd(),
+          policy: { mode: 'off' },
+          readwritePaths: [],
+          readonlyPaths: [],
+          executableAuthority: { fd, path: process.execPath },
+        }),
+      ).rejects.toMatchObject({
+        code: 'TREE_CONTAINMENT_UNAVAILABLE',
+        message: expect.stringContaining('ambient execution is refused'),
+      });
+    } finally {
+      closeSync(fd);
+    }
+  });
+
+  it('reopens an independent offset for every native execution', async () => {
+    if (process.platform !== 'linux') return;
+    const bytes = Buffer.from('immutable-provider-bytes');
+    const writer = openSync(
+      tmpdir(),
+      0x40_0000 | constants.O_DIRECTORY | constants.O_RDWR,
+      0o700,
+    );
+    const parent = openSync(`/proc/self/fd/${writer}`, constants.O_RDONLY);
+    try {
+      writeSync(writer, bytes);
+      fsyncSync(writer);
+      fchmodSync(writer, 0o500);
+      closeSync(writer);
+      for (let run = 0; run < 2; run += 1) {
+        const fresh = await reopenExecutableAuthority(parent);
+        try {
+          await expect(fresh.readFile()).resolves.toEqual(bytes);
+        } finally {
+          await fresh.close();
+        }
+      }
+      expect(readFileSync(`/proc/self/fdinfo/${parent}`, 'utf8')).toMatch(
+        /^pos:\s+0$/mu,
+      );
+    } finally {
+      closeSync(parent);
+      try {
+        closeSync(writer);
+      } catch {
+        // already closed after publication
+      }
+    }
   });
 });
 
@@ -126,10 +281,110 @@ describe('bwrap argv profile', () => {
     );
     if (lastMask !== -1) expect(lastMask).toBeGreaterThan(lastRootBind);
   });
+
+  it('binds an executable handle to a private path after broader binds', () => {
+    const argv = buildBwrapArgv({
+      bwrap: '/usr/bin/bwrap',
+      command: ['/operator/approved/provider', 'pack'],
+      cwd: '/var/tmp/pkg',
+      readwritePaths: ['/var/tmp/pkg'],
+      readonlyPaths: [],
+      network: false,
+      profile: 'package-exec',
+      executableAuthority: {
+        path: '/operator/approved/provider',
+        childFd: 5,
+      },
+    });
+    expect(argv).not.toContain('--preserve-fds');
+    expect(argv).toEqual(
+      expect.arrayContaining([
+        '--perms',
+        '0500',
+        '--ro-bind-data',
+        '5',
+        '/run/openpacker/provider-executable',
+      ]),
+    );
+    const executableBind = argv.lastIndexOf('--ro-bind-data');
+    const broaderBind = argv.reduce(
+      (found, item, index) =>
+        (item === '--bind' || item === '--ro-bind') && index < executableBind
+          ? index
+          : found,
+      -1,
+    );
+    expect(executableBind).toBeGreaterThan(broaderBind);
+    const separator = argv.lastIndexOf('--');
+    expect(argv.slice(separator + 1)).toEqual([
+      '/run/openpacker/provider-executable',
+      'pack',
+    ]);
+    expect(argv.slice(separator + 1)).not.toContain(
+      '/operator/approved/provider',
+    );
+  });
 });
 
 describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   const backend = nativeBackend!;
+
+  it('executes inherited bytes after their approved path is replaced', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'op-bwrap-exec-fd-'));
+    const approved = join(root, 'provider');
+    const original = join(root, 'provider-original');
+    const attacker = join(root, 'provider-attacker');
+    const marker = join(root, 'attacker-ran');
+    const approvedBytes = Buffer.from('#!/bin/sh\nprintf approved');
+    writeFileSync(approved, approvedBytes, { mode: 0o755 });
+    writeFileSync(
+      attacker,
+      `#!/bin/sh\nprintf attacker\nprintf pwned > ${JSON.stringify(marker)}`,
+      { mode: 0o755 },
+    );
+    const writer = openSync(
+      tmpdir(),
+      0x40_0000 | constants.O_DIRECTORY | constants.O_RDWR,
+      0o700,
+    );
+    const fd = openSync(`/proc/self/fd/${writer}`, constants.O_RDONLY);
+    try {
+      writeSync(writer, approvedBytes);
+      fsyncSync(writer);
+      fchmodSync(writer, 0o500);
+      closeSync(writer);
+      renameSync(approved, original);
+      renameSync(attacker, approved);
+      const runInput = {
+        argv: [approved],
+        cwd: root,
+        hostEnv: { PATH: '/usr/bin:/bin' },
+        env: { PATH: '/usr/bin:/bin' },
+        readwritePaths: [root],
+        readonlyPaths: [],
+        network: false,
+        profile: 'package-exec',
+        maximumStdoutBytes: 1_024,
+        maximumStderrBytes: 1_024,
+        maximumOutputBytes: 2_048,
+        executableAuthority: { fd, path: approved },
+      } as const;
+      for (let run = 0; run < 2; run += 1) {
+        const result = await backend.run(runInput);
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe('approved');
+      }
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      closeSync(fd);
+      try {
+        closeSync(writer);
+      } catch {
+        // already closed after snapshot publication
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it('denies reading arbitrary home files', async () => {
     const pkg = mkdtempSync(join(tmpdir(), 'op-escape-home-'));

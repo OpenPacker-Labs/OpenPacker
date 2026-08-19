@@ -93,9 +93,10 @@ about 0.4s. Project-state mutation (`init`, `add`, `install`, `update`,
 `remove`, generation switching and garbage collection) currently refuses with
 `UNSAFE_PATH`: Node does not expose the no-follow, handle-relative Windows
 filesystem primitive required to keep `.opm` metadata and shims race-safe.
-Commands that do not access `.opm` metadata, notably `opm pack`, help and
-version, remain available; `opm list` does not. This is an explicit capability
-withdrawal, not a fallback to pathname checks.
+Packing also refuses on Windows because artifact and receipt publication uses
+the same no-follow atomic writer. Help and version remain available; `opm list`
+does not. This is an explicit capability withdrawal, not a fallback to pathname
+checks.
 
 ---
 
@@ -236,6 +237,16 @@ stronger one.
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
 
+`opm install --offline` replays an existing manifest-bound lock from the
+canonical `.artifact` cache without re-resolving the package. The cached bytes
+are re-hashed against the lock digest before extraction. Source classification
+is available only when the exact immutable package projection is bound to an
+explicit source in the current manifest; a source written only in the lock has
+no authority. Hand-authored evidence, signer, issuer, lifecycle, registry, or
+source-snapshot claims in a lock are likewise not policy authority. Registry
+locks therefore fail closed offline under the default lifecycle policy unless
+their verifier evidence can be independently replayed.
+
 ---
 
 ## Commands
@@ -375,7 +386,7 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Digests are verified before materialize.
 - Default layout is **`.opm/`**, not a silent rewrite of `node_modules`.
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
-  through `@openpacker/sandbox` — MXC preferred, native jail fallback,
+  through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
   ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
 
@@ -397,9 +408,16 @@ minimal_path = true
 # allowed_lifecycle_script_packages = ["pkg:npm/esbuild"]
 ```
 
-`degrade-warn` and `off` do not waive hard process-tree ceilings. Execution
-still refuses unless Bubblewrap owns a PID namespace (Linux) or MXC owns the job
-(macOS/Windows).
+`degrade-warn` and `off` do not waive hard process-tree ceilings, and they do
+not fall back to ambient execution: every mode refuses with
+`TREE_CONTAINMENT_UNAVAILABLE` unless a backend owns the process tree. That
+currently means Bubblewrap with a PID namespace on Linux. Package-execution
+containment on macOS and Windows is **withdrawn**: the MXC SDK configures
+containment by path strings and cannot consume the stable directory-handle
+authorities every run requires, so runs there fail closed (exit 78 under
+`fail-closed`, `TREE_CONTAINMENT_UNAVAILABLE` otherwise) instead of degrading
+toward ambient execution. This is an explicit capability withdrawal, like the
+Windows metadata refusal above, not a silent downgrade.
 
 **Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
 `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).

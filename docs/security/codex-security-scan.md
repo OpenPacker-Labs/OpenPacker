@@ -18,3 +18,10 @@ Honor the repository's safety constraints while validating findings:
 Prioritize concrete, reachable vulnerabilities over speculative hardening. Treat
 intentionally dormant native-runtime lanes as missing external evidence, not
 vulnerabilities, unless their fail-closed isolation can be bypassed.
+
+Use deep mode to review every tracked production source file. The prohibited
+live host-manager and mutable-image executions are explicit scope exclusions,
+not deferred repository coverage; assess those boundaries through their static
+implementation and existing isolated fixtures. Report complete coverage only
+after the tracked production inventory has been reviewed, otherwise fail closed
+with the exact uncovered paths.

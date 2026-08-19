@@ -12,11 +12,14 @@ import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import { parse as parseYaml } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
 import {
+  canonicalBytes,
   canonicalDigest,
+  canonicalProjectionDigest,
   compareCanonicalStrings,
   formatDigest,
   sha256,
 } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import type {
   Digest,
   JsonValue,
@@ -91,6 +94,17 @@ export interface LockImportResult {
 
 const DEFAULT_EVALUATION_TIME = '2026-08-02T00:00:00Z';
 
+function projectedDigest(
+  id: 'proof-v1' | 'explanation-v1' | 'artifact-set-v1' | 'universe-v1',
+  value: JsonValue,
+) {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!projection) throw new Error(`Missing digest projection ${id}`);
+  return canonicalProjectionDigest(value, projection);
+}
+
 /**
  * Resolve codecs from options or the process adapter registry.
  *
@@ -137,7 +151,7 @@ function defaultHandlers(
       {
         ecosystem: 'npm',
         codec: npm,
-        parse: (raw) => JSON.parse(asText(raw)) as unknown,
+        parse: (raw) => parseStrictJson(asText(raw)),
       },
     ],
     [
@@ -163,7 +177,7 @@ function defaultHandlers(
         codec: nuget,
         parse: (raw) => ({
           format: 'project.assets.json' as const,
-          data: JSON.parse(asText(raw)) as unknown,
+          data: parseStrictJson(asText(raw)),
         }),
       },
     ],
@@ -174,7 +188,7 @@ function defaultHandlers(
         codec: nuget,
         parse: (raw) => ({
           format: 'packages.lock.json' as const,
-          data: JSON.parse(asText(raw)) as unknown,
+          data: parseStrictJson(asText(raw)),
         }),
       },
     ],
@@ -183,7 +197,7 @@ function defaultHandlers(
       {
         ecosystem: 'pypi',
         codec: pypi,
-        parse: (raw) => JSON.parse(asText(raw)) as unknown,
+        parse: (raw) => parseStrictJson(asText(raw)),
       },
     ],
     [
@@ -552,6 +566,13 @@ function asBytes(raw: string | Uint8Array): Uint8Array {
   return typeof raw === 'string' ? new TextEncoder().encode(raw) : raw;
 }
 
+function parseStrictJson(text: string): unknown {
+  // The YAML parser already in this package detects duplicate mapping keys;
+  // JSON.parse then retains the strict JSON grammar expected by lock formats.
+  parseYaml(text, { schema: 'json', uniqueKeys: true });
+  return JSON.parse(text) as unknown;
+}
+
 export function detectLockFormat(
   raw: string | Uint8Array,
   hint?: LockFormat,
@@ -560,7 +581,7 @@ export function detectLockFormat(
   const text = asText(raw).trim();
   if (text.startsWith('{')) {
     try {
-      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const parsed = parseStrictJson(text) as Record<string, unknown>;
       if (parsed.lockfileVersion === 3 && parsed.packages)
         return 'package-lock';
       if (parsed.version !== undefined && parsed.targets) return 'nuget-assets';
@@ -728,7 +749,7 @@ export async function buildCaptureSolveInput(
           evaluationTime,
           plan.sourceDigest,
         )
-      : mergePackagesIntoUniverse(options.universe, plan.packages);
+      : await mergePackagesIntoUniverse(options.universe, plan.packages);
 
   const request: SolveRequest = {
     requirements: [],
@@ -800,6 +821,23 @@ export async function completeLockImport(
     protocolVersion?: string;
   },
 ): Promise<LockImportResult> {
+  if (solveInput.request.policy.requiredEvidence.length > 0)
+    throw new ProviderError(
+      'POLICY_DENIED',
+      `Lock import cannot satisfy required evidence: ${solveInput.request.policy.requiredEvidence.join(', ')}`,
+    );
+  const severity = { info: 0, warning: 1, error: 2 } as const;
+  const maximum = severity[solveInput.request.policy.semanticLossMaximum];
+  const losses = [
+    ...solveInput.semanticLoss,
+    ...solveInput.universe.packages.flatMap((item) => item.semanticLoss),
+  ];
+  const deniedLoss = losses.find((loss) => severity[loss.severity] > maximum);
+  if (deniedLoss)
+    throw new ProviderError(
+      'POLICY_DENIED',
+      `Semantic loss ${deniedLoss.code} exceeds ${solveInput.request.policy.semanticLossMaximum}`,
+    );
   const embeddedInput = {
     request: solveInput.request,
     universe: solveInput.universe,
@@ -813,15 +851,17 @@ export async function completeLockImport(
     );
 
   const explanation = output.explanation as SolveResponse['explanation'];
-  const proofDigest = await canonicalDigest(
+  const proofDigest = await projectedDigest(
+    'proof-v1',
     output.proof as unknown as JsonValue,
   );
-  const explanationDigest = await canonicalDigest(
+  const explanationDigest = await projectedDigest(
+    'explanation-v1',
     explanation as unknown as JsonValue,
   );
-  const artifactSetDigest = await canonicalDigest(
-    output.selected.flatMap((item) => item.artifacts) as unknown as JsonValue,
-  );
+  const artifactSetDigest = await projectedDigest('artifact-set-v1', {
+    items: output.selected.flatMap((item) => item.artifacts),
+  } as unknown as JsonValue);
   const protocolVersion =
     meta.protocolVersion === '1.0-draft' || meta.protocolVersion === undefined
       ? ('1.0-draft' as const)
@@ -967,6 +1007,17 @@ async function minimalInstanceFromLockEntry(
         'No artifact descriptor is captured; OpenPacker holds no sha256 audit digest for this package',
       blocksProfile: [],
     });
+  const resolvedLocation = httpsArtifactLocation(entry.resolved);
+  if (entry.resolved !== undefined && resolvedLocation === undefined)
+    semanticLoss.push({
+      code: 'NATIVE_ARTIFACT_LOCATION_NOT_HTTPS',
+      severity: 'warning',
+      sourceEcosystem: ecosystem,
+      sourcePath: '/',
+      originalMeaning: `The native lock references ${entry.resolved}`,
+      representedMeaning: 'No executable artifact location was imported',
+      blocksProfile: [],
+    });
   const artifacts =
     parsedDigest === undefined
       ? []
@@ -985,17 +1036,7 @@ async function minimalInstanceFromLockEntry(
                 sizeUnknown: true,
               },
             },
-            locations:
-              entry.resolved === undefined
-                ? []
-                : [
-                    {
-                      transport: 'https' as const,
-                      uri: entry.resolved,
-                      priority: 0,
-                      rangeSupported: false,
-                    },
-                  ],
+            locations: resolvedLocation === undefined ? [] : [resolvedLocation],
             referrers: [],
             externalRefs: [],
           },
@@ -1044,7 +1085,7 @@ async function minimalInstanceFromLockEntry(
     artifacts,
     lifecycle: {
       status: 'unknown',
-      eligible: true,
+      eligible: false,
       warnings: [
         {
           code: 'LIFECYCLE_NOT_CAPTURED',
@@ -1065,6 +1106,23 @@ async function minimalInstanceFromLockEntry(
     },
     semanticLoss,
   };
+}
+
+function httpsArtifactLocation(resolved: string | undefined) {
+  if (resolved === undefined) return undefined;
+  try {
+    const url = new URL(resolved);
+    if (url.protocol !== 'https:' || url.username || url.password)
+      return undefined;
+    return {
+      transport: 'https' as const,
+      uri: url.toString(),
+      priority: 0,
+      rangeSupported: false,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function stripUndefined(value: unknown): unknown {
@@ -1127,14 +1185,17 @@ async function buildMinimalUniverse(
   };
   return {
     ...body,
-    canonicalDigest: await canonicalDigest(body as unknown as JsonValue),
+    canonicalDigest: await projectedDigest(
+      'universe-v1',
+      body as unknown as JsonValue,
+    ),
   };
 }
 
-function mergePackagesIntoUniverse(
+async function mergePackagesIntoUniverse(
   universe: ResolutionUniverse,
   packages: PackageInstance[],
-): ResolutionUniverse {
+): Promise<ResolutionUniverse> {
   const byExact = new Map(
     universe.packages
       .filter((item) => item.identity.exactPurl)
@@ -1147,12 +1208,33 @@ function mergePackagesIntoUniverse(
         'INVALID_LOCKFILE',
         'Package instance is missing exactPurl',
       );
-    if (!byExact.has(exact)) byExact.set(exact, item);
+    const existing = byExact.get(exact);
+    if (
+      existing !== undefined &&
+      new TextDecoder().decode(
+        canonicalBytes(stripUndefined(existing) as JsonValue),
+      ) !==
+        new TextDecoder().decode(
+          canonicalBytes(stripUndefined(item) as JsonValue),
+        )
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `Caller universe contradicts native lock package ${exact}`,
+      );
+    if (existing === undefined) byExact.set(exact, item);
   }
-  return {
+  const merged = {
     ...universe,
     packages: [...byExact.values()].sort((left, right) =>
       compareCanonicalStrings(left.nodeId, right.nodeId),
+    ),
+  };
+  return {
+    ...merged,
+    canonicalDigest: await projectedDigest(
+      'universe-v1',
+      merged as unknown as JsonValue,
     ),
   };
 }

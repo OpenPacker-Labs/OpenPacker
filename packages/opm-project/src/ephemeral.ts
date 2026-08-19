@@ -4,10 +4,24 @@ import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { storeKeyFromDigest } from './paths.js';
-import { inferFormat, materializeLockPackage } from './install.js';
-import { listRegistryVersions, resolveRegistryArtifact } from './registry.js';
+import {
+  bindVerifiedArtifactBytes,
+  sealVerifiedArtifactBinding,
+  inferFormat,
+  materializeLockPackage,
+} from './install.js';
+import {
+  listRegistryVersions,
+  providerFor,
+  resolveRegistryArtifact,
+} from './registry.js';
 import { resolveGraph, solveGraph } from './resolve.js';
 import { requireAdapterRegistry } from './adapters.js';
+import {
+  captureFactsFromCatalog,
+  defaultSupplyChainPolicyInput,
+  lockPackageSupplyChainFields,
+} from './supply-chain.js';
 
 /**
  * Run a tool without adding it to a project — what `npx`, `pipx run`, `uvx`
@@ -150,6 +164,15 @@ async function materialiseExact(
   cached: boolean;
 }> {
   const artifact = await resolveRegistryArtifact(ecosystem, exact);
+  const policyInput = defaultSupplyChainPolicyInput();
+  const { facts } = await captureFactsFromCatalog(
+    await providerFor(ecosystem),
+    artifact.exactPurl,
+    {
+      evaluationTime: new Date().toISOString(),
+      registryId: artifact.registryId,
+    },
+  );
   const pkg: LockPackage = {
     alias: 'tool',
     purl: artifact.exactPurl,
@@ -163,12 +186,16 @@ async function materialiseExact(
     bins: [],
     reason: 'direct',
     ecosystem,
+    ...lockPackageSupplyChainFields(facts),
   };
+  bindVerifiedArtifactBytes(pkg, artifact.bytes, 'registry', facts);
+  sealVerifiedArtifactBinding(pkg);
   const { storePath, bins, cached } = await materializeLockPackage({
     root: cacheRoot,
     pkg,
     offline: false,
     bytes: artifact.bytes,
+    policy: policyInput,
   });
   return {
     exactPurl: artifact.exactPurl,

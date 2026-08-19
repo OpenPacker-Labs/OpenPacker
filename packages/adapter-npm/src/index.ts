@@ -12,6 +12,7 @@ import type {
   JsonValue,
 } from '@openpacker/contracts';
 import {
+  assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
   evaluateRange,
@@ -622,6 +623,10 @@ export class NpmRegistryProvider implements CatalogProvider {
         mediaType: 'application/json',
       },
     });
+    assertPackageIdentityMatchesRequest(
+      canonical,
+      translated.instance.identity,
+    );
     return { package: translated.instance, record, warnings: [] };
   }
 

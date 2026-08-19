@@ -257,6 +257,13 @@ describe('PyPI transitive resolution', () => {
         graph,
         rootRequirements: [{ purl: 'pkg:pypi/demo-tool' }],
         evaluationTime: '2026-08-04T00:00:00Z',
+        policy: {
+          allowYanked: false,
+          allowQuarantined: false,
+          semanticLossMaximum: 'error',
+          requiredEvidence: [],
+          acceptedOverlayAuthorities: ['publisher'],
+        },
       });
       expect(solved.proofValid).toBe(true);
       const selected = solved.selected
@@ -339,6 +346,10 @@ describe('supply-chain policy over the transitive closure', () => {
         );
         expect(alpha?.reason).toBe('transitive');
         expect(alpha?.sourceKind).toBe('registry');
+        expect(lock.packages['demo-tool']?.dependencies).toEqual(
+          expect.arrayContaining(['alpha', 'beta', 'gamma']),
+        );
+        expect(alpha?.dependencies).toEqual([]);
       });
     } finally {
       await rm(root, { recursive: true, force: true });

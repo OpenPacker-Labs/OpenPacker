@@ -2,7 +2,6 @@ import type { BackendProbe, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
   SandboxBackendError,
-  spawnCapture,
   type OutputLimitKind,
 } from './mock.js';
 
@@ -47,6 +46,13 @@ export async function probeMxc(): Promise<BackendProbe> {
  *
  * Note: MXC is early preview. Callers must treat enforcement as
  * defense-in-depth and record SANDBOX_BACKEND_MXC honesty losses.
+ *
+ * Currently unreachable from runInSandbox: every run synthesizes stable
+ * directory-handle authorities for its binds, and the MXC SDK configures
+ * containment by path strings only, so run() always fails closed with
+ * UNAVAILABLE (see mxcFilesystemPaths). The backend remains for probe
+ * diagnostics and for the day the SDK exposes handle-relative binds; macOS and
+ * Windows package-exec containment is withdrawn until then.
  */
 export async function createMxcBackend(): Promise<SandboxBackend> {
   const probe = await probeMxc();
@@ -60,10 +66,10 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   return {
     id: 'mxc',
     async run(input) {
-      if ((input.directoryAuthorities?.length ?? 0) > 0)
+      if (input.executableAuthority !== undefined)
         throw new SandboxBackendError(
           'UNAVAILABLE',
-          'MXC SDK does not expose inherited directory-handle binds',
+          'MXC cannot consume stable executable handle authorities',
         );
       // Prefer config-based spawn when present; fall back to a constrained
       // host spawn only if the SDK surface differs — but never silently drop
@@ -89,6 +95,9 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           ...input.readwritePaths,
         ],
         cwd: input.cwd,
+        ...(input.directoryAuthorities === undefined
+          ? {}
+          : { directoryAuthorities: input.directoryAuthorities }),
       });
 
       const config = mod.createConfigFromPolicy({
@@ -132,12 +141,17 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   };
 }
 
-function quoteCommandLine(argv: readonly string[]): string {
+export function quoteCommandLine(argv: readonly string[]): string {
   return argv
     .map((part) => {
       if (part.length === 0) return '""';
-      if (/^[A-Za-z0-9_./:@%+=,-]+$/u.test(part)) return part;
-      return `"${part.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+      if (/[$%`!^&|<>;\r\n"']/u.test(part) || part.endsWith('\\'))
+        throw new SandboxBackendError(
+          'POLICY_DENIED',
+          'MXC command arguments contain characters its string ABI cannot encode safely',
+        );
+      if (/^[A-Za-z0-9_./:@+=,-]+$/u.test(part)) return part;
+      return `"${part.replaceAll('\\', '\\\\')}"`;
     })
     .join(' ');
 }
@@ -218,7 +232,13 @@ export function mxcFilesystemPaths(input: {
   readonlyPaths: readonly string[];
   readwritePaths: readonly string[];
   cwd: string;
+  directoryAuthorities?: readonly { fd: number; path: string }[];
 }): { readonlyPaths: string[]; readwritePaths: string[] } {
+  if ((input.directoryAuthorities?.length ?? 0) > 0)
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'MXC SDK does not expose inherited directory-handle binds; package-exec containment is withdrawn on platforms without a native backend',
+    );
   const readwritePaths = [...input.readwritePaths];
   const readonlyPaths = [...input.readonlyPaths];
   const rw = new Set(readwritePaths);
@@ -227,6 +247,3 @@ export function mxcFilesystemPaths(input: {
   }
   return { readonlyPaths, readwritePaths };
 }
-
-/** Used only when tests force ambient degraded execution. */
-export { spawnCapture };
