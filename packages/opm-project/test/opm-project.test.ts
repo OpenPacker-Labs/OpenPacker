@@ -56,6 +56,7 @@ import {
 import { packTarGzip } from '@openpacker/project-io';
 import {
   openStableDirectory,
+  projectPaths,
   readStableFile,
   revalidateStableDirectory,
   supportsStableProjectMetadata,
@@ -902,6 +903,28 @@ describe('environment generations', () => {
     await expect(switchGeneration({ root, target: 99 })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+
+  it('keeps the current generation when the target cannot be activated', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [first] = await listGenerations(root);
+    if (!first?.members[0]) throw new Error('expected installed generation');
+    await removePackage({ root, alias: 'demo-tool', offline: true });
+    const before = await readEnvironmentState(root);
+    await rm(first.members[0].storePath, { recursive: true, force: true });
+
+    await expect(switchGeneration({ root, target: 1 })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(await readEnvironmentState(root)).toEqual(before);
+    expect(
+      (await readProjectState(projectPaths(root).projectState))?.packages,
+    ).toEqual({});
   });
 
   it('collects only store paths outside every retained generation', async () => {

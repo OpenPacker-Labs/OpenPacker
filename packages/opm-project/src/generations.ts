@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readdir, type FileHandle } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, readdir, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
@@ -18,6 +19,7 @@ import {
   removeStableTree,
   resolveContained,
   stableHandlePath,
+  storePathForDigest,
   writeStableFile,
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
@@ -422,10 +424,7 @@ export async function recordGeneration(input: {
   return generation;
 }
 
-/**
- * Point the environment at an earlier generation. The record is never
- * rewritten, so rolling back is itself reversible.
- */
+/** Activate an earlier generation, then atomically point the environment at it. */
 export async function switchGeneration(input: {
   root: string;
   target: string | number;
@@ -445,6 +444,7 @@ export async function switchGeneration(input: {
       'NOT_FOUND',
       `Generation ${target.sequence} is no longer retained`,
     );
+  await activateGeneration({ root: input.root, generation: target });
   await writeEnvironmentState(input.root, {
     ...state,
     currentGenerationDigest: target.generationDigest,
@@ -684,75 +684,116 @@ export async function activateGeneration(input: {
   generation: Generation;
 }): Promise<ProjectState> {
   const paths = environmentPaths(input.root);
-  await ensureStableDirectory(paths.bin);
-  await ensureStableDirectory(paths.links);
-
-  const previous = await readProjectState(paths.projectState);
-  for (const record of Object.values(previous?.packages ?? {}))
-    await removeBinShims(
-      paths.bin,
-      record.bins.map((bin) => bin.name),
-    );
-
-  const state: ProjectState = { schemaVersion: 1, packages: {} };
-  for (const member of input.generation.members) {
-    const alias = assertSafeSegment(member.alias, 'package alias');
-    // The store path is content-addressed and immutable, so if it is gone the
-    // generation is genuinely unrestorable — say so rather than half-restore.
-    // Every other generation field is validated; the store path must be too,
-    // even though the record is digest-verified. Comparing against the
-    // contained resolution is the check — passing a basename would make it
-    // unconditionally true.
-    if (
-      member.storePath !==
-      resolveContained(paths.store, basename(member.storePath))
-    )
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Generation store path escapes the project store: ${member.storePath}`,
-      );
-    const ecosystem = (() => {
-      try {
-        return member.purl.startsWith('pkg:')
-          ? member.purl.slice('pkg:'.length).split('/')[0]!
-          : 'npm';
-      } catch {
-        return 'npm';
+  const store = await openStableDirectory(paths.store);
+  const prepared: {
+    member: GenerationMember;
+    alias: string;
+    bins: Awaited<ReturnType<typeof discoverBins>>;
+    handle: FileHandle;
+  }[] = [];
+  const aliases = new Set<string>();
+  const binNames = new Set<string>();
+  try {
+    // Validate the complete target before changing the currently active view.
+    // A missing final member must not leave the first members half-activated.
+    for (const member of input.generation.members) {
+      const alias = assertSafeSegment(member.alias, 'package alias');
+      if (aliases.has(alias))
+        throw new OpmError(
+          'INVALID_STATE',
+          `Generation ${input.generation.sequence} declares duplicate alias ${alias}`,
+        );
+      aliases.add(alias);
+      const expected = storePathForDigest(input.root, member.digest);
+      if (member.storePath !== expected)
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Generation store path is not derived from its digest: ${member.storePath}`,
+        );
+      const handle = await open(
+        join(stableHandlePath(store), basename(expected)),
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      ).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ELOOP')
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path is linked: ${expected}`,
+          );
+        if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+          throw new OpmError(
+            'NOT_FOUND',
+            `Generation ${input.generation.sequence} needs ${expected}, which is no longer in the store`,
+          );
+        throw error;
+      });
+      const ecosystem = /^pkg:([^/]+)\//u.exec(member.purl)?.[1];
+      if (!ecosystem) {
+        await handle.close();
+        throw new OpmError(
+          'INVALID_STATE',
+          `Generation ${input.generation.sequence} has invalid purl ${member.purl}`,
+        );
       }
-    })();
-    const bins = await discoverBins(member.storePath, ecosystem).catch(() => {
-      throw new OpmError(
-        'NOT_FOUND',
-        `Generation ${input.generation.sequence} needs ${member.storePath}, which is no longer in the store`,
+      try {
+        const bins = await discoverBins(stableHandlePath(handle), ecosystem);
+        for (const bin of bins) {
+          const name = assertSafeSegment(bin.name, 'bin name');
+          if (binNames.has(name))
+            throw new OpmError(
+              'INVALID_STATE',
+              `Generation ${input.generation.sequence} declares duplicate bin ${name}`,
+            );
+          binNames.add(name);
+        }
+        prepared.push({ member, alias, bins, handle });
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
+    }
+
+    await ensureStableDirectory(paths.bin);
+    await ensureStableDirectory(paths.links);
+    const previous = await readProjectState(paths.projectState);
+    for (const record of Object.values(previous?.packages ?? {}))
+      await removeBinShims(
+        paths.bin,
+        record.bins.map((bin) => bin.name),
       );
-    });
-    const shims = await writeBinShims({
-      binDir: paths.bin,
-      storeRoot: member.storePath,
-      bins,
-    });
-    await writeStableFile(
-      resolveContained(paths.links, alias),
-      `${JSON.stringify(
-        {
-          alias,
-          purl: member.purl,
-          storePath: member.storePath,
-          digest: member.digest,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    state.packages[alias] = {
-      alias,
-      purl: member.purl,
-      digest: member.digest,
-      storePath: member.storePath,
-      bins: shims,
-      installedAt: input.generation.createdAt,
-    };
+
+    const state: ProjectState = { schemaVersion: 1, packages: {} };
+    for (const { member, alias, bins } of prepared) {
+      const shims = await writeBinShims({
+        binDir: paths.bin,
+        storeRoot: member.storePath,
+        bins,
+      });
+      await writeStableFile(
+        resolveContained(paths.links, alias),
+        `${JSON.stringify(
+          {
+            alias,
+            purl: member.purl,
+            storePath: member.storePath,
+            digest: member.digest,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      state.packages[alias] = {
+        alias,
+        purl: member.purl,
+        digest: member.digest,
+        storePath: member.storePath,
+        bins: shims,
+        installedAt: input.generation.createdAt,
+      };
+    }
+    await writeProjectState(paths.projectState, state);
+    return state;
+  } finally {
+    await Promise.all(prepared.map(({ handle }) => handle.close()));
+    await store.close();
   }
-  await writeProjectState(paths.projectState, state);
-  return state;
 }

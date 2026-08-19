@@ -5,7 +5,6 @@ import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   OpmError,
   addPackage,
-  activateGeneration,
   collectGarbage,
   configurePackProviders,
   ecosystemFromPurl,
@@ -493,7 +492,6 @@ export async function runOpm(
         const target = to
           ? await switchGeneration({ root, target: Number(to) })
           : await rollbackToPrevious(root);
-        await reinstallGeneration(root, target);
         io.stdout.write(`Rolled back to generation ${target.sequence}\n`);
         return EXIT_CODES.success;
       }
@@ -541,17 +539,6 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
       'There is no earlier generation to roll back to',
     );
   return switchGeneration({ root, target: target.generationDigest });
-}
-
-/**
- * Rebuild the derived view for a generation. The record is the source of
- * truth, so switching is a pointer move plus an idempotent regeneration.
- */
-async function reinstallGeneration(
-  root: string,
-  generation: Generation,
-): Promise<void> {
-  await activateGeneration({ root, generation });
 }
 
 function handleError(error: unknown, io: CliIo): number {
