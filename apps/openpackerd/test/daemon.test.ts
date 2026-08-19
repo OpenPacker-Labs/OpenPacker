@@ -133,6 +133,61 @@ describe('openpackerd', () => {
     });
   });
 
+  it('returns deterministic resolver exhaustion as a rate limit', async () => {
+    const unavailable = async (): Promise<never> => {
+      throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
+    };
+    const resolver = createEmbeddedResolver({
+      ...bindings,
+      solve_json: () => {
+        throw new Error(
+          'RESOURCE_LIMIT: exhaustive resolution proof requires 2000 work units (limit 1000)',
+        );
+      },
+    });
+    const operations = createReferenceOperations({
+      universe,
+      resolver,
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const app = createOpenPackerDaemon({ operations });
+    const request = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../fixtures/protocol/solve/request.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as SolveRequest;
+    const started = Date.now();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/solve',
+      payload: request,
+    });
+    expect(response.statusCode).toBe(429);
+    expect(response.json()).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryable: true,
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    await app.close();
+  });
+
   it('requires forensic intent for every lifecycle-denied artifact subject', async () => {
     const descriptor = {
       descriptorId: 'quarantined-artifact',

@@ -338,6 +338,8 @@ export function createReferenceOperations(
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes('UNSATISFIABLE:'))
           throw operationError('UNSATISFIABLE', message);
+        if (message.startsWith('RESOURCE_LIMIT:'))
+          throw operationError('RATE_LIMITED', message, 429);
         if (message.includes('unsupported semantics profile:'))
           throw operationError('UNSUPPORTED_SEMANTICS_PROFILE', message);
         throw error;

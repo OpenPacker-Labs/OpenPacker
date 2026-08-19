@@ -10,6 +10,10 @@ pub enum ResolverError {
     UniverseLimit { limit: usize, actual: usize },
     #[error("objective optimality cannot be independently proven above {limit} nodes ({actual})")]
     ObjectiveLimit { limit: usize, actual: usize },
+    #[error(
+        "RESOURCE_LIMIT: exhaustive resolution proof requires {required} work units (limit {limit})"
+    )]
+    ExhaustiveWorkLimit { limit: u64, required: u64 },
     #[error("UNSATISFIABLE: {0}")]
     Unsatisfiable(String),
     #[error("INTERNAL_ERROR: proof check failed: {0}")]

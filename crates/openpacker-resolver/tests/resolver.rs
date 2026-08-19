@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use openpacker_resolver::*;
 use serde_json::{Value, json};
@@ -410,6 +413,45 @@ fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
             actual: 23
         })
     ));
+}
+
+#[test]
+fn exhaustive_proof_work_fails_before_enumeration() {
+    let candidate = package('9', "demo", "1.0.0");
+    let mut packages = Vec::new();
+    for index in 1..=22 {
+        let mut candidate = candidate.clone();
+        let version = format!("{index}.0.0");
+        set_identity(&mut candidate, "npm", "demo", &version);
+        candidate.metadata_digest = Digest {
+            algorithm: "sha256".into(),
+            value: format!("{index:064x}"),
+        };
+        packages.push(candidate);
+    }
+    let mut bounded = input(
+        packages,
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    bounded.request.resource_limits = Some(json!({ "graphNodes": 1_000 }));
+
+    let started = Instant::now();
+    assert!(matches!(
+        solve(&bounded),
+        Err(ResolverError::ExhaustiveWorkLimit {
+            limit: 1_000,
+            required
+        }) if required > 1_000
+    ));
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]

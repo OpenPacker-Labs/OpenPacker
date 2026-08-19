@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ResolverError, SolveInput,
     checker::independent_valid_selection,
-    engine::{MAX_COMPANION_NODES, compare_selection},
+    engine::{MAX_COMPANION_NODES, compare_selection, enforce_exhaustive_work_limit},
 };
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -35,6 +35,7 @@ pub(crate) fn brute_force_oracle_amended(
             actual: nodes,
         });
     }
+    enforce_exhaustive_work_limit(input)?;
     let mut best: Option<Vec<usize>> = None;
     let assignments_checked = 1u64 << nodes;
     for mask in 0..assignments_checked {

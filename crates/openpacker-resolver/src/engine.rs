@@ -22,6 +22,7 @@ pub const MAX_REQUIREMENTS: usize = 1_000_000;
 pub const MAX_ALTERNATIVES: usize = 10_000;
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 pub const MAX_PREDICATE_DEPTH: usize = 64;
+pub const MAX_EXHAUSTIVE_WORK: u64 = 10_000_000;
 
 const SUPPORTED_REQUIREMENT_KINDS: [&str; 11] = [
     "runtime",
@@ -337,7 +338,100 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             actual: input.universe.packages.len(),
         });
     }
+    if input.request.semantics.profile == "prex-calculus-subset-v1"
+        && (objectives_require_optimization(&input.request)
+            || !crate::resolvo_engine::supports(input))
+    {
+        enforce_exhaustive_work_limit(input)?;
+    }
     Ok(())
+}
+
+pub(crate) fn enforce_exhaustive_work_limit(input: &SolveInput) -> Result<(), ResolverError> {
+    let nodes = input.universe.packages.len();
+    if nodes > MAX_COMPANION_NODES {
+        return Ok(());
+    }
+    let node_work = u64::try_from(nodes.max(1)).unwrap_or(u64::MAX);
+    let mut structure =
+        node_work.saturating_add(u64::try_from(input.request.objectives.len()).unwrap_or(u64::MAX));
+    for requirement in &input.request.requirements {
+        structure = structure.saturating_add(expression_work(&requirement.expression));
+    }
+    for package in &input.universe.packages {
+        for requirement in &package.requirements {
+            structure = structure.saturating_add(expression_work(&requirement.expression));
+        }
+        for conflict in &package.conflicts {
+            structure = structure.saturating_add(expression_work(&conflict.expression));
+        }
+        for constraint in &package.cardinality_constraints {
+            structure = structure
+                .saturating_add(expression_work(&constraint.selector).saturating_mul(node_work));
+        }
+        for capability in &package.capabilities {
+            if let Some(predicate) = &capability.target_predicate {
+                structure = structure.saturating_add(predicate_work(predicate));
+            }
+        }
+    }
+    let assignments = 1u64 << nodes;
+    let required = assignments
+        .saturating_mul(node_work)
+        .saturating_mul(structure.max(1));
+    let requested = input
+        .request
+        .resource_limits
+        .as_ref()
+        .and_then(|limits| limits.get("graphNodes"))
+        .map(|value| {
+            value.as_u64().filter(|limit| *limit > 0).ok_or_else(|| {
+                ResolverError::InvalidInput(
+                    "resourceLimits.graphNodes must be a positive integer".into(),
+                )
+            })
+        })
+        .transpose()?;
+    let limit = requested
+        .unwrap_or(MAX_EXHAUSTIVE_WORK)
+        .min(MAX_EXHAUSTIVE_WORK);
+    if required > limit {
+        return Err(ResolverError::ExhaustiveWorkLimit { limit, required });
+    }
+    Ok(())
+}
+
+fn expression_work(expression: &RequirementExpression) -> u64 {
+    match expression {
+        RequirementExpression::AllOf { expressions }
+        | RequirementExpression::AnyOf { expressions } => {
+            expressions.iter().fold(1u64, |work, item| {
+                work.saturating_add(expression_work(item))
+            })
+        }
+        RequirementExpression::Not { expression } => {
+            1u64.saturating_add(expression_work(expression))
+        }
+        RequirementExpression::Conditional {
+            when,
+            then,
+            otherwise,
+        } => 1u64
+            .saturating_add(predicate_work(when))
+            .saturating_add(expression_work(then))
+            .saturating_add(otherwise.as_deref().map_or(0, expression_work)),
+        _ => 1,
+    }
+}
+
+fn predicate_work(predicate: &TargetPredicate) -> u64 {
+    match predicate {
+        TargetPredicate::AllOf { predicates } | TargetPredicate::AnyOf { predicates } => predicates
+            .iter()
+            .fold(1u64, |work, item| work.saturating_add(predicate_work(item))),
+        TargetPredicate::Not { predicate } => 1u64.saturating_add(predicate_work(predicate)),
+        _ => 1,
+    }
 }
 
 /// Amendments the policy admits, and those present but ignored. Admitted
@@ -627,6 +721,7 @@ fn companion_resolve(input: &SolveInput) -> Result<Vec<usize>, ResolverError> {
             actual: input.universe.packages.len(),
         });
     }
+    enforce_exhaustive_work_limit(input)?;
     let mut best: Option<Vec<usize>> = None;
     let count = 1u64 << input.universe.packages.len();
     for mask in 0..count {
