@@ -291,6 +291,22 @@ describe('@openpacker/sandbox', () => {
     expect(writable.readwritePaths).toContain('/proj');
   });
 
+  it('refuses stable directory authorities in MXC filesystem planning', () => {
+    expect(() =>
+      mxcFilesystemPaths({
+        cwd: '/tmp',
+        readwritePaths: ['/tmp'],
+        readonlyPaths: [],
+        directoryAuthorities: [{ fd: 3, path: '/tmp' }],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'UNAVAILABLE',
+        message: expect.stringContaining('directory-handle'),
+      }),
+    );
+  });
+
   it('refuses dangerous write grants unless allowed', () => {
     expect(() => assertGrantsNotDangerous(['/'], false)).toThrow(JailPathError);
     expect(() => assertGrantsNotDangerous(['/'], true)).not.toThrow();

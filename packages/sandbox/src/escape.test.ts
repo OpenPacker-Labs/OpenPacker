@@ -110,6 +110,40 @@ describe('jail path validation', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('refuses a missing grant before a backend can make it appear', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-missing-'));
+    const missing = join(root, 'late');
+    let backendRan = false;
+    try {
+      await expect(
+        runInSandbox({
+          argv: ['/usr/bin/true'],
+          cwd: root,
+          policy: { mode: 'fail-closed' },
+          readwritePaths: [missing],
+          readonlyPaths: [],
+          backend: {
+            id: 'mock',
+            async run() {
+              backendRan = true;
+              mkdirSync(missing);
+              return { exitCode: 0, stdout: '', stderr: '' };
+            },
+          },
+        }),
+      ).rejects.toMatchObject({
+        code:
+          process.platform === 'linux' || process.platform === 'darwin'
+            ? 'ENOENT'
+            : 'UNSAFE_JAIL_PATH',
+      });
+      expect(backendRan).toBe(false);
+      expect(existsSync(missing)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('credential scrubbing (hardened)', () => {

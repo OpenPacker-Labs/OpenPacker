@@ -60,11 +60,6 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   return {
     id: 'mxc',
     async run(input) {
-      if ((input.directoryAuthorities?.length ?? 0) > 0)
-        throw new SandboxBackendError(
-          'UNAVAILABLE',
-          'MXC SDK does not expose inherited directory-handle binds',
-        );
       // Prefer config-based spawn when present; fall back to a constrained
       // host spawn only if the SDK surface differs — but never silently drop
       // the jail: if we cannot configure MXC, fail.
@@ -89,6 +84,9 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           ...input.readwritePaths,
         ],
         cwd: input.cwd,
+        ...(input.directoryAuthorities === undefined
+          ? {}
+          : { directoryAuthorities: input.directoryAuthorities }),
       });
 
       const config = mod.createConfigFromPolicy({
@@ -223,7 +221,13 @@ export function mxcFilesystemPaths(input: {
   readonlyPaths: readonly string[];
   readwritePaths: readonly string[];
   cwd: string;
+  directoryAuthorities?: readonly { fd: number; path: string }[];
 }): { readonlyPaths: string[]; readwritePaths: string[] } {
+  if ((input.directoryAuthorities?.length ?? 0) > 0)
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'MXC SDK does not expose inherited directory-handle binds',
+    );
   const readwritePaths = [...input.readwritePaths];
   const readonlyPaths = [...input.readonlyPaths];
   const rw = new Set(readwritePaths);

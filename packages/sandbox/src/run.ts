@@ -206,14 +206,10 @@ export async function runInSandbox(
     const authorized = new Set(authorities.map(({ path }) => resolve(path)));
     for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
       if (authorized.has(path)) continue;
-      try {
-        const handle = await openStableJailPath(path, 'sandbox bind');
-        ownedAuthorities.push(handle);
-        authorities.push({ fd: handle.fd, path });
-        authorized.add(path);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
+      const handle = await openStableJailPath(path, 'sandbox bind');
+      ownedAuthorities.push(handle);
+      authorities.push({ fd: handle.fd, path });
+      authorized.add(path);
     }
 
     const timeoutMs =
