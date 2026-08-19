@@ -98,3 +98,15 @@ upstream Codex Security release currently has no patched version.
   project 144/144 passed. All three incremental staged gates and the exact
   `970e2a8..4c0d0bf` 12-gate impact aggregate were green; diff checks were
   clean.
+- 2026-08-19 layer 03 review remediation: the first independent review found
+  remaining project metadata/link ancestor races, staged-layout publication and
+  source-copy races, incomplete process-tree termination, an undocumented
+  Windows layout limitation, and vacuous TAR count coverage. Shared stable
+  file/directory operations now cover project state, generations, shims, links,
+  store publication and collection; layout publication and copy inputs are
+  identity-checked before and after use; timeout, abort and output limits
+  terminate and await descendant trees (including MXC jobs); Windows layout
+  projection fails closed and is documented; and adversarial race/early-limit
+  regressions close each oracle. Materializer 18/18, project I/O 24/24, OPM
+  project 149/149, sandbox 36/36, and the amended exact 12-gate layer aggregate
+  passed with process authority; diff checks were clean.

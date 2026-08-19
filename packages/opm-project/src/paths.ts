@@ -1,4 +1,22 @@
-import { dirname, join, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import {
+  mkdir,
+  lstat,
+  open,
+  rename,
+  rm,
+  type FileHandle,
+} from 'node:fs/promises';
+import {
+  basename,
+  dirname,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { OpmError } from './types.js';
 
 export const MANIFEST_NAME = 'opm.toml';
@@ -127,6 +145,196 @@ export function resolveContained(root: string, ...parts: string[]): string {
 
 export function storePathForDigest(root: string, digest: string): string {
   return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
+}
+
+export async function openStableDirectory(
+  path: string,
+  create = false,
+): Promise<FileHandle> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  let handle = await open(
+    root,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+      const child = join(stableHandlePath(handle), part);
+      if (create)
+        await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        });
+      const next = await open(
+        child,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      if (!(await next.stat()).isDirectory()) {
+        await next.close();
+        throw new OpmError('UNSAFE_PATH', `Not a directory: ${path}`);
+      }
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    if (
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+    )
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Directory path is linked or unstable: ${path}`,
+      );
+    throw error;
+  }
+}
+
+export function stableHandlePath(handle: FileHandle): string {
+  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
+  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
+  throw new OpmError(
+    'UNSAFE_PATH',
+    'Stable no-follow filesystem handles are unavailable on this platform',
+  );
+}
+
+export async function ensureStableDirectory(path: string): Promise<void> {
+  const handle = await openStableDirectory(path, true);
+  try {
+    await assertNamedDirectory(path, handle);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function readStableFile(
+  path: string,
+  maximumBytes = 4 * 1024 * 1024,
+): Promise<string> {
+  const parent = await openStableDirectory(dirname(path));
+  let file: FileHandle | undefined;
+  try {
+    await assertNamedDirectory(dirname(path), parent);
+    file = await open(
+      join(stableHandlePath(parent), basename(path)),
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(maximumBytes))
+      throw new OpmError(
+        'INVALID_STATE',
+        `Metadata file is special or exceeds ${maximumBytes} bytes: ${path}`,
+      );
+    const contents = await file.readFile('utf8');
+    const after = await file.stat({ bigint: true });
+    if (
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.size !== before.size ||
+      after.ctimeNs !== before.ctimeNs ||
+      after.mtimeNs !== before.mtimeNs
+    )
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata file changed while it was read: ${path}`,
+      );
+    await assertNamedDirectory(dirname(path), parent);
+    return contents;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+      throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
+    throw error;
+  } finally {
+    await file?.close().catch(() => undefined);
+    await parent.close();
+  }
+}
+
+export async function writeStableFile(
+  path: string,
+  contents: string | Uint8Array,
+  mode = 0o644,
+): Promise<void> {
+  const parent = await openStableDirectory(dirname(path), true);
+  const directory = stableHandlePath(parent);
+  const temporary = join(directory, `.${basename(path)}.${randomUUID()}.tmp`);
+  let file: FileHandle | undefined;
+  try {
+    file = await open(
+      temporary,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      mode,
+    );
+    await file.writeFile(contents);
+    await file.sync();
+    const opened = await file.stat({ bigint: true });
+    const named = await lstat(temporary, { bigint: true });
+    if (opened.dev !== named.dev || opened.ino !== named.ino)
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata staging file changed before publication: ${path}`,
+      );
+    const published = join(directory, basename(path));
+    await rename(temporary, published);
+    const publishedInfo = await lstat(published, { bigint: true });
+    if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Metadata file changed during publication: ${path}`,
+      );
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await file?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    await parent.close();
+  }
+}
+
+export async function removeStableFile(path: string): Promise<void> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await rm(join(stableHandlePath(parent), basename(path)), { force: true });
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function removeStableTree(path: string): Promise<void> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await rm(join(stableHandlePath(parent), basename(path)), {
+      recursive: true,
+      force: true,
+    });
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+async function assertNamedDirectory(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  const [opened, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(resolve(path), { bigint: true }),
+  ]);
+  if (
+    !named.isDirectory() ||
+    named.isSymbolicLink() ||
+    opened.dev !== named.dev ||
+    opened.ino !== named.ino
+  )
+    throw new OpmError(
+      'INPUT_CHANGED',
+      `Directory changed while it was in use: ${path}`,
+    );
 }
 
 export function findProjectRoot(

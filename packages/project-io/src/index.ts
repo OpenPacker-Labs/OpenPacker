@@ -227,6 +227,7 @@ export {
   collectFiles,
   materialiseTree,
   removeTree,
+  supportsStableTreeLayout,
   type MaterialiseResult,
 } from './layout.js';
 

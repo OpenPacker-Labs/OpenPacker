@@ -1,7 +1,10 @@
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { describe, expect, it, vi } from 'vitest';
+import { collectMxcChild } from './backends/mxc.js';
 import {
   assertGrantsNotDangerous,
   buildSeatbeltProfile,
@@ -306,20 +309,78 @@ describe('@openpacker/sandbox', () => {
     ).rejects.toBeInstanceOf(JailPathError);
   });
 
-  it('kills hung package-exec after timeout', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
-    const started = Date.now();
-    const outcome = await runInSandbox({
-      argv: [process.execPath, '-e', 'setTimeout(() => {}, 30_000)'],
+  it.each(['fail-closed', 'off'] as const)(
+    'kills descendants after a %s timeout',
+    async (mode) => {
+      const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
+      const marker = join(cwd, 'escaped');
+      const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
+      const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000)`;
+      const started = Date.now();
+      const outcome = await runInSandbox({
+        argv: [process.execPath, '-e', parent],
+        cwd,
+        policy: { mode, timeoutMs: 100 },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        ...(mode === 'fail-closed' ? { backend: createMockBackend() } : {}),
+      });
+      expect(Date.now() - started).toBeLessThan(8_000);
+      expect(outcome.exitCode).not.toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+    },
+  );
+
+  it('kills descendants after an external abort', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-abort-'));
+    const marker = join(cwd, 'escaped');
+    const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
+    const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`;
+    const abort = new AbortController();
+    const running = runInSandbox({
+      argv: [process.execPath, '-e', parent],
       cwd,
-      policy: { mode: 'fail-closed', timeoutMs: 250 },
+      policy: { mode: 'fail-closed', timeoutMs: 30_000 },
       readwritePaths: [cwd],
       readonlyPaths: [],
       backend: createMockBackend(),
+      signal: abort.signal,
     });
-    expect(Date.now() - started).toBeLessThan(8_000);
-    expect(outcome.exitCode).not.toBe(0);
+    setTimeout(() => abort.abort(), 100);
+    expect((await running).exitCode).toBe(124);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  it.each(['abort', 'output'] as const)(
+    'waits for MXC job termination after %s',
+    async (reason) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: PassThrough;
+        stderr: PassThrough;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = vi.fn(() => setImmediate(() => child.emit('close', 1)));
+      const abort = new AbortController();
+      const running = collectMxcChild(
+        child,
+        {
+          maximumStdoutBytes: 8,
+          maximumStderrBytes: 8,
+          maximumOutputBytes: 12,
+        },
+        abort.signal,
+      );
+      if (reason === 'abort') abort.abort();
+      else child.stdout.write('x'.repeat(32));
+      const result = await running;
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+      expect(result.exitCode).toBe(reason === 'abort' ? 124 : 125);
+    },
+  );
 
   it('mock package-exec is not enforced (honesty)', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));

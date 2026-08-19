@@ -1,17 +1,16 @@
 import { existsSync, readdirSync } from 'node:fs';
-import {
-  chmod,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
-import { assertSafeSegment, resolveContained } from './paths.js';
+import {
+  assertSafeSegment,
+  ensureStableDirectory,
+  removeStableFile,
+  resolveContained,
+  writeStableFile,
+} from './paths.js';
 
 export async function discoverNpmBins(
   extractRoot: string,
@@ -303,7 +302,7 @@ export async function writeBinShims(input: {
   /** Extra store roots on PYTHONPATH for Python entry points. */
   pythonPath?: readonly string[];
 }): Promise<WrittenBinShim[]> {
-  await mkdir(input.binDir, { recursive: true });
+  await ensureStableDirectory(input.binDir);
   const written: WrittenBinShim[] = [];
   const storeRoot = resolve(input.storeRoot);
   const binDir = resolve(input.binDir);
@@ -332,8 +331,7 @@ export async function writeBinShims(input: {
       pythonRoots,
       opmxPath: resolveOpmxPath(),
     });
-    await writeFile(shimPath, script, { mode: 0o755 });
-    await chmod(shimPath, 0o755);
+    await writeStableFile(shimPath, script, 0o755);
     written.push({
       name,
       path: bin.path,
@@ -474,7 +472,7 @@ export async function removeBinShims(
 ): Promise<void> {
   for (const name of names) {
     const safe = assertSafeSegment(name, 'bin name');
-    await rm(resolveContained(binDir, safe), { force: true });
+    await removeStableFile(resolveContained(binDir, safe));
   }
 }
 

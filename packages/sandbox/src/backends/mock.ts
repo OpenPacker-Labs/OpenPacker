@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { join, parse } from 'node:path';
 import type { SandboxBackend } from '../types.js';
 
 /**
@@ -171,47 +172,117 @@ export async function spawnCapture(input: {
         env: { ...input.env },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
-        ...(signal === undefined ? {} : { signal }),
       });
       const output = new BoundedOutput({
         maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
         maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,
         maximumOutputBytes: input.maximumOutputBytes ?? 2 * 1024 * 1024,
       });
-      let terminated = false;
-      const terminateTree = () => {
-        if (terminated) return;
-        terminated = true;
-        try {
-          if (process.platform !== 'win32' && child.pid)
-            process.kill(-child.pid, 'SIGKILL');
-          else child.kill('SIGKILL');
-        } catch {
-          child.kill('SIGKILL');
-        }
+      let termination: Promise<void> | undefined;
+      let aborted = false;
+      let settled = false;
+      const terminateTree = (reason: 'limit' | 'abort') => {
+        aborted ||= reason === 'abort';
+        return (termination ??= terminateProcessTree(child));
       };
       child.stdout?.on('data', (chunk: unknown) => {
-        if (!output.push('stdout', chunk)) terminateTree();
+        if (!output.push('stdout', chunk)) void terminateTree('limit');
       });
       child.stderr?.on('data', (chunk: unknown) => {
-        if (!output.push('stderr', chunk)) terminateTree();
+        if (!output.push('stderr', chunk)) void terminateTree('limit');
       });
+      const onAbort = () => void terminateTree('abort');
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
       child.on('error', (err) => {
-        if ((err as NodeJS.ErrnoException).name === 'AbortError') {
-          const result = output.result(124);
-          resolvePromise({
-            ...result,
-            stderr: `${result.stderr}\nopenpacker sandbox: process timed out\n`,
-          });
-          return;
-        }
+        signal?.removeEventListener('abort', onAbort);
+        settled = true;
         reject(err);
       });
-      child.on('close', (code) => {
-        resolvePromise(output.result(code ?? 1));
+      child.on('close', async (code) => {
+        await termination;
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        const result = output.result(aborted ? 124 : (code ?? 1));
+        resolvePromise(
+          aborted
+            ? {
+                ...result,
+                stderr: `${result.stderr}\nopenpacker sandbox: process aborted or timed out\n`,
+              }
+            : result,
+        );
       });
     });
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+async function terminateProcessTree(child: ChildProcess): Promise<void> {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    const taskkill = join(
+      parse(process.execPath).root,
+      'Windows',
+      'System32',
+      'taskkill.exe',
+    );
+    const killed = await new Promise<boolean>((resolve) => {
+      const killer = spawn(taskkill, ['/PID', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      killer.once('error', () => resolve(false));
+      killer.once('close', (code) => resolve(code === 0));
+    });
+    if (killed) return;
+    child.kill('SIGKILL');
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, 'SIGSTOP');
+  } catch {
+    // The process may already be exiting; still collect escaped descendants.
+  }
+  for (const pid of descendantPids(child.pid).reverse()) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // A process that exited between the snapshot and kill is already safe.
+    }
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
+function descendantPids(root: number): number[] {
+  const result = spawnSync('/bin/ps', ['-axo', 'pid=,ppid='], {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0 || typeof result.stdout !== 'string') return [];
+  const children = new Map<number, number[]>();
+  for (const line of result.stdout.split('\n')) {
+    const [pidText, parentText] = line.trim().split(/\s+/u);
+    const pid = Number(pidText);
+    const parent = Number(parentText);
+    if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(parent)) continue;
+    const list = children.get(parent) ?? [];
+    list.push(pid);
+    children.set(parent, list);
+  }
+  const descendants: number[] = [];
+  const pending = [...(children.get(root) ?? [])];
+  while (pending.length > 0) {
+    const pid = pending.pop()!;
+    descendants.push(pid);
+    pending.push(...(children.get(pid) ?? []));
+  }
+  return descendants;
 }

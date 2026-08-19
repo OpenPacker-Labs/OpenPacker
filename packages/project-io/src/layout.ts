@@ -9,8 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
-  chmod,
-  copyFile,
+  lstat,
   mkdir,
   open,
   readdir,
@@ -19,7 +18,7 @@ import {
   stat,
   type FileHandle,
 } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, parse, relative, resolve, sep } from 'node:path';
 import { ProjectIoError } from './index.js';
 
 export interface MaterialiseResult {
@@ -41,7 +40,7 @@ export async function materialiseTree(
   root: string,
 ): Promise<MaterialiseResult> {
   assertContained(root, destination);
-  const rootHandle = await openDirectory(root, true);
+  const rootHandle = await openStableDirectory(root, true);
   const handles: FileHandle[] = [rootHandle];
   const result: MaterialiseResult = { files: 0, copied: false };
   let staging: string | undefined;
@@ -62,15 +61,25 @@ export async function materialiseTree(
 
     const parentPath = handlePath(parent);
     staging = join(parentPath, `.${name}.openpacker-${randomUUID()}`);
-    await mkdir(staging);
+    await mkdir(staging, { mode: 0o700 });
     const stagingHandle = await openDirectory(staging, false);
     handles.push(stagingHandle);
-    const sourceHandle = await openDirectory(source, false);
+    const sourceHandle = await openStableDirectory(source, false);
     handles.push(sourceHandle);
     await walk(sourceHandle, stagingHandle, result);
     const published = join(parentPath, name);
+    await assertNamedHandle(staging, stagingHandle);
     await rm(published, { recursive: true, force: true });
+    await assertNamedHandle(staging, stagingHandle);
     await rename(staging, published);
+    try {
+      await assertNamedHandle(published, stagingHandle);
+    } catch (error) {
+      await rm(published, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+      throw error;
+    }
     staging = undefined;
     return result;
   } catch (error) {
@@ -123,17 +132,90 @@ async function walk(
       from,
       constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
     );
+    let output: FileHandle | undefined;
     try {
-      const info = await file.stat();
-      if (!info.isFile()) throw unsafe(from);
-      await copyFile(handlePath(file), to, constants.COPYFILE_EXCL);
-      await chmod(to, (info.mode & 0o111) !== 0 ? 0o755 : 0o644);
+      const before = await file.stat({ bigint: true });
+      if (!before.isFile()) throw unsafe(from);
+      if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw unsafe(from);
+      const size = Number(before.size);
+      output = await open(
+        to,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_EXCL |
+          constants.O_NOFOLLOW,
+        (before.mode & 0o111n) !== 0n ? 0o755 : 0o644,
+      );
+      const buffer = new Uint8Array(64 * 1024);
+      let offset = 0;
+      while (offset < size) {
+        const length = Math.min(size - offset, buffer.byteLength);
+        const { bytesRead } = await file.read(buffer, 0, length, offset);
+        if (bytesRead === 0) break;
+        await output.write(buffer, 0, bytesRead, offset);
+        offset += bytesRead;
+      }
+      await output.sync();
+      const [after, outputInfo, namedOutput] = await Promise.all([
+        file.stat({ bigint: true }),
+        output.stat({ bigint: true }),
+        lstat(to, { bigint: true }),
+      ]);
+      if (
+        BigInt(offset) !== before.size ||
+        after.dev !== before.dev ||
+        after.ino !== before.ino ||
+        after.size !== before.size ||
+        after.ctimeNs !== before.ctimeNs ||
+        after.mtimeNs !== before.mtimeNs ||
+        outputInfo.dev !== namedOutput.dev ||
+        outputInfo.ino !== namedOutput.ino
+      )
+        throw unsafe(from);
+      await output.chmod((before.mode & 0o111n) !== 0n ? 0o755 : 0o644);
       result.copied = true;
     } finally {
+      await output?.close().catch(() => undefined);
       await file.close();
     }
     result.files += 1;
   }
+}
+
+async function openStableDirectory(
+  path: string,
+  create: boolean,
+): Promise<FileHandle> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  let handle = await openDirectory(root, false);
+  try {
+    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+      const child = join(handlePath(handle), part);
+      if (create)
+        await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'EEXIST') throw error;
+        });
+      const next = await openDirectory(child, false);
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function assertNamedHandle(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  const [opened, named] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(path, { bigint: true }),
+  ]);
+  if (opened.dev !== named.dev || opened.ino !== named.ino) throw unsafe(path);
 }
 
 async function openDirectory(
@@ -150,6 +232,14 @@ async function openDirectory(
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     );
     if (!(await handle.stat()).isDirectory()) {
+      await handle.close();
+      throw unsafe(path);
+    }
+    const [opened, referenced] = await Promise.all([
+      handle.stat({ bigint: true }),
+      stat(handlePath(handle), { bigint: true }),
+    ]);
+    if (opened.dev !== referenced.dev || opened.ino !== referenced.ino) {
       await handle.close();
       throw unsafe(path);
     }
@@ -172,6 +262,12 @@ function handlePath(handle: FileHandle): string {
     String(handle.fd),
     'Native layout requires stable no-follow directory handles on this platform',
   );
+}
+
+export function supportsStableTreeLayout(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'linux' || platform === 'darwin';
 }
 
 function unsafe(path: string): ProjectIoError {
@@ -202,7 +298,7 @@ function assertContained(root: string, destination: string): void {
 
 /** Remove a layout directory if it exists. */
 export async function removeTree(path: string): Promise<void> {
-  const parent = await openDirectory(dirname(resolve(path)), false);
+  const parent = await openStableDirectory(dirname(resolve(path)), false);
   try {
     await rm(join(handlePath(parent), resolve(path).split(sep).at(-1)!), {
       recursive: true,

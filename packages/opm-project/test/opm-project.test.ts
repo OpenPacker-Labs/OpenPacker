@@ -1,8 +1,11 @@
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -48,6 +51,7 @@ import {
   whyPackage,
   OpmError,
 } from '../src/index.js';
+import { writeStableFile } from '../src/paths.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureCatalog = join(repoRoot, 'fixtures/opm/catalog.json');
@@ -267,6 +271,90 @@ describe('path containment', () => {
 });
 
 describe('fail-closed install paths', () => {
+  it('refuses a linked project state without reading outside the project', async () => {
+    const root = await tempProject();
+    const outside = join(root, 'outside-state.json');
+    const statePath = join(root, '.opm/project.json');
+    await writeFile(outside, 'outside');
+    await rm(statePath);
+    await symlink(outside, statePath);
+
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    expect(await readFile(outside, 'utf8')).toBe('outside');
+  });
+
+  it.each(['bin', 'links'])(
+    'validates a linked %s directory even for an empty project state',
+    async (name) => {
+      const root = await tempProject();
+      const managed = join(root, '.opm', name);
+      const outside = join(root, `outside-${name}`);
+      await rm(managed, { recursive: true });
+      await mkdir(outside);
+      await writeFile(join(outside, 'marker'), 'untouched');
+      await symlink(outside, managed, 'dir');
+
+      await expect(
+        readProjectState(join(root, '.opm/project.json')),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(await readdir(outside)).toEqual(['marker']);
+    },
+  );
+
+  it('replaces a linked final shim without changing its target', async () => {
+    const root = await tempProject();
+    const outside = join(root, 'outside-shim');
+    const shim = join(root, '.opm/bin/demo-tool');
+    await writeFile(outside, 'untouched');
+    await symlink(outside, shim);
+
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+
+    expect((await lstat(shim)).isFile()).toBe(true);
+    expect(await readFile(outside, 'utf8')).toBe('untouched');
+  });
+
+  it('detects an ancestor swap during stable publication', async () => {
+    const root = await tempProject();
+    const bin = join(root, '.opm/bin');
+    const outside = join(root, 'outside-bin');
+    const backup = join(root, '.opm/bin-original');
+    await mkdir(outside);
+
+    let settled = false;
+    const writing = writeStableFile(
+      join(bin, 'large-shim'),
+      new Uint8Array(16 * 1024 * 1024),
+      0o755,
+    );
+    void writing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    let observed = false;
+    while (!settled && !observed) {
+      observed = (await readdir(bin)).some((entry) => entry.endsWith('.tmp'));
+      if (!observed)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(observed).toBe(true);
+    await rename(bin, backup);
+    await symlink(outside, bin, 'dir');
+
+    await expect(writing).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    expect(await readdir(outside)).toEqual([]);
+  });
+
   it('refuses network fetches while offline', async () => {
     await expect(
       fetchArtifactBytes('https://registry.example.invalid/pkg.tgz', true),

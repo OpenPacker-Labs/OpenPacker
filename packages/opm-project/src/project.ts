@@ -47,6 +47,7 @@ import {
 import {
   assertSafeSegment,
   CATALOG_NAME,
+  ensureStableDirectory,
   LOCK_NAME,
   MANIFEST_NAME,
   parentDirs,
@@ -122,10 +123,10 @@ export async function initProject(input: {
   const manifest = defaultManifest(name);
   await mkdir(paths.root, { recursive: true });
   await writeFile(paths.manifest, serializeManifest(manifest), 'utf8');
-  await mkdir(paths.opmDir, { recursive: true });
-  await mkdir(paths.store, { recursive: true });
-  await mkdir(paths.bin, { recursive: true });
-  await mkdir(paths.links, { recursive: true });
+  await ensureStableDirectory(paths.opmDir);
+  await ensureStableDirectory(paths.store);
+  await ensureStableDirectory(paths.bin);
+  await ensureStableDirectory(paths.links);
   if (!(await fileExists(paths.lock))) {
     await writeLockfile(paths.lock, emptyLockfile());
   }

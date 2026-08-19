@@ -281,12 +281,36 @@ describe('safe materialization', () => {
         { ...DEFAULT_MATERIALIZATION_LIMITS, maximumFiles: 1 },
       ),
     ).rejects.toMatchObject({ code: 'FILE_COUNT_LIMIT' });
+
+    const invalidAfterLimit = tar([
+      { name: 'one', data: '1' },
+      { name: 'two', data: '2' },
+    ]);
+    invalidAfterLimit[1024 + 148] = invalidAfterLimit[1024 + 148]! ^ 0xff;
+    await expect(
+      inspectArchive(invalidAfterLimit, 'tar', {
+        ...DEFAULT_MATERIALIZATION_LIMITS,
+        maximumFiles: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'FILE_COUNT_LIMIT' });
     await expect(
       inspectArchive(tar([{ name: 'large', data: '12345' }]), 'tar', {
         ...DEFAULT_MATERIALIZATION_LIMITS,
         maximumExpandedBytes: 4,
       }),
     ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
+  });
+
+  it('rejects a file used as an ancestor before materialization', async () => {
+    await expect(
+      inspectArchive(
+        tar([
+          { name: 'parent', data: 'file' },
+          { name: 'parent/child', data: 'child' },
+        ]),
+        'tar',
+      ),
+    ).rejects.toMatchObject({ code: 'FILE_AS_DIRECTORY' });
   });
 
   it('drains gzip output concurrently and rejects a backpressure-sized bomb', async () => {

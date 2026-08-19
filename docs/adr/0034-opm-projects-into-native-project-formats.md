@@ -60,6 +60,11 @@ in a real project.
 The ADR 0022 sentence about not replacing native layouts is amended, not
 deleted: the `layout` level exists, but it is opt-in, and it states in its loss
 that the result is _equivalent to_ rather than _produced by_ the native tool.
+Native layout projection is limited to Linux and macOS, where OpenPacker can
+traverse and publish through runtime-verified no-follow directory handles.
+Windows refuses `layout` projection with `UNSAFE_PATH`; `manifest` and `lock`
+projection remain available there until Node exposes an equivalent safe
+fd-relative filesystem primitive.
 
 `opm` is now safe to run in an existing npm or .NET project: it adds what it
 manages and leaves everything else where it was. That is the property that made

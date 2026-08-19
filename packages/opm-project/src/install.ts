@@ -1,16 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import {
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { lstat, open, realpath, rm } from 'node:fs/promises';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   descriptorForBytes,
@@ -38,10 +29,17 @@ import {
 import {
   assertSafeSegment,
   assertStoreKey,
+  ensureStableDirectory,
+  openStableDirectory,
   projectPaths,
+  readStableFile,
+  removeStableFile,
+  removeStableTree,
   resolveContained,
   storeKeyFromDigest,
   storePathForDigest,
+  stableHandlePath,
+  writeStableFile,
 } from './paths.js';
 import {
   detectNpmLifecycleScripts,
@@ -61,7 +59,7 @@ export async function readProjectState(
   path: string,
 ): Promise<ProjectState | undefined> {
   try {
-    const text = await readFile(path, 'utf8');
+    const text = await readStableFile(path);
     return await validateProjectState(JSON.parse(text) as unknown, path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
@@ -80,6 +78,10 @@ async function validateProjectState(
   const paths = projectPaths(root);
   if (resolve(statePath) !== paths.projectState)
     throw invalidState(`state path must be ${paths.projectState}`);
+  await assertRealDirectory(paths.opmDir, 'project metadata directory');
+  const realStoreRoot = await assertRealDirectory(paths.store, 'project store');
+  await assertRealDirectory(paths.bin, 'project bin directory');
+  await assertRealDirectory(paths.links, 'project links directory');
   const validated: ProjectState['packages'] = {};
 
   for (const [key, raw] of Object.entries(packages)) {
@@ -94,11 +96,6 @@ async function validateProjectState(
     const expectedStore = storePathForDigest(root, digest);
     if (record.storePath !== expectedStore)
       throw invalidState(`${alias}.storePath is not derived from its digest`);
-    await assertRealDirectory(paths.opmDir, 'project metadata directory');
-    const realStoreRoot = await assertRealDirectory(
-      paths.store,
-      'project store',
-    );
     const realPackage = await assertRealDirectory(
       expectedStore,
       `${alias} store path`,
@@ -189,10 +186,14 @@ async function assertRealDirectory(
   path: string,
   name: string,
 ): Promise<string> {
-  const info = await lstat(path).catch(() => undefined);
-  if (!info?.isDirectory() || info.isSymbolicLink())
+  const handle = await openStableDirectory(path).catch(() => undefined);
+  if (!handle)
     throw invalidState(`${name} is missing, linked, or not a directory`);
-  return await realpath(path);
+  try {
+    return await realpath(stableHandlePath(handle));
+  } finally {
+    await handle.close();
+  }
 }
 
 function isContained(root: string, target: string): boolean {
@@ -207,8 +208,7 @@ export async function writeProjectState(
   path: string,
   state: ProjectState,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  await writeStableFile(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 export async function fetchArtifactBytes(
@@ -452,8 +452,8 @@ export async function materializeLockPackage(input: {
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
   const storePath = storePathForDigest(input.root, input.pkg.digest);
   const archivePath = `${storePath}.artifact`;
-  await ensureLocalDirectory(paths.opmDir, 'project metadata directory');
-  await ensureLocalDirectory(paths.store, 'project store');
+  await ensureStableDirectory(paths.opmDir);
+  await ensureStableDirectory(paths.store);
   let cached = false;
   let bytes = input.bytes;
   if (bytes === undefined && !input.force) {
@@ -484,8 +484,6 @@ export async function materializeLockPackage(input: {
     );
   }
 
-  await rm(storePath, { recursive: true, force: true });
-
   const descriptor = await descriptorForBytes({
     bytes,
     descriptorId: input.pkg.storeKey,
@@ -494,34 +492,43 @@ export async function materializeLockPackage(input: {
     nativeRole: 'native-package',
   });
 
-  await materialize({
-    source: bytesSource(bytes),
-    descriptor,
-    destination: storePath,
-    format: input.pkg.format as ArchiveFormat,
-  });
-  if (!cached || input.force) await persistArtifact(archivePath, bytes);
-
-  // Lifecycle scripts: default never run. When allowlisted, run only in jail.
   let lifecycleScriptsExecuted = false;
   let sandboxOutcomes: SandboxOutcome[] = [];
-  if (input.pkg.ecosystem === 'npm') {
-    const declared = await detectNpmLifecycleScripts(storePath);
-    if (
-      hasLifecycleScripts(declared) &&
-      lifecycleScriptsAllowed(input.policy, input.pkg.purl)
-    ) {
-      const packageDir = storePath;
-      const result = await runDeclaredLifecycleScripts({
-        declared,
-        packageDir,
-        packageId: input.pkg.purl,
-        policy: input.policy,
-      });
-      lifecycleScriptsExecuted = result.executed;
-      sandboxOutcomes = result.outcomes;
+  const storeHandle = await openStableDirectory(paths.store);
+  try {
+    const stableStorePath = join(
+      stableHandlePath(storeHandle),
+      basename(storePath),
+    );
+    await rm(stableStorePath, { recursive: true, force: true });
+    await materialize({
+      source: bytesSource(bytes),
+      descriptor,
+      destination: stableStorePath,
+      format: input.pkg.format as ArchiveFormat,
+    });
+
+    // Lifecycle scripts: default never run. When allowlisted, run only in jail.
+    if (input.pkg.ecosystem === 'npm') {
+      const declared = await detectNpmLifecycleScripts(stableStorePath);
+      if (
+        hasLifecycleScripts(declared) &&
+        lifecycleScriptsAllowed(input.policy, input.pkg.purl)
+      ) {
+        const result = await runDeclaredLifecycleScripts({
+          declared,
+          packageDir: stableStorePath,
+          packageId: input.pkg.purl,
+          policy: input.policy,
+        });
+        lifecycleScriptsExecuted = result.executed;
+        sandboxOutcomes = result.outcomes;
+      }
     }
+  } finally {
+    await storeHandle.close();
   }
+  if (!cached || input.force) await persistArtifact(archivePath, bytes);
 
   let bins: BinDeclaration[] =
     input.pkg.bins.length > 0
@@ -544,9 +551,9 @@ export async function installFromLock(input: {
   policy?: PolicyInput;
 }): Promise<ProjectState> {
   const paths = projectPaths(input.root);
-  await mkdir(paths.opmDir, { recursive: true });
-  await mkdir(paths.bin, { recursive: true });
-  await mkdir(paths.links, { recursive: true });
+  await ensureStableDirectory(paths.opmDir);
+  await ensureStableDirectory(paths.bin);
+  await ensureStableDirectory(paths.links);
 
   const state = (await readProjectState(paths.projectState)) ?? {
     schemaVersion: 1 as const,
@@ -624,10 +631,9 @@ export async function installFromLock(input: {
       ...(pkg.ecosystem === 'pypi' ? { pythonPath: pythonStoreRoots } : {}),
     });
 
-    await writeFile(
+    await writeStableFile(
       resolveContained(paths.links, alias),
       `${JSON.stringify({ alias, purl: pkg.purl, storePath, digest: pkg.digest }, null, 2)}\n`,
-      'utf8',
     );
 
     if (lifecycleScriptsExecuted) anyLifecycle = true;
@@ -691,10 +697,10 @@ export async function uninstallPackages(input: {
       paths.bin,
       record.bins.map((b) => b.name),
     );
-    await rm(resolveContained(paths.links, safeAlias), { force: true });
+    await removeStableFile(resolveContained(paths.links, safeAlias));
     if (input.removeStore) {
-      await rm(record.storePath, { recursive: true, force: true });
-      await rm(`${record.storePath}.artifact`, { force: true });
+      await removeStableTree(record.storePath);
+      await removeStableFile(`${record.storePath}.artifact`);
     }
     delete state.packages[alias];
     delete state.packages[safeAlias];
@@ -764,8 +770,8 @@ export async function uninstallAll(root: string): Promise<void> {
     });
   }
   // clear bin dir shims
-  await rm(paths.bin, { recursive: true, force: true });
-  await mkdir(paths.bin, { recursive: true });
+  await removeStableTree(paths.bin);
+  await ensureStableDirectory(paths.bin);
 }
 
 export function lockPackageFromSource(input: {
@@ -797,29 +803,8 @@ export function lockPackageFromSource(input: {
   };
 }
 
-async function ensureLocalDirectory(path: string, name: string): Promise<void> {
-  try {
-    await mkdir(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-  }
-  const info = await lstat(path);
-  if (!info.isDirectory() || info.isSymbolicLink())
-    throw new OpmError(
-      'UNSAFE_PATH',
-      `${name} is linked or is not a directory: ${path}`,
-    );
-}
-
 async function persistArtifact(path: string, bytes: Uint8Array): Promise<void> {
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, bytes, { flag: 'wx', mode: 0o444 });
-    await rm(path, { force: true });
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined);
-  }
+  await writeStableFile(path, bytes, 0o444);
 }
 
 export function inferFormat(source: string, mediaType?: string): ArchiveFormat {

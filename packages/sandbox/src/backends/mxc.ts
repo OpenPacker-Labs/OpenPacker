@@ -115,7 +115,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           on: (event: string, cb: (...args: unknown[]) => void) => void;
           kill?: (signal?: NodeJS.Signals) => void;
         };
-        return await collectChild(child, input, input.signal);
+        return await collectMxcChild(child, input, input.signal);
       }
 
       // Last resort: do not pretend — surface unavailability.
@@ -137,7 +137,7 @@ function quoteCommandLine(argv: readonly string[]): string {
     .join(' ');
 }
 
-async function collectChild(
+export async function collectMxcChild(
   child: {
     stdout?: NodeJS.ReadableStream | null;
     stderr?: NodeJS.ReadableStream | null;
@@ -158,28 +158,50 @@ async function collectChild(
 }> {
   return await new Promise((resolve, reject) => {
     const output = new BoundedOutput(limits);
-    const onAbort = () => {
+    let aborted = false;
+    let terminationTimer: ReturnType<typeof setTimeout> | undefined;
+    const terminate = () => {
+      if (terminationTimer) return;
       try {
-        child.kill?.('SIGTERM');
+        child.kill?.('SIGKILL');
       } catch {
-        // ignore
+        // The close/error event remains authoritative.
       }
+      terminationTimer = setTimeout(
+        () =>
+          reject(
+            new SandboxBackendError(
+              'TERMINATION_FAILED',
+              'MXC process did not terminate after kill',
+            ),
+          ),
+        5_000,
+      );
+    };
+    const onAbort = () => {
+      aborted = true;
+      terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout?.on('data', (d: unknown) => {
-      if (!output.push('stdout', d)) child.kill?.('SIGKILL');
+      if (!output.push('stdout', d)) terminate();
     });
     child.stderr?.on('data', (d: unknown) => {
-      if (!output.push('stderr', d)) child.kill?.('SIGKILL');
+      if (!output.push('stderr', d)) terminate();
     });
     child.on('error', (err: unknown) => {
       signal?.removeEventListener('abort', onAbort);
+      if (terminationTimer) clearTimeout(terminationTimer);
       reject(err);
     });
     child.on('close', (code: unknown) => {
       signal?.removeEventListener('abort', onAbort);
-      resolve(output.result(typeof code === 'number' ? code : 1));
+      if (terminationTimer) clearTimeout(terminationTimer);
+      resolve(
+        output.result(aborted ? 124 : typeof code === 'number' ? code : 1),
+      );
     });
+    if (signal?.aborted) onAbort();
   });
 }
 

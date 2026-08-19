@@ -1,12 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { readdir, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
@@ -14,7 +7,18 @@ import {
   type InstalledPackageRecord,
   type ProjectState,
 } from './types.js';
-import { assertSafeSegment, projectPaths, resolveContained } from './paths.js';
+import {
+  assertSafeSegment,
+  ensureStableDirectory,
+  openStableDirectory,
+  projectPaths,
+  readStableFile,
+  removeStableFile,
+  removeStableTree,
+  resolveContained,
+  stableHandlePath,
+  writeStableFile,
+} from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
 
@@ -164,7 +168,7 @@ export async function readStoreReferences(
   const paths = environmentPaths(root);
   try {
     const parsed = JSON.parse(
-      await readFile(paths.storeReferences, 'utf8'),
+      await readStableFile(paths.storeReferences),
     ) as StoreReferences;
     if (parsed.referencesVersion !== '1')
       throw new OpmError(
@@ -196,14 +200,10 @@ async function writeStoreReferences(
       )
       .sort((left, right) => (left[0] < right[0] ? -1 : 1)),
   );
-  await mkdir(paths.opmDir, { recursive: true });
-  const temporary = `${paths.storeReferences}.tmp`;
-  await writeFile(
-    temporary,
+  await writeStableFile(
+    paths.storeReferences,
     `${JSON.stringify({ referencesVersion: '1', edges }, null, 2)}\n`,
-    'utf8',
   );
-  await rename(temporary, paths.storeReferences);
 }
 
 /**
@@ -249,7 +249,7 @@ export async function readEnvironmentState(
 ): Promise<EnvironmentState | undefined> {
   try {
     return JSON.parse(
-      await readFile(environmentPaths(root).environmentState, 'utf8'),
+      await readStableFile(environmentPaths(root).environmentState),
     ) as EnvironmentState;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
@@ -263,10 +263,10 @@ async function writeEnvironmentState(
   state: EnvironmentState,
 ): Promise<void> {
   const paths = environmentPaths(root);
-  await mkdir(paths.opmDir, { recursive: true });
-  const temporary = `${paths.environmentState}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-  await rename(temporary, paths.environmentState);
+  await writeStableFile(
+    paths.environmentState,
+    `${JSON.stringify(state, null, 2)}\n`,
+  );
 }
 
 export async function readGeneration(
@@ -276,7 +276,7 @@ export async function readGeneration(
   const paths = environmentPaths(root);
   try {
     const generation = JSON.parse(
-      await readFile(generationFile(paths.generations, digest), 'utf8'),
+      await readStableFile(generationFile(paths.generations, digest)),
     ) as Generation;
     // A record whose digest does not match its content has been edited.
     const { generationDigest: stored, ...body } = generation;
@@ -296,11 +296,15 @@ export async function readGeneration(
 export async function listGenerations(root: string): Promise<Generation[]> {
   const paths = environmentPaths(root);
   let names: string[];
+  let handle: FileHandle | undefined;
   try {
-    names = await readdir(paths.generations);
+    handle = await openStableDirectory(paths.generations);
+    names = await readdir(stableHandlePath(handle));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
+  } finally {
+    await handle?.close();
   }
   const generations = await Promise.all(
     names
@@ -385,11 +389,10 @@ export async function recordGeneration(input: {
   if (previous && contentKey(previous) === contentKey(generation))
     return previous;
 
-  await mkdir(paths.generations, { recursive: true });
-  await writeFile(
+  await ensureStableDirectory(paths.generations);
+  await writeStableFile(
     generationFile(paths.generations, generation.generationDigest),
     `${JSON.stringify(generation, null, 2)}\n`,
-    'utf8',
   );
   await writeEnvironmentState(input.root, {
     stateVersion: '1',
@@ -507,14 +510,20 @@ export async function collectableStorePaths(input: {
     pending.push(...(edges.get(current) ?? []));
   }
   let present: string[];
+  let storeHandle: FileHandle | undefined;
   try {
-    present = (await readdir(paths.store, { withFileTypes: true }))
+    storeHandle = await openStableDirectory(paths.store);
+    present = (
+      await readdir(stableHandlePath(storeHandle), { withFileTypes: true })
+    )
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(paths.store, entry.name));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       return { collectable: [], retained };
     throw error;
+  } finally {
+    await storeHandle?.close();
   }
   return {
     collectable: present.filter((path) => !reachable.has(path)).sort(),
@@ -532,8 +541,8 @@ export async function collectGarbage(input: {
   if (input.dryRun) return { removed: collectable, retained };
 
   for (const path of collectable) {
-    await rm(path, { recursive: true, force: true });
-    await rm(`${path}.artifact`, { force: true });
+    await removeStableTree(path);
+    await removeStableFile(`${path}.artifact`);
   }
 
   // Forget edges whose source was just collected. The ledger accumulates
@@ -566,9 +575,9 @@ export async function collectGarbage(input: {
     const paths = environmentPaths(input.root);
     for (const generation of await listGenerations(input.root)) {
       if (keepDigests.has(generation.generationDigest)) continue;
-      await rm(generationFile(paths.generations, generation.generationDigest), {
-        force: true,
-      });
+      await removeStableFile(
+        generationFile(paths.generations, generation.generationDigest),
+      );
     }
     await writeEnvironmentState(input.root, {
       ...state,
@@ -661,8 +670,8 @@ export async function activateGeneration(input: {
   generation: Generation;
 }): Promise<ProjectState> {
   const paths = environmentPaths(input.root);
-  await mkdir(paths.bin, { recursive: true });
-  await mkdir(paths.links, { recursive: true });
+  await ensureStableDirectory(paths.bin);
+  await ensureStableDirectory(paths.links);
 
   const previous = await readProjectState(paths.projectState);
   for (const record of Object.values(previous?.packages ?? {}))
@@ -708,7 +717,7 @@ export async function activateGeneration(input: {
       storeRoot: member.storePath,
       bins,
     });
-    await writeFile(
+    await writeStableFile(
       resolveContained(paths.links, alias),
       `${JSON.stringify(
         {
@@ -720,7 +729,6 @@ export async function activateGeneration(input: {
         null,
         2,
       )}\n`,
-      'utf8',
     );
     state.packages[alias] = {
       alias,
