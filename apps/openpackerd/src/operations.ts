@@ -5,9 +5,11 @@ import {
 } from '@openpacker/artifact-model';
 import {
   canonicalDigest,
+  canonicalProjectionDigest,
   compareCanonicalStrings,
   formatDigest,
 } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import type {
   ArtifactDescriptor,
   Capabilities,
@@ -78,6 +80,17 @@ import {
 } from '@openpacker/policy';
 import type { Signer, Verifier } from '@openpacker/trust';
 import { verifySourceSnapshot, type OpenPackerStateStore } from './store.js';
+
+function projectedDigest(
+  id: 'proof-v1' | 'explanation-v1' | 'artifact-set-v1',
+  value: JsonValue,
+) {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!projection) throw new Error(`Missing digest projection ${id}`);
+  return canonicalProjectionDigest(value, projection);
+}
 
 export interface OperationContext {
   signal: AbortSignal;
@@ -351,17 +364,17 @@ export function createReferenceOperations(
           `Independent proof check failed: ${check.diagnostics.join('; ')}`,
         );
       const explanation = output.explanation as unknown as ExplanationGraph;
-      const proofDigest = await canonicalDigest(
+      const proofDigest = await projectedDigest(
+        'proof-v1',
         output.proof as unknown as JsonValue,
       );
-      const explanationDigest = await canonicalDigest(
+      const explanationDigest = await projectedDigest(
+        'explanation-v1',
         explanation as unknown as JsonValue,
       );
-      const artifactSetDigest = await canonicalDigest(
-        output.selected.flatMap(
-          (item) => item.artifacts,
-        ) as unknown as JsonValue,
-      );
+      const artifactSetDigest = await projectedDigest('artifact-set-v1', {
+        items: output.selected.flatMap((item) => item.artifacts),
+      } as unknown as JsonValue);
       const receipt: ResolutionReceipt = {
         receiptVersion: '1',
         protocolVersion: '1.0-draft',

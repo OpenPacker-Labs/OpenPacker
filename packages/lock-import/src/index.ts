@@ -14,10 +14,12 @@ import { parse as parseToml } from 'smol-toml';
 import {
   canonicalBytes,
   canonicalDigest,
+  canonicalProjectionDigest,
   compareCanonicalStrings,
   formatDigest,
   sha256,
 } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import type {
   Digest,
   JsonValue,
@@ -91,6 +93,17 @@ export interface LockImportResult {
 }
 
 const DEFAULT_EVALUATION_TIME = '2026-08-02T00:00:00Z';
+
+function projectedDigest(
+  id: 'proof-v1' | 'explanation-v1' | 'artifact-set-v1',
+  value: JsonValue,
+) {
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!projection) throw new Error(`Missing digest projection ${id}`);
+  return canonicalProjectionDigest(value, projection);
+}
 
 /**
  * Resolve codecs from options or the process adapter registry.
@@ -838,15 +851,17 @@ export async function completeLockImport(
     );
 
   const explanation = output.explanation as SolveResponse['explanation'];
-  const proofDigest = await canonicalDigest(
+  const proofDigest = await projectedDigest(
+    'proof-v1',
     output.proof as unknown as JsonValue,
   );
-  const explanationDigest = await canonicalDigest(
+  const explanationDigest = await projectedDigest(
+    'explanation-v1',
     explanation as unknown as JsonValue,
   );
-  const artifactSetDigest = await canonicalDigest(
-    output.selected.flatMap((item) => item.artifacts) as unknown as JsonValue,
-  );
+  const artifactSetDigest = await projectedDigest('artifact-set-v1', {
+    items: output.selected.flatMap((item) => item.artifacts),
+  } as unknown as JsonValue);
   const protocolVersion =
     meta.protocolVersion === '1.0-draft' || meta.protocolVersion === undefined
       ? ('1.0-draft' as const)

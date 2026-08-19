@@ -13,7 +13,7 @@ use crate::{
     ExplanationGraph, ExplanationNode, PackageInstance, ProofCheck, RequirementExpression,
     RequirementWitness, ResolutionProof, ResolutionSolution, ResolutionUniverse, ResolverError,
     SelectedAssignment, SolveInput, SolveOutput, SolveRequest, TargetPredicate, canonical_json,
-    digest_json, parse_json_as, version_satisfies,
+    digest_json, digest_projection, parse_json_as, version_satisfies,
 };
 
 pub const MAX_COMPANION_NODES: usize = 22;
@@ -857,8 +857,8 @@ pub(crate) fn build_output(
         .iter()
         .map(|index| input.universe.packages[*index].clone())
         .collect();
-    let request_digest = digest_json(&input.request)?;
-    let universe_digest = digest_json(&input.universe)?;
+    let request_digest = digest_projection(&input.request, "request-v1")?;
+    let universe_digest = digest_projection(&input.universe, "universe-v1")?;
     let witness_platforms = RequirementPlatforms::new(&input.request);
     let mut witnesses = Vec::new();
     let mut satisfied = Vec::new();
@@ -972,7 +972,7 @@ pub(crate) fn build_output(
     solution
         .source_snapshot_digests
         .sort_by(|a, b| a.value.cmp(&b.value));
-    solution.solution_digest = digest_json(&solution)?;
+    solution.solution_digest = digest_projection(&solution, "solution-v1")?;
     let proof = ResolutionProof {
         applied_amendment_digests: Vec::new(),
         proof_version: "1".into(),
@@ -1139,7 +1139,7 @@ pub(crate) fn build_native_output(
     }
 
     output.solution.solution_digest = zero_digest();
-    output.solution.solution_digest = digest_json(&output.solution)?;
+    output.solution.solution_digest = digest_projection(&output.solution, "solution-v1")?;
     output.explanation = explanation(input, &output.solution, &output.proof);
     Ok(output)
 }

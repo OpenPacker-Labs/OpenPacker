@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import { packageNodeId } from '@openpacker/adapter-core';
+import { canonicalProjectionDigest } from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import type {
   JsonValue,
@@ -520,6 +522,47 @@ describe('openpackerd', () => {
       universe.packages[1]!.nodeId,
     ]);
     expect(response.signedReceipt.signatures).toHaveLength(1);
+    const projection = (id: string) => {
+      const value = DIGEST_PROJECTIONS.projections.find(
+        (candidate) => candidate.id === id,
+      );
+      if (!value) throw new Error(`missing projection ${id}`);
+      return value;
+    };
+    expect(response.requestDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.normalizedRequest,
+        projection('request-v1'),
+      ),
+    );
+    expect(response.universeDigest).toEqual(
+      await canonicalProjectionDigest(universe, projection('universe-v1')),
+    );
+    expect(response.solution.solutionDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.solution,
+        projection('solution-v1'),
+      ),
+    );
+    expect(response.signedReceipt.receipt.proofDigest).toEqual(
+      await canonicalProjectionDigest(response.proof, projection('proof-v1')),
+    );
+    expect(response.signedReceipt.receipt.explanationDigest).toEqual(
+      await canonicalProjectionDigest(
+        response.explanation,
+        projection('explanation-v1'),
+      ),
+    );
+    expect(response.signedReceipt.receipt.artifactSetDigest).toEqual(
+      await canonicalProjectionDigest(
+        {
+          items: response.selected.flatMap(
+            (item: PackageInstance) => item.artifacts,
+          ),
+        },
+        projection('artifact-set-v1'),
+      ),
+    );
     for (const profile of [
       'native-capture-v1',
       'native-validated-v1',
