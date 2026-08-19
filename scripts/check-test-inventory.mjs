@@ -17,7 +17,7 @@ function filesIn(path) {
 export function workspaceInventoryFailures(rows) {
   return rows.flatMap((row) => {
     const failures = [];
-    if (!/(?:^|\s)vitest\s+run(?:\s|$)/u.test(row.testScript ?? ''))
+    if (row.testScript !== 'vitest run')
       failures.push(
         `${row.workspace}: test script is not a runnable Vitest gate`,
       );

@@ -15,6 +15,12 @@ test('inventory rejects no-op, empty, skipped-only, and unwired gates', () => {
         activeTests: 1,
       },
       {
+        workspace: 'echo',
+        testScript: 'echo vitest run',
+        discoveredTests: 1,
+        activeTests: 1,
+      },
+      {
         workspace: 'empty',
         testScript: 'vitest run',
         discoveredTests: 0,
@@ -29,6 +35,7 @@ test('inventory rejects no-op, empty, skipped-only, and unwired gates', () => {
     ]),
     [
       'no-op: test script is not a runnable Vitest gate',
+      'echo: test script is not a runnable Vitest gate',
       'empty: Vitest discovered no tests',
       'skipped: discovered suite is skipped or todo only',
     ],
