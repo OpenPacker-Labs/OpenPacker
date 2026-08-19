@@ -125,13 +125,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
   }
 
   async putSnapshot(snapshot: SourceSnapshot | JsonValue): Promise<string> {
-    const source = snapshot as SourceSnapshot;
-    const digest = await sourceSnapshotDigest(snapshot);
-    if (
-      source.rootDigest?.algorithm === 'sha256' &&
-      formatDigest(source.rootDigest) !== formatDigest(digest)
-    )
-      throw new Error('Snapshot root digest does not match its content');
+    const digest = await verifySourceSnapshot(snapshot);
     return this.#put(
       'snapshot',
       digest.algorithm,
@@ -262,6 +256,20 @@ export async function sourceSnapshotDigest(
     ...payload
   } = source;
   return await canonicalDigest(payload as unknown as JsonValue);
+}
+
+export async function verifySourceSnapshot(
+  snapshot: SourceSnapshot | JsonValue,
+): Promise<{ algorithm: 'sha256'; value: string }> {
+  const source = snapshot as SourceSnapshot;
+  const digest = await sourceSnapshotDigest(snapshot);
+  if (
+    source.rootDigest?.algorithm !== 'sha256' ||
+    formatDigest(source.rootDigest) !== formatDigest(digest) ||
+    source.snapshotId !== formatDigest(digest)
+  )
+    throw new Error('Snapshot id or root digest does not match its content');
+  return digest;
 }
 
 function validateDigest(algorithm: string, digest: string): void {

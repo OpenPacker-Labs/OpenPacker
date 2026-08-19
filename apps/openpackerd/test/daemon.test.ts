@@ -14,6 +14,7 @@ import {
   assertDaemonBindAddress,
   assertDaemonPort,
   createOpenPackerDaemon,
+  sourceSnapshotDigest,
   SqliteStateStore,
 } from '../src/index.js';
 import { runDaemon } from '../src/cli.js';
@@ -182,7 +183,7 @@ describe('openpackerd', () => {
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
     const policy = {
       allowYanked: false,
-      allowQuarantined: false,
+      allowQuarantined: true,
       semanticLossMaximum: 'warning' as const,
       requiredEvidence: [],
       permitForensicDigestMaterialization: true,
@@ -240,6 +241,105 @@ describe('openpackerd', () => {
     expect(
       store.getSnapshot('sha256', snapshot.rootDigest.value),
     ).toBeUndefined();
+
+    const rootDigest = await sourceSnapshotDigest(snapshot);
+    const wrongId = {
+      ...snapshot,
+      rootDigest,
+      snapshotId: `sha256:${'a'.repeat(64)}`,
+    };
+    await expect(
+      operations.catalogImport(wrongId, { store } as never),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
+  it('enforces materialization policy facts and fails closed when lifecycle is unknown', async () => {
+    const descriptor = {
+      descriptorId: 'policy-artifact',
+      digest: digest('7'),
+      size: 2,
+      mediaType: 'application/octet-stream',
+      artifactType: 'package',
+      nativeRole: 'native-package',
+      locations: [
+        {
+          transport: 'https' as const,
+          uri: 'https://fixtures.openpacker.dev/package.tgz',
+          priority: 0,
+          rangeSupported: false,
+        },
+      ],
+      referrers: [],
+      externalRefs: [],
+    };
+    const owner = { ...universe.packages[0]!, artifacts: [descriptor] };
+    const unavailable = async (): Promise<never> => {
+      throw new Error('not reached');
+    };
+    const operations = createReferenceOperations({
+      universe: { ...universe, packages: [owner] },
+      resolver: createEmbeddedResolver(bindings),
+      meta: {
+        protocolVersion: '1.0-draft',
+        provider: {
+          id: 'fixture',
+          implementation: 'openpackerd',
+          version: '0.1.0',
+        },
+      },
+      resolverBuildDigest: digest('f'),
+      extensions: {
+        lifecycleApply: unavailable,
+        pack: unavailable,
+        publish: unavailable,
+      },
+    });
+    const basePolicy = {
+      allowYanked: false,
+      allowQuarantined: false,
+      semanticLossMaximum: 'warning' as const,
+      requiredEvidence: [],
+    };
+    const subject = { type: 'artifact' as const, descriptor };
+    await expect(
+      operations.materialize(
+        { subject, policy: { ...basePolicy, maximumArtifactSize: 1 } },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject,
+          policy: { ...basePolicy, allowedProviderIds: ['other'] },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject,
+          policy: {
+            ...basePolicy,
+            allowedArtifactSourceSchemes: ['file'],
+          },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      operations.materialize(
+        {
+          subject: {
+            type: 'artifact',
+            descriptor: { ...descriptor, digest: digest('6') },
+          },
+          policy: basePolicy,
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
   });
 
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {

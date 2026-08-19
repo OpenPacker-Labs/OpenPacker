@@ -70,8 +70,14 @@ import {
   type LockFormat,
 } from '@openpacker/lock-import';
 import { signReceipt, verifySignedReceipt } from '@openpacker/receipts';
+import {
+  evaluatePolicy,
+  policyDocumentFromPolicyInput,
+  type PolicyFacts,
+  type SourceKind,
+} from '@openpacker/policy';
 import type { Signer, Verifier } from '@openpacker/trust';
-import { sourceSnapshotDigest, type OpenPackerStateStore } from './store.js';
+import { verifySourceSnapshot, type OpenPackerStateStore } from './store.js';
 
 export interface OperationContext {
   signal: AbortSignal;
@@ -425,6 +431,62 @@ export function createReferenceOperations(
           'LIFECYCLE_DENIED',
           `${owner.lifecycle.status} artifacts require explicit forensic materialization`,
         );
+      if (input.policy) {
+        const policy = policyDocumentFromPolicyInput(input.policy);
+        const sourceSchemes = descriptor.locations.length
+          ? descriptor.locations.map((location) =>
+              typeof location === 'string'
+                ? sourceScheme(location)
+                : (sourceScheme(location.uri) ?? location.transport),
+            )
+          : [undefined];
+        for (const scheme of new Set(sourceSchemes)) {
+          const facts: PolicyFacts = {
+            evidence: [],
+            artifactSize: descriptor.size,
+            provider: options.meta.provider.id,
+            forensicDigestMaterialization: input.forensic === true,
+            semanticLoss: owner?.semanticLoss ?? [],
+            sourceSnapshotDigests: owner?.sourceSnapshots ?? [],
+            ...(owner === undefined ? {} : { lifecycle: owner.lifecycle }),
+            ...(owner === undefined
+              ? {}
+              : {
+                  packageId:
+                    owner.identity.exactPurl ?? owner.identity.canonicalPurl,
+                }),
+            ...(input.context?.evaluationTime === undefined
+              ? {}
+              : { evaluationTime: input.context.evaluationTime }),
+            ...(input.target === undefined
+              ? {}
+              : {
+                  target: {
+                    ...(input.target.os === undefined
+                      ? {}
+                      : { os: input.target.os }),
+                    ...(input.target.architecture === undefined
+                      ? {}
+                      : { architecture: input.target.architecture }),
+                  },
+                }),
+            ...(scheme === undefined ? {} : { sourceScheme: scheme }),
+            sourceKind: materializationSourceKind(owner, scheme),
+            lifecycleScriptsExecuted: false,
+          };
+          const result = await evaluatePolicy(policy, facts);
+          if (result.decision !== 'allow')
+            throw operationError(
+              result.decision === 'deny'
+                ? 'POLICY_DENIED'
+                : 'POLICY_INDETERMINATE',
+              `Materialization policy ${result.decision}: ${result.checks
+                .filter(({ status }) => status !== 'valid')
+                .map(({ code }) => code)
+                .join(', ')}`,
+            );
+        }
+      }
       return {
         meta: options.meta,
         descriptor,
@@ -591,15 +653,15 @@ export function createReferenceOperations(
 
     async catalogImport(input, context) {
       const snapshot = snapshotFrom(input);
-      if (
-        formatDigest(await sourceSnapshotDigest(snapshot)) !==
-        formatDigest(snapshot.rootDigest)
-      )
+      try {
+        await verifySourceSnapshot(snapshot);
+      } catch {
         throw operationError(
           'DIGEST_MISMATCH',
-          'Catalog snapshot root digest does not match its content',
+          'Catalog snapshot id or root digest does not match its content',
           400,
         );
+      }
       const digest = await context.store.putSnapshot(input);
       return { snapshot, digest };
     },
@@ -935,15 +997,17 @@ function findArtifact(
 ): { descriptor: ArtifactDescriptor; package?: PackageInstance } {
   const subject = input.subject;
   if (subject.type === 'artifact') {
-    const owner = packages.find((item) =>
-      item.artifacts.some(
+    let canonicalDescriptor: ArtifactDescriptor | undefined;
+    const owner = packages.find((item) => {
+      canonicalDescriptor = item.artifacts.find(
         (artifact) =>
           formatDigest(artifact.digest) ===
           formatDigest(subject.descriptor.digest),
-      ),
-    );
+      );
+      return canonicalDescriptor !== undefined;
+    });
     return {
-      descriptor: subject.descriptor,
+      descriptor: canonicalDescriptor ?? subject.descriptor,
       ...(owner === undefined ? {} : { package: owner }),
     };
   }
@@ -989,6 +1053,27 @@ function findArtifact(
       'No immutable artifact descriptor matches the materialization subject',
     );
   return { descriptor, ...(owner === undefined ? {} : { package: owner }) };
+}
+
+function sourceScheme(uri: string): string | undefined {
+  try {
+    return new URL(uri).protocol.replace(/:$/u, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function materializationSourceKind(
+  owner: PackageInstance | undefined,
+  scheme: string | undefined,
+): SourceKind {
+  if (scheme === 'file') return 'path';
+  if (scheme === 'git' || scheme?.startsWith('git+')) return 'git';
+  if (scheme === 'oci') return 'oci';
+  if (owner?.identity.sourceRefs.some(({ type }) => type === 'registry'))
+    return 'registry';
+  if (scheme === 'http' || scheme === 'https') return 'tarball';
+  return 'exotic';
 }
 
 function evidenceResult(
