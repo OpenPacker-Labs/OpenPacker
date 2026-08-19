@@ -3,7 +3,8 @@
 ## Status
 
 - Phase: implementing; layers 01 and 02 independently approved
-- Current layer: stack `03-filesystem-resources` on approved layer 02
+- Current layer: `03-filesystem-resources` implemented and awaiting independent
+  review
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -86,3 +87,14 @@ upstream Codex Security release currently has no patched version.
   rotation, status rollback/collision, anonymous token egress, tag exhaustion,
   revocation authenticity, signer-role separation, redirects, and token body
   bounds were adversarially rechecked with no remaining finding.
+- 2026-08-19 layer 03 implementation: sandbox helpers are fixed to trusted
+  system paths and all execution funnels enforce hard output budgets; TAR and
+  OCI materialization enforce count and aggregate limits before allocation or
+  blob fetch; OPM artifact reads are bounded, abortable, regular-file-only and
+  no-follow; canonical artifact bytes are digest-verified before every store
+  reconstruction; project state paths are derived and realpath-confined; and
+  native layouts traverse stable no-follow directory handles. Sandbox 32/32,
+  materializer 17/17, OCI 45/45, project I/O 20/20, npm adapter 16/16, and OPM
+  project 144/144 passed. All three incremental staged gates and the exact
+  `970e2a8..4c0d0bf` 12-gate impact aggregate were green; diff checks were
+  clean.
