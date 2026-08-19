@@ -337,40 +337,19 @@ describe('WIT-shaped bridge', () => {
 });
 
 describe('config discovery without core import tables', () => {
-  const fixturePath = async () => {
-    const { fileURLToPath } = await import('node:url');
-    const { dirname, join } = await import('node:path');
-    return join(
-      dirname(fileURLToPath(import.meta.url)),
-      '../../../fixtures/adapters/external-fixture/index.js',
-    );
-  };
-
-  it('loads an external fixture adapter via imports only', async () => {
+  it('refuses JavaScript imports before their top-level code can execute', async () => {
     const { createRegistryFromDiscovery } = await import('./discovery.js');
-    const registry = await createRegistryFromDiscovery({
-      imports: [await fixturePath()],
-    });
-    expect(registry.has('external-fixture')).toBe(true);
-    expect(registry.codecFor('external-fixture').purlType).toBe(
-      'external-fixture',
-    );
-    const def = await registry.definitionFor('external-fixture');
-    expect(hasResource(def, 'prex.registry.package-metadata/1')).toBe(true);
+    delete (globalThis as { opmImported?: boolean }).opmImported;
     await expect(
-      registry.installerFor('external-fixture'),
-    ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
-  });
-
-  it('refuses to register an imported module whose definition outruns its exports', async () => {
-    const { createRegistryFromDiscovery } = await import('./discovery.js');
-    const dishonest = (await fixturePath()).replace(
-      'external-fixture',
-      'dishonest-fixture',
-    );
-    await expect(
-      createRegistryFromDiscovery({ imports: [dishonest] }),
-    ).rejects.toMatchObject({ code: 'INVALID_ADAPTER' });
+      createRegistryFromDiscovery({
+        imports: [
+          'data:text/javascript,globalThis.opmImported=true;export default {}',
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'ADAPTER_LOAD_DISABLED' });
+    expect(
+      (globalThis as { opmImported?: boolean }).opmImported,
+    ).toBeUndefined();
   });
 });
 
