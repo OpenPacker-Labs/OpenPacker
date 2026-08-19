@@ -67,6 +67,23 @@ export function packZip(entries: readonly ArchiveEntry[]): Uint8Array {
 
 /** Sorted by path so archive order never depends on caller order. */
 function sorted(entries: readonly ArchiveEntry[]): ArchiveEntry[] {
+  const seen = new Set<string>();
+  for (const { path } of entries) {
+    const parts = path.split('/');
+    if (
+      path === '' ||
+      path.startsWith('/') ||
+      path.includes('\\') ||
+      path.includes('\0') ||
+      parts.some(
+        (part) =>
+          part === '' || part === '.' || part === '..' || part.includes(':'),
+      ) ||
+      seen.has(path)
+    )
+      throw new TypeError(`Unsafe or duplicate archive path: ${path}`);
+    seen.add(path);
+  }
   return [...entries].sort((left, right) =>
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
   );

@@ -529,6 +529,10 @@ describe('TOML and tree helpers', () => {
       expect(await collectFiles(join(dir, 'tree'), 'package')).toMatchObject([
         { path: 'package/bin/tool', executable: true },
       ]);
+      await symlink(file, join(dir, 'tree', 'linked'));
+      await expect(collectFiles(join(dir, 'tree'))).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
       await removeTree(join(dir, 'tree'));
       await removeTree(join(dir, 'tree'));
       await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -579,6 +583,12 @@ describe('archives', () => {
     // Reversed input order too: archive order must not depend on the caller.
     expect(packTarGzip(entries)).toEqual(packTarGzip([...entries].reverse()));
     expect(packZip(entries)).toEqual(packZip([...entries].reverse()));
+    for (const path of ['../escape', '/absolute', 'file:stream', 'a\\b']) {
+      expect(() => packZip([{ path, contents: new Uint8Array() }])).toThrow(
+        /Unsafe/u,
+      );
+    }
+    expect(() => packTarGzip([...entries, entries[0]!])).toThrow(/duplicate/u);
   });
 
   it('uses the ustar prefix rather than truncating a long path', async () => {

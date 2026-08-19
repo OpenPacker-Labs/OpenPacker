@@ -103,6 +103,8 @@ export function validateArchivePath(
   // checks below. Both are refused on every platform, because an archive that
   // only extracts safely on Linux is not safely extractable.
   for (const part of parts) {
+    if (part.includes(':'))
+      throw unsafe('WINDOWS_ALTERNATE_DATA_STREAM', input);
     if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))
       throw unsafe('WINDOWS_RESERVED_NAME', input);
     if (/[ .]$/u.test(part)) throw unsafe('WINDOWS_TRAILING_CHARACTER', input);

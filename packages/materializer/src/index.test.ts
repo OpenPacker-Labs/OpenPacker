@@ -157,6 +157,8 @@ describe('safe materialization', () => {
     'C:\\Windows\\system32',
     '\\\\server\\share',
     'a/../../b',
+    'file:stream',
+    'dir/file:$DATA',
   ])('rejects unsafe path %s', (path) => {
     expect(() => validateArchivePath(path)).toThrow();
   });
