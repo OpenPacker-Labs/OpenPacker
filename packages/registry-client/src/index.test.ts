@@ -226,6 +226,77 @@ describe('RegistryClient pagination', () => {
       for await (const _ of client.listAll()) void _;
     }).rejects.toMatchObject({ code: 'INVALID_PROVIDER_RESPONSE' });
   });
+
+  it('bounds unique pages, entries, bytes, and cursor length before yielding excess data', async () => {
+    const one = await entryFor(manifest('one'));
+    const two = await entryFor(manifest('two'));
+    const cases = [
+      {
+        limits: { maximumPages: 1 },
+        page: { packages: [one], metadata: { count: 1, nextCursor: 'next' } },
+        expected: /pages/u,
+      },
+      {
+        limits: { maximumEntries: 1 },
+        page: {
+          packages: [one, two],
+          metadata: { count: 2, nextCursor: null },
+        },
+        expected: /entries/u,
+      },
+      {
+        limits: { maximumBytes: 1 },
+        page: { packages: [], metadata: { count: 0, nextCursor: null } },
+        expected: /bytes/u,
+      },
+      {
+        limits: { maximumCursorLength: 3 },
+        page: { packages: [], metadata: { count: 0, nextCursor: 'long' } },
+        expected: /cursor/u,
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const { transport } = fixtureTransport({
+        '/.well-known/prex-registry': definition(),
+        '/v1/packages': testCase.page,
+      });
+      const client = new RegistryClient({
+        baseUrl: BASE,
+        transport,
+        paginationLimits: testCase.limits,
+      });
+      await expect(async () => {
+        for await (const _entry of client.listAll()) void _entry;
+      }).rejects.toThrow(testCase.expected);
+    }
+  });
+
+  it('imposes a pagination deadline when the caller omits one', async () => {
+    const transport = {
+      async request(request: HttpRequest): Promise<HttpResponse> {
+        if (request.url.endsWith('/.well-known/prex-registry'))
+          return {
+            status: 200,
+            headers: {},
+            body: new TextEncoder().encode(JSON.stringify(definition())),
+            url: request.url,
+          };
+        return new Promise((_resolve, reject) => {
+          const abort = () => reject(request.signal?.reason);
+          request.signal?.addEventListener('abort', abort, { once: true });
+          if (request.signal?.aborted) abort();
+        });
+      },
+    };
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      paginationLimits: { maximumElapsedMilliseconds: 5 },
+    });
+    await expect(async () => {
+      for await (const _entry of client.listAll()) void _entry;
+    }).rejects.toThrow(/milliseconds/u);
+  });
 });
 
 describe('RegistryClient verification', () => {

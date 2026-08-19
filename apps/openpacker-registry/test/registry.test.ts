@@ -709,6 +709,46 @@ describe('federation over external sources', () => {
     await up.close();
     await local.close();
   });
+
+  it('drops digest-inconsistent search results and marks the source unavailable', async () => {
+    const up = await upstream();
+    const local = registry({
+      store: new RegistryStore(),
+      sources: [{ id: 'corrupt', spec: { kind: 'prex', url: BASE } }],
+      registryClientFactory: () =>
+        new RegistryClient({
+          baseUrl: BASE,
+          transport: {
+            async request(request: HttpRequest): Promise<HttpResponse> {
+              const response = await up.inject({
+                method: 'GET',
+                url: request.url.replace(BASE, ''),
+              });
+              const body = response.json();
+              if (request.url.includes('/v1/packages?'))
+                body.packages[0].registryMetadata.manifestDigest.value =
+                  'f'.repeat(64);
+              return {
+                status: response.statusCode,
+                headers: response.headers as Record<string, string>,
+                body: new TextEncoder().encode(JSON.stringify(body)),
+                url: request.url,
+              };
+            },
+          },
+        }),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages?search=upstream-only',
+    });
+    expect(response.json().packages).toEqual([]);
+    expect(response.json().metadata.unavailable).toEqual([
+      { sourceId: 'corrupt', reason: expect.stringMatching(/hashes to/u) },
+    ]);
+    await up.close();
+    await local.close();
+  });
 });
 
 describe('serviceability through the registry', () => {

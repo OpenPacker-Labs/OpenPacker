@@ -60,7 +60,25 @@ export interface RegistryClientOptions {
   revocationTtlMilliseconds?: number;
   /** Injectable clock, so TTL behaviour is testable without waiting. */
   clock?: () => number;
+  /** Caller may tighten, never raise, the mandatory untrusted-pagination limits. */
+  paginationLimits?: Partial<PaginationLimits>;
 }
+
+export interface PaginationLimits {
+  maximumPages: number;
+  maximumEntries: number;
+  maximumBytes: number;
+  maximumCursorLength: number;
+  maximumElapsedMilliseconds: number;
+}
+
+const PAGINATION_LIMITS: PaginationLimits = {
+  maximumPages: 100,
+  maximumEntries: 100_000,
+  maximumBytes: 64 * 1024 * 1024,
+  maximumCursorLength: 4096,
+  maximumElapsedMilliseconds: 30_000,
+};
 
 export interface ListOptions {
   search?: string;
@@ -81,6 +99,7 @@ export class RegistryClient {
   #revocationSerial = 0;
   readonly #revocationTtl: number;
   readonly #clock: () => number;
+  readonly #paginationLimits: PaginationLimits;
 
   constructor(options: RegistryClientOptions) {
     const url = new URL(options.baseUrl);
@@ -108,6 +127,7 @@ export class RegistryClient {
     // minutes by default; a caller running a long process can shorten it.
     this.#revocationTtl = options.revocationTtlMilliseconds ?? 300_000;
     this.#clock = options.clock ?? (() => Date.now());
+    this.#paginationLimits = paginationLimits(options.paginationLimits);
   }
 
   /**
@@ -197,6 +217,12 @@ export class RegistryClient {
 
   /** One page of packages. Prefer `listAll` unless you are paging yourself. */
   async list(options: ListOptions = {}): Promise<PackagePage> {
+    return (await this.#listPage(options)).page;
+  }
+
+  async #listPage(
+    options: ListOptions = {},
+  ): Promise<{ page: PackagePage; bytes: number }> {
     await this.#require(
       options.updatedSince === undefined
         ? 'prex.registry.search/1'
@@ -213,7 +239,14 @@ export class RegistryClient {
       ['cursor', options.cursor],
     ] as const)
       if (value !== undefined && value !== '') url.searchParams.set(key, value);
-    return (await this.#json(url.toString(), options.signal)) as PackagePage;
+    const response = await this.#jsonDocument(url.toString(), options.signal);
+    const page = response.value as unknown as PackagePage;
+    if (!Array.isArray(page.packages) || !page.metadata)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        'Registry package page has no packages array or metadata',
+      );
+    return { page, bytes: response.bytes };
   }
 
   /**
@@ -224,16 +257,48 @@ export class RegistryClient {
    * and stopping there would silently truncate a mirror.
    */
   async *listAll(options: ListOptions = {}): AsyncGenerator<RegistryEntry> {
+    const limits = this.#paginationLimits;
+    const deadline = AbortSignal.timeout(limits.maximumElapsedMilliseconds);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, deadline])
+      : deadline;
     let cursor = options.cursor;
     const seen = new Set<string>();
+    let pages = 0;
+    let entries = 0;
+    let bytes = 0;
     for (;;) {
-      const page = await this.list({
-        ...options,
-        ...(cursor === undefined ? {} : { cursor }),
-      });
+      if (pages >= limits.maximumPages)
+        throw paginationLimit(`more than ${limits.maximumPages} pages`);
+      let result: { page: PackagePage; bytes: number };
+      try {
+        result = await this.#listPage({
+          ...options,
+          signal,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+      } catch (error) {
+        if (deadline.aborted && !options.signal?.aborted)
+          throw paginationLimit(
+            `longer than ${limits.maximumElapsedMilliseconds} milliseconds`,
+          );
+        throw error;
+      }
+      pages += 1;
+      entries += result.page.packages.length;
+      bytes += result.bytes;
+      if (entries > limits.maximumEntries)
+        throw paginationLimit(`more than ${limits.maximumEntries} entries`);
+      if (bytes > limits.maximumBytes)
+        throw paginationLimit(`more than ${limits.maximumBytes} bytes`);
+      const page = result.page;
       for (const entry of page.packages) yield entry;
       const next = page.metadata.nextCursor;
       if (next === undefined || next === null) return;
+      if (typeof next !== 'string' || next.length > limits.maximumCursorLength)
+        throw paginationLimit(
+          `a cursor longer than ${limits.maximumCursorLength} characters`,
+        );
       // A registry that returns the cursor it was given would loop forever.
       if (seen.has(next))
         throw new ProviderError(
@@ -352,6 +417,13 @@ export class RegistryClient {
   }
 
   async #json(url: string, signal?: AbortSignal): Promise<JsonValue> {
+    return (await this.#jsonDocument(url, signal)).value;
+  }
+
+  async #jsonDocument(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<{ value: JsonValue; bytes: number }> {
     const response = await this.#transport.request({
       url,
       method: 'GET',
@@ -366,7 +438,10 @@ export class RegistryClient {
         `Registry returned ${response.status} for ${url}`,
       );
     try {
-      return JSON.parse(new TextDecoder().decode(response.body)) as JsonValue;
+      return {
+        value: JSON.parse(new TextDecoder().decode(response.body)) as JsonValue,
+        bytes: response.body.byteLength,
+      };
     } catch (error) {
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
@@ -376,6 +451,28 @@ export class RegistryClient {
       );
     }
   }
+}
+
+function paginationLimits(
+  requested: Partial<PaginationLimits> | undefined,
+): PaginationLimits {
+  return Object.fromEntries(
+    Object.entries(PAGINATION_LIMITS).map(([name, ceiling]) => {
+      const value = requested?.[name as keyof PaginationLimits] ?? ceiling;
+      if (!Number.isSafeInteger(value) || value < 1 || value > ceiling)
+        throw new RangeError(
+          `${name} must be an integer between 1 and ${ceiling}`,
+        );
+      return [name, value];
+    }),
+  ) as unknown as PaginationLimits;
+}
+
+function paginationLimit(detail: string): ProviderError {
+  return new ProviderError(
+    'INVALID_PROVIDER_RESPONSE',
+    `Registry pagination returned ${detail}; refusing an unbounded walk.`,
+  );
 }
 
 export interface RevocationEntryLike {
