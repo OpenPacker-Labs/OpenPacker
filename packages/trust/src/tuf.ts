@@ -386,6 +386,8 @@ export async function verifyTufTarget(
 
   let target = targets.signed.targets[targetPath];
   let roleName = 'targets';
+  const delegatedVersions: Record<string, number> = {};
+  const delegatedDigests: Record<string, Digest> = {};
   if (!target && targets.signed.delegations) {
     for (const delegatedRole of targets.signed.delegations.roles) {
       if (!(await isDelegatedPath(delegatedRole, targetPath))) continue;
@@ -443,6 +445,8 @@ export async function verifyTufTarget(
           'mix-match',
           'Delegated metadata changed without a version increase',
         );
+      delegatedVersions[delegatedRole.name] = delegated.signed.version;
+      delegatedDigests[delegatedRole.name] = delegatedDigest;
       target = delegated.signed.targets[targetPath];
       if (target) {
         roleName = delegatedRole.name;
@@ -475,23 +479,14 @@ export async function verifyTufTarget(
       metadataVersions: {
         ...trusted.metadataVersions,
         targets: targets.signed.version,
-        ...(roleName === 'targets'
-          ? {}
-          : {
-              [roleName]:
-                snapshot.signed.meta[`${roleName}.json`]?.version ?? 0,
-            }),
+        ...delegatedVersions,
       },
       timestampDigest,
       snapshotDigest,
       metadataDigests: {
         ...trusted.metadataDigests,
         targets: targetsDigest,
-        ...(roleName === 'targets'
-          ? {}
-          : {
-              [roleName]: await digest(files.delegated![roleName]!),
-            }),
+        ...delegatedDigests,
       },
     },
   };
