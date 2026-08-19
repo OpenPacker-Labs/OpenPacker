@@ -26,7 +26,7 @@ import {
   type OciManifest,
   type RegistryAuthentication,
 } from './index.js';
-import { packUstar } from './tar.js';
+import { packUstarAsync, type AsyncTarFile } from './tar.js';
 
 /**
  * OCI registries as a PREX catalog.
@@ -44,6 +44,11 @@ import { packUstar } from './tar.js';
  */
 
 const DEFAULT_REGISTRY = 'registry-1.docker.io';
+
+export const OCI_MATERIALIZATION_LIMITS = Object.freeze({
+  maximumLayers: 256,
+  maximumLayoutBytes: 512 * 1024 * 1024,
+});
 
 function exactRegistryOrigin(value: string): string {
   const url = new URL(value);
@@ -536,23 +541,43 @@ export class OciRegistryProvider implements CatalogProvider {
     image: { digest: string; bytes: Uint8Array; manifest: OciManifest },
     signal?: AbortSignal,
   ): Promise<{ bytes: Uint8Array }> {
-    const files: { path: string; body: Uint8Array }[] = [];
-    const putBlob = (digest: string, body: Uint8Array) => {
+    if (image.manifest.layers.length > OCI_MATERIALIZATION_LIMITS.maximumLayers)
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `OCI image has more than ${OCI_MATERIALIZATION_LIMITS.maximumLayers} layers`,
+      );
+
+    const files = new Map<string, AsyncTarFile>();
+    const putBlob = (
+      digest: string,
+      size: number,
+      body: () => Promise<Uint8Array>,
+    ) => {
       const hex = digest.startsWith('sha256:')
         ? digest.slice('sha256:'.length)
         : digest;
-      files.push({ path: `blobs/sha256/${hex}`, body });
+      const path = `blobs/sha256/${hex}`;
+      const previous = files.get(path);
+      if (previous && previous.size !== size)
+        throw new ProviderError(
+          'INVALID_PROVIDER_METADATA',
+          `OCI digest ${digest} has contradictory sizes`,
+        );
+      if (!previous) files.set(path, { path, size, body });
     };
 
-    putBlob(image.digest, image.bytes);
-
-    const configBytes = await client.pullBlob(image.manifest.config, signal);
-    putBlob(image.manifest.config.digest, configBytes);
-
-    for (const layer of image.manifest.layers) {
-      const layerBytes = await client.pullBlob(layer, signal);
-      putBlob(layer.digest, layerBytes);
-    }
+    putBlob(image.digest, image.bytes.byteLength, async () => image.bytes);
+    putBlob(
+      image.manifest.config.digest,
+      image.manifest.config.size,
+      async () => await client.pullBlob(image.manifest.config, signal),
+    );
+    for (const layer of image.manifest.layers)
+      putBlob(
+        layer.digest,
+        layer.size,
+        async () => await client.pullBlob(layer, signal),
+      );
 
     const indexDocument = {
       schemaVersion: 2,
@@ -566,18 +591,35 @@ export class OciRegistryProvider implements CatalogProvider {
         },
       ],
     };
-    files.push({
+    const indexBytes = new TextEncoder().encode(
+      `${JSON.stringify(indexDocument)}\n`,
+    );
+    const layoutBytes = new TextEncoder().encode(
+      `${JSON.stringify({ imageLayoutVersion: '1.0.0' })}\n`,
+    );
+    files.set('index.json', {
       path: 'index.json',
-      body: new TextEncoder().encode(`${JSON.stringify(indexDocument)}\n`),
+      size: indexBytes.byteLength,
+      body: async () => indexBytes,
     });
-    files.push({
+    files.set('oci-layout', {
       path: 'oci-layout',
-      body: new TextEncoder().encode(
-        `${JSON.stringify({ imageLayoutVersion: '1.0.0' })}\n`,
-      ),
+      size: layoutBytes.byteLength,
+      body: async () => layoutBytes,
     });
 
-    return { bytes: packUstar(files) };
+    try {
+      return {
+        bytes: await packUstarAsync(
+          [...files.values()],
+          OCI_MATERIALIZATION_LIMITS.maximumLayoutBytes,
+        ),
+      };
+    } catch (error) {
+      if (error instanceof RangeError)
+        throw new ProviderError('INVALID_PROVIDER_METADATA', error.message);
+      throw error;
+    }
   }
 
   async snapshot(evaluationTime: string): Promise<SourceSnapshot> {

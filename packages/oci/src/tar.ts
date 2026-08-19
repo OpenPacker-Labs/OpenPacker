@@ -58,14 +58,25 @@ export interface TarFile {
   body: Uint8Array;
 }
 
+export interface AsyncTarFile {
+  path: string;
+  size: number;
+  body: () => Promise<Uint8Array>;
+}
+
+function safeTarPath(input: string): string {
+  const path = input.replace(/^\/+/u, '').replaceAll('\\', '/');
+  if (path.includes('..') || path.startsWith('/'))
+    throw new RangeError(`refusing unsafe tar path: ${input}`);
+  return path;
+}
+
 /** Pack files into an uncompressed ustar archive. */
 export function packUstar(files: readonly TarFile[]): Uint8Array {
   const parts: Uint8Array[] = [];
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
   for (const file of sorted) {
-    const path = file.path.replace(/^\/+/u, '').replaceAll('\\', '/');
-    if (path.includes('..') || path.startsWith('/'))
-      throw new RangeError(`refusing unsafe tar path: ${file.path}`);
+    const path = safeTarPath(file.path);
     parts.push(writeHeader(path, file.body.byteLength, '0'));
     parts.push(file.body);
     const padding = pad(file.body.byteLength);
@@ -80,6 +91,37 @@ export function packUstar(files: readonly TarFile[]): Uint8Array {
   for (const part of parts) {
     out.set(part, offset);
     offset += part.byteLength;
+  }
+  return out;
+}
+
+/** Pack into one pre-sized archive while retaining at most one input body. */
+export async function packUstarAsync(
+  files: readonly AsyncTarFile[],
+  maximumBytes: number,
+): Promise<Uint8Array> {
+  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
+  let total = BLOCK * 2;
+  for (const file of sorted) {
+    if (!Number.isSafeInteger(file.size) || file.size < 0)
+      throw new RangeError(`invalid ustar body size: ${file.size}`);
+    total += BLOCK + file.size + pad(file.size);
+    if (!Number.isSafeInteger(total) || total > maximumBytes)
+      throw new RangeError(`ustar archive exceeds ${maximumBytes} bytes`);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const file of sorted) {
+    const path = safeTarPath(file.path);
+    out.set(writeHeader(path, file.size, '0'), offset);
+    offset += BLOCK;
+    const body = await file.body();
+    if (body.byteLength !== file.size)
+      throw new RangeError(
+        `ustar body size changed for ${file.path}: expected ${file.size}, got ${body.byteLength}`,
+      );
+    out.set(body, offset);
+    offset += file.size + pad(file.size);
   }
   return out;
 }
