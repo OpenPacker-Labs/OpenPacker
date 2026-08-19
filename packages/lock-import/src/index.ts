@@ -354,10 +354,7 @@ export function parsePnpmLock(text: string): {
 } {
   const document = parseYaml(text) as {
     lockfileVersion?: unknown;
-    packages?: Record<
-      string,
-      { resolution?: { integrity?: string; tarball?: string } }
-    >;
+    packages?: Record<string, unknown>;
     snapshots?: Record<string, unknown>;
   };
   const version = String(document.lockfileVersion ?? '');
@@ -407,6 +404,38 @@ export function parsePnpmLock(text: string): {
   const packageKeys = new Set<string>();
   for (const [key, value] of Object.entries(document.packages)) {
     const { name, version: packageVersion } = parsePackageKey(key);
+    // A non-object value (`'a@1.0.0: garbage'`) has no resolution to read;
+    // accepting it would import a version-only entry from malformed input.
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed package value for: ${key}`,
+      );
+    const resolution = (value as { resolution?: unknown }).resolution;
+    if (
+      resolution !== undefined &&
+      (resolution === null ||
+        typeof resolution !== 'object' ||
+        Array.isArray(resolution))
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
+    const { integrity, tarball } = (resolution ?? {}) as {
+      integrity?: unknown;
+      tarball?: unknown;
+    };
+    if (tarball !== undefined && typeof tarball !== 'string')
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
+    if (integrity !== undefined && typeof integrity !== 'string')
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
     const installPath = `node_modules/${name}`;
@@ -417,12 +446,8 @@ export function parsePnpmLock(text: string): {
       );
     packages[installPath] = {
       version: packageVersion,
-      ...(value?.resolution?.tarball
-        ? { resolved: value.resolution.tarball }
-        : {}),
-      ...(value?.resolution?.integrity
-        ? { integrity: value.resolution.integrity }
-        : {}),
+      ...(tarball !== undefined ? { resolved: tarball } : {}),
+      ...(integrity !== undefined ? { integrity } : {}),
     };
     packageKeys.add(key);
   }

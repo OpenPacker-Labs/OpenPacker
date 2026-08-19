@@ -252,6 +252,26 @@ describe('pnpm-lock.yaml import', () => {
     ).toThrow(/unsupported package key/u);
   });
 
+  it('refuses malformed package values instead of importing them version-only', () => {
+    expect(() => parsePnpmLock(lock("  'a@1.0.0': garbage\n"))).toThrow(
+      /malformed package value/u,
+    );
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0':\n    resolution: garbage\n")),
+    ).toThrow(/malformed resolution/u);
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0':\n    resolution: {integrity: 42}\n")),
+    ).toThrow(/malformed resolution/u);
+  });
+
+  it('does not auto-detect pre-v9 lockfiles as pnpm', () => {
+    // Only the v9 key shape is supported; a v6 file must fall through to
+    // unable-to-detect rather than being parsed with v9 semantics.
+    expect(() =>
+      detectLockFormat("lockfileVersion: '6.0'\npackages:\n  /a@1.0.0: {}\n"),
+    ).toThrow(/detect/u);
+  });
+
   it('refuses malformed or unbound snapshot selections', () => {
     for (const snapshots of [
       "['react-dom@18.2.0(react@18.2.0)']",
