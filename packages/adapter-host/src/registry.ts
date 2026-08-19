@@ -22,7 +22,7 @@ import { hasResource, requireResource } from './resources.js';
 export class AdapterRegistry {
   readonly #byId = new Map<string, AdapterModule>();
   readonly #byPurlType = new Map<string, AdapterModule>();
-  readonly #bySource = new Map<string, AdapterModule>();
+  readonly #bySource = new Map<string, Map<string, AdapterModule>>();
   readonly #packProviders = new Map<string, Map<string, PackagePacker>>();
   readonly #defaultPackProvider = new Map<string, PackagePacker>();
 
@@ -104,7 +104,10 @@ export class AdapterRegistry {
         'A named source needs a non-empty id',
       );
     this.#byId.set(module.id, module);
-    this.#bySource.set(key, module);
+    const modules = this.#bySource.get(key) ?? new Map();
+    for (const purlType of module.purlTypes)
+      modules.set(purlType.toLowerCase(), module);
+    this.#bySource.set(key, modules);
   }
 
   list(): readonly AdapterModule[] {
@@ -127,7 +130,7 @@ export class AdapterRegistry {
    * definition is the authority on that, and it may need I/O to read.
    */
   moduleFor(purlType: string, sourceId?: string): AdapterModule {
-    if (sourceId !== undefined) return this.moduleForSource(sourceId);
+    if (sourceId !== undefined) return this.moduleForSource(sourceId, purlType);
     const module = this.#byPurlType.get(purlType.toLowerCase());
     if (!module)
       throw new AdapterHostError(
@@ -138,13 +141,19 @@ export class AdapterRegistry {
     return module;
   }
 
-  moduleForSource(sourceId: string): AdapterModule {
-    const module = this.#bySource.get(sourceId.trim().toLowerCase());
-    if (!module)
+  moduleForSource(sourceId: string, purlType: string): AdapterModule {
+    const modules = this.#bySource.get(sourceId.trim().toLowerCase());
+    if (!modules)
       throw new AdapterHostError(
         'UNKNOWN_SOURCE',
         `No source named "${sourceId}" is registered. ` +
           `Registered: ${this.sourceIds().join(', ') || '(none)'}.`,
+      );
+    const module = modules.get(purlType.toLowerCase());
+    if (!module)
+      throw new AdapterHostError(
+        'UNSUPPORTED_ECOSYSTEM',
+        `Source "${sourceId}" does not have an adapter for purl type "${purlType}".`,
       );
     return module;
   }

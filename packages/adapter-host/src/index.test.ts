@@ -430,6 +430,18 @@ describe('named sources', () => {
     ).resolves.toBeDefined();
   });
 
+  it('lets one named source use the native adapter for each ecosystem', async () => {
+    const registry = new AdapterRegistry();
+    registry.registerSource('mirror', mirror(['npm']));
+    registry.registerSource('mirror', mirror(['pypi']));
+    await expect(
+      registry.definitionFor('npm', { sourceId: 'mirror' }),
+    ).resolves.toMatchObject({ purlTypes: ['npm'] });
+    await expect(
+      registry.definitionFor('pypi', { sourceId: 'mirror' }),
+    ).resolves.toMatchObject({ purlTypes: ['pypi'] });
+  });
+
   it('refuses an empty source id', () => {
     const registry = new AdapterRegistry();
     expect(() => registry.registerSource('  ', mirror(['npm']))).toThrow(

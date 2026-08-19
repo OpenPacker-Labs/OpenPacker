@@ -82,6 +82,10 @@ export function registryEndpoint(ecosystem: string): string {
       'UNSUPPORTED_ECOSYSTEM',
       `No registry endpoint is configured for "${ecosystem}".`,
     );
+  return safeRegistryEndpoint(endpoint, ecosystem);
+}
+
+function safeRegistryEndpoint(endpoint: string, ecosystem: string): string {
   let parsed: URL;
   try {
     parsed = new URL(endpoint);
@@ -121,9 +125,33 @@ export interface RegistryOptions {
    * asked for.
    */
   sourceId?: string;
+  /** Configured endpoint selected from opm.toml. */
+  endpoint?: string;
   transport?: HttpTransport;
   fetch?: typeof fetch;
   now?: () => string;
+}
+
+/** Bind a project registry selection to the endpoint the adapter will use. */
+export function registryOptionsForEcosystem(
+  ecosystem: string,
+  manifest: Pick<OpmManifest, 'registries'>,
+  requested: RegistryOptions = {},
+): RegistryOptions {
+  if (requested.endpoint !== undefined)
+    return {
+      ...requested,
+      endpoint: safeRegistryEndpoint(requested.endpoint, ecosystem),
+    };
+  const sourceId = sourceForEcosystem(ecosystem, manifest, requested.sourceId);
+  if (sourceId === undefined) return requested;
+  const source = manifest.registries?.[sourceId];
+  if (source === undefined) return requested;
+  const { sourceId: _sourceId, ...options } = requested;
+  return {
+    ...options,
+    endpoint: safeRegistryEndpoint(source.url, ecosystem),
+  };
 }
 
 function assertOnline(ecosystem: string, offline: boolean | undefined): void {
@@ -209,14 +237,19 @@ export async function providerForWithDiscovery(
   // origin as unsafe.
   const named = options.sourceId !== undefined;
   const endpoint =
-    named || DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+    options.endpoint ??
+    (named || DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
       ? undefined
-      : registryEndpoint(ecosystem);
+      : registryEndpoint(ecosystem));
+  if (endpoint !== undefined) safeRegistryEndpoint(endpoint, ecosystem);
   const transport =
     options.transport ??
     (endpoint
       ? new BoundedFetchTransport({
-          allowedOrigins: allowedOriginsFor(ecosystem),
+          allowedOrigins:
+            options.endpoint === undefined
+              ? allowedOriginsFor(ecosystem)
+              : [new URL(endpoint).origin],
         })
       : undefined);
   try {
@@ -237,6 +270,26 @@ export async function providerForWithDiscovery(
   } catch (error) {
     mapHostError(error);
   }
+}
+
+/** Registry Definition for the same authority selected for provider traffic. */
+export async function registryDefinitionFor(
+  ecosystem: string,
+  options: RegistryOptions = {},
+) {
+  const endpoint =
+    options.endpoint ??
+    (options.sourceId !== undefined ||
+    DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+      ? undefined
+      : registryEndpoint(ecosystem));
+  return requireAdapterRegistry().definitionFor(ecosystem, {
+    offline: true,
+    ...(options.sourceId === undefined ? {} : { sourceId: options.sourceId }),
+    ...(endpoint === undefined
+      ? {}
+      : { endpoint: safeRegistryEndpoint(endpoint, ecosystem) }),
+  });
 }
 
 export async function searchRegistry(
@@ -292,6 +345,7 @@ export interface RegistryArtifact {
   mediaType: string;
   uri: string;
   bytes: Uint8Array;
+  registryId: string;
 }
 
 export async function resolveRegistryArtifact(
@@ -303,6 +357,8 @@ export async function resolveRegistryArtifact(
     'prex.registry.package-metadata/1',
     'prex.registry.artifact/1',
   ]);
+  const registryId = (await registryDefinitionFor(ecosystem, options))
+    .registryId;
   const inspection = await provider.inspect(exactPurl);
   const inspectedPurl = inspection.package.identity.exactPurl;
   if (!inspectedPurl)
@@ -343,8 +399,9 @@ export async function resolveRegistryArtifact(
       `The ${ecosystem} registry published no download location for ${exactPurl}.`,
     );
   const uriOrigin = new URL(uri).origin;
-  const allowed =
-    DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+  const allowed = options.endpoint
+    ? [new URL(safeRegistryEndpoint(options.endpoint, ecosystem)).origin]
+    : DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
       ? [uriOrigin]
       : allowedOriginsFor(ecosystem);
   const ociNamed = ecosystem === 'oci' && uriOrigin.startsWith('https://');
@@ -363,5 +420,6 @@ export async function resolveRegistryArtifact(
     mediaType: descriptor.mediaType ?? 'application/octet-stream',
     uri,
     bytes: record.rawBody,
+    registryId,
   };
 }

@@ -77,10 +77,26 @@ const ARTIFACT_ORIGINS: Readonly<Record<string, readonly string[]>> = {
 };
 
 function endpointFor(ecosystem: string, context: AdapterContext): string {
-  const env =
-    process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}`]?.trim() ??
-    context.endpoint;
-  return env || DEFAULT_ENDPOINTS[ecosystem] || '';
+  const endpoint =
+    context.endpoint?.trim() ||
+    process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}`]?.trim() ||
+    DEFAULT_ENDPOINTS[ecosystem] ||
+    '';
+  const parsed = new URL(endpoint);
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password)
+    throw new TypeError(
+      'Registry endpoints must use HTTPS without credentials',
+    );
+  return endpoint;
+}
+
+function registryIdFor(
+  ecosystem: string,
+  context: AdapterContext,
+  defaultId: string,
+): string {
+  const endpoint = endpointFor(ecosystem, context);
+  return endpoint === DEFAULT_ENDPOINTS[ecosystem] ? defaultId : endpoint;
 }
 
 function transportFor(
@@ -110,7 +126,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['npm'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:npmjs-org',
+          registryId: registryIdFor(
+            'npm',
+            context,
+            'urn:openpacker:registry:npmjs-org',
+          ),
           displayName: 'npmjs.org',
           purlTypes: ['npm'],
           native: 'npm-registry-v1',
@@ -140,7 +160,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['cargo'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:crates-io',
+          registryId: registryIdFor(
+            'cargo',
+            context,
+            'urn:openpacker:registry:crates-io',
+          ),
           displayName: 'crates.io',
           purlTypes: ['cargo'],
           native: 'cargo-sparse-v1',
@@ -163,7 +187,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['pypi'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:pypi-org',
+          registryId: registryIdFor(
+            'pypi',
+            context,
+            'urn:openpacker:registry:pypi-org',
+          ),
           displayName: 'PyPI',
           purlTypes: ['pypi'],
           native: 'pypi-json-v1',
@@ -233,7 +261,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           if (resources.length > 0)
             return {
               registryDefinitionVersion: '1' as const,
-              registryId: 'urn:openpacker:registry:nuget-org',
+              registryId: registryIdFor(
+                'nuget',
+                context,
+                'urn:openpacker:registry:nuget-org',
+              ),
               displayName: 'nuget.org',
               purlTypes: ['nuget'],
               protocol: { native: 'nuget-v3', transport: ['https' as const] },
@@ -267,7 +299,11 @@ export function defaultAdapterModules(): AdapterModule[] {
           // fall through to static definition
         }
         return httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:nuget-org',
+          registryId: registryIdFor(
+            'nuget',
+            context,
+            'urn:openpacker:registry:nuget-org',
+          ),
           displayName: 'nuget.org',
           purlTypes: ['nuget'],
           native: 'nuget-v3',
@@ -297,7 +333,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['maven'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:maven-central',
+          registryId: registryIdFor(
+            'maven',
+            context,
+            'urn:openpacker:registry:maven-central',
+          ),
           displayName: 'Maven Central',
           purlTypes: ['maven'],
           native: 'maven-repo-v1',
@@ -320,7 +360,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['golang'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:proxy-golang-org',
+          registryId: registryIdFor(
+            'golang',
+            context,
+            'urn:openpacker:registry:proxy-golang-org',
+          ),
           displayName: 'proxy.golang.org',
           purlTypes: ['golang'],
           native: 'golang-proxy-v1',
@@ -342,7 +386,11 @@ export function defaultAdapterModules(): AdapterModule[] {
       purlTypes: ['oci'],
       registryDefinition: (context = {}) =>
         httpRegistryDefinition({
-          registryId: 'urn:openpacker:registry:oci-distribution',
+          registryId: registryIdFor(
+            'oci',
+            context,
+            'urn:openpacker:registry:oci-distribution',
+          ),
           displayName: 'OCI Distribution',
           purlTypes: ['oci'],
           native: 'oci-distribution-v1',
