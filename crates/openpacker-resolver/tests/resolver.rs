@@ -558,6 +558,26 @@ fn universe_rejects_asserted_node_ids_and_contradictory_identity_fields() {
 }
 
 #[test]
+fn universe_rejects_non_canonical_or_versionless_exact_purls() {
+    // A version-less exactPurl is not exact identity at all.
+    let mut versionless = package('5', "victim", "1.0.0");
+    versionless.identity.exact_purl = Some("pkg:npm/victim".into());
+    assert!(matches!(
+        validate_universe(&input(vec![versionless], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("canonical and versioned")
+    ));
+
+    // A non-canonical exactPurl (uppercase name canonicalizes to lowercase)
+    // must not be silently normalized into an accepted identity.
+    let mut non_canonical = package('6', "victim", "1.0.0");
+    non_canonical.identity.exact_purl = Some("pkg:npm/Victim@1.0.0".into());
+    assert!(matches!(
+        validate_universe(&input(vec![non_canonical], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("canonical and versioned")
+    ));
+}
+
+#[test]
 fn native_validated_checks_represented_constraints_without_optimizing() {
     let selected = package('d', "captured", "1.0.0");
     let selected_id = selected.node_id.clone();
@@ -776,6 +796,76 @@ fn unaccepted_amendments_do_not_change_the_solution() {
             .iter()
             .any(|node| node.kind == "amendment-ignored")
     );
+    assert!(check(&amended, &amended_output).unwrap().valid);
+}
+
+#[test]
+fn an_admitted_authority_with_a_wrong_pinned_digest_changes_nothing() {
+    let one = package('1', "demo", "1.0.0");
+    let two = package('2', "demo", "2.0.0");
+    let requirements = vec![requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/demo".into(),
+            vers: Some("vers:npm/>=1.0.0".into()),
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )];
+    let plain = input(vec![one.clone(), two.clone()], requirements.clone());
+    let mut amended = input(vec![one.clone(), two.clone()], requirements);
+    amended.universe.amendments.push(UniverseAmendment {
+        amendment_version: "1".into(),
+        subject: json!({}),
+        applies_to_metadata_digest: one.metadata_digest.clone(),
+        operations: vec![
+            json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
+        ],
+        authority: "organization".into(),
+        rest: BTreeMap::new(),
+    });
+    amended
+        .request
+        .policy
+        .accepted_amendment_authorities
+        .push("organization".into());
+    // The authority is admitted, but the pin names a digest that is not this
+    // amendment's canonical digest.
+    amended
+        .request
+        .policy
+        .accepted_amendment_digests
+        .push(digest('9'));
+
+    let plain_output = solve(&plain).unwrap();
+    let amended_output = solve(&amended).unwrap();
+
+    // Authority admission without a matching digest pin grants no power: the
+    // solution and its digest are byte-identical to the unamended universe.
+    assert_eq!(
+        amended_output.solution.solution_digest,
+        plain_output.solution.solution_digest
+    );
+    assert_eq!(
+        amended_output.solution.selected_node_ids,
+        plain_output.solution.selected_node_ids
+    );
+    // The amendment is recorded as present and ignored, never applied.
+    assert!(
+        amended_output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-ignored")
+    );
+    assert!(
+        !amended_output
+            .explanation
+            .nodes
+            .iter()
+            .any(|node| node.kind == "amendment-applied")
+    );
+    assert!(amended_output.proof.applied_amendment_digests.is_empty());
     assert!(check(&amended, &amended_output).unwrap().valid);
 }
 
