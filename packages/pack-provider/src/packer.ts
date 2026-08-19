@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants, type Dirent } from 'node:fs';
 import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
@@ -47,6 +48,14 @@ export interface DelegatedExecutableIdentity {
 }
 
 type InspectExecutable = (path: string) => Promise<DelegatedExecutableIdentity>;
+interface DelegatedExecutableAuthority {
+  identity: DelegatedExecutableIdentity;
+  fd: number;
+  close(): Promise<void>;
+}
+type OpenExecutableAuthority = (
+  path: string,
+) => Promise<DelegatedExecutableAuthority>;
 
 const DEFAULT_LIMITS: ManifestPackagePackerLimits = {
   outputEntries: 4_096,
@@ -55,6 +64,9 @@ const DEFAULT_LIMITS: ManifestPackagePackerLimits = {
   totalArtifactBytes: 2_147_483_648n,
   readChunkBytes: 64 * 1_024,
 };
+
+const MAX_DELEGATED_EXECUTABLE_BYTES = 64 * 1_024 * 1_024;
+const LINUX_O_TMPFILE = 0x40_0000 | constants.O_DIRECTORY;
 
 export interface ManifestPackagePackerLimits {
   outputEntries: number;
@@ -65,9 +77,16 @@ export interface ManifestPackagePackerLimits {
 }
 
 export interface ManifestPackagePackerDependencies {
-  /** Absolute executable path explicitly approved by the host operator. */
+  /**
+   * Absolute standalone executable explicitly approved by the host operator.
+   * The configured source path is recorded in receipts, while its digest is
+   * computed from and execution uses one unnamed immutable private snapshot.
+   * Sibling modules/resources are not exposed; approve a standalone wrapper or
+   * bundle. Unavailable unnamed storage fails closed without a named fallback.
+   */
   executablePath: string;
   inspectExecutable?: InspectExecutable;
+  openExecutableAuthority?: OpenExecutableAuthority;
   sandboxRun?: SandboxRun;
   limits?: Partial<ManifestPackagePackerLimits>;
   openFile?: typeof open;
@@ -79,6 +98,7 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly purlType: string;
   readonly #executablePath: string;
   readonly #inspectExecutable: InspectExecutable;
+  readonly #openExecutableAuthority: OpenExecutableAuthority;
   readonly #sandboxRun: SandboxRun;
   readonly #limits: ManifestPackagePackerLimits;
   readonly #openFile: typeof open;
@@ -106,6 +126,15 @@ export class ManifestPackagePacker implements PackagePacker {
     this.#executablePath = dependencies.executablePath;
     this.#inspectExecutable =
       dependencies.inspectExecutable ?? inspectDelegatedExecutable;
+    this.#openExecutableAuthority =
+      dependencies.openExecutableAuthority ??
+      (dependencies.inspectExecutable === undefined
+        ? openDelegatedExecutable
+        : async (path) => ({
+            identity: await dependencies.inspectExecutable!(path),
+            fd: -1,
+            close: async () => undefined,
+          }));
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
     this.#openFile = dependencies.openFile ?? open;
@@ -243,196 +272,66 @@ export class ManifestPackagePacker implements PackagePacker {
           'AUTHORITY_NOT_DECLARED',
           `${this.providerId} does not declare environment variable ${name}`,
         );
-    const executableIdentity = await this.#inspectExecutable(
+    const executableAuthority = await this.#openExecutableAuthority(
       this.#executablePath,
     ).catch(() => undefined);
-    if (executableIdentity === undefined)
+    if (executableAuthority === undefined)
       throw new ProviderError(
         'UNSUPPORTED_ECOSYSTEM',
         `${this.providerId} cannot pack here: ${this.#executablePath} is not a stable executable`,
       );
-    const executablePath = executableIdentity.path;
-    const tool = {
-      name: this.manifest.executable,
-      path: executablePath,
-      digest: executableIdentity.digest,
-    };
-    const withTool: PackPlan = {
-      ...plan,
-      ...(plan.command === undefined
-        ? {}
-        : {
-            command: plan.command.map((value, index) =>
-              index === 0 ? executablePath : value,
-            ),
-          }),
-      ...(plan.commands === undefined
-        ? {}
-        : {
-            commands: plan.commands.map((command) =>
-              command.map((value, index) =>
-                index === 0 ? executablePath : value,
-              ),
-            ),
-          }),
-      ...(plan.cleanupCommands === undefined
-        ? {}
-        : {
-            cleanupCommands: plan.cleanupCommands.map((command) =>
-              command.map((value, index) =>
-                index === 0 ? executablePath : value,
-              ),
-            ),
-          }),
-      tool,
-    };
-    if (options.dryRun) return emptyOutcome(withTool);
-
-    const outputDirectory = resolve(
-      options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
-    );
-    const outputAuthority = await openStableDirectory(outputDirectory);
-    const stableOutputDirectory = stableHandlePath(outputAuthority);
-    const outputReal = await realpath(stableOutputDirectory);
-    const outputIdentity = await directoryIdentity(stableOutputDirectory);
-    await assertNamedDirectory(outputDirectory, outputAuthority);
+    const executableIdentity = executableAuthority.identity;
     try {
-      const existingArtifacts = await checkedProviderOutput(async () => {
-        const artifacts = await collectArtifacts(
-          stableOutputDirectory,
-          outputDirectory,
-          outputReal,
-          hostPlan,
-          this.#limits,
-          this.#openFile,
-        );
-        await assertDirectoryIdentity(
-          stableOutputDirectory,
-          outputReal,
-          outputIdentity,
-        );
-        return artifacts;
-      });
-      if (existingArtifacts.length > 0)
-        throw new ProviderError(
-          'OUTPUT_NOT_EMPTY',
-          `${this.providerId} requires an output directory without matching artifacts`,
-        );
-
-      const outcomes: SandboxOutcome[] = [];
-      const environment = { ...hostPlan.environment, ...authorizedEnvironment };
-      try {
-        for (const arguments_ of hostPlan.commandArguments) {
-          const outcome = await this.runCommand(
-            [executablePath, ...arguments_],
-            input,
-            options,
-            withTool,
-            executableIdentity,
-            environment,
-            Object.keys(authorizedEnvironment),
-            outputDirectory,
-            outputAuthority.fd,
-          );
-          outcomes.push(outcome);
-          if (outcome.exitCode !== 0) break;
-        }
-      } finally {
-        for (const arguments_ of hostPlan.cleanupArguments)
-          outcomes.push(
-            await this.runCommand(
-              [executablePath, ...arguments_],
-              input,
-              options,
-              withTool,
-              executableIdentity,
-              environment,
-              Object.keys(authorizedEnvironment),
-              outputDirectory,
-              outputAuthority.fd,
-            ),
-          );
-      }
-      const outcome =
-        outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
-      let artifacts = await checkedProviderOutput(async () => {
-        await assertNamedDirectory(outputDirectory, outputAuthority);
-        const currentIdentity = await directoryIdentity(stableOutputDirectory);
-        if (
-          currentIdentity.dev !== outputIdentity.dev ||
-          currentIdentity.ino !== outputIdentity.ino ||
-          (await realpath(stableOutputDirectory)) !== outputReal
-        )
-          throw new ProviderError(
-            'INVALID_RESPONSE',
-            'Delegated provider replaced its output directory',
-          );
-        const collected =
-          outcome.exitCode === 0
-            ? await collectArtifacts(
-                stableOutputDirectory,
-                outputDirectory,
-                outputReal,
-                hostPlan,
-                this.#limits,
-                this.#openFile,
-              )
-            : [];
-        await assertDirectoryIdentity(
-          stableOutputDirectory,
-          outputReal,
-          currentIdentity,
-        );
-        return collected;
-      });
-      if (outcome.exitCode === 0 && artifacts.length === 0)
-        throw new ProviderError(
-          'INVALID_RESPONSE',
-          `${this.providerId} succeeded without a declared artifact`,
-        );
-      if (outcome.exitCode === 0) {
-        const identities = new Map<string, DelegatedPackArtifactIdentity>();
-        const identityDirectoryIdentity = await directoryIdentity(
-          stableOutputDirectory,
-        );
-        for (const artifact of artifacts) {
-          const identityOutcome = await this.runCommand(
-            [
-              executablePath,
-              ...hostPlan.identityArgumentTemplates.map((argument) =>
-                expand(argument, {
-                  projectRoot: input.project.root,
-                  manifestPath: input.project.manifestPath,
-                  outputDirectory,
-                  packageName: input.target!.identifier,
-                  packageVersion: input.target!.version,
-                  artifactPath: artifact.path,
-                }),
+      const executablePath = executableIdentity.path;
+      const tool = {
+        name: this.manifest.executable,
+        // Receipt path identifies the operator-approved source; the digest is
+        // of the exact immutable snapshot supplied to the sandbox.
+        path: executablePath,
+        digest: executableIdentity.digest,
+      };
+      const withTool: PackPlan = {
+        ...plan,
+        ...(plan.command === undefined
+          ? {}
+          : {
+              command: plan.command.map((value, index) =>
+                index === 0 ? executablePath : value,
               ),
-            ],
-            input,
-            options,
-            withTool,
-            executableIdentity,
-            environment,
-            Object.keys(authorizedEnvironment),
-            outputDirectory,
-            outputAuthority.fd,
-          );
-          outcomes.push(identityOutcome);
-          if (identityOutcome.exitCode !== 0)
-            throw new ProviderError(
-              'INVALID_RESPONSE',
-              `${this.providerId} could not identify ${artifact.path}`,
-            );
-          identities.set(
-            artifact.path,
-            parseArtifactIdentity(identityOutcome.stdout),
-          );
-        }
-        artifacts = await checkedProviderOutput(async () => {
-          await assertNamedDirectory(outputDirectory, outputAuthority);
-          const collected = await collectArtifacts(
+            }),
+        ...(plan.commands === undefined
+          ? {}
+          : {
+              commands: plan.commands.map((command) =>
+                command.map((value, index) =>
+                  index === 0 ? executablePath : value,
+                ),
+              ),
+            }),
+        ...(plan.cleanupCommands === undefined
+          ? {}
+          : {
+              cleanupCommands: plan.cleanupCommands.map((command) =>
+                command.map((value, index) =>
+                  index === 0 ? executablePath : value,
+                ),
+              ),
+            }),
+        tool,
+      };
+      if (options.dryRun) return emptyOutcome(withTool);
+
+      const outputDirectory = resolve(
+        options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
+      );
+      const outputAuthority = await openStableDirectory(outputDirectory);
+      const stableOutputDirectory = stableHandlePath(outputAuthority);
+      const outputReal = await realpath(stableOutputDirectory);
+      const outputIdentity = await directoryIdentity(stableOutputDirectory);
+      await assertNamedDirectory(outputDirectory, outputAuthority);
+      try {
+        const existingArtifacts = await checkedProviderOutput(async () => {
+          const artifacts = await collectArtifacts(
             stableOutputDirectory,
             outputDirectory,
             outputReal,
@@ -443,52 +342,194 @@ export class ManifestPackagePacker implements PackagePacker {
           await assertDirectoryIdentity(
             stableOutputDirectory,
             outputReal,
-            identityDirectoryIdentity,
+            outputIdentity,
+          );
+          return artifacts;
+        });
+        if (existingArtifacts.length > 0)
+          throw new ProviderError(
+            'OUTPUT_NOT_EMPTY',
+            `${this.providerId} requires an output directory without matching artifacts`,
+          );
+
+        const outcomes: SandboxOutcome[] = [];
+        const environment = {
+          ...hostPlan.environment,
+          ...authorizedEnvironment,
+        };
+        try {
+          for (const arguments_ of hostPlan.commandArguments) {
+            const outcome = await this.runCommand(
+              [executablePath, ...arguments_],
+              input,
+              options,
+              withTool,
+              executableAuthority,
+              environment,
+              Object.keys(authorizedEnvironment),
+              outputDirectory,
+              outputAuthority.fd,
+            );
+            outcomes.push(outcome);
+            if (outcome.exitCode !== 0) break;
+          }
+        } finally {
+          for (const arguments_ of hostPlan.cleanupArguments)
+            outcomes.push(
+              await this.runCommand(
+                [executablePath, ...arguments_],
+                input,
+                options,
+                withTool,
+                executableAuthority,
+                environment,
+                Object.keys(authorizedEnvironment),
+                outputDirectory,
+                outputAuthority.fd,
+              ),
+            );
+        }
+        const outcome =
+          outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
+        let artifacts = await checkedProviderOutput(async () => {
+          await assertNamedDirectory(outputDirectory, outputAuthority);
+          const currentIdentity = await directoryIdentity(
+            stableOutputDirectory,
+          );
+          if (
+            currentIdentity.dev !== outputIdentity.dev ||
+            currentIdentity.ino !== outputIdentity.ino ||
+            (await realpath(stableOutputDirectory)) !== outputReal
+          )
+            throw new ProviderError(
+              'INVALID_RESPONSE',
+              'Delegated provider replaced its output directory',
+            );
+          const collected =
+            outcome.exitCode === 0
+              ? await collectArtifacts(
+                  stableOutputDirectory,
+                  outputDirectory,
+                  outputReal,
+                  hostPlan,
+                  this.#limits,
+                  this.#openFile,
+                )
+              : [];
+          await assertDirectoryIdentity(
+            stableOutputDirectory,
+            outputReal,
+            currentIdentity,
           );
           return collected;
         });
-        if (
-          artifacts.length !== identities.size ||
-          artifacts.some((artifact) => {
-            const identity = identities.get(artifact.path);
-            return (
-              identity === undefined ||
-              identity.exactPurl !== targetExactPurl(input.target!) ||
-              identity.artifactDigest !== artifact.digest
-            );
-          })
-        )
+        if (outcome.exitCode === 0 && artifacts.length === 0)
           throw new ProviderError(
             'INVALID_RESPONSE',
-            `${this.providerId} artifact identity does not match the requested target and captured bytes`,
+            `${this.providerId} succeeded without a declared artifact`,
           );
-        artifacts = artifacts.map((artifact) => ({
-          ...artifact,
-          exactPurl: identities.get(artifact.path)!.exactPurl,
-        }));
+        if (outcome.exitCode === 0) {
+          const identities = new Map<string, DelegatedPackArtifactIdentity>();
+          const identityDirectoryIdentity = await directoryIdentity(
+            stableOutputDirectory,
+          );
+          for (const artifact of artifacts) {
+            const identityOutcome = await this.runCommand(
+              [
+                executablePath,
+                ...hostPlan.identityArgumentTemplates.map((argument) =>
+                  expand(argument, {
+                    projectRoot: input.project.root,
+                    manifestPath: input.project.manifestPath,
+                    outputDirectory,
+                    packageName: input.target!.identifier,
+                    packageVersion: input.target!.version,
+                    artifactPath: artifact.path,
+                  }),
+                ),
+              ],
+              input,
+              options,
+              withTool,
+              executableAuthority,
+              environment,
+              Object.keys(authorizedEnvironment),
+              outputDirectory,
+              outputAuthority.fd,
+            );
+            outcomes.push(identityOutcome);
+            if (identityOutcome.exitCode !== 0)
+              throw new ProviderError(
+                'INVALID_RESPONSE',
+                `${this.providerId} could not identify ${artifact.path}`,
+              );
+            identities.set(
+              artifact.path,
+              parseArtifactIdentity(identityOutcome.stdout),
+            );
+          }
+          artifacts = await checkedProviderOutput(async () => {
+            await assertNamedDirectory(outputDirectory, outputAuthority);
+            const collected = await collectArtifacts(
+              stableOutputDirectory,
+              outputDirectory,
+              outputReal,
+              hostPlan,
+              this.#limits,
+              this.#openFile,
+            );
+            await assertDirectoryIdentity(
+              stableOutputDirectory,
+              outputReal,
+              identityDirectoryIdentity,
+            );
+            return collected;
+          });
+          if (
+            artifacts.length !== identities.size ||
+            artifacts.some((artifact) => {
+              const identity = identities.get(artifact.path);
+              return (
+                identity === undefined ||
+                identity.exactPurl !== targetExactPurl(input.target!) ||
+                identity.artifactDigest !== artifact.digest
+              );
+            })
+          )
+            throw new ProviderError(
+              'INVALID_RESPONSE',
+              `${this.providerId} artifact identity does not match the requested target and captured bytes`,
+            );
+          artifacts = artifacts.map((artifact) => ({
+            ...artifact,
+            exactPurl: identities.get(artifact.path)!.exactPurl,
+          }));
+        }
+        return {
+          ...withTool,
+          performed: true,
+          exitCode: outcome.exitCode,
+          stdout: outcomes
+            .map((item) => item.stdout)
+            .filter(Boolean)
+            .join('\n'),
+          stderr: outcomes
+            .map((item) => item.stderr)
+            .filter(Boolean)
+            .join('\n'),
+          artifacts,
+          sandboxBackend: outcome.backend,
+          sandboxEnforced: outcome.enforced,
+          semanticLoss: [
+            ...plan.semanticLoss,
+            ...outcomes.flatMap((item) => item.losses),
+          ],
+        };
+      } finally {
+        await outputAuthority.close();
       }
-      return {
-        ...withTool,
-        performed: true,
-        exitCode: outcome.exitCode,
-        stdout: outcomes
-          .map((item) => item.stdout)
-          .filter(Boolean)
-          .join('\n'),
-        stderr: outcomes
-          .map((item) => item.stderr)
-          .filter(Boolean)
-          .join('\n'),
-        artifacts,
-        sandboxBackend: outcome.backend,
-        sandboxEnforced: outcome.enforced,
-        semanticLoss: [
-          ...plan.semanticLoss,
-          ...outcomes.flatMap((item) => item.losses),
-        ],
-      };
     } finally {
-      await outputAuthority.close();
+      await executableAuthority.close();
     }
   }
 
@@ -497,15 +538,15 @@ export class ManifestPackagePacker implements PackagePacker {
     input: PackInput,
     options: PackOptions,
     plan: PackPlan,
-    executableIdentity: DelegatedExecutableIdentity,
+    executableAuthority: DelegatedExecutableAuthority,
     environment: Readonly<Record<string, string>>,
     grantedEnvironment: readonly string[],
     outputDirectory: string,
     outputDirectoryFd: number,
   ): Promise<SandboxOutcome> {
     await assertExecutableIdentity(
-      executableIdentity,
-      await this.#inspectExecutable(executableIdentity.path),
+      executableAuthority.identity,
+      await this.#inspectExecutable(executableAuthority.identity.path),
     );
     const outcome = await this.#sandboxRun({
       argv: command,
@@ -523,11 +564,19 @@ export class ManifestPackagePacker implements PackagePacker {
       network: plan.requiresNetwork,
       profile: 'package-exec',
       directoryAuthorities: [{ fd: outputDirectoryFd, path: outputDirectory }],
+      ...(executableAuthority.fd < 0
+        ? {}
+        : {
+            executableAuthority: {
+              fd: executableAuthority.fd,
+              path: executableAuthority.identity.path,
+            },
+          }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     await assertExecutableIdentity(
-      executableIdentity,
-      await this.#inspectExecutable(executableIdentity.path),
+      executableAuthority.identity,
+      await this.#inspectExecutable(executableAuthority.identity.path),
     );
     return outcome;
   }
@@ -536,35 +585,70 @@ export class ManifestPackagePacker implements PackagePacker {
 async function inspectDelegatedExecutable(
   path: string,
 ): Promise<DelegatedExecutableIdentity> {
-  if (!isAbsolute(path)) unsafeExecutable(path);
+  const authority = await openDelegatedExecutable(path);
+  try {
+    return authority.identity;
+  } finally {
+    await authority.close();
+  }
+}
+
+async function openDelegatedExecutable(
+  path: string,
+): Promise<DelegatedExecutableAuthority> {
+  if (!isAbsolute(path) || process.platform !== 'linux') unsafeExecutable(path);
   const before = await lstat(path, { bigint: true });
   if (
     !before.isFile() ||
     before.isSymbolicLink() ||
     (before.mode & 0o111n) === 0n ||
-    before.size > BigInt(Number.MAX_SAFE_INTEGER)
+    before.size > BigInt(MAX_DELEGATED_EXECUTABLE_BYTES)
   )
     unsafeExecutable(path);
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const source = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let snapshot: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    const opened = await handle.stat({ bigint: true });
+    const opened = await source.stat({ bigint: true });
     if (!sameExecutableMetadata(before, opened)) unsafeExecutable(path);
-    const hash = createHash('sha256');
+    const sourceHash = createHash('sha256');
     const buffer = new Uint8Array(64 * 1024);
     let offset = 0;
-    while (offset < Number(opened.size)) {
-      const { bytesRead } = await handle.read(
-        buffer,
-        0,
-        Math.min(buffer.byteLength, Number(opened.size) - offset),
-        offset,
-      );
-      if (bytesRead === 0) break;
-      hash.update(buffer.subarray(0, bytesRead));
-      offset += bytesRead;
+    const writer = await open(
+      tmpdir(),
+      LINUX_O_TMPFILE | constants.O_RDWR,
+      0o700,
+    );
+    try {
+      snapshot = await open(stableHandlePath(writer), constants.O_RDONLY);
+      while (offset < Number(opened.size)) {
+        const { bytesRead } = await source.read(
+          buffer,
+          0,
+          Math.min(buffer.byteLength, Number(opened.size) - offset),
+          offset,
+        );
+        if (bytesRead === 0) break;
+        sourceHash.update(buffer.subarray(0, bytesRead));
+        let written = 0;
+        while (written < bytesRead) {
+          const { bytesWritten } = await writer.write(
+            buffer,
+            written,
+            bytesRead - written,
+            offset + written,
+          );
+          if (bytesWritten === 0) unsafeExecutable(path);
+          written += bytesWritten;
+        }
+        offset += bytesRead;
+      }
+      await writer.sync();
+      await writer.chmod(0o500);
+    } finally {
+      await writer.close();
     }
     const [after, namedAfter] = await Promise.all([
-      handle.stat({ bigint: true }),
+      source.stat({ bigint: true }),
       lstat(path, { bigint: true }),
     ]);
     if (
@@ -573,18 +657,53 @@ async function inspectDelegatedExecutable(
       !sameExecutableMetadata(opened, namedAfter)
     )
       unsafeExecutable(path);
+    const snapshotInfo = await snapshot.stat({ bigint: true });
+    if (!snapshotInfo.isFile() || snapshotInfo.size !== opened.size)
+      unsafeExecutable(path);
+    const sourceDigest = sourceHash.digest('hex');
+    const snapshotDigest = await hashOpenFile(snapshot, Number(opened.size));
+    if (snapshotDigest !== sourceDigest) unsafeExecutable(path);
     return {
-      path,
-      digest: { algorithm: 'sha256', value: hash.digest('hex') },
-      device: opened.dev,
-      inode: opened.ino,
-      size: opened.size,
-      ctimeNanoseconds: timestampNanoseconds(opened, 'ctime'),
-      mtimeNanoseconds: timestampNanoseconds(opened, 'mtime'),
+      identity: {
+        path,
+        digest: { algorithm: 'sha256', value: snapshotDigest },
+        device: opened.dev,
+        inode: opened.ino,
+        size: opened.size,
+        ctimeNanoseconds: timestampNanoseconds(opened, 'ctime'),
+        mtimeNanoseconds: timestampNanoseconds(opened, 'mtime'),
+      },
+      fd: snapshot.fd,
+      close: async () => await snapshot!.close(),
     };
+  } catch (error) {
+    await snapshot?.close().catch(() => undefined);
+    throw error;
   } finally {
-    await handle.close();
+    await source.close().catch(() => undefined);
   }
+}
+
+async function hashOpenFile(
+  handle: Awaited<ReturnType<typeof open>>,
+  size: number,
+): Promise<string> {
+  const hash = createHash('sha256');
+  const buffer = new Uint8Array(64 * 1024);
+  let offset = 0;
+  while (offset < size) {
+    const { bytesRead } = await handle.read(
+      buffer,
+      0,
+      Math.min(buffer.byteLength, size - offset),
+      offset,
+    );
+    if (bytesRead === 0) break;
+    hash.update(buffer.subarray(0, bytesRead));
+    offset += bytesRead;
+  }
+  if (offset !== size) throw new Error('Executable snapshot was truncated');
+  return hash.digest('hex');
 }
 
 function sameExecutableMetadata(
