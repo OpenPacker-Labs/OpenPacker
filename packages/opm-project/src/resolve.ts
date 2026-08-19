@@ -1,5 +1,5 @@
 import { canonicalDigest } from '@openpacker/canonical';
-import type { PackageInstance } from '@openpacker/contracts';
+import type { PackageInstance, PolicyInput } from '@openpacker/contracts';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { providerFor, type RegistryOptions } from './registry.js';
@@ -602,6 +602,14 @@ export async function solveGraph(input: {
   graph: ResolvedGraph;
   rootRequirements: readonly { purl: string; vers?: string }[];
   evaluationTime?: string;
+  policy?: Pick<
+    PolicyInput,
+    | 'allowYanked'
+    | 'allowQuarantined'
+    | 'requiredEvidence'
+    | 'semanticLossMaximum'
+    | 'acceptedOverlayAuthorities'
+  >;
 }): Promise<{
   selected: PackageInstance[];
   solutionDigest: string;
@@ -622,7 +630,7 @@ export async function solveGraph(input: {
       'prefer-highest-native-version',
       'canonical-lexical-tie-break',
     ],
-    policy: {
+    policy: input.policy ?? {
       acceptedOverlayAuthorities: ['publisher'],
       allowQuarantined: false,
       allowYanked: false,

@@ -518,9 +518,13 @@ export async function materializeLockPackage(input: {
     await materialize({
       source: bytesSource(bytes),
       descriptor,
-      destination: stableStorePath,
+      // materialize opens and holds its own stable parent authority. Passing a
+      // /proc/self/fd path would make that walker traverse the procfs symlink
+      // as though it were project data and can alias one of its own new fds.
+      destination: storePath,
       format: input.pkg.format as ArchiveFormat,
     });
+    await revalidateStableDirectory(paths.store, storeHandle);
 
     let lifecycleScriptsExecuted = false;
     let sandboxOutcomes: SandboxOutcome[] = [];

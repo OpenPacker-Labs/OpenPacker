@@ -626,6 +626,14 @@ async function resolveTransitive(input: {
 
     const solved = await solveGraph({
       graph,
+      policy: {
+        allowYanked: policy.allowYanked,
+        allowQuarantined: policy.allowQuarantined,
+        requiredEvidence: policy.requiredEvidence,
+        semanticLossMaximum: policy.semanticLossMaximum,
+        acceptedOverlayAuthorities: input.manifest.policy
+          ?.acceptedOverlayAuthorities ?? ['publisher'],
+      },
       // Pin each root to the version the direct pass already locked. Left
       // unpinned, the closure can select a different release of a package the
       // lock has already decided, and that second copy lands as a transitive

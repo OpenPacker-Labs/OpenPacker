@@ -257,6 +257,13 @@ describe('PyPI transitive resolution', () => {
         graph,
         rootRequirements: [{ purl: 'pkg:pypi/demo-tool' }],
         evaluationTime: '2026-08-04T00:00:00Z',
+        policy: {
+          allowYanked: false,
+          allowQuarantined: false,
+          semanticLossMaximum: 'error',
+          requiredEvidence: [],
+          acceptedOverlayAuthorities: ['publisher'],
+        },
       });
       expect(solved.proofValid).toBe(true);
       const selected = solved.selected
