@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { AdapterRegistry, setAdapterRegistry } from '@openpacker/adapter-host';
+import type { PackagePacker } from '@openpacker/adapter-core';
 import type { PackReceipt } from '@openpacker/contracts';
 import { inspectArchive } from '@openpacker/materializer';
 import { PACK_RECEIPT, packProject } from '../src/pack.js';
@@ -67,6 +69,10 @@ describe('pack project', () => {
       expect.objectContaining({ purlType: 'npm', identifier: 'demo' }),
     );
     expect(receipt.artifacts).toHaveLength(1);
+    expect(receipt.artifacts[0]?.descriptorId).toBe(
+      first.artifacts.find((artifact) => artifact.nativeRole === 'distribution')
+        ?.digest,
+    );
     expect(receipt.normalizedManifestDigest.value).toMatch(/^[0-9a-f]{64}$/u);
   });
 
@@ -126,5 +132,72 @@ describe('pack project', () => {
         (entry) => entry.path,
       ),
     ).toEqual(['package/dist/index.js', 'package/package.json']);
+  });
+
+  it('rejects duplicate artifact identities before writing a receipt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-duplicate-pack-'));
+    roots.push(root);
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"demo","version":"1.0.0"}\n',
+    );
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const plan = {
+      strategy: 'delegate' as const,
+      purlType: 'fixture',
+      command: ['fixture'],
+      commands: [['fixture']],
+      requiresBuild: false,
+      requiresNetwork: false,
+      expectedRoles: ['distribution'],
+      semanticLoss: [],
+    };
+    const packer: PackagePacker = {
+      providerId: 'fixture',
+      providerManifestDigest: `sha256:${'b'.repeat(64)}`,
+      purlType: 'fixture',
+      async available() {
+        return { available: true };
+      },
+      async detect(projectRoot) {
+        return {
+          root: projectRoot,
+          manifestPath: join(projectRoot, 'package.json'),
+        };
+      },
+      async plan() {
+        return plan;
+      },
+      async pack() {
+        return {
+          ...plan,
+          performed: true,
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          artifacts: ['one', 'two'].map((name) => ({
+            path: join(root, `${name}.fixture`),
+            exactPurl: 'pkg:fixture/demo@1.0.0',
+            mediaType: 'application/octet-stream',
+            size: 1,
+            digest,
+            nativeRole: 'distribution',
+          })),
+        };
+      },
+    };
+    const registry = new AdapterRegistry();
+    registry.registerPackProvider(packer, { makeDefault: true });
+    setAdapterRegistry(registry);
+
+    await expect(
+      packProject({
+        root,
+        ecosystem: 'fixture',
+        strategy: 'delegate',
+        name: 'demo',
+        version: '1.0.0',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 });

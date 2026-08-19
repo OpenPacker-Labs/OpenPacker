@@ -172,6 +172,7 @@ function receiptFor(
   normalizedManifestDigest: PackReceipt['normalizedManifestDigest'],
   provider?: PackReceipt['provider'],
 ): PackReceipt {
+  const descriptorIds = new Set<string>();
   return {
     packReceiptVersion: '1',
     strategy: outcome.strategy,
@@ -193,20 +194,28 @@ function receiptFor(
             enforced: outcome.sandboxEnforced,
           },
         }),
-    artifacts: outcome.artifacts.map((artifact) => ({
-      descriptorId: artifact.exactPurl ?? artifact.digest,
-      digest: parseDigest(artifact.digest),
-      size: artifact.size,
-      mediaType: artifact.mediaType,
-      artifactType: artifact.mediaType,
-      ...(artifact.outputName === undefined
-        ? {}
-        : { fileName: basename(artifact.outputName) }),
-      nativeRole: artifact.nativeRole,
-      locations: [],
-      referrers: [],
-      externalRefs: [],
-    })),
+    artifacts: outcome.artifacts.map((artifact) => {
+      if (descriptorIds.has(artifact.digest))
+        throw new OpmError(
+          'INVALID_RESPONSE',
+          `Pack returned duplicate artifact digest ${artifact.digest}`,
+        );
+      descriptorIds.add(artifact.digest);
+      return {
+        descriptorId: artifact.digest,
+        digest: parseDigest(artifact.digest),
+        size: artifact.size,
+        mediaType: artifact.mediaType,
+        artifactType: artifact.mediaType,
+        ...(artifact.outputName === undefined
+          ? {}
+          : { fileName: basename(artifact.outputName) }),
+        nativeRole: artifact.nativeRole,
+        locations: [],
+        referrers: [],
+        externalRefs: [],
+      };
+    }),
     semanticLoss: [...outcome.semanticLoss],
   };
 }

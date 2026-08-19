@@ -260,6 +260,24 @@ describe('manifest package packer', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
+  it('reserves the host receipt name from delegated providers', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        await writeFile(join(outputDirectory, 'demo.test'), 'native');
+        await writeFile(join(outputDirectory, 'opm-pack-receipt.json'), '{}');
+        return outcome();
+      },
+    );
+
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
   it('retains preflight authority across a swap to empty and restore', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');

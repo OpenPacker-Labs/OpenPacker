@@ -601,6 +601,11 @@ async function collectArtifacts(
   }
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
+    if (entry.name === 'opm-pack-receipt.json')
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        'Delegated providers may not create the host receipt',
+      );
     if (!entry.isFile()) continue;
     const type = plan.artifacts.find(
       (candidate) =>
