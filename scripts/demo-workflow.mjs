@@ -17,7 +17,12 @@ import {
   descriptorForBytes,
   streamFromBytes,
 } from '@openpacker/artifact-model';
-import { FixtureHttpTransport, packageNodeId } from '@openpacker/adapter-core';
+import {
+  FixtureHttpTransport,
+  formatPurl,
+  packageNodeId,
+  parsePurl,
+} from '@openpacker/adapter-core';
 import { NpmRegistryProvider } from '@openpacker/adapter-npm';
 import { CargoSparseProvider } from '@openpacker/adapter-cargo';
 import { NugetV3Provider } from '@openpacker/adapter-nuget';
@@ -153,7 +158,10 @@ async function instance({
   cardinalityConstraints = [],
   status = 'published',
 }) {
-  const canonicalPurl = exactPurl.slice(0, exactPurl.lastIndexOf('@'));
+  const parsed = parsePurl(exactPurl);
+  assert.equal(parsed.type, purlType);
+  assert.equal(parsed.version, version);
+  const canonicalPurl = formatPurl({ ...parsed, version: undefined });
   // Node identity is the package-node-v1 projection, the same helper every
   // codec uses, so a universe built here is indistinguishable from one a codec
   // produced.
@@ -164,10 +172,12 @@ async function instance({
   const identity = {
     canonicalPurl,
     exactPurl,
-    purlType,
-    name,
-    version,
-    qualifiers: {},
+    purlType: parsed.type,
+    ...(parsed.namespace === undefined ? {} : { namespace: parsed.namespace }),
+    name: parsed.name,
+    version: parsed.version,
+    qualifiers: parsed.qualifiers,
+    ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
     nativeCoordinates: [{ ecosystem: purlType, coordinate: name, version }],
     aliases: [],
     sourceRefs: [source],

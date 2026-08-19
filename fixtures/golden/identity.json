@@ -7,7 +7,8 @@
         "canonicalPurl": "pkg:npm/%40openpacker/demo-tool",
         "exactPurl": "pkg:npm/%40openpacker/demo-tool@1.0.0-beta.1",
         "externalRefs": [],
-        "name": "@openpacker/demo-tool",
+        "name": "demo-tool",
+        "namespace": "@openpacker",
         "nativeCoordinates": [
           {
             "coordinate": "@openpacker/demo-tool",

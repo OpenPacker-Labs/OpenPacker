@@ -6,7 +6,7 @@
       "kind": "normalize"
     },
     {
-      "digest": "sha256:20f52fd52fa1d75c09e87e5519a928fdcc0148135068ea8222726c74f8850644",
+      "digest": "sha256:6a61d6a1bee12d87c4948b0ee1590c884a277f33b2f43c9edaa6c6918adaa3b9",
       "file": "fixtures/golden/identity.json",
       "kind": "identity"
     },
@@ -21,7 +21,7 @@
       "kind": "snapshot"
     },
     {
-      "digest": "sha256:9232d19ba07fdecf892c85d4e6ab8c46767b871c63a8d707855474684c1fffd5",
+      "digest": "sha256:2a028b0b241e416c0cb1b56addf1ae3ff686c90abf7ceb5a15e30996a9438632",
       "file": "fixtures/golden/universe.json",
       "kind": "universe"
     },
@@ -31,7 +31,7 @@
       "kind": "solution"
     },
     {
-      "digest": "sha256:a458e7ead33e1948810463500c7334d2fdc04fe1a0f6e4c6a775b1a947f97d96",
+      "digest": "sha256:67b3e3912aafc2e4c3ef833d375a2b2b4b45c43916591013d62a152245ad1e31",
       "file": "fixtures/golden/proof.json",
       "kind": "proof"
     },
@@ -41,17 +41,17 @@
       "kind": "explanation"
     },
     {
-      "digest": "sha256:6a920f59011d34897f43fe8c28a60c4e08b630b40c7bd5895001d16b9d33b72d",
+      "digest": "sha256:f9f5f1085032ef4546dc753f327b4339293b3e21a39df19a2cee02d642e01c63",
       "file": "fixtures/golden/unsatisfiable.json",
       "kind": "unsatisfiable"
     },
     {
-      "digest": "sha256:052b579c43b743725a3c16b3d9bfd841b665e3885bdec2eac532393505499f69",
+      "digest": "sha256:ed921ad07ee161cca69914ed5d476063fc9deed4744f2c101d774efbc7033169",
       "file": "fixtures/golden/receipt.json",
       "kind": "receipt"
     },
     {
-      "digest": "sha256:6355c252fdc3fc6292473a2268ce04225e439a1cd2629534fa490ffa4a68413d",
+      "digest": "sha256:76acb229013addd7b0d0de79f7c4890c7cecdad15393e1402e91a8070f51ddde",
       "file": "fixtures/golden/lockfile.json",
       "kind": "lockfile"
     },
@@ -61,17 +61,17 @@
       "kind": "lifecycle"
     },
     {
-      "digest": "sha256:ff55d9f7adb504e5e533e847c372fac9cb05c54b0cde750d35599fc9ea5f457c",
+      "digest": "sha256:1b22c3908e2a1986f1ac033f50086c8f8052d939cbc810a928bc5e9021556069",
       "file": "fixtures/golden/event.json",
       "kind": "event"
     },
     {
-      "digest": "sha256:37dced883af1163c8cce18316d0bca138a7f27a0142f5af0c79edf890cc07327",
+      "digest": "sha256:e8fa8c1267f612b266a7f20a2c52aa6517c55cf8638512a571616f4052ce9015",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
     {
-      "digest": "sha256:cedb2a515da1518eefc0c87b3018c2a03c33675f56008105cd5377e8224cda41",
+      "digest": "sha256:42ae4d0d1ad4b23f96388508a5153a0ad13bb365762d68e35b1dd236e2863c3d",
       "file": "fixtures/golden/ocm.json",
       "kind": "ocm"
     },
@@ -91,7 +91,7 @@
       "kind": "slsa"
     },
     {
-      "digest": "sha256:283c91c32b57a573c7f238851a3962720381e2a8c6857a04324e98e044e9fd33",
+      "digest": "sha256:ddd330bca068df4c7c0419515e2bac217f79e73cfb9c1bbd8dbe74736bbf9f85",
       "file": "fixtures/golden/cyclonedx.json",
       "kind": "cyclonedx"
     }

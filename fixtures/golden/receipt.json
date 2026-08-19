@@ -115,7 +115,7 @@
     },
     "proofDigest": {
       "algorithm": "sha256",
-      "value": "4c7d5d0ddbf31afaeeb382ac6091ba0c352542acfc35331954ab61a9179d455f"
+      "value": "9f5e16fddff6e87c2d726cd05ad0c5ad59475315c0ef0a803c1661cc953868c8"
     },
     "protocolVersion": "1.0-draft",
     "receiptVersion": "1",
@@ -202,18 +202,18 @@
     },
     "universeDigest": {
       "algorithm": "sha256",
-      "value": "bf295837b40cc7d3ef11f2d4b247b76abe40942e33be59b75e4fcea3bb1d82b6"
+      "value": "16f31616a67df4dcbd213b63ea7c7a0573fee1ebbdd7bd96ce656ca5fe0b4902"
     }
   },
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "6af321899f54b184768997075dad61a22288a890022832370ecdeb2390fd9921"
+    "value": "4b24d265169c31285f0c47c743622f3edba1914acf5dc661eb40ceab23b26a77"
   },
   "signatures": [
     {
       "algorithm": "ed25519",
       "keyId": "root",
-      "signature": "ZTrZdVYbDP0n_7CA14_pQGYpAUCAsu6jT_51zeXj-pSA4HLyoYfaf8Ok7wJ1gZMMNucf_pWOw_1RKD_VlywgDg"
+      "signature": "pT4d9ZhlI-w1ckQ25JYS-95BxKeNNj9Hj3YeyYw1T1nMhhc0G2Y1QojGCZeWCbfMH0vKdbL_uphCWTK6CnBcCQ"
     }
   ]
 }
