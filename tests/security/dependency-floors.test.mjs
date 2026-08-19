@@ -28,6 +28,21 @@ test('committed dependency fixtures stay above patched security floors', async (
       `${name} must be at least ${minimum}`,
     );
 
+  for (const [file, name, minimum] of [
+    ['packages/conformance/package.json', 'ajv', '8.18.0'],
+    ['packages/adapters-default/package.json', 'yaml', '2.8.3'],
+    ['packages/lock-import/package.json', 'yaml', '2.8.3'],
+  ]) {
+    const manifest = JSON.parse(await readFile(new URL(file, root), 'utf8'));
+    const match = manifest.dependencies[name].match(/^\^?(\d+\.\d+\.\d+)$/u);
+    assert.ok(match, `${file} must use an exact or caret ${name} range`);
+    assert.equal(
+      atLeast(match[1], minimum),
+      true,
+      `${file} ${name} must start at least ${minimum}`,
+    );
+  }
+
   const requirements = await readFile(
     new URL('fixtures/locks/pypi/requirements.txt', root),
     'utf8',
@@ -53,5 +68,10 @@ test('committed dependency fixtures stay above patched security floors', async (
     new URL('fixtures/locks/poetry/poetry.lock', root),
     'utf8',
   );
-  assert.match(poetry, /name = "requests"\nversion = "2\.33\.0"/u);
+  const poetryRequests = poetry.match(
+    /name = "requests"\nversion = "([0-9.]+)"[\s\S]*?python-versions = ">=3\.10"/u,
+  );
+  assert.ok(poetryRequests, 'Poetry requests must require Python >=3.10');
+  assert.equal(atLeast(poetryRequests[1], '2.33.0'), true);
+  assert.match(poetry, /\[metadata\][\s\S]*python-versions = "\^3\.10"/u);
 });
