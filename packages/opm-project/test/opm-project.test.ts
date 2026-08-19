@@ -1,8 +1,10 @@
 import {
+  appendFile,
   chmod,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rename,
@@ -16,7 +18,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   addPackage,
   activateGeneration,
@@ -51,7 +53,12 @@ import {
   whyPackage,
   OpmError,
 } from '../src/index.js';
-import { writeStableFile } from '../src/paths.js';
+import { packTarGzip } from '@openpacker/project-io';
+import {
+  readStableFile,
+  supportsStableProjectMetadata,
+  writeStableFile,
+} from '../src/paths.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureCatalog = join(repoRoot, 'fixtures/opm/catalog.json');
@@ -158,6 +165,12 @@ describe('parsePackageSpec', () => {
 });
 
 describe('path containment', () => {
+  it('withdraws project metadata mutation where stable handles are unavailable', () => {
+    expect(supportsStableProjectMetadata('linux')).toBe(true);
+    expect(supportsStableProjectMetadata('darwin')).toBe(true);
+    expect(supportsStableProjectMetadata('win32')).toBe(false);
+  });
+
   it('rejects unsafe aliases and store keys', () => {
     expect(() => assertSafeSegment('../evil', 'package alias')).toThrow(
       /Invalid package alias/,
@@ -271,6 +284,35 @@ describe('path containment', () => {
 });
 
 describe('fail-closed install paths', () => {
+  it('bounds metadata allocation when a file grows during read', async () => {
+    const root = await tempProject();
+    const path = join(root, '.opm/growing.json');
+    await writeFile(path, new Uint8Array(64 * 1024));
+    const probe = await open(path);
+    const prototype = Object.getPrototypeOf(probe) as {
+      read: (...args: unknown[]) => Promise<unknown>;
+    };
+    await probe.close();
+    const original = prototype.read;
+    const read = vi
+      .spyOn(prototype, 'read')
+      .mockImplementationOnce(async function (
+        this: unknown,
+        ...args: unknown[]
+      ) {
+        await appendFile(path, new Uint8Array(2 * 1024 * 1024));
+        return await Reflect.apply(original, this, args);
+      });
+    try {
+      await expect(readStableFile(path, 1024 * 1024)).rejects.toMatchObject({
+        code: 'INPUT_CHANGED',
+      });
+      expect(read.mock.calls[0]?.[2]).toBe(64 * 1024);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it('refuses a linked project state without reading outside the project', async () => {
     const root = await tempProject();
     const outside = join(root, 'outside-state.json');
@@ -516,6 +558,62 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
+  it('rejects a store directory substituted during materialization', async () => {
+    const root = await tempProject();
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode(
+          JSON.stringify({ name: 'swap-test', version: '1.0.0' }),
+        ),
+        executable: false,
+      },
+      {
+        path: 'package/large.bin',
+        contents: new Uint8Array(randomBytes(8 * 1024 * 1024)),
+        executable: false,
+      },
+    ]);
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const store = join(root, '.opm/store');
+    const backup = join(root, '.opm/store-original');
+    const materialising = materializeLockPackage({
+      root,
+      pkg: {
+        alias: 'swap-test',
+        purl: 'pkg:npm/swap-test@1.0.0',
+        version: '1.0.0',
+        digest,
+        size: bytes.byteLength,
+        format: 'tar+gzip',
+        mediaType: 'application/vnd.openpacker.package.tgz',
+        source: 'file:unused',
+        storeKey: storeKeyFromDigest(digest),
+        bins: [],
+        reason: 'direct',
+        ecosystem: 'npm',
+      },
+      offline: true,
+      bytes,
+    });
+    void materialising.catch(() => undefined);
+    let observed = false;
+    while (!observed) {
+      observed = (await readdir(store)).some((entry) =>
+        entry.startsWith(`.${storeKeyFromDigest(digest)}.`),
+      );
+      if (!observed)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    await rename(store, backup);
+    await mkdir(store);
+
+    await expect(materialising).rejects.toMatchObject({
+      code: 'INPUT_CHANGED',
+    });
+    expect(await readdir(store)).toEqual([]);
+  });
+
   it('rejects adding from a catalog entry whose digest does not match the bytes', async () => {
     const root = await tempProject();
     const catalogPath = join(root, '.opm/catalog.json');
@@ -586,6 +684,23 @@ describe('fail-closed install paths', () => {
       code: 'INVALID_STATE',
     });
     expect(await readFile(join(outside, 'marker'), 'utf8')).toBe('untouched');
+  });
+
+  it('treats a missing persisted bin target as invalid state, not absent state', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const state = await readProjectState(statePath);
+    const target = Object.values(state?.packages ?? {})[0]?.bins[0]?.target;
+    if (!target) throw new Error('fixture must declare a bin target');
+    await rm(target);
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
   });
 });
 

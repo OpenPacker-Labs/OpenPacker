@@ -89,7 +89,12 @@ tools/dev-bin/opm --help            # one-off, no PATH setup at all
 
 On Windows, `opm.cmd` and `opmx.cmd` do the same thing, except that they ask
 turbo every time rather than checking file times first — a warm cache hit is
-about 0.4s.
+about 0.4s. Project-state mutation (`init`, `add`, `install`, `update`,
+`remove`, generation switching and garbage collection) currently refuses with
+`UNSAFE_PATH`: Node does not expose the no-follow, handle-relative Windows
+filesystem primitive required to keep `.opm` metadata and shims race-safe.
+Read-only commands and `opm pack` remain available. This is an explicit
+capability withdrawal, not a fallback to pathname checks.
 
 ---
 
@@ -390,6 +395,10 @@ minimal_path = true
 # [policy]
 # allowed_lifecycle_script_packages = ["pkg:npm/esbuild"]
 ```
+
+`degrade-warn` and `off` do not waive hard process-tree ceilings. Execution
+still refuses unless Bubblewrap owns a PID namespace (Linux) or MXC owns the job
+(macOS/Windows).
 
 **Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
 `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).

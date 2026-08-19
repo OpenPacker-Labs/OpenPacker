@@ -110,3 +110,15 @@ upstream Codex Security release currently has no patched version.
   regressions close each oracle. Materializer 18/18, project I/O 24/24, OPM
   project 149/149, sandbox 36/36, and the amended exact 12-gate layer aggregate
   passed with process authority; diff checks were clean.
+- 2026-08-19 layer 03 second review remediation: the amended review found
+  Windows project-state capability overclaim, a growing-file allocation gap,
+  store/generation authority handoffs, validation-wide absent-state handling,
+  incomplete directory/staging snapshots, and best-effort descendant killing.
+  Windows project mutation is now explicitly withdrawn while read-only and
+  packing remain; metadata reads allocate only the snapshotted bounded size;
+  store and generation transactions retain one fd-relative authority through
+  completion; only the state-file open maps ENOENT to absence; layout compares
+  complete source and staged tree snapshots; and production execution requires
+  Bubblewrap PID-namespace or MXC job ownership (the mock process group is
+  test-only). OPM project 153/153, project I/O 26/26, sandbox 35/35, and the
+  exact amended 12-gate layer aggregate passed with process authority.

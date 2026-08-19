@@ -1,5 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { join, parse } from 'node:path';
+import { spawn, type ChildProcess } from 'node:child_process';
 import type { SandboxBackend } from '../types.js';
 
 /**
@@ -31,6 +30,7 @@ export function createMockBackend(options?: {
         maximumStdoutBytes: input.maximumStdoutBytes,
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
+        treeContainment: 'test-only',
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -132,6 +132,7 @@ export async function spawnCapture(input: {
   maximumStdoutBytes?: number;
   maximumStderrBytes?: number;
   maximumOutputBytes?: number;
+  treeContainment?: 'pid-namespace' | 'test-only';
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -145,6 +146,16 @@ export async function spawnCapture(input: {
   if (!command) {
     throw new SandboxBackendError('EMPTY_ARGV', 'argv[0] is required');
   }
+  if (input.treeContainment === undefined)
+    throw new SandboxBackendError(
+      'TREE_CONTAINMENT_UNAVAILABLE',
+      'Execution requires an OS-owned PID namespace or job object',
+    );
+  if (input.treeContainment === 'pid-namespace' && process.platform !== 'linux')
+    throw new SandboxBackendError(
+      'TREE_CONTAINMENT_UNAVAILABLE',
+      'PID namespace containment is unavailable on this platform',
+    );
 
   const timeoutMs = input.timeoutMs ?? 0;
   let timeoutSignal: AbortSignal | undefined;
@@ -183,7 +194,10 @@ export async function spawnCapture(input: {
       let settled = false;
       const terminateTree = (reason: 'limit' | 'abort') => {
         aborted ||= reason === 'abort';
-        return (termination ??= terminateProcessTree(child));
+        return (termination ??= terminateProcessTree(
+          child,
+          input.treeContainment!,
+        ));
       };
       child.stdout?.on('data', (chunk: unknown) => {
         if (!output.push('stdout', chunk)) void terminateTree('limit');
@@ -220,69 +234,15 @@ export async function spawnCapture(input: {
   }
 }
 
-async function terminateProcessTree(child: ChildProcess): Promise<void> {
+async function terminateProcessTree(
+  child: ChildProcess,
+  containment: 'pid-namespace' | 'test-only',
+): Promise<void> {
   if (!child.pid) return;
-  if (process.platform === 'win32') {
-    const taskkill = join(
-      parse(process.execPath).root,
-      'Windows',
-      'System32',
-      'taskkill.exe',
-    );
-    const killed = await new Promise<boolean>((resolve) => {
-      const killer = spawn(taskkill, ['/PID', String(child.pid), '/T', '/F'], {
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      killer.once('error', () => resolve(false));
-      killer.once('close', (code) => resolve(code === 0));
-    });
-    if (killed) return;
-    child.kill('SIGKILL');
-    return;
-  }
-
   try {
-    process.kill(-child.pid, 'SIGSTOP');
-  } catch {
-    // The process may already be exiting; still collect escaped descendants.
-  }
-  for (const pid of descendantPids(child.pid).reverse()) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // A process that exited between the snapshot and kill is already safe.
-    }
-  }
-  try {
-    process.kill(-child.pid, 'SIGKILL');
+    if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+    else if (containment === 'test-only') child.kill('SIGKILL');
   } catch {
     child.kill('SIGKILL');
   }
-}
-
-function descendantPids(root: number): number[] {
-  const result = spawnSync('/bin/ps', ['-axo', 'pid=,ppid='], {
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024,
-  });
-  if (result.status !== 0 || typeof result.stdout !== 'string') return [];
-  const children = new Map<number, number[]>();
-  for (const line of result.stdout.split('\n')) {
-    const [pidText, parentText] = line.trim().split(/\s+/u);
-    const pid = Number(pidText);
-    const parent = Number(parentText);
-    if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(parent)) continue;
-    const list = children.get(parent) ?? [];
-    list.push(pid);
-    children.set(parent, list);
-  }
-  const descendants: number[] = [];
-  const pending = [...(children.get(root) ?? [])];
-  while (pending.length > 0) {
-    const pid = pending.pop()!;
-    descendants.push(pid);
-    pending.push(...(children.get(pid) ?? []));
-  }
-  return descendants;
 }

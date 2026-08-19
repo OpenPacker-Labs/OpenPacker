@@ -64,7 +64,10 @@ Native layout projection is limited to Linux and macOS, where OpenPacker can
 traverse and publish through runtime-verified no-follow directory handles.
 Windows refuses `layout` projection with `UNSAFE_PATH`; `manifest` and `lock`
 projection remain available there until Node exposes an equivalent safe
-fd-relative filesystem primitive.
+fd-relative filesystem primitive. The broader `.opm` project-state workflow is
+likewise unavailable on Windows; read-only commands and packing remain
+available. The CLI guide records that explicit withdrawal separately from
+projection depth.
 
 `opm` is now safe to run in an existing npm or .NET project: it adds what it
 manages and leaves everything else where it was. That is the property that made

@@ -36,11 +36,13 @@ policy rather than claim “MXC-secure” as a product fact.
    The policy is project-config (`opm.toml` `[sandbox]`) and PREX `PolicyInput`
    fields, bound into receipts via `policyDigest`.
 2. **Default mode is fail-closed.** If the requested jail cannot be enforced,
-   refuse rather than silently unsandbox. Projects may opt into `degrade-warn`
-   or `off`; those choices are noisy in logs and receipts.
+   refuse rather than silently unsandbox. `degrade-warn` and `off` may relax
+   isolation policy, but never waive hard process-tree termination: package
+   execution still refuses when no OS-owned tree is available.
 3. **Backend ladder:** prefer MXC when available and able to enforce the
-   profile; else native jails (Bubblewrap on Linux, Seatbelt on macOS, process
-   isolation on Windows when available); else fail per mode.
+   profile; else Bubblewrap's PID namespace on Linux; else refuse. Seatbelt
+   alone does not own a killable process tree, and Windows requires MXC's job
+   containment.
 4. **Single enforcement funnel** — `@openpacker/sandbox` `runInSandbox`.
    Lifecycle scripts, `opmx`/ephemeral runs, and `InstallerProvider.install` all
    go through it. No second ad-hoc spawn for package execution.

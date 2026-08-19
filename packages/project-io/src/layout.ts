@@ -28,6 +28,15 @@ export interface MaterialiseResult {
   copied: boolean;
 }
 
+interface TreeEntrySnapshot {
+  type: 'directory' | 'file';
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  ctimeNs: bigint;
+  mtimeNs: bigint;
+}
+
 /**
  * Replace `destination` with the contents of `source`.
  *
@@ -66,7 +75,18 @@ export async function materialiseTree(
     handles.push(stagingHandle);
     const sourceHandle = await openStableDirectory(source, false);
     handles.push(sourceHandle);
-    await walk(sourceHandle, stagingHandle, result);
+    const sourceSnapshot = new Map<string, TreeEntrySnapshot>();
+    const stagedSnapshot = new Map<string, TreeEntrySnapshot>();
+    await walk(
+      sourceHandle,
+      stagingHandle,
+      result,
+      '',
+      sourceSnapshot,
+      stagedSnapshot,
+    );
+    await assertTreeSnapshot(sourceHandle, sourceSnapshot);
+    await assertTreeSnapshot(stagingHandle, stagedSnapshot);
     const published = join(parentPath, name);
     await assertNamedHandle(staging, stagingHandle);
     await rm(published, { recursive: true, force: true });
@@ -104,19 +124,31 @@ async function walk(
   source: FileHandle,
   destination: FileHandle,
   result: MaterialiseResult,
+  at: string,
+  sourceSnapshot: Map<string, TreeEntrySnapshot>,
+  destinationSnapshot: Map<string, TreeEntrySnapshot>,
 ): Promise<void> {
   const sourcePath = handlePath(source);
   const destinationPath = handlePath(destination);
+  const sourceDirectoryBefore = await source.stat({ bigint: true });
   const entries = await readdir(sourcePath, { withFileTypes: true });
   for (const entry of entries) {
     const from = join(sourcePath, entry.name);
     const to = join(destinationPath, entry.name);
+    const relativePath = at === '' ? entry.name : `${at}/${entry.name}`;
     if (entry.isDirectory()) {
       const fromHandle = await openDirectory(from, false);
       await mkdir(to);
       const toHandle = await openDirectory(to, false);
       try {
-        await walk(fromHandle, toHandle, result);
+        await walk(
+          fromHandle,
+          toHandle,
+          result,
+          relativePath,
+          sourceSnapshot,
+          destinationSnapshot,
+        );
       } finally {
         await Promise.all([fromHandle.close(), toHandle.close()]);
       }
@@ -173,6 +205,9 @@ async function walk(
       )
         throw unsafe(from);
       await output.chmod((before.mode & 0o111n) !== 0n ? 0o755 : 0o644);
+      const finalOutput = await output.stat({ bigint: true });
+      destinationSnapshot.set(relativePath, snapshot('file', finalOutput));
+      sourceSnapshot.set(relativePath, snapshot('file', before));
       result.copied = true;
     } finally {
       await output?.close().catch(() => undefined);
@@ -180,6 +215,117 @@ async function walk(
     }
     result.files += 1;
   }
+  const sourceDirectoryAfter = await source.stat({ bigint: true });
+  if (!sameMetadata(sourceDirectoryBefore, sourceDirectoryAfter))
+    throw unsafe(sourcePath);
+  sourceSnapshot.set(at, snapshot('directory', sourceDirectoryBefore));
+  destinationSnapshot.set(
+    at,
+    snapshot('directory', await destination.stat({ bigint: true })),
+  );
+}
+
+async function assertTreeSnapshot(
+  root: FileHandle,
+  expected: ReadonlyMap<string, TreeEntrySnapshot>,
+): Promise<void> {
+  const actual = new Map<string, TreeEntrySnapshot>();
+  await captureTree(root, '', actual);
+  if (actual.size !== expected.size) throw unsafe(handlePath(root));
+  for (const [path, snapshot] of expected) {
+    const current = actual.get(path);
+    if (!current || !sameSnapshot(snapshot, current))
+      throw unsafe(path === '' ? handlePath(root) : path);
+  }
+}
+
+async function captureTree(
+  directory: FileHandle,
+  at: string,
+  out: Map<string, TreeEntrySnapshot>,
+): Promise<void> {
+  const before = await directory.stat({ bigint: true });
+  const directoryPath = handlePath(directory);
+  for (const entry of await readdir(directoryPath, { withFileTypes: true })) {
+    const path = at === '' ? entry.name : `${at}/${entry.name}`;
+    const childPath = join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      const child = await openDirectory(childPath, false);
+      try {
+        await captureTree(child, path, out);
+      } finally {
+        await child.close();
+      }
+      continue;
+    }
+    if (!entry.isFile()) throw unsafe(childPath);
+    const file = await open(
+      childPath,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
+    try {
+      const info = await file.stat({ bigint: true });
+      if (!info.isFile()) throw unsafe(childPath);
+      out.set(path, snapshot('file', info));
+    } finally {
+      await file.close();
+    }
+  }
+  const after = await directory.stat({ bigint: true });
+  if (!sameMetadata(before, after)) throw unsafe(directoryPath);
+  out.set(at, snapshot('directory', before));
+}
+
+function snapshot(
+  type: TreeEntrySnapshot['type'],
+  info: Awaited<ReturnType<FileHandle['stat']>>,
+): TreeEntrySnapshot {
+  return {
+    type,
+    dev: BigInt(info.dev),
+    ino: BigInt(info.ino),
+    size: BigInt(info.size),
+    ctimeNs:
+      'ctimeNs' in info
+        ? BigInt(info.ctimeNs)
+        : BigInt(info.ctimeMs) * 1_000_000n,
+    mtimeNs:
+      'mtimeNs' in info
+        ? BigInt(info.mtimeNs)
+        : BigInt(info.mtimeMs) * 1_000_000n,
+  };
+}
+
+function sameSnapshot(
+  left: TreeEntrySnapshot,
+  right: TreeEntrySnapshot,
+): boolean {
+  return left.type === right.type && sameMetadata(left, right);
+}
+
+function sameMetadata(
+  left: {
+    dev: bigint;
+    ino: bigint;
+    size: bigint;
+    ctimeNs: bigint;
+    mtimeNs: bigint;
+  },
+  right: {
+    dev: bigint;
+    ino: bigint;
+    size: bigint;
+    ctimeNs: bigint;
+    mtimeNs: bigint;
+  },
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.ctimeNs === right.ctimeNs &&
+    left.mtimeNs === right.mtimeNs
+  );
 }
 
 async function openStableDirectory(

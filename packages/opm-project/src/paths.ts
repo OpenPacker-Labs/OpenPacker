@@ -199,6 +199,12 @@ export function stableHandlePath(handle: FileHandle): string {
   );
 }
 
+export function supportsStableProjectMetadata(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'linux' || platform === 'darwin';
+}
+
 export async function ensureStableDirectory(path: string): Promise<void> {
   const handle = await openStableDirectory(path, true);
   try {
@@ -213,22 +219,58 @@ export async function readStableFile(
   maximumBytes = 4 * 1024 * 1024,
 ): Promise<string> {
   const parent = await openStableDirectory(dirname(path));
-  let file: FileHandle | undefined;
   try {
     await assertNamedDirectory(dirname(path), parent);
-    file = await open(
-      join(stableHandlePath(parent), basename(path)),
-      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    const contents = await readStableFileAt(
+      parent,
+      basename(path),
+      maximumBytes,
+      path,
     );
+    await assertNamedDirectory(dirname(path), parent);
+    return contents;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+      throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
+    throw error;
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function readStableFileAt(
+  parent: FileHandle,
+  name: string,
+  maximumBytes = 4 * 1024 * 1024,
+  displayPath = name,
+): Promise<string> {
+  assertSafeSegment(name, 'metadata file name');
+  const file = await open(
+    join(stableHandlePath(parent), name),
+    constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+  );
+  try {
     const before = await file.stat({ bigint: true });
     if (!before.isFile() || before.size > BigInt(maximumBytes))
       throw new OpmError(
         'INVALID_STATE',
-        `Metadata file is special or exceeds ${maximumBytes} bytes: ${path}`,
+        `Metadata file is special or exceeds ${maximumBytes} bytes: ${displayPath}`,
       );
-    const contents = await file.readFile('utf8');
+    const buffer = Buffer.alloc(Number(before.size));
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const { bytesRead } = await file.read(
+        buffer,
+        offset,
+        buffer.byteLength - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
     const after = await file.stat({ bigint: true });
     if (
+      BigInt(offset) !== before.size ||
       after.dev !== before.dev ||
       after.ino !== before.ino ||
       after.size !== before.size ||
@@ -237,17 +279,11 @@ export async function readStableFile(
     )
       throw new OpmError(
         'INPUT_CHANGED',
-        `Metadata file changed while it was read: ${path}`,
+        `Metadata file changed while it was read: ${displayPath}`,
       );
-    await assertNamedDirectory(dirname(path), parent);
-    return contents;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
-      throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
-    throw error;
+    return buffer.toString('utf8');
   } finally {
-    await file?.close().catch(() => undefined);
-    await parent.close();
+    await file.close();
   }
 }
 
@@ -257,8 +293,24 @@ export async function writeStableFile(
   mode = 0o644,
 ): Promise<void> {
   const parent = await openStableDirectory(dirname(path), true);
+  try {
+    await writeStableFileAt(parent, basename(path), contents, mode, path);
+    await assertNamedDirectory(dirname(path), parent);
+  } finally {
+    await parent.close();
+  }
+}
+
+export async function writeStableFileAt(
+  parent: FileHandle,
+  name: string,
+  contents: string | Uint8Array,
+  mode = 0o644,
+  displayPath = name,
+): Promise<void> {
+  assertSafeSegment(name, 'metadata file name');
   const directory = stableHandlePath(parent);
-  const temporary = join(directory, `.${basename(path)}.${randomUUID()}.tmp`);
+  const temporary = join(directory, `.${name}.${randomUUID()}.tmp`);
   let file: FileHandle | undefined;
   try {
     file = await open(
@@ -276,22 +328,27 @@ export async function writeStableFile(
     if (opened.dev !== named.dev || opened.ino !== named.ino)
       throw new OpmError(
         'INPUT_CHANGED',
-        `Metadata staging file changed before publication: ${path}`,
+        `Metadata staging file changed before publication: ${displayPath}`,
       );
-    const published = join(directory, basename(path));
+    const published = join(directory, name);
     await rename(temporary, published);
     const publishedInfo = await lstat(published, { bigint: true });
     if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)
       throw new OpmError(
         'INPUT_CHANGED',
-        `Metadata file changed during publication: ${path}`,
+        `Metadata file changed during publication: ${displayPath}`,
       );
-    await assertNamedDirectory(dirname(path), parent);
   } finally {
     await file?.close().catch(() => undefined);
     await rm(temporary, { force: true }).catch(() => undefined);
-    await parent.close();
   }
+}
+
+export async function revalidateStableDirectory(
+  path: string,
+  handle: FileHandle,
+): Promise<void> {
+  await assertNamedDirectory(path, handle);
 }
 
 export async function removeStableFile(path: string): Promise<void> {

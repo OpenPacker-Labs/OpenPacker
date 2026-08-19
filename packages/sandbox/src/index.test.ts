@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { collectMxcChild } from './backends/mxc.js';
 import {
   assertGrantsNotDangerous,
+  buildBwrapArgv,
   buildSeatbeltProfile,
   createMockBackend,
   digestSandboxPolicy,
@@ -121,22 +122,18 @@ describe('@openpacker/sandbox', () => {
     ).toBe(true);
   });
 
-  it('degrade-warn runs ambient when backend unavailable', async () => {
+  it('degrade-warn refuses ambient execution without owned tree containment', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
-    const outcome = await runInSandbox({
-      argv: [process.execPath, '-e', 'process.stdout.write("ok")'],
-      cwd,
-      policy: { mode: 'degrade-warn', required: false },
-      readwritePaths: [cwd],
-      readonlyPaths: [],
-      backend: createMockBackend({ unavailable: true }),
-    });
-    expect(outcome.exitCode).toBe(0);
-    expect(outcome.stdout).toContain('ok');
-    expect(outcome.degraded).toBe(true);
-    expect(outcome.losses.some((l) => l.code === SANDBOX_LOSS.DEGRADED)).toBe(
-      true,
-    );
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.stdout.write("never")'],
+        cwd,
+        policy: { mode: 'degrade-warn', required: false },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        backend: createMockBackend({ unavailable: true }),
+      }),
+    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
   });
 
   it('mock backend executes argv with scrubbed env', async () => {
@@ -167,19 +164,17 @@ describe('@openpacker/sandbox', () => {
     expect(body.home).toContain('openpacker-sandbox');
   });
 
-  it('mode off marks degraded ambient execution', async () => {
+  it('mode off still refuses execution without owned tree containment', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
-    const outcome = await runInSandbox({
-      argv: [process.execPath, '-e', 'process.stdout.write("off")'],
-      cwd,
-      policy: { mode: 'off' },
-      readwritePaths: [cwd],
-      readonlyPaths: [],
-    });
-    expect(outcome.exitCode).toBe(0);
-    expect(outcome.backend).toBe('off');
-    expect(outcome.degraded).toBe(true);
-    expect(outcome.enforced).toBe(false);
+    await expect(
+      runInSandbox({
+        argv: [process.execPath, '-e', 'process.stdout.write("never")'],
+        cwd,
+        policy: { mode: 'off' },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+      }),
+    ).rejects.toMatchObject({ code: 'TREE_CONTAINMENT_UNAVAILABLE' });
   });
 
   it('rejects writable native sandbox helpers', async () => {
@@ -190,30 +185,24 @@ describe('@openpacker/sandbox', () => {
     expect(findTrustedSandboxHelper('bwrap', [directory])).toBeUndefined();
   });
 
-  it('bounds backend and ambient output', async () => {
+  it('bounds backend output', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-output-'));
-    for (const mode of ['fail-closed', 'off'] as const) {
-      const outcome = await runInSandbox({
-        argv: [
-          process.execPath,
-          '-e',
-          'process.stdout.write("x".repeat(4096))',
-        ],
-        cwd,
-        policy: {
-          mode,
-          maximumStdoutBytes: 64,
-          maximumStderrBytes: 64,
-          maximumOutputBytes: 96,
-        },
-        readwritePaths: [cwd],
-        readonlyPaths: [],
-        ...(mode === 'fail-closed' ? { backend: createMockBackend() } : {}),
-      });
-      expect(outcome.exitCode).toBe(125);
-      expect(outcome.outputLimitExceeded).toBe('stdout');
-      expect(Buffer.byteLength(outcome.stdout)).toBeLessThanOrEqual(64);
-    }
+    const outcome = await runInSandbox({
+      argv: [process.execPath, '-e', 'process.stdout.write("x".repeat(4096))'],
+      cwd,
+      policy: {
+        mode: 'fail-closed',
+        maximumStdoutBytes: 64,
+        maximumStderrBytes: 64,
+        maximumOutputBytes: 96,
+      },
+      readwritePaths: [cwd],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(outcome.exitCode).toBe(125);
+    expect(outcome.outputLimitExceeded).toBe('stdout');
+    expect(Buffer.byteLength(outcome.stdout)).toBeLessThanOrEqual(64);
   });
 
   it('kills the process tree when output exceeds policy', async () => {
@@ -309,28 +298,25 @@ describe('@openpacker/sandbox', () => {
     ).rejects.toBeInstanceOf(JailPathError);
   });
 
-  it.each(['fail-closed', 'off'] as const)(
-    'kills descendants after a %s timeout',
-    async (mode) => {
-      const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
-      const marker = join(cwd, 'escaped');
-      const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
-      const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000)`;
-      const started = Date.now();
-      const outcome = await runInSandbox({
-        argv: [process.execPath, '-e', parent],
-        cwd,
-        policy: { mode, timeoutMs: 100 },
-        readwritePaths: [cwd],
-        readonlyPaths: [],
-        ...(mode === 'fail-closed' ? { backend: createMockBackend() } : {}),
-      });
-      expect(Date.now() - started).toBeLessThan(8_000);
-      expect(outcome.exitCode).not.toBe(0);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
-    },
-  );
+  it('kills descendants after a contained timeout', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
+    const marker = join(cwd, 'escaped');
+    const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
+    const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`;
+    const started = Date.now();
+    const outcome = await runInSandbox({
+      argv: [process.execPath, '-e', parent],
+      cwd,
+      policy: { mode: 'fail-closed', timeoutMs: 100 },
+      readwritePaths: [cwd],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(outcome.exitCode).not.toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 
   it('kills descendants after an external abort', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-abort-'));
@@ -412,6 +398,18 @@ describe('@openpacker/sandbox', () => {
         profile: 'package-exec',
       }),
     ).toContain('(deny network*)');
+    const bwrap = buildBwrapArgv({
+      bwrap: '/usr/bin/bwrap',
+      command: ['/usr/bin/true'],
+      cwd: '/tmp',
+      readwritePaths: ['/tmp'],
+      readonlyPaths: [],
+      network: false,
+      profile: 'package-exec',
+      environment: {},
+    });
+    expect(bwrap).toContain('--unshare-pid');
+    expect(bwrap).toContain('--die-with-parent');
     expect(sandboxPolicyFromInstallOptions({ mode: 'off' })).toMatchObject({
       mode: 'off',
       required: false,

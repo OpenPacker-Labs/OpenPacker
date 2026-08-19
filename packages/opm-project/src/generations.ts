@@ -13,6 +13,7 @@ import {
   openStableDirectory,
   projectPaths,
   readStableFile,
+  readStableFileAt,
   removeStableFile,
   removeStableTree,
   resolveContained,
@@ -274,44 +275,57 @@ export async function readGeneration(
   digest: string,
 ): Promise<Generation> {
   const paths = environmentPaths(root);
+  const handle = await openStableDirectory(paths.generations).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
+    throw error;
+  });
   try {
-    const generation = JSON.parse(
-      await readStableFile(generationFile(paths.generations, digest)),
-    ) as Generation;
-    // A record whose digest does not match its content has been edited.
-    const { generationDigest: stored, ...body } = generation;
-    if (stored !== generationDigest(body))
-      throw new OpmError(
-        'DIGEST_MISMATCH',
-        `Generation ${digest} does not match its recorded digest`,
-      );
-    return generation;
+    const name = basename(generationFile(paths.generations, digest));
+    return parseGeneration(await readStableFileAt(handle, name), digest);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
     throw error;
+  } finally {
+    await handle.close();
   }
+}
+
+function parseGeneration(text: string, digest: string): Generation {
+  const generation = JSON.parse(text) as Generation;
+  const { generationDigest: stored, ...body } = generation;
+  if (stored !== digest || stored !== generationDigest(body))
+    throw new OpmError(
+      'DIGEST_MISMATCH',
+      `Generation ${digest} does not match its recorded digest`,
+    );
+  return generation;
 }
 
 export async function listGenerations(root: string): Promise<Generation[]> {
   const paths = environmentPaths(root);
-  let names: string[];
-  let handle: FileHandle | undefined;
+  let handle: FileHandle;
   try {
     handle = await openStableDirectory(paths.generations);
-    names = await readdir(stableHandlePath(handle));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
-  } finally {
-    await handle?.close();
   }
-  const generations = await Promise.all(
-    names
-      .filter((name) => name.endsWith('.json'))
-      .map((name) => readGeneration(root, `sha256:${name.slice(0, -5)}`)),
-  );
-  return generations.sort((left, right) => left.sequence - right.sequence);
+  try {
+    const names = await readdir(stableHandlePath(handle));
+    const generations = await Promise.all(
+      names
+        .filter((name) => /^[0-9a-f]{64}\.json$/u.test(name))
+        .map(async (name) => {
+          const digest = `sha256:${name.slice(0, -5)}`;
+          return parseGeneration(await readStableFileAt(handle, name), digest);
+        }),
+    );
+    return generations.sort((left, right) => left.sequence - right.sequence);
+  } finally {
+    await handle.close();
+  }
 }
 
 /**

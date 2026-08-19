@@ -101,16 +101,11 @@ export function probeNativeBackends(): BackendProbe[] {
           },
     );
   } else if (platform() === 'darwin') {
-    const se = findTrustedSandboxHelper('sandbox-exec');
-    probes.push(
-      se
-        ? { id: 'native-seatbelt', available: true }
-        : {
-            id: 'native-seatbelt',
-            available: false,
-            reason: 'sandbox-exec not found',
-          },
-    );
+    probes.push({
+      id: 'native-seatbelt',
+      available: false,
+      reason: 'sandbox-exec does not own a killable process tree',
+    });
   } else if (platform() === 'win32') {
     probes.push({
       id: 'native-process',
@@ -178,6 +173,7 @@ export function createBwrapBackend(): SandboxBackend {
         maximumStdoutBytes: input.maximumStdoutBytes,
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
+        treeContainment: 'pid-namespace',
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -294,49 +290,10 @@ export function buildBwrapArgv(input: {
 }
 
 export function createSeatbeltBackend(): SandboxBackend {
-  const helper = findTrustedSandboxHelper('sandbox-exec');
-  if (!helper) {
-    throw new SandboxBackendError(
-      'UNAVAILABLE',
-      'trusted sandbox-exec not found in system paths',
-    );
-  }
-  return {
-    id: 'native-seatbelt',
-    async run(input) {
-      assertTrustedSandboxHelper(helper);
-      const cwdPath = resolve(input.cwd);
-      const rw = [...input.readwritePaths];
-      const ro = [...input.readonlyPaths];
-      if (!rw.map((p) => resolve(p)).includes(cwdPath)) ro.push(cwdPath);
-      const profile = buildSeatbeltProfile({
-        readwritePaths: rw,
-        readonlyPaths: ro,
-        network: input.network,
-        profile: input.profile,
-        legacyFatRoot: input.legacyFatRoot === true,
-      });
-      return spawnCapture({
-        argv: [
-          helper.path,
-          '-p',
-          profile,
-          '/usr/bin/env',
-          '-i',
-          ...Object.entries(input.env)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([name, value]) => `${name}=${value}`),
-          ...input.argv,
-        ],
-        cwd: input.cwd,
-        env: input.hostEnv,
-        maximumStdoutBytes: input.maximumStdoutBytes,
-        maximumStderrBytes: input.maximumStderrBytes,
-        maximumOutputBytes: input.maximumOutputBytes,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      });
-    },
-  };
+  throw new SandboxBackendError(
+    'UNAVAILABLE',
+    'sandbox-exec does not own a killable process tree; use MXC on macOS',
+  );
 }
 
 export function buildSeatbeltProfile(input: {
@@ -397,7 +354,5 @@ ${net}
 export function createNativeBackend(): SandboxBackend | undefined {
   if (platform() === 'linux' && findTrustedSandboxHelper('bwrap'))
     return createBwrapBackend();
-  if (platform() === 'darwin' && findTrustedSandboxHelper('sandbox-exec'))
-    return createSeatbeltBackend();
   return undefined;
 }
