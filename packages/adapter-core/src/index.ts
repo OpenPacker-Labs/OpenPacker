@@ -1,4 +1,8 @@
-import { canonicalProjectionDigest, formatDigest } from '@openpacker/canonical';
+import {
+  canonicalProjectionDigest,
+  formatDigest,
+  parseCanonicalJson,
+} from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
   Distribution,
@@ -1555,7 +1559,7 @@ export function json<T>(response: HttpResponse): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
   try {
-    const value = JSON.parse(text(response)) as T;
+    const value = parseCanonicalJson(text(response)) as T;
     assertBoundedProviderMetadata(value);
     return value;
   } catch (error) {

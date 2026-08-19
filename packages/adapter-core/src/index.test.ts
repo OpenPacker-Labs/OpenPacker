@@ -236,6 +236,16 @@ it('maps status, corruption, limits, and cancellation to stable failures', async
   ).toThrowError(
     expect.objectContaining({ code: 'INVALID_PROVIDER_METADATA' }),
   );
+  expect(() =>
+    json({
+      status: 200,
+      headers: {},
+      body: new TextEncoder().encode('{"version":"1","version":"2"}'),
+      url: 'https://fixture.test/duplicate',
+    }),
+  ).toThrowError(
+    expect.objectContaining({ code: 'INVALID_PROVIDER_METADATA' }),
+  );
 
   const controller = new AbortController();
   controller.abort(new Error('cancelled'));
