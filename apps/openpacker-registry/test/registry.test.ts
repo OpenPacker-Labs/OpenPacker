@@ -388,7 +388,8 @@ describe('reading, through the real client', () => {
     });
 
     const client = clientFor(app, {
-      keys: { 'publisher-1': keys.leaf!, 'test-registry': keys.root! },
+      keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
       clock: () => Date.parse('2026-08-10T00:00:00.000Z'),
     });
     const entry = await client.entry('com.example.demo', '1.2.3');

@@ -465,7 +465,8 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
-      keys: { 'publisher-1': keys.leaf!, 'test-registry': keys.root! },
+      keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -490,7 +491,8 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
-      keys: { 'publisher-1': keys.leaf!, 'test-registry': keys.root! },
+      keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -514,7 +516,8 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
-      keys: { 'publisher-1': keys.leaf!, 'test-registry': keys.root! },
+      keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -541,7 +544,7 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
-      keys: { 'test-registry': keys.root! },
+      registryKeys: { 'test-registry': keys.root! },
       revocationTtlMilliseconds: 1000,
       clock: () => now,
     });
@@ -570,7 +573,7 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
-      keys: { 'test-registry': keys.root! },
+      registryKeys: { 'test-registry': keys.root! },
       revocationTtlMilliseconds: 1000,
       clock: () => now,
     });
@@ -606,11 +609,41 @@ describe('RegistryClient revocation', () => {
       const client = new RegistryClient({
         baseUrl: BASE,
         transport,
-        keys: { 'test-registry': keys.root! },
+        registryKeys: { 'test-registry': keys.root! },
       });
       await expect(client.revocations()).rejects.toBeTruthy();
     },
   );
+
+  it('does not let a publisher key authenticate registry metadata', async () => {
+    const document = await signedRevocationList([], 1);
+    const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+    document.signatures = [
+      {
+        algorithm: 'ed25519',
+        keyId: 'publisher-1',
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(document.listDigest)),
+        ),
+        role: 'registry',
+      },
+    ];
+    const { transport } = fixtureTransport({
+      '/.well-known/prex-registry': definition([
+        ...ALL_RESOURCES,
+        'prex.registry.key-lifecycle/1',
+      ]),
+      '/v1/revocations': document,
+    });
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      keys: { 'publisher-1': keys.leaf! },
+    });
+    await expect(client.revocations()).rejects.toMatchObject({
+      code: 'INVALID_SIGNATURE',
+    });
+  });
 });
 
 async function signedRevocationList(

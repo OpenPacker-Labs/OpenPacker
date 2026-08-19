@@ -56,6 +56,8 @@ export interface RegistryClientOptions {
    * `verifyEntry` reports rather than silently treating as verified.
    */
   keys?: Readonly<Record<string, JsonWebKey>>;
+  /** Registry signer keys authorized to authenticate registry-wide metadata. */
+  registryKeys?: Readonly<Record<string, JsonWebKey>>;
   /**
    * How long a fetched revocation list is reused. A client that cached one
    * forever would never learn about a revocation, so this is a TTL rather than
@@ -97,6 +99,7 @@ export class RegistryClient {
   readonly #baseUrl: string;
   readonly #transport: HttpTransport;
   readonly #keys: Readonly<Record<string, JsonWebKey>>;
+  readonly #registryKeys: Readonly<Record<string, JsonWebKey>>;
   #definition: RegistryDefinitionLike | undefined;
   #revocations: { entries: RevocationEntryLike[]; known: boolean } | undefined;
   #revocationsFetchedAt = 0;
@@ -126,6 +129,7 @@ export class RegistryClient {
         ...(options.fetch ? { fetch: options.fetch } : {}),
       });
     this.#keys = options.keys ?? {};
+    this.#registryKeys = options.registryKeys ?? {};
     // Caching a revocation list forever means a long-lived client never learns
     // about a revocation — which is the entire thing revocation is for. Five
     // minutes by default; a caller running a long process can shorten it.
@@ -183,7 +187,7 @@ export class RegistryClient {
     let signatureVerified = false;
     for (const signature of body.signatures) {
       if (signature.role !== 'registry') continue;
-      const key = this.#keys[signature.keyId];
+      const key = this.#registryKeys[signature.keyId];
       if (!key) continue;
       const verifier = await Ed25519Verifier.fromJwk(signature.keyId, key);
       if (await verifier.verify(message, signature.signature)) {

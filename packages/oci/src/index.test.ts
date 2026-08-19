@@ -624,6 +624,51 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     expect(contacted).toEqual([]);
   });
 
+  it('does not follow redirects from an authorized token origin', async () => {
+    const contacted: string[] = [];
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      contacted.push(href);
+      if (href.startsWith('https://auth.internal/')) {
+        expect(init?.redirect).toBe('manual');
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://evil.example/token' },
+        });
+      }
+      return challenge('https://auth.internal/token');
+    }) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      allowedTokenOrigins: ['https://auth.internal'],
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toMatchObject({ code: 'UNSAFE_REDIRECT' });
+    expect(contacted).toEqual([
+      'https://registry.test/v2/demo/tags/list',
+      'https://auth.internal/token?service=registry.test&scope=s',
+    ]);
+  });
+
+  it.each([
+    JSON.stringify({ token: 'x'.repeat(70 * 1024) }),
+    JSON.stringify({ token: 'x'.repeat(16_385) }),
+    '{"token":"ok","expires_in":1e309}',
+  ])('rejects an oversized or invalid token response', async (body) => {
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).includes('/token')
+        ? new Response(body, { status: 200 })
+        : challenge('https://registry.test/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toBeTruthy();
+  });
+
   it('refuses a plaintext token endpoint even anonymously', async () => {
     const fetchImplementation = (async () =>
       challenge('http://registry.test/token')) as unknown as typeof fetch;

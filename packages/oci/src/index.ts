@@ -540,8 +540,16 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     const response = await this.#fetch(tokenUrl, {
       method: 'GET',
       headers: requestHeaders,
+      redirect: 'manual',
       ...(signal ? { signal } : {}),
     });
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      throw new RegistryProtocolError(
+        'UNSAFE_REDIRECT',
+        `Token endpoint ${tokenUrl.origin} attempted a redirect`,
+      );
+    }
     if (!response.ok) {
       await response.body?.cancel();
       throw new RegistryProtocolError(
@@ -549,19 +557,36 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
         `Token request to ${tokenUrl.origin} failed: HTTP ${response.status}`,
       );
     }
-    const body = (await response.json()) as {
-      token?: string;
-      access_token?: string;
-      expires_in?: number;
-    };
+    if (!response.body)
+      throw new RegistryProtocolError(
+        'INVALID_RESPONSE',
+        `Token endpoint ${tokenUrl.origin} returned no body`,
+      );
+    const body = parseJson<{
+      token?: unknown;
+      access_token?: unknown;
+      expires_in?: unknown;
+    }>(await collectStream(response.body, 64 * 1024, signal));
     const token = body.token ?? body.access_token;
-    if (!token)
+    if (typeof token !== 'string' || token.length < 1 || token.length > 16_384)
       throw new RegistryProtocolError(
         'UNAUTHORIZED',
-        `Token endpoint ${tokenUrl.origin} returned no token`,
+        `Token endpoint ${tokenUrl.origin} returned an invalid token`,
+      );
+    if (
+      body.expires_in !== undefined &&
+      (typeof body.expires_in !== 'number' ||
+        !Number.isSafeInteger(body.expires_in) ||
+        body.expires_in < 0 ||
+        body.expires_in > 86_400)
+    )
+      throw new RegistryProtocolError(
+        'INVALID_RESPONSE',
+        `Token endpoint ${tokenUrl.origin} returned an invalid lifetime`,
       );
     // Expire early so a token cannot lapse mid-request.
-    const lifetime = Math.max(30, body.expires_in ?? 300) - 15;
+    const lifetime =
+      Math.max(30, (body.expires_in as number | undefined) ?? 300) - 15;
     this.#tokens.set(key, {
       token,
       expiresAt: this.#now() + lifetime * 1000,
