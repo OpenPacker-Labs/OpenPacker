@@ -138,6 +138,8 @@ export async function reduceLifecycle(
   target: LifecycleTarget,
   evaluationTime: string,
   authorityRules: readonly LifecycleAuthorityRule[],
+  /** Authorities established by signature/provenance verification upstream. */
+  verifiedAuthorities: ReadonlyMap<string, Authority>,
 ): Promise<LifecycleReduction> {
   const now = time(evaluationTime, 'evaluation time');
   const entries = events
@@ -179,7 +181,8 @@ export async function reduceLifecycle(
     else if (
       !authorityRules.some(
         (rule) =>
-          rule.authority === entry.event.authority &&
+          verifiedAuthorities.get(entry.event.eventId) === rule.authority &&
+          entry.event.authority === rule.authority &&
           rule.scopes.includes(entry.scope) &&
           rule.actions.includes(entry.event.action),
       )

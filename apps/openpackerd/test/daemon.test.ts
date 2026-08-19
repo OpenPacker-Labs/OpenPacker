@@ -110,6 +110,42 @@ describe('openpackerd', () => {
     expect(runDaemon).toBeTypeOf('function');
   });
 
+  it('rejects DNS-rebinding authorities and cross-origin browser requests', async () => {
+    const app = createOpenPackerDaemon({
+      operations: await createStandaloneReferenceOperations(),
+    });
+    try {
+      const rebound = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: { host: '127.0.0.1.attacker.example' },
+      });
+      expect(rebound.statusCode).toBe(403);
+
+      const crossOrigin = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: {
+          host: '127.0.0.1:7337',
+          origin: 'https://attacker.example',
+        },
+      });
+      expect(crossOrigin.statusCode).toBe(403);
+
+      const loopback = await app.inject({
+        method: 'GET',
+        url: '/v1/health',
+        headers: {
+          host: '[::1]:7337',
+          origin: 'http://localhost:7337',
+        },
+      });
+      expect(loopback.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('boots the standalone reference operations with an empty universe', async () => {
     const operations = await createStandaloneReferenceOperations();
     const meta = {

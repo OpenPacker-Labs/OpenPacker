@@ -58,6 +58,8 @@ export interface OpenPackerDaemonOptions {
   maximumTimeoutMilliseconds?: number;
   eventPageSize?: number;
   clock?: Clock;
+  /** Disable loopback Host/Origin enforcement for an explicitly remote bind. */
+  allowRemoteRequests?: boolean;
 }
 
 export interface StartedOpenPackerDaemon {
@@ -124,6 +126,8 @@ export function createOpenPackerDaemon(
   );
 
   app.addHook('onRequest', async (request) => {
+    if (options.allowRemoteRequests !== true)
+      assertLoopbackRequest(request.headers.host, request.headers.origin);
     request.headers['x-correlation-id'] = correlationId(
       request.headers['x-correlation-id'],
     );
@@ -544,6 +548,67 @@ export function createOpenPackerDaemon(
  */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 
+function assertLoopbackRequest(
+  host: string | undefined,
+  origin: string | undefined,
+): void {
+  if (!isLoopbackAuthority(host))
+    throw new OperationError(
+      'POLICY_DENIED',
+      'The reference daemon only accepts loopback request authorities',
+      403,
+    );
+  if (origin !== undefined && !isLoopbackOrigin(origin))
+    throw new OperationError(
+      'POLICY_DENIED',
+      'The reference daemon rejects non-loopback browser origins',
+      403,
+    );
+}
+
+function isLoopbackAuthority(authority: string | undefined): boolean {
+  if (authority === undefined) return false;
+  try {
+    const url = new URL(`http://${authority}`);
+    return (
+      url.username === '' &&
+      url.password === '' &&
+      url.pathname === '/' &&
+      url.search === '' &&
+      url.hash === '' &&
+      isLoopbackHostname(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.username === '' &&
+      url.password === '' &&
+      url.pathname === '/' &&
+      url.search === '' &&
+      url.hash === '' &&
+      isLoopbackHostname(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/\.$/u, '');
+  return LOOPBACK_HOSTS.has(
+    normalized.startsWith('[') && normalized.endsWith(']')
+      ? normalized.slice(1, -1)
+      : normalized,
+  );
+}
+
 export function assertDaemonBindAddress(
   host: string,
   options: { allowRemoteBind?: boolean } = {},
@@ -586,7 +651,10 @@ export async function startOpenPackerDaemon(
   assertDaemonBindAddress(host, {
     allowRemoteBind: options.allowRemoteBind === true,
   });
-  const app = createOpenPackerDaemon(options);
+  const app = createOpenPackerDaemon({
+    ...options,
+    allowRemoteRequests: options.allowRemoteBind === true,
+  });
   const address = await app.listen({ host, port });
   return { app, address, close: () => app.close() };
 }
