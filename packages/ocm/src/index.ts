@@ -249,10 +249,8 @@ export async function mapSolutionToOcm(input: {
       }),
     );
   }
-  const output: OcmComponentDescriptor[] = [];
+  const dependencies = new Map<string, Map<string, string[]>>();
   for (const node of ordered) {
-    const descriptor = descriptors.get(node.nodeId);
-    if (!descriptor) continue;
     const referenceRequirements = new Map<string, string[]>();
     for (const edge of input.solution.dependencyEdges.filter(
       ({ fromNodeId }) => fromNodeId === node.nodeId,
@@ -263,33 +261,60 @@ export async function mapSolutionToOcm(input: {
       requirements.push(edge.requirementId);
       referenceRequirements.set(dependency.nodeId, requirements);
     }
+    dependencies.set(node.nodeId, referenceRequirements);
+  }
+
+  const complete = new Set<string>();
+  const active = new Set<string>();
+  const completeDescriptor = async (
+    nodeId: string,
+  ): Promise<OcmComponentDescriptor | undefined> => {
+    const descriptor = descriptors.get(nodeId);
+    if (!descriptor || complete.has(nodeId)) return descriptor;
+    if (active.has(nodeId))
+      throw new OcmValidationError(
+        'CYCLIC_COMPONENT_REFERENCE',
+        `Cannot create recursive OCM component-reference digests for cycle at ${nodeId}`,
+      );
+    active.add(nodeId);
     const references: OcmComponentReference[] = [];
-    for (const [dependencyNodeId, requirementIds] of [
-      ...referenceRequirements,
-    ].sort(([left], [right]) => compareCanonicalStrings(left, right))) {
-      const dependency = selected.get(dependencyNodeId)!;
-      const dependencyDescriptor = descriptors.get(dependencyNodeId);
-      if (!dependencyDescriptor) continue;
-      const sortedIds = [...requirementIds].sort();
-      references.push({
-        name: sortedIds[0]!,
-        componentName: await componentNameForPurl(
-          dependency.identity.exactPurl!,
-        ),
-        version: dependency.normalizedVersion,
-        digest: await ocmComponentReferenceDigest(dependencyDescriptor),
-        labels: [
-          {
-            name: 'org.openpacker.prex.requirementIds',
-            value: sortedIds,
-            signing: true,
-          },
-        ],
-      });
+    try {
+      for (const [dependencyNodeId, requirementIds] of [
+        ...(dependencies.get(nodeId) ?? []),
+      ].sort(([left], [right]) => compareCanonicalStrings(left, right))) {
+        const dependency = selected.get(dependencyNodeId)!;
+        const dependencyDescriptor = await completeDescriptor(dependencyNodeId);
+        if (!dependencyDescriptor) continue;
+        const sortedIds = [...requirementIds].sort();
+        references.push({
+          name: sortedIds[0]!,
+          componentName: await componentNameForPurl(
+            dependency.identity.exactPurl!,
+          ),
+          version: dependency.normalizedVersion,
+          digest: await ocmComponentReferenceDigest(dependencyDescriptor),
+          labels: [
+            {
+              name: 'org.openpacker.prex.requirementIds',
+              value: sortedIds,
+              signing: true,
+            },
+          ],
+        });
+      }
+      descriptor.component.componentReferences = references;
+      validateOcmDescriptor(descriptor);
+      complete.add(nodeId);
+      return descriptor;
+    } finally {
+      active.delete(nodeId);
     }
-    descriptor.component.componentReferences = references;
-    validateOcmDescriptor(descriptor);
-    output.push(descriptor);
+  };
+
+  const output: OcmComponentDescriptor[] = [];
+  for (const node of ordered) {
+    const descriptor = await completeDescriptor(node.nodeId);
+    if (descriptor) output.push(descriptor);
   }
   return output;
 }
@@ -316,6 +341,15 @@ export async function ocmComponentReferenceDigest(
         version,
         type,
         relation,
+        digest,
+        labels,
+      }),
+    ),
+    componentReferences: descriptor.component.componentReferences.map(
+      ({ name, componentName, version, digest, labels }) => ({
+        name,
+        componentName,
+        version,
         digest,
         labels,
       }),

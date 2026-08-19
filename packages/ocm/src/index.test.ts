@@ -100,11 +100,12 @@ describe('OCM mapping', () => {
     const packages = [
       packageFor('app', 'pkg:npm/app@1.0.0'),
       packageFor('dep', 'pkg:npm/dep@1.0.0'),
+      packageFor('leaf', 'pkg:npm/leaf@1.0.0'),
     ];
     const descriptors = await mapSolutionToOcm({
       packages,
       solution: {
-        selectedNodeIds: ['app', 'dep'],
+        selectedNodeIds: ['app', 'dep', 'leaf'],
         selectedCapabilityProviders: [],
         dependencyEdges: [
           {
@@ -119,8 +120,18 @@ describe('OCM mapping', () => {
             requirementId: 'capability-edge',
             witnessType: 'capability',
           },
+          {
+            fromNodeId: 'dep',
+            toNodeId: 'leaf',
+            requirementId: 'transitive-edge',
+            witnessType: 'package',
+          },
         ],
-        satisfiedRequirementIds: ['capability-edge', 'package-edge'],
+        satisfiedRequirementIds: [
+          'capability-edge',
+          'package-edge',
+          'transitive-edge',
+        ],
         excludedCandidates: [],
         objectiveTuple: [],
         sourceSnapshotDigests: [],
@@ -133,16 +144,29 @@ describe('OCM mapping', () => {
       descriptors.find(({ component }) => component.componentReferences.length)
         ?.component.componentReferences,
     ).toHaveLength(1);
-    const app = descriptors.find(
-      ({ component }) => component.componentReferences.length,
-    );
-    const dependency = descriptors.find(
-      ({ component }) => component.componentReferences.length === 0,
-    );
+    const descriptorFor = (purl: string) =>
+      descriptors.find(({ component }) =>
+        component.labels.some(
+          ({ name, value }) =>
+            name === 'org.openpacker.prex.exactPurl' && value === purl,
+        ),
+      );
+    const app = descriptorFor('pkg:npm/app@1.0.0');
+    const dependency = descriptorFor('pkg:npm/dep@1.0.0');
+    const leaf = descriptorFor('pkg:npm/leaf@1.0.0');
     expect(app?.component.componentReferences[0]?.digest).toEqual(
       await ocmComponentReferenceDigest(dependency!),
     );
+    expect(dependency?.component.componentReferences[0]?.digest).toEqual(
+      await ocmComponentReferenceDigest(leaf!),
+    );
     const before = await ocmComponentReferenceDigest(dependency!);
+    const changedTransitive = structuredClone(dependency!);
+    changedTransitive.component.componentReferences[0]!.digest.value =
+      'c'.repeat(64);
+    expect(await ocmComponentReferenceDigest(changedTransitive)).not.toEqual(
+      before,
+    );
     dependency!.component.repositoryContexts.push({
       type: 'ociRegistry',
       baseUrl: 'registry.example/first',
@@ -155,6 +179,37 @@ describe('OCM mapping', () => {
           'mirror.example/openpacker/demo@sha256:' + 'f'.repeat(64),
       };
     expect(await ocmComponentReferenceDigest(dependency!)).toEqual(before);
+
+    await expect(
+      mapSolutionToOcm({
+        packages,
+        solution: {
+          selectedNodeIds: ['app', 'dep'],
+          selectedCapabilityProviders: [],
+          dependencyEdges: [
+            {
+              fromNodeId: 'app',
+              toNodeId: 'dep',
+              requirementId: 'app-dep',
+              witnessType: 'package',
+            },
+            {
+              fromNodeId: 'dep',
+              toNodeId: 'app',
+              requirementId: 'dep-app',
+              witnessType: 'package',
+            },
+          ],
+          satisfiedRequirementIds: ['app-dep', 'dep-app'],
+          excludedCandidates: [],
+          objectiveTuple: [],
+          sourceSnapshotDigests: [],
+          semanticLoss: [],
+          solutionDigest: { algorithm: 'sha256', value: 'e'.repeat(64) },
+        },
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'CYCLIC_COMPONENT_REFERENCE' });
   });
 
   it('rejects malformed provider, resource, and digest fields', async () => {
