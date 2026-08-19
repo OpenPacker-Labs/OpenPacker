@@ -224,6 +224,11 @@ describe('pnpm-lock.yaml import', () => {
       ),
     ).toThrow(/peer context.*losslessly/u);
     expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'react-dom@18.2.0': {}\nsnapshots:\n  'react-dom@18.2.0(react@18.2.0)': {}\n",
+      ),
+    ).toThrow(/peer context.*losslessly/u);
+    expect(() =>
       parsePnpmLock(lock("  'a@1.0.0': {}\n  'a@2.0.0': {}\n")),
     ).toThrow(/multiple locked selections/u);
   });

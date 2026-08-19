@@ -315,6 +315,7 @@ export function parsePnpmLock(text: string): {
       string,
       { resolution?: { integrity?: string; tarball?: string } }
     >;
+    snapshots?: Record<string, unknown>;
   };
   const version = String(document.lockfileVersion ?? '');
   // v5 keyed packages as `/name/version`, a different shape entirely. Refusing
@@ -328,6 +329,14 @@ export function parsePnpmLock(text: string): {
     throw new ProviderError(
       'INVALID_LOCKFILE',
       'pnpm-lock.yaml has no packages section',
+    );
+  const contextualSnapshot = Object.keys(document.snapshots ?? {}).find((key) =>
+    key.includes('('),
+  );
+  if (contextualSnapshot)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `pnpm peer context cannot be represented losslessly: ${contextualSnapshot}`,
     );
 
   const packages: Record<
