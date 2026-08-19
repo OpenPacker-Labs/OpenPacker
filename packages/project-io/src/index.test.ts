@@ -628,6 +628,16 @@ describe('archives', () => {
         /Unsafe/u,
       );
     }
+    for (const path of [
+      '__proto__',
+      'nested/__proto__/file',
+      'constructor/file',
+      'prototype/file',
+    ]) {
+      expect(() => packZip([{ path, contents: new Uint8Array(1) }])).toThrow(
+        /Unsafe/u,
+      );
+    }
     expect(() => packTarGzip([...entries, entries[0]!])).toThrow(/duplicate/u);
   });
 

@@ -20,6 +20,7 @@ export interface ArchiveEntry {
 }
 
 const BLOCK = 512;
+const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * A fixed timestamp so packing is reproducible.
@@ -58,7 +59,7 @@ export function packTar(entries: readonly ArchiveEntry[]): Uint8Array {
 
 /** A zip, as NuGet publishes (`.nupkg` is an OPC zip). */
 export function packZip(entries: readonly ArchiveEntry[]): Uint8Array {
-  const files: Record<string, Uint8Array> = {};
+  const files = Object.create(null) as Record<string, Uint8Array>;
   for (const entry of sorted(entries)) files[entry.path] = entry.contents;
   // A fixed timestamp for the same determinism reason as the tar above. Zip
   // cannot express 0 — its DOS date starts at 1980 — so that is the epoch used.
@@ -79,6 +80,7 @@ function sorted(entries: readonly ArchiveEntry[]): ArchiveEntry[] {
         (part) =>
           part === '' || part === '.' || part === '..' || part.includes(':'),
       ) ||
+      parts.some((part) => PROTOTYPE_KEYS.has(part)) ||
       seen.has(path)
     )
       throw new TypeError(`Unsafe or duplicate archive path: ${path}`);
