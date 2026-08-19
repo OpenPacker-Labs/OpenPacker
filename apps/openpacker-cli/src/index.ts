@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { isIP } from 'node:net';
+import { lookup } from 'node:dns/promises';
+import { isAbsolute, relative } from 'node:path';
+import { get } from 'node:https';
+import { Readable } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   streamFromBytes,
@@ -724,20 +729,102 @@ function locationSource(
     stat: async () => ({ descriptor, rangeSupported: location.rangeSupported }),
     open: async (_descriptor, _range, signal) => {
       signal?.throwIfAborted();
-      if (location.transport === 'file')
-        return streamFromBytes(await readFile(fileURLToPath(location.uri)));
-      const response = await fetch(location.uri, {
-        redirect: 'error',
-        ...(signal === undefined ? {} : { signal }),
-      });
-      if (!response.ok || !response.body)
+      if (location.transport === 'file') {
+        const root = await realpath(process.cwd());
+        const artifact = await realpath(fileURLToPath(location.uri));
+        const fromRoot = relative(root, artifact);
+        if (
+          fromRoot === '..' ||
+          fromRoot.startsWith(
+            `..${process.platform === 'win32' ? '\\' : '/'}`,
+          ) ||
+          isAbsolute(fromRoot)
+        )
+          throw new InputError(
+            'Provider artifact file is outside the CLI working directory',
+          );
+        return streamFromBytes(await readFile(artifact));
+      }
+      const url = new URL(location.uri);
+      if (url.protocol !== 'https:' || url.username || url.password)
         throw new InputError(
-          `Artifact download failed with HTTP ${response.status}`,
+          'Provider artifact locations must use credential-free HTTPS',
         );
-      return response.body;
+      const hostname = url.hostname.replace(/^\[|\]$/gu, '');
+      const addresses = isIP(hostname)
+        ? [{ address: hostname, family: isIP(hostname) }]
+        : await lookup(hostname, { all: true });
+      if (
+        addresses.length === 0 ||
+        addresses.some(({ address }) => isPrivateAddress(address))
+      )
+        throw new InputError(
+          'Provider artifact location resolves to a private or local address',
+        );
+      return pinnedHttpsStream(url, addresses[0]!, signal);
     },
     listReferrers: async () => [],
   };
+}
+
+async function pinnedHttpsStream(
+  url: URL,
+  resolved: { address: string; family: number },
+  signal?: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+  const deadline = AbortSignal.timeout(30_000);
+  const boundedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  return new Promise((resolve, reject) => {
+    const request = get(
+      url,
+      {
+        signal: boundedSignal,
+        lookup: (_hostname, _options, callback) =>
+          callback(null, resolved.address, resolved.family),
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.destroy();
+          reject(
+            new InputError(`Artifact download failed with HTTP ${status}`),
+          );
+          return;
+        }
+        resolve(Readable.toWeb(response) as ReadableStream<Uint8Array>);
+      },
+    );
+    request.once('error', reject);
+  });
+}
+
+function isPrivateAddress(value: string): boolean {
+  const address = value.toLowerCase();
+  if (address.includes(':')) {
+    if (address.startsWith('::ffff:'))
+      return isPrivateAddress(address.slice('::ffff:'.length));
+    return (
+      address === '::' ||
+      address === '::1' ||
+      address.startsWith('fc') ||
+      address.startsWith('fd') ||
+      /^fe[89ab]/u.test(address)
+    );
+  }
+  const octets = address.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((part) => part < 0 || part > 255))
+    return true;
+  const [first, second] = octets as [number, number, number, number];
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
 }
 
 function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {

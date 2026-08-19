@@ -1,4 +1,8 @@
 import { Readable } from 'node:stream';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_CODES, runCli, type CliIo } from '../src/index.js';
 
@@ -242,6 +246,54 @@ describe('openpacker CLI', () => {
       expect(requested).toBe(item.path);
       expect(output.out).toContain(digest);
       vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects private HTTPS and out-of-root file artifacts before reading them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openpacker-cli-location-'));
+    const outside = join(root, 'outside.tar');
+    await writeFile(outside, 'not an archive');
+    try {
+      for (const location of [
+        { transport: 'https', uri: 'https://127.0.0.1/archive.tar' },
+        { transport: 'file', uri: pathToFileURL(outside).toString() },
+      ]) {
+        const fetch = vi.fn(async () =>
+          Response.json({
+            descriptor: {
+              descriptorId: 'fixture',
+              mediaType: 'application/x-tar',
+              artifactType: 'package',
+              digest: { algorithm: 'sha256', value: '0'.repeat(64) },
+              size: 0,
+              nativeRole: 'native-package',
+              fileName: 'archive.tar',
+              locations: [{ ...location, priority: 0, rangeSupported: false }],
+              referrers: [],
+              externalRefs: [],
+            },
+          }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const output = io();
+        const destination = join(root, `install-${location.transport}`);
+        expect(
+          await runCli(
+            [
+              'materialize',
+              'pkg:npm/demo@1.0.0',
+              '--install-prefix',
+              destination,
+            ],
+            output,
+          ),
+        ).toBe(EXIT_CODES.invalidInput);
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(output.err).toMatch(/private or local|outside/u);
+        vi.unstubAllGlobals();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 
