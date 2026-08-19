@@ -95,7 +95,7 @@ export interface LockImportResult {
 const DEFAULT_EVALUATION_TIME = '2026-08-02T00:00:00Z';
 
 function projectedDigest(
-  id: 'proof-v1' | 'explanation-v1' | 'artifact-set-v1',
+  id: 'proof-v1' | 'explanation-v1' | 'artifact-set-v1' | 'universe-v1',
   value: JsonValue,
 ) {
   const projection = DIGEST_PROJECTIONS.projections.find(
@@ -749,7 +749,7 @@ export async function buildCaptureSolveInput(
           evaluationTime,
           plan.sourceDigest,
         )
-      : mergePackagesIntoUniverse(options.universe, plan.packages);
+      : await mergePackagesIntoUniverse(options.universe, plan.packages);
 
   const request: SolveRequest = {
     requirements: [],
@@ -1185,14 +1185,17 @@ async function buildMinimalUniverse(
   };
   return {
     ...body,
-    canonicalDigest: await canonicalDigest(body as unknown as JsonValue),
+    canonicalDigest: await projectedDigest(
+      'universe-v1',
+      body as unknown as JsonValue,
+    ),
   };
 }
 
-function mergePackagesIntoUniverse(
+async function mergePackagesIntoUniverse(
   universe: ResolutionUniverse,
   packages: PackageInstance[],
-): ResolutionUniverse {
+): Promise<ResolutionUniverse> {
   const byExact = new Map(
     universe.packages
       .filter((item) => item.identity.exactPurl)
@@ -1221,10 +1224,17 @@ function mergePackagesIntoUniverse(
       );
     if (existing === undefined) byExact.set(exact, item);
   }
-  return {
+  const merged = {
     ...universe,
     packages: [...byExact.values()].sort((left, right) =>
       compareCanonicalStrings(left.nodeId, right.nodeId),
+    ),
+  };
+  return {
+    ...merged,
+    canonicalDigest: await projectedDigest(
+      'universe-v1',
+      merged as unknown as JsonValue,
     ),
   };
 }

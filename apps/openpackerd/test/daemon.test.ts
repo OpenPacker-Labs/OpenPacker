@@ -92,7 +92,7 @@ const snapshot = {
   recordsDigest: digest('b'),
   evidenceRefs: [],
 };
-const universe: ResolutionUniverse = {
+const universeBody: Omit<ResolutionUniverse, 'canonicalDigest'> = {
   universeVersion: '1',
   packages: await Promise.all([
     packageInstance('1', '1.0.0'),
@@ -102,7 +102,13 @@ const universe: ResolutionUniverse = {
   sourceSnapshots: [snapshot],
   lifecycleRoot: digest('d'),
   targetVocabularyVersion: '1',
-  canonicalDigest: digest('e'),
+};
+const universe: ResolutionUniverse = {
+  ...universeBody,
+  canonicalDigest: await canonicalProjectionDigest(
+    universeBody as unknown as JsonValue,
+    DIGEST_PROJECTIONS.projections.find(({ id }) => id === 'universe-v1')!,
+  ),
 };
 
 describe('openpackerd', () => {

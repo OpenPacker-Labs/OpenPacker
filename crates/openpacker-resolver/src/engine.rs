@@ -151,10 +151,13 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
             }
         }
     }
-    if universe.canonical_digest != digest_projection(universe, "universe-v1")? {
-        return Err(ResolverError::InvalidInput(
-            "canonicalDigest does not match the universe-v1 projection".into(),
-        ));
+    let expected_universe_digest = digest_projection(universe, "universe-v1")?;
+    if universe.canonical_digest != expected_universe_digest {
+        return Err(ResolverError::InvalidInput(format!(
+            "canonicalDigest {} does not match the universe-v1 projection {}",
+            universe.canonical_digest.as_string(),
+            expected_universe_digest.as_string(),
+        )));
     }
     Ok(())
 }
