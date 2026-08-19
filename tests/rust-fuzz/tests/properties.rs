@@ -1,5 +1,6 @@
 use openpacker_resolver::{
-    SolveInput, brute_force_oracle, canonical_json, check, normalize_purl, solve, version_satisfies,
+    SolveInput, brute_force_oracle, canonical_json, check, digest_json, normalize_purl, solve,
+    version_satisfies,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -12,12 +13,25 @@ fn generated_input(versions: u8) -> SolveInput {
         (1..=versions)
             .map(|version| {
                 let mut package = template.clone();
-                package["nodeId"] = json!(format!("sha256:{version:064x}"));
-                package["identity"]["exactPurl"] = json!(format!("pkg:npm/demo@{version}.0.0"));
+                let exact_purl = format!("pkg:npm/demo@{version}.0.0");
+                package["identity"]["exactPurl"] = json!(exact_purl);
                 package["identity"]["version"] = json!(format!("{version}.0.0"));
                 package["nativeVersion"] = json!(format!("{version}.0.0"));
                 package["normalizedVersion"] = json!(format!("{version}.0.0"));
-                package["versionSortKey"] = json!(format!("{version:04}.0000.0000"));
+                package["versionSortKey"] = json!(format!("{version}.0.0"));
+                package["nodeId"] = json!(
+                    digest_json(&json!({
+                        "identity": {
+                            "exactPurl": exact_purl,
+                            "qualifiers": package["identity"]["qualifiers"],
+                        },
+                        "nativeSemantics": {
+                            "version": package["nativeSemantics"]["version"],
+                        },
+                    }))
+                    .unwrap()
+                    .as_string()
+                );
                 package
             })
             .collect(),

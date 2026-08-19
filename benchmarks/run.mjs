@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { canonicalize, formatDigest, sha256 } from '@openpacker/canonical';
-import { parseVers } from '@openpacker/adapter-core';
+import { packageNodeId, parseVers } from '@openpacker/adapter-core';
 import { NpmCodec } from '@openpacker/adapter-npm';
 import { CatalogSnapshotBuilder } from '@openpacker/catalog';
 import {
@@ -26,7 +26,7 @@ const solveInput = JSON.parse(
 const iterations = baseline.iterations;
 const codec = new NpmCodec();
 
-function syntheticSolveInput(packageCount) {
+async function syntheticSolveInput(packageCount) {
   const input = structuredClone(solveInput);
   // Large synthetic runs measure Resolvo validity/proof throughput only. PREX
   // optimization claims above the bounded independent oracle fail closed.
@@ -36,19 +36,22 @@ function syntheticSolveInput(packageCount) {
       'exclude-lifecycle-denied',
     ];
   const template = input.universe.packages[0];
-  input.universe.packages = Array.from({ length: packageCount }, (_, index) => {
+  input.universe.packages = [];
+  for (let index = 0; index < packageCount; index += 1) {
     const digest = index.toString(16).padStart(64, '0');
+    const exactPurl =
+      index === 0 ? 'pkg:npm/demo@1.0.0' : `pkg:npm/benchmark-${index}@1.0.0`;
     const packageInstance = {
       ...structuredClone(template),
-      nodeId: index === 0 ? template.nodeId : `sha256:${digest}`,
+      nodeId: await packageNodeId({
+        exactPurl,
+        nativeSemanticsVersion: template.nativeSemantics.version,
+      }),
       identity: {
         ...structuredClone(template.identity),
         canonicalPurl:
           index === 0 ? 'pkg:npm/demo' : `pkg:npm/benchmark-${index}`,
-        exactPurl:
-          index === 0
-            ? 'pkg:npm/demo@1.0.0'
-            : `pkg:npm/benchmark-${index}@1.0.0`,
+        exactPurl,
         name: index === 0 ? 'demo' : `benchmark-${index}`,
       },
       metadataDigest:
@@ -77,8 +80,8 @@ function syntheticSolveInput(packageCount) {
             },
           ]
         : [];
-    return packageInstance;
-  });
+    input.universe.packages.push(packageInstance);
+  }
   return input;
 }
 
@@ -159,16 +162,20 @@ results['catalog-snapshot-100-records-20'] = await measureAsync(
       '2026-08-02T00:00:00Z',
       '2026-08-02T00:00:00Z',
     );
-    for (let record = 0; record < 100; record += 1)
+    for (let record = 0; record < 100; record += 1) {
+      const exactPurl = `pkg:npm/catalog-${record}@1.0.0`;
       builder.add({
         key: `demo-${index}-${record}`,
         package: {
           ...structuredClone(packageInstance),
-          nodeId: `sha256:${(index * 100 + record + 1).toString(16).padStart(64, '0')}`,
+          nodeId: await packageNodeId({
+            exactPurl,
+            nativeSemanticsVersion: packageInstance.nativeSemantics.version,
+          }),
           identity: {
             ...structuredClone(packageInstance.identity),
             canonicalPurl: `pkg:npm/catalog-${record}`,
-            exactPurl: `pkg:npm/catalog-${record}@1.0.0`,
+            exactPurl,
             name: `catalog-${record}`,
           },
         },
@@ -182,6 +189,7 @@ results['catalog-snapshot-100-records-20'] = await measureAsync(
         },
         semanticLoss: [],
       });
+    }
     await builder.build();
   },
 );
@@ -223,16 +231,18 @@ results['solver-warm-proof-explanation-200'] = await measureAsync(
   () => embedded.solve(solveInput),
   10,
 );
+const mediumSolveInput = await syntheticSolveInput(100);
+const largeSolveInput = await syntheticSolveInput(1_000);
 results['solver-medium-100-warm-20'] = await measureAsync(
   'solver-medium-100-warm-20',
   20,
-  () => embedded.solve(syntheticSolveInput(100)),
+  () => embedded.solve(mediumSolveInput),
   2,
 );
 results['solver-large-1000-warm-1'] = await measureAsync(
   'solver-large-1000-warm-1',
   1,
-  () => embedded.solve(syntheticSolveInput(1_000)),
+  () => embedded.solve(largeSolveInput),
   1,
 );
 results['proof-check-1000'] = await measureAsync(
