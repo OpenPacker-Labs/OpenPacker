@@ -65,6 +65,7 @@ API detail.
 | [Trust and policy](operations/trust-lifecycle-policy.md)           | Evidence vs decisions         |
 | [Threat model](security/threat-model.md)                           | Security assumptions          |
 | [Supply chain](security/supply-chain.md)                           | Capture + mitigate attacks    |
+| [Codex Security](security/codex-security.md)                       | Local AI security scan        |
 | [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates      |
 | [ADRs](adr/README.md)                                              | Stable architecture decisions |
 
