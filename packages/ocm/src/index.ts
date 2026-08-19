@@ -214,11 +214,51 @@ export async function mapSolutionToOcm(input: {
   provider: string;
   receiptDigest?: Digest;
 }): Promise<OcmComponentDescriptor[]> {
-  const selected = new Map(
-    input.packages
-      .filter(({ nodeId }) => input.solution.selectedNodeIds.includes(nodeId))
-      .map((item) => [item.nodeId, item]),
-  );
+  const selectedIds = new Set(input.solution.selectedNodeIds);
+  if (selectedIds.size !== input.solution.selectedNodeIds.length)
+    throw new OcmValidationError(
+      'DUPLICATE_SELECTED_NODE',
+      'OCM mapping requires unique selected node IDs',
+    );
+  const packagesByNode = new Map<string, PackageInstance>();
+  for (const item of input.packages) {
+    if (packagesByNode.has(item.nodeId) && selectedIds.has(item.nodeId))
+      throw new OcmValidationError(
+        'DUPLICATE_SELECTED_NODE',
+        `Multiple packages share selected node ID ${item.nodeId}`,
+      );
+    packagesByNode.set(item.nodeId, item);
+  }
+  const selected = new Map<string, PackageInstance>();
+  const selectedPurls = new Set<string>();
+  for (const nodeId of selectedIds) {
+    const item = packagesByNode.get(nodeId);
+    if (!item)
+      throw new OcmValidationError(
+        'MISSING_SELECTED_NODE',
+        `Selected node ${nodeId} has no package`,
+      );
+    const exactPurl = item.identity.exactPurl;
+    if (!exactPurl)
+      throw new OcmValidationError(
+        'MISSING_EXACT_PURL',
+        `Selected node ${nodeId} has no exact PURL`,
+      );
+    if (selectedPurls.has(exactPurl))
+      throw new OcmValidationError(
+        'DUPLICATE_SELECTED_PURL',
+        `Multiple selected nodes share exact PURL ${exactPurl}`,
+      );
+    selectedPurls.add(exactPurl);
+    selected.set(nodeId, item);
+  }
+  for (const edge of input.solution.dependencyEdges) {
+    if (!selected.has(edge.fromNodeId) || !selected.has(edge.toNodeId))
+      throw new OcmValidationError(
+        'INVALID_DEPENDENCY_EDGE',
+        `Dependency edge ${edge.requirementId} does not connect two selected packages`,
+      );
+  }
   const ordered = [...selected.values()].sort((left, right) =>
     compareCanonicalStrings(
       left.identity.exactPurl ?? '',
@@ -227,8 +267,7 @@ export async function mapSolutionToOcm(input: {
   );
   const descriptors = new Map<string, OcmComponentDescriptor>();
   for (const node of ordered) {
-    const exactPurl = node.identity.exactPurl;
-    if (!exactPurl) continue;
+    const exactPurl = node.identity.exactPurl!;
     descriptors.set(
       node.nodeId,
       await createOcmDescriptor({
@@ -250,73 +289,67 @@ export async function mapSolutionToOcm(input: {
     );
   }
   const dependencies = new Map<string, Map<string, string[]>>();
-  for (const node of ordered) {
-    const referenceRequirements = new Map<string, string[]>();
-    for (const edge of input.solution.dependencyEdges.filter(
-      ({ fromNodeId }) => fromNodeId === node.nodeId,
-    )) {
-      const dependency = selected.get(edge.toNodeId);
-      if (!dependency?.identity.exactPurl) continue;
-      const requirements = referenceRequirements.get(dependency.nodeId) ?? [];
-      requirements.push(edge.requirementId);
-      referenceRequirements.set(dependency.nodeId, requirements);
-    }
-    dependencies.set(node.nodeId, referenceRequirements);
+  const parents = new Map<string, Set<string>>();
+  for (const nodeId of selectedIds) {
+    dependencies.set(nodeId, new Map());
+    parents.set(nodeId, new Set());
   }
-
-  const complete = new Set<string>();
-  const active = new Set<string>();
-  const completeDescriptor = async (
-    nodeId: string,
-  ): Promise<OcmComponentDescriptor | undefined> => {
-    const descriptor = descriptors.get(nodeId);
-    if (!descriptor || complete.has(nodeId)) return descriptor;
-    if (active.has(nodeId))
-      throw new OcmValidationError(
-        'CYCLIC_COMPONENT_REFERENCE',
-        `Cannot create recursive OCM component-reference digests for cycle at ${nodeId}`,
-      );
-    active.add(nodeId);
+  for (const edge of input.solution.dependencyEdges) {
+    const requirements = dependencies.get(edge.fromNodeId)!;
+    const requirementIds = requirements.get(edge.toNodeId) ?? [];
+    requirementIds.push(edge.requirementId);
+    requirements.set(edge.toNodeId, requirementIds);
+    parents.get(edge.toNodeId)!.add(edge.fromNodeId);
+  }
+  const remaining = new Map(
+    [...dependencies].map(([nodeId, items]) => [nodeId, items.size]),
+  );
+  const ready = ordered
+    .filter(({ nodeId }) => remaining.get(nodeId) === 0)
+    .map(({ nodeId }) => nodeId);
+  let completed = 0;
+  for (let cursor = 0; cursor < ready.length; cursor += 1) {
+    const nodeId = ready[cursor]!;
+    const descriptor = descriptors.get(nodeId)!;
     const references: OcmComponentReference[] = [];
-    try {
-      for (const [dependencyNodeId, requirementIds] of [
-        ...(dependencies.get(nodeId) ?? []),
-      ].sort(([left], [right]) => compareCanonicalStrings(left, right))) {
-        const dependency = selected.get(dependencyNodeId)!;
-        const dependencyDescriptor = await completeDescriptor(dependencyNodeId);
-        if (!dependencyDescriptor) continue;
-        const sortedIds = [...requirementIds].sort();
-        references.push({
-          name: sortedIds[0]!,
-          componentName: await componentNameForPurl(
-            dependency.identity.exactPurl!,
-          ),
-          version: dependency.normalizedVersion,
-          digest: await ocmComponentReferenceDigest(dependencyDescriptor),
-          labels: [
-            {
-              name: 'org.openpacker.prex.requirementIds',
-              value: sortedIds,
-              signing: true,
-            },
-          ],
-        });
-      }
-      descriptor.component.componentReferences = references;
-      validateOcmDescriptor(descriptor);
-      complete.add(nodeId);
-      return descriptor;
-    } finally {
-      active.delete(nodeId);
+    for (const [dependencyNodeId, requirementIds] of [
+      ...dependencies.get(nodeId)!,
+    ].sort(([left], [right]) => compareCanonicalStrings(left, right))) {
+      const dependency = selected.get(dependencyNodeId)!;
+      const sortedIds = [...requirementIds].sort();
+      references.push({
+        name: sortedIds[0]!,
+        componentName: await componentNameForPurl(
+          dependency.identity.exactPurl!,
+        ),
+        version: dependency.normalizedVersion,
+        digest: await ocmComponentReferenceDigest(
+          descriptors.get(dependencyNodeId)!,
+        ),
+        labels: [
+          {
+            name: 'org.openpacker.prex.requirementIds',
+            value: sortedIds,
+            signing: true,
+          },
+        ],
+      });
     }
-  };
-
-  const output: OcmComponentDescriptor[] = [];
-  for (const node of ordered) {
-    const descriptor = await completeDescriptor(node.nodeId);
-    if (descriptor) output.push(descriptor);
+    descriptor.component.componentReferences = references;
+    validateOcmDescriptor(descriptor);
+    completed += 1;
+    for (const parent of parents.get(nodeId)!) {
+      const count = remaining.get(parent)! - 1;
+      remaining.set(parent, count);
+      if (count === 0) ready.push(parent);
+    }
   }
-  return output;
+  if (completed !== selected.size)
+    throw new OcmValidationError(
+      'CYCLIC_COMPONENT_REFERENCE',
+      'Cannot create recursive OCM component-reference digests for a cyclic graph',
+    );
+  return ordered.map(({ nodeId }) => descriptors.get(nodeId)!);
 }
 
 export async function ocmComponentReferenceDigest(

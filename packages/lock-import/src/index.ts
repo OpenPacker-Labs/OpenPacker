@@ -234,6 +234,19 @@ function defaultHandlers(
  * that difference is where the import loses information rather than inventing
  * it.
  */
+function hasUnsupportedPoetryContext(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasUnsupportedPoetryContext);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([key, child]) =>
+      key === 'marker' ||
+      key === 'markers' ||
+      key === 'source' ||
+      key === 'files' ||
+      hasUnsupportedPoetryContext(child),
+  );
+}
+
 export function parsePoetryLock(text: string): {
   version: 1;
   package: { name: string; version: string }[];
@@ -258,19 +271,21 @@ export function parsePoetryLock(text: string): {
 
   const packages: { name: string; version: string }[] = [];
   const seen = new Set<string>();
-  for (const entry of document.package) {
+  for (const [index, entry] of document.package.entries()) {
     if (typeof entry?.name !== 'string' || typeof entry.version !== 'string')
-      continue;
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package entry ${index + 1} is missing a string name or version`,
+      );
     // Normalised the way PyPI normalises, so Foo_Bar and foo-bar are one
     // distribution — the same rule requirements.txt import applies.
     const name = entry.name.toLowerCase().replace(/[-_.]+/gu, '-');
-    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) continue;
-    if (
-      entry.marker !== undefined ||
-      entry.markers !== undefined ||
-      entry.source !== undefined ||
-      entry.files !== undefined
-    )
+    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package entry ${index + 1} has an invalid name`,
+      );
+    if (hasUnsupportedPoetryContext(entry))
       throw new ProviderError(
         'INVALID_LOCKFILE',
         `poetry.lock package ${name} carries marker, source, or artifact context that cannot be represented losslessly`,
@@ -318,12 +333,12 @@ export function parsePnpmLock(text: string): {
     snapshots?: Record<string, unknown>;
   };
   const version = String(document.lockfileVersion ?? '');
-  // v5 keyed packages as `/name/version`, a different shape entirely. Refusing
-  // beats importing a v5 file as though it were v6+ and getting names wrong.
-  if (!/^(?:6|7|8|9)/u.test(version))
+  // Older versions use different package/snapshot key shapes. Refusing beats
+  // treating them as v9 and silently changing package identities.
+  if (!/^9(?:\.|$)/u.test(version))
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `Unsupported pnpm lockfileVersion "${version}"; 6.0 and later are supported.`,
+      `Unsupported pnpm lockfileVersion "${version}"; only version 9 is supported.`,
     );
   if (!document.packages || typeof document.packages !== 'object')
     throw new ProviderError(
@@ -353,11 +368,18 @@ export function parsePnpmLock(text: string): {
       );
     const identifier = key;
     const at = identifier.lastIndexOf('@');
-    if (at <= 0) continue;
+    if (at <= 0)
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+      );
     const name = identifier.slice(0, at);
     const packageVersion = identifier.slice(at + 1);
-    if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name)) continue;
-    if (!/^[0-9]/u.test(packageVersion)) continue;
+    if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name) || !/^[0-9]/u.test(packageVersion))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+      );
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
     const installPath = `node_modules/${name}`;
@@ -501,7 +523,10 @@ export function detectLockFormat(
       )
   )
     return 'gradle-lockfile';
-  if (/^lockfileVersion:\s*'?[6-9]/mu.test(text) && /^packages:/mu.test(text))
+  if (
+    /^lockfileVersion:\s*'?9(?:\.\d+)?'?\s*$/mu.test(text) &&
+    /^packages:/mu.test(text)
+  )
     return 'pnpm-lock';
   // Poetry writes a [metadata] lock-version alongside [[package]] tables;
   // Cargo.lock has [[package]] too, so the metadata block is what separates

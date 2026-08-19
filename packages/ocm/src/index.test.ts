@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   ArtifactDescriptor,
   PackageInstance,
+  ResolutionSolution,
 } from '@openpacker/contracts';
 import {
   componentNameForPurl,
@@ -24,6 +25,36 @@ const artifact: ArtifactDescriptor = {
   referrers: [],
   externalRefs: [],
 };
+
+const packageFor = (nodeId: string, exactPurl: string): PackageInstance => ({
+  nodeId,
+  identity: {
+    canonicalPurl: exactPurl.slice(0, exactPurl.lastIndexOf('@')),
+    exactPurl,
+    purlType: 'npm',
+    name: exactPurl,
+    version: '1.0.0',
+    qualifiers: {},
+    nativeCoordinates: [],
+    aliases: [],
+    sourceRefs: [],
+    publisherRefs: [],
+    externalRefs: [],
+  },
+  nativeVersion: '1.0.0',
+  normalizedVersion: '1.0.0',
+  versionSortKey: '1.0.0',
+  requirements: [],
+  capabilities: [],
+  conflicts: [],
+  cardinalityConstraints: [],
+  artifacts: [artifact],
+  lifecycle: { status: 'published', eligible: true, warnings: [] },
+  sourceSnapshots: [],
+  metadataDigest: { algorithm: 'sha256', value: 'd'.repeat(64) },
+  nativeSemantics: { version: '1', data: {} },
+  semanticLoss: [],
+});
 
 describe('OCM mapping', () => {
   it('creates a location-independent component descriptor', async () => {
@@ -65,38 +96,6 @@ describe('OCM mapping', () => {
   });
 
   it('coalesces multiple semantic edges to one OCM component reference', async () => {
-    const packageFor = (
-      nodeId: string,
-      exactPurl: string,
-    ): PackageInstance => ({
-      nodeId,
-      identity: {
-        canonicalPurl: exactPurl.slice(0, exactPurl.lastIndexOf('@')),
-        exactPurl,
-        purlType: 'npm',
-        name: exactPurl,
-        version: '1.0.0',
-        qualifiers: {},
-        nativeCoordinates: [],
-        aliases: [],
-        sourceRefs: [],
-        publisherRefs: [],
-        externalRefs: [],
-      },
-      nativeVersion: '1.0.0',
-      normalizedVersion: '1.0.0',
-      versionSortKey: '1.0.0',
-      requirements: [],
-      capabilities: [],
-      conflicts: [],
-      cardinalityConstraints: [],
-      artifacts: [artifact],
-      lifecycle: { status: 'published', eligible: true, warnings: [] },
-      sourceSnapshots: [],
-      metadataDigest: { algorithm: 'sha256', value: 'd'.repeat(64) },
-      nativeSemantics: { version: '1', data: {} },
-      semanticLoss: [],
-    });
     const packages = [
       packageFor('app', 'pkg:npm/app@1.0.0'),
       packageFor('dep', 'pkg:npm/dep@1.0.0'),
@@ -210,7 +209,103 @@ describe('OCM mapping', () => {
         provider: 'openpacker.dev',
       }),
     ).rejects.toMatchObject({ code: 'CYCLIC_COMPONENT_REFERENCE' });
+
+    const solutionFor = (
+      selectedNodeIds: string[],
+      dependencyEdges: ResolutionSolution['dependencyEdges'] = [],
+    ): ResolutionSolution => ({
+      selectedNodeIds,
+      selectedCapabilityProviders: [],
+      dependencyEdges,
+      satisfiedRequirementIds: dependencyEdges.map(
+        ({ requirementId }) => requirementId,
+      ),
+      excludedCandidates: [],
+      objectiveTuple: [],
+      sourceSnapshotDigests: [],
+      semanticLoss: [],
+      solutionDigest: { algorithm: 'sha256', value: 'e'.repeat(64) },
+    });
+    await expect(
+      mapSolutionToOcm({
+        packages,
+        solution: solutionFor(['missing']),
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'MISSING_SELECTED_NODE' });
+
+    const missingExact = packageFor('no-purl', 'pkg:npm/no-purl@1.0.0');
+    delete missingExact.identity.exactPurl;
+    await expect(
+      mapSolutionToOcm({
+        packages: [missingExact],
+        solution: solutionFor(['no-purl']),
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'MISSING_EXACT_PURL' });
+
+    for (const solution of [
+      solutionFor(
+        ['app'],
+        [
+          {
+            fromNodeId: 'app',
+            toNodeId: 'dep',
+            requirementId: 'unselected-dep',
+            witnessType: 'package',
+          },
+        ],
+      ),
+      solutionFor(
+        ['app', 'dep'],
+        [
+          {
+            fromNodeId: 'app',
+            toNodeId: 'missing',
+            requirementId: 'missing-dep',
+            witnessType: 'package',
+          },
+        ],
+      ),
+    ])
+      await expect(
+        mapSolutionToOcm({ packages, solution, provider: 'openpacker.dev' }),
+      ).rejects.toMatchObject({ code: 'INVALID_DEPENDENCY_EDGE' });
   });
+
+  it('finalizes a deep acyclic chain without recursion', async () => {
+    const count = 5_000;
+    const packages = Array.from({ length: count }, (_, index) => {
+      const id = `node-${String(index).padStart(4, '0')}`;
+      return packageFor(id, `pkg:npm/${id}@1.0.0`);
+    });
+    const dependencyEdges = packages.slice(0, -1).map((item, index) => ({
+      fromNodeId: item.nodeId,
+      toNodeId: packages[index + 1]!.nodeId,
+      requirementId: `edge-${index}`,
+      witnessType: 'package' as const,
+    }));
+    const descriptors = await mapSolutionToOcm({
+      packages,
+      solution: {
+        selectedNodeIds: packages.map(({ nodeId }) => nodeId),
+        selectedCapabilityProviders: [],
+        dependencyEdges,
+        satisfiedRequirementIds: dependencyEdges.map(
+          ({ requirementId }) => requirementId,
+        ),
+        excludedCandidates: [],
+        objectiveTuple: [],
+        sourceSnapshotDigests: [],
+        semanticLoss: [],
+        solutionDigest: { algorithm: 'sha256', value: 'e'.repeat(64) },
+      },
+      provider: 'openpacker.dev',
+    });
+    expect(descriptors).toHaveLength(count);
+    expect(descriptors[0]?.component.componentReferences).toHaveLength(1);
+    expect(descriptors.at(-1)?.component.componentReferences).toHaveLength(0);
+  }, 15_000);
 
   it('rejects malformed provider, resource, and digest fields', async () => {
     const descriptor = await createOcmDescriptor({

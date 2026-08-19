@@ -233,12 +233,19 @@ describe('pnpm-lock.yaml import', () => {
     ).toThrow(/multiple locked selections/u);
   });
 
-  it('refuses lockfileVersion 5, whose keys mean something else', () => {
-    // v5 keys are `/name/version`; importing one as v6+ would produce wrong
-    // names rather than an error.
+  it('refuses pre-v9 lockfiles, whose keys mean something else', () => {
+    for (const version of ['5.4', '6.0', '8.0'])
+      expect(() =>
+        parsePnpmLock(
+          `lockfileVersion: '${version}'\npackages:\n  /a@1.0.0: {}\n`,
+        ),
+      ).toThrow(/only version 9/u);
+  });
+
+  it('refuses malformed entries even when another package is valid', () => {
     expect(() =>
-      parsePnpmLock("lockfileVersion: '5.4'\npackages:\n  /a/1.0.0: {}\n"),
-    ).toThrow(/lockfileVersion/u);
+      parsePnpmLock(lock("  'a@1.0.0': {}\n  local-package: {}\n")),
+    ).toThrow(/unsupported package key/u);
   });
 
   it('is detected from its version and packages sections', () => {
@@ -272,6 +279,11 @@ describe('poetry.lock import', () => {
     ).toThrow(/context.*losslessly/u);
     expect(() =>
       parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[package.dependencies]\ndep = { version = "1", markers = "sys_platform == 'win32'" }\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
         `[[package]]\nname = "foo"\nversion = "1.0"\nsource = { type = "git", url = "https://example.invalid/repo" }\n`,
       ),
     ).toThrow(/context.*losslessly/u);
@@ -296,5 +308,13 @@ describe('poetry.lock import', () => {
     expect(() => parsePoetryLock('[metadata]\nlock-version = "2.0"\n')).toThrow(
       /\[\[package\]\]/u,
     );
+  });
+
+  it('refuses malformed entries even when another package is valid', () => {
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "good"\nversion = "1.0"\n\n[[package]]\nname = "missing-version"\n`,
+      ),
+    ).toThrow(/missing a string name or version/u);
   });
 });
