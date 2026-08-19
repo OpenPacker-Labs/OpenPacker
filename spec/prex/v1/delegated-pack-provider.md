@@ -36,6 +36,25 @@ MUST NOT resolve it through `PATH`. `default_for` MUST be a subset of the
 manifest's `purlTypes`, and `allow_environment` MUST be a subset of its declared
 environment authority.
 
+The approved executable MUST be standalone. Before execution, the host copies
+bounded bytes from the no-follow approved file into an unnamed immutable
+snapshot and hashes that snapshot. The sandbox copies the snapshot bytes from an
+inherited read-only descriptor into a private mode-`0500` executable and
+executes only that private path. The configured absolute path remains the
+selection and receipt source path; the receipt digest identifies the exact
+snapshot bytes that ran. The configured path is not the process `argv[0]` and
+its parent directory is not made visible merely because it contains the approved
+file.
+
+Consequently, sibling modules and resources, relative loader paths, and runtime
+layouts such as nvm installations are unsupported at this boundary. Operators
+MUST approve a self-contained executable, bundle, or standalone wrapper instead.
+This private-path rule supersedes any earlier expectation that delegated
+providers execute with their configured path as `argv[0]`. A host MUST fail
+closed rather than reopen that path or widen the jail to satisfy sibling lookup.
+It MUST also fail closed when structurally unnamed snapshot storage is
+unavailable; creating a named writable temporary executable is not a fallback.
+
 ## Templates
 
 Templates are argv or environment values, never shell text. Hosts replace:
@@ -52,8 +71,9 @@ change the authority declared by the provider.
 
 Manifest commands and cleanup commands carry argument lists only. The compiled
 `DelegatedPackHostPlan` preserves that shape; the host prepends the separately
-validated top-level executable. A provider cannot check one binary and then ask
-the host to execute another.
+validated top-level executable name for planning and receipts. At execution the
+host substitutes the private immutable snapshot path. A provider cannot check
+one binary and then ask the host to execute another.
 
 WIT planners receive a canonical `DelegatedPackPlanInput` document from this
 schema. Version 1 contains the detected project root and manifest path, explicit

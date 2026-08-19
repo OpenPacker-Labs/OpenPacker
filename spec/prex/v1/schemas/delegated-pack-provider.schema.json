@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json",
   "title": "PREX delegated pack provider manifest and host plan",
+  "description": "Delegated providers plan execution of an operator-approved standalone executable. The configured absolute source path is host configuration outside this manifest; hosts execute a bounded immutable snapshot at a private sandbox path, so sibling modules, resources, relative runtime layouts, and configured-path argv[0] semantics are unsupported.",
   "$defs": {
     "DelegatedProviderId": {
       "type": "string",
@@ -22,6 +23,7 @@
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
     "PackProviderExecutable": {
+      "$comment": "Logical executable name used by provider plans and receipts, not an executable path. The host separately selects an approved absolute standalone source and executes its immutable snapshot at a private path.",
       "type": "string",
       "minLength": 1,
       "maxLength": 255,
