@@ -12,6 +12,7 @@ import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import { parse as parseYaml } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
 import {
+  canonicalBytes,
   canonicalDigest,
   compareCanonicalStrings,
   formatDigest,
@@ -1189,7 +1190,21 @@ function mergePackagesIntoUniverse(
         'INVALID_LOCKFILE',
         'Package instance is missing exactPurl',
       );
-    if (!byExact.has(exact)) byExact.set(exact, item);
+    const existing = byExact.get(exact);
+    if (
+      existing !== undefined &&
+      new TextDecoder().decode(
+        canonicalBytes(stripUndefined(existing) as JsonValue),
+      ) !==
+        new TextDecoder().decode(
+          canonicalBytes(stripUndefined(item) as JsonValue),
+        )
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `Caller universe contradicts native lock package ${exact}`,
+      );
+    if (existing === undefined) byExact.set(exact, item);
   }
   return {
     ...universe,

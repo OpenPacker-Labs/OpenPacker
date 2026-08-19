@@ -143,6 +143,22 @@ describe('lock-import planning', () => {
     }
   });
 
+  it('rejects caller universe artifacts that contradict a native lock', async () => {
+    const original = await planNativeLockImport(npmLock, {
+      format: 'package-lock',
+    });
+    const universe = structuredClone(original.universe);
+    const collision = universe.packages.find(
+      (item) => item.artifacts.length > 0,
+    );
+    if (!collision?.artifacts[0]) throw new Error('expected artifact fixture');
+    collision.artifacts[0].digest.value = 'f'.repeat(64);
+
+    await expect(
+      planNativeLockImport(npmLock, { format: 'package-lock', universe }),
+    ).rejects.toMatchObject({ code: 'INVALID_LOCKFILE' });
+  });
+
   it('records lifecycle as unknown instead of claiming published eligibility', async () => {
     const plan = await planLockCapture(npmLock, { format: 'package-lock' });
     for (const item of plan.packages) {
