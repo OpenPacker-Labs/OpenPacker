@@ -54,6 +54,11 @@ import {
 import type { PolicyInput } from '@openpacker/contracts';
 import { digestSandboxPolicy, type SandboxOutcome } from '@openpacker/sandbox';
 import { sandboxPolicyFromProject } from './lifecycle.js';
+import {
+  assertSupplyChainAllowed,
+  captureFactsFromSourceUri,
+} from './supply-chain.js';
+import { policyDocumentFromPolicyInput } from '@openpacker/policy';
 
 export async function emptyProjectState(): Promise<ProjectState> {
   return { schemaVersion: 1, packages: {} };
@@ -465,6 +470,17 @@ export async function materializeLockPackage(input: {
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
+  if (input.policy?.blockExoticSources !== undefined) {
+    const facts = captureFactsFromSourceUri(input.pkg.purl, input.pkg.source, {
+      evaluationTime: new Date().toISOString(),
+      dependencyDepth: input.pkg.reason === 'transitive' ? 1 : 0,
+      lifecycleScriptsExecuted: false,
+    });
+    await assertSupplyChainAllowed(
+      policyDocumentFromPolicyInput(input.policy),
+      facts,
+    );
+  }
   const storePath = storePathForDigest(input.root, input.pkg.digest);
   const archivePath = `${storePath}.artifact`;
   await ensureStableDirectory(paths.opmDir);

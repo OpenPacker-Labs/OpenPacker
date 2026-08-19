@@ -38,6 +38,7 @@ import {
   assertStoreKey,
   fetchArtifactBytes,
   initProject,
+  installFromLock,
   installProject,
   listInstalled,
   materializeLockPackage,
@@ -52,6 +53,7 @@ import {
   discoverBins,
   whyPackage,
   OpmError,
+  defaultSupplyChainPolicyInput,
 } from '../src/index.js';
 import { packTarGzip } from '@openpacker/project-io';
 import {
@@ -547,6 +549,47 @@ describe('fail-closed install paths', () => {
         offline: true,
       }),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
+  it('rechecks current exotic-source policy before installing an existing lock', async () => {
+    const root = await tempProject();
+    const bytes = await readFile(fixtureTgz);
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const storeKey = storeKeyFromDigest(digest);
+    await expect(
+      installFromLock({
+        root,
+        offline: false,
+        lock: {
+          schemaVersion: 1,
+          generatedBy: 'opm',
+          packages: {
+            demo: {
+              alias: 'demo',
+              purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+              version: '1.1.0',
+              digest,
+              size: bytes.byteLength,
+              format: 'tar+gzip',
+              mediaType: 'application/vnd.openpacker.package.tgz',
+              source: 'https://packages.example.invalid/demo-tool-1.1.0.tgz',
+              storeKey,
+              bins: [],
+              reason: 'direct',
+              ecosystem: 'npm',
+              sourceKind: 'registry',
+            },
+          },
+        },
+        policy: {
+          ...defaultSupplyChainPolicyInput(),
+          blockExoticSources: { direct: true, transitive: true },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(
+      lstat(join(root, '.opm/store', storeKey)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects a size mismatch even when the digest matches', async () => {
