@@ -65,6 +65,7 @@ export {
   createSeatbeltBackend,
   findTrustedSandboxHelper,
   probeNativeBackends,
+  reopenExecutableAuthority,
 } from './backends/native.js';
 
 export {

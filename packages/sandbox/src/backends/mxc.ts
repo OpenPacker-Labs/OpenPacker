@@ -60,6 +60,11 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   return {
     id: 'mxc',
     async run(input) {
+      if (input.executableAuthority !== undefined)
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'MXC cannot consume stable executable handle authorities',
+        );
       // Prefer config-based spawn when present; fall back to a constrained
       // host spawn only if the SDK surface differs — but never silently drop
       // the jail: if we cannot configure MXC, fail.

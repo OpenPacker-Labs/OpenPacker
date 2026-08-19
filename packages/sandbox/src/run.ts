@@ -241,6 +241,9 @@ export async function runInSandbox(
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
           directoryAuthorities: authorities,
+          ...(input.executableAuthority === undefined
+            ? {}
+            : { executableAuthority: input.executableAuthority }),
           ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });
@@ -349,6 +352,11 @@ async function runAmbient(
   stderr: string;
   outputLimitExceeded?: 'stdout' | 'stderr' | 'combined';
 }> {
+  if (input.executableAuthority !== undefined)
+    throw new SandboxBackendError(
+      'UNAVAILABLE',
+      'Ambient execution cannot consume stable executable handle authorities',
+    );
   const jailRoot = defaultJailHomeRoot();
   await mkdir(jailRoot, { recursive: true });
   const jailHome = await mkdtemp(join(jailRoot, 'ambient-'));

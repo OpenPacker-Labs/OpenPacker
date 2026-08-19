@@ -105,6 +105,8 @@ export interface RunInSandboxInput {
   signal?: AbortSignal;
   /** Open directory handles the backend must use instead of reopening paths. */
   directoryAuthorities?: readonly { fd: number; path: string }[];
+  /** Read-only standalone bytes copied into a private backend executable. */
+  executableAuthority?: { fd: number; path: string };
 }
 
 export interface SandboxOutcome {
@@ -155,6 +157,7 @@ export interface SandboxBackend {
     maximumOutputBytes: number;
     signal?: AbortSignal;
     directoryAuthorities?: readonly { fd: number; path: string }[];
+    executableAuthority?: { fd: number; path: string };
   }): Promise<{
     exitCode: number;
     stdout: string;

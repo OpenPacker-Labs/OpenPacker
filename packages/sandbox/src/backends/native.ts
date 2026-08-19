@@ -1,4 +1,11 @@
-import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import {
+  constants,
+  existsSync,
+  lstatSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { open, type FileHandle } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { SandboxBackendError, spawnCapture } from './mock.js';
@@ -155,42 +162,67 @@ export function createBwrapBackend(): SandboxBackend {
     id: 'native-bwrap',
     async run(input) {
       assertTrustedSandboxHelper(helper);
-      const argv = buildBwrapArgv({
-        bwrap: helper.path,
-        command: input.argv,
-        cwd: input.cwd,
-        readwritePaths: input.readwritePaths,
-        readonlyPaths: input.readonlyPaths,
-        network: input.network,
-        profile: input.profile,
-        legacyFatRoot: input.legacyFatRoot === true,
-        environment: input.env,
-        ...(input.directoryAuthorities === undefined
-          ? {}
-          : {
-              directoryAuthorities: input.directoryAuthorities.map(
-                ({ path }, index) => ({
-                  path,
-                  childFd: 3 + index,
-                }),
-              ),
-            }),
-      });
-      return spawnCapture({
-        argv,
-        cwd: '/',
-        env: input.hostEnv,
-        maximumStdoutBytes: input.maximumStdoutBytes,
-        maximumStderrBytes: input.maximumStderrBytes,
-        maximumOutputBytes: input.maximumOutputBytes,
-        treeContainment: 'pid-namespace',
-        ...(input.directoryAuthorities === undefined
-          ? {}
-          : { inheritedFds: input.directoryAuthorities.map(({ fd }) => fd) }),
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      });
+      const executableHandle =
+        input.executableAuthority === undefined
+          ? undefined
+          : await reopenExecutableAuthority(input.executableAuthority.fd);
+      try {
+        const directoryAuthorities =
+          input.directoryAuthorities?.map(({ path }, index) => ({
+            path,
+            childFd: 3 + index,
+          })) ?? [];
+        const executableAuthority =
+          input.executableAuthority === undefined
+            ? undefined
+            : {
+                path: input.executableAuthority.path,
+                childFd: 3 + directoryAuthorities.length,
+              };
+        const argv = buildBwrapArgv({
+          bwrap: helper.path,
+          command: input.argv,
+          cwd: input.cwd,
+          readwritePaths: input.readwritePaths,
+          readonlyPaths: input.readonlyPaths,
+          network: input.network,
+          profile: input.profile,
+          legacyFatRoot: input.legacyFatRoot === true,
+          environment: input.env,
+          directoryAuthorities,
+          ...(executableAuthority === undefined ? {} : { executableAuthority }),
+        });
+        return await spawnCapture({
+          argv,
+          cwd: '/',
+          env: input.hostEnv,
+          maximumStdoutBytes: input.maximumStdoutBytes,
+          maximumStderrBytes: input.maximumStderrBytes,
+          maximumOutputBytes: input.maximumOutputBytes,
+          treeContainment: 'pid-namespace',
+          inheritedFds: [
+            ...(input.directoryAuthorities?.map(({ fd }) => fd) ?? []),
+            ...(executableHandle === undefined ? [] : [executableHandle.fd]),
+          ],
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        });
+      } finally {
+        await executableHandle?.close().catch(() => undefined);
+      }
     },
   };
+}
+
+/** Reopen immutable snapshot bytes with an independent offset for one run. */
+export async function reopenExecutableAuthority(
+  fd: number,
+): Promise<FileHandle> {
+  if (process.platform !== 'linux' || !Number.isSafeInteger(fd) || fd < 0)
+    throw new SandboxBackendError(
+      'INVALID_FD_AUTHORITY',
+      'Executable authority requires a valid Linux file descriptor',
+    );
+  return await open(`/proc/self/fd/${fd}`, constants.O_RDONLY);
 }
 
 export function buildBwrapArgv(input: {
@@ -204,6 +236,7 @@ export function buildBwrapArgv(input: {
   legacyFatRoot?: boolean;
   environment?: Readonly<Record<string, string>>;
   directoryAuthorities?: readonly { path: string; childFd: number }[];
+  executableAuthority?: { path: string; childFd: number };
 }): string[] {
   const args: string[] = [
     input.bwrap,
@@ -243,7 +276,11 @@ export function buildBwrapArgv(input: {
   args.push('--tmpfs', '/var/tmp');
 
   const command0 = input.command[0];
-  if (command0 && command0.includes('/')) {
+  if (
+    input.executableAuthority === undefined &&
+    command0 &&
+    command0.includes('/')
+  ) {
     try {
       const execPath = resolve(command0);
       if (existsSync(execPath)) {
@@ -304,9 +341,28 @@ export function buildBwrapArgv(input: {
     }
   }
 
+  // Apply the immutable standalone executable overlay last so no broader bind
+  // can hide it and no configured-path sibling code enters the jail.
+  const stableExecutablePath = '/run/openpacker/provider-executable';
+  if (input.executableAuthority !== undefined) {
+    args.push('--dir', '/run');
+    args.push('--dir', '/run/openpacker');
+    args.push(
+      '--perms',
+      '0500',
+      '--ro-bind-data',
+      String(input.executableAuthority.childFd),
+      stableExecutablePath,
+    );
+  }
+
   args.push('--chdir', cwdPath);
   args.push('--');
-  args.push(...input.command);
+  args.push(
+    ...(input.executableAuthority === undefined
+      ? input.command
+      : [stableExecutablePath, ...input.command.slice(1)]),
+  );
   return args;
 }
 
