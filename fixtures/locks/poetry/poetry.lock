@@ -9,7 +9,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "requests"
-version = "2.32.3"
+version = "2.33.0"
 description = "Python HTTP for Humans."
 optional = false
 python-versions = ">=3.8"
