@@ -402,7 +402,12 @@ export function parseRequirementsTxt(text: string): {
         `requirements.txt line ${lineNumber} contains an artifact hash that cannot be represented losslessly`,
       );
     const line = uncommented.trim();
-    if (line === '' || line.startsWith('-')) continue;
+    if (line === '') continue;
+    if (line.startsWith('-'))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `requirements.txt line ${lineNumber} uses an option or include that cannot be represented losslessly: "${line}"`,
+      );
     const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^\s;]+)$/u.exec(line);
     if (!match) {
       throw new ProviderError(

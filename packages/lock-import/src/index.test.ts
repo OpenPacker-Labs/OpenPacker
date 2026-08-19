@@ -187,7 +187,11 @@ describe('requirements.txt import', () => {
     // from an input that never pinned anything.
     for (const bad of ['requests>=2.0', 'requests', 'requests~=2.0'])
       expect(() => parseRequirementsTxt(bad), bad).toThrow(/exact pin/u);
-    expect(() => parseRequirementsTxt('-e .\n')).toThrow(/no exact pins/u);
+    for (const directive of ['-e .', '-r extra.txt', '-c constraints.txt'])
+      expect(
+        () => parseRequirementsTxt(`requests==2.32.3\n${directive}\n`),
+        directive,
+      ).toThrow(/option or include.*losslessly/u);
   });
 
   it('is detected only when every line is a pin', () => {
