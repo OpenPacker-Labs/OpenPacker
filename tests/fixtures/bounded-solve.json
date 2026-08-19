@@ -46,7 +46,7 @@
     "targetVocabularyVersion": "1",
     "canonicalDigest": {
       "algorithm": "sha256",
-      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+      "value": "dc342e3ec7bebfafa3fcbfe1d6b1393de518230a7ad5eb80d4b191a89ed3ff34"
     },
     "packages": [
       {
