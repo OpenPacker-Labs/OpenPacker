@@ -332,6 +332,19 @@ test('blockExoticSources blocks transitive git/tarball but can allow direct', as
     dependencyDepth: 0,
   });
   expect(direct.decision).toBe('allow');
+
+  const missing = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    dependencyDepth: 2,
+  });
+  expect(missing.decision).toBe('indeterminate');
+  expect(missing.checks).toContainEqual(
+    expect.objectContaining({
+      code: 'supply-chain.exotic-source',
+      status: 'not-provided',
+    }),
+  );
 });
 
 test('lifecycle script execution is denied unless allowlisted', async () => {
