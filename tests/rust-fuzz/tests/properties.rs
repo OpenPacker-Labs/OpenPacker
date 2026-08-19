@@ -1,6 +1,6 @@
 use openpacker_resolver::{
-    SolveInput, brute_force_oracle, canonical_json, check, digest_json, normalize_purl, solve,
-    version_satisfies,
+    SolveInput, brute_force_oracle, canonical_json, check, digest_json, digest_projection,
+    normalize_purl, solve, version_satisfies,
 };
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -36,6 +36,9 @@ fn generated_input(versions: u8) -> SolveInput {
             })
             .collect(),
     );
+    value["universe"]["canonicalDigest"] =
+        serde_json::to_value(digest_projection(&value["universe"], "universe-v1").unwrap())
+            .unwrap();
     serde_json::from_value(value).unwrap()
 }
 
