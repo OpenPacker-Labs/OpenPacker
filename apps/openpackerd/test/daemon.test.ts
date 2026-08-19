@@ -14,6 +14,7 @@ import {
   assertDaemonPort,
   createOpenPackerDaemon,
 } from '../src/index.js';
+import { runDaemon } from '../src/cli.js';
 import {
   createReferenceOperations,
   OperationError,
@@ -87,6 +88,10 @@ const universe: ResolutionUniverse = {
 };
 
 describe('openpackerd', () => {
+  it('keeps the CLI import-safe for coverage and embedding', () => {
+    expect(runDaemon).toBeTypeOf('function');
+  });
+
   it('boots the standalone reference operations with an empty universe', async () => {
     const operations = await createStandaloneReferenceOperations();
     const meta = {

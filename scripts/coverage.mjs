@@ -9,11 +9,14 @@ import {
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, relative, resolve } from 'node:path';
+import {
+  coverageFailures,
+  coverageThresholds as thresholds,
+} from './coverage-policy.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const coverage = join(root, 'coverage');
 const raw = join(coverage, 'raw');
-const thresholds = { instrumentedFilesPercent: 80, functionPercent: 70 };
 const workspaceRoots = ['apps', 'examples', 'packages'];
 const workspaces = workspaceRoots
   .flatMap((directory) =>
@@ -184,13 +187,7 @@ for (const workspace of workspaceCoverage)
   console.log(
     `${workspace.workspace}: ${workspace.instrumentedFilesPercent}% files, ${workspace.functionPercent}% functions, ${workspace.tests} test files`,
   );
-const failingWorkspaces = workspaceCoverage.filter(
-  (workspace) =>
-    workspace.sourceFiles === 0 ||
-    workspace.functions === 0 ||
-    workspace.instrumentedFilesPercent < thresholds.instrumentedFilesPercent ||
-    workspace.functionPercent < thresholds.functionPercent,
-);
+const failingWorkspaces = coverageFailures(workspaceCoverage, thresholds);
 if (failingWorkspaces.length)
   throw new Error(
     `workspace coverage below threshold: ${failingWorkspaces
@@ -201,8 +198,18 @@ if (failingWorkspaces.length)
       .join('; ')}`,
   );
 if (
-  instrumentedFilesPercent < thresholds.instrumentedFilesPercent ||
-  functionPercent < thresholds.functionPercent
+  coverageFailures(
+    [
+      {
+        sourceFiles: expectedFiles.length,
+        instrumentedFiles: instrumentedFiles.length,
+        instrumentedFilesPercent,
+        functions,
+        functionPercent,
+      },
+    ],
+    thresholds,
+  ).length
 )
   throw new Error(
     `coverage below threshold: files ${instrumentedFilesPercent}%/${thresholds.instrumentedFilesPercent}%, functions ${functionPercent}%/${thresholds.functionPercent}%`,

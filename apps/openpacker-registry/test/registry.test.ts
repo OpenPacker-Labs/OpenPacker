@@ -7,6 +7,7 @@ import { RegistryClient } from '@openpacker/registry-client';
 import type { HttpRequest, HttpResponse } from '@openpacker/adapter-core';
 import type { JsonValue, PackageManifest } from '@openpacker/contracts';
 import { createRegistry, RegistryStore } from '../src/index.js';
+import { runRegistry } from '../src/cli.js';
 
 const keys = JSON.parse(
   readFileSync(
@@ -18,6 +19,19 @@ const keys = JSON.parse(
 ) as Record<string, JsonWebKey>;
 
 const BASE = 'https://registry.test';
+
+it('keeps CLI validation runnable without starting a registry', async () => {
+  let stdout = '';
+  let stderr = '';
+  const io = {
+    stdout: { write: (text: string) => (stdout += text) },
+    stderr: { write: (text: string) => (stderr += text) },
+  };
+  await expect(runRegistry(['--help'], io)).resolves.toBe(0);
+  await expect(runRegistry([], io)).resolves.toBe(2);
+  expect(stdout).toContain('--registry-id');
+  expect(stderr).toContain('--registry-id is required');
+});
 
 function manifest(
   name = 'com.example.demo',

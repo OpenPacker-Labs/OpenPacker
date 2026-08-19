@@ -17,8 +17,8 @@ test suite and every advertised test type has a mandatory oracle.
 ## Decisions
 
 - Reuse the dependency-free V8 coverage collector already in the repository.
-- Apply the existing 80% source-file and 70% function thresholds independently
-  to every workspace; do not lower thresholds or exclude executable source.
+- Require every production source file to be instrumented and retain the 70%
+  function threshold independently per workspace; unknown functions fail closed.
 - Count production `src` trees only, and include apps, examples, and packages.
 - Require unit coverage for every workspace. Apply conformance, security,
   property, integration, end-to-end, compatibility, browser, fuzz, Pact, chaos,
@@ -31,7 +31,7 @@ test suite and every advertised test type has a mandatory oracle.
 
 - Every workspace has at least one discovered test and participates in the
   coverage run.
-- Every workspace independently clears 80% source-file instrumentation and 70%
+- Every workspace independently clears 100% source-file instrumentation and 70%
   function coverage.
 - Every root test gate refuses an empty or missing oracle.
 - Pact chaos and Pact mutation tests remain mandatory for the Epoch HTTP
