@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createVitest } from 'vitest/node';
 
 const testFile = /\.(?:test|spec)\.(?:[cm]?js|tsx?)$/u;
-const activeTest =
-  /\b(?:it|test)(?:\.(?:concurrent|each))?(?:\([^)]*\))?\s*\(/u;
 
 function filesIn(path) {
   if (!existsSync(path)) return [];
@@ -46,7 +44,7 @@ export function authorityInventoryFailures(authorities, scripts, hasOracle) {
   });
 }
 
-export function checkTestInventory(root) {
+export async function checkTestInventory(root) {
   const workspaces = ['apps', 'examples', 'packages']
     .flatMap((directory) =>
       readdirSync(join(root, directory), { withFileTypes: true })
@@ -58,26 +56,27 @@ export function checkTestInventory(root) {
         .map((entry) => join(directory, entry.name)),
     )
     .sort();
-  const discovery = spawnSync(
-    'npm',
-    [
-      'exec',
-      '--',
-      'vitest',
-      'list',
-      'packages',
-      'apps',
-      'examples',
-      '--config',
-      'scripts/vitest.gate.config.mjs',
-      '--json',
-    ],
-    { cwd: root, encoding: 'utf8' },
-  );
-  if (discovery.error) throw discovery.error;
-  if (discovery.status !== 0)
-    throw new Error(discovery.stderr || 'Vitest discovery failed');
-  const discovered = JSON.parse(discovery.stdout);
+  const vitest = await createVitest('test', {
+    root,
+    config: 'scripts/vitest.gate.config.mjs',
+    run: true,
+    reporters: [],
+  });
+  let discovered;
+  try {
+    await vitest.init();
+    const result = await vitest.collect(['packages', 'apps', 'examples']);
+    if (result.unhandledErrors.length)
+      throw new Error('Vitest discovery reported unhandled errors');
+    discovered = result.testModules.flatMap((module) =>
+      [...module.children.allTests()].map((test) => ({
+        file: module.moduleId,
+        runnable: test.options.mode === 'run' || test.options.mode === 'only',
+      })),
+    );
+  } finally {
+    await vitest.close();
+  }
   const rows = workspaces.map((workspace) => {
     const manifest = JSON.parse(
       readFileSync(join(root, workspace, 'package.json'), 'utf8'),
@@ -89,14 +88,11 @@ export function checkTestInventory(root) {
           `..${process.platform === 'win32' ? '\\' : '/'}`,
         ),
     );
-    const files = [...new Set(tests.map(({ file }) => file))];
     return {
       workspace,
       testScript: manifest.scripts?.test,
       discoveredTests: tests.length,
-      activeTests: files.filter((file) =>
-        activeTest.test(readFileSync(file, 'utf8')),
-      ).length,
+      activeTests: tests.filter(({ runnable }) => runnable).length,
     };
   });
 
@@ -192,19 +188,20 @@ export function checkTestInventory(root) {
     const absolute = join(root, path);
     if (!existsSync(absolute)) return false;
     if (!statSync(absolute).isDirectory()) return true;
-    return filesIn(absolute).some(
-      (file) =>
-        testFile.test(file) && activeTest.test(readFileSync(file, 'utf8')),
-    );
+    return filesIn(absolute).some((file) => testFile.test(file));
   };
   const failures = [
     ...workspaceInventoryFailures(rows),
     ...authorityInventoryFailures(authorities, scripts, hasOracle),
   ];
   if (failures.length) throw new Error(failures.join('\n'));
-  const runnableTests = rows.reduce((sum, row) => sum + row.discoveredTests, 0);
+  const discoveredTests = rows.reduce(
+    (sum, row) => sum + row.discoveredTests,
+    0,
+  );
+  const runnableTests = rows.reduce((sum, row) => sum + row.activeTests, 0);
   console.log(
-    `test inventory: ${workspaces.length} workspaces, ${runnableTests} discovered tests, ${new Set(authorities.map(({ type }) => type)).size} test types`,
+    `test inventory: ${workspaces.length} workspaces, ${runnableTests}/${discoveredTests} runnable/discovered tests, ${new Set(authorities.map(({ type }) => type)).size} test types`,
   );
 }
 
@@ -212,4 +209,4 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 )
-  checkTestInventory(resolve(import.meta.dirname, '..'));
+  await checkTestInventory(resolve(import.meta.dirname, '..'));
