@@ -989,7 +989,7 @@ fn an_admitted_authority_with_a_wrong_pinned_digest_changes_nothing() {
     let mut amended = input(vec![one.clone(), two.clone()], requirements);
     amended.universe.amendments.push(UniverseAmendment {
         amendment_version: "1".into(),
-        subject: json!({}),
+        subject: serde_json::to_value(&one.identity).unwrap(),
         applies_to_metadata_digest: one.metadata_digest.clone(),
         operations: vec![
             json!({"op":"retractRequirement","requirementId":"root","justification":"test"}),
@@ -1009,6 +1009,8 @@ fn an_admitted_authority_with_a_wrong_pinned_digest_changes_nothing() {
         .policy
         .accepted_amendment_digests
         .push(digest('9'));
+    // Pinning the amendment mutated the universe; re-pin its digest.
+    refresh_universe_digest(&mut amended);
 
     let plain_output = solve(&plain).unwrap();
     let amended_output = solve(&amended).unwrap();
