@@ -44,7 +44,7 @@ export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumFiles: 10_000,
   maximumExpandedBytes: 64 * 1024 * 1024,
   maximumCompressedBytes: 64 * 1024 * 1024,
-  maximumCompressionRatio: 20,
+  maximumCompressionRatio: 32,
   maximumMemoryBytes: 192 * 1024 * 1024,
   maximumPathBytes: 4096,
   maximumDepth: 128,
