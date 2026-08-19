@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layers 01 through 03 independently approved
-- Current layer: `04-lock-composition` next
+- Phase: implementing; layers 01 through 04 independently approved
+- Current layer: `05-scan-closeout`
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -141,3 +141,17 @@ upstream Codex Security release currently has no patched version.
   lifecycle handle transfer, complete publication snapshots, mandatory
   process-tree ownership, provider pre-probe policy denial, and the narrowed
   Windows capability contract were rechecked with no remaining finding.
+- 2026-08-19 layer 04 implementation: requirements artifact hashes and
+  directives, Poetry marker/source/hash contexts at any nesting depth, malformed
+  mixed entries, pnpm v9 package and snapshot peer contexts, and multiple native
+  selections now fail closed instead of collapsing into a weaker capture; pnpm
+  support is honestly limited to v9. OCM component-reference digests include
+  completed transitive references, require a one-to-one selected package graph,
+  and use one-pass adjacency with iterative dependency-first completion; missing
+  endpoints and cycles fail explicitly. A 5,000-node chain guards the resource
+  boundary. Lock import 24/24, OCM 5/5, both package typechecks, all staged
+  gates, and the exact layer six-gate impact aggregate passed; diff checks were
+  clean.
+- 2026-08-19 layer 04 independent review: approved at `88457fe` after native
+  variant, marker, hash, snapshot, endpoint, cycle, and deep-chain cases were
+  independently rechecked with no remaining finding.

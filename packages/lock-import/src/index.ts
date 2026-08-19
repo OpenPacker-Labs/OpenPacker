@@ -232,15 +232,48 @@ function defaultHandlers(
  * version — so the conversion is a rename rather than a translation. What it
  * does not carry is uv's per-package artifact hashes in the same shape, and
  * that difference is where the import loses information rather than inventing
- * it.
+ * it. Per-entry environment context (`python-versions`, markers, sources,
+ * `optional = true`) is refused outright: a lock that only applies to some
+ * interpreters or only includes some packages cannot be imported as a flat
+ * pinned set. The lock-wide `[metadata] python-versions` survives as uv.lock's
+ * `requires-python`, which the pypi codec records as tracked semantic loss.
  */
+function hasUnsupportedPoetryContext(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasUnsupportedPoetryContext);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([key, child]) =>
+      key === 'marker' ||
+      key === 'markers' ||
+      key === 'source' ||
+      key === 'files' ||
+      // python-versions is interpreter applicability; dropping it would pin a
+      // selection for environments the lock never claimed to cover.
+      key === 'python-versions' ||
+      // optional = true means the package may not participate in the locked
+      // set at all. (optional = false is the poetry default and carries no
+      // information, so it is not context.)
+      (key === 'optional' && child === true) ||
+      hasUnsupportedPoetryContext(child),
+  );
+}
+
 export function parsePoetryLock(text: string): {
   version: 1;
+  'requires-python'?: string;
   package: { name: string; version: string }[];
 } {
-  const document = parseToml(text) as {
-    package?: { name?: unknown; version?: unknown }[];
-    metadata?: { 'lock-version'?: unknown };
+  // Depth is capped far beyond anything a real poetry.lock nests to; the cap
+  // also bounds the hasUnsupportedPoetryContext recursion over the result.
+  const document = parseToml(text, { maxDepth: 64 }) as {
+    package?: Array<
+      Record<string, unknown> & { name?: unknown; version?: unknown }
+    >;
+    metadata?: {
+      'lock-version'?: unknown;
+      'python-versions'?: unknown;
+      files?: unknown;
+    };
   };
   if (!Array.isArray(document.package))
     throw new ProviderError(
@@ -248,16 +281,38 @@ export function parsePoetryLock(text: string): {
       'poetry.lock has no [[package]] entries',
     );
 
+  if (document.metadata?.files !== undefined)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'poetry.lock artifact hashes cannot be represented without losing integrity',
+    );
+
   const packages: { name: string; version: string }[] = [];
   const seen = new Set<string>();
-  for (const entry of document.package) {
+  for (const [index, entry] of document.package.entries()) {
     if (typeof entry?.name !== 'string' || typeof entry.version !== 'string')
-      continue;
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package entry ${index + 1} is missing a string name or version`,
+      );
     // Normalised the way PyPI normalises, so Foo_Bar and foo-bar are one
     // distribution — the same rule requirements.txt import applies.
     const name = entry.name.toLowerCase().replace(/[-_.]+/gu, '-');
-    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) continue;
-    if (seen.has(name)) continue;
+    if (!/^[a-z0-9][a-z0-9-]*$/u.test(name))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package entry ${index + 1} has an invalid name`,
+      );
+    if (hasUnsupportedPoetryContext(entry))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package ${name} carries marker, source, python-version, optionality, or artifact context that cannot be represented losslessly`,
+      );
+    if (seen.has(name))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock contains multiple locked selections for ${name}`,
+      );
     seen.add(name);
     packages.push({ name, version: entry.version });
   }
@@ -266,7 +321,17 @@ export function parsePoetryLock(text: string): {
       'INVALID_LOCKFILE',
       'poetry.lock contains no importable packages',
     );
-  return { version: 1, package: packages };
+  // The lock-wide [metadata] python-versions maps onto uv.lock's
+  // requires-python, which the pypi codec records as a tracked semantic loss
+  // rather than discarding it.
+  const requiresPython = document.metadata?.['python-versions'];
+  return {
+    version: 1,
+    ...(typeof requiresPython === 'string'
+      ? { 'requires-python': requiresPython }
+      : {}),
+    package: packages,
+  };
 }
 
 /**
@@ -289,50 +354,121 @@ export function parsePnpmLock(text: string): {
 } {
   const document = parseYaml(text) as {
     lockfileVersion?: unknown;
-    packages?: Record<
-      string,
-      { resolution?: { integrity?: string; tarball?: string } }
-    >;
+    packages?: Record<string, unknown>;
+    snapshots?: Record<string, unknown>;
   };
   const version = String(document.lockfileVersion ?? '');
-  // v5 keyed packages as `/name/version`, a different shape entirely. Refusing
-  // beats importing a v5 file as though it were v6+ and getting names wrong.
-  if (!/^(?:6|7|8|9)/u.test(version))
+  // Older versions use different package/snapshot key shapes. Refusing beats
+  // treating them as v9 and silently changing package identities.
+  if (!/^9(?:\.|$)/u.test(version))
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `Unsupported pnpm lockfileVersion "${version}"; 6.0 and later are supported.`,
+      `Unsupported pnpm lockfileVersion "${version}"; only version 9 is supported.`,
     );
-  if (!document.packages || typeof document.packages !== 'object')
+  if (
+    !document.packages ||
+    typeof document.packages !== 'object' ||
+    Array.isArray(document.packages)
+  )
     throw new ProviderError(
       'INVALID_LOCKFILE',
       'pnpm-lock.yaml has no packages section',
     );
 
+  const parsePackageKey = (key: string): { name: string; version: string } => {
+    if (key.includes('('))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm peer context cannot be represented losslessly: ${key}`,
+      );
+    const at = key.lastIndexOf('@');
+    if (at <= 0)
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+      );
+    const name = key.slice(0, at);
+    const packageVersion = key.slice(at + 1);
+    if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name) || !/^[0-9]/u.test(packageVersion))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+      );
+    return { name, version: packageVersion };
+  };
+
   const packages: Record<
     string,
     { version: string; resolved?: string; integrity?: string }
   > = {};
+  const packageKeys = new Set<string>();
   for (const [key, value] of Object.entries(document.packages)) {
-    // Peer-dependency suffixes like `(react@18.0.0)` describe how a package was
-    // resolved, not which package it is.
-    const identifier = key.split('(')[0]!;
-    const at = identifier.lastIndexOf('@');
-    if (at <= 0) continue;
-    const name = identifier.slice(0, at);
-    const packageVersion = identifier.slice(at + 1);
-    if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name)) continue;
-    if (!/^[0-9]/u.test(packageVersion)) continue;
+    const { name, version: packageVersion } = parsePackageKey(key);
+    // A non-object value (`'a@1.0.0: garbage'`) has no resolution to read;
+    // accepting it would import a version-only entry from malformed input.
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed package value for: ${key}`,
+      );
+    const resolution = (value as { resolution?: unknown }).resolution;
+    if (
+      resolution !== undefined &&
+      (resolution === null ||
+        typeof resolution !== 'object' ||
+        Array.isArray(resolution))
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
+    const { integrity, tarball } = (resolution ?? {}) as {
+      integrity?: unknown;
+      tarball?: unknown;
+    };
+    if (tarball !== undefined && typeof tarball !== 'string')
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
+    if (integrity !== undefined && typeof integrity !== 'string')
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+      );
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
-    packages[`node_modules/${name}`] = {
+    const installPath = `node_modules/${name}`;
+    if (packages[installPath] !== undefined)
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains multiple locked selections for ${name}`,
+      );
+    packages[installPath] = {
       version: packageVersion,
-      ...(value?.resolution?.tarball
-        ? { resolved: value.resolution.tarball }
-        : {}),
-      ...(value?.resolution?.integrity
-        ? { integrity: value.resolution.integrity }
-        : {}),
+      ...(tarball !== undefined ? { resolved: tarball } : {}),
+      ...(integrity !== undefined ? { integrity } : {}),
     };
+    packageKeys.add(key);
+  }
+  if (document.snapshots !== undefined) {
+    if (
+      document.snapshots === null ||
+      typeof document.snapshots !== 'object' ||
+      Array.isArray(document.snapshots)
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        'pnpm-lock.yaml snapshots must be a mapping',
+      );
+    for (const key of Object.keys(document.snapshots)) {
+      parsePackageKey(key);
+      if (!packageKeys.has(key))
+        throw new ProviderError(
+          'INVALID_LOCKFILE',
+          `pnpm-lock.yaml snapshot has no matching package: ${key}`,
+        );
+    }
   }
   if (Object.keys(packages).length === 0)
     throw new ProviderError(
@@ -358,17 +494,26 @@ export function parseRequirementsTxt(text: string): {
   package: { name: string; version: string }[];
 } {
   const packages: { name: string; version: string }[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   let lineNumber = 0;
   for (const rawLine of text.split(/\r?\n/u)) {
     lineNumber += 1;
-    // Strip comments, then hash options like `--hash=sha256:...` which pin the
-    // artifact but not the identity this import is about.
-    const line = rawLine
-      .split('#')[0]!
-      .trim()
-      .replace(/\s+--hash=\S+/gu, '');
-    if (line === '' || line.startsWith('-')) continue;
+    const uncommented = rawLine.split('#')[0]!;
+    // `--hash` anywhere on the line, not just as a whitespace-delimited token:
+    // `idna==3.7--hash=sha256:x` would otherwise smuggle a hash into the
+    // version token.
+    if (/--hash/u.test(uncommented))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `requirements.txt line ${lineNumber} contains an artifact hash that cannot be represented losslessly`,
+      );
+    const line = uncommented.trim();
+    if (line === '') continue;
+    if (line.startsWith('-'))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `requirements.txt line ${lineNumber} uses an option or include that cannot be represented losslessly: "${line}"`,
+      );
     const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^\s;]+)$/u.exec(line);
     if (!match) {
       throw new ProviderError(
@@ -378,9 +523,18 @@ export function parseRequirementsTxt(text: string): {
       );
     }
     const name = match[1]!.toLowerCase().replace(/[-_.]+/gu, '-');
-    if (seen.has(name)) continue;
-    seen.add(name);
-    packages.push({ name, version: match[2]! });
+    const version = match[2]!;
+    const previous = seen.get(name);
+    if (previous !== undefined) {
+      if (previous !== version)
+        throw new ProviderError(
+          'INVALID_LOCKFILE',
+          `requirements.txt contains multiple exact versions for ${name}`,
+        );
+      continue;
+    }
+    seen.set(name, version);
+    packages.push({ name, version });
   }
   if (packages.length === 0)
     throw new ProviderError(
@@ -444,7 +598,10 @@ export function detectLockFormat(
       )
   )
     return 'gradle-lockfile';
-  if (/^lockfileVersion:\s*'?[6-9]/mu.test(text) && /^packages:/mu.test(text))
+  if (
+    /^lockfileVersion:\s*'?9(?:\.\d+)?'?\s*$/mu.test(text) &&
+    /^packages:/mu.test(text)
+  )
     return 'pnpm-lock';
   // Poetry writes a [metadata] lock-version alongside [[package]] tables;
   // Cargo.lock has [[package]] too, so the metadata block is what separates

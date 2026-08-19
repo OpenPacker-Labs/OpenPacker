@@ -158,7 +158,7 @@ describe('lock-import planning', () => {
 describe('requirements.txt import', () => {
   it('imports a fully pinned file', () => {
     const parsed = parseRequirementsTxt(
-      '# comment\nrequests==2.32.3\nidna==3.7  --hash=sha256:abc\n',
+      '# comment\nrequests==2.32.3\nidna==3.7\n',
     );
     expect(parsed.package).toEqual([
       { name: 'requests', version: '2.32.3' },
@@ -166,11 +166,24 @@ describe('requirements.txt import', () => {
     ]);
   });
 
+  it('refuses artifact hashes instead of silently discarding them', () => {
+    expect(() =>
+      parseRequirementsTxt('idna==3.7 --hash=sha256:abc --hash=sha256:def\n'),
+    ).toThrow(/artifact hash.*losslessly/u);
+    // No space before the option: the hash must not slip into the version.
+    expect(() => parseRequirementsTxt('idna==3.7--hash=sha256:abc\n')).toThrow(
+      /artifact hash.*losslessly/u,
+    );
+  });
+
   it('normalises names the way PyPI does', () => {
     // Foo_Bar and foo-bar are the same distribution.
     expect(
       parseRequirementsTxt('Foo_Bar==1.0\nfoo-bar==1.0\n').package,
     ).toEqual([{ name: 'foo-bar', version: '1.0' }]);
+    expect(() => parseRequirementsTxt('Foo_Bar==1.0\nfoo-bar==2.0\n')).toThrow(
+      /multiple exact versions/u,
+    );
   });
 
   it('refuses anything that is not an exact pin', () => {
@@ -178,7 +191,11 @@ describe('requirements.txt import', () => {
     // from an input that never pinned anything.
     for (const bad of ['requests>=2.0', 'requests', 'requests~=2.0'])
       expect(() => parseRequirementsTxt(bad), bad).toThrow(/exact pin/u);
-    expect(() => parseRequirementsTxt('-e .\n')).toThrow(/no exact pins/u);
+    for (const directive of ['-e .', '-r extra.txt', '-c constraints.txt'])
+      expect(
+        () => parseRequirementsTxt(`requests==2.32.3\n${directive}\n`),
+        directive,
+      ).toThrow(/option or include.*losslessly/u);
   });
 
   it('is detected only when every line is a pin', () => {
@@ -202,21 +219,79 @@ describe('pnpm-lock.yaml import', () => {
     expect(parsed.packages['node_modules/@scope/pkg']?.version).toBe('1.2.3');
   });
 
-  it('drops the peer-dependency suffix, which describes resolution not identity', () => {
-    const parsed = parsePnpmLock(
-      lock(
-        "  'react-dom@18.2.0(react@18.2.0)':\n    resolution: {integrity: sha512-y}\n",
+  it('refuses peer contexts and multiple locked versions', () => {
+    expect(() =>
+      parsePnpmLock(
+        lock(
+          "  'react-dom@18.2.0(react@18.2.0)':\n    resolution: {integrity: sha512-y}\n",
+        ),
       ),
-    );
-    expect(parsed.packages['node_modules/react-dom']?.version).toBe('18.2.0');
+    ).toThrow(/peer context.*losslessly/u);
+    expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'react-dom@18.2.0': {}\nsnapshots:\n  'react-dom@18.2.0(react@18.2.0)': {}\n",
+      ),
+    ).toThrow(/peer context.*losslessly/u);
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0': {}\n  'a@2.0.0': {}\n")),
+    ).toThrow(/multiple locked selections/u);
   });
 
-  it('refuses lockfileVersion 5, whose keys mean something else', () => {
-    // v5 keys are `/name/version`; importing one as v6+ would produce wrong
-    // names rather than an error.
+  it('refuses pre-v9 lockfiles, whose keys mean something else', () => {
+    for (const version of ['5.4', '6.0', '8.0'])
+      expect(() =>
+        parsePnpmLock(
+          `lockfileVersion: '${version}'\npackages:\n  /a@1.0.0: {}\n`,
+        ),
+      ).toThrow(/only version 9/u);
+  });
+
+  it('refuses malformed entries even when another package is valid', () => {
     expect(() =>
-      parsePnpmLock("lockfileVersion: '5.4'\npackages:\n  /a/1.0.0: {}\n"),
-    ).toThrow(/lockfileVersion/u);
+      parsePnpmLock(lock("  'a@1.0.0': {}\n  local-package: {}\n")),
+    ).toThrow(/unsupported package key/u);
+  });
+
+  it('refuses malformed package values instead of importing them version-only', () => {
+    expect(() => parsePnpmLock(lock("  'a@1.0.0': garbage\n"))).toThrow(
+      /malformed package value/u,
+    );
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0':\n    resolution: garbage\n")),
+    ).toThrow(/malformed resolution/u);
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0':\n    resolution: {integrity: 42}\n")),
+    ).toThrow(/malformed resolution/u);
+  });
+
+  it('does not auto-detect pre-v9 lockfiles as pnpm', () => {
+    // Only the v9 key shape is supported; a v6 file must fall through to
+    // unable-to-detect rather than being parsed with v9 semantics.
+    expect(() =>
+      detectLockFormat("lockfileVersion: '6.0'\npackages:\n  /a@1.0.0: {}\n"),
+    ).toThrow(/detect/u);
+  });
+
+  it('refuses malformed or unbound snapshot selections', () => {
+    for (const snapshots of [
+      "['react-dom@18.2.0(react@18.2.0)']",
+      "'react-dom@18.2.0(react@18.2.0)'",
+    ])
+      expect(() =>
+        parsePnpmLock(
+          `lockfileVersion: '9.0'\npackages:\n  'react-dom@18.2.0': {}\nsnapshots: ${snapshots}\n`,
+        ),
+      ).toThrow(/snapshots must be a mapping/u);
+    expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'a@1.0.0': {}\nsnapshots:\n  'a@1.0.0': {}\n  local-malformed: {}\n",
+      ),
+    ).toThrow(/unsupported package key/u);
+    expect(() =>
+      parsePnpmLock(
+        "lockfileVersion: '9.0'\npackages:\n  'a@1.0.0': {}\nsnapshots:\n  'b@1.0.0': {}\n",
+      ),
+    ).toThrow(/no matching package/u);
   });
 
   it('is detected from its version and packages sections', () => {
@@ -229,12 +304,40 @@ describe('pnpm-lock.yaml import', () => {
 });
 
 describe('poetry.lock import', () => {
-  const poetry = `[[package]]\nname = "Foo_Bar"\nversion = "1.0"\n\n[[package]]\nname = "foo-bar"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\n`;
+  const poetry = `[[package]]\nname = "Foo_Bar"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\n`;
 
   it('normalises names the way PyPI does', () => {
     expect(parsePoetryLock(poetry).package).toEqual([
       { name: 'foo-bar', version: '1.0' },
     ]);
+  });
+
+  it('refuses duplicate, marker, source, and hash context', () => {
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[[package]]\nname = "Foo"\nversion = "2.0"\n`,
+      ),
+    ).toThrow(/multiple locked selections/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\nmarker = "sys_platform == 'linux'"\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[package.dependencies]\ndep = { version = "1", markers = "sys_platform == 'win32'" }\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\nsource = { type = "git", url = "https://example.invalid/repo" }\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata.files]\nfoo = [{ file = "foo.whl", hash = "sha256:abc" }]\n`,
+      ),
+    ).toThrow(/artifact hashes.*integrity/u);
   });
 
   it('is distinguished from Cargo.lock, which also uses [[package]]', () => {
@@ -251,5 +354,59 @@ describe('poetry.lock import', () => {
     expect(() => parsePoetryLock('[metadata]\nlock-version = "2.0"\n')).toThrow(
       /\[\[package\]\]/u,
     );
+  });
+
+  it('refuses malformed entries even when another package is valid', () => {
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "good"\nversion = "1.0"\n\n[[package]]\nname = "missing-version"\n`,
+      ),
+    ).toThrow(/missing a string name or version/u);
+  });
+
+  it('refuses names that do not normalise to a PyPI distribution name', () => {
+    expect(() =>
+      parsePoetryLock(`[[package]]\nname = "-foo"\nversion = "1.0"\n`),
+    ).toThrow(/invalid name/u);
+    expect(() =>
+      parsePoetryLock(`[[package]]\nname = "!!!"\nversion = "1.0"\n`),
+    ).toThrow(/invalid name/u);
+  });
+
+  it('refuses per-entry python-versions and optional selections', () => {
+    // python-versions is environment applicability: dropping it would pin a
+    // selection for interpreters the lock never covered.
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\npython-versions = ">=3.6"\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    // optional = true means the package may not participate in the locked set.
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\noptional = true\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    // optional = false is the poetry default and carries no information.
+    expect(
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\noptional = false\n`,
+      ).package,
+    ).toEqual([{ name: 'foo', version: '1.0' }]);
+  });
+
+  it('surfaces [metadata] python-versions as tracked requires-python loss', async () => {
+    const parsed = parsePoetryLock(
+      `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\npython-versions = "^3.10"\n`,
+    );
+    expect(parsed['requires-python']).toBe('^3.10');
+    const plan = await planLockCapture(
+      `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\npython-versions = "^3.10"\n`,
+    );
+    expect(
+      plan.semanticLoss.some(
+        (loss) => loss.code === 'PYPI_LOCK_REQUIRES_PYTHON',
+      ),
+    ).toBe(true);
   });
 });
