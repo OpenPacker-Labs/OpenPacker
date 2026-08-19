@@ -31,17 +31,29 @@ export function workspaceInventoryFailures(rows) {
   });
 }
 
-export function authorityInventoryFailures(authorities, scripts, hasOracle) {
-  return authorities.flatMap(({ type, script, commandIncludes, paths }) => {
-    const command = scripts[script] ?? '';
-    const failures = [];
-    if (!command) failures.push(`${type}: missing ${script} script`);
-    else if (!command.includes(commandIncludes))
-      failures.push(`${type}: ${script} is not bound to ${commandIncludes}`);
-    for (const path of paths)
-      if (!hasOracle(path)) failures.push(`${type}: missing oracle ${path}`);
-    return failures;
-  });
+export function authorityInventoryFailures(
+  authorities,
+  scriptsByOwner,
+  hasOracle,
+  hasActiveVitest,
+) {
+  return authorities.flatMap(
+    ({ type, owner = 'root', script, command, oracles, vitest = [] }) => {
+      const actual = scriptsByOwner.get(owner)?.[script] ?? '';
+      const failures = [];
+      if (!actual) failures.push(`${type}: missing ${owner} ${script} script`);
+      else if (actual !== command)
+        failures.push(
+          `${type}: ${owner} ${script} does not match its authority command`,
+        );
+      for (const path of oracles)
+        if (!hasOracle(path)) failures.push(`${type}: missing oracle ${path}`);
+      for (const path of vitest)
+        if (!hasActiveVitest(path))
+          failures.push(`${type}: no runnable Vitest oracle ${path}`);
+      return failures;
+    },
+  );
 }
 
 export async function checkTestInventory(root) {
@@ -77,10 +89,12 @@ export async function checkTestInventory(root) {
   } finally {
     await vitest.close();
   }
+  const manifests = new Map();
   const rows = workspaces.map((workspace) => {
     const manifest = JSON.parse(
       readFileSync(join(root, workspace, 'package.json'), 'utf8'),
     );
+    manifests.set(workspace, manifest);
     const tests = discovered.filter(
       ({ file }) =>
         relative(join(root, workspace), file) !== '..' &&
@@ -96,103 +110,188 @@ export async function checkTestInventory(root) {
     };
   });
 
+  const rootScripts = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  ).scripts;
+  const commands = {
+    test: 'turbo run test && node scripts/run-gate.mjs unit',
+    conformance: 'node scripts/run-gate.mjs conformance',
+    security: 'node scripts/run-gate.mjs security',
+    integration: 'node scripts/run-gate.mjs integration',
+    e2e: 'node scripts/run-gate.mjs e2e',
+    compat: 'node scripts/run-gate.mjs compat',
+    browser: 'node scripts/run-gate.mjs browser',
+    fuzz: 'node scripts/fuzz-smoke.mjs',
+    coverage: 'node scripts/coverage.mjs',
+    parity:
+      'npm exec -- vitest run packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs',
+    nativeParity: 'node scripts/pack-parity-container.mjs',
+    live: 'npm run test:live --workspace @openpacker/oci && npm run test:live --workspace @openpacker/adapter-nix',
+  };
   const authorities = [
-    ['unit', 'test', 'run-gate.mjs unit', ['tests/unit']],
-    ['property', 'test', 'run-gate.mjs unit', ['tests/property']],
-    [
-      'conformance',
-      'test:conformance',
-      'run-gate.mjs conformance',
-      ['tests/conformance', 'packages/conformance/test'],
-    ],
-    [
-      'security',
-      'test:security',
-      'run-gate.mjs security',
-      ['tests/security', 'packages/sandbox/src/escape.test.ts'],
-    ],
-    [
-      'integration',
-      'test:integration',
-      'run-gate.mjs integration',
-      ['tests/integration', 'integrations/mise/test'],
-    ],
-    ['e2e', 'test:e2e', 'run-gate.mjs e2e', ['tests/e2e']],
-    ['compatibility', 'test:compat', 'run-gate.mjs compat', ['tests/compat']],
-    [
-      'browser',
-      'test:browser',
-      'run-gate.mjs browser',
-      [
+    {
+      type: 'unit',
+      script: 'test',
+      command: commands.test,
+      oracles: ['tests/unit'],
+    },
+    {
+      type: 'property',
+      script: 'test',
+      command: commands.test,
+      oracles: ['tests/property'],
+    },
+    {
+      type: 'conformance',
+      script: 'test:conformance',
+      command: commands.conformance,
+      oracles: ['tests/conformance', 'packages/conformance/test'],
+      vitest: ['packages/conformance/test/contracts.test.ts'],
+    },
+    {
+      type: 'security',
+      script: 'test:security',
+      command: commands.security,
+      oracles: ['tests/security', 'packages/sandbox/src/escape.test.ts'],
+      vitest: ['packages/sandbox/src/escape.test.ts'],
+    },
+    {
+      type: 'integration',
+      script: 'test:integration',
+      command: commands.integration,
+      oracles: ['tests/integration', 'integrations/mise/test'],
+    },
+    {
+      type: 'e2e',
+      script: 'test:e2e',
+      command: commands.e2e,
+      oracles: ['tests/e2e'],
+    },
+    {
+      type: 'compatibility',
+      script: 'test:compat',
+      command: commands.compat,
+      oracles: ['tests/compat'],
+    },
+    {
+      type: 'browser',
+      script: 'test:browser',
+      command: commands.browser,
+      oracles: [
         'tests/browser',
         'examples/epoch-consumer/test/sdk-browser.playwright.mjs',
       ],
-    ],
-    ['fuzz', 'test:fuzz', 'fuzz-smoke.mjs', ['scripts/fuzz-smoke.mjs']],
-    [
-      'pact',
-      'coverage',
-      'coverage.mjs',
-      ['examples/epoch-consumer/test/pact.consumer.test.ts'],
-    ],
-    [
-      'chaos',
-      'coverage',
-      'coverage.mjs',
-      ['examples/epoch-consumer/test/pact.chaos.test.ts'],
-    ],
-    [
-      'mutation',
-      'coverage',
-      'coverage.mjs',
-      ['examples/epoch-consumer/test/pact.mutation.test.ts'],
-    ],
-    ['mutation', 'test', 'run-gate.mjs unit', ['tests/property/prex.test.mjs']],
-    [
-      'pack-parity',
-      'test:pack-parity',
-      'standard-pack.test.ts',
-      [
+    },
+    {
+      type: 'fuzz',
+      script: 'test:fuzz',
+      command: commands.fuzz,
+      oracles: ['scripts/fuzz-smoke.mjs'],
+    },
+    {
+      type: 'pact',
+      script: 'coverage',
+      command: commands.coverage,
+      oracles: ['examples/epoch-consumer/test/pact.consumer.test.ts'],
+      vitest: ['examples/epoch-consumer/test/pact.consumer.test.ts'],
+    },
+    {
+      type: 'chaos',
+      script: 'coverage',
+      command: commands.coverage,
+      oracles: ['examples/epoch-consumer/test/pact.chaos.test.ts'],
+      vitest: ['examples/epoch-consumer/test/pact.chaos.test.ts'],
+    },
+    {
+      type: 'mutation',
+      script: 'coverage',
+      command: commands.coverage,
+      oracles: ['examples/epoch-consumer/test/pact.mutation.test.ts'],
+      vitest: ['examples/epoch-consumer/test/pact.mutation.test.ts'],
+    },
+    {
+      type: 'mutation',
+      script: 'test',
+      command: commands.test,
+      oracles: ['tests/property/prex.test.mjs'],
+    },
+    {
+      type: 'pack-parity',
+      script: 'test:pack-parity',
+      command: commands.parity,
+      oracles: [
         'packages/adapters-default/src/standard-pack.test.ts',
         'packages/adapters-default/src/standard-pack.native.test.ts',
       ],
-    ],
-    [
-      'pack-parity-native',
-      'test:pack-parity:native',
-      'pack-parity-container.mjs',
-      ['scripts/pack-parity-container.mjs'],
-    ],
-    [
-      'live-oci',
-      'test:live',
-      '@openpacker/oci',
-      ['packages/oci/scripts/live-interop.mjs'],
-    ],
-    [
-      'live-nix',
-      'test:live',
-      '@openpacker/adapter-nix',
-      ['packages/adapter-nix/test/provider.live.test.ts'],
-    ],
-  ].map(([type, script, commandIncludes, paths]) => ({
-    type,
-    script,
-    commandIncludes,
-    paths,
-  }));
-  const scripts = JSON.parse(
-    readFileSync(join(root, 'package.json'), 'utf8'),
-  ).scripts;
+      vitest: [
+        'packages/adapters-default/src/standard-pack.test.ts',
+        'packages/adapters-default/src/standard-pack.native.test.ts',
+      ],
+    },
+    {
+      type: 'pack-parity-native',
+      script: 'test:pack-parity:native',
+      command: commands.nativeParity,
+      oracles: ['scripts/pack-parity-container.mjs'],
+    },
+    {
+      type: 'live-oci',
+      script: 'test:live',
+      command: commands.live,
+      oracles: ['packages/oci/scripts/live-interop.mjs'],
+    },
+    {
+      type: 'live-oci',
+      owner: 'packages/oci',
+      script: 'test:live',
+      command: 'node scripts/live-interop.mjs',
+      oracles: ['packages/oci/scripts/live-interop.mjs'],
+    },
+    {
+      type: 'live-nix',
+      script: 'test:live',
+      command: commands.live,
+      oracles: ['packages/adapter-nix/test/provider.live.test.ts'],
+      vitest: ['packages/adapter-nix/test/provider.live.test.ts'],
+    },
+    {
+      type: 'live-nix',
+      owner: 'packages/adapter-nix',
+      script: 'test:live',
+      command: 'OPENPACKER_LIVE_NIX=1 vitest run test/provider.live.test.ts',
+      oracles: ['packages/adapter-nix/test/provider.live.test.ts'],
+      vitest: ['packages/adapter-nix/test/provider.live.test.ts'],
+    },
+  ];
   const hasOracle = (path) => {
     const absolute = join(root, path);
     if (!existsSync(absolute)) return false;
     if (!statSync(absolute).isDirectory()) return true;
     return filesIn(absolute).some((file) => testFile.test(file));
   };
+  const runnableByFile = new Map();
+  for (const test of discovered) {
+    const path = relative(root, test.file);
+    runnableByFile.set(
+      path,
+      (runnableByFile.get(path) ?? false) || test.runnable,
+    );
+  }
+  const scriptsByOwner = new Map([
+    ['root', rootScripts],
+    ...[...manifests].map(([workspace, manifest]) => [
+      workspace,
+      manifest.scripts ?? {},
+    ]),
+  ]);
   const failures = [
     ...workspaceInventoryFailures(rows),
-    ...authorityInventoryFailures(authorities, scripts, hasOracle),
+    ...authorityInventoryFailures(
+      authorities,
+      scriptsByOwner,
+      hasOracle,
+      (path) => runnableByFile.get(path) === true,
+    ),
   ];
   if (failures.length) throw new Error(failures.join('\n'));
   const discoveredTests = rows.reduce(

@@ -39,13 +39,30 @@ test('inventory rejects no-op, empty, skipped-only, and unwired gates', () => {
         {
           type: 'chaos',
           script: 'coverage',
-          commandIncludes: 'coverage.mjs',
-          paths: ['chaos.test.ts'],
+          command: 'node scripts/coverage.mjs',
+          oracles: ['chaos.test.ts'],
+          vitest: ['chaos.test.ts'],
+        },
+        {
+          type: 'live-nix',
+          owner: 'packages/adapter-nix',
+          script: 'test:live',
+          command:
+            'OPENPACKER_LIVE_NIX=1 vitest run test/provider.live.test.ts',
+          oracles: ['provider.live.test.ts'],
         },
       ],
-      { coverage: 'true' },
+      new Map([
+        ['root', { coverage: 'echo coverage.mjs' }],
+        ['packages/adapter-nix', {}],
+      ]),
       () => true,
+      () => false,
     ),
-    ['chaos: coverage is not bound to coverage.mjs'],
+    [
+      'chaos: root coverage does not match its authority command',
+      'chaos: no runnable Vitest oracle chaos.test.ts',
+      'live-nix: missing packages/adapter-nix test:live script',
+    ],
   );
 });
