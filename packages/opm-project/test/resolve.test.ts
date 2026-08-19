@@ -310,7 +310,7 @@ describe('supply-chain policy over the transitive closure', () => {
   const permissive: PolicyInput = {
     allowYanked: false,
     allowQuarantined: false,
-    semanticLossMaximum: 'warning',
+    semanticLossMaximum: 'error',
     requiredEvidence: [],
   };
 

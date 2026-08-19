@@ -9,7 +9,11 @@ import type {
   CatalogProvider,
   ProviderInspection,
 } from '@openpacker/adapter-core';
-import type { PolicyInput } from '@openpacker/contracts';
+import type {
+  LifecycleState,
+  PolicyInput,
+  SemanticLoss,
+} from '@openpacker/contracts';
 import {
   evaluatePolicy,
   isSourceKind,
@@ -100,8 +104,8 @@ export function captureFactsFromInspection(
     inspection.package.identity.canonicalPurl;
   const facts: PolicyFacts = {
     evidence: [],
-    // No lifecycle events applied yet → eligible until a denying event is known.
-    lifecycle: { status: 'published', eligible: true, warnings: [] },
+    lifecycle: inspection.package.lifecycle,
+    semanticLoss: [...inspection.package.semanticLoss],
     packageId: exactPurl,
     evaluationTime: options.evaluationTime,
     provider: inspection.package.identity.purlType,
@@ -206,6 +210,8 @@ export function captureFactsFromSourceUri(
     dependencyDepth?: number;
     priorTrustLevel?: TrustTier;
     lifecycleScriptsExecuted?: boolean;
+    lifecycle?: LifecycleState;
+    semanticLoss?: readonly SemanticLoss[];
     /**
      * Set when the URI came from a registry's own artifact record and its
      * origin was checked against that ecosystem's allowlist. Only the caller
@@ -216,11 +222,16 @@ export function captureFactsFromSourceUri(
 ): PolicyFacts {
   const facts: PolicyFacts = {
     evidence: [],
-    lifecycle: { status: 'published', eligible: true, warnings: [] },
     packageId,
     evaluationTime: options.evaluationTime,
     dependencyDepth: options.dependencyDepth ?? 0,
     lifecycleScriptsExecuted: options.lifecycleScriptsExecuted ?? false,
+    ...(options.lifecycle === undefined
+      ? {}
+      : { lifecycle: options.lifecycle }),
+    ...(options.semanticLoss === undefined
+      ? {}
+      : { semanticLoss: [...options.semanticLoss] }),
     trustLevel: 'unknown',
     ...sourceFactsFromUri(sourceUri),
   };

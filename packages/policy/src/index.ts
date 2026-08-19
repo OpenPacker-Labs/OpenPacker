@@ -8,6 +8,7 @@ import type {
   LifecycleState,
   PolicyInput,
   SemanticLoss,
+  TargetPredicate,
 } from '@openpacker/contracts';
 
 /**
@@ -32,14 +33,21 @@ export type SourceKind =
 export interface PolicyDocument {
   allowYanked: boolean;
   allowQuarantined: boolean;
+  allowDeprecated?: boolean;
+  allowRevoked?: boolean;
   allowDelistedExact?: boolean;
   requiredEvidence: string[];
   acceptedIdentities?: string[];
   acceptedIssuers?: string[];
   deniedLicenses?: string[];
+  allowedLicenses?: string[];
+  allowUnknownLicenses?: boolean;
+  allowMissingLicenses?: boolean;
   allowedProviders?: string[];
   allowedSourceSchemes?: string[];
-  allowedTargets?: Array<{ os?: string; architecture?: string }>;
+  allowedTargets?: Array<
+    TargetPredicate | { os?: string; architecture?: string }
+  >;
   maximumArtifactSize?: number;
   maximumExpandedSize?: number;
   semanticLossMaximum: 'info' | 'warning' | 'error';
@@ -169,6 +177,56 @@ const EXOTIC_KINDS = new Set<SourceKind>(['git', 'tarball', 'exotic']);
 /** Characters that end one PURL coordinate and begin the next. */
 const COORDINATE_BOUNDARY = new Set(['@', '/', '?', '#']);
 
+function targetPredicate(
+  predicate: TargetPredicate | { os?: string; architecture?: string },
+  target: PolicyFacts['target'],
+): boolean | undefined {
+  if (!('type' in predicate)) {
+    if (!target) return undefined;
+    return (
+      (predicate.os === undefined || predicate.os === target.os) &&
+      (predicate.architecture === undefined ||
+        predicate.architecture === target.architecture)
+    );
+  }
+  if (predicate.type === 'true') return true;
+  if (predicate.type === 'false') return false;
+  if (predicate.type === 'allOf' || predicate.type === 'anyOf') {
+    const values = predicate.predicates.map((item) =>
+      targetPredicate(item, target),
+    );
+    if (values.some((value) => value === undefined)) return undefined;
+    return predicate.type === 'allOf'
+      ? values.every(Boolean)
+      : values.some(Boolean);
+  }
+  if (predicate.type === 'not') {
+    const value = targetPredicate(predicate.predicate, target);
+    return value === undefined ? undefined : !value;
+  }
+  if (!target) return undefined;
+  if (
+    predicate.type !== 'equals' &&
+    predicate.type !== 'notEquals' &&
+    predicate.type !== 'in' &&
+    predicate.type !== 'notIn'
+  )
+    return undefined;
+  const key = predicate.path.replace(/^\//u, '');
+  if (key !== 'os' && key !== 'architecture') return undefined;
+  const value = target[key];
+  if (value === undefined) return undefined;
+  if (predicate.type === 'equals' || predicate.type === 'notEquals') {
+    const matches = value === predicate.value;
+    return predicate.type === 'equals' ? matches : !matches;
+  }
+  if (predicate.type === 'in' || predicate.type === 'notIn') {
+    const matches = predicate.values.includes(value);
+    return predicate.type === 'in' ? matches : !matches;
+  }
+  return undefined;
+}
+
 /**
  * Whether an exclude list exempts this package.
  *
@@ -249,13 +307,19 @@ export async function evaluatePolicy(
   if (!facts.lifecycle) {
     checks.push({
       code: 'lifecycle.eligibility',
-      status: 'not-provided',
-      message: 'Lifecycle eligibility was not provided',
+      status: facts.sourceKind === 'path' ? 'valid' : 'not-provided',
+      message:
+        facts.sourceKind === 'path'
+          ? 'Registry lifecycle does not apply to a local path source'
+          : 'Lifecycle eligibility was not provided',
     });
   } else {
     const explicitlyAllowed =
       (facts.lifecycle.status === 'yanked' && policy.allowYanked) ||
       (facts.lifecycle.status === 'quarantined' && policy.allowQuarantined) ||
+      (facts.lifecycle.status === 'deprecated' &&
+        policy.allowDeprecated === true) ||
+      (facts.lifecycle.status === 'revoked' && policy.allowRevoked === true) ||
       (facts.lifecycle.status === 'delisted' &&
         policy.allowDelistedExact === true);
     checks.push({
@@ -280,8 +344,13 @@ export async function evaluatePolicy(
     );
     deny(
       'lifecycle.revoked',
-      facts.lifecycle.status === 'revoked',
+      facts.lifecycle.status === 'revoked' && !policy.allowRevoked,
       'Revoked releases are denied',
+    );
+    deny(
+      'lifecycle.deprecated',
+      facts.lifecycle.status === 'deprecated' && !policy.allowDeprecated,
+      'Deprecated release policy',
     );
     deny(
       'lifecycle.delisted',
@@ -305,24 +374,32 @@ export async function evaluatePolicy(
         !policy.acceptedIssuers.includes(facts.sigstoreIssuer),
       'Accepted Sigstore issuer policy',
     );
-  if (policy.deniedLicenses)
+  if (
+    policy.deniedLicenses ||
+    policy.allowedLicenses ||
+    policy.allowUnknownLicenses !== undefined ||
+    policy.allowMissingLicenses !== undefined
+  )
     for (const license of facts.licenses ?? [{ status: 'missing' as const }]) {
       if (license.status === 'missing')
         checks.push({
           code: 'license',
-          status: 'not-provided',
+          status: policy.allowMissingLicenses ? 'valid' : 'not-provided',
           message: 'License evidence is missing',
         });
       else if (license.status === 'unknown')
         checks.push({
           code: 'license',
-          status: 'unknown',
+          status: policy.allowUnknownLicenses ? 'valid' : 'unknown',
           message: 'License evidence is unknown',
         });
       else
         deny(
           'license',
-          policy.deniedLicenses.includes(license.expression ?? ''),
+          (policy.deniedLicenses?.includes(license.expression ?? '') ??
+            false) ||
+            (policy.allowedLicenses !== undefined &&
+              !policy.allowedLicenses.includes(license.expression ?? '')),
           `License ${license.expression ?? 'unknown'}`,
         );
     }
@@ -342,19 +419,18 @@ export async function evaluatePolicy(
         !policy.allowedSourceSchemes.includes(facts.sourceScheme),
       'Artifact source scheme policy',
     );
-  if (policy.allowedTargets)
+  if (policy.allowedTargets) {
+    const matches = policy.allowedTargets.map((predicate) =>
+      targetPredicate(predicate, facts.target),
+    );
+    const allowed = matches.some((value) => value === true);
     requireValue(
       'target',
-      facts.target !== undefined,
-      facts.target !== undefined &&
-        !policy.allowedTargets.some(
-          (target) =>
-            (!target.os || target.os === facts.target?.os) &&
-            (!target.architecture ||
-              target.architecture === facts.target?.architecture),
-        ),
+      allowed || !matches.some((value) => value === undefined),
+      !allowed,
       'Target platform policy',
     );
+  }
   if (policy.maximumArtifactSize !== undefined)
     requireValue(
       'artifact-size',
@@ -584,12 +660,30 @@ export async function evaluatePolicy(
 export function policyDocumentFromPolicyInput(
   input: PolicyInput,
 ): PolicyDocument {
+  const requiredEvidence = new Set(input.requiredEvidence);
+  if (input.requireFreshTufMetadata) requiredEvidence.add('tuf-fresh');
+  if (input.sigstore?.required) requiredEvidence.add('sigstore');
+  if (input.sigstore?.requireTransparencyEvidence)
+    requiredEvidence.add('sigstore-transparency');
+  if (input.slsa?.required) requiredEvidence.add('slsa');
+  for (const predicate of input.slsa?.predicateTypes ?? [])
+    requiredEvidence.add(`slsa-predicate:${predicate}`);
+  for (const builder of input.slsa?.builderIds ?? [])
+    requiredEvidence.add(`slsa-builder:${builder}`);
+  for (const buildType of input.slsa?.buildTypes ?? [])
+    requiredEvidence.add(`slsa-build-type:${buildType}`);
   const document: PolicyDocument = {
     allowYanked: input.allowYanked,
     allowQuarantined: input.allowQuarantined,
-    requiredEvidence: [...input.requiredEvidence],
+    requiredEvidence: [...requiredEvidence],
     semanticLossMaximum: input.semanticLossMaximum,
   };
+  if (input.allowDeprecated !== undefined)
+    document.allowDeprecated = input.allowDeprecated;
+  if (input.allowRevoked !== undefined)
+    document.allowRevoked = input.allowRevoked;
+  if (input.allowDelisted !== undefined)
+    document.allowDelistedExact = input.allowDelisted;
   if (input.permitForensicDigestMaterialization !== undefined)
     document.permitForensicDigestMaterialization =
       input.permitForensicDigestMaterialization;
@@ -600,21 +694,7 @@ export function policyDocumentFromPolicyInput(
   if (input.allowedArtifactSourceSchemes)
     document.allowedSourceSchemes = [...input.allowedArtifactSourceSchemes];
   if (input.allowedTargets) {
-    document.allowedTargets = input.allowedTargets.flatMap((target) => {
-      if (!('os' in target) && !('architecture' in target)) return [];
-      const os =
-        'os' in target && typeof target.os === 'string' ? target.os : undefined;
-      const architecture =
-        'architecture' in target && typeof target.architecture === 'string'
-          ? target.architecture
-          : undefined;
-      return [
-        {
-          ...(os === undefined ? {} : { os }),
-          ...(architecture === undefined ? {} : { architecture }),
-        },
-      ];
-    });
+    document.allowedTargets = [...input.allowedTargets];
   }
   if (input.maximumArtifactSize !== undefined)
     document.maximumArtifactSize = input.maximumArtifactSize;
@@ -622,8 +702,17 @@ export function policyDocumentFromPolicyInput(
     document.maximumExpandedSize = input.maximumExpandedMaterializationSize;
   if (input.licenses?.denied)
     document.deniedLicenses = [...input.licenses.denied];
-  if (input.acceptedSignerIdentityPatterns)
-    document.acceptedIdentities = [...input.acceptedSignerIdentityPatterns];
+  if (input.licenses?.allowed)
+    document.allowedLicenses = [...input.licenses.allowed];
+  if (input.licenses?.allowUnknown !== undefined)
+    document.allowUnknownLicenses = input.licenses.allowUnknown;
+  if (input.licenses?.allowMissing !== undefined)
+    document.allowMissingLicenses = input.licenses.allowMissing;
+  const acceptedIdentities = new Set(input.acceptedSignerIdentityPatterns);
+  for (const identity of input.sigstore?.identityPatterns ?? [])
+    acceptedIdentities.add(identity);
+  if (acceptedIdentities.size > 0)
+    document.acceptedIdentities = [...acceptedIdentities];
   if (input.sigstore?.issuerPatterns)
     document.acceptedIssuers = [...input.sigstore.issuerPatterns];
   if (input.minimumReleaseAgeMinutes !== undefined)

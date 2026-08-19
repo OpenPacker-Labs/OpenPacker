@@ -365,13 +365,89 @@ test('policyDocumentFromPolicyInput promotes normative schema knobs', async () =
     blockExoticSources: { transitive: true, direct: false },
     allowLifecycleScripts: false,
     expectedRegistryId: 'urn:openpacker:registry:npmjs-org',
+    requireFreshTufMetadata: true,
+    acceptedSignerIdentityPatterns: ['legacy@example.test'],
+    sigstore: {
+      required: true,
+      issuerPatterns: ['https://issuer.example'],
+      identityPatterns: ['release@example.test'],
+      requireTransparencyEvidence: true,
+    },
+    slsa: {
+      required: true,
+      predicateTypes: ['https://slsa.dev/provenance/v1'],
+      builderIds: ['https://builder.example'],
+      buildTypes: ['https://build.example/npm'],
+    },
+    licenses: {
+      allowed: ['MIT'],
+      denied: ['GPL-3.0-only'],
+      allowMissing: false,
+      allowUnknown: false,
+    },
+    allowedTargets: [{ type: 'equals', path: '/os', value: 'linux' }],
   };
   const document = policyDocumentFromPolicyInput(input);
   expect(document.minimumReleaseAgeMinutes).toBe(1440);
   expect(document.trustPolicy).toBe('no-downgrade');
   expect(document.blockExoticSources?.transitive).toBe(true);
   expect(document.expectedRegistryId).toBe('urn:openpacker:registry:npmjs-org');
-  expect(document.requiredEvidence).toEqual(['tuf']);
+  expect(document.requiredEvidence).toEqual(
+    expect.arrayContaining([
+      'tuf',
+      'tuf-fresh',
+      'sigstore',
+      'sigstore-transparency',
+      'slsa',
+      'slsa-predicate:https://slsa.dev/provenance/v1',
+      'slsa-builder:https://builder.example',
+      'slsa-build-type:https://build.example/npm',
+    ]),
+  );
+  expect(document.allowedLicenses).toEqual(['MIT']);
+  expect(document.allowedTargets).toEqual(input.allowedTargets);
+  expect(document.acceptedIdentities).toEqual([
+    'legacy@example.test',
+    'release@example.test',
+  ]);
+});
+
+test('target predicates and configured evidence fail closed instead of disappearing', async () => {
+  const document = policyDocumentFromPolicyInput({
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'warning',
+    requiredEvidence: [],
+    requireFreshTufMetadata: true,
+    allowedTargets: [{ type: 'equals', path: '/os', value: 'linux' }],
+  });
+  const missing = await evaluatePolicy(document, {
+    evidence: [],
+    lifecycle: eligible,
+    target: { os: 'windows' },
+  });
+  expect(missing.decision).toBe('deny');
+  expect(missing.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'evidence.tuf-fresh' }),
+      expect.objectContaining({ code: 'target', status: 'policy-denied' }),
+    ]),
+  );
+
+  const unsupported = await evaluatePolicy(
+    {
+      ...document,
+      allowedTargets: [{ type: 'capabilityPresent', name: 'cpu:arm64' }],
+    },
+    {
+      evidence: [{ type: 'tuf-fresh', status: 'verified' }],
+      lifecycle: eligible,
+    },
+  );
+  expect(unsupported.decision).toBe('indeterminate');
+  expect(unsupported.checks).toContainEqual(
+    expect.objectContaining({ code: 'target', status: 'not-provided' }),
+  );
 });
 
 test('exclude lists stop at a coordinate boundary instead of matching siblings', async () => {
