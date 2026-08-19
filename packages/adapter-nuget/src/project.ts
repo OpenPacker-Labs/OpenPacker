@@ -316,6 +316,7 @@ export class NugetProjectFormat implements ProjectFormat {
 
     const bytes = packZip(entries);
     const fileName = `${id}.${version}.nupkg`;
+    assertPackFileName(fileName, project.manifestPath);
     const outputPath = join(options.outputDirectory ?? project.root, fileName);
     await writeFileAtomic(outputPath, bytes);
 
@@ -328,6 +329,21 @@ export class NugetProjectFormat implements ProjectFormat {
       semanticLoss: [packLoss(built.length === 0)],
     };
   }
+}
+
+function assertPackFileName(fileName: string, manifestPath: string): void {
+  if (
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.includes('/') ||
+    fileName.includes('\\') ||
+    fileName.includes('\0')
+  )
+    throw new ProjectIoError(
+      'UNSAFE_PATH',
+      manifestPath,
+      `Package metadata produced an unsafe artifact filename: ${fileName}`,
+    );
 }
 
 interface ParsedReference {

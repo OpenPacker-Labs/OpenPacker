@@ -271,4 +271,18 @@ describe('NpmProjectFormat — pack', () => {
       await fixture.cleanup();
     }
   });
+
+  it('rejects traversal in package metadata before writing', async () => {
+    const fixture = await project(
+      '{"name":"demo","version":"../../../victim"}\n',
+    );
+    try {
+      await expect(
+        fixture.format.pack!(fixture.detected),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      await expect(readFile(join(fixture.dir, 'victim.tgz'))).rejects.toThrow();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });
