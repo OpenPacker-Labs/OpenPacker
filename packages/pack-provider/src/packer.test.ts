@@ -85,12 +85,12 @@ describe('manifest package packer', () => {
     expect(plan.requiresNetwork).toBe(true);
   });
 
-  it('refuses build authority before resolving or running a tool', async () => {
+  it('requires execution consent before resolving or running any provider', async () => {
     const root = await project();
     let resolved = false;
     let ran = false;
     const packer = configured(
-      { ...manifest(), authority: { ...manifest().authority, build: true } },
+      manifest(),
       async () => {
         resolved = true;
         return '/usr/bin/test-pack';
@@ -124,6 +124,7 @@ describe('manifest package packer', () => {
     );
 
     const result = await packer.pack(input(root), {
+      allowBuild: true,
       outputDirectory,
       authorizedEnvironment: { TEST_TOKEN: 'secret' },
     });
@@ -168,6 +169,7 @@ describe('manifest package packer', () => {
     );
 
     const result = await packer.pack(input(root), {
+      allowBuild: true,
       outputDirectory,
       authorizedEnvironment: { LD_PRELOAD: '/tmp/evil.so' },
       sandbox: { mode: 'off' },
@@ -197,11 +199,12 @@ describe('manifest package packer', () => {
 
     await expect(
       packer.pack(input(root), {
+        allowBuild: true,
         authorizedEnvironment: { OTHER_TOKEN: 'no' },
       }),
     ).rejects.toMatchObject({ code: 'AUTHORITY_NOT_DECLARED' });
     await expect(
-      packer.pack(input(root), { outputDirectory }),
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -223,7 +226,7 @@ describe('manifest package packer', () => {
     );
 
     await expect(
-      packer.pack(input(root), { outputDirectory }),
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -237,7 +240,7 @@ describe('manifest package packer', () => {
     directorySwap.original = original;
 
     await expect(
-      configured().pack(input(root), { outputDirectory }),
+      configured().pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -258,9 +261,9 @@ describe('manifest package packer', () => {
       { outputEntries: 2 },
     );
 
-    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 2 entries/u,
-    );
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 2 entries/u);
   });
 
   it('bounds individual and aggregate artifact bytes', async () => {
@@ -275,9 +278,9 @@ describe('manifest package packer', () => {
       },
       { artifactBytes: 4n },
     );
-    await expect(single.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 4 bytes/u,
-    );
+    await expect(
+      single.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 4 bytes/u);
 
     await rm(outputDirectory, { recursive: true, force: true });
     const aggregate = configured(
@@ -291,7 +294,7 @@ describe('manifest package packer', () => {
       { artifactBytes: 10n, totalArtifactBytes: 5n },
     );
     await expect(
-      aggregate.pack(input(root), { outputDirectory }),
+      aggregate.pack(input(root), { allowBuild: true, outputDirectory }),
     ).rejects.toThrow(/exceed 5 total bytes/u);
   });
 
@@ -325,9 +328,9 @@ describe('manifest package packer', () => {
       },
     );
 
-    await expect(packer.pack(input(root), { outputDirectory })).rejects.toThrow(
-      /exceeds 1024 bytes/u,
-    );
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toThrow(/exceeds 1024 bytes/u);
     await growth;
   });
 
@@ -358,10 +361,12 @@ describe('manifest package packer', () => {
       { readChunkBytes: 1 },
     );
 
-    const result = await packer.pack(input(root), { outputDirectory }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+    const result = await packer
+      .pack(input(root), { allowBuild: true, outputDirectory })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
     await attack;
     expect(result).toMatchObject({ code: 'INVALID_RESPONSE' });
   });

@@ -128,7 +128,25 @@ export async function packProject(input: {
       'INTERNAL_ERROR',
       'Performed pack has no normalized input',
     );
-  const receipt = receiptFor(outcome, target, normalized.digest);
+  if (
+    input.strategy === 'delegate' &&
+    packer.providerManifestDigest === undefined
+  )
+    throw new OpmError(
+      'INVALID_RESPONSE',
+      `Delegated provider ${packer.providerId} has no manifest digest`,
+    );
+  const receipt = receiptFor(
+    outcome,
+    target,
+    normalized.digest,
+    input.strategy === 'delegate'
+      ? {
+          id: packer.providerId,
+          manifestDigest: parseDigest(packer.providerManifestDigest!),
+        }
+      : undefined,
+  );
   const bytes = canonicalBytes(receipt as unknown as JsonValue);
   const receiptPath = join(outputDirectory, PACK_RECEIPT);
   await writeFileAtomic(receiptPath, bytes);
@@ -151,12 +169,14 @@ function receiptFor(
   outcome: PackOutcome,
   target: Distribution,
   normalizedManifestDigest: PackReceipt['normalizedManifestDigest'],
+  provider?: PackReceipt['provider'],
 ): PackReceipt {
   return {
     packReceiptVersion: '1',
     strategy: outcome.strategy,
     target,
     normalizedManifestDigest,
+    ...(provider === undefined ? {} : { provider }),
     ...(outcome.tool === undefined ? {} : { tool: outcome.tool }),
     commands: (
       outcome.commands ??

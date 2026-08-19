@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { join } from 'node:path';
 import {
   type AdapterRegistry,
   getAdapterRegistry,
@@ -10,6 +10,7 @@ import {
 } from '@openpacker/pack-provider';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+import { assertSafeSegment } from './paths.js';
 
 export interface ConfiguredPackProviders {
   authorizedEnvironment: Readonly<
@@ -25,7 +26,9 @@ export async function configurePackProviders(input: {
   dependencies?: ManifestPackagePackerDependencies;
 }): Promise<ConfiguredPackProviders> {
   const registry = input.registry ?? getAdapterRegistry();
-  const environment = input.environment ?? process.env;
+  // Ambient process.env is not consent. Embedders may pass an already
+  // authorized value map; the CLI passes none until it grows an explicit grant.
+  const environment = input.environment ?? {};
   const loaded = [];
   const defaults = new Map<string, string>();
 
@@ -33,7 +36,10 @@ export async function configurePackProviders(input: {
     input.manifest.packProviders ?? {},
   )) {
     let provider;
-    const path = resolve(input.root, source.manifest);
+    const path = join(
+      input.root,
+      assertSafeSegment(source.manifest, 'pack provider manifest'),
+    );
     try {
       provider = await loadDelegatedPackProvider(path);
     } catch (error) {

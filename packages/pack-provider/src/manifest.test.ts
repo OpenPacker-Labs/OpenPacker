@@ -68,6 +68,20 @@ describe('delegated pack provider manifest', () => {
       code: 'INVALID_PROVIDER_MANIFEST',
     });
   });
+
+  it('rejects duplicate JSON members before schema validation', async () => {
+    const root = await temporaryRoot();
+    const path = join(root, 'provider.json');
+    const text = JSON.stringify(provider()).replace(
+      '"id":"example.test"',
+      '"id":"example.test","id":"attacker.test"',
+    );
+    await writeFile(path, text);
+
+    await expect(loadDelegatedPackProvider(path)).rejects.toThrow(
+      /Duplicate object member: id/u,
+    );
+  });
 });
 
 function provider() {

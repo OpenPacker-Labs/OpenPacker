@@ -13,9 +13,11 @@ import {
   type PackPlan,
   type PackagePacker,
 } from '@openpacker/adapter-core';
+import { canonicalBytes } from '@openpacker/canonical';
 import type {
   DelegatedPackHostPlan,
   DelegatedPackProviderManifest,
+  JsonValue,
   PackProviderArgument,
 } from '@openpacker/contracts';
 import { findExecutable } from '@openpacker/project-io';
@@ -53,6 +55,7 @@ export interface ManifestPackagePackerDependencies {
 
 export class ManifestPackagePacker implements PackagePacker {
   readonly providerId: string;
+  readonly providerManifestDigest: string;
   readonly purlType: string;
   readonly #resolveExecutable: ResolveExecutable;
   readonly #sandboxRun: SandboxRun;
@@ -70,6 +73,9 @@ export class ManifestPackagePacker implements PackagePacker {
         `Provider ${manifest.id} does not declare purl type ${purlType}`,
       );
     this.providerId = manifest.id;
+    this.providerManifestDigest = `sha256:${createHash('sha256')
+      .update(canonicalBytes(manifest as unknown as JsonValue))
+      .digest('hex')}`;
     this.purlType = purlType;
     this.#resolveExecutable = dependencies.resolveExecutable ?? findExecutable;
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
@@ -176,7 +182,9 @@ export class ManifestPackagePacker implements PackagePacker {
       command: commands[0]!,
       commands,
       ...(cleanupCommands.length === 0 ? {} : { cleanupCommands }),
-      requiresBuild: plan.authority.build,
+      // A project-selected executable is code execution even if its manifest
+      // claims the native tool does not compile project sources.
+      requiresBuild: true,
       requiresNetwork,
       expectedRoles: [
         ...new Set(plan.artifacts.map((item) => item.nativeRole)),
@@ -191,7 +199,7 @@ export class ManifestPackagePacker implements PackagePacker {
   ): Promise<PackOutcome> {
     const hostPlan = await this.hostPlan(input, options);
     const plan = await this.plan(input, options);
-    if (!options.dryRun && plan.requiresBuild && options.allowBuild !== true)
+    if (!options.dryRun && options.allowBuild !== true)
       throw new ProviderError(
         'BUILD_CONSENT_REQUIRED',
         `${this.providerId} requests build authority; pass --allow-build`,

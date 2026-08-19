@@ -392,6 +392,8 @@ export interface PackedArtifact {
  */
 export interface PackagePacker {
   readonly providerId: string;
+  /** Canonical provider manifest digest for delegated receipt binding. */
+  readonly providerManifestDigest?: string;
   readonly purlType: Ecosystem;
   available(options?: PackOptions): Promise<PackAvailability>;
   detect(root: string): Promise<DetectedProject | undefined>;

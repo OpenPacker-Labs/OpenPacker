@@ -181,6 +181,19 @@
         "normalizedManifestDigest": {
           "$ref": "common.schema.json#/$defs/Digest"
         },
+        "provider": {
+          "type": "object",
+          "required": ["id", "manifestDigest"],
+          "properties": {
+            "id": {
+              "$ref": "delegated-pack-provider.schema.json#/$defs/DelegatedProviderId"
+            },
+            "manifestDigest": {
+              "$ref": "common.schema.json#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false
+        },
         "tool": { "$ref": "#/$defs/PackTool" },
         "commands": {
           "type": "array",
@@ -213,7 +226,16 @@
           "items": { "$ref": "common.schema.json#/$defs/SemanticLoss" }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "strategy": { "const": "delegate" } },
+            "required": ["strategy"]
+          },
+          "then": { "required": ["provider"] }
+        }
+      ]
     },
     "PackTool": {
       "type": "object",

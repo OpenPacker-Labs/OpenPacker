@@ -44,7 +44,7 @@ export interface PackProviderSource {
   manifest: string;
   /** PURL types that select this provider when --provider is omitted. */
   defaultFor?: readonly string[];
-  /** Names, never values, that this project authorizes from the host env. */
+  /** Names the provider may receive when the host grants values explicitly. */
   allowEnvironment?: readonly string[];
 }
 

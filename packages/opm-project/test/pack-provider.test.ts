@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdapterRegistry, setAdapterRegistry } from '@openpacker/adapter-host';
 import type { RunInSandboxInput, SandboxOutcome } from '@openpacker/sandbox';
 import { configurePackProviders } from '../src/pack-providers.js';
@@ -11,6 +11,7 @@ import type { OpmManifest } from '../src/types.js';
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -47,6 +48,7 @@ describe('configured delegated pack providers', () => {
       version: '1.0.0',
       outputDirectory,
       offline: true,
+      allowBuild: true,
       authorizedEnvironment: configured.authorizedEnvironment,
     });
 
@@ -62,6 +64,39 @@ describe('configured delegated pack providers', () => {
       'distribution',
       'receipt',
     ]);
+    expect(result.receipt?.provider).toEqual({
+      id: 'example-acme',
+      manifestDigest: {
+        algorithm: 'sha256',
+        value: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      },
+    });
+  });
+
+  it('does not treat ambient host secrets as project consent', async () => {
+    const root = await fixture();
+    vi.stubEnv('ACME_TOKEN', 'ambient-secret');
+    const configured = await configurePackProviders({
+      root,
+      registry: new AdapterRegistry(),
+      manifest: projectManifest(),
+    });
+
+    expect(configured.authorizedEnvironment['example-acme']).toEqual({});
+  });
+
+  it('keeps provider manifests at a direct project-owned path', async () => {
+    const root = await fixture();
+    const manifest = projectManifest();
+    manifest.packProviders!['example-acme']!.manifest = '../provider.json';
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
   });
 
   it('rejects a configuration key that does not bind the manifest id', async () => {

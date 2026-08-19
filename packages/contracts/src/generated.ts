@@ -946,6 +946,7 @@ export type PackReceipt = {
   strategy: 'delegate' | 'standard';
   target: Distribution;
   normalizedManifestDigest: Digest;
+  provider?: { id: DelegatedProviderId; manifestDigest: Digest };
   tool?: PackTool;
   commands: Array<Array<string>>;
   sandbox?: { backend?: string; enforced: boolean };
@@ -7246,6 +7247,19 @@ export const schemaCatalog: Record<string, JsonValue> = {
           normalizedManifestDigest: {
             $ref: 'common.schema.json#/$defs/Digest',
           },
+          provider: {
+            type: 'object',
+            required: ['id', 'manifestDigest'],
+            properties: {
+              id: {
+                $ref: 'delegated-pack-provider.schema.json#/$defs/DelegatedProviderId',
+              },
+              manifestDigest: {
+                $ref: 'common.schema.json#/$defs/Digest',
+              },
+            },
+            additionalProperties: false,
+          },
           tool: {
             $ref: '#/$defs/PackTool',
           },
@@ -7293,6 +7307,21 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
         },
         additionalProperties: false,
+        allOf: [
+          {
+            if: {
+              properties: {
+                strategy: {
+                  const: 'delegate',
+                },
+              },
+              required: ['strategy'],
+            },
+            then: {
+              required: ['provider'],
+            },
+          },
+        ],
       },
       PackTool: {
         type: 'object',
