@@ -1,4 +1,12 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -178,6 +186,31 @@ describe('materialiseTree', () => {
       await expect(
         materialiseTree(dir, join(root, '..', '..', 'escaped'), root),
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    });
+  });
+
+  it.each(['root', 'scope'])('refuses a linked %s ancestor', async (kind) => {
+    await withTemp(async (dir) => {
+      const { materialiseTree } = await import('./layout.js');
+      const source = join(dir, 'source');
+      const root = join(dir, 'node_modules');
+      const outside = join(dir, 'outside');
+      await mkdir(source);
+      await writeFile(join(source, 'package.js'), 'safe');
+      await mkdir(outside);
+      await writeFile(join(outside, 'marker'), 'untouched');
+      if (kind === 'root') await symlink(outside, root, 'dir');
+      else {
+        await mkdir(root);
+        await symlink(outside, join(root, '@scope'), 'dir');
+      }
+      const destination =
+        kind === 'root' ? join(root, 'pkg') : join(root, '@scope', 'pkg');
+      await expect(
+        materialiseTree(source, destination, root),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(await readFile(join(outside, 'marker'), 'utf8')).toBe('untouched');
+      await expect(readFile(join(outside, 'package.js'))).rejects.toThrow();
     });
   });
 

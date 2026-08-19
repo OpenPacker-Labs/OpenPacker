@@ -1,9 +1,20 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   descriptorForBytes,
+  collectStream,
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
@@ -51,11 +62,145 @@ export async function readProjectState(
 ): Promise<ProjectState | undefined> {
   try {
     const text = await readFile(path, 'utf8');
-    return JSON.parse(text) as ProjectState;
+    return await validateProjectState(JSON.parse(text) as unknown, path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
+}
+
+async function validateProjectState(
+  value: unknown,
+  statePath: string,
+): Promise<ProjectState> {
+  const state = objectValue(value, 'project state');
+  if (state.schemaVersion !== 1) throw invalidState('schemaVersion must be 1');
+  const packages = objectValue(state.packages, 'packages');
+  const root = dirname(dirname(resolve(statePath)));
+  const paths = projectPaths(root);
+  if (resolve(statePath) !== paths.projectState)
+    throw invalidState(`state path must be ${paths.projectState}`);
+  const validated: ProjectState['packages'] = {};
+
+  for (const [key, raw] of Object.entries(packages)) {
+    const alias = assertSafeSegment(key, 'package alias');
+    const record = objectValue(raw, `package ${alias}`);
+    if (record.alias !== alias)
+      throw invalidState(`package ${alias} has a contradictory alias`);
+    const purl = stringValue(record.purl, `${alias}.purl`);
+    if (!purl.startsWith('pkg:'))
+      throw invalidState(`${alias}.purl must be a package URL`);
+    const digest = stringValue(record.digest, `${alias}.digest`);
+    const expectedStore = storePathForDigest(root, digest);
+    if (record.storePath !== expectedStore)
+      throw invalidState(`${alias}.storePath is not derived from its digest`);
+    await assertRealDirectory(paths.opmDir, 'project metadata directory');
+    const realStoreRoot = await assertRealDirectory(
+      paths.store,
+      'project store',
+    );
+    const realPackage = await assertRealDirectory(
+      expectedStore,
+      `${alias} store path`,
+    );
+    if (!isContained(realStoreRoot, realPackage))
+      throw invalidState(`${alias}.storePath escapes the project store`);
+    if (!Array.isArray(record.bins))
+      throw invalidState(`${alias}.bins must be an array`);
+    const bins: InstalledPackageRecord['bins'][number][] = [];
+    for (const [index, rawBin] of record.bins.entries()) {
+      const bin = objectValue(rawBin, `${alias}.bins[${index}]`);
+      const name = assertSafeSegment(
+        stringValue(bin.name, `${alias}.bins[${index}].name`),
+        'bin name',
+      );
+      const binPath = stringValue(bin.path, `${alias}.bins[${index}].path`);
+      const segments = binPath
+        .split(/[/\\]/u)
+        .filter((part) => part !== '' && part !== '.');
+      if (segments.length === 0 || segments.includes('..'))
+        throw invalidState(`${alias}.bins[${index}].path escapes its store`);
+      const target = resolveContained(expectedStore, ...segments);
+      if (bin.target !== target)
+        throw invalidState(`${alias}.bins[${index}].target is not derived`);
+      const shim = resolveContained(paths.bin, name);
+      if (bin.shim !== shim)
+        throw invalidState(`${alias}.bins[${index}].shim is not derived`);
+      const targetInfo = await lstat(target).catch(() => undefined);
+      if (!targetInfo?.isFile() || targetInfo.isSymbolicLink())
+        throw invalidState(`${alias}.bins[${index}].target is not a file`);
+      const realTarget = await realpath(target);
+      if (!isContained(realPackage, realTarget))
+        throw invalidState(`${alias}.bins[${index}].target escapes its store`);
+      bins.push({ name, path: binPath, shim, target });
+    }
+    const installedAt = stringValue(record.installedAt, `${alias}.installedAt`);
+    if (!Number.isFinite(Date.parse(installedAt)))
+      throw invalidState(`${alias}.installedAt is not a timestamp`);
+    if (
+      record.lifecycleScriptsExecuted !== undefined &&
+      typeof record.lifecycleScriptsExecuted !== 'boolean'
+    )
+      throw invalidState(`${alias}.lifecycleScriptsExecuted must be boolean`);
+    if (
+      record.sandboxEnforced !== undefined &&
+      typeof record.sandboxEnforced !== 'boolean'
+    )
+      throw invalidState(`${alias}.sandboxEnforced must be boolean`);
+    if (
+      record.sandboxBackend !== undefined &&
+      typeof record.sandboxBackend !== 'string'
+    )
+      throw invalidState(`${alias}.sandboxBackend must be a string`);
+    validated[alias] = {
+      alias,
+      purl,
+      digest,
+      storePath: expectedStore,
+      bins,
+      installedAt,
+      ...(record.lifecycleScriptsExecuted === undefined
+        ? {}
+        : { lifecycleScriptsExecuted: record.lifecycleScriptsExecuted }),
+      ...(record.sandboxBackend === undefined
+        ? {}
+        : { sandboxBackend: record.sandboxBackend }),
+      ...(record.sandboxEnforced === undefined
+        ? {}
+        : { sandboxEnforced: record.sandboxEnforced }),
+    };
+  }
+  return { schemaVersion: 1, packages: validated };
+}
+
+function objectValue(value: unknown, name: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw invalidState(`${name} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value === '')
+    throw invalidState(`${name} must be a non-empty string`);
+  return value;
+}
+
+async function assertRealDirectory(
+  path: string,
+  name: string,
+): Promise<string> {
+  const info = await lstat(path).catch(() => undefined);
+  if (!info?.isDirectory() || info.isSymbolicLink())
+    throw invalidState(`${name} is missing, linked, or not a directory`);
+  return await realpath(path);
+}
+
+function isContained(root: string, target: string): boolean {
+  return target === root || target.startsWith(root + sep);
+}
+
+function invalidState(message: string): OpmError {
+  return new OpmError('INVALID_STATE', `Invalid project state: ${message}`);
 }
 
 export async function writeProjectState(
@@ -69,7 +214,33 @@ export async function writeProjectState(
 export async function fetchArtifactBytes(
   source: string,
   offline: boolean,
+  options: {
+    expectedBytes?: number;
+    maximumBytes?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<Uint8Array> {
+  const absoluteMaximum = 512 * 1024 * 1024;
+  const maximumBytes = options.maximumBytes ?? absoluteMaximum;
+  if (
+    !Number.isSafeInteger(maximumBytes) ||
+    maximumBytes < 0 ||
+    maximumBytes > absoluteMaximum
+  )
+    throw new RangeError(
+      `Artifact byte limit must be between 0 and ${absoluteMaximum}`,
+    );
+  if (
+    options.expectedBytes !== undefined &&
+    (!Number.isSafeInteger(options.expectedBytes) ||
+      options.expectedBytes < 0 ||
+      options.expectedBytes > maximumBytes)
+  )
+    throw new OpmError(
+      'SIZE_LIMIT',
+      `Expected artifact size exceeds ${maximumBytes} bytes`,
+    );
+  const limit = options.expectedBytes ?? maximumBytes;
   if (source.startsWith('https:') || source.startsWith('http:')) {
     if (offline) {
       throw new OpmError(
@@ -77,27 +248,114 @@ export async function fetchArtifactBytes(
         `Refusing network fetch for ${source} while offline`,
       );
     }
-    const response = await fetch(source);
+    const response = await fetch(source, {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
     if (!response.ok) {
       throw new OpmError(
         'FETCH_FAILED',
         `Failed to fetch ${source}: HTTP ${response.status}`,
       );
     }
-    return new Uint8Array(await response.arrayBuffer());
+    const declared = response.headers.get('content-length');
+    if (
+      declared !== null &&
+      (!/^\d+$/u.test(declared) || Number(declared) > limit)
+    )
+      throw new OpmError(
+        'SIZE_LIMIT',
+        `Artifact response exceeds ${limit} bytes`,
+      );
+    if (!response.body)
+      throw new OpmError('FETCH_FAILED', `Artifact response has no body`);
+    let bytes: Uint8Array;
+    try {
+      bytes = await collectStream(response.body, limit, options.signal);
+    } catch (error) {
+      if (error instanceof RangeError)
+        throw new OpmError(
+          'SIZE_LIMIT',
+          `Artifact response exceeds ${limit} bytes`,
+        );
+      throw error;
+    }
+    assertExpectedSize(bytes.byteLength, options.expectedBytes);
+    return bytes;
   }
   // file path
   const path = source.startsWith('file:')
     ? fileURLToPath(source)
     : resolve(source);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    return new Uint8Array(await readFile(path));
+    handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile())
+      throw new OpmError(
+        'UNSAFE_SOURCE',
+        `Artifact source is not a regular file: ${path}`,
+      );
+    if (before.size > BigInt(limit))
+      throw new OpmError(
+        'SIZE_LIMIT',
+        `Artifact source exceeds ${limit} bytes`,
+      );
+    const size = Number(before.size);
+    assertExpectedSize(size, options.expectedBytes);
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    while (offset < size) {
+      options.signal?.throwIfAborted();
+      const { bytesRead } = await handle.read(
+        bytes,
+        offset,
+        size - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (
+      offset !== size ||
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.size !== before.size ||
+      after.ctimeNs !== before.ctimeNs ||
+      after.mtimeNs !== before.mtimeNs
+    )
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Artifact source changed while it was read: ${path}`,
+      );
+    return bytes;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new OpmError('NOT_FOUND', `Artifact source not found: ${path}`);
     }
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+      throw new OpmError(
+        'UNSAFE_SOURCE',
+        `Artifact source must not be a symbolic link: ${path}`,
+      );
     throw error;
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
+}
+
+function assertExpectedSize(
+  actual: number,
+  expected: number | undefined,
+): void {
+  if (expected !== undefined && actual !== expected)
+    throw new OpmError(
+      'SIZE_MISMATCH',
+      `Artifact has ${actual} bytes, expected ${expected}`,
+    );
 }
 
 export function digestOf(bytes: Uint8Array): string {
@@ -193,27 +451,25 @@ export async function materializeLockPackage(input: {
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
   const storePath = storePathForDigest(input.root, input.pkg.digest);
-  const already = await pathExists(storePath);
-  if (already && !input.force) {
-    const bins =
-      input.pkg.bins.length > 0
-        ? [...input.pkg.bins]
-        : await discoverBins(storePath, input.pkg.ecosystem);
-    return {
-      storePath,
-      bins,
-      cached: true,
-      lifecycleScriptsExecuted: false,
-      sandboxOutcomes: [],
-    };
+  const archivePath = `${storePath}.artifact`;
+  await ensureLocalDirectory(paths.opmDir, 'project metadata directory');
+  await ensureLocalDirectory(paths.store, 'project store');
+  let cached = false;
+  let bytes = input.bytes;
+  if (bytes === undefined && !input.force) {
+    try {
+      bytes = await fetchArtifactBytes(archivePath, true, {
+        expectedBytes: input.pkg.size,
+      });
+      cached = true;
+    } catch (error) {
+      if (!(error instanceof OpmError) || error.code !== 'NOT_FOUND')
+        throw error;
+    }
   }
-  if (already && input.force) {
-    await rm(storePath, { recursive: true, force: true });
-  }
-
-  await mkdir(paths.store, { recursive: true });
-  const bytes =
-    input.bytes ?? (await fetchArtifactBytes(input.pkg.source, input.offline));
+  bytes ??= await fetchArtifactBytes(input.pkg.source, input.offline, {
+    expectedBytes: input.pkg.size,
+  });
   const actual = digestOf(bytes);
   if (actual !== input.pkg.digest) {
     throw new OpmError(
@@ -228,6 +484,8 @@ export async function materializeLockPackage(input: {
     );
   }
 
+  await rm(storePath, { recursive: true, force: true });
+
   const descriptor = await descriptorForBytes({
     bytes,
     descriptorId: input.pkg.storeKey,
@@ -241,8 +499,8 @@ export async function materializeLockPackage(input: {
     descriptor,
     destination: storePath,
     format: input.pkg.format as ArchiveFormat,
-    managedDestination: true,
   });
+  if (!cached || input.force) await persistArtifact(archivePath, bytes);
 
   // Lifecycle scripts: default never run. When allowlisted, run only in jail.
   let lifecycleScriptsExecuted = false;
@@ -272,7 +530,7 @@ export async function materializeLockPackage(input: {
   return {
     storePath,
     bins,
-    cached: false,
+    cached,
     lifecycleScriptsExecuted,
     sandboxOutcomes,
   };
@@ -436,6 +694,7 @@ export async function uninstallPackages(input: {
     await rm(resolveContained(paths.links, safeAlias), { force: true });
     if (input.removeStore) {
       await rm(record.storePath, { recursive: true, force: true });
+      await rm(`${record.storePath}.artifact`, { force: true });
     }
     delete state.packages[alias];
     delete state.packages[safeAlias];
@@ -538,12 +797,28 @@ export function lockPackageFromSource(input: {
   };
 }
 
-async function pathExists(path: string): Promise<boolean> {
+async function ensureLocalDirectory(path: string, name: string): Promise<void> {
   try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
+    await mkdir(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.isSymbolicLink())
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `${name} is linked or is not a directory: ${path}`,
+    );
+}
+
+async function persistArtifact(path: string, bytes: Uint8Array): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, bytes, { flag: 'wx', mode: 0o444 });
+    await rm(path, { force: true });
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
   }
 }
 

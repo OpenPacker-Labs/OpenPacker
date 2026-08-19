@@ -1,18 +1,25 @@
 /**
  * Materialise a directory from the content-addressed store.
  *
- * Hardlink where the filesystem allows it, copy where it does not, and never
- * symlink. A symlinked layout needs developer mode or elevation on Windows and
- * silently breaks tools that resolve realpath, so the same lockfile would
- * install differently depending on where it ran — the same reason opm ships
- * bin shims rather than symlinks.
- *
- * Hardlinks are safe here because the store is immutable: a store path is
- * named by the digest of its contents, so nothing ever writes to one in place.
+ * Copy through stable, no-follow file and directory handles, and never
+ * symlink. Pathname-only hardlinks would reopen the source race this boundary
+ * exists to close.
  */
 
-import { cp, link, mkdir, readdir, rm, stat } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+  type FileHandle,
+} from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { ProjectIoError } from './index.js';
 
 export interface MaterialiseResult {
@@ -34,42 +41,145 @@ export async function materialiseTree(
   root: string,
 ): Promise<MaterialiseResult> {
   assertContained(root, destination);
-  await rm(destination, { recursive: true, force: true });
-  await mkdir(destination, { recursive: true });
+  const rootHandle = await openDirectory(root, true);
+  const handles: FileHandle[] = [rootHandle];
   const result: MaterialiseResult = { files: 0, copied: false };
-  await walk(source, destination, result);
-  return result;
+  let staging: string | undefined;
+  try {
+    const parts = relative(resolve(root), resolve(destination)).split(sep);
+    const name = parts.pop();
+    if (!name || name === '.' || name === '..') throw unsafe(destination);
+    let parent = rootHandle;
+    for (const part of parts) {
+      if (!part || part === '.' || part === '..') throw unsafe(destination);
+      const childPath = join(handlePath(parent), part);
+      await mkdir(childPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      parent = await openDirectory(childPath, false);
+      handles.push(parent);
+    }
+
+    const parentPath = handlePath(parent);
+    staging = join(parentPath, `.${name}.openpacker-${randomUUID()}`);
+    await mkdir(staging);
+    const stagingHandle = await openDirectory(staging, false);
+    handles.push(stagingHandle);
+    const sourceHandle = await openDirectory(source, false);
+    handles.push(sourceHandle);
+    await walk(sourceHandle, stagingHandle, result);
+    const published = join(parentPath, name);
+    await rm(published, { recursive: true, force: true });
+    await rename(staging, published);
+    staging = undefined;
+    return result;
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+    )
+      throw unsafe(destination);
+    throw error;
+  } finally {
+    if (staging)
+      await rm(staging, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    await Promise.all(
+      handles.reverse().map(async (handle) => await handle.close()),
+    );
+  }
 }
 
 async function walk(
-  source: string,
-  destination: string,
+  source: FileHandle,
+  destination: FileHandle,
   result: MaterialiseResult,
 ): Promise<void> {
-  const entries = await readdir(source, { withFileTypes: true });
+  const sourcePath = handlePath(source);
+  const destinationPath = handlePath(destination);
+  const entries = await readdir(sourcePath, { withFileTypes: true });
   for (const entry of entries) {
-    const from = join(source, entry.name);
-    const to = join(destination, entry.name);
+    const from = join(sourcePath, entry.name);
+    const to = join(destinationPath, entry.name);
     if (entry.isDirectory()) {
-      await mkdir(to, { recursive: true });
-      await walk(from, to, result);
+      const fromHandle = await openDirectory(from, false);
+      await mkdir(to);
+      const toHandle = await openDirectory(to, false);
+      try {
+        await walk(fromHandle, toHandle, result);
+      } finally {
+        await Promise.all([fromHandle.close(), toHandle.close()]);
+      }
       continue;
     }
     if (!entry.isFile()) {
       // The store is built by the materializer, which already refuses
       // symlinks, devices and sockets. Anything else here is not something to
       // reproduce into a project directory on a guess.
-      continue;
+      throw unsafe(from);
     }
+    const file = await open(
+      from,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
     try {
-      await link(from, to);
-    } catch {
-      // Cross-device, a filesystem without hardlinks, or a link-count limit.
-      await cp(from, to);
+      const info = await file.stat();
+      if (!info.isFile()) throw unsafe(from);
+      await copyFile(handlePath(file), to, constants.COPYFILE_EXCL);
+      await chmod(to, (info.mode & 0o111) !== 0 ? 0o755 : 0o644);
       result.copied = true;
+    } finally {
+      await file.close();
     }
     result.files += 1;
   }
+}
+
+async function openDirectory(
+  path: string,
+  create: boolean,
+): Promise<FileHandle> {
+  if (create)
+    await mkdir(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error;
+    });
+  try {
+    const handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    if (!(await handle.stat()).isDirectory()) {
+      await handle.close();
+      throw unsafe(path);
+    }
+    return handle;
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+    )
+      throw unsafe(path);
+    throw error;
+  }
+}
+
+function handlePath(handle: FileHandle): string {
+  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
+  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
+  throw new ProjectIoError(
+    'UNSAFE_PATH',
+    String(handle.fd),
+    'Native layout requires stable no-follow directory handles on this platform',
+  );
+}
+
+function unsafe(path: string): ProjectIoError {
+  return new ProjectIoError(
+    'UNSAFE_PATH',
+    path,
+    `Layout path is linked, special, or unstable: ${path}`,
+  );
 }
 
 /**
@@ -92,12 +202,15 @@ function assertContained(root: string, destination: string): void {
 
 /** Remove a layout directory if it exists. */
 export async function removeTree(path: string): Promise<void> {
+  const parent = await openDirectory(dirname(resolve(path)), false);
   try {
-    await stat(path);
-  } catch {
-    return;
+    await rm(join(handlePath(parent), resolve(path).split(sep).at(-1)!), {
+      recursive: true,
+      force: true,
+    });
+  } finally {
+    await parent.close();
   }
-  await rm(path, { recursive: true, force: true });
 }
 
 /** Every file under `root`, as archive entries with forward-slash paths. */

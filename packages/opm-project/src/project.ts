@@ -869,7 +869,9 @@ async function resolveRequirement(input: {
     }
     const source = entry.resolvedSource;
     // verify digest if we can read offline
-    const bytes = await fetchArtifactBytes(source, input.offline);
+    const bytes = await fetchArtifactBytes(source, input.offline, {
+      expectedBytes: entry.size,
+    });
     const actual = digestOf(bytes);
     if (actual !== entry.digest) {
       throw new OpmError(

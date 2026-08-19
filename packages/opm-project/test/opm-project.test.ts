@@ -1,10 +1,18 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   addPackage,
@@ -47,6 +55,7 @@ const fixtureTgz = join(repoRoot, 'fixtures/opm/demo-tool-1.1.0.tgz');
 
 const temps: string[] = [];
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -264,6 +273,48 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'OFFLINE' });
   });
 
+  it('bounds and cancels remote artifact collection', async () => {
+    let canceled = false;
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(2));
+            },
+            cancel() {
+              canceled = true;
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(
+      fetchArtifactBytes('https://packages.example/artifact', false, {
+        maximumBytes: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'SIZE_LIMIT' });
+    expect(canceled).toBe(true);
+  });
+
+  it('rejects oversized and linked local artifact sources', async () => {
+    const root = await tempProject();
+    const artifact = join(root, 'artifact.tgz');
+    const linked = join(root, 'linked.tgz');
+    await writeFile(artifact, 'too large');
+    await symlink(artifact, linked);
+    await expect(
+      fetchArtifactBytes(artifact, true, { maximumBytes: 1 }),
+    ).rejects.toMatchObject({ code: 'SIZE_LIMIT' });
+    await expect(fetchArtifactBytes(linked, true)).rejects.toMatchObject({
+      code: 'UNSAFE_SOURCE',
+    });
+    await expect(fetchArtifactBytes(root, true)).rejects.toMatchObject({
+      code: 'UNSAFE_SOURCE',
+    });
+  });
+
   it('refuses an explicit network source while offline', async () => {
     const root = await tempProject();
     await expect(
@@ -327,6 +378,56 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'SIZE_MISMATCH' });
   });
 
+  it('rebuilds store trees only from a verified canonical artifact cache', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    const storePath = join(root, '.opm/store', pkg.storeKey);
+    await mkdir(storePath, { recursive: true });
+    await writeFile(join(storePath, 'malicious'), 'unverified');
+
+    const first = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      bytes,
+    });
+    await expect(readFile(join(storePath, 'malicious'))).rejects.toThrow();
+    const bin = first.bins[0];
+    if (!bin) throw new Error('fixture must declare a bin');
+    const target = join(storePath, ...bin.path.split('/'));
+    const original = await readFile(target);
+    await writeFile(target, 'tampered');
+
+    const cached = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+    });
+    expect(cached.cached).toBe(true);
+    expect(await readFile(target)).toEqual(original);
+
+    await chmod(`${storePath}.artifact`, 0o644);
+    await writeFile(`${storePath}.artifact`, new Uint8Array(bytes.byteLength));
+    await expect(
+      materializeLockPackage({ root, pkg, offline: true }),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
   it('rejects adding from a catalog entry whose digest does not match the bytes', async () => {
     const root = await tempProject();
     const catalogPath = join(root, '.opm/catalog.json');
@@ -344,6 +445,59 @@ describe('fail-closed install paths', () => {
         offline: true,
       }),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+
+  it('rejects persisted store and bin authority outside the project store', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const valid = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<
+        string,
+        { storePath: string; bins: Array<{ target: string }> }
+      >;
+    };
+    const record = Object.values(valid.packages)[0]!;
+    const originalStore = record.storePath;
+    record.storePath = root;
+    await writeFile(statePath, JSON.stringify(valid));
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+
+    record.storePath = originalStore;
+    record.bins[0]!.target = join(root, 'opm.toml');
+    await writeFile(statePath, JSON.stringify(valid));
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+  });
+
+  it('rejects a linked digest-named store directory', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const statePath = join(root, '.opm/project.json');
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as {
+      packages: Record<string, { storePath: string }>;
+    };
+    const storePath = Object.values(state.packages)[0]!.storePath;
+    const outside = join(root, 'outside');
+    await mkdir(outside);
+    await writeFile(join(outside, 'marker'), 'untouched');
+    await rm(storePath, { recursive: true });
+    await symlink(outside, storePath, 'dir');
+    await expect(readProjectState(statePath)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+    expect(await readFile(join(outside, 'marker'), 'utf8')).toBe('untouched');
   });
 });
 

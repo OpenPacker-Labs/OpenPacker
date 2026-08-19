@@ -531,8 +531,10 @@ export async function collectGarbage(input: {
   const { collectable, retained } = await collectableStorePaths(input);
   if (input.dryRun) return { removed: collectable, retained };
 
-  for (const path of collectable)
+  for (const path of collectable) {
     await rm(path, { recursive: true, force: true });
+    await rm(`${path}.artifact`, { force: true });
+  }
 
   // Forget edges whose source was just collected. The ledger accumulates
   // otherwise, and an edge out of a path that no longer exists cannot describe
