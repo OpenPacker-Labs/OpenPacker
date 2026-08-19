@@ -1,0 +1,16 @@
+{
+  "format": "package-lock",
+  "ecosystem": "npm",
+  "packageCount": 2,
+  "lockedExactPurls": [
+    "pkg:npm/%40openpacker/demo-tool@1.1.0",
+    "pkg:npm/openpacker-npm-fixture@1.0.0"
+  ],
+  "semanticLossCodes": [
+    "NATIVE_RESULT_CAPTURE_ONLY"
+  ],
+  "sourceDigest": {
+    "algorithm": "sha256",
+    "value": "327c59c045a2d3409b66b4252bdd19bd8defc4b8321a7f4d001a9bef69e561fd"
+  }
+}

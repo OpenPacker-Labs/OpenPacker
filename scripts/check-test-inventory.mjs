@@ -183,6 +183,25 @@ export async function checkTestInventory(root) {
       ],
     },
     {
+      type: 'behavior',
+      script: 'test:behavior',
+      command: 'node scripts/run-gate.mjs behavior',
+      oracles: ['tests/behavior'],
+    },
+    {
+      type: 'snapshot',
+      script: 'test',
+      command: commands.test,
+      oracles: [
+        'packages/canonical/test/snapshot.test.ts',
+        'packages/lock-import/src/snapshot.test.ts',
+      ],
+      vitest: [
+        'packages/canonical/test/snapshot.test.ts',
+        'packages/lock-import/src/snapshot.test.ts',
+      ],
+    },
+    {
       type: 'fuzz',
       script: 'test:fuzz',
       command: commands.fuzz,
