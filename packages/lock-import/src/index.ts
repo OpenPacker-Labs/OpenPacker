@@ -239,13 +239,21 @@ export function parsePoetryLock(text: string): {
   package: { name: string; version: string }[];
 } {
   const document = parseToml(text) as {
-    package?: { name?: unknown; version?: unknown }[];
-    metadata?: { 'lock-version'?: unknown };
+    package?: Array<
+      Record<string, unknown> & { name?: unknown; version?: unknown }
+    >;
+    metadata?: { 'lock-version'?: unknown; files?: unknown };
   };
   if (!Array.isArray(document.package))
     throw new ProviderError(
       'INVALID_LOCKFILE',
       'poetry.lock has no [[package]] entries',
+    );
+
+  if (document.metadata?.files !== undefined)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'poetry.lock artifact hashes cannot be represented without losing integrity',
     );
 
   const packages: { name: string; version: string }[] = [];
@@ -257,7 +265,21 @@ export function parsePoetryLock(text: string): {
     // distribution — the same rule requirements.txt import applies.
     const name = entry.name.toLowerCase().replace(/[-_.]+/gu, '-');
     if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) continue;
-    if (seen.has(name)) continue;
+    if (
+      entry.marker !== undefined ||
+      entry.markers !== undefined ||
+      entry.source !== undefined ||
+      entry.files !== undefined
+    )
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock package ${name} carries marker, source, or artifact context that cannot be represented losslessly`,
+      );
+    if (seen.has(name))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `poetry.lock contains multiple locked selections for ${name}`,
+      );
     seen.add(name);
     packages.push({ name, version: entry.version });
   }
@@ -315,7 +337,12 @@ export function parsePnpmLock(text: string): {
   for (const [key, value] of Object.entries(document.packages)) {
     // Peer-dependency suffixes like `(react@18.0.0)` describe how a package was
     // resolved, not which package it is.
-    const identifier = key.split('(')[0]!;
+    if (key.includes('('))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm peer context cannot be represented losslessly: ${key}`,
+      );
+    const identifier = key;
     const at = identifier.lastIndexOf('@');
     if (at <= 0) continue;
     const name = identifier.slice(0, at);
@@ -324,7 +351,13 @@ export function parsePnpmLock(text: string): {
     if (!/^[0-9]/u.test(packageVersion)) continue;
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
-    packages[`node_modules/${name}`] = {
+    const installPath = `node_modules/${name}`;
+    if (packages[installPath] !== undefined)
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `pnpm-lock.yaml contains multiple locked selections for ${name}`,
+      );
+    packages[installPath] = {
       version: packageVersion,
       ...(value?.resolution?.tarball
         ? { resolved: value.resolution.tarball }
@@ -358,16 +391,17 @@ export function parseRequirementsTxt(text: string): {
   package: { name: string; version: string }[];
 } {
   const packages: { name: string; version: string }[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   let lineNumber = 0;
   for (const rawLine of text.split(/\r?\n/u)) {
     lineNumber += 1;
-    // Strip comments, then hash options like `--hash=sha256:...` which pin the
-    // artifact but not the identity this import is about.
-    const line = rawLine
-      .split('#')[0]!
-      .trim()
-      .replace(/\s+--hash=\S+/gu, '');
+    const uncommented = rawLine.split('#')[0]!;
+    if (/(?:^|\s)--hash(?:=|\s|$)/u.test(uncommented))
+      throw new ProviderError(
+        'INVALID_LOCKFILE',
+        `requirements.txt line ${lineNumber} contains an artifact hash that cannot be represented losslessly`,
+      );
+    const line = uncommented.trim();
     if (line === '' || line.startsWith('-')) continue;
     const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^\s;]+)$/u.exec(line);
     if (!match) {
@@ -378,9 +412,18 @@ export function parseRequirementsTxt(text: string): {
       );
     }
     const name = match[1]!.toLowerCase().replace(/[-_.]+/gu, '-');
-    if (seen.has(name)) continue;
-    seen.add(name);
-    packages.push({ name, version: match[2]! });
+    const version = match[2]!;
+    const previous = seen.get(name);
+    if (previous !== undefined) {
+      if (previous !== version)
+        throw new ProviderError(
+          'INVALID_LOCKFILE',
+          `requirements.txt contains multiple exact versions for ${name}`,
+        );
+      continue;
+    }
+    seen.set(name, version);
+    packages.push({ name, version });
   }
   if (packages.length === 0)
     throw new ProviderError(

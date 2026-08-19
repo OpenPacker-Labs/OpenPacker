@@ -158,7 +158,7 @@ describe('lock-import planning', () => {
 describe('requirements.txt import', () => {
   it('imports a fully pinned file', () => {
     const parsed = parseRequirementsTxt(
-      '# comment\nrequests==2.32.3\nidna==3.7  --hash=sha256:abc\n',
+      '# comment\nrequests==2.32.3\nidna==3.7\n',
     );
     expect(parsed.package).toEqual([
       { name: 'requests', version: '2.32.3' },
@@ -166,11 +166,20 @@ describe('requirements.txt import', () => {
     ]);
   });
 
+  it('refuses artifact hashes instead of silently discarding them', () => {
+    expect(() =>
+      parseRequirementsTxt('idna==3.7 --hash=sha256:abc --hash=sha256:def\n'),
+    ).toThrow(/artifact hash.*losslessly/u);
+  });
+
   it('normalises names the way PyPI does', () => {
     // Foo_Bar and foo-bar are the same distribution.
     expect(
       parseRequirementsTxt('Foo_Bar==1.0\nfoo-bar==1.0\n').package,
     ).toEqual([{ name: 'foo-bar', version: '1.0' }]);
+    expect(() => parseRequirementsTxt('Foo_Bar==1.0\nfoo-bar==2.0\n')).toThrow(
+      /multiple exact versions/u,
+    );
   });
 
   it('refuses anything that is not an exact pin', () => {
@@ -202,13 +211,17 @@ describe('pnpm-lock.yaml import', () => {
     expect(parsed.packages['node_modules/@scope/pkg']?.version).toBe('1.2.3');
   });
 
-  it('drops the peer-dependency suffix, which describes resolution not identity', () => {
-    const parsed = parsePnpmLock(
-      lock(
-        "  'react-dom@18.2.0(react@18.2.0)':\n    resolution: {integrity: sha512-y}\n",
+  it('refuses peer contexts and multiple locked versions', () => {
+    expect(() =>
+      parsePnpmLock(
+        lock(
+          "  'react-dom@18.2.0(react@18.2.0)':\n    resolution: {integrity: sha512-y}\n",
+        ),
       ),
-    );
-    expect(parsed.packages['node_modules/react-dom']?.version).toBe('18.2.0');
+    ).toThrow(/peer context.*losslessly/u);
+    expect(() =>
+      parsePnpmLock(lock("  'a@1.0.0': {}\n  'a@2.0.0': {}\n")),
+    ).toThrow(/multiple locked selections/u);
   });
 
   it('refuses lockfileVersion 5, whose keys mean something else', () => {
@@ -229,12 +242,35 @@ describe('pnpm-lock.yaml import', () => {
 });
 
 describe('poetry.lock import', () => {
-  const poetry = `[[package]]\nname = "Foo_Bar"\nversion = "1.0"\n\n[[package]]\nname = "foo-bar"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\n`;
+  const poetry = `[[package]]\nname = "Foo_Bar"\nversion = "1.0"\n\n[metadata]\nlock-version = "2.0"\n`;
 
   it('normalises names the way PyPI does', () => {
     expect(parsePoetryLock(poetry).package).toEqual([
       { name: 'foo-bar', version: '1.0' },
     ]);
+  });
+
+  it('refuses duplicate, marker, source, and hash context', () => {
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[[package]]\nname = "Foo"\nversion = "2.0"\n`,
+      ),
+    ).toThrow(/multiple locked selections/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\nmarker = "sys_platform == 'linux'"\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\nsource = { type = "git", url = "https://example.invalid/repo" }\n`,
+      ),
+    ).toThrow(/context.*losslessly/u);
+    expect(() =>
+      parsePoetryLock(
+        `[[package]]\nname = "foo"\nversion = "1.0"\n\n[metadata.files]\nfoo = [{ file = "foo.whl", hash = "sha256:abc" }]\n`,
+      ),
+    ).toThrow(/artifact hashes.*integrity/u);
   });
 
   it('is distinguished from Cargo.lock, which also uses [[package]]', () => {
