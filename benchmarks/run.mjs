@@ -2,7 +2,13 @@
 import { performance } from 'node:perf_hooks';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { canonicalize, formatDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalize,
+  canonicalProjectionDigest,
+  formatDigest,
+  sha256,
+} from '@openpacker/canonical';
+import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import { packageNodeId, parseVers } from '@openpacker/adapter-core';
 import { NpmCodec } from '@openpacker/adapter-npm';
 import { CatalogSnapshotBuilder } from '@openpacker/catalog';
@@ -68,6 +74,7 @@ async function syntheticSolveInput(packageCount) {
               expression: {
                 type: 'package',
                 purl: `pkg:npm/benchmark-${index + 1}`,
+                qualifiers: {},
               },
               kind: 'runtime',
               optional: false,
@@ -82,6 +89,14 @@ async function syntheticSolveInput(packageCount) {
         : [];
     input.universe.packages.push(packageInstance);
   }
+  const projection = DIGEST_PROJECTIONS.projections.find(
+    ({ id }) => id === 'universe-v1',
+  );
+  if (!projection) throw new Error('missing universe-v1 digest projection');
+  input.universe.canonicalDigest = await canonicalProjectionDigest(
+    input.universe,
+    projection,
+  );
   return input;
 }
 
