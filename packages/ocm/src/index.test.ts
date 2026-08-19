@@ -273,6 +273,48 @@ describe('OCM mapping', () => {
       ).rejects.toMatchObject({ code: 'INVALID_DEPENDENCY_EDGE' });
   });
 
+  it('rejects duplicate selected nodes and duplicate selected PURLs', async () => {
+    const packages = [
+      packageFor('app', 'pkg:npm/app@1.0.0'),
+      packageFor('dep', 'pkg:npm/dep@1.0.0'),
+    ];
+    const solutionFor = (selectedNodeIds: string[]): ResolutionSolution => ({
+      selectedNodeIds,
+      selectedCapabilityProviders: [],
+      dependencyEdges: [],
+      satisfiedRequirementIds: [],
+      excludedCandidates: [],
+      objectiveTuple: [],
+      sourceSnapshotDigests: [],
+      semanticLoss: [],
+      solutionDigest: { algorithm: 'sha256', value: 'e'.repeat(64) },
+    });
+    // A solution must not select the same node twice.
+    await expect(
+      mapSolutionToOcm({
+        packages,
+        solution: solutionFor(['app', 'app']),
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_SELECTED_NODE' });
+    // Two packages must not share a selected node ID.
+    await expect(
+      mapSolutionToOcm({
+        packages: [packages[0]!, packageFor('app', 'pkg:npm/other@1.0.0')],
+        solution: solutionFor(['app']),
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_SELECTED_NODE' });
+    // Two selected nodes must not resolve to the same exact PURL.
+    await expect(
+      mapSolutionToOcm({
+        packages: [packages[0]!, packageFor('alias', 'pkg:npm/app@1.0.0')],
+        solution: solutionFor(['app', 'alias']),
+        provider: 'openpacker.dev',
+      }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_SELECTED_PURL' });
+  });
+
   it('finalizes a deep acyclic chain without recursion', async () => {
     const count = 5_000;
     const packages = Array.from({ length: count }, (_, index) => {
