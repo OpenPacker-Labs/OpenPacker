@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   type AdapterRegistry,
   getAdapterRegistry,
@@ -10,7 +10,11 @@ import {
 } from '@openpacker/pack-provider';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
-import { assertSafeSegment } from './paths.js';
+import {
+  assertContainedRelativePath,
+  openStableDirectory,
+  stableHandlePath,
+} from './paths.js';
 
 export interface ConfiguredPackProviders {
   authorizedEnvironment: Readonly<
@@ -36,17 +40,27 @@ export async function configurePackProviders(input: {
     input.manifest.packProviders ?? {},
   )) {
     let provider;
-    const path = join(
+    // Manifest paths may span several segments (`.opm/providers/acme.json`)
+    // but must stay contained beneath the project root. The loader still gets
+    // a path, but one anchored at a stable no-follow directory handle, so a
+    // symlinked or swapped intermediate component fails closed instead of
+    // redirecting the read.
+    const displayPath = join(
       input.root,
-      assertSafeSegment(source.manifest, 'pack provider manifest'),
+      assertContainedRelativePath(source.manifest, 'pack provider manifest'),
     );
+    const directory = await openStableDirectory(dirname(displayPath));
     try {
-      provider = await loadDelegatedPackProvider(path);
+      provider = await loadDelegatedPackProvider(
+        join(stableHandlePath(directory), basename(displayPath)),
+      );
     } catch (error) {
       throw new OpmError(
         'INVALID_MANIFEST',
-        `Cannot load pack provider ${id} from ${path}: ${message(error)}`,
+        `Cannot load pack provider ${id} from ${displayPath}: ${message(error)}`,
       );
+    } finally {
+      await directory.close();
     }
     if (provider.id !== id)
       throw new OpmError(

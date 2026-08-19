@@ -3,7 +3,9 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  rename,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -117,6 +119,77 @@ describe('configured delegated pack providers', () => {
         registry: new AdapterRegistry(),
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('loads a provider manifest from a nested contained path', async () => {
+    const root = await fixture();
+    await mkdir(join(root, '.opm', 'providers'), { recursive: true });
+    await rename(
+      join(root, 'provider.json'),
+      join(root, '.opm', 'providers', 'acme.json'),
+    );
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest =
+      '.opm/providers/acme.json';
+
+    const configured = await configurePackProviders({
+      root,
+      manifest,
+      registry: new AdapterRegistry(),
+    });
+
+    expect(configured.authorizedEnvironment['example-acme']).toEqual({});
+  });
+
+  it('fails closed when a manifest path component is a symlink', async () => {
+    const root = await fixture();
+    await mkdir(join(root, '.opm'));
+    const outside = join(root, 'outside');
+    await mkdir(outside);
+    await rename(join(root, 'provider.json'), join(outside, 'acme.json'));
+    await symlink(outside, join(root, '.opm', 'providers'));
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest =
+      '.opm/providers/acme.json';
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('rejects absolute provider manifest paths', async () => {
+    const root = await fixture();
+    const manifest = projectManifest(root);
+    manifest.packProviders!['example-acme']!.manifest = join(
+      root,
+      'provider.json',
+    );
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('rejects a symlinked provider manifest file', async () => {
+    const root = await fixture();
+    await rename(join(root, 'provider.json'), join(root, 'real.json'));
+    await symlink(join(root, 'real.json'), join(root, 'provider.json'));
+
+    await expect(
+      configurePackProviders({
+        root,
+        manifest: projectManifest(root),
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_MANIFEST' });
   });
 
   it('rejects a configuration key that does not bind the manifest id', async () => {

@@ -30,11 +30,14 @@ default_for = ["acme"]
 allow_environment = ["ACME_TOKEN"]
 ```
 
-The section key MUST equal the manifest `id`. Manifest paths resolve from the
-project root. `executable` MUST be an operator-approved absolute path and hosts
-MUST NOT resolve it through `PATH`. `default_for` MUST be a subset of the
-manifest's `purlTypes`, and `allow_environment` MUST be a subset of its declared
-environment authority.
+The section key MUST equal the manifest `id`. Manifest paths are relative to the
+project root and may span several segments (`.opm/providers/acme.json`), but
+MUST stay contained beneath it: hosts MUST reject absolute paths and `.`/`..`
+escapes, and MUST open the manifest with no-follow semantics so a symlinked or
+swapped path component fails closed. `executable` MUST be an operator-approved
+absolute path and hosts MUST NOT resolve it through `PATH`. `default_for` MUST
+be a subset of the manifest's `purlTypes`, and `allow_environment` MUST be a
+subset of its declared environment authority.
 
 The approved executable MUST be standalone. Before execution, the host copies
 bounded bytes from the no-follow approved file into an unnamed immutable

@@ -46,10 +46,12 @@ default_for = ["acme"]
 allow_environment = ["ACME_TOKEN"]
 ```
 
-The key must equal the provider manifest's `id`. `executable` is an
-operator-approved absolute path; OPM never resolves delegated tools through
-`PATH`. `default_for` is optional; use `--provider` when several providers
-support one PURL type:
+The key must equal the provider manifest's `id`. `manifest` is relative to the
+project root and must stay contained beneath it — absolute paths and `..`
+escapes fail closed, and the file is opened with no-follow semantics.
+`executable` is an operator-approved absolute path; OPM never resolves delegated
+tools through `PATH`. `default_for` is optional; use `--provider` when several
+providers support one PURL type:
 
 ```sh
 opm pack acme --package-version 1.2.3 --provider dev-example-acme --allow-build --offline

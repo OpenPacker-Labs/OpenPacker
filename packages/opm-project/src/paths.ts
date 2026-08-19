@@ -12,6 +12,7 @@ import {
 import {
   basename,
   dirname,
+  isAbsolute,
   join,
   parse,
   relative,
@@ -94,6 +95,28 @@ export function assertSafeSegment(value: string, kind: string): string {
         `so this would collide with "${value.replace(/[ .]+$/u, '')}"`,
     );
   return value;
+}
+
+/**
+ * Multi-segment relative path contained beneath a root, such as a delegated
+ * pack provider manifest at `.opm/providers/acme.json`. Every segment must be
+ * a safe single name; absolute paths and `.`/`..` escapes fail closed. The
+ * result is lexical only — callers must open it through the stable no-follow
+ * primitives below, never by bare path.
+ */
+export function assertContainedRelativePath(
+  value: string,
+  kind: string,
+): string {
+  if (isAbsolute(value)) {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid ${kind} "${value}": must be a relative path contained in the project`,
+    );
+  }
+  const segments = value.split('/');
+  for (const segment of segments) assertSafeSegment(segment, kind);
+  return join(...segments);
 }
 
 export function assertDigest(digest: string): string {

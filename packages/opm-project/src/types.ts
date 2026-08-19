@@ -40,7 +40,11 @@ export interface RegistrySource {
 }
 
 export interface PackProviderSource {
-  /** Local provider manifest path, resolved from the project root. */
+  /**
+   * Local provider manifest path, relative to and contained beneath the
+   * project root (e.g. `.opm/providers/acme.json`). Absolute paths and `..`
+   * escapes fail closed; the host opens the file with no-follow semantics.
+   */
   manifest: string;
   /** Absolute executable path explicitly approved by the project operator. */
   executable: string;
