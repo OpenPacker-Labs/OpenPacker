@@ -217,6 +217,22 @@ describe('publish', () => {
     await app.close();
   });
 
+  it('normalizes an omitted publisher role without minting registry authority', async () => {
+    const app = registry();
+    const body = await signed(manifest());
+    delete (body.signatures[0] as { role?: string }).role;
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: body,
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().entry.signatures).toMatchObject([
+      { keyId: 'publisher-1', role: 'publisher' },
+    ]);
+    await app.close();
+  });
+
   it('refuses an unsigned manifest unless the operator opted in', async () => {
     const app = registry();
     const unsigned = {

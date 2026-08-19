@@ -830,7 +830,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           'This registry requires a signed manifest. Start it with ' +
             'anonymousPublish only if you accept being the only thing anyone can check.',
         );
-      if (signatures.some((signature) => signature.role !== 'publisher'))
+      if (signatures.some((signature) => signature.role === 'registry'))
         throw new PublishError(
           'INVALID_SIGNATURE',
           400,
