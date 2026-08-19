@@ -237,6 +237,16 @@ stronger one.
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
 
+`opm install --offline` replays an existing manifest-bound lock from the
+canonical `.artifact` cache without re-resolving the package. The cached bytes
+are re-hashed against the lock digest before extraction. Source classification
+is available only when the exact immutable package projection is bound to an
+explicit source in the current manifest; a source written only in the lock has
+no authority. Hand-authored evidence, signer, issuer, lifecycle, registry, or
+source-snapshot claims in a lock are likewise not policy authority. Registry
+locks therefore fail closed offline under the default lifecycle policy unless
+their verifier evidence can be independently replayed.
+
 ---
 
 ## Commands

@@ -55,6 +55,22 @@ support one PURL type:
 opm pack acme --package-version 1.2.3 --provider dev-example-acme --allow-build --offline
 ```
 
+The approved executable must be standalone. OPM copies its bounded, no-follow
+bytes into an unnamed immutable snapshot and hashes that snapshot. The sandbox
+copies those bytes from an inherited read-only descriptor into a private
+mode-`0500` executable and executes that private path. The configured path
+remains the selection and receipt source path, while the receipt digest
+identifies the exact bytes that ran. It is not preserved as `argv[0]`, and OPM
+does not expose its parent directory.
+
+Providers therefore cannot depend on sibling modules or resources, relative
+loader paths, or runtime trees such as an nvm installation. Use an approved
+self-contained bundle or standalone wrapper. OPM fails closed instead of
+reopening the configured path or broadening filesystem authority. Native
+delegation currently requires Linux `O_TMPFILE` support and fails closed when
+unnamed snapshot storage is unavailable. This does not restrict the standardized
+emitters listed above.
+
 Provider manifests map to the standard `package-build` WIT plan interface; the
 host retains execution authority. Native compilation or project-controlled
 lifecycle execution requires `--allow-build`; network access independently

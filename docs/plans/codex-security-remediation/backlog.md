@@ -37,7 +37,9 @@ marker, source, and transitive composition semantics.
 
 ## 05 — Advisory and scan closeout
 
-Status: planned.
+Status: implementation and independent review approved; final native/full
+verification, fresh deep scan, commits, stacked PRs, squash merge, and deploy
+are blocked on external authority reset.
 
 Replace or remove the vulnerable `extract-zip` implementation in the external
 Codex Security installation, keep it outside the workspace graph, rerun all
