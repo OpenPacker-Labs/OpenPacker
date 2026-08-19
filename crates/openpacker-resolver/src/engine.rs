@@ -67,6 +67,11 @@ pub fn validate_universe(universe: &ResolutionUniverse) -> Result<(), ResolverEr
     let mut requirement_count = 0usize;
     for package in &universe.packages {
         crate::normalize::validate_package_identity(&package.identity)?;
+        crate::normalize::validate_package_versions(
+            &package.identity,
+            &package.normalized_version,
+            &package.version_sort_key,
+        )?;
         let expected_node_id = package_node_id(package)?;
         if package.node_id != expected_node_id {
             return Err(ResolverError::InvalidInput(format!(

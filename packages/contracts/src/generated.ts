@@ -9085,7 +9085,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           amendments: {
             $comment:
-              'Authority-gated supersessions. Ignored unless policy.acceptedAmendmentAuthorities admits their authority.',
+              'Authority- and digest-gated supersessions. Ignored unless policy accepts both the amendment authority and its canonical amendment-v1 digest.',
             type: 'array',
             maxItems: 10000,
             items: {

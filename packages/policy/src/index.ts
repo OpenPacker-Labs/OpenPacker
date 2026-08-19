@@ -1,6 +1,7 @@
 import {
   canonicalDigest,
   compareCanonicalStrings,
+  formatDigest,
 } from '@openpacker/canonical';
 import type {
   Digest,
@@ -53,6 +54,7 @@ export interface PolicyDocument {
   semanticLossMaximum: 'info' | 'warning' | 'error';
   deniedSemanticLossCodes?: string[];
   requireExactSourceSnapshot?: boolean;
+  requiredSourceSnapshotDigests?: Digest[];
   permitForensicDigestMaterialization?: boolean;
   /**
    * pnpm minimumReleaseAge: minutes a version must age after publish before
@@ -131,6 +133,7 @@ export interface PolicyFacts {
   expandedSize?: number;
   semanticLoss?: SemanticLoss[];
   exactSourceSnapshot?: boolean;
+  sourceSnapshotDigests?: Digest[];
   forensicDigestMaterialization?: boolean;
   /** Package identity string used for exclude lists (purl or name). */
   packageId?: string;
@@ -349,7 +352,8 @@ export async function evaluatePolicy(
     );
     deny(
       'lifecycle.deprecated',
-      facts.lifecycle.status === 'deprecated' && !policy.allowDeprecated,
+      facts.lifecycle.status === 'deprecated' &&
+        policy.allowDeprecated === false,
       'Deprecated release policy',
     );
     deny(
@@ -461,6 +465,19 @@ export async function evaluatePolicy(
       facts.exactSourceSnapshot === false,
       'Exact source snapshot policy',
     );
+  if (policy.requiredSourceSnapshotDigests) {
+    const allowed = new Set(
+      policy.requiredSourceSnapshotDigests.map(formatDigest),
+    );
+    requireValue(
+      'source-snapshot-digest',
+      (facts.sourceSnapshotDigests?.length ?? 0) > 0,
+      facts.sourceSnapshotDigests?.some(
+        (digest) => !allowed.has(formatDigest(digest)),
+      ) ?? false,
+      'Required source snapshot digest policy',
+    );
+  }
   if (facts.forensicDigestMaterialization)
     deny(
       'forensic-materialization',
@@ -711,7 +728,10 @@ export function policyDocumentFromPolicyInput(
   const acceptedIdentities = new Set(input.acceptedSignerIdentityPatterns);
   for (const identity of input.sigstore?.identityPatterns ?? [])
     acceptedIdentities.add(identity);
-  if (acceptedIdentities.size > 0)
+  if (
+    input.acceptedSignerIdentityPatterns !== undefined ||
+    input.sigstore?.identityPatterns !== undefined
+  )
     document.acceptedIdentities = [...acceptedIdentities];
   if (input.sigstore?.issuerPatterns)
     document.acceptedIssuers = [...input.sigstore.issuerPatterns];
@@ -753,8 +773,9 @@ export function policyDocumentFromPolicyInput(
   if (input.expectedRegistryId !== undefined)
     document.expectedRegistryId = input.expectedRegistryId;
   if (input.requiredSourceSnapshotDigests !== undefined)
-    document.requireExactSourceSnapshot =
-      input.requiredSourceSnapshotDigests.length > 0;
+    document.requiredSourceSnapshotDigests = [
+      ...input.requiredSourceSnapshotDigests,
+    ];
   return document;
 }
 

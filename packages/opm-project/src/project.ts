@@ -678,6 +678,7 @@ async function resolveTransitive(input: {
           lifecycleScriptsExecuted: false,
           lifecycle: instance.lifecycle,
           semanticLoss: instance.semanticLoss,
+          sourceSnapshotDigests: instance.sourceSnapshots,
           ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
         },
       );

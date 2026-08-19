@@ -161,6 +161,9 @@ describe('supply-chain capture from npm inspect (real provider path)', () => {
     });
     expect(facts.lifecycle?.status).toBe('revoked');
     expect(facts.semanticLoss?.[0]?.code).toBe('TEST_LOSS');
+    expect(facts.sourceSnapshotDigests).toEqual(
+      inspection.package.sourceSnapshots,
+    );
     await expect(
       assertSupplyChainAllowed(
         policyDocumentFromPolicyInput(defaultSupplyChainPolicyInput()),

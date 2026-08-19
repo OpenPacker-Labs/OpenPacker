@@ -41,7 +41,7 @@ fn package(seed: char, name: &str, version: &str) -> PackageInstance {
             purl_type: "npm".into(),
             namespace: None,
             name: name.into(),
-            version: Some(identity_version),
+            version: Some(identity_version.clone()),
             qualifiers: BTreeMap::new(),
             subpath: None,
             native_coordinates: Vec::new(),
@@ -52,8 +52,8 @@ fn package(seed: char, name: &str, version: &str) -> PackageInstance {
             extensions: BTreeMap::new(),
         },
         native_version: version.into(),
-        normalized_version: version.into(),
-        version_sort_key: format!("{version:0>12}"),
+        normalized_version: identity_version.clone(),
+        version_sort_key: identity_version,
         requirements: Vec::new(),
         capabilities: Vec::new(),
         conflicts: Vec::new(),
@@ -91,6 +91,8 @@ fn set_identity(package: &mut PackageInstance, kind: &str, name: &str, version: 
     package.identity.version = Some(exact_purl.rsplit_once('@').unwrap().1.to_owned());
     package.identity.qualifiers.clear();
     package.identity.subpath = None;
+    package.normalized_version = package.identity.version.clone().unwrap();
+    package.version_sort_key = package.normalized_version.clone();
     package.node_id = digest_json(&json!({
         "identity": { "exactPurl": exact_purl, "qualifiers": {} },
         "nativeSemantics": { "version": "1" },
@@ -371,8 +373,8 @@ fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
         let version = format!("{index}.0.0");
         set_identity(&mut candidate, "npm", "demo", &version);
         candidate.native_version = version.clone();
-        candidate.normalized_version = version;
-        candidate.version_sort_key = format!("{index:04}");
+        candidate.normalized_version = version.clone();
+        candidate.version_sort_key = version;
         candidate.metadata_digest = Digest {
             algorithm: "sha256".into(),
             value: format!("{index:064x}"),
@@ -538,6 +540,20 @@ fn universe_rejects_asserted_node_ids_and_contradictory_identity_fields() {
     assert!(matches!(
         validate_universe(&input(vec![contradictory], Vec::new()).universe),
         Err(ResolverError::InvalidInput(message)) if message.contains("name contradicts")
+    ));
+
+    let mut forged_version = package('3', "victim", "1.0.0");
+    forged_version.normalized_version = "9.9.9".into();
+    assert!(matches!(
+        validate_universe(&input(vec![forged_version], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("normalizedVersion contradicts")
+    ));
+
+    let mut forged_sort = package('4', "victim", "1.0.0");
+    forged_sort.version_sort_key = "999999999999".into();
+    assert!(matches!(
+        validate_universe(&input(vec![forged_sort], Vec::new()).universe),
+        Err(ResolverError::InvalidInput(message)) if message.contains("versionSortKey contradicts")
     ));
 }
 

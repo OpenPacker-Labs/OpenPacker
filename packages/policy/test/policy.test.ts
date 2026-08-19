@@ -386,6 +386,9 @@ test('policyDocumentFromPolicyInput promotes normative schema knobs', async () =
       allowUnknown: false,
     },
     allowedTargets: [{ type: 'equals', path: '/os', value: 'linux' }],
+    requiredSourceSnapshotDigests: [
+      { algorithm: 'sha256', value: 'a'.repeat(64) },
+    ],
   };
   const document = policyDocumentFromPolicyInput(input);
   expect(document.minimumReleaseAgeMinutes).toBe(1440);
@@ -410,6 +413,68 @@ test('policyDocumentFromPolicyInput promotes normative schema knobs', async () =
     'legacy@example.test',
     'release@example.test',
   ]);
+  expect(document.requiredSourceSnapshotDigests).toEqual(
+    input.requiredSourceSnapshotDigests,
+  );
+});
+
+test('empty signer allowlists, deprecated defaults, and snapshot pins remain restrictive', async () => {
+  const emptySigners = policyDocumentFromPolicyInput({
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'warning',
+    requiredEvidence: [],
+    acceptedSignerIdentityPatterns: [],
+  });
+  expect(emptySigners.acceptedIdentities).toEqual([]);
+  expect(
+    (
+      await evaluatePolicy(emptySigners, {
+        evidence: [],
+        lifecycle: eligible,
+        signerIdentity: 'release@example.test',
+      })
+    ).decision,
+  ).toBe('deny');
+
+  expect(
+    (
+      await evaluatePolicy(
+        {
+          allowYanked: false,
+          allowQuarantined: false,
+          requiredEvidence: [],
+          semanticLossMaximum: 'warning',
+        },
+        {
+          evidence: [],
+          lifecycle: { status: 'deprecated', eligible: true, warnings: [] },
+        },
+      )
+    ).decision,
+  ).toBe('allow');
+
+  const pinned = policyDocumentFromPolicyInput({
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'warning',
+    requiredEvidence: [],
+    requiredSourceSnapshotDigests: [
+      { algorithm: 'sha256', value: 'a'.repeat(64) },
+    ],
+  });
+  const mismatch = await evaluatePolicy(pinned, {
+    evidence: [],
+    lifecycle: eligible,
+    sourceSnapshotDigests: [{ algorithm: 'sha256', value: 'b'.repeat(64) }],
+  });
+  expect(mismatch.decision).toBe('deny');
+  expect(mismatch.checks).toContainEqual(
+    expect.objectContaining({
+      code: 'source-snapshot-digest',
+      status: 'policy-denied',
+    }),
+  );
 });
 
 test('target predicates and configured evidence fail closed instead of disappearing', async () => {

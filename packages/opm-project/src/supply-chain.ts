@@ -10,6 +10,7 @@ import type {
   ProviderInspection,
 } from '@openpacker/adapter-core';
 import type {
+  Digest,
   LifecycleState,
   PolicyInput,
   SemanticLoss,
@@ -106,6 +107,7 @@ export function captureFactsFromInspection(
     evidence: [],
     lifecycle: inspection.package.lifecycle,
     semanticLoss: [...inspection.package.semanticLoss],
+    sourceSnapshotDigests: [...inspection.package.sourceSnapshots],
     packageId: exactPurl,
     evaluationTime: options.evaluationTime,
     provider: inspection.package.identity.purlType,
@@ -212,6 +214,7 @@ export function captureFactsFromSourceUri(
     lifecycleScriptsExecuted?: boolean;
     lifecycle?: LifecycleState;
     semanticLoss?: readonly SemanticLoss[];
+    sourceSnapshotDigests?: readonly Digest[];
     /**
      * Set when the URI came from a registry's own artifact record and its
      * origin was checked against that ecosystem's allowlist. Only the caller
@@ -232,6 +235,9 @@ export function captureFactsFromSourceUri(
     ...(options.semanticLoss === undefined
       ? {}
       : { semanticLoss: [...options.semanticLoss] }),
+    ...(options.sourceSnapshotDigests === undefined
+      ? {}
+      : { sourceSnapshotDigests: [...options.sourceSnapshotDigests] }),
     trustLevel: 'unknown',
     ...sourceFactsFromUri(sourceUri),
   };
