@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, rm } from 'node:fs/promises';
+import { lstat, open, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -530,16 +530,46 @@ export async function materializeLockPackage(input: {
       nativeRole: 'native-package',
     });
 
-    await rm(stableStorePath, { recursive: true, force: true });
-    await materialize({
-      source: bytesSource(bytes),
-      descriptor,
-      // materialize opens and holds its own stable parent authority. Passing a
-      // /proc/self/fd path would make that walker traverse the procfs symlink
-      // as though it were project data and can alias one of its own new fds.
-      destination: storePath,
-      format: input.pkg.format as ArchiveFormat,
-    });
+    const stagedName = `.${basename(storePath)}.materialize-${randomUUID()}`;
+    const stagedPath = join(paths.store, stagedName);
+    const stableStagedPath = join(stableHandlePath(storeHandle), stagedName);
+    try {
+      await materialize({
+        source: bytesSource(bytes),
+        descriptor,
+        // materialize opens and holds its own stable parent authority. Passing
+        // a /proc/self/fd path would make that walker traverse the procfs
+        // symlink as though it were project data and can alias one of its own
+        // new fds.
+        destination: stagedPath,
+        format: input.pkg.format as ArchiveFormat,
+      });
+      await revalidateStableDirectory(paths.store, storeHandle);
+      const backupName = `.${basename(storePath)}.replace-${randomUUID()}`;
+      const stableBackupPath = join(stableHandlePath(storeHandle), backupName);
+      let backedUp = false;
+      try {
+        await rename(stableStorePath, stableBackupPath);
+        backedUp = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      try {
+        await rename(stableStagedPath, stableStorePath);
+      } catch (error) {
+        if (backedUp) await rename(stableBackupPath, stableStorePath);
+        throw error;
+      }
+      if (backedUp)
+        await rm(stableBackupPath, { recursive: true, force: true });
+    } catch (error) {
+      await revalidateStableDirectory(paths.store, storeHandle);
+      throw error;
+    } finally {
+      await rm(stableStagedPath, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
     await revalidateStableDirectory(paths.store, storeHandle);
 
     let lifecycleScriptsExecuted = false;

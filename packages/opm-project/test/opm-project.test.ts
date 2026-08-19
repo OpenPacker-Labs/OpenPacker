@@ -668,6 +668,47 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
+  it('preserves the current store tree when replacement materialization fails', async () => {
+    const root = await tempProject();
+    const bytes = new Uint8Array(await readFile(fixtureTgz));
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const pkg = {
+      alias: 'demo-tool',
+      purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey: storeKeyFromDigest(digest),
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'npm',
+    };
+    const { storePath, bins } = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      bytes,
+    });
+    const bin = bins[0];
+    if (!bin) throw new Error('fixture must declare a bin');
+    const target = join(storePath, ...bin.path.split('/'));
+    const original = await readFile(target);
+
+    await expect(
+      materializeLockPackage({
+        root,
+        pkg: { ...pkg, format: 'zip' },
+        offline: true,
+        force: true,
+        bytes,
+      }),
+    ).rejects.toBeDefined();
+    expect(await readFile(target)).toEqual(original);
+  });
+
   it('rejects a store directory substituted during materialization', async () => {
     const root = await tempProject();
     const bytes = packTarGzip([
@@ -934,6 +975,29 @@ describe('environment generations', () => {
     expect((await readEnvironmentState(root))?.currentGenerationDigest).toBe(
       before[1]?.generationDigest,
     );
+  });
+
+  it('refuses to activate a retained generation whose store tree changed', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const installed = await readProjectState(projectPaths(root).projectState);
+    const target = installed?.packages['demo-tool']?.bins[0]?.target;
+    if (!target) throw new Error('expected installed executable');
+    await removePackage({ root, alias: 'demo-tool', offline: true });
+    const before = await readEnvironmentState(root);
+    await writeFile(target, 'tampered executable');
+
+    await expect(switchGeneration({ root, target: 1 })).rejects.toMatchObject({
+      code: 'DIGEST_MISMATCH',
+    });
+    expect(await readEnvironmentState(root)).toEqual(before);
+    expect(
+      (await readProjectState(projectPaths(root).projectState))?.packages,
+    ).toEqual({});
   });
 
   it('refuses to switch to an unknown generation', async () => {

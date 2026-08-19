@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readdir, type FileHandle } from 'node:fs/promises';
+import { lstat, open, readdir, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
@@ -15,6 +15,7 @@ import {
   projectPaths,
   readStableFile,
   readStableFileAt,
+  revalidateStableDirectory,
   removeStableFile,
   removeStableTree,
   resolveContained,
@@ -24,6 +25,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
+import { collectFiles } from '@openpacker/project-io';
 
 /**
  * The environment ledger.
@@ -44,6 +46,7 @@ export interface GenerationMember {
   purl: string;
   digest: string;
   storePath: string;
+  treeDigest: string;
 }
 
 export interface Generation {
@@ -117,6 +120,23 @@ const canonical = (value: unknown): string =>
 
 const sha256 = (text: string): string =>
   `sha256:${createHash('sha256').update(text).digest('hex')}`;
+
+async function storeTreeDigest(path: string): Promise<string> {
+  const files = await collectFiles(path);
+  return sha256(
+    canonical(
+      files
+        .map((file) => ({
+          path: file.path,
+          executable: file.executable,
+          digest: `sha256:${createHash('sha256')
+            .update(file.contents)
+            .digest('hex')}`,
+        }))
+        .sort((left, right) => (left.path < right.path ? -1 : 1)),
+    ),
+  );
+}
 
 /**
  * The digest of a generation excludes the field that carries it, so it stays
@@ -366,14 +386,17 @@ export async function recordGeneration(input: {
     0,
   );
 
-  const members: GenerationMember[] = Object.values(input.packages)
-    .map((record) => ({
-      alias: record.alias,
-      purl: record.purl,
-      digest: record.digest,
-      storePath: record.storePath,
-    }))
-    .sort((left, right) => (left.alias < right.alias ? -1 : 1));
+  const members: GenerationMember[] = (
+    await Promise.all(
+      Object.values(input.packages).map(async (record) => ({
+        alias: record.alias,
+        purl: record.purl,
+        digest: record.digest,
+        storePath: record.storePath,
+        treeDigest: await storeTreeDigest(record.storePath),
+      })),
+    )
+  ).sort((left, right) => (left.alias < right.alias ? -1 : 1));
 
   // Edges go to the store ledger, not into the generation record: gc forgets
   // non-retained generations, and edges kept there would be forgotten with
@@ -735,6 +758,40 @@ export async function activateGeneration(input: {
         );
       }
       try {
+        await revalidateStableDirectory(paths.store, store);
+        const [handleBefore, namedBefore] = await Promise.all([
+          handle.stat({ bigint: true }),
+          lstat(expected, { bigint: true }),
+        ]);
+        if (
+          handleBefore.dev !== namedBefore.dev ||
+          handleBefore.ino !== namedBefore.ino
+        )
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path changed while validating ${expected}`,
+          );
+        const actualTreeDigest = await storeTreeDigest(expected);
+        const [handleAfter, namedAfter] = await Promise.all([
+          handle.stat({ bigint: true }),
+          lstat(expected, { bigint: true }),
+        ]);
+        await revalidateStableDirectory(paths.store, store);
+        if (
+          handleBefore.dev !== handleAfter.dev ||
+          handleBefore.ino !== handleAfter.ino ||
+          handleAfter.dev !== namedAfter.dev ||
+          handleAfter.ino !== namedAfter.ino
+        )
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Generation store path changed while validating ${expected}`,
+          );
+        if (actualTreeDigest !== member.treeDigest)
+          throw new OpmError(
+            'DIGEST_MISMATCH',
+            `Generation ${input.generation.sequence} store tree does not match ${member.treeDigest}`,
+          );
         const bins = await discoverBins(stableHandlePath(handle), ecosystem);
         for (const bin of bins) {
           const name = assertSafeSegment(bin.name, 'bin name');

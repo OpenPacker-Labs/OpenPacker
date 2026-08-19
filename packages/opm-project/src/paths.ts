@@ -397,7 +397,20 @@ export async function revalidateStableDirectory(
   path: string,
   handle: FileHandle,
 ): Promise<void> {
-  await assertNamedDirectory(path, handle);
+  try {
+    await assertNamedDirectory(path, handle);
+  } catch (error) {
+    if (
+      ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(
+        (error as NodeJS.ErrnoException).code ?? '',
+      )
+    )
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `Directory changed while it was in use: ${path}`,
+      );
+    throw error;
+  }
 }
 
 export async function removeStableFile(path: string): Promise<void> {
