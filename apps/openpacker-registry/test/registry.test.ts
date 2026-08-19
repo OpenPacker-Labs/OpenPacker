@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalDigest, formatDigest } from '@openpacker/canonical';
 import { Ed25519Signer } from '@openpacker/trust';
 import { RegistryClient } from '@openpacker/registry-client';
@@ -72,20 +72,66 @@ async function signed(value: PackageManifest, keyId = 'publisher-1') {
         role: 'publisher' as const,
       },
     ],
-    namespaceProof: {
-      namespace: 'com.example',
-      method: 'registry-configured' as const,
-      keyId,
-    },
   };
 }
 
-function registry(overrides: Record<string, unknown> = {}) {
+async function signedStatus(
+  name: string,
+  version: string,
+  status: 'active' | 'deprecated' | 'deleted',
+  options: {
+    eventId?: string;
+    issuedAt?: string;
+    keyId?: string;
+    key?: JsonWebKey;
+  } = {},
+) {
+  const update = {
+    statusUpdateVersion: '1' as const,
+    eventId: options.eventId ?? `${name}@${version}:${status}`,
+    name,
+    version,
+    status,
+    reason: `test transition to ${status}`,
+    issuedAt: options.issuedAt ?? '2026-08-10T00:00:00.000Z',
+  };
+  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  const keyId = options.keyId ?? 'publisher-1';
+  const signer = await Ed25519Signer.fromJwk(keyId, options.key ?? keys.leaf!);
+  return {
+    update,
+    updateDigest,
+    signatures: [
+      {
+        algorithm: 'ed25519' as const,
+        keyId,
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(updateDigest)),
+        ),
+        role: 'publisher' as const,
+      },
+    ],
+  };
+}
+
+function registry(
+  overrides: Record<string, unknown> = {},
+  bindPublisher = true,
+) {
+  const store =
+    (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
+  if (bindPublisher)
+    store.trustKey(
+      'com.example',
+      'publisher-1',
+      'registry-configured',
+      '2026-08-10T00:00:00.000Z',
+    );
   return createRegistry({
     registryId: 'urn:openpacker:registry:test',
     displayName: 'test registry',
     purlTypes: ['npm'],
-    store: new RegistryStore(),
+    store,
     publisherKeys: { 'publisher-1': keys.leaf! },
     clock: { now: () => '2026-08-10T00:00:00.000Z' },
     ...overrides,
@@ -124,6 +170,7 @@ describe('service index', () => {
     expect(types).toContain('prex.registry.sync/1');
     // Advertising artifact/1 would promise bytes this registry does not hold.
     expect(types).not.toContain('prex.registry.artifact/1');
+    expect(types).not.toContain('prex.registry.key-lifecycle/1');
     await app.close();
   });
 });
@@ -228,11 +275,15 @@ describe('publish', () => {
         ...body,
         // A well-formed manifest inside a request this registry cannot act on
         // is still a request it cannot act on.
-        namespaceProof: { namespace: 'Example', method: 'dns-txt', keyId: 'k' },
+        namespaceProof: {
+          namespace: 'com.attacker',
+          method: 'dns-txt',
+          keyId: 'publisher-1',
+        },
       },
     });
     expect(response.statusCode).toBe(400);
-    expect(response.json().detail).toMatch(/\/namespaceProof\/namespace/);
+    expect(response.json().detail).toMatch(/additional properties/u);
     await app.close();
   });
 
@@ -270,14 +321,27 @@ describe('publish', () => {
   });
 
   it('refuses a key with no claim to the name', async () => {
-    const app = registry();
+    const app = registry({}, false);
     const body = await signed(manifest());
+    const selfAuthorized = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: {
+        ...body,
+        namespaceProof: {
+          namespace: 'com.example',
+          method: 'dns-txt',
+          keyId: 'publisher-1',
+        },
+      },
+    });
+    expect(selfAuthorized.statusCode).toBe(400);
     // A valid signature on a name this key was never bound to is a valid
-    // signature on a squatted name.
+    // signature on a squatted name. The refused proof above must not persist.
     const response = await app.inject({
       method: 'POST',
       url: '/v1/publish',
-      payload: { ...body, namespaceProof: undefined },
+      payload: body,
     });
     expect(response.statusCode).toBe(403);
     expect(response.json().code).toBe('POLICY_DENIED');
@@ -323,7 +387,11 @@ describe('reading, through the real client', () => {
       payload: await signed(manifest()),
     });
 
-    const client = clientFor(app, { keys: { 'publisher-1': keys.leaf! } });
+    const client = clientFor(app, {
+      keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
+      clock: () => Date.parse('2026-08-10T00:00:00.000Z'),
+    });
     const entry = await client.entry('com.example.demo', '1.2.3');
     expect(entry.manifest.version).toBe('1.2.3');
     // The wire contract is exercised by a real consumer, not asserted.
@@ -360,7 +428,7 @@ describe('reading, through the real client', () => {
     await app.inject({
       method: 'PATCH',
       url: '/v1/packages/com.example.demo/versions/1.2.3/status',
-      payload: { status: 'deleted' },
+      payload: await signedStatus('com.example.demo', '1.2.3', 'deleted'),
     });
 
     const client = clientFor(app);
@@ -370,6 +438,164 @@ describe('reading, through the real client', () => {
     expect(entry.registryMetadata.status).toBe('deleted');
     const page = await client.list({});
     expect(page.packages).toHaveLength(0);
+    await app.close();
+  });
+
+  it('requires a fresh namespace signature and rejects lifecycle replays', async () => {
+    const app = registry({
+      publisherKeys: {
+        'publisher-1': keys.leaf!,
+        'publisher-2': keys.log!,
+      },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    const route = '/v1/packages/com.example.demo/versions/1.2.3/status';
+
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: route,
+          payload: { status: 'deleted' },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: route,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'deleted', {
+            eventId: 'wrong-namespace',
+            keyId: 'publisher-2',
+            key: keys.log!,
+          }),
+        })
+      ).statusCode,
+    ).toBe(403);
+    const mismatched = await signedStatus(
+      'com.example.demo',
+      '1.2.3',
+      'deleted',
+      { eventId: 'digest-mismatch' },
+    );
+    mismatched.update.reason = 'changed after signing';
+    expect(
+      (await app.inject({ method: 'PATCH', url: route, payload: mismatched }))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: route,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'deleted', {
+            eventId: 'stale',
+            issuedAt: '2026-08-09T23:54:59.000Z',
+          }),
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/packages/com.example.demo/versions/1.2.3',
+        })
+      ).json().registryMetadata.status,
+    ).toBe('active');
+
+    const accepted = await signedStatus(
+      'com.example.demo',
+      '1.2.3',
+      'deleted',
+      { eventId: 'accepted-delete' },
+    );
+    expect(
+      (await app.inject({ method: 'PATCH', url: route, payload: accepted }))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (await app.inject({ method: 'PATCH', url: route, payload: accepted }))
+        .statusCode,
+    ).toBe(409);
+    await app.close();
+  });
+
+  it('rejects lifecycle rollback while scoping event ids to each package', async () => {
+    const store = new RegistryStore();
+    store.trustKey('com.example', 'publisher-1', 'registry-configured');
+    store.trustKey('org.other', 'publisher-2', 'registry-configured');
+    const app = registry({
+      store,
+      clock: { now: () => '2026-08-10T00:02:00.000Z' },
+      publisherKeys: {
+        'publisher-1': keys.leaf!,
+        'publisher-2': keys.log!,
+      },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest()),
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signedWith(
+        'publisher-2',
+        keys.log!,
+        manifest('org.other.demo', '1.0.0'),
+      ),
+    });
+    const firstRoute = '/v1/packages/com.example.demo/versions/1.2.3/status';
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: firstRoute,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'deleted', {
+            eventId: 'shared-event',
+            issuedAt: '2026-08-10T00:01:00.000Z',
+          }),
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: firstRoute,
+          payload: await signedStatus('com.example.demo', '1.2.3', 'active', {
+            eventId: 'older-event',
+            issuedAt: '2026-08-10T00:00:30.000Z',
+          }),
+        })
+      ).statusCode,
+    ).toBe(409);
+    const other = await app.inject({
+      method: 'PATCH',
+      url: '/v1/packages/org.other.demo/versions/1.0.0/status',
+      payload: await signedStatus('org.other.demo', '1.0.0', 'deprecated', {
+        eventId: 'shared-event',
+        issuedAt: '2026-08-10T00:01:00.000Z',
+        keyId: 'publisher-2',
+        key: keys.log!,
+      }),
+    });
+    expect(other.statusCode).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: firstRoute.replace('/status', ''),
+        })
+      ).json().registryMetadata.status,
+    ).toBe('deleted');
     await app.close();
   });
 
@@ -561,6 +787,46 @@ describe('federation over external sources', () => {
     await up.close();
     await local.close();
   });
+
+  it('drops digest-inconsistent search results and marks the source unavailable', async () => {
+    const up = await upstream();
+    const local = registry({
+      store: new RegistryStore(),
+      sources: [{ id: 'corrupt', spec: { kind: 'prex', url: BASE } }],
+      registryClientFactory: () =>
+        new RegistryClient({
+          baseUrl: BASE,
+          transport: {
+            async request(request: HttpRequest): Promise<HttpResponse> {
+              const response = await up.inject({
+                method: 'GET',
+                url: request.url.replace(BASE, ''),
+              });
+              const body = response.json();
+              if (request.url.includes('/v1/packages?'))
+                body.packages[0].registryMetadata.manifestDigest.value =
+                  'f'.repeat(64);
+              return {
+                status: response.statusCode,
+                headers: response.headers as Record<string, string>,
+                body: new TextEncoder().encode(JSON.stringify(body)),
+                url: request.url,
+              };
+            },
+          },
+        }),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages?search=upstream-only',
+    });
+    expect(response.json().packages).toEqual([]);
+    expect(response.json().metadata.unavailable).toEqual([
+      { sourceId: 'corrupt', reason: expect.stringMatching(/hashes to/u) },
+    ]);
+    await up.close();
+    await local.close();
+  });
 });
 
 describe('serviceability through the registry', () => {
@@ -585,6 +851,28 @@ describe('serviceability through the registry', () => {
 
   /** Let the fire-and-forget check settle before asserting. */
   const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  it('does not derive egress authority from publisher locations', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const app = registry();
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/publish',
+        payload: await signed(manifest()),
+      });
+      await app.inject({
+        method: 'GET',
+        url: '/v1/packages/com.example.demo/versions/1.2.3',
+      });
+      await settle();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await app.close();
+    }
+  });
 
   it('checks what a manifest advertises because someone asked for it', async () => {
     const { probes, transport } = probing();
@@ -821,18 +1109,82 @@ describe('key lifecycle', () => {
     expect(response.statusCode).toBe(201);
     await app.close();
   });
+
+  it('does not let a revoked successor rotate authority again', async () => {
+    const app = await signing();
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationFrom(
+            'publisher-1',
+            keys.leaf!,
+            'publisher-2',
+            keys.log!,
+            '2026-08-10T00:01:00.000Z',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationFrom(
+            'publisher-2',
+            keys.log!,
+            'publisher-3',
+            keys.root!,
+            '2026-08-10T00:02:00.000Z',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationFrom(
+        'publisher-2',
+        keys.log!,
+        'attacker',
+        keys.leaf!,
+        '2026-08-10T00:03:00.000Z',
+      ),
+    });
+    expect(rejected.statusCode).toBe(403);
+    expect(rejected.json().detail).toMatch(/revoked/u);
+    await app.close();
+  });
 });
 
 /** A rotation from publisher-1 to `nextKeyId`, signed by publisher-1. */
 async function rotationTo(nextKeyId: string, nextJwk: JsonWebKey) {
+  return rotationFrom(
+    'publisher-1',
+    keys.leaf!,
+    nextKeyId,
+    nextJwk,
+    '2026-08-11T00:00:00.000Z',
+  );
+}
+
+async function rotationFrom(
+  previousKeyId: string,
+  previousJwk: JsonWebKey,
+  nextKeyId: string,
+  nextJwk: JsonWebKey,
+  rotatedAt: string,
+) {
   const { rotationMessage } = await import('../src/keys.js');
   const unsigned = {
-    previousKeyId: 'publisher-1',
+    previousKeyId,
     nextKeyId,
     nextPublicKey: { kty: 'OKP', crv: 'Ed25519', x: nextJwk.x! },
-    rotatedAt: '2026-08-11T00:00:00.000Z',
+    rotatedAt,
   };
-  const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+  const signer = await Ed25519Signer.fromJwk(previousKeyId, previousJwk);
   return {
     ...unsigned,
     signature: await signer.sign(await rotationMessage(unsigned)),
@@ -860,10 +1212,5 @@ async function signedWith(
         role: 'publisher' as const,
       },
     ],
-    namespaceProof: {
-      namespace: 'com.example',
-      method: 'registry-configured' as const,
-      keyId,
-    },
   };
 }

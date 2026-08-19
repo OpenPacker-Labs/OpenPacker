@@ -86,6 +86,35 @@ describe('addressing', () => {
 });
 
 describe('browsing and pinning', () => {
+  it('rejects an unconfigured registry before fetch', async () => {
+    const contacted: string[] = [];
+    const fetchImplementation = (async (url: URL | string) => {
+      contacted.push(String(url));
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const reference =
+      'pkg:oci/demo?repository_url=evil.example/acme/demo&tag=latest';
+    await expect(
+      new OciRegistryProvider({ fetch: fetchImplementation }).inspect(
+        reference,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(contacted).toEqual([]);
+  });
+
+  it('allows an exact operator-configured registry origin', async () => {
+    const { fetchImplementation } = registry();
+    const provider = new OciRegistryProvider({
+      fetch: fetchImplementation,
+      allowedRegistryOrigins: ['https://registry.example'],
+    });
+    await expect(
+      provider.enumerate(
+        'pkg:oci/demo?repository_url=registry.example/acme/demo',
+      ),
+    ).resolves.toHaveLength(2);
+  });
+
   it('lists tags as browsable references', async () => {
     const { fetchImplementation } = registry();
     const provider = new OciRegistryProvider({ fetch: fetchImplementation });

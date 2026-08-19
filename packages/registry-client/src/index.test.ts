@@ -226,6 +226,77 @@ describe('RegistryClient pagination', () => {
       for await (const _ of client.listAll()) void _;
     }).rejects.toMatchObject({ code: 'INVALID_PROVIDER_RESPONSE' });
   });
+
+  it('bounds unique pages, entries, bytes, and cursor length before yielding excess data', async () => {
+    const one = await entryFor(manifest('one'));
+    const two = await entryFor(manifest('two'));
+    const cases = [
+      {
+        limits: { maximumPages: 1 },
+        page: { packages: [one], metadata: { count: 1, nextCursor: 'next' } },
+        expected: /pages/u,
+      },
+      {
+        limits: { maximumEntries: 1 },
+        page: {
+          packages: [one, two],
+          metadata: { count: 2, nextCursor: null },
+        },
+        expected: /entries/u,
+      },
+      {
+        limits: { maximumBytes: 1 },
+        page: { packages: [], metadata: { count: 0, nextCursor: null } },
+        expected: /bytes/u,
+      },
+      {
+        limits: { maximumCursorLength: 3 },
+        page: { packages: [], metadata: { count: 0, nextCursor: 'long' } },
+        expected: /cursor/u,
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const { transport } = fixtureTransport({
+        '/.well-known/prex-registry': definition(),
+        '/v1/packages': testCase.page,
+      });
+      const client = new RegistryClient({
+        baseUrl: BASE,
+        transport,
+        paginationLimits: testCase.limits,
+      });
+      await expect(async () => {
+        for await (const _entry of client.listAll()) void _entry;
+      }).rejects.toThrow(testCase.expected);
+    }
+  });
+
+  it('imposes a pagination deadline when the caller omits one', async () => {
+    const transport = {
+      async request(request: HttpRequest): Promise<HttpResponse> {
+        if (request.url.endsWith('/.well-known/prex-registry'))
+          return {
+            status: 200,
+            headers: {},
+            body: new TextEncoder().encode(JSON.stringify(definition())),
+            url: request.url,
+          };
+        return new Promise((_resolve, reject) => {
+          const abort = () => reject(request.signal?.reason);
+          request.signal?.addEventListener('abort', abort, { once: true });
+          if (request.signal?.aborted) abort();
+        });
+      },
+    };
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      paginationLimits: { maximumElapsedMilliseconds: 5 },
+    });
+    await expect(async () => {
+      for await (const _entry of client.listAll()) void _entry;
+    }).rejects.toThrow(/milliseconds/u);
+  });
 });
 
 describe('RegistryClient verification', () => {
@@ -378,17 +449,7 @@ describe('RegistryClient revocation', () => {
         'prex.registry.key-lifecycle/1',
       ]),
       '/v1/packages/demo-tool/versions/1.2.3': dated,
-      '/v1/revocations': {
-        list: {
-          revocationListVersion: '1',
-          registryId: 'urn:openpacker:registry:example',
-          serial,
-          issuedAt: '2026-08-11T00:00:00.000Z',
-          revoked,
-        },
-        listDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
-        signatures: [],
-      },
+      '/v1/revocations': await signedRevocationList(revoked, serial),
     });
   };
 
@@ -405,6 +466,7 @@ describe('RegistryClient revocation', () => {
       baseUrl: BASE,
       transport,
       keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -430,6 +492,7 @@ describe('RegistryClient revocation', () => {
       baseUrl: BASE,
       transport,
       keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -454,6 +517,7 @@ describe('RegistryClient revocation', () => {
       baseUrl: BASE,
       transport,
       keys: { 'publisher-1': keys.leaf! },
+      registryKeys: { 'test-registry': keys.root! },
     });
     const result = await client.verifyEntry(
       await client.entry('demo-tool', '1.2.3'),
@@ -480,6 +544,7 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
+      registryKeys: { 'test-registry': keys.root! },
       revocationTtlMilliseconds: 1000,
       clock: () => now,
     });
@@ -508,6 +573,7 @@ describe('RegistryClient revocation', () => {
     const client = new RegistryClient({
       baseUrl: BASE,
       transport,
+      registryKeys: { 'test-registry': keys.root! },
       revocationTtlMilliseconds: 1000,
       clock: () => now,
     });
@@ -521,7 +587,95 @@ describe('RegistryClient revocation', () => {
       code: 'STALE_METADATA',
     });
   });
+
+  it.each(['digest', 'signature', 'registry', 'expiry'] as const)(
+    'rejects unauthenticated revocation metadata with a bad %s',
+    async (bad) => {
+      const document = await signedRevocationList([], 1, {
+        ...(bad === 'registry'
+          ? { registryId: 'urn:openpacker:registry:other' }
+          : {}),
+        ...(bad === 'expiry' ? { expiresAt: '2026-08-10T00:00:00.000Z' } : {}),
+      });
+      if (bad === 'digest') document.listDigest.value = '0'.repeat(64);
+      if (bad === 'signature') document.signatures[0]!.signature = 'AAAA';
+      const { transport } = fixtureTransport({
+        '/.well-known/prex-registry': definition([
+          ...ALL_RESOURCES,
+          'prex.registry.key-lifecycle/1',
+        ]),
+        '/v1/revocations': document,
+      });
+      const client = new RegistryClient({
+        baseUrl: BASE,
+        transport,
+        registryKeys: { 'test-registry': keys.root! },
+      });
+      await expect(client.revocations()).rejects.toBeTruthy();
+    },
+  );
+
+  it('does not let a publisher key authenticate registry metadata', async () => {
+    const document = await signedRevocationList([], 1);
+    const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
+    document.signatures = [
+      {
+        algorithm: 'ed25519',
+        keyId: 'publisher-1',
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(document.listDigest)),
+        ),
+        role: 'registry',
+      },
+    ];
+    const { transport } = fixtureTransport({
+      '/.well-known/prex-registry': definition([
+        ...ALL_RESOURCES,
+        'prex.registry.key-lifecycle/1',
+      ]),
+      '/v1/revocations': document,
+    });
+    const client = new RegistryClient({
+      baseUrl: BASE,
+      transport,
+      keys: { 'publisher-1': keys.leaf! },
+    });
+    await expect(client.revocations()).rejects.toMatchObject({
+      code: 'INVALID_SIGNATURE',
+    });
+  });
 });
+
+async function signedRevocationList(
+  revoked: unknown[],
+  serial: number,
+  options: { registryId?: string; issuedAt?: string; expiresAt?: string } = {},
+) {
+  const list = {
+    revocationListVersion: '1' as const,
+    registryId: options.registryId ?? 'urn:openpacker:registry:example',
+    serial,
+    issuedAt: options.issuedAt ?? '2026-08-11T00:00:00.000Z',
+    expiresAt: options.expiresAt ?? '2099-01-01T00:00:00.000Z',
+    revoked,
+  };
+  const listDigest = await canonicalDigest(list as unknown as JsonValue);
+  const signer = await Ed25519Signer.fromJwk('test-registry', keys.root!);
+  return {
+    list,
+    listDigest,
+    signatures: [
+      {
+        algorithm: 'ed25519' as const,
+        keyId: 'test-registry',
+        signature: await signer.sign(
+          new TextEncoder().encode(formatDigest(listDigest)),
+        ),
+        role: 'registry' as const,
+      },
+    ],
+  };
+}
 
 /** A transport whose revocation list is produced fresh on every read. */
 function revocationTransport(
@@ -531,17 +685,9 @@ function revocationTransport(
     async request(request: HttpRequest): Promise<HttpResponse> {
       const state = current();
       const body = request.url.endsWith('/v1/revocations')
-        ? {
-            list: {
-              revocationListVersion: '1',
-              registryId: 'urn:openpacker:registry:example',
-              serial: state.serial,
-              issuedAt: '2026-08-11T00:00:00.000Z',
-              revoked: state.revoked,
-            },
-            listDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
-            signatures: [],
-          }
+        ? await signedRevocationList(state.revoked, state.serial, {
+            issuedAt: '1970-01-01T00:00:00.000Z',
+          })
         : definition([...ALL_RESOURCES, 'prex.registry.key-lifecycle/1']);
       return {
         status: 200,

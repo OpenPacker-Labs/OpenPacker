@@ -6,6 +6,7 @@ import { collectStream, streamFromBytes } from '@openpacker/artifact-model';
 import {
   BearerTokenAuthentication,
   OCI_EMPTY_CONFIG_BYTES,
+  OCI_MEDIA_TYPES,
   OciImageLayout,
   OciRegistryClient,
   ociDescriptor,
@@ -194,6 +195,147 @@ describe('OCI Distribution client', () => {
       code: 'PAGINATION_LOOP',
     });
   });
+
+  it('fetches and verifies referrer subject and artifact type bindings', async () => {
+    const subject = await ociDescriptor(
+      new TextEncoder().encode('subject'),
+      'application/vnd.test.subject',
+    );
+    const artifactType = 'application/vnd.test.attestation';
+    const manifestBytes = new TextEncoder().encode(
+      JSON.stringify({
+        schemaVersion: 2,
+        mediaType: OCI_MEDIA_TYPES.manifest,
+        artifactType,
+        config: await ociDescriptor(
+          OCI_EMPTY_CONFIG_BYTES,
+          OCI_MEDIA_TYPES.emptyConfig,
+        ),
+        layers: [],
+        subject,
+      }),
+    );
+    const referrer = await ociDescriptor(
+      manifestBytes,
+      OCI_MEDIA_TYPES.manifest,
+      { artifactType },
+    );
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      fetch: async (input) =>
+        String(input).includes('/referrers/')
+          ? new Response(
+              JSON.stringify({
+                schemaVersion: 2,
+                mediaType: OCI_MEDIA_TYPES.index,
+                manifests: [referrer],
+              }),
+              { status: 200 },
+            )
+          : new Response(manifestBytes, {
+              status: 200,
+              headers: { 'content-type': OCI_MEDIA_TYPES.manifest },
+            }),
+    });
+    await expect(client.listReferrers(subject, artifactType)).resolves.toEqual([
+      referrer,
+    ]);
+  });
+
+  it.each(['subject', 'artifact type', 'index descriptor'] as const)(
+    'rejects a referrer with a mismatched %s binding',
+    async (mismatch) => {
+      const subject = await ociDescriptor(
+        new TextEncoder().encode('subject'),
+        'application/vnd.test.subject',
+      );
+      const wrongSubject = await ociDescriptor(
+        new TextEncoder().encode('other'),
+        'application/vnd.test.subject',
+      );
+      const artifactType = 'application/vnd.test.attestation';
+      const manifestBytes = new TextEncoder().encode(
+        JSON.stringify({
+          schemaVersion: 2,
+          mediaType: OCI_MEDIA_TYPES.manifest,
+          artifactType:
+            mismatch === 'artifact type'
+              ? 'application/vnd.test.other'
+              : artifactType,
+          config: await ociDescriptor(
+            OCI_EMPTY_CONFIG_BYTES,
+            OCI_MEDIA_TYPES.emptyConfig,
+          ),
+          layers: [],
+          subject: mismatch === 'subject' ? wrongSubject : subject,
+        }),
+      );
+      const referrer = await ociDescriptor(
+        manifestBytes,
+        OCI_MEDIA_TYPES.manifest,
+        { artifactType },
+      );
+      const indexed =
+        mismatch === 'index descriptor'
+          ? { ...referrer, size: referrer.size + 1 }
+          : referrer;
+      const client = new OciRegistryClient({
+        registry: 'https://registry.example',
+        repository: 'openpacker/demo',
+        fetch: async (input) =>
+          String(input).includes('/referrers/')
+            ? new Response(
+                JSON.stringify({
+                  schemaVersion: 2,
+                  mediaType: OCI_MEDIA_TYPES.index,
+                  manifests: [indexed],
+                }),
+                { status: 200 },
+              )
+            : new Response(manifestBytes, {
+                status: 200,
+                headers: { 'content-type': OCI_MEDIA_TYPES.manifest },
+              }),
+      });
+      await expect(
+        client.listReferrers(subject, artifactType),
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    },
+  );
+
+  it('rejects oversized referrer manifests before fetching them', async () => {
+    const subject = await ociDescriptor(
+      new TextEncoder().encode('subject'),
+      'application/vnd.test.subject',
+    );
+    let requests = 0;
+    const client = new OciRegistryClient({
+      registry: 'https://registry.example',
+      repository: 'openpacker/demo',
+      fetch: async () => {
+        requests += 1;
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 2,
+            mediaType: OCI_MEDIA_TYPES.index,
+            manifests: [
+              {
+                digest: `sha256:${'a'.repeat(64)}`,
+                mediaType: OCI_MEDIA_TYPES.manifest,
+                size: 1024 * 1024 + 1,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await expect(client.listReferrers(subject)).rejects.toMatchObject({
+      code: 'PAGINATION_LIMIT',
+    });
+    expect(requests).toBe(1);
+  });
 });
 
 describe('tag listing and bearer authentication', () => {
@@ -241,8 +383,7 @@ describe('tag listing and bearer authentication', () => {
     });
   });
 
-  it('terminates when a registry keeps pointing at the same page', async () => {
-    // A self-referential next-link would otherwise loop forever.
+  it('rejects a registry that repeats a pagination page', async () => {
     const fetchImplementation = (async () =>
       jsonResponse(
         { tags: ['1.0'] },
@@ -253,7 +394,65 @@ describe('tag listing and bearer authentication', () => {
       repository: 'demo',
       fetch: fetchImplementation,
     });
-    expect(await client.listTags()).toEqual(['1.0']);
+    await expect(client.listTags()).rejects.toMatchObject({
+      code: 'PAGINATION_LOOP',
+    });
+  });
+
+  it('bounds tag pages, tags, response bytes, and cursor length', async () => {
+    const cases = [
+      {
+        limits: { maximumPages: 1 },
+        body: { tags: ['1.0'] },
+        link: '</v2/demo/tags/list?last=1.0>; rel="next"',
+      },
+      { limits: { maximumTags: 1 }, body: { tags: ['1.0', '2.0'] } },
+      { limits: { maximumBytes: 8 }, body: { tags: ['1.0'] } },
+      {
+        limits: { maximumCursorLength: 4 },
+        body: { tags: ['1.0'] },
+        link: '</v2/demo/tags/list?last=abcdef>; rel="next"',
+      },
+    ] as const;
+    for (const item of cases) {
+      const client = new OciRegistryClient({
+        registry: 'https://registry.test',
+        repository: 'demo',
+        tagLimits: item.limits,
+        fetch: async () =>
+          jsonResponse(
+            item.body,
+            'link' in item && item.link ? { link: item.link } : {},
+          ),
+      });
+      await expect(client.listTags()).rejects.toBeTruthy();
+    }
+  });
+
+  it('rejects invalid tags and aborts a stalled listing at the deadline', async () => {
+    const invalid = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      fetch: async () => jsonResponse({ tags: ['-invalid'] }),
+    });
+    await expect(invalid.listTags()).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+
+    const stalled = new OciRegistryClient({
+      registry: 'https://registry.test',
+      repository: 'demo',
+      tagLimits: { maximumElapsedMilliseconds: 10 },
+      fetch: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal!.reason),
+          ),
+        ),
+    });
+    await expect(stalled.listTags()).rejects.toMatchObject({
+      code: 'PAGINATION_LIMIT',
+    });
   });
 
   it('performs the anonymous bearer handshake and caches the token', async () => {
@@ -288,6 +487,7 @@ describe('tag listing and bearer authentication', () => {
       fetch: fetchImplementation,
       authentication: new BearerTokenAuthentication({
         fetch: fetchImplementation,
+        allowedTokenOrigins: ['https://auth.test'],
       }),
     });
     expect(await client.listTags()).toEqual(['1.0']);
@@ -298,6 +498,22 @@ describe('tag listing and bearer authentication', () => {
 });
 
 describe('credentials are not handed to a server-nominated endpoint', () => {
+  it('requires credentials to be bound to an exact registry origin', () => {
+    expect(
+      () =>
+        new BearerTokenAuthentication({
+          credentials: { username: 'alice', password: 'hunter2' },
+        }),
+    ).toThrow(/registryOrigin/u);
+    expect(
+      () =>
+        new BearerTokenAuthentication({
+          credentials: { username: 'alice', password: 'hunter2' },
+          registryOrigin: 'https://registry.test/path',
+        }),
+    ).toThrow(/exact HTTPS origin/u);
+  });
+
   const challenge = (realm: string) =>
     new Response('', {
       status: 401,
@@ -329,6 +545,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       credentials: { username: 'alice', password: 'hunter2' },
+      registryOrigin: 'https://registry.test',
     });
     await expect(
       auth.headers(
@@ -354,6 +571,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       credentials: { username: 'alice', password: 'hunter2' },
+      registryOrigin: 'https://registry.test',
     });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
@@ -368,6 +586,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       credentials: { username: 'alice', password: 'hunter2' },
+      registryOrigin: 'https://registry.test',
       allowedTokenOrigins: ['https://auth.internal'],
     });
     await expect(
@@ -375,16 +594,79 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     ).resolves.toMatchObject({ authorization: 'Bearer ok' });
   });
 
-  it('still performs the anonymous flow against any HTTPS realm', async () => {
-    // Anonymous discloses nothing, so compatibility is kept where it is free.
+  it('rejects a different registry before contacting it', async () => {
+    const contacted: string[] = [];
+    const auth = new BearerTokenAuthentication({
+      fetch: (async (url: URL | string) => {
+        contacted.push(String(url));
+        return new Response(null, { status: 200 });
+      }) as unknown as typeof fetch,
+      credentials: { username: 'alice', password: 'hunter2' },
+      registryOrigin: 'https://registry.test',
+    });
+    await expect(
+      auth.headers(new URL('https://evil.example/v2/demo/tags/list'), 's'),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted).toEqual([]);
+  });
+
+  it('rejects an unconfigured anonymous token origin before contacting it', async () => {
+    const contacted: string[] = [];
     const fetchImplementation = (async (url: URL | string) =>
       String(url).startsWith('https://auth.elsewhere/')
-        ? new Response(JSON.stringify({ token: 'anon' }), { status: 200 })
+        ? (contacted.push(String(url)),
+          new Response(JSON.stringify({ token: 'anon' }), { status: 200 }))
         : challenge('https://auth.elsewhere/token')) as unknown as typeof fetch;
     const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
-    ).resolves.toMatchObject({ authorization: 'Bearer anon' });
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(contacted).toEqual([]);
+  });
+
+  it('does not follow redirects from an authorized token origin', async () => {
+    const contacted: string[] = [];
+    const fetchImplementation = (async (
+      url: URL | string,
+      init?: RequestInit,
+    ) => {
+      const href = String(url);
+      contacted.push(href);
+      if (href.startsWith('https://auth.internal/')) {
+        expect(init?.redirect).toBe('manual');
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://evil.example/token' },
+        });
+      }
+      return challenge('https://auth.internal/token');
+    }) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({
+      fetch: fetchImplementation,
+      allowedTokenOrigins: ['https://auth.internal'],
+    });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toMatchObject({ code: 'UNSAFE_REDIRECT' });
+    expect(contacted).toEqual([
+      'https://registry.test/v2/demo/tags/list',
+      'https://auth.internal/token?service=registry.test&scope=s',
+    ]);
+  });
+
+  it.each([
+    JSON.stringify({ token: 'x'.repeat(70 * 1024) }),
+    JSON.stringify({ token: 'x'.repeat(16_385) }),
+    '{"token":"ok","expires_in":1e309}',
+  ])('rejects an oversized or invalid token response', async (body) => {
+    const fetchImplementation = (async (url: URL | string) =>
+      String(url).includes('/token')
+        ? new Response(body, { status: 200 })
+        : challenge('https://registry.test/token')) as unknown as typeof fetch;
+    const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
+    await expect(
+      auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
+    ).rejects.toBeTruthy();
   });
 
   it('refuses a plaintext token endpoint even anonymously', async () => {

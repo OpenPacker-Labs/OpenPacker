@@ -97,8 +97,9 @@ the publisher's document is the thing under signature.
 POST /v1/publish
 ```
 
-A `RegistryPublishRequest` carries the manifest, its digest, at least one
-signature, and optionally a namespace proof. The registry MUST:
+A `RegistryPublishRequest` carries the manifest, its digest, and at least one
+signature. Namespace authority is established independently by the operator;
+publish data never creates or widens it. The registry MUST:
 
 1. **Validate the request against `RegistryPublishRequest` and refuse what does
    not conform, storing nothing.** A registry is the last party that can cheaply
@@ -121,7 +122,8 @@ one says "I wrote this", the other says "I accepted this".
 ### Namespace proof
 
 A signature proves a document was not altered. It says nothing about who may use
-a name. `NamespaceProof` binds a key to a reverse-DNS prefix by one of:
+a name. A server-side verifier or authenticated operator uses `NamespaceProof`
+to bind a key to a reverse-DNS prefix by one of:
 
 - `dns-txt` — a TXT record at `_prex.<namespace-as-domain>` containing the key
   id.
@@ -130,10 +132,23 @@ a name. `NamespaceProof` binds a key to a reverse-DNS prefix by one of:
 - `registry-configured` — the operator configured the binding out of band.
   Honest about being an operator decision rather than a proof.
 
-The two mechanisms are independent and neither substitutes for the other: an
-unsigned document with a valid namespace proof is unverifiable, and a signed
-document from a key with no claim to the name is a valid signature on a squatted
-name.
+The publish route MUST NOT accept a caller-supplied proof or mutate namespace
+bindings. The two mechanisms are independent and neither substitutes for the
+other: an unsigned document with a valid namespace proof is unverifiable, and a
+signed document from a key with no claim to the name is a valid signature on a
+squatted name.
+
+## Lifecycle status updates
+
+```http
+PATCH /v1/packages/{name}/versions/{version}/status
+```
+
+A `SignedStatusUpdate` binds an immutable event id, exact route name and
+version, new status, reason, and issue time. Each signature is Ed25519 over the
+ASCII `formatDigest(updateDigest)`. The registry MUST re-derive the digest,
+reject stale or replayed events, and require at least one non-revoked signing
+key already authorised for the package namespace before changing status.
 
 ## Artifact bytes
 

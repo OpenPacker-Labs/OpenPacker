@@ -12,12 +12,14 @@
  */
 
 import { canonicalDigest, formatDigest } from '@openpacker/canonical';
+import { validateContract } from '@openpacker/conformance';
 import type {
   Digest,
   JsonValue,
   PackageManifest,
   PackagePage,
   RegistryEntry,
+  SignedRevocationList,
   VersionList,
 } from '@openpacker/contracts';
 import {
@@ -40,6 +42,8 @@ export interface RegistryDefinitionLike {
 }
 
 export const WELL_KNOWN = '/.well-known/prex-registry';
+const SIGNED_REVOCATION_LIST_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedRevocationList';
 
 export interface RegistryClientOptions {
   /** Registry base URL. Trailing slash optional. */
@@ -52,6 +56,8 @@ export interface RegistryClientOptions {
    * `verifyEntry` reports rather than silently treating as verified.
    */
   keys?: Readonly<Record<string, JsonWebKey>>;
+  /** Registry signer keys authorized to authenticate registry-wide metadata. */
+  registryKeys?: Readonly<Record<string, JsonWebKey>>;
   /**
    * How long a fetched revocation list is reused. A client that cached one
    * forever would never learn about a revocation, so this is a TTL rather than
@@ -60,7 +66,25 @@ export interface RegistryClientOptions {
   revocationTtlMilliseconds?: number;
   /** Injectable clock, so TTL behaviour is testable without waiting. */
   clock?: () => number;
+  /** Caller may tighten, never raise, the mandatory untrusted-pagination limits. */
+  paginationLimits?: Partial<PaginationLimits>;
 }
+
+export interface PaginationLimits {
+  maximumPages: number;
+  maximumEntries: number;
+  maximumBytes: number;
+  maximumCursorLength: number;
+  maximumElapsedMilliseconds: number;
+}
+
+const PAGINATION_LIMITS: PaginationLimits = {
+  maximumPages: 100,
+  maximumEntries: 100_000,
+  maximumBytes: 64 * 1024 * 1024,
+  maximumCursorLength: 4096,
+  maximumElapsedMilliseconds: 30_000,
+};
 
 export interface ListOptions {
   search?: string;
@@ -75,12 +99,14 @@ export class RegistryClient {
   readonly #baseUrl: string;
   readonly #transport: HttpTransport;
   readonly #keys: Readonly<Record<string, JsonWebKey>>;
+  readonly #registryKeys: Readonly<Record<string, JsonWebKey>>;
   #definition: RegistryDefinitionLike | undefined;
   #revocations: { entries: RevocationEntryLike[]; known: boolean } | undefined;
   #revocationsFetchedAt = 0;
   #revocationSerial = 0;
   readonly #revocationTtl: number;
   readonly #clock: () => number;
+  readonly #paginationLimits: PaginationLimits;
 
   constructor(options: RegistryClientOptions) {
     const url = new URL(options.baseUrl);
@@ -103,11 +129,13 @@ export class RegistryClient {
         ...(options.fetch ? { fetch: options.fetch } : {}),
       });
     this.#keys = options.keys ?? {};
+    this.#registryKeys = options.registryKeys ?? {};
     // Caching a revocation list forever means a long-lived client never learns
     // about a revocation — which is the entire thing revocation is for. Five
     // minutes by default; a caller running a long process can shorten it.
     this.#revocationTtl = options.revocationTtlMilliseconds ?? 300_000;
     this.#clock = options.clock ?? (() => Date.now());
+    this.#paginationLimits = paginationLimits(options.paginationLimits);
   }
 
   /**
@@ -132,13 +160,57 @@ export class RegistryClient {
       this.#revocationsFetchedAt = this.#clock();
       return this.#revocations;
     }
-    const body = (await this.#json(
-      `${this.#baseUrl}/v1/revocations`,
-      signal,
-    )) as unknown as {
-      list?: { serial?: number; revoked?: RevocationEntryLike[] };
-    };
-    const serial = body.list?.serial ?? 0;
+    const value = await this.#json(`${this.#baseUrl}/v1/revocations`, signal);
+    const validation = validateContract(SIGNED_REVOCATION_LIST_SCHEMA, value);
+    if (!validation.valid)
+      throw new ProviderError(
+        'INVALID_RESPONSE',
+        `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
+      );
+    const body = value as unknown as SignedRevocationList;
+    const definition = await this.definition(signal);
+    if (body.list.registryId !== definition.registryId)
+      throw new ProviderError(
+        'INVALID_SIGNATURE',
+        `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
+      );
+    const digest = await canonicalDigest(body.list as unknown as JsonValue);
+    if (
+      body.listDigest.algorithm !== digest.algorithm ||
+      body.listDigest.value !== digest.value
+    )
+      throw new ProviderError(
+        'DIGEST_MISMATCH',
+        `Revocation list states ${formatDigest(body.listDigest)} but hashes to ${formatDigest(digest)}`,
+      );
+    const message = new TextEncoder().encode(formatDigest(digest));
+    let signatureVerified = false;
+    for (const signature of body.signatures) {
+      if (signature.role !== 'registry') continue;
+      const key = this.#registryKeys[signature.keyId];
+      if (!key) continue;
+      const verifier = await Ed25519Verifier.fromJwk(signature.keyId, key);
+      if (await verifier.verify(message, signature.signature)) {
+        signatureVerified = true;
+        break;
+      }
+    }
+    if (!signatureVerified)
+      throw new ProviderError(
+        'INVALID_SIGNATURE',
+        'Revocation list has no valid signature from a configured registry key',
+      );
+    const now = this.#clock();
+    const issuedAt = Date.parse(body.list.issuedAt);
+    const expiresAt = body.list.expiresAt
+      ? Date.parse(body.list.expiresAt)
+      : issuedAt + this.#revocationTtl;
+    if (issuedAt > now + 300_000 || expiresAt <= now || expiresAt < issuedAt)
+      throw new ProviderError(
+        'STALE_METADATA',
+        'Registry revocation list is not currently fresh',
+      );
+    const serial = body.list.serial;
     // A replayed older list would pin a client to the state of the world from
     // before a compromise, which is the attack a serial exists to stop.
     if (serial < this.#revocationSerial)
@@ -147,8 +219,8 @@ export class RegistryClient {
         `Registry served revocation serial ${serial} after ${this.#revocationSerial}; refusing to go backwards.`,
       );
     this.#revocationSerial = serial;
-    this.#revocations = { entries: body.list?.revoked ?? [], known: true };
-    this.#revocationsFetchedAt = this.#clock();
+    this.#revocations = { entries: body.list.revoked, known: true };
+    this.#revocationsFetchedAt = now;
     return this.#revocations;
   }
 
@@ -197,6 +269,12 @@ export class RegistryClient {
 
   /** One page of packages. Prefer `listAll` unless you are paging yourself. */
   async list(options: ListOptions = {}): Promise<PackagePage> {
+    return (await this.#listPage(options)).page;
+  }
+
+  async #listPage(
+    options: ListOptions = {},
+  ): Promise<{ page: PackagePage; bytes: number }> {
     await this.#require(
       options.updatedSince === undefined
         ? 'prex.registry.search/1'
@@ -213,7 +291,14 @@ export class RegistryClient {
       ['cursor', options.cursor],
     ] as const)
       if (value !== undefined && value !== '') url.searchParams.set(key, value);
-    return (await this.#json(url.toString(), options.signal)) as PackagePage;
+    const response = await this.#jsonDocument(url.toString(), options.signal);
+    const page = response.value as unknown as PackagePage;
+    if (!Array.isArray(page.packages) || !page.metadata)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        'Registry package page has no packages array or metadata',
+      );
+    return { page, bytes: response.bytes };
   }
 
   /**
@@ -224,16 +309,48 @@ export class RegistryClient {
    * and stopping there would silently truncate a mirror.
    */
   async *listAll(options: ListOptions = {}): AsyncGenerator<RegistryEntry> {
+    const limits = this.#paginationLimits;
+    const deadline = AbortSignal.timeout(limits.maximumElapsedMilliseconds);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, deadline])
+      : deadline;
     let cursor = options.cursor;
     const seen = new Set<string>();
+    let pages = 0;
+    let entries = 0;
+    let bytes = 0;
     for (;;) {
-      const page = await this.list({
-        ...options,
-        ...(cursor === undefined ? {} : { cursor }),
-      });
+      if (pages >= limits.maximumPages)
+        throw paginationLimit(`more than ${limits.maximumPages} pages`);
+      let result: { page: PackagePage; bytes: number };
+      try {
+        result = await this.#listPage({
+          ...options,
+          signal,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+      } catch (error) {
+        if (deadline.aborted && !options.signal?.aborted)
+          throw paginationLimit(
+            `longer than ${limits.maximumElapsedMilliseconds} milliseconds`,
+          );
+        throw error;
+      }
+      pages += 1;
+      entries += result.page.packages.length;
+      bytes += result.bytes;
+      if (entries > limits.maximumEntries)
+        throw paginationLimit(`more than ${limits.maximumEntries} entries`);
+      if (bytes > limits.maximumBytes)
+        throw paginationLimit(`more than ${limits.maximumBytes} bytes`);
+      const page = result.page;
       for (const entry of page.packages) yield entry;
       const next = page.metadata.nextCursor;
       if (next === undefined || next === null) return;
+      if (typeof next !== 'string' || next.length > limits.maximumCursorLength)
+        throw paginationLimit(
+          `a cursor longer than ${limits.maximumCursorLength} characters`,
+        );
       // A registry that returns the cursor it was given would loop forever.
       if (seen.has(next))
         throw new ProviderError(
@@ -352,6 +469,13 @@ export class RegistryClient {
   }
 
   async #json(url: string, signal?: AbortSignal): Promise<JsonValue> {
+    return (await this.#jsonDocument(url, signal)).value;
+  }
+
+  async #jsonDocument(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<{ value: JsonValue; bytes: number }> {
     const response = await this.#transport.request({
       url,
       method: 'GET',
@@ -366,7 +490,10 @@ export class RegistryClient {
         `Registry returned ${response.status} for ${url}`,
       );
     try {
-      return JSON.parse(new TextDecoder().decode(response.body)) as JsonValue;
+      return {
+        value: JSON.parse(new TextDecoder().decode(response.body)) as JsonValue,
+        bytes: response.body.byteLength,
+      };
     } catch (error) {
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
@@ -376,6 +503,28 @@ export class RegistryClient {
       );
     }
   }
+}
+
+function paginationLimits(
+  requested: Partial<PaginationLimits> | undefined,
+): PaginationLimits {
+  return Object.fromEntries(
+    Object.entries(PAGINATION_LIMITS).map(([name, ceiling]) => {
+      const value = requested?.[name as keyof PaginationLimits] ?? ceiling;
+      if (!Number.isSafeInteger(value) || value < 1 || value > ceiling)
+        throw new RangeError(
+          `${name} must be an integer between 1 and ${ceiling}`,
+        );
+      return [name, value];
+    }),
+  ) as unknown as PaginationLimits;
+}
+
+function paginationLimit(detail: string): ProviderError {
+  return new ProviderError(
+    'INVALID_PROVIDER_RESPONSE',
+    `Registry pagination returned ${detail}; refusing an unbounded walk.`,
+  );
 }
 
 export interface RevocationEntryLike {

@@ -45,6 +45,35 @@ import { packUstar } from './tar.js';
 
 const DEFAULT_REGISTRY = 'registry-1.docker.io';
 
+function exactRegistryOrigin(value: string): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  )
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `OCI registry authority must be an exact HTTPS origin: ${value}`,
+    );
+  return url.origin;
+}
+
+export interface OciRegistryProviderOptions {
+  fetch?: typeof fetch;
+  /** Exact registry origins an untrusted PURL may select. Docker Hub only by default. */
+  allowedRegistryOrigins?: readonly string[];
+  /** Authentication is usable only for this independently configured origin. */
+  authentication?: {
+    registryOrigin: string;
+    handler: RegistryAuthentication;
+  };
+  now?: () => string;
+}
+
 export interface OciRepositoryReference {
   registry: string;
   repository: string;
@@ -186,24 +215,51 @@ export class OciRegistryProvider implements CatalogProvider {
     extensions: { 'openpacker.dev/oci': 'distribution-v2' },
   };
 
-  constructor(
-    private readonly options: {
-      fetch?: typeof fetch;
-      authentication?: RegistryAuthentication;
-      now?: () => string;
-    } = {},
-  ) {}
+  constructor(private readonly options: OciRegistryProviderOptions = {}) {
+    this.allowedRegistryOrigins = new Set(
+      (options.allowedRegistryOrigins ?? [`https://${DEFAULT_REGISTRY}`]).map(
+        exactRegistryOrigin,
+      ),
+    );
+    if (this.allowedRegistryOrigins.size === 0)
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'OCI provider requires at least one allowed registry origin',
+      );
+    if (
+      options.authentication &&
+      !this.allowedRegistryOrigins.has(
+        exactRegistryOrigin(options.authentication.registryOrigin),
+      )
+    )
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'OCI authentication origin must also be an allowed registry origin',
+      );
+  }
+
+  private readonly allowedRegistryOrigins: ReadonlySet<string>;
 
   #client(reference: OciRepositoryReference): OciRegistryClient {
+    const registry = exactRegistryOrigin(`https://${reference.registry}`);
+    if (!this.allowedRegistryOrigins.has(registry))
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        `OCI registry origin is not operator-authorized: ${registry}`,
+      );
+    const configuredAuthentication = this.options.authentication;
+    const authentication =
+      configuredAuthentication &&
+      exactRegistryOrigin(configuredAuthentication.registryOrigin) === registry
+        ? configuredAuthentication.handler
+        : new BearerTokenAuthentication(
+            this.options.fetch ? { fetch: this.options.fetch } : {},
+          );
     return new OciRegistryClient({
-      registry: `https://${reference.registry}`,
+      registry,
       repository: reference.repository,
       ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
-      authentication:
-        this.options.authentication ??
-        new BearerTokenAuthentication(
-          this.options.fetch ? { fetch: this.options.fetch } : {},
-        ),
+      authentication,
     });
   }
 

@@ -75,6 +75,33 @@ describe('default adapters', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
   });
 
+  it('binds OCI requests to the operator-configured registry origin', async () => {
+    const requests: string[] = [];
+    const registry = createDefaultAdapterRegistry();
+    const provider = await registry.catalogFor('oci', {
+      endpoint: 'https://registry.example',
+      fetch: (async (input: URL | string) => {
+        requests.push(String(input));
+        return new Response(JSON.stringify({ tags: ['1.0.0'] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as typeof fetch,
+    });
+    await expect(
+      provider.enumerate(
+        'pkg:oci/demo?repository_url=registry.example/acme/demo',
+      ),
+    ).resolves.toHaveLength(1);
+    await expect(
+      provider.enumerate('pkg:oci/demo?repository_url=evil.example/acme/demo'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(requests).toHaveLength(2);
+    expect(new Set(requests)).toEqual(
+      new Set(['https://registry.example/v2/acme/demo/tags/list']),
+    );
+  });
+
   it('advertises only resources each module can honor', async () => {
     const registry = createDefaultAdapterRegistry();
     const expected: Record<string, string[]> = {

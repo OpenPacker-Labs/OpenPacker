@@ -262,3 +262,24 @@ it('rejects unlisted initial and redirect origins before fetching them', async (
   ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   expect(calls).toEqual(['https://registry.test/data']);
 });
+
+it('preserves HEAD across a 303 serviceability redirect', async () => {
+  const methods: string[] = [];
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: ['https://registry.test'],
+    fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      return methods.length === 1
+        ? new Response(null, {
+            status: 303,
+            headers: { location: 'https://registry.test/final' },
+          })
+        : new Response(null, { status: 200 });
+    }) as typeof fetch,
+  });
+  await transport.request({
+    url: 'https://registry.test/start',
+    method: 'HEAD',
+  });
+  expect(methods).toEqual(['HEAD', 'HEAD']);
+});

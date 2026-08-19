@@ -26,6 +26,7 @@
   "dependencies": {
     "@openpacker/adapter-core": "0.1.0",
     "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
     "@openpacker/contracts": "0.1.0",
     "@openpacker/trust": "0.1.0"
   },

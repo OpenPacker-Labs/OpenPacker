@@ -1256,7 +1256,6 @@ export type RegistryPublishRequest = {
   manifest: PackageManifest;
   manifestDigest: Digest;
   signatures?: Array<ManifestSignature>;
-  namespaceProof?: NamespaceProof;
 };
 export type RegistryPublishResponse = { entry: RegistryEntry };
 export type RegistryRef = {
@@ -1553,6 +1552,11 @@ export type SignedRevocationList = {
   listDigest: Digest;
   signatures: Array<ManifestSignature>;
 };
+export type SignedStatusUpdate = {
+  update: StatusUpdate;
+  updateDigest: Digest;
+  signatures: Array<ManifestSignature>;
+};
 export type SolveRequest = {
   requirements: Array<Requirement>;
   target: TargetContext;
@@ -1622,8 +1626,13 @@ export type SourceSnapshot = {
   extensions?: Extensions;
 };
 export type StatusUpdate = {
+  statusUpdateVersion: '1';
+  eventId: string;
+  name: string;
+  version: string;
   status: 'active' | 'deprecated' | 'deleted';
-  reason?: string;
+  reason: string;
+  issuedAt: string;
 };
 export type StringSet = Array<string>;
 export type SubstituteDescriptor = {
@@ -8065,14 +8074,68 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
       StatusUpdate: {
         type: 'object',
-        required: ['status'],
+        required: [
+          'statusUpdateVersion',
+          'eventId',
+          'name',
+          'version',
+          'status',
+          'reason',
+          'issuedAt',
+        ],
         properties: {
+          statusUpdateVersion: {
+            const: '1',
+          },
+          eventId: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+          },
+          name: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 512,
+          },
+          version: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+          },
           status: {
             enum: ['active', 'deprecated', 'deleted'],
           },
           reason: {
             type: 'string',
+            minLength: 1,
             maxLength: 4096,
+          },
+          issuedAt: {
+            type: 'string',
+            format: 'date-time',
+          },
+        },
+        additionalProperties: false,
+      },
+      SignedStatusUpdate: {
+        $comment:
+          'A fresh immutable lifecycle mutation. Signatures are Ed25519 over the ASCII formatDigest(updateDigest); the registry re-derives the digest and requires a non-revoked namespace key.',
+        type: 'object',
+        required: ['update', 'updateDigest', 'signatures'],
+        properties: {
+          update: {
+            $ref: '#/$defs/StatusUpdate',
+          },
+          updateDigest: {
+            $ref: 'common.schema.json#/$defs/Digest',
+          },
+          signatures: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 32,
+            items: {
+              $ref: 'package-manifest.schema.json#/$defs/ManifestSignature',
+            },
           },
         },
         additionalProperties: false,
@@ -8096,9 +8159,6 @@ export const schemaCatalog: Record<string, JsonValue> = {
             items: {
               $ref: 'package-manifest.schema.json#/$defs/ManifestSignature',
             },
-          },
-          namespaceProof: {
-            $ref: '#/$defs/NamespaceProof',
           },
         },
         additionalProperties: false,

@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase: implementing; layer 01 independently approved
-- Current layer: `01-canonical-policy` closeout before stacking layer 02
+- Phase: implementing; layers 01 and 02 independently approved
+- Current layer: stack `03-filesystem-resources` on approved layer 02
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -76,3 +76,13 @@ upstream Codex Security release currently has no patched version.
   version projections, deny-all empty signer allowlists, deprecation defaults,
   authority-plus-digest amendments, and exact source-snapshot pins were all
   rechecked with no remaining findings.
+- 2026-08-18 layer 02: authenticated namespace/status mutations, bounded and
+  verified federation, operator-bound OCI origins and credentials, verified
+  bounded referrers/tags/token flows, and authenticated revocation metadata.
+  Registry 92/92, OCI 43/43, registry client 28/28, adapters-default 50 passed
+  with 11 native skips, and the exact `253834c..fb3d9a0` layer aggregate passed
+  all 15 impact-selected gates.
+- 2026-08-18 layer 02 independent review: approved at `fb3d9a0` after revoked
+  rotation, status rollback/collision, anonymous token egress, tag exhaustion,
+  revocation authenticity, signer-role separation, redirects, and token body
+  bounds were adversarially rechecked with no remaining finding.

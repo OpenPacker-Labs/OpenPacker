@@ -13,9 +13,17 @@
  * silently take it over.
  */
 
-import type { PackageManifest, RegistryEntry } from '@openpacker/contracts';
+import type {
+  JsonValue,
+  PackageManifest,
+  RegistryEntry,
+} from '@openpacker/contracts';
 import { RegistryClient } from '@openpacker/registry-client';
-import type { CatalogProvider } from '@openpacker/adapter-core';
+import { ProviderError, type CatalogProvider } from '@openpacker/adapter-core';
+import { createPrexValidator, validateContract } from '@openpacker/conformance';
+
+const REGISTRY_ENTRY_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RegistryEntry';
 
 export type SourceSpec =
   /** Packages published to this registry. Always present, always first. */
@@ -58,6 +66,7 @@ export interface FederationOptions {
 export class Federation {
   readonly #sources: readonly ConfiguredSource[];
   readonly #clients = new Map<string, RegistryClient>();
+  readonly #validator = createPrexValidator();
 
   constructor(private readonly options: FederationOptions) {
     this.#sources = options.sources.filter(
@@ -108,7 +117,7 @@ export class Federation {
         // Verify before relaying. Passing along something whose digest does
         // not match would launder an upstream's contradiction into this
         // registry's own answer.
-        await client.verifyEntry(entry);
+        await this.#verifyEntry(client, entry);
         return { entry: this.#tag(entry, source.id), sourceId: source.id };
       } catch {
         // Not here, or not reachable. Try the next source.
@@ -132,6 +141,7 @@ export class Federation {
       try {
         const client = await this.#clientFor(source.id, source.spec.url);
         for await (const entry of client.listAll({ search: query, limit })) {
+          await this.#verifyEntry(client, entry);
           entries.push(this.#tag(entry, source.id));
           if (entries.length >= limit) break;
         }
@@ -163,6 +173,37 @@ export class Federation {
         sourceId,
       },
     };
+  }
+
+  async #verifyEntry(
+    client: RegistryClient,
+    entry: RegistryEntry,
+  ): Promise<void> {
+    const contract = validateContract(
+      REGISTRY_ENTRY_SCHEMA,
+      entry as unknown as JsonValue,
+      this.#validator,
+    );
+    if (!contract.valid)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        'Federated registry returned an invalid RegistryEntry',
+      );
+    const verification = await client.verifyEntry(entry);
+    if (!verification.digestMatches)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        'Federated registry entry has no verifiable manifest digest',
+      );
+    if (
+      verification.signatures.some(
+        (signature) => signature.status === 'revoked',
+      )
+    )
+      throw new ProviderError(
+        'INVALID_SIGNATURE',
+        'Federated registry entry is signed by a revoked key',
+      );
   }
 
   async #clientFor(id: string, url: string): Promise<RegistryClient> {

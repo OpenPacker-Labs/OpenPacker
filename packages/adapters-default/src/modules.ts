@@ -340,22 +340,25 @@ export function defaultAdapterModules(): AdapterModule[] {
     {
       id: 'org.openpacker.adapter.oci',
       purlTypes: ['oci'],
-      registryDefinition: () =>
+      registryDefinition: (context = {}) =>
         httpRegistryDefinition({
           registryId: 'urn:openpacker:registry:oci-distribution',
           displayName: 'OCI Distribution',
           purlTypes: ['oci'],
           native: 'oci-distribution-v1',
-          baseUrl: 'https://registry-1.docker.io',
+          baseUrl: endpointFor('oci', context),
           includeArtifact: true,
           project: { buildV2: true },
         }),
       packer: ociPacker,
-      catalog: (context) =>
-        new OciRegistryProvider({
+      catalog: (context) => {
+        const endpoint = endpointFor('oci', context);
+        return new OciRegistryProvider({
+          allowedRegistryOrigins: [new URL(endpoint).origin],
           ...(context.now ? { now: context.now } : {}),
           ...(context.fetch ? { fetch: context.fetch } : {}),
-        }) as never,
+        }) as never;
+      },
     },
     {
       id: 'org.openpacker.adapter.nix',
