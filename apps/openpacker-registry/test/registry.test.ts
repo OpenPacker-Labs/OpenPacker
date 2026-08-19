@@ -1380,6 +1380,206 @@ describe('key lifecycle', () => {
     expect(rejected.json().detail).toMatch(/revoked/u);
     await app.close();
   });
+
+  it('does not let an unattributed known key consume rotation capacity', async () => {
+    const app = registry(
+      {
+        store: new RegistryStore(),
+        publisherKeys: { 'publisher-1': keys.leaf! },
+      },
+      false,
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationTo('publisher-2', keys.log!),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().detail).toMatch(/verified holder/u);
+    expect(
+      (await app.inject({ method: 'GET', url: '/v1/revocations' })).json().list
+        .revoked,
+    ).toEqual([]);
+    await app.close();
+  });
+
+  it('charges concurrent rotations transactionally to their verified holder', async () => {
+    const store = new RegistryStore();
+    store.trustKey(
+      'com.alpha.one',
+      'alpha-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:alpha.com',
+    );
+    store.trustKey(
+      'com.alpha.two',
+      'alpha-2',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:alpha.com',
+    );
+    store.trustKey(
+      'com.beta',
+      'beta-1',
+      'dns-txt',
+      '2026-08-10T00:00:00.000Z',
+      'dns:beta.com',
+    );
+    const app = registry(
+      {
+        store,
+        publisherKeys: {
+          'alpha-1': keys.leaf!,
+          'alpha-2': keys.log!,
+          'beta-1': keys.root!,
+        },
+        rotationQuota: { limit: 1 },
+      },
+      false,
+    );
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/v1/keys/rotations',
+        payload: await rotationFrom(
+          'alpha-1',
+          keys.leaf!,
+          'alpha-next-1',
+          keys.root!,
+          '2026-08-10T00:00:00.000Z',
+        ),
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/v1/keys/rotations',
+        payload: await rotationFrom(
+          'alpha-2',
+          keys.log!,
+          'alpha-next-2',
+          keys.root!,
+          '2026-08-10T00:00:00.000Z',
+        ),
+      }),
+    ]);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 429]);
+    expect(
+      first.statusCode === 429
+        ? first.headers['retry-after']
+        : second.headers['retry-after'],
+    ).toBe('3600');
+
+    const otherHolder = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationFrom(
+        'beta-1',
+        keys.root!,
+        'beta-next',
+        keys.log!,
+        '2026-08-10T00:00:00.000Z',
+      ),
+    });
+    expect(otherHolder.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('bounds each rotation chain independently of the rate window', async () => {
+    const bounded = registry({
+      store: new RegistryStore(),
+      publisherKeys: { 'publisher-1': keys.leaf! },
+      rotationQuota: { maximumChainLength: 1 },
+    });
+    expect(
+      (
+        await bounded.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationTo('bounded-2', keys.log!),
+        })
+      ).statusCode,
+    ).toBe(201);
+    const refused = await bounded.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationFrom(
+        'bounded-2',
+        keys.log!,
+        'bounded-3',
+        keys.root!,
+        '2026-08-10T00:00:00.000Z',
+      ),
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().detail).toMatch(/maximum length/u);
+    await bounded.close();
+  });
+
+  it('reserves active-list capacity for emergency revocation', async () => {
+    const store = new RegistryStore();
+    store.trustKey('org.beta', 'beta-1', 'registry-configured');
+    const app = registry({
+      store,
+      publisherKeys: {
+        'publisher-1': keys.leaf!,
+        'beta-1': keys.root!,
+      },
+      rotationQuota: {
+        limit: 3,
+        maximumChainLength: 3,
+        maximumActiveRotationsPerHolder: 2,
+        maximumActiveRevocations: 3,
+        reservedEmergencyRevocations: 1,
+      },
+    });
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationTo('publisher-2', keys.log!),
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/keys/rotations',
+          payload: await rotationFrom(
+            'publisher-2',
+            keys.log!,
+            'publisher-3',
+            keys.root!,
+            '2026-08-10T00:00:00.000Z',
+          ),
+        })
+      ).statusCode,
+    ).toBe(201);
+    const routine = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: await rotationFrom(
+        'beta-1',
+        keys.root!,
+        'beta-2',
+        keys.leaf!,
+        '2026-08-10T00:00:00.000Z',
+      ),
+    });
+    expect(routine.statusCode).toBe(503);
+    expect(routine.json().detail).toMatch(/emergency/u);
+
+    store.revoke({
+      keyId: 'operator-emergency',
+      revokedAt: '2026-08-10T00:00:00.000Z',
+      effective: 'retroactive',
+      reason: 'compromised',
+    });
+    const list = await app.inject({ method: 'GET', url: '/v1/revocations' });
+    expect(list.json().list.revoked).toHaveLength(3);
+    await app.close();
+  });
 });
 
 /** A rotation from publisher-1 to `nextKeyId`, signed by publisher-1. */

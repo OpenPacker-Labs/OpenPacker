@@ -23,33 +23,30 @@ export type ProofMethod =
   | 'registry-configured';
 
 /**
- * Derive the holder a proof really rests on.
+ * Record the holder a proof verifier established.
  *
- * `com.example.tools` proved by DNS rests on `example.com` — the same party as
- * `com.example.cli`, however many namespaces they take out. `io.github.acme`
- * rests on the GitHub org, not on the whole of github.io, or one org could
- * speak for every other. An operator decision is named as such: the holder is
- * the registry, and pretending otherwise would launder a configuration choice
- * into a proof.
+ * DNS registrable-domain boundaries cannot be recovered from a reverse-DNS
+ * package namespace without a maintained public-suffix list. The namespace
+ * proof verifier already knows the authority it checked, so that verified
+ * identity is persisted instead of being guessed here. An operator decision is
+ * named as such: the holder is the registry, and pretending otherwise would
+ * launder a configuration choice into a proof.
  */
-export function holderOf(namespace: string, method: ProofMethod): string {
-  const segments = namespace.split('.');
+export function holderOf(
+  namespace: string,
+  method: ProofMethod,
+  verifiedHolderId?: string,
+): string {
   if (method === 'registry-configured') return `operator:${namespace}`;
-
-  // A forge namespace's authority stops at the account, not at the forge.
-  const FORGES: Readonly<Record<string, string>> = {
-    'io.github': 'github',
-    'com.github': 'github',
-  };
-  const prefix = segments.slice(0, 2).join('.');
-  const forge = FORGES[prefix];
-  if (forge !== undefined && segments.length >= 3)
-    return `${forge}:${segments[2]}`;
-
-  // Otherwise the proof is over a DNS name, which is the reverse of the first
-  // two labels: `com.example.anything` is proved by whoever holds example.com.
-  const domain = segments.slice(0, 2).reverse().join('.');
-  return `dns:${domain}`;
+  if (
+    verifiedHolderId === undefined ||
+    !/^(?:dns|github):[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(verifiedHolderId) ||
+    verifiedHolderId.length > 512
+  )
+    throw new TypeError(
+      `${method} namespace proofs require a verified dns: or github: holder identity`,
+    );
+  return verifiedHolderId;
 }
 
 export interface QuotaPolicy {

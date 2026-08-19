@@ -19,6 +19,8 @@ import type { ServiceabilityRecord } from './serviceability.js';
 import type { KeyRotation, RevocationEntry } from './keys.js';
 import { holderOf, type PackageRedirect, type ProofMethod } from './holders.js';
 
+const MAXIMUM_ACTIVE_REVOCATIONS = 10_000;
+
 export interface HolderNamespace {
   namespace: string;
   method: string;
@@ -60,6 +62,35 @@ export interface ListQuery {
   /** Include entries withdrawn from listings. */
   includeDeleted?: boolean;
 }
+
+export interface RotationQuotaPolicy {
+  limit: number;
+  windowSeconds: number;
+  maximumChainLength: number;
+  maximumActiveRotationsPerHolder: number;
+  maximumActiveRevocations: number;
+  reservedEmergencyRevocations: number;
+}
+
+export type RotateKeyResult =
+  | { rotated: true }
+  | {
+      rotated: false;
+      reason:
+        | 'revoked'
+        | 'unattributed'
+        | 'next-key-exists'
+        | 'chain-capacity'
+        | 'holder-capacity'
+        | 'global-capacity';
+      holderId?: string;
+    }
+  | {
+      rotated: false;
+      reason: 'rate';
+      holderId: string;
+      recent: readonly number[];
+    };
 
 export class RegistryStore {
   readonly #database: DatabaseSync;
@@ -116,13 +147,24 @@ export class RegistryStore {
         previous_key_id TEXT NOT NULL,
         next_public_key TEXT NOT NULL,
         rotated_at TEXT NOT NULL,
-        signature TEXT NOT NULL
+        signature TEXT NOT NULL,
+        chain_depth INTEGER NOT NULL DEFAULT 0
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS key_rotation_holders (
+        next_key_id TEXT NOT NULL,
+        holder_id TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (next_key_id, holder_id),
+        FOREIGN KEY (next_key_id) REFERENCES key_rotations(next_key_id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS key_rotation_holders_rate
+        ON key_rotation_holders(holder_id, at);
       CREATE TABLE IF NOT EXISTS namespace_keys (
         namespace TEXT NOT NULL,
         key_id TEXT NOT NULL,
         method TEXT NOT NULL,
         holder_id TEXT NOT NULL DEFAULT '',
+        holder_verified INTEGER NOT NULL DEFAULT 0,
         verified_at TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (namespace, key_id)
       ) STRICT;
@@ -158,12 +200,13 @@ export class RegistryStore {
       ) STRICT;
     `);
     this.#migrateStatusEvents();
+    this.#migrateKeyRotations();
     this.#database.exec(
       'CREATE INDEX IF NOT EXISTS status_events_order ON status_events(name, version, issued_at DESC)',
     );
-    // A registry that predates holder attribution has proofs with no holder.
-    // Backfilling on open keeps `GET /v1/holders` honest about history rather
-    // than reporting an empty world until somebody publishes again.
+    // Older stores did not distinguish proof-verified holder identities from
+    // holder ids guessed from namespace labels. Marking those rows unverified
+    // makes upgrade fail closed until the proof is checked again.
     this.#migrateNamespaceKeys();
     this.#searchable = this.#createSearchIndex();
   }
@@ -556,8 +599,18 @@ export class RegistryStore {
     return this.get(input.name, input.version)!;
   }
 
-  /** Atomically carry authority forward and retire the predecessor. */
-  rotateKey(rotation: KeyRotation, revocation: RevocationEntry): boolean {
+  /**
+   * Atomically enforce holder/global budgets, carry authority forward, and
+   * retire the predecessor. Rotation history is retained separately from the
+   * bounded active revocation set so quota accounting never depends on
+   * materialising the public list.
+   */
+  rotateKeyWithinQuota(
+    rotation: KeyRotation,
+    revocation: RevocationEntry,
+    quota: RotationQuotaPolicy,
+    atEpochMs: number,
+  ): RotateKeyResult {
     this.#database.exec('BEGIN IMMEDIATE');
     try {
       if (
@@ -566,12 +619,102 @@ export class RegistryStore {
           .get(rotation.previousKeyId)
       ) {
         this.#database.exec('ROLLBACK');
-        return false;
+        return { rotated: false, reason: 'revoked' };
       }
+      if (
+        this.#database
+          .prepare(
+            `SELECT 1 FROM key_rotations WHERE next_key_id = ?
+             UNION ALL
+             SELECT 1 FROM namespace_keys WHERE key_id = ?
+             LIMIT 1`,
+          )
+          .get(rotation.nextKeyId, rotation.nextKeyId)
+      ) {
+        this.#database.exec('ROLLBACK');
+        return { rotated: false, reason: 'next-key-exists' };
+      }
+
+      const bindings = this.#database
+        .prepare(
+          `SELECT namespace, method, holder_id, holder_verified, verified_at
+           FROM namespace_keys WHERE key_id = ?`,
+        )
+        .all(rotation.previousKeyId) as unknown as {
+        namespace: string;
+        method: string;
+        holder_id: string;
+        holder_verified: number;
+        verified_at: string;
+      }[];
+      if (
+        bindings.length === 0 ||
+        bindings.some(
+          ({ holder_id: holderId, holder_verified: verified }) =>
+            holderId === '' || verified !== 1,
+        )
+      ) {
+        this.#database.exec('ROLLBACK');
+        return { rotated: false, reason: 'unattributed' };
+      }
+      const holders = [...new Set(bindings.map(({ holder_id }) => holder_id))];
+      const cutoff = atEpochMs - quota.windowSeconds * 1000;
+      for (const holderId of holders) {
+        const recent = (
+          this.#database
+            .prepare(
+              `SELECT at FROM key_rotation_holders
+               WHERE holder_id = ? AND at > ? ORDER BY at ASC`,
+            )
+            .all(holderId, cutoff) as { at: number }[]
+        ).map(({ at }) => at);
+        if (recent.length >= quota.limit) {
+          this.#database.exec('ROLLBACK');
+          return {
+            rotated: false,
+            reason: 'rate',
+            holderId,
+            recent,
+          };
+        }
+        const active = this.#database
+          .prepare(
+            'SELECT COUNT(*) AS n FROM key_rotation_holders WHERE holder_id = ?',
+          )
+          .get(holderId) as { n: number };
+        if (active.n >= quota.maximumActiveRotationsPerHolder) {
+          this.#database.exec('ROLLBACK');
+          return {
+            rotated: false,
+            reason: 'holder-capacity',
+            holderId,
+          };
+        }
+      }
+
+      const predecessor = this.#database
+        .prepare('SELECT chain_depth FROM key_rotations WHERE next_key_id = ?')
+        .get(rotation.previousKeyId) as { chain_depth: number } | undefined;
+      const chainDepth = (predecessor?.chain_depth ?? 0) + 1;
+      if (chainDepth > quota.maximumChainLength) {
+        this.#database.exec('ROLLBACK');
+        return { rotated: false, reason: 'chain-capacity' };
+      }
+      const activeRevocations = this.#database
+        .prepare('SELECT COUNT(*) AS n FROM revocations')
+        .get() as { n: number };
+      const routineCapacity =
+        quota.maximumActiveRevocations - quota.reservedEmergencyRevocations;
+      if (activeRevocations.n >= routineCapacity) {
+        this.#database.exec('ROLLBACK');
+        return { rotated: false, reason: 'global-capacity' };
+      }
+
       this.#database
         .prepare(
-          `INSERT INTO key_rotations(next_key_id, previous_key_id, next_public_key, rotated_at, signature)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO key_rotations
+             (next_key_id, previous_key_id, next_public_key, rotated_at, signature, chain_depth)
+           VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(
           rotation.nextKeyId,
@@ -579,35 +722,33 @@ export class RegistryStore {
           JSON.stringify(rotation.nextPublicKey),
           rotation.rotatedAt,
           rotation.signature,
+          chainDepth,
         );
-      const bindings = this.#database
-        .prepare(
-          `SELECT namespace, method, holder_id, verified_at
-         FROM namespace_keys WHERE key_id = ?`,
-        )
-        .all(rotation.previousKeyId) as unknown as {
-        namespace: string;
-        method: string;
-        holder_id: string;
-        verified_at: string;
-      }[];
+      for (const holderId of holders)
+        this.#database
+          .prepare(
+            `INSERT INTO key_rotation_holders(next_key_id, holder_id, at)
+             VALUES (?, ?, ?)`,
+          )
+          .run(rotation.nextKeyId, holderId, atEpochMs);
       for (const binding of bindings)
         this.#database
           .prepare(
             `INSERT OR REPLACE INTO namespace_keys
-             (namespace, key_id, method, holder_id, verified_at)
-           VALUES (?, ?, ?, ?, ?)`,
+             (namespace, key_id, method, holder_id, holder_verified, verified_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
           )
           .run(
             binding.namespace,
             rotation.nextKeyId,
             binding.method,
             binding.holder_id,
+            binding.holder_verified,
             binding.verified_at,
           );
       this.revoke(revocation);
       this.#database.exec('COMMIT');
-      return true;
+      return { rotated: true };
     } catch (error) {
       this.#database.exec('ROLLBACK');
       throw error;
@@ -696,6 +837,19 @@ export class RegistryStore {
    * its consumers to the state of the world before a compromise.
    */
   revoke(entry: RevocationEntry): number {
+    const existing = this.#database
+      .prepare('SELECT 1 FROM revocations WHERE key_id = ?')
+      .get(entry.keyId);
+    if (existing === undefined) {
+      const active = this.#database
+        .prepare('SELECT COUNT(*) AS n FROM revocations')
+        .get() as { n: number };
+      if (active.n >= MAXIMUM_ACTIVE_REVOCATIONS)
+        throw new RegistryStoreError(
+          'REVOCATION_CAPACITY',
+          `The active revocation set is limited to ${MAXIMUM_ACTIVE_REVOCATIONS} entries`,
+        );
+    }
     this.#database
       .prepare(
         `INSERT INTO revocations(key_id, revoked_at, effective, reason, detail, replaced_by)
@@ -753,25 +907,36 @@ export class RegistryStore {
     }));
   }
 
+  #migrateKeyRotations(): void {
+    const columns = this.#database
+      .prepare('PRAGMA table_info(key_rotations)')
+      .all() as unknown as { name: string }[];
+    if (!columns.some(({ name }) => name === 'chain_depth'))
+      this.#database.exec(
+        'ALTER TABLE key_rotations ADD COLUMN chain_depth INTEGER NOT NULL DEFAULT 0',
+      );
+  }
+
   /** Bind a signing key to a namespace, attributed to the holder it rests on. */
   trustKey(
     namespace: string,
     keyId: string,
     method: string,
     verifiedAt = '',
+    verifiedHolderId?: string,
   ): void {
+    const holderId = holderOf(
+      namespace,
+      method as ProofMethod,
+      verifiedHolderId,
+    );
     this.#database
       .prepare(
-        `INSERT OR REPLACE INTO namespace_keys(namespace, key_id, method, holder_id, verified_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO namespace_keys
+           (namespace, key_id, method, holder_id, holder_verified, verified_at)
+         VALUES (?, ?, ?, ?, 1, ?)`,
       )
-      .run(
-        namespace,
-        keyId,
-        method,
-        holderOf(namespace, method as ProofMethod),
-        verifiedAt,
-      );
+      .run(namespace, keyId, method, holderId, verifiedAt);
   }
 
   /** Key ids permitted to publish under a namespace. */
@@ -788,7 +953,7 @@ export class RegistryStore {
     const rows = this.#database
       .prepare(
         `SELECT holder_id, COUNT(DISTINCT namespace) AS n
-         FROM namespace_keys WHERE holder_id != ''
+         FROM namespace_keys WHERE holder_id != '' AND holder_verified = 1
          GROUP BY holder_id ORDER BY n DESC, holder_id ASC`,
       )
       .all() as { holder_id: string; n: number }[];
@@ -807,7 +972,9 @@ export class RegistryStore {
     const rows = this.#database
       .prepare(
         `SELECT namespace, method, key_id, verified_at
-         FROM namespace_keys WHERE holder_id = ? ORDER BY namespace ASC`,
+         FROM namespace_keys
+         WHERE holder_id = ? AND holder_verified = 1
+         ORDER BY namespace ASC`,
       )
       .all(holderId) as {
       namespace: string;
@@ -839,7 +1006,9 @@ export class RegistryStore {
   holderForNamespace(namespace: string): string | undefined {
     const row = this.#database
       .prepare(
-        `SELECT holder_id FROM namespace_keys WHERE namespace = ? AND holder_id != '' LIMIT 1`,
+        `SELECT holder_id FROM namespace_keys
+         WHERE namespace = ? AND holder_id != '' AND holder_verified = 1
+         LIMIT 1`,
       )
       .get(namespace) as { holder_id: string } | undefined;
     return row?.holder_id;
@@ -955,23 +1124,22 @@ export class RegistryStore {
     return row.n;
   }
 
-  /** Give pre-holder rows a holder, so history is not silently invisible. */
+  /** Mark legacy guessed holder ids unverified; only operator bindings are safe to recover. */
   #migrateNamespaceKeys(): void {
-    const rows = this.#database
+    const columns = this.#database
+      .prepare('PRAGMA table_info(namespace_keys)')
+      .all() as unknown as { name: string }[];
+    if (!columns.some(({ name }) => name === 'holder_verified'))
+      this.#database.exec(
+        'ALTER TABLE namespace_keys ADD COLUMN holder_verified INTEGER NOT NULL DEFAULT 0',
+      );
+    this.#database
       .prepare(
-        `SELECT namespace, key_id, method FROM namespace_keys WHERE holder_id = ''`,
+        `UPDATE namespace_keys
+         SET holder_id = 'operator:' || namespace, holder_verified = 1
+         WHERE method = 'registry-configured'`,
       )
-      .all() as { namespace: string; key_id: string; method: string }[];
-    for (const row of rows)
-      this.#database
-        .prepare(
-          'UPDATE namespace_keys SET holder_id = ? WHERE namespace = ? AND key_id = ?',
-        )
-        .run(
-          holderOf(row.namespace, row.method as ProofMethod),
-          row.namespace,
-          row.key_id,
-        );
+      .run();
   }
 
   #recomputeLatest(name: string): void {

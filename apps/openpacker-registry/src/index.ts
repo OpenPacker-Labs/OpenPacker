@@ -33,6 +33,7 @@ import { Ed25519Signer, Ed25519Verifier } from '@openpacker/trust';
 import {
   RegistryStore,
   RegistryStoreError,
+  type RotationQuotaPolicy,
   type StoredEntry,
 } from './store.js';
 import {
@@ -51,7 +52,6 @@ import {
   type ServiceabilityRecord,
 } from './serviceability.js';
 import {
-  holderOf,
   quotaState,
   redirectDigest,
   redirectMessage,
@@ -81,8 +81,6 @@ const STATUS_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate';
 const KEY_ROTATION_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/KeyRotation';
-const REVOCATION_LIST_SCHEMA =
-  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RevocationList';
 /**
  * Publishes per holder per hour, by default.
  *
@@ -93,6 +91,14 @@ const REVOCATION_LIST_SCHEMA =
  * namespace, which costs one DNS record.
  */
 const DEFAULT_QUOTA: QuotaPolicy = { limit: 120, windowSeconds: 3600 };
+const DEFAULT_ROTATION_QUOTA: RotationQuotaPolicy = {
+  limit: 12,
+  windowSeconds: 3600,
+  maximumChainLength: 32,
+  maximumActiveRotationsPerHolder: 256,
+  maximumActiveRevocations: 10_000,
+  reservedEmergencyRevocations: 1_000,
+};
 const DEFAULT_LIMIT = 50;
 const MAXIMUM_LIMIT = 250;
 const STATUS_FRESHNESS_MILLISECONDS = 5 * 60 * 1000;
@@ -140,6 +146,8 @@ export interface RegistryOptions {
   serviceabilityTransport?: HttpTransport;
   /** Publish allowance, charged per namespace holder. See DEFAULT_QUOTA. */
   quota?: QuotaPolicy;
+  /** Holder-attributed key-rotation budgets and reserved emergency capacity. */
+  rotationQuota?: Partial<RotationQuotaPolicy>;
   /**
    * Conversions between manifest versions, for read-time negotiation.
    *
@@ -158,6 +166,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   const validator = createPrexValidator();
   const serviceabilityTtl = options.serviceabilityTtlMilliseconds ?? 86_400_000;
   const quota = options.quota ?? DEFAULT_QUOTA;
+  const rotationQuota = checkedRotationQuota(options.rotationQuota);
   const migrations = options.manifestMigrations ?? [];
   // Checks are triggered by reads, so at most one is in flight per package —
   // otherwise a popular package under load would fan out one request per
@@ -369,7 +378,8 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           403,
           'A rotation must replace the predecessor key material',
         );
-      assertFreshRotation(rotation.rotatedAt, clock.now());
+      const nowValue = clock.now();
+      assertFreshRotation(rotation.rotatedAt, nowValue);
       try {
         await Ed25519Verifier.fromJwk(
           rotation.nextKeyId,
@@ -397,23 +407,60 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         reason: 'rotated' as const,
         replacedBy: rotation.nextKeyId,
       };
-      assertValid(
-        REVOCATION_LIST_SCHEMA,
-        {
-          revocationListVersion: '1',
-          registryId: options.registryId,
-          serial: store.revocationSerial() + 1,
-          issuedAt: clock.now(),
-          revoked: [...store.revocations(), revocation],
-        } as unknown as JsonValue,
-        validator,
+      const result = store.rotateKeyWithinQuota(
+        rotation,
+        revocation,
+        rotationQuota,
+        Date.parse(nowValue),
       );
-      if (!store.rotateKey(rotation, revocation))
+      if (!result.rotated) {
+        if (result.reason === 'rate') {
+          const state = quotaState(
+            result.recent,
+            rotationQuota,
+            Date.parse(nowValue),
+          );
+          throw new QuotaError(
+            `${result.holderId} has rotated keys ${rotationQuota.limit} times in the last ${rotationQuota.windowSeconds} seconds`,
+            retryAfterSeconds(state, Date.parse(nowValue)),
+          );
+        }
+        if (result.reason === 'holder-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `${result.holderId} has exhausted its active key-rotation allowance`,
+          );
+        if (result.reason === 'chain-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            'This key-rotation chain has reached its configured maximum length',
+          );
+        if (result.reason === 'global-capacity')
+          throw new PublishError(
+            'POLICY_DENIED',
+            503,
+            'Routine key-rotation capacity is exhausted; emergency revocation capacity remains reserved',
+          );
+        if (result.reason === 'unattributed')
+          throw new PublishError(
+            'POLICY_DENIED',
+            403,
+            `Key ${rotation.previousKeyId} has no fully verified holder attribution`,
+          );
+        if (result.reason === 'next-key-exists')
+          throw new PublishError(
+            'INVALID_REQUEST',
+            409,
+            `Key id ${rotation.nextKeyId} became known before rotation could commit`,
+          );
         throw new PublishError(
           'INVALID_SIGNATURE',
           403,
           `Key ${rotation.previousKeyId} was revoked before rotation could commit`,
         );
+      }
       reply.code(201);
       return sendJson(reply, {
         rotated: rotation.previousKeyId,
@@ -1051,12 +1098,17 @@ function assertNamespace(
   for (const namespace of candidates) {
     const permitted = new Set(store.keysFor(namespace));
     if (permitted.size === 0) continue;
-    if (signatures.some((signature) => permitted.has(signature.keyId)))
+    if (signatures.some((signature) => permitted.has(signature.keyId))) {
       // The most specific matching namespace is the one that governs, and its
       // holder is who the publish is charged to.
-      return (
-        store.holderForNamespace(namespace) ?? holderOf(namespace, 'dns-txt')
+      const holder = store.holderForNamespace(namespace);
+      if (holder !== undefined) return holder;
+      throw new PublishError(
+        'POLICY_DENIED',
+        403,
+        `Namespace ${namespace} has no verified holder attribution; re-verify its namespace proof`,
       );
+    }
     break;
   }
   throw new PublishError(
@@ -1236,6 +1288,31 @@ function boundedLimit(value?: string): number {
       'limit must be a positive integer',
     );
   return Math.min(parsed, MAXIMUM_LIMIT);
+}
+
+function checkedRotationQuota(
+  overrides?: Partial<RotationQuotaPolicy>,
+): RotationQuotaPolicy {
+  const policy = { ...DEFAULT_ROTATION_QUOTA, ...overrides };
+  for (const [name, value] of Object.entries(policy))
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new TypeError(`${name} must be a positive safe integer`);
+  if (policy.maximumActiveRevocations > 10_000)
+    throw new TypeError(
+      'maximumActiveRevocations cannot exceed the revocation-list contract limit',
+    );
+  if (policy.reservedEmergencyRevocations >= policy.maximumActiveRevocations)
+    throw new TypeError(
+      'reservedEmergencyRevocations must leave capacity for routine rotations',
+    );
+  if (
+    policy.maximumActiveRotationsPerHolder >
+    policy.maximumActiveRevocations - policy.reservedEmergencyRevocations
+  )
+    throw new TypeError(
+      'maximumActiveRotationsPerHolder cannot exceed routine rotation capacity',
+    );
+  return policy;
 }
 
 function assertTimestamp(value: string): string {
