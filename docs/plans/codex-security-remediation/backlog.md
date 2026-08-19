@@ -11,7 +11,7 @@ policy controls that the evaluator cannot enforce.
 
 ## 02 — Registry and network authority
 
-Status: planned.
+Status: independently approved; focused and 15-gate layer aggregate green.
 
 Close findings 3, 5, 6, 13, 17, 21, and 24. Authenticate registry mutation, bind
 namespaces and credentials to operator configuration, constrain outbound origins
