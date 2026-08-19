@@ -93,9 +93,10 @@ about 0.4s. Project-state mutation (`init`, `add`, `install`, `update`,
 `remove`, generation switching and garbage collection) currently refuses with
 `UNSAFE_PATH`: Node does not expose the no-follow, handle-relative Windows
 filesystem primitive required to keep `.opm` metadata and shims race-safe.
-Commands that do not access `.opm` metadata, notably `opm pack`, help and
-version, remain available; `opm list` does not. This is an explicit capability
-withdrawal, not a fallback to pathname checks.
+Packing also refuses on Windows because artifact and receipt publication uses
+the same no-follow atomic writer. Help and version remain available; `opm list`
+does not. This is an explicit capability withdrawal, not a fallback to pathname
+checks.
 
 ---
 

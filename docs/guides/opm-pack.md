@@ -1,5 +1,9 @@
 # Packing with `opm`
 
+`opm pack` currently requires Linux or macOS. Windows is refused before output
+publication because Node does not expose the no-follow, handle-relative
+filesystem primitive used by every artifact and receipt writer.
+
 `opm pack` writes target-native package files and `opm-pack-receipt.json`.
 Standardized packing is the default and does not need the target package manager
 installed:

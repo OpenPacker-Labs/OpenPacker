@@ -104,8 +104,8 @@ export async function readTextFile(path: string): Promise<TextFile> {
  * Write via a temporary file in the same directory, then rename.
  *
  * A half-written `package.json` is worse than an unmodified one, and rename is
- * the only step that is atomic on both POSIX and Windows. Matches how the opm
- * store and the generation ledger already write.
+ * the atomic publication step on supported POSIX hosts. Windows is refused by
+ * the stable-directory boundary below rather than falling back to pathnames.
  */
 export async function writeFileAtomic(
   path: string,
