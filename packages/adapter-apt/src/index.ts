@@ -15,6 +15,7 @@ import {
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   HostInstallerSandboxError,
+  findHostExecutable,
   planSandboxSummary,
   runHostInstaller,
   type HostInstallerRunInput,
@@ -136,28 +137,21 @@ export class AptSystemProvider implements InstallerProvider {
       }),
     private readonly currentPlatform: () => string = platform,
     private readonly isRoot: () => boolean = () => process.getuid?.() === 0,
+    private readonly findExecutable: (
+      name: string,
+    ) => Promise<string | undefined> = findHostExecutable,
   ) {}
 
-  async available(signal?: AbortSignal): Promise<InstallerAvailability> {
+  async available(_signal?: AbortSignal): Promise<InstallerAvailability> {
     if (this.currentPlatform() !== 'linux')
       return {
         available: false,
         reason: `apt is Linux-only; this host is ${this.currentPlatform()}`,
       };
-    try {
-      const { stdout } = await this.execute(
-        'apt-get',
-        ['--version'],
-        signal ? { signal } : {},
-      );
-      const version = /apt\s+(\S+)/u.exec(stdout)?.[1];
-      return {
-        available: true,
-        tool: { name: 'apt-get', ...(version ? { version } : {}) },
-      };
-    } catch {
-      return { available: false, reason: 'apt-get is not on PATH' };
-    }
+    const path = await this.findExecutable('apt-get');
+    return path
+      ? { available: true, tool: { name: 'apt-get', path } }
+      : { available: false, reason: 'apt-get is not on PATH' };
   }
 
   /** Candidate and installed versions, as apt reports them. */
@@ -214,12 +208,6 @@ export class AptSystemProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallOutcome> {
     const plan = await this.plan(exactPurl, options);
-    const availability = await this.available(options.signal);
-    if (!availability.available)
-      throw new ProviderError(
-        'UNSUPPORTED_ECOSYSTEM',
-        `apt cannot run here: ${availability.reason}`,
-      );
     if (options.dryRun)
       return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
     // Elevation is consented to, never assumed. A PURL naming a system package
@@ -230,17 +218,41 @@ export class AptSystemProvider implements InstallerProvider {
         `Installing ${exactPurl} needs root. Re-run with elevation allowed; ` +
           `the command would be: ${plan.command.join(' ')}`,
       );
+    const availability = await this.available(options.signal);
+    if (!availability.available)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        `apt cannot run here: ${availability.reason}`,
+      );
+
+    const aptPath = availability.tool?.path;
+    if (!aptPath)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'apt-get did not resolve to an executable path',
+      );
+    const sudoPath = plan.requiresElevation
+      ? await this.findExecutable('sudo')
+      : undefined;
+    if (plan.requiresElevation && !sudoPath)
+      throw new ProviderError('UNSUPPORTED_ECOSYSTEM', 'sudo is not on PATH');
+    const executionPlan: InstallPlan = {
+      ...plan,
+      command: plan.requiresElevation
+        ? [sudoPath!, aptPath, ...plan.command.slice(2)]
+        : [aptPath, ...plan.command.slice(1)],
+    };
 
     try {
       const result = await runHostInstaller(
-        hostInstallerInput(options, plan.command),
+        hostInstallerInput(options, executionPlan.command),
       );
       const { installed } = await this.versions(
         aptName(exactPurl).name,
         options.signal,
       ).catch(() => ({ installed: undefined }));
       return {
-        ...plan,
+        ...executionPlan,
         performed: true,
         exitCode: result.exitCode,
         stdout: result.stdout,

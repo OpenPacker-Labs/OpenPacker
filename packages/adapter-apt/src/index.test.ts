@@ -31,14 +31,20 @@ const linux = () => 'linux';
 
 describe('availability', () => {
   it('reports the tool it found', async () => {
-    const { execute } = fakeApt({
+    const { calls, execute } = fakeApt({
       'apt-get --version': { stdout: 'apt 2.8.3 (amd64)' },
     });
-    const apt = new AptSystemProvider(execute, linux, () => false);
+    const apt = new AptSystemProvider(
+      execute,
+      linux,
+      () => false,
+      async () => '/usr/bin/apt-get',
+    );
     expect(await apt.available()).toMatchObject({
       available: true,
-      tool: { name: 'apt-get', version: '2.8.3' },
+      tool: { name: 'apt-get', path: '/usr/bin/apt-get' },
     });
+    expect(calls).toEqual([]);
   });
 
   it('reports unavailability instead of throwing, so a caller can pick another provider', async () => {
@@ -53,6 +59,7 @@ describe('availability', () => {
       fakeApt({ 'apt-get --version': { fail: new Error('ENOENT') } }).execute,
       linux,
       () => false,
+      async () => undefined,
     );
     expect((await missing.available()).reason).toMatch(/not on PATH/u);
   });

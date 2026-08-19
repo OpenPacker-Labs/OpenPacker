@@ -19,6 +19,7 @@ import {
   limitedContainmentLoss,
   matchPackageGrant,
   mxcFilesystemPaths,
+  quoteCommandLine,
   networkToolMaskFiles,
   notSandboxedLoss,
   planSandboxSummary,
@@ -450,4 +451,20 @@ describe('@openpacker/sandbox', () => {
       SANDBOX_LOSS.SYSTEM_LIMITED,
     );
   });
+});
+
+it('refuses MXC command-string expansion and ambiguous quoting', () => {
+  for (const argument of [
+    '$(touch owned)',
+    '`touch owned`',
+    '$HOME',
+    '%USERPROFILE%',
+    'line\nbreak',
+    'double"quote',
+    "single'quote",
+    'trailing\\',
+  ])
+    expect(() => quoteCommandLine(['/bin/tool', argument])).toThrowError(
+      expect.objectContaining({ code: 'POLICY_DENIED' }),
+    );
 });

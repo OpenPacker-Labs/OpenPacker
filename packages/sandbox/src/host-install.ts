@@ -1,4 +1,7 @@
 import type { SemanticLoss } from '@openpacker/contracts';
+import { constants } from 'node:fs';
+import { access, realpath } from 'node:fs/promises';
+import { delimiter, extname, isAbsolute, join } from 'node:path';
 import { runInSandbox } from './run.js';
 import { SANDBOX_LOSS, type SandboxPolicy } from './types.js';
 import { loss } from './policy.js';
@@ -8,6 +11,30 @@ export interface HostInstallerSandboxOptions {
   prefer?: 'auto' | 'mxc' | 'native';
   /** @deprecated Host installers always refuse ambient execution. */
   allowHostUnsandboxedInstall?: boolean;
+}
+
+/** Resolve a host installer without executing PATH-controlled code. */
+export async function findHostExecutable(
+  name: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<string | undefined> {
+  const extensions =
+    process.platform === 'win32' && extname(name) === ''
+      ? (environment.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')
+      : [''];
+  for (const directory of (environment.PATH ?? '').split(delimiter)) {
+    if (!isAbsolute(directory)) continue;
+    for (const extension of extensions) {
+      const candidate = join(directory, `${name}${extension}`);
+      try {
+        await access(candidate, constants.X_OK);
+        return await realpath(candidate);
+      } catch {
+        // Continue through the operator-supplied search path without running it.
+      }
+    }
+  }
+  return undefined;
 }
 
 export function sandboxPolicyFromInstallOptions(

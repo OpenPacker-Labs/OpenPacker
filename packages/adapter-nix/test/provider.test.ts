@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { installableFromPurl, NixStoreProvider } from '../src/index.js';
+import {
+  installableFromPurl,
+  NixCodec,
+  NixStoreProvider,
+} from '../src/index.js';
 
 /**
  * Offline fixtures pin argv and shape decisions. Live Nix coverage lives in
@@ -47,17 +51,33 @@ function withRealise(pathInfo: string) {
 
 describe('availability', () => {
   it('reports the nix it found', async () => {
-    const { execute } = nix({ 'nix --version': 'nix (Nix) 2.24.9' });
-    expect(await new NixStoreProvider(execute).available()).toMatchObject({
-      available: true,
-      tool: { name: 'nix', version: '2.24.9' },
+    const { calls, execute } = nix({
+      'nix --version': 'nix (Nix) 2.24.9',
     });
+    expect(
+      await new NixStoreProvider(
+        execute,
+        new NixCodec(),
+        async () => '/nix/var/nix/profiles/default/bin/nix',
+      ).available(),
+    ).toMatchObject({
+      available: true,
+      tool: {
+        name: 'nix',
+        path: '/nix/var/nix/profiles/default/bin/nix',
+      },
+    });
+    expect(calls).toEqual([]);
   });
 
   it('reports absence instead of throwing', async () => {
-    const provider = new NixStoreProvider(async () => {
-      throw new Error('ENOENT');
-    });
+    const provider = new NixStoreProvider(
+      async () => {
+        throw new Error('must not execute');
+      },
+      new NixCodec(),
+      async () => undefined,
+    );
     expect((await provider.available()).available).toBe(false);
   });
 });

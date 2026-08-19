@@ -132,12 +132,17 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
   };
 }
 
-function quoteCommandLine(argv: readonly string[]): string {
+export function quoteCommandLine(argv: readonly string[]): string {
   return argv
     .map((part) => {
       if (part.length === 0) return '""';
-      if (/^[A-Za-z0-9_./:@%+=,-]+$/u.test(part)) return part;
-      return `"${part.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+      if (/[$%`!^&|<>;\r\n"']/u.test(part) || part.endsWith('\\'))
+        throw new SandboxBackendError(
+          'POLICY_DENIED',
+          'MXC command arguments contain characters its string ABI cannot encode safely',
+        );
+      if (/^[A-Za-z0-9_./:@+=,-]+$/u.test(part)) return part;
+      return `"${part.replaceAll('\\', '\\\\')}"`;
     })
     .join(' ');
 }

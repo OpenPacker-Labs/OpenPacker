@@ -37,6 +37,23 @@ describe('ChocolateyProvider', () => {
     );
   });
 
+  it('discovers an exact executable path without running choco', async () => {
+    let executions = 0;
+    const provider = new ChocolateyProvider(
+      async () => {
+        executions += 1;
+        throw new Error('must not execute');
+      },
+      () => 'win32',
+      async () => 'C:\\ProgramData\\choco.exe',
+    );
+    expect(await provider.available()).toMatchObject({
+      available: true,
+      tool: { path: 'C:\\ProgramData\\choco.exe' },
+    });
+    expect(executions).toBe(0);
+  });
+
   it('refuses install without elevation consent', async () => {
     const provider = new ChocolateyProvider(
       async () => ({ stdout: '2.2.2', stderr: '' }),

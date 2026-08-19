@@ -26,13 +26,20 @@ const windows = () => 'win32';
 
 describe('availability', () => {
   it('reports the winget it found', async () => {
-    const { execute } = fakeWinget({ 'winget --version': 'v1.8.1911' });
+    const { calls, execute } = fakeWinget({
+      'winget --version': 'v1.8.1911',
+    });
     expect(
-      await new WingetSystemProvider(execute, windows).available(),
+      await new WingetSystemProvider(
+        execute,
+        windows,
+        async () => 'C:\\Program Files\\winget.exe',
+      ).available(),
     ).toMatchObject({
       available: true,
-      tool: { name: 'winget', version: '1.8.1911' },
+      tool: { name: 'winget', path: 'C:\\Program Files\\winget.exe' },
     });
+    expect(calls).toEqual([]);
   });
 
   it('reports that it is Windows-only rather than throwing', async () => {

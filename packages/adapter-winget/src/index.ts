@@ -15,6 +15,7 @@ import {
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   HostInstallerSandboxError,
+  findHostExecutable,
   planSandboxSummary,
   runHostInstaller,
 } from '@openpacker/sandbox';
@@ -115,28 +116,21 @@ export class WingetSystemProvider implements InstallerProvider {
         maxBuffer: 8 * 1024 * 1024,
       }),
     private readonly currentPlatform: () => string = platform,
+    private readonly findExecutable: (
+      name: string,
+    ) => Promise<string | undefined> = findHostExecutable,
   ) {}
 
-  async available(signal?: AbortSignal): Promise<InstallerAvailability> {
+  async available(_signal?: AbortSignal): Promise<InstallerAvailability> {
     if (this.currentPlatform() !== 'win32')
       return {
         available: false,
         reason: `winget is Windows-only; this host is ${this.currentPlatform()}`,
       };
-    try {
-      const { stdout } = await this.execute(
-        'winget',
-        ['--version'],
-        signal ? { signal } : {},
-      );
-      const version = /v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)/u.exec(stdout)?.[1];
-      return {
-        available: true,
-        tool: { name: 'winget', ...(version ? { version } : {}) },
-      };
-    } catch {
-      return { available: false, reason: 'winget is not on PATH' };
-    }
+    const path = await this.findExecutable('winget');
+    return path
+      ? { available: true, tool: { name: 'winget', path } }
+      : { available: false, reason: 'winget is not on PATH' };
   }
 
   /** Published versions, newest last, as `winget show --versions` reports. */
@@ -203,25 +197,35 @@ export class WingetSystemProvider implements InstallerProvider {
     options: InstallOptions = {},
   ): Promise<InstallOutcome> {
     const plan = await this.plan(exactPurl, options);
+    if (options.dryRun)
+      return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
     const availability = await this.available(options.signal);
     if (!availability.available)
       throw new ProviderError(
         'UNSUPPORTED_ECOSYSTEM',
         `winget cannot run here: ${availability.reason}`,
       );
-    if (options.dryRun)
-      return { ...plan, performed: false, exitCode: 0, stdout: '', stderr: '' };
+    const executable = availability.tool?.path;
+    if (!executable)
+      throw new ProviderError(
+        'UNSUPPORTED_ECOSYSTEM',
+        'winget did not resolve to an executable path',
+      );
+    const executionPlan: InstallPlan = {
+      ...plan,
+      command: [executable, ...plan.command.slice(1)],
+    };
 
     try {
       const result = await runHostInstaller({
-        argv: plan.command,
+        argv: executionPlan.command,
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         ...(options.offline === undefined ? {} : { offline: options.offline }),
         ecosystem: 'winget',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
       return {
-        ...plan,
+        ...executionPlan,
         performed: true,
         exitCode: result.exitCode,
         stdout: result.stdout,
