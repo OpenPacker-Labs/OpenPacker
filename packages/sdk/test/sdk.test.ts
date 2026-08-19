@@ -39,6 +39,11 @@ const capabilities = {
 } as const;
 
 describe('OpenPackerClient', () => {
+  it('keeps the browser entrypoint aligned with the primary SDK', async () => {
+    const browser = await import('../src/browser.js');
+    expect(browser.OpenPackerClient).toBe(OpenPackerClient);
+  });
+
   it("returns parsed data and the server's exact bytes", async () => {
     const bytes = new TextEncoder().encode(JSON.stringify(capabilities));
     const client = new OpenPackerClient({
