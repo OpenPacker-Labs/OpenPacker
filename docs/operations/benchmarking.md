@@ -8,11 +8,13 @@ proof/explanation, proof checks, bounded exhaustive oracle, 8 MiB OCI-style
 streaming and chunking, and WASM load.
 
 The committed [`baseline.json`](../../benchmarks/baseline.json) contains broad
-maximum wall-time and heap-growth regression thresholds. They are CI safety
-limits, not latency/throughput promises and not comparisons with native package
-managers. Report Node version, platform, fixture size, iteration count, warm-up,
-and whether a metric includes loading, canonicalization, proof, or I/O whenever
-publishing a result.
+maximum process-CPU-time and heap-growth regression thresholds. Warm repeated
+operations use process CPU time so unrelated host load cannot consume their
+regression budget; cold load and cold solve retain wall time. These are local
+safety limits, not latency/throughput promises or comparisons with native
+package managers. Reports identify the clock used for each metric. Also report
+Node version, platform, fixture size, iteration count, warm-up, and whether a
+metric includes loading, canonicalization, proof, or I/O when publishing one.
 
 The current Node `>=20.20.0`, 10,000-iteration threshold set is:
 
