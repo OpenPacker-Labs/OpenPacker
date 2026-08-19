@@ -165,6 +165,16 @@ export function createBwrapBackend(): SandboxBackend {
         profile: input.profile,
         legacyFatRoot: input.legacyFatRoot === true,
         environment: input.env,
+        ...(input.directoryAuthorities === undefined
+          ? {}
+          : {
+              directoryAuthorities: input.directoryAuthorities.map(
+                ({ path }, index) => ({
+                  path,
+                  childFd: 3 + index,
+                }),
+              ),
+            }),
       });
       return spawnCapture({
         argv,
@@ -174,6 +184,9 @@ export function createBwrapBackend(): SandboxBackend {
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'pid-namespace',
+        ...(input.directoryAuthorities === undefined
+          ? {}
+          : { inheritedFds: input.directoryAuthorities.map(({ fd }) => fd) }),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -190,6 +203,7 @@ export function buildBwrapArgv(input: {
   profile: SandboxProfile;
   legacyFatRoot?: boolean;
   environment?: Readonly<Record<string, string>>;
+  directoryAuthorities?: readonly { path: string; childFd: number }[];
 }): string[] {
   const args: string[] = [
     input.bwrap,
@@ -251,8 +265,12 @@ export function buildBwrapArgv(input: {
   if (!rw.has(cwdPath) && !ro.has(cwdPath)) ro.add(cwdPath);
 
   for (const path of rw) {
-    if (!existsSync(path)) continue;
-    args.push('--bind', path, path);
+    const authority = input.directoryAuthorities?.find(
+      ({ path: target }) => resolve(target) === path,
+    );
+    if (!authority && !existsSync(path)) continue;
+    if (authority) args.push('--bind-fd', String(authority.childFd), path);
+    else args.push('--bind', path, path);
   }
   for (const path of ro) {
     if (rw.has(path)) continue;

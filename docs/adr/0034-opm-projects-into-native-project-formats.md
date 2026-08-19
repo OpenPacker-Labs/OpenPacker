@@ -65,9 +65,9 @@ traverse and publish through runtime-verified no-follow directory handles.
 Windows refuses `layout` projection with `UNSAFE_PATH`; `manifest` and `lock`
 projection remain available there until Node exposes an equivalent safe
 fd-relative filesystem primitive. The broader `.opm` project-state workflow is
-likewise unavailable on Windows; read-only commands and packing remain
-available. The CLI guide records that explicit withdrawal separately from
-projection depth.
+likewise unavailable on Windows, including `opm list`; packing and commands that
+do not access `.opm` metadata remain available. The CLI guide records that
+explicit withdrawal separately from projection depth.
 
 `opm` is now safe to run in an existing npm or .NET project: it adds what it
 manages and leaves everything else where it was. That is the property that made

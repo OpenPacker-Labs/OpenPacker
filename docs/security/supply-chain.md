@@ -44,7 +44,7 @@ is hard-denied), not a silent allow.
 | Yank after compromise                      | Lifecycle events                                                     | Lifecycle reduction + `allowYanked: false`                          |
 | Digest substitution                        | Artifact digest/size on fetch                                        | Fail closed before extract; CAS content-addressed store             |
 | Host installer scripts (apt/choco)         | Semantic loss `SYSTEM_INSTALL_NOT_BYTE_VERIFIED`                     | Cannot claim `native-validated-v1`; elevation consent               |
-| Unsandboxed host install                   | `SYSTEM_INSTALL_NOT_SANDBOXED` when ambient                          | Default refuse; `allowHostUnsandboxedInstall` or `sandbox.mode=off` |
+| Unsandboxed host install                   | Legacy `SYSTEM_INSTALL_NOT_SANDBOXED` evidence                       | Always refuse; legacy ambient policy fields do not execute          |
 
 ## Policy profile (configured default)
 

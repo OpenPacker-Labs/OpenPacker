@@ -205,6 +205,16 @@ export function supportsStableProjectMetadata(
   return platform === 'linux' || platform === 'darwin';
 }
 
+export function assertStableProjectMetadataSupported(
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (!supportsStableProjectMetadata(platform))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      'Stable no-follow project metadata is unavailable on this platform',
+    );
+}
+
 export async function ensureStableDirectory(path: string): Promise<void> {
   const handle = await openStableDirectory(path, true);
   try {

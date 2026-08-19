@@ -114,11 +114,22 @@ upstream Codex Security release currently has no patched version.
   Windows project-state capability overclaim, a growing-file allocation gap,
   store/generation authority handoffs, validation-wide absent-state handling,
   incomplete directory/staging snapshots, and best-effort descendant killing.
-  Windows project mutation is now explicitly withdrawn while read-only and
-  packing remain; metadata reads allocate only the snapshotted bounded size;
-  store and generation transactions retain one fd-relative authority through
-  completion; only the state-file open maps ENOENT to absence; layout compares
-  complete source and staged tree snapshots; and production execution requires
-  Bubblewrap PID-namespace or MXC job ownership (the mock process group is
-  test-only). OPM project 153/153, project I/O 26/26, sandbox 35/35, and the
-  exact amended 12-gate layer aggregate passed with process authority.
+  Windows project mutation is now explicitly withdrawn while packing remains;
+  metadata reads allocate only the snapshotted bounded size; store and
+  generation transactions retain one fd-relative authority through completion;
+  only the state-file open maps ENOENT to absence; layout compares complete
+  source and staged tree snapshots; and production execution requires Bubblewrap
+  PID-namespace or MXC job ownership (the mock process group is test-only). OPM
+  project 153/153, project I/O 26/26, sandbox 35/35, and the exact amended
+  12-gate layer aggregate passed with process authority.
+- 2026-08-19 layer 03 third review remediation: lifecycle execution now passes
+  an inherited stable directory handle to Bubblewrap and binds it with
+  `--bind-fd`; staged layouts revalidate complete source and destination trees
+  after old-destination removal and again after publication; host installers
+  reject the legacy ambient option before execution and all four providers now
+  route installs only through OS-owned containment; and Windows documentation no
+  longer claims `opm list` support. Directory-handle accessibility after exec
+  has a real child-process oracle. Sandbox 36/36, OPM project 154/154, project
+  I/O 27/27, apt 14/14, WinGet 10/10, Chocolatey 3/3, and Nix 32 passed with 3
+  opt-in live skips. Contract validation, package typechecks, and the exact
+  layer impact aggregate passed with process authority; diff checks were clean.

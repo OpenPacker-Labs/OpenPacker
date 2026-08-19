@@ -9454,7 +9454,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           allowHostUnsandboxedInstall: {
             $comment:
-              'Permit host installers (apt/winget/…) to run without a jail. Emits SYSTEM_INSTALL_NOT_SANDBOXED. Default false.',
+              'Deprecated compatibility field. Ambient host install is always refused because it has no owned process-tree boundary.',
             type: 'boolean',
           },
           sandboxPackageGrants: {

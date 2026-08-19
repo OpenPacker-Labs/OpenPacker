@@ -90,10 +90,18 @@ export async function materialiseTree(
     const published = join(parentPath, name);
     await assertNamedHandle(staging, stagingHandle);
     await rm(published, { recursive: true, force: true });
+    await assertTreeSnapshot(sourceHandle, sourceSnapshot);
+    await assertTreeSnapshot(stagingHandle, stagedSnapshot);
     await assertNamedHandle(staging, stagingHandle);
     await rename(staging, published);
     try {
       await assertNamedHandle(published, stagingHandle);
+      await assertTreeSnapshot(sourceHandle, sourceSnapshot);
+      stagedSnapshot.set(
+        '',
+        snapshot('directory', await stagingHandle.stat({ bigint: true })),
+      );
+      await assertTreeSnapshot(stagingHandle, stagedSnapshot);
     } catch (error) {
       await rm(published, { recursive: true, force: true }).catch(
         () => undefined,

@@ -45,6 +45,7 @@ import {
   writeProjectState,
 } from './install.js';
 import {
+  assertStableProjectMetadataSupported,
   assertSafeSegment,
   CATALOG_NAME,
   ensureStableDirectory,
@@ -436,7 +437,10 @@ export async function uninstallProject(input: {
   return { schemaVersion: 1, packages: {} };
 }
 
-export async function listInstalled(root: string): Promise<
+export async function listInstalled(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<
   {
     alias: string;
     purl: string;
@@ -445,6 +449,7 @@ export async function listInstalled(root: string): Promise<
     bins: string[];
   }[]
 > {
+  assertStableProjectMetadataSupported(platform);
   const paths = projectPaths(root);
   const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
   const state = (await readProjectState(paths.projectState)) ?? {

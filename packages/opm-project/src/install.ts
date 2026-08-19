@@ -525,14 +525,23 @@ export async function materializeLockPackage(input: {
         hasLifecycleScripts(declared) &&
         lifecycleScriptsAllowed(input.policy, input.pkg.purl)
       ) {
-        const result = await runDeclaredLifecycleScripts({
-          declared,
-          packageDir: stableStorePath,
-          packageId: input.pkg.purl,
-          policy: input.policy,
-        });
-        lifecycleScriptsExecuted = result.executed;
-        sandboxOutcomes = result.outcomes;
+        const packageHandle = await open(
+          stableStorePath,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+        try {
+          const result = await runDeclaredLifecycleScripts({
+            declared,
+            packageDir: storePath,
+            packageId: input.pkg.purl,
+            policy: input.policy,
+            directoryAuthority: { fd: packageHandle.fd, path: storePath },
+          });
+          lifecycleScriptsExecuted = result.executed;
+          sandboxOutcomes = result.outcomes;
+        } finally {
+          await packageHandle.close();
+        }
       }
     }
     if (!cached || input.force)

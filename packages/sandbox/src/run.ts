@@ -225,6 +225,9 @@ export async function runInSandbox(
           maximumStdoutBytes: resolved.maximumStdoutBytes,
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
+          ...(input.directoryAuthorities === undefined
+            ? {}
+            : { directoryAuthorities: input.directoryAuthorities }),
           ...(timeoutMs > 0 ? { timeoutMs } : {}),
           ...(signal === undefined ? {} : { signal }),
         });

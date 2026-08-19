@@ -705,6 +705,13 @@ describe('fail-closed install paths', () => {
 });
 
 describe('project lifecycle offline', () => {
+  it('refuses list when stable project metadata is unavailable', async () => {
+    const root = await tempProject();
+    await expect(listInstalled(root, 'win32')).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+  });
+
   it('init add install list remove uninstall sync', async () => {
     const root = await tempProject();
 

@@ -101,14 +101,14 @@ describe('planning', () => {
     });
   });
 
-  it('does not claim full jail enforcement for host-install', async () => {
+  it('does not let the legacy ambient option disable enforcement', async () => {
     const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
     const jailed = await apt.plan('pkg:deb/curl');
     expect(jailed.sandbox?.willEnforce).toBe(true);
     const ambient = await apt.plan('pkg:deb/curl', {
       sandbox: { allowHostUnsandboxedInstall: true },
     });
-    expect(ambient.sandbox?.willEnforce).toBe(false);
+    expect(ambient.sandbox?.willEnforce).toBe(true);
     expect(ambient.semanticLoss.map((loss) => loss.code)).not.toContain(
       'SYSTEM_INSTALL_SANDBOXED',
     );
@@ -176,14 +176,13 @@ describe('installing', () => {
   it('forwards offline into the host-install funnel (the inverted spread drops it)', () => {
     // The bug: `undefined ? { offline: undefined } : {}` so `offline: true`
     // never reaches runHostInstaller and the jail gets network.
-    const noop = async () => ({ stdout: '', stderr: '' });
-    expect(
-      hostInstallerInput({ offline: true }, ['apt-get'], noop).offline,
-    ).toBe(true);
-    expect(
-      hostInstallerInput({ offline: false }, ['apt-get'], noop).offline,
-    ).toBe(false);
-    expect(hostInstallerInput({}, ['apt-get'], noop).offline).toBeUndefined();
+    expect(hostInstallerInput({ offline: true }, ['apt-get']).offline).toBe(
+      true,
+    );
+    expect(hostInstallerInput({ offline: false }, ['apt-get']).offline).toBe(
+      false,
+    );
+    expect(hostInstallerInput({}, ['apt-get']).offline).toBeUndefined();
     expect(
       hostInstallerInput(
         {
@@ -191,7 +190,6 @@ describe('installing', () => {
           sandbox: { allowHostUnsandboxedInstall: true },
         },
         ['apt-get'],
-        noop,
       ),
     ).toMatchObject({
       offline: true,
@@ -199,7 +197,7 @@ describe('installing', () => {
     });
   });
 
-  it('runs the planned command once consented, and reports what it settled on', async () => {
+  it('refuses the legacy ambient option before executing the install', async () => {
     const { calls, execute } = fakeApt({
       'apt-get --version': { stdout: 'apt 2.8.3' },
       'sudo apt-get install --yes curl': { stdout: 'Setting up curl' },
@@ -209,47 +207,13 @@ describe('installing', () => {
       },
     });
     const apt = new AptSystemProvider(execute, linux, () => false);
-    const outcome = await apt.install('pkg:deb/curl', {
-      allowElevation: true,
-      // Unit tests inject execute(); ambient opt-in exercises that path.
-      sandbox: { allowHostUnsandboxedInstall: true },
-    });
-    expect(outcome.performed).toBe(true);
-    expect(outcome.exitCode).toBe(0);
-    expect(outcome.installedVersion).toBe('8.5.0-2ubuntu10.11');
-    expect(outcome.sandboxEnforced).toBe(false);
-    expect(outcome.semanticLoss.map((loss) => loss.code)).toContain(
-      'SYSTEM_INSTALL_NOT_SANDBOXED',
-    );
-    expect(outcome.semanticLoss.map((loss) => loss.code)).not.toContain(
-      'SYSTEM_INSTALL_SANDBOXED',
-    );
-    expect(calls).toContainEqual([
-      'sudo',
-      'apt-get',
-      'install',
-      '--yes',
-      'curl',
-    ]);
-  });
-
-  it('surfaces a failing install as an outcome rather than a throw', async () => {
-    const { execute } = fakeApt({
-      'apt-get --version': { stdout: 'apt 2.8.3' },
-      'sudo apt-get install': {
-        fail: Object.assign(new Error('exit 100'), {
-          code: 100,
-          stderr: 'E: Unable to locate package nope',
-        }),
-      },
-    });
-    const apt = new AptSystemProvider(execute, linux, () => false);
-    const outcome = await apt.install('pkg:deb/nope', {
-      allowElevation: true,
-      sandbox: { allowHostUnsandboxedInstall: true },
-    });
-    expect(outcome.exitCode).toBe(100);
-    expect(outcome.stderr).toMatch(/Unable to locate/u);
+    await expect(
+      apt.install('pkg:deb/curl', {
+        allowElevation: true,
+        sandbox: { allowHostUnsandboxedInstall: true },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(calls.some(([file]) => file === 'sudo')).toBe(false);
   });
 
   it('refuses to run at all where apt does not exist', async () => {

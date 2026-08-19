@@ -103,6 +103,8 @@ export interface RunInSandboxInput {
    */
   backend?: SandboxBackend;
   signal?: AbortSignal;
+  /** Open directory handles the backend must use instead of reopening paths. */
+  directoryAuthorities?: readonly { fd: number; path: string }[];
 }
 
 export interface SandboxOutcome {
@@ -152,6 +154,7 @@ export interface SandboxBackend {
     maximumStderrBytes: number;
     maximumOutputBytes: number;
     signal?: AbortSignal;
+    directoryAuthorities?: readonly { fd: number; path: string }[];
   }): Promise<{
     exitCode: number;
     stdout: string;

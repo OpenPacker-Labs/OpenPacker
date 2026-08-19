@@ -31,6 +31,9 @@ export function createMockBackend(options?: {
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
+        ...(input.directoryAuthorities === undefined
+          ? {}
+          : { inheritedFds: input.directoryAuthorities.map(({ fd }) => fd) }),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
@@ -133,6 +136,7 @@ export async function spawnCapture(input: {
   maximumStderrBytes?: number;
   maximumOutputBytes?: number;
   treeContainment?: 'pid-namespace' | 'test-only';
+  inheritedFds?: readonly number[];
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -155,6 +159,14 @@ export async function spawnCapture(input: {
     throw new SandboxBackendError(
       'TREE_CONTAINMENT_UNAVAILABLE',
       'PID namespace containment is unavailable on this platform',
+    );
+  if (
+    (input.inheritedFds?.length ?? 0) > 16 ||
+    input.inheritedFds?.some((fd) => !Number.isSafeInteger(fd) || fd < 0)
+  )
+    throw new SandboxBackendError(
+      'INVALID_FD_AUTHORITY',
+      'At most 16 valid directory handles may be inherited',
     );
 
   const timeoutMs = input.timeoutMs ?? 0;
@@ -181,7 +193,7 @@ export async function spawnCapture(input: {
       const child = spawn(command, args, {
         cwd: input.cwd,
         env: { ...input.env },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe', ...(input.inheritedFds ?? [])],
         detached: process.platform !== 'win32',
       });
       const output = new BoundedOutput({

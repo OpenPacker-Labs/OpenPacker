@@ -1,4 +1,5 @@
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { chmod, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -164,6 +165,38 @@ describe('@openpacker/sandbox', () => {
     expect(body.home).toContain('openpacker-sandbox');
   });
 
+  it('keeps a directory authority accessible after exec', async () => {
+    if (process.platform !== 'linux' && process.platform !== 'darwin') return;
+    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-fd-'));
+    await writeFile(join(cwd, 'proof'), 'stable');
+    const authority = await open(
+      cwd,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    try {
+      const fdPath =
+        process.platform === 'linux' ? '/proc/self/fd/3' : '/dev/fd/3';
+      const outcome = await runInSandbox({
+        argv: [
+          process.execPath,
+          '-e',
+          `process.stdout.write(require('fs').readFileSync(${JSON.stringify(
+            `${fdPath}/proof`,
+          )}, 'utf8'))`,
+        ],
+        cwd,
+        policy: { mode: 'fail-closed' },
+        readwritePaths: [cwd],
+        readonlyPaths: [],
+        directoryAuthorities: [{ fd: authority.fd, path: cwd }],
+        backend: createMockBackend(),
+      });
+      expect(outcome).toMatchObject({ exitCode: 0, stdout: 'stable' });
+    } finally {
+      await authority.close();
+    }
+  });
+
   it('mode off still refuses execution without owned tree containment', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
     await expect(
@@ -228,25 +261,19 @@ describe('@openpacker/sandbox', () => {
     await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('host installer helper records ambient loss when unsandboxed is allowed', async () => {
+  it('refuses the legacy ambient host installer option', async () => {
     const summary = planSandboxSummary({
       allowHostUnsandboxedInstall: true,
     });
-    expect(summary.willEnforce).toBe(false);
-    const result = await runHostInstaller({
-      argv: [process.execPath, '-e', 'process.stdout.write("apt")'],
-      ecosystem: 'deb',
-      sandbox: { allowHostUnsandboxedInstall: true },
-      ambientExecute: async () => ({ stdout: 'ok', stderr: '' }),
-    });
-    expect(result.exitCode).toBe(0);
-    expect(result.sandboxEnforced).toBe(false);
-    expect(result.containmentLimited).toBe(true);
-    expect(
-      result.extraLosses.some(
-        (l) => l.code === SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
-      ),
-    ).toBe(true);
+    expect(summary.willEnforce).toBe(true);
+    expect(summary.allowAmbient).toBe(false);
+    await expect(
+      runHostInstaller({
+        argv: [process.execPath, '-e', 'process.stdout.write("never")'],
+        ecosystem: 'deb',
+        sandbox: { allowHostUnsandboxedInstall: true },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
   });
 
   it('does not auto-grant MXC write on cwd (C2)', () => {
@@ -407,9 +434,11 @@ describe('@openpacker/sandbox', () => {
       network: false,
       profile: 'package-exec',
       environment: {},
+      directoryAuthorities: [{ path: '/tmp', childFd: 3 }],
     });
     expect(bwrap).toContain('--unshare-pid');
     expect(bwrap).toContain('--die-with-parent');
+    expect(bwrap.join(' ')).toContain('--bind-fd 3 /tmp');
     expect(sandboxPolicyFromInstallOptions({ mode: 'off' })).toMatchObject({
       mode: 'off',
       required: false,
