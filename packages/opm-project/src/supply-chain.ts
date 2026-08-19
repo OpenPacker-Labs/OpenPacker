@@ -371,7 +371,7 @@ export function lockPackageSupplyChainFields(
   facts: PolicyFacts,
 ): Pick<
   LockPackage,
-  'trustLevel' | 'publishedAt' | 'registryId' | 'sourceKind'
+  'trustLevel' | 'publishedAt' | 'registryId' | 'sourceKind' | 'lifecycle'
 > {
   return {
     ...(facts.trustLevel !== undefined && isTrustTier(facts.trustLevel)
@@ -384,5 +384,6 @@ export function lockPackageSupplyChainFields(
     ...(facts.sourceKind !== undefined && isSourceKind(facts.sourceKind)
       ? { sourceKind: facts.sourceKind }
       : {}),
+    ...(facts.lifecycle === undefined ? {} : { lifecycle: facts.lifecycle }),
   };
 }

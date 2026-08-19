@@ -470,12 +470,24 @@ export async function materializeLockPackage(input: {
   const paths = projectPaths(input.root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
   assertStoreKey(input.pkg.storeKey, input.pkg.digest);
-  if (input.policy?.blockExoticSources !== undefined) {
+  if (input.policy !== undefined) {
     const facts = captureFactsFromSourceUri(input.pkg.purl, input.pkg.source, {
       evaluationTime: new Date().toISOString(),
       dependencyDepth: input.pkg.reason === 'transitive' ? 1 : 0,
       lifecycleScriptsExecuted: false,
     });
+    facts.artifactSize = input.pkg.size;
+    facts.provider = input.pkg.ecosystem;
+    if (input.pkg.trustLevel !== undefined)
+      facts.trustLevel = input.pkg.trustLevel;
+    if (input.pkg.publishedAt !== undefined)
+      facts.publishedAt = input.pkg.publishedAt;
+    if (input.pkg.registryId !== undefined)
+      facts.registryId = input.pkg.registryId;
+    if (input.pkg.sourceKind !== undefined)
+      facts.sourceKind = input.pkg.sourceKind;
+    if (input.pkg.lifecycle !== undefined)
+      facts.lifecycle = input.pkg.lifecycle;
     await assertSupplyChainAllowed(
       policyDocumentFromPolicyInput(input.policy),
       facts,

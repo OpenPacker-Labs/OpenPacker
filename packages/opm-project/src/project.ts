@@ -411,6 +411,7 @@ export async function installProject(input: {
       ...(synced.native === undefined ? {} : { native: synced.native }),
     };
   }
+  assertLockMatchesManifest(input.root, manifest, lock);
   const offline = input.offline ?? manifest.options.offline;
   const state = await installFromLock({
     root: input.root,
@@ -424,6 +425,60 @@ export async function installProject(input: {
     lock,
   });
   return { lock, state, native };
+}
+
+function assertLockMatchesManifest(
+  root: string,
+  manifest: OpmManifest,
+  lock: OpmLockfile,
+): void {
+  for (const [alias, requirement] of Object.entries(manifest.packages)) {
+    const pkg = lock.packages[alias];
+    if (!pkg || pkg.reason !== 'direct')
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock does not contain direct manifest requirement ${alias}`,
+      );
+    if (stripPurlVersion(pkg.purl) !== stripPurlVersion(requirement.purl))
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match manifest PURL ${requirement.purl}`,
+      );
+    const exactRequirement =
+      stripPurlVersion(requirement.purl) !== requirement.purl
+        ? requirement.purl
+        : requirement.version !== undefined &&
+            /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(requirement.version)
+          ? exactPurl(requirement.purl, requirement.version)
+          : undefined;
+    if (exactRequirement !== undefined && pkg.purl !== exactRequirement)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match manifest version ${requirement.version}`,
+      );
+    if (
+      requirement.source !== undefined &&
+      pkg.source !== requirement.source &&
+      pkg.source !== normalizedRequirementSource(requirement.source, root)
+    )
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} does not match its manifest source`,
+      );
+  }
+  for (const [alias, pkg] of Object.entries(lock.packages))
+    if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock contains undeclared direct package ${alias}`,
+      );
+}
+
+function normalizedRequirementSource(source: string, root: string): string {
+  const resolved = resolveSource(source, root);
+  return resolved.startsWith('/') || /^[A-Za-z]:/u.test(resolved)
+    ? toFileUrl(resolved)
+    : resolved;
 }
 
 export async function uninstallProject(input: {

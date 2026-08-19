@@ -1,4 +1,4 @@
-import type { PolicyInput } from '@openpacker/contracts';
+import type { LifecycleState, PolicyInput } from '@openpacker/contracts';
 import type { SourceKind, TrustTier } from '@openpacker/policy';
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
@@ -135,6 +135,8 @@ export interface LockPackage {
   registryId?: string;
   /** How the package source was obtained. */
   sourceKind?: SourceKind;
+  /** Registry lifecycle state captured when the lock was resolved. */
+  lifecycle?: LifecycleState;
   /**
    * The ecosystem's own integrity value over the same archive bytes.
    *

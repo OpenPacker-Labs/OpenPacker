@@ -3,6 +3,20 @@ import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import type { LockPackage, OpmLockfile } from './types.js';
 import { OpmError } from './types.js';
 
+const LIFECYCLE_STATUSES = new Set([
+  'published',
+  'yanked',
+  'deprecated',
+  'quarantined',
+  'revoked',
+  'delisted',
+  'restored',
+  'promoted',
+  'removed-from-channel',
+  'ownership-transferred',
+  'unknown',
+]);
+
 export function emptyLockfile(): OpmLockfile {
   return {
     schemaVersion: 1,
@@ -161,6 +175,11 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       `Package "${alias}" has invalid registryId`,
     );
   }
+  if (pkg.lifecycle !== undefined && !isLifecycleState(pkg.lifecycle))
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid lifecycle`,
+    );
   return {
     alias: typeof pkg.alias === 'string' ? pkg.alias : alias,
     purl: requiredString('purl'),
@@ -182,7 +201,21 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       ? { registryId: pkg.registryId }
       : {}),
     ...(isSourceKind(pkg.sourceKind) ? { sourceKind: pkg.sourceKind } : {}),
+    ...(isLifecycleState(pkg.lifecycle) ? { lifecycle: pkg.lifecycle } : {}),
   };
+}
+
+function isLifecycleState(
+  value: unknown,
+): value is NonNullable<LockPackage['lifecycle']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false;
+  const lifecycle = value as Record<string, unknown>;
+  return (
+    typeof lifecycle.eligible === 'boolean' &&
+    typeof lifecycle.status === 'string' &&
+    LIFECYCLE_STATUSES.has(lifecycle.status)
+  );
 }
 
 export async function readLockfile(

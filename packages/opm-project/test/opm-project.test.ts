@@ -551,45 +551,54 @@ describe('fail-closed install paths', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 
-  it('rechecks current exotic-source policy before installing an existing lock', async () => {
+  it('rechecks every current policy against facts persisted in an existing lock', async () => {
     const root = await tempProject();
     const bytes = await readFile(fixtureTgz);
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     const storeKey = storeKeyFromDigest(digest);
+    const pkg = {
+      alias: 'demo',
+      purl: 'pkg:nuget/demo@1.1.0',
+      version: '1.1.0',
+      digest,
+      size: bytes.byteLength,
+      format: 'tar+gzip' as const,
+      mediaType: 'application/vnd.openpacker.package.tgz',
+      source: `file:${fixtureTgz}`,
+      storeKey,
+      bins: [],
+      reason: 'direct' as const,
+      ecosystem: 'nuget',
+      sourceKind: 'registry' as const,
+      registryId: 'urn:example:nuget',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      trustLevel: 'registry-attested' as const,
+      lifecycle: { status: 'published' as const, eligible: true },
+    };
+    const installed = await materializeLockPackage({
+      root,
+      pkg,
+      offline: true,
+      policy: {
+        ...defaultSupplyChainPolicyInput(),
+        minimumReleaseAgeMinutes: 60,
+        expectedRegistryId: 'urn:example:nuget',
+      },
+    });
+    expect(installed.storePath).toContain(storeKey);
+
     await expect(
-      installFromLock({
+      materializeLockPackage({
         root,
-        offline: false,
-        lock: {
-          schemaVersion: 1,
-          generatedBy: 'opm',
-          packages: {
-            demo: {
-              alias: 'demo',
-              purl: 'pkg:npm/@openpacker/demo-tool@1.1.0',
-              version: '1.1.0',
-              digest,
-              size: bytes.byteLength,
-              format: 'tar+gzip',
-              mediaType: 'application/vnd.openpacker.package.tgz',
-              source: 'https://packages.example.invalid/demo-tool-1.1.0.tgz',
-              storeKey,
-              bins: [],
-              reason: 'direct',
-              ecosystem: 'npm',
-              sourceKind: 'registry',
-            },
-          },
-        },
+        pkg,
+        offline: true,
+        force: true,
         policy: {
           ...defaultSupplyChainPolicyInput(),
-          blockExoticSources: { direct: true, transitive: true },
+          maximumArtifactSize: bytes.byteLength - 1,
         },
       }),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
-    await expect(
-      lstat(join(root, '.opm/store', storeKey)),
-    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects a size mismatch even when the digest matches', async () => {
@@ -950,6 +959,23 @@ describe('environment generations', () => {
     await installProject({ root, offline: true });
     // An install that changes nothing would otherwise grow the ledger forever.
     expect(await listGenerations(root)).toHaveLength(1);
+  });
+
+  it('rejects an existing lock with a direct package absent from the manifest', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const paths = projectPaths(root);
+    const manifest = parseManifest(await readFile(paths.manifest, 'utf8'));
+    manifest.packages = {};
+    await writeFile(paths.manifest, serializeManifest(manifest));
+
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      { code: 'INVALID_LOCK' },
+    );
   });
 
   it('rolls back by repointing state, never by rewriting a record', async () => {
