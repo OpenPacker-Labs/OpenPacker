@@ -123,7 +123,7 @@ describe('installing', () => {
         sandbox: { allowHostUnsandboxedInstall: true },
       }),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
-    expect(calls.some(([, verb]) => verb === 'install')).toBe(false);
+    expect(calls).toEqual([]);
   });
 
   it('refuses degraded containment before executing an install', async () => {
@@ -134,7 +134,7 @@ describe('installing', () => {
         sandbox: { mode: 'degrade-warn', prefer: 'mxc' },
       }),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
-    expect(calls.some(([, verb]) => verb === 'install')).toBe(false);
+    expect(calls).toEqual([]);
   });
 
   it('refuses to run where winget does not exist', async () => {

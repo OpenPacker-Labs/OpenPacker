@@ -262,11 +262,9 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('refuses the legacy ambient host installer option', async () => {
-    const summary = planSandboxSummary({
-      allowHostUnsandboxedInstall: true,
-    });
-    expect(summary.willEnforce).toBe(true);
-    expect(summary.allowAmbient).toBe(false);
+    expect(() =>
+      planSandboxSummary({ allowHostUnsandboxedInstall: true }),
+    ).toThrowError(expect.objectContaining({ code: 'POLICY_DENIED' }));
     await expect(
       runHostInstaller({
         argv: [process.execPath, '-e', 'process.stdout.write("never")'],
@@ -439,14 +437,12 @@ describe('@openpacker/sandbox', () => {
     expect(bwrap).toContain('--unshare-pid');
     expect(bwrap).toContain('--die-with-parent');
     expect(bwrap.join(' ')).toContain('--bind-fd 3 /tmp');
-    expect(sandboxPolicyFromInstallOptions({ mode: 'off' })).toMatchObject({
-      mode: 'off',
-      required: true,
-      legacyFatRoot: true,
-    });
-    expect(
+    expect(() => sandboxPolicyFromInstallOptions({ mode: 'off' })).toThrow(
+      /fail-closed/u,
+    );
+    expect(() =>
       sandboxPolicyFromInstallOptions({ mode: 'degrade-warn' }),
-    ).toMatchObject({ mode: 'degrade-warn', required: true });
+    ).toThrow(/fail-closed/u);
     expect(notSandboxedLoss('apt').code).toBe(
       SANDBOX_LOSS.SYSTEM_NOT_SANDBOXED,
     );

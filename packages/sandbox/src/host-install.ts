@@ -13,6 +13,13 @@ export interface HostInstallerSandboxOptions {
 export function sandboxPolicyFromInstallOptions(
   sandbox?: HostInstallerSandboxOptions,
 ): SandboxPolicy {
+  if (
+    sandbox?.allowHostUnsandboxedInstall === true ||
+    (sandbox?.mode !== undefined && sandbox.mode !== 'fail-closed')
+  )
+    throw new HostInstallerSandboxError(
+      'Host installers require fail-closed containment; ambient and degraded execution are disabled',
+    );
   const mode = sandbox?.mode ?? 'fail-closed';
   return {
     mode,
@@ -91,14 +98,6 @@ export async function runHostInstaller(
   input: HostInstallerRunInput,
 ): Promise<HostInstallerRunResult> {
   const summary = planSandboxSummary(input.sandbox);
-  if (
-    input.sandbox?.allowHostUnsandboxedInstall === true ||
-    (input.sandbox?.mode !== undefined && input.sandbox.mode !== 'fail-closed')
-  )
-    throw new HostInstallerSandboxError(
-      'Host installers require fail-closed containment; ambient and degraded execution are disabled',
-    );
-
   const policy = sandboxPolicyFromInstallOptions(input.sandbox);
   const [file, ...args] = input.argv;
   if (!file) {

@@ -101,17 +101,15 @@ describe('planning', () => {
     });
   });
 
-  it('does not let the legacy ambient option disable enforcement', async () => {
+  it('refuses the legacy ambient option during planning', async () => {
     const apt = new AptSystemProvider(fakeApt().execute, linux, () => false);
     const jailed = await apt.plan('pkg:deb/curl');
     expect(jailed.sandbox?.willEnforce).toBe(true);
-    const ambient = await apt.plan('pkg:deb/curl', {
-      sandbox: { allowHostUnsandboxedInstall: true },
-    });
-    expect(ambient.sandbox?.willEnforce).toBe(true);
-    expect(ambient.semanticLoss.map((loss) => loss.code)).not.toContain(
-      'SYSTEM_INSTALL_SANDBOXED',
-    );
+    await expect(
+      apt.plan('pkg:deb/curl', {
+        sandbox: { allowHostUnsandboxedInstall: true },
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
   });
 
   it('refuses anything that is not a Debian package name', async () => {
