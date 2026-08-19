@@ -150,6 +150,51 @@ function storedZip(name: string, text: string): Uint8Array {
   return output;
 }
 
+function storedZipEntries(
+  entries: readonly { name: string; text: string }[],
+): Uint8Array {
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let localOffset = 0;
+  for (const entry of entries) {
+    const archive = storedZip(entry.name, entry.text);
+    const view = new DataView(
+      archive.buffer,
+      archive.byteOffset,
+      archive.byteLength,
+    );
+    const eocd = archive.byteLength - 22;
+    const centralOffset = view.getUint32(eocd + 16, true);
+    const central = archive.slice(centralOffset, eocd);
+    new DataView(
+      central.buffer,
+      central.byteOffset,
+      central.byteLength,
+    ).setUint32(42, localOffset, true);
+    const local = archive.slice(0, centralOffset);
+    locals.push(local);
+    centrals.push(central);
+    localOffset += local.byteLength;
+  }
+  const centralSize = centrals.reduce(
+    (total, central) => total + central.byteLength,
+    0,
+  );
+  const output = new Uint8Array(localOffset + centralSize + 22);
+  let offset = 0;
+  for (const part of [...locals, ...centrals]) {
+    output.set(part, offset);
+    offset += part.byteLength;
+  }
+  const eocd = new DataView(output.buffer, offset, 22);
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, centralSize, true);
+  eocd.setUint32(16, localOffset, true);
+  return output;
+}
+
 describe('safe materialization', () => {
   it.each([
     '../escape',
@@ -307,6 +352,16 @@ describe('safe materialization', () => {
         ...DEFAULT_MATERIALIZATION_LIMITS,
         maximumExpandedBytes: 4,
       }),
+    ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
+    await expect(
+      inspectArchive(
+        storedZipEntries([
+          { name: 'one', text: '123456' },
+          { name: 'two', text: '123456' },
+        ]),
+        'zip',
+        { ...DEFAULT_MATERIALIZATION_LIMITS, maximumExpandedBytes: 10 },
+      ),
     ).rejects.toMatchObject({ code: 'EXPANDED_SIZE_LIMIT' });
   });
 

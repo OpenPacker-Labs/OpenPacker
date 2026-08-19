@@ -495,6 +495,12 @@ async function parseZip(
     throw unsafe('ARCHIVE_LIMIT', 'zip central directory');
   const entries: InspectedArchiveEntry[] = [];
   const ranges: Array<[number, number]> = [];
+  const paths = new Set<string>();
+  const pathTypes = new Map<string, 'file' | 'directory'>();
+  const foldedPaths = new Set<string>();
+  const requiredDirectories = new Set<string>();
+  let declaredExpanded = 0;
+  let actualExpanded = 0;
   let cursor = centralOffset;
   for (let index = 0; index < count; index += 1) {
     if (
@@ -522,6 +528,9 @@ async function parseZip(
       );
     const rawName = utf8.decode(nameBytes);
     const path = validateArchivePath(rawName, limits);
+    if (paths.has(path)) throw unsafe('DUPLICATE_PATH', path);
+    const foldedPath = path.toLowerCase();
+    if (foldedPaths.has(foldedPath)) throw unsafe('CASE_COLLISION', path);
     const unixMode = externalAttributes >>> 16;
     const fileType = unixMode & 0o170000;
     if (fileType === 0o120000) throw unsafe('SYMLINK_REJECTED', path);
@@ -542,8 +551,23 @@ async function parseZip(
     ranges.push([dataStart, dataEnd]);
     const compressed = bytes.subarray(dataStart, dataEnd);
     const directory = rawName.endsWith('/') || fileType === 0o040000;
-    if (!directory && expandedSize > limits.maximumExpandedBytes)
-      throw unsafe('EXPANDED_SIZE_LIMIT', path);
+    const parts = path.split('/');
+    for (let length = 1; length < parts.length; length += 1) {
+      const ancestor = parts.slice(0, length).join('/');
+      if (pathTypes.get(ancestor) === 'file')
+        throw unsafe('FILE_AS_DIRECTORY', path);
+      requiredDirectories.add(ancestor);
+    }
+    if (!directory && requiredDirectories.has(path))
+      throw unsafe('FILE_AS_DIRECTORY', path);
+    paths.add(path);
+    pathTypes.set(path, directory ? 'directory' : 'file');
+    foldedPaths.add(foldedPath);
+    if (!directory) {
+      if (expandedSize > limits.maximumExpandedBytes - declaredExpanded)
+        throw unsafe('EXPANDED_SIZE_LIMIT', path);
+      declaredExpanded += expandedSize;
+    }
     if (!directory) validateRatio(expandedSize, compressedSize, limits);
     let data: Uint8Array;
     if (directory) data = new Uint8Array();
@@ -557,6 +581,11 @@ async function parseZip(
       );
     if (!directory && data.byteLength !== expandedSize)
       throw unsafe('SIZE_MISMATCH', path);
+    if (!directory) {
+      if (data.byteLength > limits.maximumExpandedBytes - actualExpanded)
+        throw unsafe('EXPANDED_SIZE_LIMIT', path);
+      actualExpanded += data.byteLength;
+    }
     validateRatio(data.byteLength, compressedSize, limits);
     if (!directory && crc32(data) !== crc) throw unsafe('CRC_MISMATCH', path);
     entries.push({
