@@ -13,6 +13,7 @@ import { loadCatalogs, resolveSource, toFileUrl } from './catalog.js';
 import { codecFor } from './codecs.js';
 import {
   listRegistryVersions,
+  registryOptionsForEcosystem,
   resolveRegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
@@ -666,6 +667,12 @@ async function resolveTransitive(input: {
   const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
   try {
+    const optionsFor = (ecosystem: string) =>
+      registryOptionsForEcosystem(
+        ecosystem,
+        input.manifest,
+        input.registryOptions ?? {},
+      );
     const graph = await resolveGraph({
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
@@ -673,9 +680,7 @@ async function resolveTransitive(input: {
           ? {}
           : { range: nativeRangeFor(pkg, input.manifest)! }),
       })),
-      ...(input.registryOptions === undefined
-        ? {}
-        : { options: input.registryOptions }),
+      optionsFor,
     });
     if (graph.packages.length === 0) return {};
 
@@ -711,7 +716,7 @@ async function resolveTransitive(input: {
       const artifact = await resolveRegistryArtifact(
         instance.identity.purlType,
         exact,
-        input.registryOptions ?? {},
+        optionsFor(instance.identity.purlType),
       );
       // Same standard as the direct path: the digest that goes in the lock is
       // re-derived from the bytes in hand, not copied from what the provider
@@ -751,6 +756,7 @@ async function resolveTransitive(input: {
           ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
         },
       );
+      facts.registryId = artifact.registryId;
       await assertSupplyChainAllowed(policy, facts);
 
       const transitiveIntegrity = nativeIntegrityOf(
@@ -1001,7 +1007,11 @@ async function resolveRequirement(input: {
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
   if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
-    const registryOptions = input.registryOptions ?? {};
+    const registryOptions = registryOptionsForEcosystem(
+      ecosystem,
+      input.manifest,
+      input.registryOptions ?? {},
+    );
     const target =
       candidateExact ??
       (await (async () => {
@@ -1056,13 +1066,10 @@ async function resolveRequirement(input: {
         ...registryOptions,
         offline: input.offline,
       });
-      const registryId = (
-        await requireAdapterRegistry().definitionFor(ecosystem)
-      ).registryId;
       const { facts } = await captureFactsFromCatalog(catalog, target, {
         evaluationTime,
         dependencyDepth: 0,
-        registryId,
+        registryId: artifact.registryId,
         ...(priorTrust === undefined ? {} : { priorTrustLevel: priorTrust }),
       });
       // Prefer artifact URI for source kind when inspect did not set one.
@@ -1100,6 +1107,7 @@ async function resolveRequirement(input: {
           lifecycleScriptsExecuted: false,
         },
       );
+      facts.registryId = artifact.registryId;
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
     }

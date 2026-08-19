@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
@@ -12,13 +12,16 @@ import {
   listRegistryVersions,
   materializeLockPackage,
   providerFor,
+  registryOptionsForEcosystem,
   registryEndpoint,
+  resolveManifestToLock,
   resolveRegistryArtifact,
   searchRegistry,
   selectToolBin,
   fetchTool,
   OpmError,
   storeKeyFromDigest,
+  type OpmManifest,
 } from '../src/index.js';
 
 /**
@@ -146,12 +149,113 @@ describe('registry configuration', () => {
     }
   });
 
+  it('rejects an unsafe project registry before constructing a provider', () => {
+    expect(() =>
+      registryOptionsForEcosystem('npm', {
+        registries: {
+          mirror: {
+            id: 'mirror',
+            url: 'http://user:secret@mirror.example',
+            defaultFor: ['npm'],
+          },
+        },
+      }),
+    ).toThrow(/must be HTTPS/u);
+  });
+
   it('refuses an ecosystem it has no registry for', async () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
     // Discovery path: unregistered purl types fail closed at the adapter host.
     await expect(providerFor('cocoapods')).rejects.toThrow(
       /No adapter is registered|No registry|UNSUPPORTED_ECOSYSTEM/u,
     );
+  });
+});
+
+describe('project registry authority', () => {
+  it('uses the configured endpoint for direct and transitive packages and locks its identity', async () => {
+    const endpoint = 'https://mirror.example';
+    const packageDocument = (name: string, dependencies = {}) => ({
+      name,
+      'dist-tags': { latest: '1.0.0' },
+      versions: {
+        '1.0.0': {
+          name,
+          version: '1.0.0',
+          dependencies,
+          dist: {
+            tarball: `${endpoint}/${name}/-/${name}-1.0.0.tgz`,
+            integrity: TARBALL_SRI,
+          },
+        },
+      },
+    });
+    const response = (body: unknown) => ({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: new TextEncoder().encode(JSON.stringify(body)),
+    });
+    const artifact = {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+      body: TARBALL,
+    };
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [
+          `${endpoint}/demo`,
+          response(packageDocument('demo', { child: '1.0.0' })),
+        ],
+        [`${endpoint}/child`, response(packageDocument('child'))],
+        [`${endpoint}/demo/-/demo-1.0.0.tgz`, artifact],
+        [`${endpoint}/child/-/child-1.0.0.tgz`, artifact],
+      ]),
+    );
+    const manifest: OpmManifest = {
+      project: { name: 'authority-test', ecosystems: ['npm'] },
+      packages: {
+        demo: {
+          alias: 'demo',
+          purl: 'pkg:npm/demo',
+          version: '1.0.0',
+          bins: [{ name: 'demo', path: 'bin.js' }],
+        },
+      },
+      registries: {
+        mirror: { id: 'mirror', url: endpoint, defaultFor: ['npm'] },
+      },
+      options: { offline: false, layout: 'opm' },
+      policy: {
+        allowYanked: false,
+        allowQuarantined: false,
+        semanticLossMaximum: 'error',
+        requiredEvidence: [],
+      },
+    };
+    const root = await mkdtemp(join(tmpdir(), 'opm-authority-'));
+    try {
+      const lock = await resolveManifestToLock({
+        root,
+        manifest,
+        offline: false,
+        registryOptions: {
+          transport,
+          now: () => '2026-08-04T00:00:00Z',
+        },
+      });
+      expect(transport.requests.length).toBeGreaterThan(0);
+      expect(
+        transport.requests.every(({ url }) => url.startsWith(`${endpoint}/`)),
+      ).toBe(true);
+      expect(
+        Object.values(lock.packages).map(({ registryId }) => registryId),
+      ).toEqual(expect.arrayContaining([endpoint, endpoint]));
+      expect(Object.values(lock.packages).map(({ purl }) => purl)).toContain(
+        'pkg:npm/child@1.0.0',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

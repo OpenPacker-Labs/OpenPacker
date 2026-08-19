@@ -427,6 +427,7 @@ export async function resolveGraph(input: {
   roots: readonly { purl: string; range?: string }[];
   bounds?: ResolutionBounds;
   options?: RegistryOptions;
+  optionsFor?: (ecosystem: string) => RegistryOptions;
   host?: HostEnvironment;
 }): Promise<ResolvedGraph> {
   const bounds = { ...DEFAULT_BOUNDS, ...(input.bounds ?? {}) };
@@ -454,6 +455,7 @@ export async function resolveGraph(input: {
       );
     const item = queue.shift()!;
     const ecosystem = ecosystemFromPurl(item.purl);
+    const ecosystemOptions = input.optionsFor?.(ecosystem) ?? options;
 
     let candidates: string[];
     try {
@@ -461,7 +463,7 @@ export async function resolveGraph(input: {
         ecosystem,
         item.purl,
         item.range,
-        options,
+        ecosystemOptions,
       );
     } catch (error) {
       unresolved.push({
@@ -485,7 +487,7 @@ export async function resolveGraph(input: {
       candidates = candidates.slice(0, bounds.candidatesPerPackage);
     }
 
-    const provider = await providerFor(ecosystem, options, [
+    const provider = await providerFor(ecosystem, ecosystemOptions, [
       'prex.registry.package-metadata/1',
     ]);
     for (const candidate of candidates) {
