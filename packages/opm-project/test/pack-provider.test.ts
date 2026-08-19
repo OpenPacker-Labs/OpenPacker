@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,18 @@ describe('configured delegated pack providers', () => {
       dependencies: {
         resolveExecutable: async () => '/usr/bin/acme-pack',
         sandboxRun: async (input) => {
+          if (input.argv[1] === 'identify') {
+            const bytes = await readFile(input.argv.at(-1)!);
+            return outcome(
+              JSON.stringify({
+                delegatedPackArtifactIdentityVersion: '1',
+                exactPurl: 'pkg:acme/demo@1.0.0',
+                artifactDigest: `sha256:${createHash('sha256')
+                  .update(bytes)
+                  .digest('hex')}`,
+              }),
+            );
+          }
           call = input;
           await mkdir(outputDirectory, { recursive: true });
           await writeFile(join(outputDirectory, 'demo.acme'), 'native');
@@ -123,7 +136,7 @@ async function fixture(): Promise<string> {
   await writeFile(
     join(root, 'provider.json'),
     JSON.stringify({
-      delegatedPackProviderVersion: '1',
+      delegatedPackProviderVersion: '2',
       id: 'example-acme',
       purlTypes: ['acme'],
       detection: { manifestNames: ['acme.pack'] },
@@ -133,6 +146,9 @@ async function fixture(): Promise<string> {
           arguments: ['pack', '--out', '{outputDirectory}'],
         },
       ],
+      identityCommand: {
+        arguments: ['identify', '--artifact', '{artifactPath}'],
+      },
       authority: {
         build: false,
         network: 'never',
@@ -165,10 +181,10 @@ function projectManifest(): OpmManifest {
   };
 }
 
-function outcome(): SandboxOutcome {
+function outcome(stdout = ''): SandboxOutcome {
   return {
     exitCode: 0,
-    stdout: '',
+    stdout,
     stderr: '',
     backend: 'mock',
     profile: 'package-exec',

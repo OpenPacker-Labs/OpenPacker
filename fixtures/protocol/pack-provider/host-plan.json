@@ -13,6 +13,7 @@
     ]
   ],
   "cleanupArguments": [],
+  "identityArgumentTemplates": ["identify", "--artifact", "{artifactPath}"],
   "environment": {
     "ACME_CACHE": "/workspace/acme/dist/.cache"
   },

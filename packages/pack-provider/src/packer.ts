@@ -4,6 +4,7 @@ import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
+  formatPurl,
   type DetectedProject,
   type PackArtifact,
   type PackAvailability,
@@ -16,10 +17,12 @@ import {
 import { canonicalBytes } from '@openpacker/canonical';
 import type {
   DelegatedPackHostPlan,
+  DelegatedPackArtifactIdentity,
   DelegatedPackProviderManifest,
   JsonValue,
   PackProviderArgument,
 } from '@openpacker/contracts';
+import { validateContract } from '@openpacker/conformance';
 import {
   assertNamedDirectory,
   findExecutable,
@@ -156,6 +159,7 @@ export class ManifestPackagePacker implements PackagePacker {
       cleanupArguments: (this.manifest.cleanupCommands ?? []).map((command) =>
         expandArguments(command.arguments, values, options),
       ),
+      identityArgumentTemplates: [...this.manifest.identityCommand.arguments],
       environment: Object.fromEntries(
         Object.entries(this.manifest.environment ?? {}).map(([name, value]) => [
           name,
@@ -299,7 +303,7 @@ export class ManifestPackagePacker implements PackagePacker {
       }
       const outcome =
         outcomes.find((item) => item.exitCode !== 0) ?? outcomes.at(-1)!;
-      const artifacts = await checkedProviderOutput(async () => {
+      let artifacts = await checkedProviderOutput(async () => {
         await assertNamedDirectory(outputDirectory, outputAuthority);
         const currentIdentity = await directoryIdentity(stableOutputDirectory);
         if (
@@ -334,6 +338,82 @@ export class ManifestPackagePacker implements PackagePacker {
           'INVALID_RESPONSE',
           `${this.providerId} succeeded without a declared artifact`,
         );
+      if (outcome.exitCode === 0) {
+        const identities = new Map<string, DelegatedPackArtifactIdentity>();
+        const identityDirectoryIdentity = await directoryIdentity(
+          stableOutputDirectory,
+        );
+        for (const artifact of artifacts) {
+          const identityOutcome = await this.runCommand(
+            [
+              executablePath,
+              ...hostPlan.identityArgumentTemplates.map((argument) =>
+                expand(argument, {
+                  projectRoot: input.project.root,
+                  manifestPath: input.project.manifestPath,
+                  outputDirectory,
+                  packageName: input.target!.identifier,
+                  packageVersion: input.target!.version,
+                  artifactPath: artifact.path,
+                }),
+              ),
+            ],
+            input,
+            options,
+            plan,
+            environment,
+            Object.keys(authorizedEnvironment),
+            outputDirectory,
+            outputAuthority.fd,
+          );
+          outcomes.push(identityOutcome);
+          if (identityOutcome.exitCode !== 0)
+            throw new ProviderError(
+              'INVALID_RESPONSE',
+              `${this.providerId} could not identify ${artifact.path}`,
+            );
+          identities.set(
+            artifact.path,
+            parseArtifactIdentity(identityOutcome.stdout),
+          );
+        }
+        artifacts = await checkedProviderOutput(async () => {
+          await assertNamedDirectory(outputDirectory, outputAuthority);
+          const collected = await collectArtifacts(
+            stableOutputDirectory,
+            outputDirectory,
+            outputReal,
+            hostPlan,
+            this.#limits,
+            this.#openFile,
+          );
+          await assertDirectoryIdentity(
+            stableOutputDirectory,
+            outputReal,
+            identityDirectoryIdentity,
+          );
+          return collected;
+        });
+        if (
+          artifacts.length !== identities.size ||
+          artifacts.some((artifact) => {
+            const identity = identities.get(artifact.path);
+            return (
+              identity === undefined ||
+              identity.exactPurl !== targetExactPurl(input.target!) ||
+              identity.artifactDigest !== artifact.digest
+            );
+          })
+        )
+          throw new ProviderError(
+            'INVALID_RESPONSE',
+            `${this.providerId} artifact identity does not match the requested target and captured bytes`,
+          );
+        artifacts = artifacts.map((artifact) => ({
+          ...artifact,
+          exactPurl: identities.get(artifact.path)!.exactPurl,
+        }));
+      }
       return {
         ...withTool,
         performed: true,
@@ -444,6 +524,42 @@ function expand(
       );
     return value;
   });
+}
+
+function targetExactPurl(target: NonNullable<PackInput['target']>): string {
+  if (target.exactPurl !== undefined) return target.exactPurl;
+  const separator = target.identifier.lastIndexOf('/');
+  return formatPurl({
+    type: target.purlType,
+    qualifiers: {},
+    ...(separator < 0
+      ? { name: target.identifier }
+      : {
+          namespace: target.identifier.slice(0, separator),
+          name: target.identifier.slice(separator + 1),
+        }),
+    version: target.version,
+  });
+}
+
+function parseArtifactIdentity(stdout: string): DelegatedPackArtifactIdentity {
+  let value: JsonValue;
+  try {
+    value = JSON.parse(stdout) as JsonValue;
+  } catch {
+    throw new ProviderError(
+      'INVALID_RESPONSE',
+      'Delegated provider identity output is not one JSON object',
+    );
+  }
+  const schema =
+    'https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackArtifactIdentity';
+  if (!validateContract(schema, value).valid)
+    throw new ProviderError(
+      'INVALID_RESPONSE',
+      'Delegated provider identity output does not match the PREX contract',
+    );
+  return value as DelegatedPackArtifactIdentity;
 }
 
 function emptyOutcome(plan: PackPlan): PackOutcome {

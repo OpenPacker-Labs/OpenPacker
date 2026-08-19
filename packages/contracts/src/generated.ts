@@ -231,6 +231,11 @@ export type ConformanceLevel =
   | 'PREX-R'
   | 'PREX-C';
 export type Cursor = string;
+export type DelegatedPackArtifactIdentity = {
+  delegatedPackArtifactIdentityVersion: '1';
+  exactPurl: string;
+  artifactDigest: string;
+};
 export type DelegatedPackHostPlan = {
   $schema?: string;
   providerId: DelegatedProviderId;
@@ -238,6 +243,7 @@ export type DelegatedPackHostPlan = {
   executable: PackProviderExecutable;
   commandArguments: Array<Array<string>>;
   cleanupArguments: Array<Array<string>>;
+  identityArgumentTemplates: Array<string>;
   environment: { [key: string]: string };
   authority: DelegatedProviderAuthority;
   artifacts: Array<PackProviderArtifactPattern>;
@@ -260,7 +266,7 @@ export type DelegatedPackPlanInput = {
 };
 export type DelegatedPackProviderManifest = {
   $schema?: string;
-  delegatedPackProviderVersion: '1';
+  delegatedPackProviderVersion: '2';
   id: DelegatedProviderId;
   displayName?: string;
   purlTypes: Array<DelegatedProviderPurlType>;
@@ -268,6 +274,7 @@ export type DelegatedPackProviderManifest = {
   executable: PackProviderExecutable;
   commands: Array<PackProviderCommandTemplate>;
   cleanupCommands?: Array<PackProviderCommandTemplate>;
+  identityCommand: PackProviderIdentityCommandTemplate;
   environment?: { [key: string]: PackProviderTemplate };
   authority: DelegatedProviderAuthority;
   artifacts: Array<PackProviderArtifactPattern>;
@@ -940,6 +947,7 @@ export type PackProviderCondition =
 export type PackProviderDetection = { manifestNames: Array<string> };
 export type PackProviderEnvironmentName = string;
 export type PackProviderExecutable = string;
+export type PackProviderIdentityCommandTemplate = { arguments: Array<string> };
 export type PackProviderTemplate = string;
 export type PackReceipt = {
   packReceiptVersion: PackReceiptVersion;
@@ -2444,6 +2452,27 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           additionalProperties: false,
         },
+        PackProviderIdentityCommandTemplate: {
+          $comment:
+            'Executed once per captured artifact. The host expands artifactPath only after opening and hashing that artifact.',
+          type: 'object',
+          required: ['arguments'],
+          properties: {
+            arguments: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 255,
+              items: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 8192,
+                pattern:
+                  '^(?:[^{}]|\\{(?:projectRoot|manifestPath|outputDirectory|packageName|packageVersion|artifactPath)\\})+$',
+              },
+            },
+          },
+          additionalProperties: false,
+        },
         PackProviderDetection: {
           type: 'object',
           required: ['manifestNames'],
@@ -2557,6 +2586,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             'detection',
             'executable',
             'commands',
+            'identityCommand',
             'authority',
             'artifacts',
           ],
@@ -2566,7 +2596,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               format: 'uri',
             },
             delegatedPackProviderVersion: {
-              const: '1',
+              const: '2',
             },
             id: {
               $ref: '#/$defs/DelegatedProviderId',
@@ -2604,6 +2634,9 @@ export const schemaCatalog: Record<string, JsonValue> = {
               items: {
                 $ref: '#/$defs/PackProviderCommandTemplate',
               },
+            },
+            identityCommand: {
+              $ref: '#/$defs/PackProviderIdentityCommandTemplate',
             },
             environment: {
               type: 'object',
@@ -2723,6 +2756,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             'executable',
             'commandArguments',
             'cleanupArguments',
+            'identityArgumentTemplates',
             'environment',
             'authority',
             'artifacts',
@@ -2766,6 +2800,16 @@ export const schemaCatalog: Record<string, JsonValue> = {
                 },
               },
             },
+            identityArgumentTemplates: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 255,
+              items: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 8192,
+              },
+            },
             environment: {
               type: 'object',
               maxProperties: 128,
@@ -2787,6 +2831,32 @@ export const schemaCatalog: Record<string, JsonValue> = {
               items: {
                 $ref: '#/$defs/PackProviderArtifactPattern',
               },
+            },
+          },
+          additionalProperties: false,
+        },
+        DelegatedPackArtifactIdentity: {
+          $comment:
+            'One bounded JSON object emitted by the provider identity command on stdout. The host checks both fields against the requested target and bytes it already hashed.',
+          type: 'object',
+          required: [
+            'delegatedPackArtifactIdentityVersion',
+            'exactPurl',
+            'artifactDigest',
+          ],
+          properties: {
+            delegatedPackArtifactIdentityVersion: {
+              const: '1',
+            },
+            exactPurl: {
+              type: 'string',
+              minLength: 7,
+              maxLength: 4096,
+              pattern: '^pkg:[a-z][a-z0-9+.-]*/.+@[^@]+$',
+            },
+            artifactDigest: {
+              type: 'string',
+              pattern: '^sha256:[0-9a-f]{64}$',
             },
           },
           additionalProperties: false,

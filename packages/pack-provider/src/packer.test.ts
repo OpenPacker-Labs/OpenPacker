@@ -3,11 +3,13 @@ import {
   mkdtemp,
   mkdir,
   open,
+  readFile,
   rename,
   rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -146,6 +148,34 @@ describe('manifest package packer', () => {
         nativeRole: 'distribution',
       }),
     ]);
+  });
+
+  it('rejects a native artifact whose provider-reported identity differs from the target', async () => {
+    const root = await project();
+    const outputDirectory = join(root, 'out');
+    const packer = new ManifestPackagePacker(manifest(), 'test', {
+      resolveExecutable: async () => '/usr/bin/test-pack',
+      sandboxRun: async (sandboxInput) => {
+        if (sandboxInput.argv[1] === 'identify') {
+          const bytes = await readFile(sandboxInput.argv.at(-1)!);
+          return outcome(
+            JSON.stringify({
+              delegatedPackArtifactIdentityVersion: '1',
+              exactPurl: 'pkg:test/other@9.9.9',
+              artifactDigest: `sha256:${createHash('sha256')
+                .update(bytes)
+                .digest('hex')}`,
+            }),
+          );
+        }
+        await writeFile(join(outputDirectory, 'demo.test'), 'native bytes');
+        return outcome();
+      },
+    });
+
+    await expect(
+      packer.pack(input(root), { allowBuild: true, outputDirectory }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('binds the resolved path and keeps loader env inside a fail-closed jail', async () => {
@@ -384,7 +414,22 @@ function configured(
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
     resolveExecutable,
-    sandboxRun,
+    sandboxRun: async (input_) => {
+      if (input_.argv[1] === 'identify') {
+        const path = input_.argv.at(-1)!;
+        const bytes = await readFile(path);
+        return outcome(
+          JSON.stringify({
+            delegatedPackArtifactIdentityVersion: '1',
+            exactPurl: 'pkg:test/demo@1.0.0',
+            artifactDigest: `sha256:${createHash('sha256')
+              .update(bytes)
+              .digest('hex')}`,
+          }),
+        );
+      }
+      return sandboxRun(input_);
+    },
     ...(limits === undefined ? {} : { limits }),
     ...(openFile === undefined ? {} : { openFile }),
   });
@@ -392,7 +437,7 @@ function configured(
 
 function manifest(): DelegatedPackProviderManifest {
   return {
-    delegatedPackProviderVersion: '1',
+    delegatedPackProviderVersion: '2',
     id: 'example.test',
     purlTypes: ['test'],
     detection: { manifestNames: ['test.pack'] },
@@ -408,6 +453,9 @@ function manifest(): DelegatedPackProviderManifest {
         ],
       },
     ],
+    identityCommand: {
+      arguments: ['identify', '--artifact', '{artifactPath}'],
+    },
     environment: { TEST_MODE: 'pack' },
     authority: {
       build: false,
@@ -438,10 +486,10 @@ async function project(): Promise<string> {
   return root;
 }
 
-function outcome(): SandboxOutcome {
+function outcome(stdout = ''): SandboxOutcome {
   return {
     exitCode: 0,
-    stdout: '',
+    stdout,
     stderr: '',
     backend: 'mock',
     profile: 'package-exec',

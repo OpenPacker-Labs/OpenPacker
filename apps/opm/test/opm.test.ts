@@ -44,7 +44,7 @@ describe('opm + opmx CLI', () => {
     await writeFile(
       join(root, 'provider.json'),
       JSON.stringify({
-        delegatedPackProviderVersion: '1',
+        delegatedPackProviderVersion: '2',
         id: 'example-acme',
         purlTypes: ['acme'],
         detection: { manifestNames: ['acme.pack'] },
@@ -54,6 +54,9 @@ describe('opm + opmx CLI', () => {
             arguments: ['acme-pack.js', '--out', '{outputDirectory}'],
           },
         ],
+        identityCommand: {
+          arguments: ['identify', '--artifact', '{artifactPath}'],
+        },
         authority: { build: false, network: 'never', environment: [] },
         artifacts: [
           {
@@ -67,7 +70,7 @@ describe('opm + opmx CLI', () => {
     await writeFile(
       join(root, 'provider-default.json'),
       JSON.stringify({
-        delegatedPackProviderVersion: '1',
+        delegatedPackProviderVersion: '2',
         id: 'example-default',
         purlTypes: ['acme'],
         detection: { manifestNames: ['acme.pack'] },
@@ -77,6 +80,9 @@ describe('opm + opmx CLI', () => {
             arguments: ['default-pack.js', '--out', '{outputDirectory}'],
           },
         ],
+        identityCommand: {
+          arguments: ['identify', '--artifact', '{artifactPath}'],
+        },
         authority: { build: false, network: 'never', environment: [] },
         artifacts: [
           {

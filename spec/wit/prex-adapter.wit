@@ -146,11 +146,14 @@ interface package-build {
     use types.{error};
 
     /// Canonical JSON DelegatedPackProviderManifest bytes describing identity,
-    /// detection, authority and artifacts.
+    /// detection, authority, artifact patterns and the mandatory identity probe.
     provider-manifest: func() -> result<list<u8>, error>;
 
     /// Canonical JSON DelegatedPackPlanInput to DelegatedPackHostPlan. Both are
-    /// defined by delegated-pack-provider.schema.json. Planning has no side effects.
+    /// defined by delegated-pack-provider.schema.json. The host executes the
+    /// returned identity argument template once per captured artifact and accepts
+    /// bytes only when its versioned exact-PURL and digest record matches.
+    /// Planning has no side effects.
     plan: func(input: list<u8>) -> result<list<u8>, error>;
 }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-pack-provider.schema.json#/$defs/DelegatedPackProviderManifest",
-  "delegatedPackProviderVersion": "1",
+  "delegatedPackProviderVersion": "2",
   "id": "dev.example.acme-pack",
   "displayName": "Acme package builder",
   "purlTypes": ["acme"],
@@ -19,6 +19,9 @@
       ]
     }
   ],
+  "identityCommand": {
+    "arguments": ["identify", "--artifact", "{artifactPath}"]
+  },
   "cleanupCommands": [],
   "environment": {
     "ACME_CACHE": "{outputDirectory}/.cache"
