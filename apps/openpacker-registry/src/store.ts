@@ -372,7 +372,11 @@ export class RegistryStore {
    * `limit + 1` rows are read so the caller can tell "there is more" from
    * "exactly a page remained" without a second query or a count.
    */
-  list(query: ListQuery): { entries: StoredEntry[]; hasMore: boolean } {
+  list(query: ListQuery): {
+    entries: StoredEntry[];
+    hasMore: boolean;
+    lastReadSequence?: number;
+  } {
     const where: string[] = [];
     const parameters: (string | number)[] = [];
     if (!query.includeDeleted) where.push("status != 'deleted'");
@@ -419,7 +423,12 @@ export class RegistryStore {
                 query.purlType!.toLowerCase(),
             ),
           );
-    return { entries: filtered, hasMore: rows.length > query.limit };
+    const lastReadSequence = entries.at(-1)?.sequence;
+    return {
+      entries: filtered,
+      hasMore: rows.length > query.limit,
+      ...(lastReadSequence === undefined ? {} : { lastReadSequence }),
+    };
   }
 
   applyStatus(input: {

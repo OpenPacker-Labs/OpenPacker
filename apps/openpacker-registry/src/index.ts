@@ -550,7 +550,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     try {
       const limit = boundedLimit(request.query.limit);
       const after = decodeCursor(request.query.cursor);
-      const { entries, hasMore } = store.list({
+      const { entries, hasMore, lastReadSequence } = store.list({
         limit,
         ...(request.query.search === undefined
           ? {}
@@ -566,7 +566,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // The cursor is the last row *read*, not the last row returned: purlType
       // filtering happens after the page is taken, and using the filtered tail
       // would replay rows that were already skipped.
-      const lastRead = entries.at(-1)?.sequence ?? after;
+      const lastRead = lastReadSequence ?? after;
       const local = entries.map((entry) => toRegistryEntry(entry, options));
 
       // Upstreams are consulted only once the local pages are exhausted, so a
@@ -983,12 +983,14 @@ function assertNamespace(
   const candidates = namespacesOf(packageName);
   for (const namespace of candidates) {
     const permitted = new Set(store.keysFor(namespace));
+    if (permitted.size === 0) continue;
     if (signatures.some((signature) => permitted.has(signature.keyId)))
       // The most specific matching namespace is the one that governs, and its
       // holder is who the publish is charged to.
       return (
         store.holderForNamespace(namespace) ?? holderOf(namespace, 'dns-txt')
       );
+    break;
   }
   throw new PublishError(
     'POLICY_DENIED',
@@ -1070,9 +1072,11 @@ function holdsName(
   packageName: string,
   keyId: string,
 ): boolean {
-  return namespacesOf(packageName).some((namespace) =>
-    store.keysFor(namespace).includes(keyId),
-  );
+  for (const namespace of namespacesOf(packageName)) {
+    const keys = store.keysFor(namespace);
+    if (keys.length > 0) return keys.includes(keyId);
+  }
+  return false;
 }
 
 /**

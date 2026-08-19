@@ -348,6 +348,52 @@ describe('publish', () => {
     await app.close();
   });
 
+  it('lets a child namespace shadow its ancestor', async () => {
+    const store = new RegistryStore();
+    store.trustKey('com.example', 'publisher-1', 'registry-configured');
+    store.trustKey('com.example.child', 'publisher-2', 'registry-configured');
+    const app = registry({
+      store,
+      publisherKeys: {
+        'publisher-1': keys.leaf!,
+        'publisher-2': keys.log!,
+      },
+    });
+    const value = manifest('com.example.child.tool', '1.0.0');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/publish',
+          payload: await signed(value),
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/publish',
+          payload: await signedWith('publisher-2', keys.log!, value),
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: '/v1/packages/com.example.child.tool/versions/1.0.0/status',
+          payload: await signedStatus(
+            'com.example.child.tool',
+            '1.0.0',
+            'deleted',
+          ),
+        })
+      ).statusCode,
+    ).toBe(403);
+    await app.close();
+  });
+
   it('is idempotent for the same bytes and a conflict for different ones', async () => {
     const app = registry();
     const body = await signed(manifest());
@@ -614,6 +660,44 @@ describe('reading, through the real client', () => {
       seen.push(entry.manifest.name);
     expect(seen).toHaveLength(7);
     expect(new Set(seen).size).toBe(7);
+    await app.close();
+  });
+
+  it('advances a filtered cursor past rows that were read', async () => {
+    const app = registry({ purlTypes: ['npm', 'pypi'] });
+    for (const name of ['com.example.python-one', 'com.example.python-two']) {
+      const value = manifest(name, '1.0.0');
+      value.distributions = [
+        {
+          ...value.distributions[0]!,
+          purlType: 'pypi',
+          exactPurl: `pkg:pypi/${name}@1.0.0`,
+        },
+      ];
+      await app.inject({
+        method: 'POST',
+        url: '/v1/publish',
+        payload: await signed(value),
+      });
+    }
+    await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest('com.example.node', '1.0.0')),
+    });
+
+    const first = await app.inject({
+      method: 'GET',
+      url: '/v1/packages?purlType=npm&limit=2',
+    });
+    expect(first.json().packages).toEqual([]);
+    expect(first.json().metadata.nextCursor).toEqual(expect.any(String));
+    const second = await app.inject({
+      method: 'GET',
+      url: `/v1/packages?purlType=npm&limit=2&cursor=${encodeURIComponent(first.json().metadata.nextCursor)}`,
+    });
+    expect(second.json().packages).toHaveLength(1);
+    expect(second.json().packages[0].manifest.name).toBe('com.example.node');
     await app.close();
   });
 
