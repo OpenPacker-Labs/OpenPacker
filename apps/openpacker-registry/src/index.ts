@@ -79,6 +79,10 @@ const REDIRECT_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedPackageRedirect';
 const STATUS_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/SignedStatusUpdate';
+const KEY_ROTATION_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/KeyRotation';
+const REVOCATION_LIST_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/registry-api.schema.json#/$defs/RevocationList';
 /**
  * Publishes per holder per hour, by default.
  *
@@ -329,11 +333,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   app.post('/v1/keys/rotations', async (request, reply) => {
     try {
       const rotation = request.body as KeyRotation;
-      if (!rotation?.previousKeyId || !rotation.nextKeyId)
+      assertValid(
+        KEY_ROTATION_SCHEMA,
+        rotation as unknown as JsonValue,
+        validator,
+      );
+      if (rotation.previousKeyId === rotation.nextKeyId)
         throw new PublishError(
           'INVALID_REQUEST',
           400,
-          'A rotation names the key it succeeds and the key taking over',
+          'A rotation must introduce a distinct successor key id',
         );
       const previous = publisherKeyFor(rotation.previousKeyId);
       if (!previous)
@@ -348,6 +357,31 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           403,
           `Key ${rotation.previousKeyId} is revoked and cannot authorize a successor`,
         );
+      if (publisherKeyFor(rotation.nextKeyId))
+        throw new PublishError(
+          'INVALID_REQUEST',
+          409,
+          `Key id ${rotation.nextKeyId} is already known to this registry`,
+        );
+      if (previous.x === rotation.nextPublicKey.x)
+        throw new PublishError(
+          'POLICY_DENIED',
+          403,
+          'A rotation must replace the predecessor key material',
+        );
+      assertFreshRotation(rotation.rotatedAt, clock.now());
+      try {
+        await Ed25519Verifier.fromJwk(
+          rotation.nextKeyId,
+          rotation.nextPublicKey,
+        );
+      } catch {
+        throw new PublishError(
+          'INVALID_REQUEST',
+          400,
+          'The successor is not an importable Ed25519 public key',
+        );
+      }
       if (!(await verifyRotation(rotation, previous)))
         // Anyone could otherwise nominate a successor to someone else's key.
         throw new PublishError(
@@ -356,15 +390,25 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `The rotation is not signed by ${rotation.previousKeyId}`,
         );
 
-      if (
-        !store.rotateKey(rotation, {
-          keyId: rotation.previousKeyId,
-          revokedAt: rotation.rotatedAt,
-          effective: 'from-now',
-          reason: 'rotated',
-          replacedBy: rotation.nextKeyId,
-        })
-      )
+      const revocation = {
+        keyId: rotation.previousKeyId,
+        revokedAt: rotation.rotatedAt,
+        effective: 'from-now' as const,
+        reason: 'rotated' as const,
+        replacedBy: rotation.nextKeyId,
+      };
+      assertValid(
+        REVOCATION_LIST_SCHEMA,
+        {
+          revocationListVersion: '1',
+          registryId: options.registryId,
+          serial: store.revocationSerial() + 1,
+          issuedAt: clock.now(),
+          revoked: [...store.revocations(), revocation],
+        } as unknown as JsonValue,
+        validator,
+      );
+      if (!store.rotateKey(rotation, revocation))
         throw new PublishError(
           'INVALID_SIGNATURE',
           403,
@@ -716,9 +760,13 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `application/vnd.prex.manifest.v${served.packageManifestVersion}+json`,
         );
       }
-      // Local wins; only then is an upstream asked. An upstream that starts
-      // publishing a name this registry already serves must not take it over.
-      const relayed = await federation?.find(name, version);
+      // Ownership is by name, not by exact version. Once this registry has
+      // published any version, an upstream cannot fill a missing version under
+      // that locally-held namespace.
+      const relayed =
+        store.versions(name).length === 0
+          ? await federation?.find(name, version)
+          : undefined;
       if (relayed)
         return sendJson(reply, relayed.entry as unknown as JsonValue);
       return sendProblem(
@@ -782,6 +830,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           'This registry requires a signed manifest. Start it with ' +
             'anonymousPublish only if you accept being the only thing anyone can check.',
         );
+      if (signatures.some((signature) => signature.role !== 'publisher'))
+        throw new PublishError(
+          'INVALID_SIGNATURE',
+          400,
+          'Publishers may only submit publisher-role signatures; registry claims are minted by the registry',
+        );
 
       const message = new TextEncoder().encode(formatDigest(digest));
       for (const signature of signatures) {
@@ -831,18 +885,31 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           `${body.manifest.name} was ${moved.redirect.reason}d to ${moved.redirect.to}; publish there`,
         );
 
-      assertQuota(store, holder, quota, clock);
-
-      const stored = store.publish({
-        manifest: body.manifest,
-        manifestDigest: formatDigest(digest),
-        signatures: await counterSign(signatures, message, options.signer),
-        now: clock.now(),
-      });
-      // Charged only once the publish actually happened. Charging on the way in
-      // would let a rejected request — a bad signature, a name someone else
-      // holds — spend the allowance of the publisher whose name was borrowed.
-      if (stored.created) store.recordPublish(holder, Date.parse(clock.now()));
+      const nowValue = clock.now();
+      const atEpochMs = Date.parse(nowValue);
+      const storedOrQuota = store.publishWithinQuota(
+        {
+          manifest: body.manifest,
+          manifestDigest: formatDigest(digest),
+          signatures: await counterSign(signatures, message, options.signer),
+          now: nowValue,
+        },
+        {
+          holderId: holder,
+          atEpochMs,
+          windowSeconds: quota.windowSeconds,
+          limit: quota.limit,
+        },
+      );
+      if ('quotaExceeded' in storedOrQuota) {
+        const state = quotaState(storedOrQuota.quotaExceeded, quota, atEpochMs);
+        throw new QuotaError(
+          `${holder} has published ${quota.limit} times in the last ` +
+            `${quota.windowSeconds} seconds`,
+          retryAfterSeconds(state, atEpochMs),
+        );
+      }
+      const stored = storedOrQuota;
       reply.code(stored.created ? 201 : 200);
       return sendJson(reply, {
         entry: toRegistryEntry(stored.entry, options),
@@ -910,9 +977,9 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   /**
    * Accept a consumer's report that something did not work.
    *
-   * Corroboration only: it brings the next first-party check forward and
-   * cannot set state. A registry that let anonymous reports mark a package
-   * unreachable would be offering "report a competitor" as a feature.
+   * Anonymous reports cannot mutate first-party scheduling. Otherwise a
+   * caller can turn one cheap request into repeated outbound traffic to a
+   * publisher-selected origin by resetting a fresh check's timestamp.
    */
   app.post<{ Params: { name: string; version: string } }>(
     '/v1/packages/:name/versions/:version/observations',
@@ -924,11 +991,11 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           reply,
           problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
         );
-      store.expireServiceability(name, version);
       reply.code(202);
       return sendJson(reply, {
         accepted: true,
-        effect: 'The next read will re-check this package first-hand.',
+        effect:
+          'First-party checks retain the registry-controlled serviceability TTL.',
       } as unknown as JsonValue);
     },
   );
@@ -953,7 +1020,7 @@ async function counterSign(
 ): Promise<readonly unknown[]> {
   const publisher = signatures.map((signature) => ({
     ...signature,
-    role: signature.role ?? 'publisher',
+    role: 'publisher',
   }));
   if (!signer) return publisher;
   return [
@@ -1013,6 +1080,21 @@ function assertFreshStatusUpdate(issuedAt: string, nowValue: string): void {
       'POLICY_DENIED',
       403,
       'Lifecycle updates must be issued within the last five minutes',
+    );
+}
+
+function assertFreshRotation(rotatedAt: string, nowValue: string): void {
+  const rotated = Date.parse(rotatedAt);
+  const now = Date.parse(nowValue);
+  if (
+    !Number.isFinite(rotated) ||
+    !Number.isFinite(now) ||
+    Math.abs(now - rotated) > STATUS_FRESHNESS_MILLISECONDS
+  )
+    throw new PublishError(
+      'POLICY_DENIED',
+      403,
+      'Key rotations must be issued within five minutes of registry time',
     );
 }
 
@@ -1086,26 +1168,6 @@ function holdsName(
  * is the only time the answer actually changes. Any other number sends a client
  * back to be refused again, and a client refused twice retries harder.
  */
-function assertQuota(
-  store: RegistryStore,
-  holderId: string,
-  policy: QuotaPolicy,
-  clock: { now: () => string },
-): void {
-  const now = Date.parse(clock.now());
-  const state = quotaState(
-    store.recentPublishes(holderId, now - policy.windowSeconds * 1000),
-    policy,
-    now,
-  );
-  if (state.remaining > 0) return;
-  throw new QuotaError(
-    `${holderId} has published ${policy.limit} times in the last ` +
-      `${policy.windowSeconds} seconds`,
-    retryAfterSeconds(state, now),
-  );
-}
-
 /** `com.example.tool` → `com.example.tool`, `com.example`, `com`. */
 function namespacesOf(name: string): string[] {
   const parts = name.split('.');

@@ -194,13 +194,34 @@ it('bounds redirects and retries while stripping cross-origin credentials', asyn
   });
   const response = await transport.request({
     url: 'https://registry.test/data',
-    headers: { authorization: 'Bearer secret', 'x-api-key': 'secret' },
+    headers: {
+      accept: 'application/json',
+      authorization: 'Bearer secret',
+      'x-api-key': 'secret',
+      'x-vendor-token': 'secret',
+    },
   });
   expect(new TextDecoder().decode(response.body)).toBe('ok');
   expect(calls).toHaveLength(3);
   expect(calls[0]!.headers.get('authorization')).toBe('Bearer secret');
   expect(calls[1]!.headers.has('authorization')).toBe(false);
   expect(calls[1]!.headers.has('x-api-key')).toBe(false);
+  expect(calls[1]!.headers.has('x-vendor-token')).toBe(false);
+  expect(calls[1]!.headers.get('accept')).toBe('application/json');
+});
+
+it('enforces an intrinsic provider deadline through body consumption', async () => {
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: ['https://fixture.test'],
+    timeoutMilliseconds: 10,
+    fetch: (async () =>
+      new Response(
+        new ReadableStream({ start: () => undefined }),
+      )) as typeof fetch,
+  });
+  await expect(
+    transport.request({ url: 'https://fixture.test/stalled' }),
+  ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
 });
 
 it('maps status, corruption, limits, and cancellation to stable failures', async () => {

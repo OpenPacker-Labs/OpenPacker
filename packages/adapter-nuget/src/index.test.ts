@@ -47,6 +47,12 @@ describe('NuGet codec', () => {
     expect(codec.satisfies('3.0.0', '2.*')).toBe(false);
   });
 
+  it('rejects decoded registration path traversal IDs', () => {
+    expect(() =>
+      codec.canonicalizePurl('pkg:nuget/%2E%2E%2Fadmin@1.0.0'),
+    ).toThrow(/package ID/u);
+  });
+
   it('captures target-framework lock data', () => {
     const capture = codec.translateLockResult(
       {

@@ -13,6 +13,7 @@ import {
   assertPackageIdentityMatchesRequest,
   evaluateRange,
   compareCodePoints,
+  encodeUrlPathComponent,
   formatPurl,
   header,
   json,
@@ -265,9 +266,10 @@ export class NugetCodec
         'INVALID_PURL',
         'NuGet PURLs do not have namespaces',
       );
+    const name = nugetPathComponent(parsed.name, 'package ID');
     return formatPurl({
       ...parsed,
-      name: parsed.name.toLowerCase(),
+      name,
       ...(parsed.version === undefined
         ? {}
         : { version: this.parseNativeVersion(parsed.version).normalized }),
@@ -804,7 +806,7 @@ export class NugetV3Provider implements CatalogProvider {
       leaf.packageContent ??
       (this.#packageBaseAddress === undefined
         ? undefined
-        : `${this.#packageBaseAddress.replace(/\/$/, '')}/${parsed.name.toLowerCase()}/${parsed.version.toLowerCase()}/${parsed.name.toLowerCase()}.${parsed.version.toLowerCase()}.nupkg`);
+        : `${this.#packageBaseAddress.replace(/\/$/, '')}/${encodeUrlPathComponent(parsed.name.toLowerCase(), 'NuGet package ID')}/${encodeUrlPathComponent(parsed.version.toLowerCase(), 'NuGet package version')}/${encodeUrlPathComponent(`${parsed.name.toLowerCase()}.${parsed.version.toLowerCase()}.nupkg`, 'NuGet package filename')}`);
     if (packageUri !== undefined) {
       this.#artifactSources.set(canonical, {
         uri: packageUri,
@@ -993,7 +995,7 @@ export class NugetV3Provider implements CatalogProvider {
         'PROVIDER_CAPABILITY_MISSING',
         'NuGet service index lacks RegistrationsBaseUrl',
       );
-    const url = `${registrationBase.replace(/\/$/, '')}/${parsed.name.toLowerCase()}/index.json`;
+    const url = `${registrationBase.replace(/\/$/, '')}/${encodeUrlPathComponent(parsed.name.toLowerCase(), 'NuGet package ID')}/index.json`;
     const response = await this.transport.request({
       url,
       signal,
@@ -1181,6 +1183,13 @@ export class NugetV3Provider implements CatalogProvider {
     this.#records.set(key, record);
     return record;
   }
+}
+
+function nugetPathComponent(value: string, label: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(value))
+    throw new ProviderError('INVALID_PURL', `Invalid NuGet ${label}`);
+  encodeUrlPathComponent(value, `NuGet ${label}`);
+  return value.toLowerCase();
 }
 
 export { NugetProjectFormat } from './project.js';

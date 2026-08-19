@@ -208,6 +208,35 @@ describe('publish quota', () => {
     expect(Number(third.headers['retry-after'])).toBeGreaterThan(0);
   });
 
+  it('admits no more concurrent publishes than the holder quota', async () => {
+    const store = new RegistryStore();
+    const app = registry({ quota: { limit: 2, windowSeconds: 3600 }, store }, [
+      'com.example',
+    ]);
+    const bodies = await Promise.all(
+      Array.from({ length: 6 }, (_, index) =>
+        publishBody(`com.example.concurrent-${index}`, '1.0.0', 'com.example'),
+      ),
+    );
+    const responses = await Promise.all(
+      bodies.map((payload) =>
+        app.inject({ method: 'POST', url: '/v1/publish', payload }),
+      ),
+    );
+    expect(
+      responses.filter((response) => response.statusCode === 201),
+    ).toHaveLength(2);
+    expect(
+      responses.filter((response) => response.statusCode === 429),
+    ).toHaveLength(4);
+    expect(
+      Array.from({ length: 6 }, (_, index) =>
+        store.versions(`com.example.concurrent-${index}`),
+      ).filter((versions) => versions.length > 0),
+    ).toHaveLength(2);
+    await app.close();
+  });
+
   it('does not charge a retry of a publish it already stored', async () => {
     const app = registry({ quota: { limit: 2, windowSeconds: 3600 } });
     const body = await publishBody('com.example.a', '1.0.0', 'com.example');

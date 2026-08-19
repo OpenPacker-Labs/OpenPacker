@@ -193,6 +193,30 @@ describe('publish', () => {
     await app.close();
   });
 
+  it('does not let a publisher label its signature as a registry claim', async () => {
+    const app = registry({
+      signer: await Ed25519Signer.fromJwk('test-registry', keys.root!),
+    });
+    const body = await signed(manifest());
+    body.signatures[0]!.role = 'registry' as 'publisher';
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: body,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().detail).toMatch(/publisher-role/u);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/packages/com.example.demo/versions/1.2.3',
+        })
+      ).statusCode,
+    ).toBe(404);
+    await app.close();
+  });
+
   it('refuses an unsigned manifest unless the operator opted in', async () => {
     const app = registry();
     const unsigned = {
@@ -817,6 +841,58 @@ describe('federation over external sources', () => {
     await local.close();
   });
 
+  it('does not federate a missing version of a locally-owned name', async () => {
+    const up = await upstream('com.example.demo');
+    const local = fronting(up);
+    await local.inject({
+      method: 'POST',
+      url: '/v1/publish',
+      payload: await signed(manifest('com.example.demo', '1.0.0')),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.demo/versions/2.0.0',
+    });
+    expect(response.statusCode).toBe(404);
+    await up.close();
+    await local.close();
+  });
+
+  it('rejects a valid upstream entry for different exact coordinates', async () => {
+    const up = await upstream('com.example.attacker');
+    const local = registry({
+      store: new RegistryStore(),
+      sources: [{ id: 'upstream', spec: { kind: 'prex', url: BASE } }],
+      registryClientFactory: () =>
+        new RegistryClient({
+          baseUrl: BASE,
+          transport: {
+            async request(request: HttpRequest): Promise<HttpResponse> {
+              const url = request.url.includes(
+                '/v1/packages/com.example.victim/',
+              )
+                ? '/v1/packages/com.example.attacker/versions/2.0.0'
+                : request.url.replace(BASE, '');
+              const response = await up.inject({ method: 'GET', url });
+              return {
+                status: response.statusCode,
+                headers: response.headers as Record<string, string>,
+                body: new Uint8Array(response.rawPayload),
+                url: request.url,
+              } as HttpResponse;
+            },
+          },
+        }),
+    });
+    const response = await local.inject({
+      method: 'GET',
+      url: '/v1/packages/com.example.victim/versions/2.0.0',
+    });
+    expect(response.statusCode).toBe(404);
+    await up.close();
+    await local.close();
+  });
+
   it('still 404s for something no source holds', async () => {
     const up = await upstream();
     const local = fronting(up);
@@ -1034,7 +1110,7 @@ describe('serviceability through the registry', () => {
     await app.close();
   });
 
-  it('lets a report bring the next check forward, and nothing more', async () => {
+  it('does not let anonymous reports accelerate outbound checks', async () => {
     const { probes, transport } = probing();
     const app = registry({ serviceabilityTransport: transport });
     await app.inject({
@@ -1048,12 +1124,14 @@ describe('serviceability through the registry', () => {
     });
     await settle();
 
-    const reported = await app.inject({
-      method: 'POST',
-      url: '/v1/packages/com.example.demo/versions/1.2.3/observations',
-      payload: { state: 'unreachable' },
-    });
-    expect(reported.statusCode).toBe(202);
+    for (let index = 0; index < 3; index += 1) {
+      const reported = await app.inject({
+        method: 'POST',
+        url: '/v1/packages/com.example.demo/versions/1.2.3/observations',
+        payload: { state: 'unreachable' },
+      });
+      expect(reported.statusCode).toBe(202);
+    }
 
     // The report did not set state — otherwise "report a competitor
     // unreachable" is a feature of the registry.
@@ -1063,8 +1141,8 @@ describe('serviceability through the registry', () => {
     });
     expect(after.json().registryMetadata.serviceability.state).toBe('verified');
     await settle();
-    // It did bring the first-party check forward.
-    expect(probes).toHaveLength(2);
+    // Scheduling remains server-owned, so reports cannot amplify egress.
+    expect(probes).toHaveLength(1);
     await app.close();
   });
 
@@ -1154,6 +1232,51 @@ describe('key lifecycle', () => {
       payload: { ...rotation, signature: 'AAAAAAAAAAAAAAAAAAAAAA==' },
     });
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('rejects a signed malformed rotation without poisoning revocations', async () => {
+    const app = await signing();
+    const malformed = await rotationFrom(
+      'publisher-1',
+      keys.leaf!,
+      'publisher-2',
+      keys.log!,
+      'not-a-timestamp',
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: malformed,
+    });
+    expect(response.statusCode).toBe(400);
+    const list = (
+      await app.inject({ method: 'GET', url: '/v1/revocations' })
+    ).json();
+    expect(list.list.serial).toBe(0);
+    expect(list.list.revoked).toEqual([]);
+    await app.close();
+  });
+
+  it('rejects an unimportable successor key without changing state', async () => {
+    const app = await signing();
+    const malformed = await rotationFrom(
+      'publisher-1',
+      keys.leaf!,
+      'publisher-2',
+      { kty: 'OKP', crv: 'Ed25519', x: 'not-base64url' },
+      '2026-08-10T00:00:00.000Z',
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/keys/rotations',
+      payload: malformed,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(
+      (await app.inject({ method: 'GET', url: '/v1/revocations' })).json().list
+        .revoked,
+    ).toEqual([]);
     await app.close();
   });
 
@@ -1250,7 +1373,7 @@ async function rotationTo(nextKeyId: string, nextJwk: JsonWebKey) {
     keys.leaf!,
     nextKeyId,
     nextJwk,
-    '2026-08-11T00:00:00.000Z',
+    '2026-08-10T00:00:00.000Z',
   );
 }
 

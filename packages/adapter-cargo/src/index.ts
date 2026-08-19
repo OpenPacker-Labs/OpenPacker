@@ -14,6 +14,7 @@ import {
   compareParsedVersions,
   compareCodePoints,
   evaluateSemverRange,
+  encodeUrlPathComponent,
   formatPurl,
   header,
   packageNodeId,
@@ -163,6 +164,7 @@ export class CargoCodec
         'INVALID_PURL',
         'Cargo PURLs do not have namespaces',
       );
+    assertCargoName(parsed.name);
     return formatPurl({
       ...parsed,
       name: parsed.name.toLowerCase(),
@@ -430,11 +432,17 @@ export function parseCargoLock(input: string): CargoLockDocument {
 }
 
 export function sparseIndexPath(name: string): string {
-  const normalized = name.toLowerCase();
+  const normalized = assertCargoName(name);
   if (normalized.length === 1) return `1/${normalized}`;
   if (normalized.length === 2) return `2/${normalized}`;
   if (normalized.length === 3) return `3/${normalized[0]}/${normalized}`;
   return `${normalized.slice(0, 2)}/${normalized.slice(2, 4)}/${normalized}`;
+}
+
+function assertCargoName(value: string): string {
+  if (!/^[A-Za-z0-9_-]+$/u.test(value))
+    throw new ProviderError('INVALID_PURL', 'Invalid Cargo crate name');
+  return encodeUrlPathComponent(value.toLowerCase(), 'Cargo crate name');
 }
 
 export class CargoSparseProvider implements CatalogProvider {

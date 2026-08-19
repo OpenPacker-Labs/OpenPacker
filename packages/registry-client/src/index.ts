@@ -24,6 +24,7 @@ import type {
 } from '@openpacker/contracts';
 import {
   BoundedFetchTransport,
+  encodeUrlPathComponent,
   ProviderError,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -369,7 +370,7 @@ export class RegistryClient {
       signal,
     );
     return (await this.#json(
-      `${this.#baseUrl}/v1/packages/${encodePathSegment(name)}/versions`,
+      `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions`,
       signal,
     )) as VersionList;
   }
@@ -386,7 +387,7 @@ export class RegistryClient {
       signal,
     );
     return (await this.#json(
-      `${this.#baseUrl}/v1/packages/${encodePathSegment(name)}/versions/${encodePathSegment(version)}`,
+      `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions/${encodeUrlPathComponent(version, 'registry package version')}`,
       signal,
     )) as RegistryEntry;
   }
@@ -546,18 +547,6 @@ export interface EntryVerification {
 }
 
 export type { PackageManifest, PackagePage, RegistryEntry, VersionList };
-
-/**
- * Percent-encode a path segment without encoding the `/` inside a scoped npm
- * name away — registries route on the whole name, so `@scope/pkg` stays one
- * segment pair rather than becoming `%2F`.
- */
-function encodePathSegment(value: string): string {
-  return value
-    .split('/')
-    .map((part) => encodeURIComponent(part))
-    .join('/');
-}
 
 function isLoopback(url: URL): boolean {
   const host = url.hostname.replace(/^\[|\]$/gu, '');

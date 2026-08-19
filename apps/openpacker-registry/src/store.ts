@@ -344,6 +344,59 @@ export class RegistryStore {
     return { entry, created: true };
   }
 
+  /**
+   * Publish and charge its holder under one write lock.
+   *
+   * Signature verification stays outside the transaction, but the quota
+   * decision cannot: a check followed by two separate writes lets concurrent
+   * requests all observe the same remaining slot. Identical retries remain
+   * free, so they are resolved before the quota is consulted.
+   */
+  publishWithinQuota(
+    input: {
+      manifest: PackageManifest;
+      manifestDigest: string;
+      signatures: readonly unknown[];
+      now: string;
+      sourceId?: string;
+    },
+    quota: {
+      holderId: string;
+      atEpochMs: number;
+      windowSeconds: number;
+      limit: number;
+    },
+  ):
+    | { entry: StoredEntry; created: boolean }
+    | { quotaExceeded: readonly number[] } {
+    this.#database.exec('BEGIN IMMEDIATE');
+    try {
+      const existing = this.get(input.manifest.name, input.manifest.version);
+      if (existing) {
+        const stored = this.publish(input);
+        this.#database.exec('COMMIT');
+        return stored;
+      }
+
+      const recent = this.recentPublishes(
+        quota.holderId,
+        quota.atEpochMs - quota.windowSeconds * 1000,
+      );
+      if (recent.length >= quota.limit) {
+        this.#database.exec('COMMIT');
+        return { quotaExceeded: recent };
+      }
+
+      const stored = this.publish(input);
+      this.recordPublish(quota.holderId, quota.atEpochMs);
+      this.#database.exec('COMMIT');
+      return stored;
+    } catch (error) {
+      this.#database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   get(name: string, version: string): StoredEntry | undefined {
     if (version === 'latest') {
       const row = this.#database
@@ -607,21 +660,6 @@ export class RegistryStore {
         record.method,
         record.detail ?? null,
       );
-  }
-
-  /**
-   * Mark a record for re-check on the next read.
-   *
-   * How a client-reported observation is honoured: it moves the check earlier,
-   * and nothing more. A report can never set state, or "report a competitor
-   * unreachable" becomes a feature of the registry.
-   */
-  expireServiceability(name: string, version: string): void {
-    this.#database
-      .prepare(
-        "UPDATE serviceability SET checked_at = '1970-01-01T00:00:00.000Z' WHERE name = ? AND version = ?",
-      )
-      .run(name, version);
   }
 
   revocations(): readonly RevocationEntry[] {

@@ -128,6 +128,17 @@ describe('RegistryClient discovery', () => {
     ).not.toThrow();
   });
 
+  it('keeps package identifiers inside the package route', async () => {
+    const { transport, calls } = fixtureTransport({
+      '/.well-known/prex-registry': definition(),
+    });
+    const client = new RegistryClient({ baseUrl: BASE, transport });
+    await expect(client.versions('../admin')).rejects.toMatchObject({
+      code: 'INVALID_PURL',
+    });
+    expect(calls).toEqual([`${BASE}/.well-known/prex-registry`]);
+  });
+
   it('refuses a registry speaking a version it does not know', async () => {
     const { transport } = fixtureTransport({
       '/.well-known/prex-registry': {

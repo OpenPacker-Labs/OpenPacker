@@ -628,6 +628,7 @@ export interface HttpTransport {
 export interface BoundedFetchOptions {
   allowedOrigins: readonly string[];
   maximumBytes?: number;
+  timeoutMilliseconds?: number;
   maximumRedirects?: number;
   maximumRetries?: number;
   maximumRetryDelayMilliseconds?: number;
@@ -643,12 +644,22 @@ const SENSITIVE_HEADERS = new Set([
   'proxy-authorization',
   'x-api-key',
 ]);
+const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
+  'accept',
+  'accept-encoding',
+  'cache-control',
+  'if-match',
+  'if-none-match',
+  'range',
+  'user-agent',
+]);
 
 export class BoundedFetchTransport implements HttpTransport {
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #fetch: typeof fetch;
   readonly #delay: NonNullable<BoundedFetchOptions['delay']>;
   readonly #maximumBytes: number;
+  readonly #timeoutMilliseconds: number;
   readonly #maximumRedirects: number;
   readonly #maximumRetries: number;
   readonly #maximumRetryDelayMilliseconds: number;
@@ -665,6 +676,15 @@ export class BoundedFetchTransport implements HttpTransport {
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#delay = options.delay ?? abortableDelay;
     this.#maximumBytes = options.maximumBytes ?? 128 * 1024 * 1024;
+    this.#timeoutMilliseconds = options.timeoutMilliseconds ?? 30_000;
+    if (
+      !Number.isSafeInteger(this.#timeoutMilliseconds) ||
+      this.#timeoutMilliseconds <= 0
+    )
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'Provider timeout must be a positive safe integer',
+      );
     this.#maximumRedirects = options.maximumRedirects ?? 5;
     this.#maximumRetries = options.maximumRetries ?? 2;
     this.#maximumRetryDelayMilliseconds =
@@ -672,92 +692,114 @@ export class BoundedFetchTransport implements HttpTransport {
   }
 
   async request(request: HttpRequest): Promise<HttpResponse> {
-    let url = parseProviderUrl(request.url);
-    assertAllowedProviderUrl(url, this.#allowedOrigins);
-    let method = request.method ?? 'GET';
-    let headers = { ...(request.headers ?? {}) };
-    if (
-      url.protocol === 'http:' &&
-      Object.keys(headers).some((name) =>
-        SENSITIVE_HEADERS.has(name.toLowerCase()),
-      )
-    )
-      throw new ProviderError(
-        'INVALID_PROVIDER_ENDPOINT',
-        'Plaintext loopback provider requests cannot carry credentials',
-      );
-    const limit = Math.min(
-      request.maximumBytes ?? this.#maximumBytes,
-      this.#maximumBytes,
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () =>
+        deadline.abort(
+          new ProviderError(
+            'UPSTREAM_UNAVAILABLE',
+            `Provider request exceeded ${this.#timeoutMilliseconds} milliseconds`,
+          ),
+        ),
+      this.#timeoutMilliseconds,
     );
-    let redirects = 0;
-    let retries = 0;
-    for (;;) {
-      throwIfAborted(request.signal);
-      const response = await this.#fetch(url, {
-        method,
-        headers,
-        ...(request.signal === undefined ? {} : { signal: request.signal }),
-        redirect: 'manual',
-      });
-      if (REDIRECT_STATUSES.has(response.status)) {
-        const location = response.headers.get('location');
-        await response.body?.cancel();
-        if (!location)
-          throw new ProviderError(
-            'UPSTREAM_UNAVAILABLE',
-            `Redirect ${response.status} omitted Location`,
-            response.status,
-          );
-        if (redirects >= this.#maximumRedirects)
-          throw new ProviderError(
-            'UPSTREAM_UNAVAILABLE',
-            `Provider exceeded ${this.#maximumRedirects} redirects`,
-            response.status,
-          );
-        const next = parseProviderUrl(location, url);
-        assertAllowedProviderUrl(next, this.#allowedOrigins);
-        if (url.protocol === 'https:' && next.protocol !== 'https:')
-          throw new ProviderError(
-            'UPSTREAM_UNAVAILABLE',
-            'Provider redirect attempted an HTTPS downgrade',
-            response.status,
-          );
-        if (next.origin !== url.origin)
-          headers = stripSensitiveHeaders(headers);
-        if (response.status === 303 && method !== 'HEAD') method = 'GET';
-        url = next;
-        redirects += 1;
-        continue;
-      }
+    const signal =
+      request.signal === undefined
+        ? deadline.signal
+        : AbortSignal.any([request.signal, deadline.signal]);
+    try {
+      let url = parseProviderUrl(request.url);
+      assertAllowedProviderUrl(url, this.#allowedOrigins);
+      let method = request.method ?? 'GET';
+      let headers = { ...(request.headers ?? {}) };
       if (
-        RETRY_STATUSES.has(response.status) &&
-        retries < this.#maximumRetries
-      ) {
-        const retryAfter = retryDelayMilliseconds(
-          response.headers.get('retry-after'),
-          retries,
-          this.#maximumRetryDelayMilliseconds,
+        url.protocol === 'http:' &&
+        Object.keys(headers).some((name) =>
+          SENSITIVE_HEADERS.has(name.toLowerCase()),
+        )
+      )
+        throw new ProviderError(
+          'INVALID_PROVIDER_ENDPOINT',
+          'Plaintext loopback provider requests cannot carry credentials',
         );
-        await response.body?.cancel();
-        retries += 1;
-        await this.#delay(retryAfter, request.signal);
-        continue;
+      const limit = Math.min(
+        request.maximumBytes ?? this.#maximumBytes,
+        this.#maximumBytes,
+      );
+      let redirects = 0;
+      let retries = 0;
+      for (;;) {
+        throwIfAborted(signal);
+        const response = await abortable(
+          this.#fetch(url, {
+            method,
+            headers,
+            signal,
+            redirect: 'manual',
+          }),
+          signal,
+        );
+        if (REDIRECT_STATUSES.has(response.status)) {
+          const location = response.headers.get('location');
+          await response.body?.cancel();
+          if (!location)
+            throw new ProviderError(
+              'UPSTREAM_UNAVAILABLE',
+              `Redirect ${response.status} omitted Location`,
+              response.status,
+            );
+          if (redirects >= this.#maximumRedirects)
+            throw new ProviderError(
+              'UPSTREAM_UNAVAILABLE',
+              `Provider exceeded ${this.#maximumRedirects} redirects`,
+              response.status,
+            );
+          const next = parseProviderUrl(location, url);
+          assertAllowedProviderUrl(next, this.#allowedOrigins);
+          if (url.protocol === 'https:' && next.protocol !== 'https:')
+            throw new ProviderError(
+              'UPSTREAM_UNAVAILABLE',
+              'Provider redirect attempted an HTTPS downgrade',
+              response.status,
+            );
+          if (next.origin !== url.origin)
+            headers = stripCrossOriginHeaders(headers);
+          if (response.status === 303 && method !== 'HEAD') method = 'GET';
+          url = next;
+          redirects += 1;
+          continue;
+        }
+        if (
+          RETRY_STATUSES.has(response.status) &&
+          retries < this.#maximumRetries
+        ) {
+          const retryAfter = retryDelayMilliseconds(
+            response.headers.get('retry-after'),
+            retries,
+            this.#maximumRetryDelayMilliseconds,
+          );
+          await response.body?.cancel();
+          retries += 1;
+          await this.#delay(retryAfter, signal);
+          continue;
+        }
+        if (
+          response.status !== 304 &&
+          (response.status < 200 || response.status >= 300)
+        ) {
+          await response.body?.cancel();
+          throw providerErrorForStatus(response.status);
+        }
+        const body = await readBoundedBody(response, limit, signal);
+        return {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body,
+          url: response.url || url.toString(),
+        };
       }
-      if (
-        response.status !== 304 &&
-        (response.status < 200 || response.status >= 300)
-      ) {
-        await response.body?.cancel();
-        throw providerErrorForStatus(response.status);
-      }
-      const body = await readBoundedBody(response, limit, request.signal);
-      return {
-        status: response.status,
-        headers: Object.fromEntries(response.headers.entries()),
-        body,
-        url: response.url || url.toString(),
-      };
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
@@ -833,14 +875,28 @@ export function providerErrorForStatus(status: number): ProviderError {
   );
 }
 
-function stripSensitiveHeaders(
+function stripCrossOriginHeaders(
   headers: Readonly<Record<string, string>>,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).filter(
-      ([name]) => !SENSITIVE_HEADERS.has(name.toLowerCase()),
+    Object.entries(headers).filter(([name]) =>
+      CROSS_ORIGIN_REDIRECT_HEADERS.has(name.toLowerCase()),
     ),
   );
+}
+
+async function abortable<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  throwIfAborted(signal);
+  return await new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', abort));
+  });
 }
 
 function retryDelayMilliseconds(
@@ -906,7 +962,10 @@ async function readBoundedBody(
   try {
     for (;;) {
       throwIfAborted(signal);
-      const result = await reader.read();
+      const result = await abortable(
+        reader.read(),
+        signal ?? new AbortController().signal,
+      );
       if (result.done) break;
       size += result.value.byteLength;
       if (size > maximumBytes)
@@ -1020,6 +1079,25 @@ const encode = (value: string): string =>
       (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
     )
     .replace(/%[0-9a-f]{2}/g, (match) => match.toUpperCase());
+
+/** Encode untrusted identity as one URL path component, never URL structure. */
+export function encodeUrlPathComponent(
+  value: string,
+  label = 'URL path component',
+): string {
+  if (
+    value.length === 0 ||
+    value === '.' ||
+    value === '..' ||
+    /[\\/?#\u0000-\u001F\u007F]/u.test(value) ||
+    value
+      .replaceAll('\\', '/')
+      .split('/')
+      .some((part) => part === '.' || part === '..')
+  )
+    throw new ProviderError('INVALID_PURL', `Invalid ${label}`);
+  return encode(value);
+}
 
 export function parsePurl(value: string): ParsedPurl {
   if (value.length > 4096)

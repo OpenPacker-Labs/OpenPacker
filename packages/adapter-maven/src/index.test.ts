@@ -55,6 +55,17 @@ describe('Maven codec', () => {
     ).toBe('pkg:maven/org.example/demo-tool@1.0.0?type=war');
   });
 
+  it('rejects URL syntax in every repository path component', () => {
+    for (const purl of [
+      'pkg:maven/org%2F..%2Fadmin/demo@1.0.0',
+      'pkg:maven/org.example/demo%3Fquery@1.0.0',
+      'pkg:maven/org.example/demo@1.0.0%23fragment',
+      'pkg:maven/org.example/demo@1.0.0?classifier=%2E%2E',
+      'pkg:maven/org.example/demo@1.0.0?type=jar%2F..',
+    ])
+      expect(() => codec.canonicalizePurl(purl), purl).toThrow(/Maven/u);
+  });
+
   it('parses native coordinates as groupId:artifactId', () => {
     expect(codec.parseNativeCoordinate('org.example:demo-tool:1.0.0')).toEqual({
       ecosystem: 'maven',

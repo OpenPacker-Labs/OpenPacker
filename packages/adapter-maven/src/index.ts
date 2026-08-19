@@ -12,6 +12,7 @@ import type {
 import {
   compareCodePoints,
   evaluateRange,
+  encodeUrlPathComponent,
   formatPurl,
   header,
   json,
@@ -496,12 +497,28 @@ export function mavenRepositoryPath(
   packaging = 'jar',
   classifier?: string,
 ): string {
-  const groupPath = groupId.replace(/\./g, '/');
+  const groupPath = mavenGroupPath(groupId);
+  const artifact = mavenComponent(artifactId, 'artifactId');
   if (version === undefined)
-    return `${groupPath}/${artifactId}/maven-metadata.xml`;
+    return `${groupPath}/${artifact}/maven-metadata.xml`;
+  const encodedVersion = mavenComponent(version, 'version');
+  const encodedPackaging = mavenComponent(packaging, 'packaging');
   const classifierSuffix =
-    classifier === undefined || classifier === '' ? '' : `-${classifier}`;
-  return `${groupPath}/${artifactId}/${version}/${artifactId}-${version}${classifierSuffix}.${packaging}`;
+    classifier === undefined || classifier === ''
+      ? ''
+      : `-${mavenComponent(classifier, 'classifier')}`;
+  return `${groupPath}/${artifact}/${encodedVersion}/${artifact}-${encodedVersion}${classifierSuffix}.${encodedPackaging}`;
+}
+
+function mavenComponent(value: string, label: string): string {
+  return encodeUrlPathComponent(value, `Maven ${label}`);
+}
+
+function mavenGroupPath(groupId: string): string {
+  return groupId
+    .split('.')
+    .map((part) => mavenComponent(part, 'groupId'))
+    .join('/');
 }
 
 export function parseMavenMetadataXml(xml: string): MavenMetadataDocument {
@@ -617,6 +634,11 @@ export class MavenCodec
       );
     const packaging = parsed.qualifiers.type;
     const classifier = parsed.qualifiers.classifier;
+    mavenGroupPath(parsed.namespace);
+    mavenComponent(parsed.name, 'artifactId');
+    if (parsed.version !== undefined) mavenComponent(parsed.version, 'version');
+    if (packaging !== undefined) mavenComponent(packaging, 'packaging');
+    if (classifier !== undefined) mavenComponent(classifier, 'classifier');
     const qualifiers = mavenQualifiers({ packaging, classifier });
     // Reject silent flattening: unknown qualifiers are preserved, not dropped.
     for (const [key, entry] of Object.entries(parsed.qualifiers)) {
@@ -1304,10 +1326,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
   ): string {
     const base = this.repositoryUrl.replace(/\/$/, '');
     // OpenPacker catalog entries are JSON sidecars beside the Maven path.
-    const classifierSuffix =
-      classifier === undefined || classifier === '' ? '' : `-${classifier}`;
-    const groupPath = groupId.replace(/\./g, '/');
-    return `${base}/${groupPath}/${artifactId}/${version}/${artifactId}-${version}${classifierSuffix}.${packaging}.catalog.json`;
+    return `${base}/${mavenRepositoryPath(groupId, artifactId, version, `${packaging}.catalog.json`, classifier)}`;
   }
 
   private async metadataRecord(

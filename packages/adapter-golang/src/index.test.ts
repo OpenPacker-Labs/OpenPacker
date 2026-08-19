@@ -80,6 +80,15 @@ describe('Golang codec', () => {
     expect(codec.satisfies('v1.2.4', 'v1.2.3')).toBe(false);
   });
 
+  it('rejects decoded proxy path traversal and URL delimiters', () => {
+    for (const purl of [
+      'pkg:golang/example.com/%2E%2E%2Fadmin@v1.0.0',
+      'pkg:golang/example.com/demo%3Fquery@v1.0.0',
+      'pkg:golang/example.com/demo%23fragment@v1.0.0',
+    ])
+      expect(() => codec.canonicalizePurl(purl), purl).toThrow(/Go module/u);
+  });
+
   it('orders pseudo-versions with SemanticLoss on approximate membership', () => {
     const pseudo = 'v0.0.0-20260101120000-abcdefabcdef';
     const range = codec.parseNativeRange(pseudo);
