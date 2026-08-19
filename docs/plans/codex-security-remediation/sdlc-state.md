@@ -2,9 +2,10 @@
 
 ## Status
 
-- Phase: layer 05 code approved; final native verification, deep scan, and
-  delivery blocked on external process/network authority
-- Current layer: `05-scan-closeout`
+- Phase: all five layers reviewed, repaired, and squash-merged bottom-up
+  (#95–#99); a fresh complete Codex Security deep scan remains blocked on the
+  external account usage limit (reset 2026-08-20 14:18 local; rescan scheduled)
+- Current layer: `05-scan-closeout` (merged)
 - Branch chain: `sdlc/codex-security-01-canonical-policy` →
   `sdlc/codex-security-02-registry-network` →
   `sdlc/codex-security-03-filesystem-resources` →
@@ -185,6 +186,26 @@ upstream Codex Security release currently has no patched version.
   commit-hook, push, and fresh Codex Security network authority after the
   account usage limit was reached (reset reported as 2026-08-20 14:18 local).
   The interrupted/cancelled deep runs produced no authoritative final report.
-  Final exact-head `npm run verify`, a fresh complete Codex Security report,
-  incremental commits, stacked PR submission, bottom-up squash merge, and
-  deployment therefore remain pending and must not be reported as complete.
+- 2026-08-19 delivery: layer 05 committed incrementally (5 commits, staged gates
+  green); the stack was submitted as PRs #95–#99 and independently re-reviewed.
+  Fresh review found and repaired real defects before merge: spec/implementation
+  drift on amendment digest gating (layer 01), symlinked project-root ancestors
+  failing closed on macOS temp dirs (layer 03), silently discarded poetry
+  `python-versions`/`optional` context (layer 04), nested provider-manifest
+  paths contradicting the spec, unreachable MXC containment on macOS, a weakened
+  scanner approval policy, and NAT64/IPv4 SSRF guard gaps (layer 05). Full
+  offline `npm run verify` passed at the repaired stack head `9e25e43` (48
+  workspaces, 998/1012 runnable tests, 100% file instrumentation, 83.16%
+  functions, 31,497 fuzz cases, cargo green), and the merged `main` tree is
+  byte-identical to that verified head. Squash-merged bottom-up: #95 `fabe617`,
+  #96 `a8d3a6b`, #97 `33cc342`, #98 `10c5298`, #99 `4f0e2ef`. CodeRabbit review
+  comments on the PRs were quota-limit notices only (no actionable content).
+  Known transient: mid-stack heads do not pass `npm run demo` alone because
+  canonical fixture identity repairs landed in layer 05; the stack composes
+  green and was merged back-to-back.
+- 2026-08-19 residual: a fresh complete Codex Security deep scan could not run —
+  the account usage limit still refuses
+  (`You've hit your usage limit … try again at Aug 20th, 2026 2:18 PM`; scan
+  exit 2 after preflight). Rescan is scheduled for 2026-08-20 14:25 local. The
+  zero-finding acceptance criterion is NOT yet evidenced and must not be claimed
+  until that report exists.
