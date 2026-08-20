@@ -278,6 +278,8 @@ describe('plugin add', () => {
     expect(installed.storeDigest).toBe(fixture.digest);
     expect(installed.installedAt).toBe(NOW);
     expect(installed.alreadyInstalled).toBe(false);
+    // Fresh acquire: bytes came from the registry, not the cache.
+    expect(installed.cached).toBe(false);
     expect(installed.storePath).toBe(
       join(root, `sha256-${fixture.digest.slice('sha256:'.length)}`),
     );
@@ -394,6 +396,8 @@ describe('plugin add', () => {
       now,
     });
     expect(again.alreadyInstalled).toBe(true);
+    // The intact pin answered; nothing was read from the `.artifact` cache.
+    expect(again.cached).toBe(false);
     // The pin was intact, so nothing was fetched at all.
     expect(fixture.transport.requests.length).toBe(requests);
   });
@@ -625,6 +629,7 @@ describe('offline behaviour', () => {
       now,
     });
     expect(installed.alreadyInstalled).toBe(true);
+    expect(installed.cached).toBe(false);
     expect(fixture.transport.requests.length).toBe(requests);
   });
 
@@ -647,6 +652,7 @@ describe('offline behaviour', () => {
       now,
     });
     expect(repaired.cached).toBe(true);
+    expect(repaired.alreadyInstalled).toBe(false);
     expect(fixture.transport.requests.length).toBe(requests);
     const manifest = JSON.parse(
       await readFile(join(repaired.storePath, PLUGIN_MANIFEST_NAME), 'utf8'),

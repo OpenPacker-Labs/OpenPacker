@@ -245,7 +245,9 @@ export async function addPlugin(
           `Remove it first (opm plugin remove ${name}) to install ${wantedExact}.`,
       );
     const intact = await verifyEntry(root, existing);
-    if (intact) return toInstalled(root, existing, true, true);
+    // Nothing came from the `.artifact` cache here: the intact store entry
+    // itself answered, so `cached` stays false.
+    if (intact) return toInstalled(root, existing, true, false);
     // The entry vanished or was tampered with: repair from the cached
     // artifact bytes when they are present and still digest-verified — the
     // only offline-capable path, mirroring the project store's cache rule.
