@@ -53,6 +53,7 @@ Projects bind plugins in `opm.toml` without embedding credentials:
 [plugins.dev-example-acme]
 store_digest = "sha256:…"
 artifact_origins = ["https://artifacts.internal.example"]
+artifact_origin_token_envs = ["ACME_ARTIFACTS_TOKEN"]
 ```
 
 The section key MUST equal the manifest `id`. `store_digest` pins the exact
@@ -60,11 +61,13 @@ content-addressed store entry; a host MUST refuse a plugin whose materialized
 bytes digest differently. A project binding MAY list `artifact_origins`, an
 array of HTTPS origin-form pins (no userinfo, path, query, or hash). Those
 origins union with `OPM_HOST_FETCH_ORIGINS` for this plugin's host-fetch
-allowlist. Duplicate origins in one list MUST fail closed. The binding MAY name
-origins; it MUST NOT carry secret values and MUST NOT acquire. User-level pins
-live outside the project so `opmx --plugin` works without a project; a project
-binding MUST reference an already-installed store entry and never triggers
-acquisition by itself.
+allowlist. Duplicate origins in one list MUST fail closed. A binding MAY list
+`artifact_origin_token_envs`, a parallel array of env-var names or empty strings
+for those origins; present length MUST equal `artifact_origins`. The binding MAY
+name origins and env-var names; it MUST NOT carry secret values and MUST NOT
+acquire. User-level pins live outside the project so `opmx --plugin` works
+without a project; a project binding MUST reference an already-installed store
+entry and never triggers acquisition by itself.
 
 ## Execution
 
@@ -110,18 +113,24 @@ provider capability extension `openpacker/artifact-bytes: "host-fetch"`. For
 such a provider the `fetch-artifact-record` body MUST carry a sha256 `digest`, a
 byte `size`, and at least one `locations[].uri`. Location URIs MUST be HTTPS
 with no userinfo, query, or hash. The host MUST fetch the bytes itself over
-HTTPS without credentials, from an origin it allowlists —
-`{ origin of record.endpoint } ∪ pins`, where `pins` is `OPM_HOST_FETCH_ORIGINS`
-union this plugin's `artifact_origins` — MUST resolve the location and refuse
-private, loopback, link-local, NAT64, or IPv4-mapped answers unless that origin
-is in `pins` (`record.endpoint` is not a pin), MUST bound the download by the
-published `size`, and MUST verify the sha256 digest before any use. The plugin
-MUST NOT add origins via `record.endpoint`, extra `locations[]`, or extra body
-fields. Extra `locations[]` are not walked. A missing digest, a digest mismatch,
-an over-size body, a location outside the allowlisted origin, a location URI
-with query or hash, or an unpinned private address fails closed. The host MUST
-NOT attach credentials to the download. The plugin never proxies artifact bytes;
-`rawBody` remains the canonical bytes of the answered body.
+HTTPS, from an origin it allowlists — `{ origin of record.endpoint } ∪ pins`,
+where `pins` is `OPM_HOST_FETCH_ORIGINS` union this plugin's `artifact_origins`
+— MUST resolve the location and refuse private, loopback, link-local, NAT64, or
+IPv4-mapped answers unless that origin is in `pins` (`record.endpoint` is not a
+pin), MUST bound the download by the published `size`, and MUST verify the
+sha256 digest before any use. The plugin MUST NOT add origins via
+`record.endpoint`, extra `locations[]`, or extra body fields. Extra
+`locations[]` are not walked. A missing digest, a digest mismatch, an over-size
+body, a location outside the allowlisted origin, a location URI with query or
+hash, or an unpinned private address fails closed. The host MUST NOT attach
+credentials because the plugin asked. The host MAY attach
+`Authorization: Bearer` only when the hop origin is in `pins` **and** a
+per-origin env-var name is configured (`artifact_origin_token_envs` or
+`OPM_HOST_FETCH_TOKEN_ENVS`) **and** that env is set, RFC 6750 token68, with no
+leading `Bearer ` prefix. `OPM_HOST_FETCH_BEARER` is not a process-wide grant
+unless that name is listed. The plugin MUST NOT name headers. The plugin never
+proxies artifact bytes; `rawBody` remains the canonical bytes of the answered
+body.
 
 ## Executables
 

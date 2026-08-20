@@ -372,7 +372,7 @@ opmx --plugin acme some-tool           # when the plugin serves exactly one purl
 one. The run is the full loop: the plugin answers `enumerate` / `inspect` /
 `fetch-artifact-record` over the bounded stdio protocol — metadata only; the
 host downloads the artifact itself from the record's published `locations`
-(HTTPS, no credentials, query, or hash). The allowlist is the record endpoint
+(HTTPS, no userinfo, query, or hash). The allowlist is the record endpoint
 origin union operator pins; pins are `OPM_HOST_FETCH_ORIGINS` union this
 plugin's `[plugins.<id>] artifact_origins`. Ephemeral `opmx --plugin` has no
 project binding, so pins are env only. A public HTTPS GET on the endpoint origin
@@ -386,9 +386,22 @@ declared. A withheld location or an off-origin download fails closed
 (`UNRESOLVABLE`/`UNSAFE_PATH`), and a size or digest mismatch fails closed as a
 verification failure (exit 7) — always before anything executes.
 
+The host never attaches credentials because the plugin asked. To authenticate a
+pinned origin, name a token env var (never a secret value) in
+`artifact_origin_token_envs` or `OPM_HOST_FETCH_TOKEN_ENVS`. Pin even a public
+hostname if it requires a bearer — a public endpoint is not an Authorization
+grant. Pin plus bearer is any-path consent on that origin, so use the smallest
+pin set. `OPM_HOST_FETCH_BEARER` is not a grant unless that name is listed.
+
+```sh
+export OPM_HOST_FETCH_ORIGINS=https://artifacts.internal.example
+export OPM_HOST_FETCH_TOKEN_ENVS=ACME_ARTIFACTS_TOKEN
+```
+
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
-`opmx --offline` refuses an ephemeral resolve outright.
+`--allow-env` of `OPM_HOST_FETCH_*` or of a host-fetch token env name is
+refused. `opmx --offline` refuses an ephemeral resolve outright.
 
 A project pins the plugins it relies on in `opm.toml`, keyed by the plugin's
 manifest id, against the store entry digest that `opm plugin list` prints:
@@ -397,6 +410,7 @@ manifest id, against the store entry digest that `opm plugin list` prints:
 [plugins.dev.example.acme-adapter]
 store_digest = "sha256:…"
 artifact_origins = ["https://artifacts.internal.example"]
+artifact_origin_token_envs = ["ACME_ARTIFACTS_TOKEN"]
 ```
 
 A binding is a pin, never an acquisition: project commands that read or mutate
