@@ -394,7 +394,9 @@ and catalog surfaces, so a plugin answers metadata — versions, identity,
 records, executable declarations — while artifact bytes are fetched host-side
 from the record's published locations and verified against the published digest
 before any use (ADR 0040); a plugin that withholds or misstates them fails
-closed rather than executing unverifiable bytes.
+closed rather than executing unverifiable bytes. Declared executables are pinned
+into the lock and the generation record at install, so `opmx <bin>` runs a
+plugin-served tool in the project exactly like a first-party one.
 
 ---
 

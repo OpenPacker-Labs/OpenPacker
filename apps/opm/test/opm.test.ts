@@ -896,8 +896,8 @@ describe('project plugin bindings', () => {
   // The project path runs the same ADR 0040 acquisition loop as opmx
   // --plugin: add resolves through the bound plugin, the host fetches and
   // verifies the published bytes, and the declared native bin lands in the
-  // lock, the project state, and .opm/bin.
-  it('adds and installs a plugin-served tool in a bound project', async () => {
+  // lock, the project state, and .opm/bin — and opmx runs it.
+  it('adds, installs, and runs a plugin-served tool in a bound project', async () => {
     if (!bwrapReady) return;
     const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
     temps.push(home);
@@ -949,12 +949,23 @@ describe('project plugin bindings', () => {
       expect(bin?.name).toBe('acme-demo');
       await readFile(join(root, '.opm/bin/acme-demo'));
 
-      // KNOWN GAP (reported in layer 04 handback, not patched here): opmx
-      // re-activates the generation before resolving, and activateGeneration
-      // (packages/opm-project/src/generations.ts) re-derives bins with
-      // discoverBins(storePath, ecosystem) instead of the lock-pinned
-      // declaration — which returns [] for plugin ecosystems — so
-      // `opmx acme-demo` fails closed with NOT_FOUND today.
+      // The declared bin survives generation activation: opmx re-activates
+      // before resolving, and the member now carries the bins its install
+      // pinned instead of re-deriving nothing from the store tree.
+      let run = capture();
+      expect(await runOpmx(['acme-demo'], run.io, root), run.err).toBe(0);
+      expect(run.out).toBe('acme-demo-ran\n');
+
+      run = capture();
+      expect(
+        await runOpmx(
+          ['--package', 'demo', '--bin', 'acme-demo'],
+          run.io,
+          root,
+        ),
+        run.err,
+      ).toBe(0);
+      expect(run.out).toBe('acme-demo-ran\n');
     } finally {
       vi.unstubAllGlobals();
       restore();
