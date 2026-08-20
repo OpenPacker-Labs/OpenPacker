@@ -11,8 +11,9 @@ Requested by user (2026-08-20): "that isn't a spec v2 decision or future design
 
 ## Phase
 
-closeout — all six layers implemented; stack submitted; bottom-up review then
-squash-merge, then final `npm run verify` on main.
+closed (2026-08-20) — all six layers reviewed (rubber-duck + adversarial +
+independent review), nits repaired mid-stack, squash-merged bottom-up, and
+`npm run verify` green on merged `main` (`ce8a3d2`).
 
 ## Gap analysis (verified in code)
 
@@ -65,14 +66,14 @@ squash-merge, then final `npm run verify` on main.
 
 ## Stack layers (one issue each, bottom-up)
 
-| Layer | Branch                               | Scope                                                                                                                                                                           | PR  |
-| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                                                        |     |
-| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                                                  |     |
-| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                                                     |     |
-| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                                                  |     |
-| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter                                   |     |
-| 06    | sdlc/plugin-execution-06-cache       | ephemeral tool cache hits: metadata-first resolution defers the byte download; a digest the store already holds skips it, with download fallthrough on any cache-shape surprise |     |
+| Layer | Branch                               | Scope                                                                                                                                                                           | PR   |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                                                        | #109 |
+| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                                                  | #110 |
+| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                                                     | #111 |
+| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                                                  | #112 |
+| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter                                   | #113 |
+| 06    | sdlc/plugin-execution-06-cache       | ephemeral tool cache hits: metadata-first resolution defers the byte download; a digest the store already holds skips it, with download fallthrough on any cache-shape surprise | #114 |
 
 ## Gates
 
@@ -96,3 +97,19 @@ squash-merge, then final `npm run verify` on main.
   python/dotnet/native project bins) — layer 05.
 - Ephemeral tool cache never hit; `(cached)` was unreachable — layer 06.
 - Lockfile parser dropped `interpreter`/`entry` on read — layer 03.
+
+## Verification
+
+- Full offline `npm run verify` on merged `main` (`ce8a3d2`) exited 0: 50
+  workspaces, 1135/1149 runnable tests, 18 enforced test types, 100%
+  production-file instrumentation, 83.22% function coverage, 31,497 fuzz cases
+  across 13 classes.
+- Independent review of all six PRs; nits repaired mid-stack before squash-merge
+  (schema backslash exclusion, drive-prefix refusal, `SIZE_MISMATCH` exit-code
+  mapping, docs exit-code over-claim).
+
+## Follow-ups
+
+- WIT component substrate per ADR 0032 when a TS component host exists.
+- Fresh Codex Security deep scan remains scheduled after the scanner account
+  reset (2026-08-20 14:18 local); it is not a plugin-execution blocker.

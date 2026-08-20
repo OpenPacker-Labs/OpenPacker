@@ -26,10 +26,10 @@ explicitly as plugins, never by default.
 - Execution reuses the ADR 0038 immutable-snapshot + ADR 0036 fail-closed
   sandbox; every plugin response is schema-validated against normative PREX
   $defs before use; undeclared capabilities fail closed.
-- v1 delegates read-only registry-definition and catalog surfaces only.
-  Documented limitation: plugin-served artifact bytes cannot cross the wire
-  protocol, so plugin tools resolve but refuse execution at digest verification;
-  executing them is a spec v2 decision.
+- v1 delegates read-only registry-definition and catalog surfaces only. The
+  stdio protocol stays metadata-only; artifact bytes are fetched host-side and
+  sha256-verified (ADR 0040, plugin-execution #109–#114). That stack closed the
+  earlier “resolve then refuse at digest verification” gap.
 
 ## Verification
 
@@ -45,6 +45,8 @@ explicitly as plugins, never by default.
 
 ## Follow-ups
 
-- Spec v2 for plugin-served artifact execution (byte-carrying operation or
-  host-side download from record locations).
+- ~~Spec v2 for plugin-served artifact execution (byte-carrying operation or
+  host-side download from record locations).~~ Closed by plugin-execution
+  (#109–#114, ADR 0040): host-side download from record locations; plugin stays
+  metadata authority.
 - WIT component substrate per ADR 0032 when a TS component host exists.
