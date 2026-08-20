@@ -7,6 +7,7 @@ import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { storeKeyFromDigest } from './paths.js';
 import {
   bindVerifiedArtifactBytes,
+  bindVerifiedArtifactCacheEntry,
   sealVerifiedArtifactBinding,
   inferFormat,
   materializeLockPackage,
@@ -14,7 +15,7 @@ import {
 import {
   listRegistryVersions,
   providerFor,
-  resolveRegistryArtifact,
+  resolveRegistryArtifactDeferred,
 } from './registry.js';
 import { resolveGraph, solveGraph } from './resolve.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -34,8 +35,13 @@ import {
  * dependency, not the rigour: nothing is executed that was not verified
  * against the digest the registry published.
  *
- * Being content-addressed also makes the second run free, which is the
- * behaviour people actually want from `npx` and rarely get.
+ * Being content-addressed also makes the second run cheap, which is the
+ * behaviour people actually want from `npx` and rarely get. Resolution is
+ * not cached — registry metadata is re-read on every run, because an
+ * unpinned purl is a different thing tomorrow — but the artifact bytes are:
+ * when the freshly resolved digest already names a store archive, the
+ * download is skipped and the tree is rebuilt from that archive, re-hashed
+ * against the digest exactly as a lock replay rebuilds it.
  *
  * For ecosystems that declare runtime dependencies (npm, PyPI, …) the full
  * solved closure is materialised into the cache and returned as
@@ -164,43 +170,81 @@ async function materialiseExact(
   bins: BinDeclaration[];
   cached: boolean;
 }> {
-  const artifact = await resolveRegistryArtifact(ecosystem, exact);
+  // Resolve the artifact identity with the byte download deferred: what an
+  // unpinned purl means today is registry metadata and is re-read on every
+  // run, but the bytes are content-addressed, so a digest the tool cache
+  // already holds does not need to move again.
+  const resolved = await resolveRegistryArtifactDeferred(ecosystem, exact);
   const policyInput = defaultSupplyChainPolicyInput();
   const { facts } = await captureFactsFromCatalog(
     await providerFor(ecosystem),
-    artifact.exactPurl,
+    resolved.exactPurl,
     {
       evaluationTime: new Date().toISOString(),
-      registryId: artifact.registryId,
+      registryId: resolved.registryId,
     },
   );
   const pkg: LockPackage = {
     alias: 'tool',
-    purl: artifact.exactPurl,
-    version: artifact.version,
-    digest: artifact.digest,
-    size: artifact.bytes.byteLength,
-    format: inferFormat(artifact.uri, artifact.mediaType),
-    mediaType: artifact.mediaType,
-    source: artifact.uri,
-    storeKey: storeKeyFromDigest(artifact.digest),
-    bins: binDeclarationsFromExecutables(artifact.bins),
+    purl: resolved.exactPurl,
+    version: resolved.version,
+    digest: resolved.digest,
+    size: resolved.bytes?.byteLength ?? resolved.size,
+    format: inferFormat(resolved.uri, resolved.mediaType),
+    mediaType: resolved.mediaType,
+    source: resolved.uri,
+    storeKey: storeKeyFromDigest(resolved.digest),
+    bins: binDeclarationsFromExecutables(resolved.bins),
     reason: 'direct',
     ecosystem,
     ...lockPackageSupplyChainFields(facts),
   };
-  bindVerifiedArtifactBytes(pkg, artifact.bytes, 'registry', facts);
+
+  // Consult the cache before moving any bytes. A present entry is trusted
+  // only because it is content-addressed: materializeLockPackage re-reads
+  // the store archive named by this digest and re-hashes it before rebuilding
+  // the tree, exactly as a lock replay does. The freshly resolved facts are
+  // bound for the policy gate just as a download run binds them. Any
+  // surprise — a missing, partial, or corrupt entry, metadata that disagrees
+  // with what is stored — falls through to the full download and verify
+  // below; a cache shape must never make a runnable tool fail.
+  if (resolved.bytes === undefined) {
+    bindVerifiedArtifactCacheEntry(pkg, facts);
+    sealVerifiedArtifactBinding(pkg);
+    try {
+      const hit = await materializeLockPackage({
+        root: cacheRoot,
+        pkg,
+        offline: false,
+        policy: policyInput,
+      });
+      if (hit.cached) {
+        return {
+          exactPurl: resolved.exactPurl,
+          digest: resolved.digest,
+          storePath: hit.storePath,
+          bins: hit.bins,
+          cached: true,
+        };
+      }
+    } catch {
+      // Cache miss or a broken entry: acquire and verify as if uncached.
+    }
+  }
+
+  const bytes = resolved.bytes ?? (await resolved.fetchBytes());
+  bindVerifiedArtifactBytes(pkg, bytes, 'registry', facts);
   sealVerifiedArtifactBinding(pkg);
   const { storePath, bins, cached } = await materializeLockPackage({
     root: cacheRoot,
     pkg,
     offline: false,
-    bytes: artifact.bytes,
+    bytes,
     policy: policyInput,
   });
   return {
-    exactPurl: artifact.exactPurl,
-    digest: artifact.digest,
+    exactPurl: resolved.exactPurl,
+    digest: resolved.digest,
     storePath,
     bins,
     cached: cached ?? false,

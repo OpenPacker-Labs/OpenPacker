@@ -66,7 +66,12 @@ import {
 } from './supply-chain.js';
 
 interface VerifiedArtifactCapability {
-  bytes: Uint8Array;
+  /**
+   * Absent only for a cache-entry binding: the bytes are then read from the
+   * content-addressed store archive at materialization and hashed against
+   * the bound digest there — the same verification, where the bytes are.
+   */
+  bytes?: Uint8Array;
   provenance: 'direct' | 'registry';
   facts?: PolicyFacts;
   packageBinding: string;
@@ -105,6 +110,27 @@ export function sealVerifiedArtifactBinding(pkg: LockPackage): void {
   const capability = verifiedArtifacts.get(pkg);
   if (capability !== undefined)
     capability.packageBinding = freezeBoundLockPackage(pkg);
+}
+
+/**
+ * Bind resolution-verified facts without bytes, for a package whose bytes
+ * the content-addressed store archive already holds. The facts come from the
+ * same fresh registry resolution as a download run — never from stored data —
+ * and the archive bytes are hashed against the bound digest when they are
+ * read at materialization, so the verification posture is unchanged; only
+ * the transfer is saved.
+ */
+export function bindVerifiedArtifactCacheEntry(
+  pkg: LockPackage,
+  facts?: PolicyFacts,
+): void {
+  verifiedArtifacts.set(pkg, {
+    provenance: 'registry',
+    packageBinding: '',
+    ...(facts === undefined
+      ? {}
+      : { facts: immutablePlainData(facts, 'policy facts') }),
+  });
 }
 
 function verifiedArtifactFor(

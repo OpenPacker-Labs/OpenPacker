@@ -11,7 +11,8 @@ Requested by user (2026-08-20): "that isn't a spec v2 decision or future design
 
 ## Phase
 
-planning → dispatch (layers 01–04 below)
+closeout — all six layers implemented; stack submitted; bottom-up review then
+squash-merge, then final `npm run verify` on main.
 
 ## Gap analysis (verified in code)
 
@@ -64,13 +65,14 @@ planning → dispatch (layers 01–04 below)
 
 ## Stack layers (one issue each, bottom-up)
 
-| Layer | Branch                               | Scope                                                                                                                                         | PR  |
-| ----- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                      |     |
-| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                |     |
-| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                   |     |
-| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                |     |
-| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter |     |
+| Layer | Branch                               | Scope                                                                                                                                                                           | PR  |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                                                        |     |
+| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                                                  |     |
+| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                                                     |     |
+| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                                                  |     |
+| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter                                   |     |
+| 06    | sdlc/plugin-execution-06-cache       | ephemeral tool cache hits: metadata-first resolution defers the byte download; a digest the store already holds skips it, with download fallthrough on any cache-shape surprise |     |
 
 ## Gates
 
@@ -80,6 +82,17 @@ planning → dispatch (layers 01–04 below)
 
 ## Open risks
 
-- Sandbox package-exec profile vs. native exec from store paths (D3).
-- `BoundedFetchTransport` redirect handling must not escape the origin allowlist
-  (verify in layer 03).
+- ~~Sandbox package-exec profile vs. native exec from store paths (D3)~~ —
+  resolved in layer 03: bwrap ro-binds argv[0]/dirname + declared storePaths;
+  proven by an enforced-sandbox e2e.
+- ~~`BoundedFetchTransport` redirects~~ — resolved in layer 03:
+  `redirect: 'manual'`, origin allowlist + no-credentials re-checked per hop.
+
+## Boyscout defects fixed along the way
+
+- Generation activation discarded provider-declared bins (project `opmx <bin>`
+  failed for plugin ecosystems) — layer 05.
+- opmx project path spawned every bin through Node (latent crash for
+  python/dotnet/native project bins) — layer 05.
+- Ephemeral tool cache never hit; `(cached)` was unreachable — layer 06.
+- Lockfile parser dropped `interpreter`/`entry` on read — layer 03.

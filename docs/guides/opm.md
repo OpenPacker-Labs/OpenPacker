@@ -330,6 +330,12 @@ opmx --package demo-tool --bin demo-tool -- --help
 Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
 
+`opmx pkg:<type>/<name>` runs a tool straight from a registry, without a
+project. Registry metadata is re-resolved on every run — an unpinned run is a
+different thing tomorrow — but artifact bytes are content-addressed: a repeat
+run whose resolved digest already names a tool-cache entry skips the download
+and rebuilds from the digest-verified store archive, reported as `(cached)`.
+
 ### Delegated adapter plugins
 
 Third-party ecosystems arrive as delegated adapter plugins (ADR 0039): a
