@@ -25,8 +25,11 @@ import {
 import type { DelegatedExecutableIdentity } from '@openpacker/pack-provider';
 import {
   registerInstalledPlugins,
+  registerPlugin,
   validateOperationResult,
+  verifyPluginBindings,
 } from '../src/index.js';
+import { listPlugins } from '@openpacker/plugin-store';
 import { parseCanonicalJson } from '@openpacker/canonical';
 
 /**
@@ -912,6 +915,113 @@ describe('registerInstalledPlugins', () => {
       expect.objectContaining({ name: 'acme', code: 'DIGEST_MISMATCH' }),
     ]);
     expect(registry.has('acme')).toBe(false);
+  });
+});
+
+describe('registerPlugin', () => {
+  it('registers one named plugin and stays idempotent', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    const dependencies = {
+      storeRoot: fixture.storeRoot,
+      registry,
+      inspectExecutable: async (path: string) => fakeIdentity(path),
+      sandboxRun: async () => sandboxOutcome(''),
+    };
+    const first = await registerPlugin('acme', dependencies);
+    expect(first).toEqual({
+      name: 'acme',
+      id: 'dev.example.acme-adapter',
+      purlTypes: ['acme'],
+      alreadyRegistered: false,
+    });
+    expect(registry.has('acme')).toBe(true);
+    const second = await registerPlugin('acme', dependencies);
+    expect(second.alreadyRegistered).toBe(true);
+  });
+
+  it('never acquires: an unknown name is PLUGIN_NOT_INSTALLED', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await expect(
+      registerPlugin('globex', {
+        storeRoot: fixture.storeRoot,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'PLUGIN_NOT_INSTALLED' });
+  });
+
+  it('fails closed on a tampered entry instead of registering it', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await writeFile(join(fixture.storePath, 'plugin.json'), '{}\n');
+    await expect(
+      registerPlugin('acme', {
+        storeRoot: fixture.storeRoot,
+        registry: new AdapterRegistry(),
+      }),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+  });
+});
+
+describe('verifyPluginBindings', () => {
+  async function boundDigest(storeRoot: string): Promise<string> {
+    const [pin] = await listPlugins({ storeRoot });
+    return pin!.storeDigest;
+  }
+
+  it('verifies and registers a correctly pinned binding', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    const bound = await verifyPluginBindings(
+      {
+        'dev.example.acme-adapter': {
+          storeDigest: await boundDigest(fixture.storeRoot),
+        },
+      },
+      {
+        storeRoot: fixture.storeRoot,
+        registry,
+        inspectExecutable: async (path: string) => fakeIdentity(path),
+        sandboxRun: async () => sandboxOutcome(''),
+      },
+    );
+    expect(bound.map((entry) => entry.id)).toEqual([
+      'dev.example.acme-adapter',
+    ]);
+    expect(registry.has('acme')).toBe(true);
+  });
+
+  it('refuses a binding to a store entry that is not the installed one', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await expect(
+      verifyPluginBindings(
+        {
+          'dev.example.acme-adapter': {
+            storeDigest: `sha256:${'b'.repeat(64)}`,
+          },
+        },
+        { storeRoot: fixture.storeRoot, registry: new AdapterRegistry() },
+      ),
+    ).rejects.toMatchObject({ code: 'PLUGIN_DIGEST_MISMATCH' });
+  });
+
+  it('refuses a binding to a plugin that is not installed', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await expect(
+      verifyPluginBindings(
+        {
+          'dev.example.globex-adapter': {
+            storeDigest: `sha256:${'b'.repeat(64)}`,
+          },
+        },
+        { storeRoot: fixture.storeRoot, registry: new AdapterRegistry() },
+      ),
+    ).rejects.toMatchObject({ code: 'PLUGIN_NOT_INSTALLED' });
   });
 });
 

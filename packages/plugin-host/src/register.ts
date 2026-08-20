@@ -64,6 +64,118 @@ export interface RegisterInstalledPluginsResult {
   refused: readonly PluginRefusal[];
 }
 
+/** A plugin made available in an adapter registry by this host. */
+export interface RegisteredPlugin {
+  /** Store index key (`opm plugin add <name>`). */
+  name: string;
+  /** Manifest id — the key project bindings (`[plugins.<id>]`) use. */
+  id: string;
+  /** Purl types the plugin serves. */
+  purlTypes: readonly string[];
+  /** True when the plugin was already registered (idempotent re-entry). */
+  alreadyRegistered: boolean;
+}
+
+/**
+ * Register one named, already-installed plugin. Never acquires: a name the
+ * store does not pin is PLUGIN_NOT_INSTALLED, a tampered entry fails closed at
+ * digest verification. Re-registering the same plugin is a no-op, so a caller
+ * (opmx, a project binding) can ensure registration without coordinating with
+ * startup registration.
+ */
+export async function registerPlugin(
+  name: string,
+  options: RegisterInstalledPluginsOptions = {},
+): Promise<RegisteredPlugin> {
+  const storeRoot = options.storeRoot ?? pluginStoreRoot();
+  const listed = await listPlugins({ storeRoot });
+  const plugin = listed.find((entry) => entry.name === name);
+  if (plugin === undefined)
+    throw new OpmError(
+      'PLUGIN_NOT_INSTALLED',
+      `Plugin "${name}" is not installed. Install it first: opm plugin add ${name}`,
+    );
+  return registerOne(plugin, storeRoot, options);
+}
+
+/**
+ * Verify and register a project's `[plugins.<id>]` bindings.
+ *
+ * Each binding key is a manifest id, and `storeDigest` pins the exact
+ * content-addressed store entry (spec/prex/v1/delegated-adapter.md §Binding).
+ * A binding never triggers acquisition: an uninstalled id is
+ * PLUGIN_NOT_INSTALLED, a different installed store digest is
+ * PLUGIN_DIGEST_MISMATCH, and the entry's materialized bytes are re-verified
+ * against the pin before registration.
+ */
+export async function verifyPluginBindings(
+  bindings: Readonly<Record<string, { storeDigest: string }>>,
+  options: RegisterInstalledPluginsOptions = {},
+): Promise<readonly RegisteredPlugin[]> {
+  const storeRoot = options.storeRoot ?? pluginStoreRoot();
+  const listed = await listPlugins({ storeRoot });
+  const registered: RegisteredPlugin[] = [];
+  for (const [id, binding] of Object.entries(bindings)) {
+    const plugin = listed.find((entry) => entry.id === id);
+    if (plugin === undefined)
+      throw new OpmError(
+        'PLUGIN_NOT_INSTALLED',
+        `Project binds plugin "${id}", which is not installed. ` +
+          'A binding never acquires: install it first with `opm plugin add`.',
+      );
+    if (plugin.storeDigest !== binding.storeDigest)
+      throw new OpmError(
+        'PLUGIN_DIGEST_MISMATCH',
+        `Project binds plugin "${id}" to store entry ${binding.storeDigest}, ` +
+          `but the installed entry is ${plugin.storeDigest}. ` +
+          'Re-pin the project or reinstall the pinned plugin; the binding is refused.',
+      );
+    registered.push(await registerOne(plugin, storeRoot, options));
+  }
+  return registered;
+}
+
+/**
+ * Verify one pinned plugin and register it, unless its manifest id already
+ * answers in the registry (startup registration beat us to it).
+ */
+async function registerOne(
+  plugin: ListedPlugin,
+  storeRoot: string,
+  options: RegisterInstalledPluginsOptions,
+): Promise<RegisteredPlugin> {
+  const registry = options.registry ?? getAdapterRegistry();
+  const { manifest, executableDigest } = await loadVerifiedManifest(
+    plugin,
+    storeRoot,
+  );
+  if (registry.list().some((module) => module.id === manifest.id))
+    return {
+      name: plugin.name,
+      id: manifest.id,
+      purlTypes: [...manifest.purlTypes],
+      alreadyRegistered: true,
+    };
+  assertNoConflict(registry, plugin, manifest);
+  const executor = new DelegatedPluginExecutor(
+    manifest,
+    plugin.storePath,
+    { ...resolveEnvironment(manifest, options), executableDigest },
+    dependencies(options),
+  );
+  registry.register(
+    delegatedAdapterModule(manifest, executor, {
+      ...(options.now === undefined ? {} : { now: options.now }),
+    }),
+  );
+  return {
+    name: plugin.name,
+    id: manifest.id,
+    purlTypes: [...manifest.purlTypes],
+    alreadyRegistered: false,
+  };
+}
+
 /**
  * Load every pinned plugin from the user-level store and register it.
  *
@@ -78,7 +190,6 @@ export interface RegisterInstalledPluginsResult {
 export async function registerInstalledPlugins(
   options: RegisterInstalledPluginsOptions = {},
 ): Promise<RegisterInstalledPluginsResult> {
-  const registry = options.registry ?? getAdapterRegistry();
   const storeRoot = options.storeRoot ?? pluginStoreRoot();
   // A store that was never created means no plugins; registration must not
   // create it — this runs at CLI startup, before any plugin command.
@@ -92,23 +203,8 @@ export async function registerInstalledPlugins(
   const refused: PluginRefusal[] = [];
   for (const plugin of listed) {
     try {
-      const { manifest, executableDigest } = await loadVerifiedManifest(
-        plugin,
-        storeRoot,
-      );
-      assertNoConflict(registry, plugin, manifest);
-      const executor = new DelegatedPluginExecutor(
-        manifest,
-        plugin.storePath,
-        { ...resolveEnvironment(manifest, options), executableDigest },
-        dependencies(options),
-      );
-      registry.register(
-        delegatedAdapterModule(manifest, executor, {
-          ...(options.now === undefined ? {} : { now: options.now }),
-        }),
-      );
-      registered.push(manifest.id);
+      const entry = await registerOne(plugin, storeRoot, options);
+      if (!entry.alreadyRegistered) registered.push(entry.id);
     } catch (error) {
       refused.push({
         name: plugin.name,
