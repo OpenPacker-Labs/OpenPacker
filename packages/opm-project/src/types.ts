@@ -54,6 +54,17 @@ export interface PackProviderSource {
   allowEnvironment?: readonly string[];
 }
 
+/**
+ * A project's pin of an installed delegated adapter plugin (ADR 0039,
+ * spec/prex/v1/delegated-adapter.md §Binding). The key is the plugin's
+ * manifest `id`; the binding never acquires — it only verifies an
+ * already-installed store entry.
+ */
+export interface PluginBinding {
+  /** Digest of the content-addressed plugin store entry (`sha256:…`). */
+  storeDigest: string;
+}
+
 export type RequirementScope =
   | 'runtime'
   | 'development'
@@ -103,6 +114,13 @@ export interface OpmManifest {
   registries?: Record<string, RegistrySource>;
   /** Local delegated pack providers keyed by their manifest id. */
   packProviders?: Record<string, PackProviderSource>;
+  /**
+   * Delegated adapter plugins this project binds, keyed by the plugin's
+   * manifest `id`. A binding names an already-installed plugin store entry by
+   * digest; it never triggers acquisition, and a digest or install mismatch
+   * fails closed.
+   */
+  plugins?: Record<string, PluginBinding>;
   options: {
     offline: boolean;
     layout: 'opm';
