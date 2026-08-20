@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -18,6 +18,7 @@ import {
   createNativeBackend,
   findTrustedSandboxHelper,
   runInSandbox,
+  SandboxBackendError,
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
@@ -577,6 +578,37 @@ describe('registerInstalledPlugins', () => {
     });
   });
 
+  it('refuses to invoke when the store executable changed after registration', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    const calls: RunInSandboxInput[] = [];
+    const result = await registerInstalledPlugins({
+      storeRoot: fixture.storeRoot,
+      registry,
+      // An honest inspector: hashes whatever bytes sit at the path right now.
+      inspectExecutable: async (path) =>
+        fakeIdentity(
+          path,
+          createHash('sha256')
+            .update(await readFile(path))
+            .digest('hex'),
+        ),
+      sandboxRun: async (input) => {
+        calls.push(input);
+        return sandboxOutcome(cannedAnswer(input.argv[1] ?? '', ''));
+      },
+    });
+    expect(result.refused).toEqual([]);
+    // Swap the executable after registration; the digest pinned at
+    // registration must refuse the drifted bytes before any sandbox run.
+    await writeFile(fixture.executablePath, '#!/bin/sh\nexit 0\n');
+    await expect(registry.definitionFor('acme')).rejects.toMatchObject({
+      code: 'AUTHORITY_NOT_DECLARED',
+    });
+    expect(calls).toHaveLength(0);
+  });
+
   it('refuses identify results outside the declared purl types', async () => {
     const root = await fixtureRoot();
     const { registry } = await registerWithCannedAnswers(root, {
@@ -682,6 +714,47 @@ describe('registerInstalledPlugins', () => {
       caught = error;
     }
     expect(caught).toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
+  });
+
+  it('maps a sandbox backend failure to a fail-closed ProviderError', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    await registerInstalledPlugins({
+      storeRoot: fixture.storeRoot,
+      registry,
+      inspectExecutable: async (path) =>
+        fakeIdentity(path, fixture.executableDigest),
+      sandboxRun: async () => {
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'mxc backend is not available',
+        );
+      },
+    });
+    await expect(registry.definitionFor('acme')).rejects.toMatchObject({
+      name: 'ProviderError',
+      code: 'UNAVAILABLE',
+    });
+  });
+
+  it('maps an unexpected sandbox run failure to PLUGIN_FAILED', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    await registerInstalledPlugins({
+      storeRoot: fixture.storeRoot,
+      registry,
+      inspectExecutable: async (path) =>
+        fakeIdentity(path, fixture.executableDigest),
+      sandboxRun: async () => {
+        throw new Error('spawn exploded');
+      },
+    });
+    await expect(registry.definitionFor('acme')).rejects.toMatchObject({
+      name: 'ProviderError',
+      code: 'PLUGIN_FAILED',
+    });
   });
 
   it('refuses operations the manifest does not declare', async () => {

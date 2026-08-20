@@ -1,10 +1,13 @@
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import {
   AdapterHostError,
   getAdapterRegistry,
   type AdapterRegistry,
 } from '@openpacker/adapter-host';
 import type { DelegatedAdapterManifest } from '@openpacker/contracts';
-import { OpmError } from '@openpacker/opm-project';
+import { OpmError, readStableFileBytes } from '@openpacker/opm-project';
+import { MAX_DELEGATED_EXECUTABLE_BYTES } from '@openpacker/pack-provider';
 import {
   listPlugins,
   pluginStoreRoot,
@@ -66,9 +69,11 @@ export interface RegisterInstalledPluginsResult {
  *
  * Per plugin, before anything executes: the store entry's tree digest is
  * re-verified against the pin, the manifest is re-read no-follow and
- * schema-validated, capabilities and commands must agree, and a plugin whose
- * purl types collide with an already-registered adapter is refused — a
- * first-party adapter always wins over a plugin, never the reverse.
+ * schema-validated, the verified executable's digest is pinned for every
+ * later invocation to re-assert, capabilities and commands must agree, and a
+ * plugin whose purl types collide with an already-registered adapter is
+ * refused — a first-party adapter always wins over a plugin, never the
+ * reverse.
  */
 export async function registerInstalledPlugins(
   options: RegisterInstalledPluginsOptions = {},
@@ -87,12 +92,15 @@ export async function registerInstalledPlugins(
   const refused: PluginRefusal[] = [];
   for (const plugin of listed) {
     try {
-      const manifest = await loadVerifiedManifest(plugin, storeRoot);
+      const { manifest, executableDigest } = await loadVerifiedManifest(
+        plugin,
+        storeRoot,
+      );
       assertNoConflict(registry, plugin, manifest);
       const executor = new DelegatedPluginExecutor(
         manifest,
         plugin.storePath,
-        resolveEnvironment(manifest, options),
+        { ...resolveEnvironment(manifest, options), executableDigest },
         dependencies(options),
       );
       registry.register(
@@ -115,7 +123,7 @@ export async function registerInstalledPlugins(
 async function loadVerifiedManifest(
   plugin: ListedPlugin,
   storeRoot: string,
-): Promise<DelegatedAdapterManifest> {
+): Promise<{ manifest: DelegatedAdapterManifest; executableDigest: string }> {
   const storePath = await verifiedPluginEntry(plugin, { storeRoot });
   const manifest = await loadPluginManifest(storePath, plugin.manifestPath);
   if (manifest.id !== plugin.id)
@@ -130,7 +138,17 @@ async function loadVerifiedManifest(
       'INVALID_PLUGIN_MANIFEST',
       `Plugin "${plugin.name}" claims the reserved ${PLUGIN_PURL_TYPE} purl type`,
     );
-  return manifest;
+  // Pin the verified executable's digest: the tree was just re-verified
+  // against the pin, so this no-follow read hashes approved bytes, and the
+  // executor re-asserts this digest against every invocation-time snapshot.
+  const executableBytes = await readStableFileBytes(
+    join(storePath, manifest.executable),
+    MAX_DELEGATED_EXECUTABLE_BYTES,
+  );
+  const executableDigest = createHash('sha256')
+    .update(executableBytes)
+    .digest('hex');
+  return { manifest, executableDigest };
 }
 
 /**

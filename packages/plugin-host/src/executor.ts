@@ -16,6 +16,7 @@ import {
 } from '@openpacker/pack-provider';
 import {
   runInSandbox,
+  SandboxBackendError,
   type RunInSandboxInput,
   type SandboxOutcome,
   type SandboxPrefer,
@@ -90,6 +91,7 @@ export interface DelegatedPluginInvocation {
 export class DelegatedPluginExecutor {
   readonly #manifest: DelegatedAdapterManifest;
   readonly #storePath: string;
+  readonly #executableDigest: string;
   readonly #environment: Readonly<Record<string, string>>;
   readonly #grantedEnvironment: readonly string[];
   readonly #allowNetwork: boolean;
@@ -108,11 +110,19 @@ export class DelegatedPluginExecutor {
       /** Names whose values came from the operator (granted to the scrubber). */
       grantedEnvironment: readonly string[];
       allowNetwork: boolean;
+      /**
+       * sha256 hex of the store executable as verified at registration.
+       * Re-asserted against the invocation-time snapshot before every run, so
+       * a store entry swapped after registration fails closed instead of
+       * executing bytes the operator never approved.
+       */
+      executableDigest: string;
     },
     dependencies: DelegatedPluginExecutorDependencies = {},
   ) {
     this.#manifest = manifest;
     this.#storePath = storePath;
+    this.#executableDigest = options.executableDigest;
     this.#environment = options.environment;
     this.#grantedEnvironment = options.grantedEnvironment;
     this.#allowNetwork = options.allowNetwork;
@@ -143,7 +153,10 @@ export class DelegatedPluginExecutor {
    *
    * Failure is always a ProviderError: OFFLINE before any execution, an
    * undeclared operation is UNSUPPORTED_OPERATION, a plugin-reported error is
-   * PLUGIN_ERROR, and anything malformed, oversized, swapped, or
+   * PLUGIN_ERROR, a sandbox backend that cannot run the plugin is
+   * UNAVAILABLE, an unexpected execution failure is PLUGIN_FAILED, a store
+   * executable whose digest drifted since registration is
+   * AUTHORITY_NOT_DECLARED, and anything malformed, oversized, swapped, or
    * schema-invalid is INVALID_RESPONSE.
    */
   async invoke(input: DelegatedPluginInvocation): Promise<unknown> {
@@ -177,6 +190,13 @@ export class DelegatedPluginExecutor {
       );
     });
     try {
+      // Registration pinned the executable's digest; refuse to run anything
+      // the snapshot authority no longer recognizes as those bytes.
+      if (authority.identity.digest.value !== this.#executableDigest)
+        throw new ProviderError(
+          'AUTHORITY_NOT_DECLARED',
+          `Plugin ${manifest.id} executable no longer hashes to the digest verified at registration; the store entry drifted, repair it with \`opm plugin remove\` and \`opm plugin add\``,
+        );
       const network =
         manifest.authority.network === 'consent' &&
         this.#allowNetwork &&
@@ -188,7 +208,10 @@ export class DelegatedPluginExecutor {
         requestBytes,
         network,
         input.signal,
-      );
+      ).catch((error: unknown) => {
+        if (error instanceof ProviderError) throw error;
+        throw sandboxFailure(manifest.id, operation, error);
+      });
       if (outcome.outputLimitExceeded !== undefined)
         throw new ProviderError(
           'INVALID_RESPONSE',
@@ -213,7 +236,12 @@ export class DelegatedPluginExecutor {
           `Plugin ${manifest.id} ${operation} failed: ${error.code}: ${error.message}`,
         );
       }
-      return validateOperationResult(manifest, operation, response.result!);
+      return validateOperationResult(
+        manifest,
+        operation,
+        response.result!,
+        input.params,
+      );
     } finally {
       await authority.close();
     }
@@ -268,4 +296,27 @@ export class DelegatedPluginExecutor {
     );
     return outcome;
   }
+}
+
+/**
+ * A thrown sandbox run is host-side infrastructure failing, not a plugin
+ * answer: backend/containment unavailability maps to UNAVAILABLE, anything
+ * else unexpected to PLUGIN_FAILED. ProviderErrors (identity re-checks) pass
+ * through untouched by the caller.
+ */
+function sandboxFailure(
+  pluginId: string,
+  operation: DelegatedAdapterOperation,
+  error: unknown,
+): ProviderError {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (error instanceof SandboxBackendError)
+    return new ProviderError(
+      'UNAVAILABLE',
+      `Plugin ${pluginId} ${operation} cannot run: sandbox ${error.code}: ${detail}`,
+    );
+  return new ProviderError(
+    'PLUGIN_FAILED',
+    `Plugin ${pluginId} ${operation} sandbox run failed: ${detail}`,
+  );
 }
