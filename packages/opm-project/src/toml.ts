@@ -112,6 +112,10 @@ export function serializeManifest(manifest: OpmManifest): string {
       lines.push(
         `artifact_origins = ${tomlStringArray(binding.artifactOrigins)}`,
       );
+    if (binding.artifactOriginTokenEnvs !== undefined)
+      lines.push(
+        `artifact_origin_token_envs = ${tomlStringArray(binding.artifactOriginTokenEnvs)}`,
+      );
     lines.push('');
   }
 
@@ -295,7 +299,11 @@ export function parseManifest(text: string): OpmManifest {
   let pluginId: string | undefined;
   const pluginScratch = new Map<
     string,
-    { store_digest?: string; artifact_origins?: string[] }
+    {
+      store_digest?: string;
+      artifact_origins?: string[];
+      artifact_origin_token_envs?: string[];
+    }
   >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
@@ -480,8 +488,8 @@ export function parseManifest(text: string): OpmManifest {
           `Plugin field outside [plugins.<id>] at line ${i + 1}`,
         );
       const scratch = pluginScratch.get(pluginId) ?? {};
-      // A binding names the store entry and MAY name extra artifact origins.
-      // It still never carries secret values and never acquires.
+      // A binding may name origins and env-var names; it still never carries
+      // secret values and never acquires.
       if (key === 'store_digest' && typeof value === 'string')
         scratch.store_digest = value;
       else if (key === 'artifact_origins') {
@@ -491,6 +499,13 @@ export function parseManifest(text: string): OpmManifest {
             `Plugin field "artifact_origins" must be an array of strings at line ${i + 1}`,
           );
         scratch.artifact_origins = parsePluginArtifactOrigins(value);
+      } else if (key === 'artifact_origin_token_envs') {
+        if (!Array.isArray(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Plugin field "artifact_origin_token_envs" must be an array of strings at line ${i + 1}`,
+          );
+        scratch.artifact_origin_token_envs = [...value];
       } else
         throw new OpmError(
           'INVALID_MANIFEST',
@@ -664,6 +679,14 @@ export function parseManifest(text: string): OpmManifest {
         scratch.artifact_origins.length > 0
           ? { artifactOrigins: scratch.artifact_origins }
           : {}),
+        ...(scratch.artifact_origin_token_envs === undefined
+          ? {}
+          : {
+              artifactOriginTokenEnvs: parsePluginArtifactOriginTokenEnvs(
+                scratch.artifact_origin_token_envs,
+                scratch.artifact_origins,
+              ),
+            }),
       };
     }
     manifest.plugins = plugins;
@@ -1020,6 +1043,29 @@ function packProviderKey(id: string): string {
   if (!PACK_PROVIDER_ID.test(id))
     throw new OpmError('INVALID_MANIFEST', `Invalid pack provider id "${id}"`);
   return id;
+}
+
+const TOKEN_ENV_NAME = /^[A-Z_][A-Z0-9_]*$/u;
+
+function parsePluginArtifactOriginTokenEnvs(
+  values: readonly string[],
+  origins: readonly string[] | undefined,
+): string[] {
+  const originCount = origins?.length ?? 0;
+  if (values.length !== originCount)
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      'Plugin field "artifact_origin_token_envs" length must match artifact_origins',
+    );
+  for (const name of values) {
+    if (name === '') continue;
+    if (!TOKEN_ENV_NAME.test(name))
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'Plugin field "artifact_origin_token_envs" entries must be env-var names or empty',
+      );
+  }
+  return [...values];
 }
 
 function parsePluginArtifactOrigins(values: readonly string[]): string[] {
