@@ -4,7 +4,8 @@ Date: 2026-08-19
 
 ## Status
 
-Accepted
+Accepted — amended by
+[0040](0040-delegated-plugins-deliver-artifact-bytes-and-executables.md)
 
 ## Context
 
