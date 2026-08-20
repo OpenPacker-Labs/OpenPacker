@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
+import { binDeclarationsFromExecutables } from './bins.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { storeKeyFromDigest } from './paths.js';
 import {
@@ -183,7 +184,7 @@ async function materialiseExact(
     mediaType: artifact.mediaType,
     source: artifact.uri,
     storeKey: storeKeyFromDigest(artifact.digest),
-    bins: [],
+    bins: binDeclarationsFromExecutables(artifact.bins),
     reason: 'direct',
     ecosystem,
     ...lockPackageSupplyChainFields(facts),

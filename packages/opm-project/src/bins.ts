@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import type { ProviderExecutable } from '@openpacker/adapter-core';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
 import {
@@ -266,6 +267,45 @@ export async function discoverBins(
   return [];
 }
 
+/**
+ * Provider-declared executables as lock bins.
+ *
+ * A delegated provider declares its package's executables at inspect time
+ * (spec delegated-adapter.md §Executables); the shapes match field for field.
+ * These ecosystems have no on-disk convention `discoverBins` could find, so
+ * this declaration is the only way their bins reach a lockfile.
+ *
+ * The safety invariants are re-asserted here, not inherited from whoever
+ * produced the declarations: plugin-host validates today, but a lock bin must
+ * never become a path that escapes the store whoever wrote it down.
+ */
+export function binDeclarationsFromExecutables(
+  executables: readonly ProviderExecutable[],
+): BinDeclaration[] {
+  return executables.map((bin) => {
+    const segments = bin.path.split('/').filter((part) => part !== '');
+    if (
+      segments.length === 0 ||
+      segments.includes('..') ||
+      bin.path.startsWith('/') ||
+      bin.path.includes('\\') ||
+      /^[A-Za-z]:/u.test(bin.path)
+    )
+      throw new OpmError(
+        'UNSAFE_BIN',
+        `Provider-declared bin path escapes its store: ${bin.path}`,
+      );
+    return {
+      name: assertSafeSegment(bin.name, 'bin name'),
+      path: bin.path,
+      ...(bin.interpreter === undefined
+        ? {}
+        : { interpreter: bin.interpreter }),
+      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+    };
+  });
+}
+
 function joinPosix(...parts: string[]): string {
   return parts
     .filter((p) => p !== '' && p !== '.')
@@ -278,7 +318,7 @@ export interface WrittenBinShim {
   path: string;
   shim: string;
   target: string;
-  interpreter?: 'node' | 'python' | 'dotnet';
+  interpreter?: 'node' | 'python' | 'dotnet' | 'native';
   entry?: string;
 }
 
@@ -406,6 +446,13 @@ return spawn(python, ['-c', program, ...process.argv.slice(2)], { stdio: 'inheri
 const assembly = resolve(here, ${JSON.stringify(relTarget)});
 const dotnet = process.env.OPM_DOTNET?.trim() || 'dotnet';
 return spawn(dotnet, [assembly, ...process.argv.slice(2)], { stdio: 'inherit', env: process.env });
+`;
+  } else if (bin.interpreter === 'native') {
+    const relTarget = relative(context.binDir, context.target);
+    // Native: the verified store file is itself the program.
+    ambientBody = `
+const target = resolve(here, ${JSON.stringify(relTarget)});
+return spawn(target, process.argv.slice(2), { stdio: 'inherit', env: process.env });
 `;
   } else {
     const relTarget = relative(context.binDir, context.target);

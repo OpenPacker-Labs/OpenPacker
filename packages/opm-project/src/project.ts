@@ -16,6 +16,7 @@ import {
   toFileUrl,
 } from './catalog.js';
 import { codecFor } from './codecs.js';
+import { binDeclarationsFromExecutables } from './bins.js';
 import {
   listRegistryVersions,
   registryOptionsForEcosystem,
@@ -878,7 +879,7 @@ async function resolveTransitive(input: {
         mediaType: artifact.mediaType,
         source: artifact.uri,
         storeKey: storeKeyFromDigest(artifact.digest),
-        bins: [],
+        bins: binDeclarationsFromExecutables(artifact.bins),
         reason: 'transitive',
         ecosystem: instance.identity.purlType,
         ...(transitiveIntegrity === undefined
@@ -1217,6 +1218,8 @@ async function resolveRequirement(input: {
 
     const format = inferFormat(artifact.uri, artifact.mediaType);
     let bins = input.req.bins ? [...input.req.bins] : [];
+    if (bins.length === 0 && artifact.bins.length > 0)
+      bins = binDeclarationsFromExecutables(artifact.bins);
     if (bins.length === 0 && ecosystem === 'npm')
       bins = await discoverBinsFromArchive(bytes, format);
 

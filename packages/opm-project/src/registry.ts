@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
   parsePurl,
+  ProviderError,
   type CatalogProvider,
   type HttpTransport,
+  type ProviderExecutable,
 } from '@openpacker/adapter-core';
 import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
@@ -345,6 +348,11 @@ export interface RegistryArtifact {
   mediaType: string;
   uri: string;
   bytes: Uint8Array;
+  /**
+   * Executables the provider declared the package to carry at inspect time.
+   * Empty when it answered none (always for first-party adapters today).
+   */
+  bins: readonly ProviderExecutable[];
   registryId: string;
 }
 
@@ -398,6 +406,37 @@ export async function resolveRegistryArtifact(
       'UNRESOLVABLE',
       `The ${ecosystem} registry published no download location for ${exactPurl}.`,
     );
+
+  // Delegated providers answer metadata only (spec delegated-adapter.md
+  // §Artifact bytes): the host fetches the bytes itself, bounded by the
+  // published size and verified against the published digest. First-party
+  // providers keep the bytes their own bounded transport already verified.
+  if (
+    provider.capabilities.extensions?.['openpacker/artifact-bytes'] ===
+    'host-fetch'
+  ) {
+    const fetched = await fetchDelegatedArtifactBytes({
+      ecosystem,
+      exactPurl: inspectedPurl,
+      endpoint: record.endpoint,
+      uri,
+      size: descriptor.size,
+      digest: `${algorithm}:${value}`,
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    });
+    return {
+      exactPurl: inspectedPurl,
+      version: inspection.package.nativeVersion ?? '',
+      digest: `${algorithm}:${value}`,
+      size: fetched.size,
+      mediaType: descriptor.mediaType ?? 'application/octet-stream',
+      uri,
+      bytes: fetched.bytes,
+      bins: inspection.executables ?? [],
+      registryId,
+    };
+  }
+
   const uriOrigin = new URL(uri).origin;
   const allowed = options.endpoint
     ? [new URL(safeRegistryEndpoint(options.endpoint, ecosystem)).origin]
@@ -420,6 +459,103 @@ export async function resolveRegistryArtifact(
     mediaType: descriptor.mediaType ?? 'application/octet-stream',
     uri,
     bytes: record.rawBody,
+    bins: inspection.executables ?? [],
     registryId,
   };
+}
+
+/**
+ * Host-side byte acquisition for a delegated provider (spec
+ * delegated-adapter.md §Artifact bytes, ADR 0040).
+ *
+ * The plugin is the metadata authority, never a byte proxy: the host downloads
+ * from a location on the origin of the endpoint the record was answered with,
+ * over HTTPS without credentials, bounded by the published size, and verifies
+ * the sha256 digest before the bytes are anyone's artifact. Every gap in that
+ * chain fails closed.
+ */
+async function fetchDelegatedArtifactBytes(input: {
+  ecosystem: string;
+  exactPurl: string;
+  endpoint: string;
+  uri: string;
+  size: number | undefined;
+  digest: string;
+  fetch?: typeof fetch;
+}): Promise<{ bytes: Uint8Array; size: number }> {
+  // The published size is the download bound; without it there is no bound.
+  const size = input.size;
+  if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0)
+    throw new OpmError(
+      'UNRESOLVABLE',
+      `The ${input.ecosystem} registry published no byte size for ${input.exactPurl}, ` +
+        'so a host-side download cannot be bounded.',
+    );
+  let endpointOrigin: string;
+  try {
+    endpointOrigin = new URL(input.endpoint).origin;
+  } catch {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `The ${input.ecosystem} registry answered from an endpoint that is not a URL: ${input.endpoint}.`,
+    );
+  }
+  let location: URL;
+  try {
+    location = new URL(input.uri);
+  } catch {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `The ${input.ecosystem} registry published an invalid download location for ${input.exactPurl}.`,
+    );
+  }
+  if (location.protocol !== 'https:' || location.username || location.password)
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Refusing to fetch ${input.exactPurl} from ${input.uri}: ` +
+        'artifact locations must be HTTPS and carry no credentials.',
+    );
+  if (location.origin !== endpointOrigin)
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `${input.exactPurl} points at ${location.origin}, which is not the origin ` +
+        `of the endpoint that answered for it (${endpointOrigin}).`,
+    );
+  const transport = new BoundedFetchTransport({
+    allowedOrigins: [endpointOrigin],
+    maximumBytes: size,
+    ...(input.fetch === undefined ? {} : { fetch: input.fetch }),
+  });
+  let body: Uint8Array;
+  try {
+    body = (await transport.request({ url: input.uri, maximumBytes: size }))
+      .body;
+  } catch (error) {
+    // The transport refuses a body past the bound; surface it in the same
+    // vocabulary as the under-size check below.
+    if (
+      error instanceof ProviderError &&
+      error.code === 'UPSTREAM_RESPONSE_TOO_LARGE'
+    )
+      throw new OpmError(
+        'SIZE_MISMATCH',
+        `Registry size mismatch for ${input.exactPurl}: ` +
+          `the download exceeded the published size of ${size} bytes`,
+      );
+    throw error;
+  }
+  if (body.byteLength !== size)
+    throw new OpmError(
+      'SIZE_MISMATCH',
+      `Registry size mismatch for ${input.exactPurl}: ` +
+        `expected ${size} bytes, got ${body.byteLength}`,
+    );
+  const actual = `sha256:${createHash('sha256').update(body).digest('hex')}`;
+  if (actual !== input.digest)
+    throw new OpmError(
+      'DIGEST_MISMATCH',
+      `Registry digest mismatch for ${input.exactPurl}: ` +
+        `the ${input.ecosystem} provider reported ${input.digest}, the bytes hash to ${actual}`,
+    );
+  return { bytes: body, size };
 }

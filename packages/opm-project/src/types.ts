@@ -92,8 +92,9 @@ export interface BinDeclaration {
    * finding nothing outside npm.
    *
    * Absent means Node, so every existing lockfile keeps its meaning.
+   * `native` executes the verified store file directly.
    */
-  interpreter?: 'node' | 'python' | 'dotnet';
+  interpreter?: 'node' | 'python' | 'dotnet' | 'native';
   /** For Python console scripts: the `module:callable` to invoke. */
   entry?: string;
 }

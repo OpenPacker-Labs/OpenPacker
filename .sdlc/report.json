@@ -1,23 +1,28 @@
 {
-  "layer": "02-host",
-  "commits": ["9d18041", "d7162ae"],
+  "layer": "03-acquire",
+  "commits": ["92821a9"],
   "gates": {
-    "test @openpacker/adapter-core": "pass (26 tests)",
-    "typecheck @openpacker/adapter-core": "pass",
-    "build @openpacker/adapter-core": "pass",
-    "test @openpacker/plugin-host": "pass (51 tests)",
-    "typecheck @openpacker/plugin-host": "pass",
-    "build @openpacker/plugin-host": "pass",
+    "test @openpacker/opm-project": "pass (214 tests, +15 new)",
+    "typecheck @openpacker/opm-project": "pass",
+    "build @openpacker/opm-project": "pass",
+    "typecheck @openpacker/opm": "pass",
+    "test @openpacker/opm": "pass (25 tests, +1 new, 1 updated)",
+    "agent:check (branch scope)": "pass (6 gates)",
     "agent:check:staged (pre-commit, every commit)": "pass"
   },
   "filesChanged": [
-    "packages/adapter-core/src/index.ts",
-    "packages/adapter-core/src/index.test.ts",
-    "packages/plugin-host/src/protocol.ts",
-    "packages/plugin-host/src/module.ts",
-    "packages/plugin-host/test/plugin-host.test.ts",
+    "packages/opm-project/src/registry.ts",
+    "packages/opm-project/src/bins.ts",
+    "packages/opm-project/src/types.ts",
+    "packages/opm-project/src/ephemeral.ts",
+    "packages/opm-project/src/project.ts",
+    "packages/opm-project/src/lock.ts",
+    "packages/opm-project/test/host-fetch.test.ts",
+    "apps/opm/src/opmx.ts",
+    "apps/opm/test/opm.test.ts",
+    "apps/opm/test/plugin-tool-fixture.ts",
     ".sdlc/report.json"
   ],
-  "notes": "adapter-core: new ProviderExecutable interface matching the DelegatedAdapterBin wire shape (absent interpreter = node; entry is the python module:callable; native executes the verified store file directly) and ProviderInspection.executables as optional provider metadata validated by consumers. plugin-host: validateOperationResult's inspect case now runs validateBins after the schema + purl checks, failing closed as INVALID_RESPONSE on unsafe names, absolute/backslash/'..' paths, unknown interpreters, entry-without-python, python-without-valid-entry, >64 declarations, and duplicate names — the schema-only prose rules are enforced host-side and the safety invariants are re-asserted at the trust boundary (defense in depth; several invalid classes are already schema-rejected and stay INVALID_RESPONSE either way). The plugin's answer is preserved exactly: undefined executables stays absent, [] stays []. DelegatedCatalogProvider now sets capabilities.extensions['openpacker/artifact-bytes'] = 'host-fetch' iff the manifest admits fetch-artifact-record (same admitsOperation condition that adds 'artifact' to operations); no other extensions existed to keep. packages/plugin-host/src/manifest.ts needed no changes: layer 01 did not alter the DelegatedAdapterManifest wire type and admitsOperation semantics are unchanged. Python entry pattern reuses the opm-project bins shape /^[A-Za-z0-9_.]+:[A-Za-z0-9_.]+$/. Layer 03 acquisition can rely on the marker being present on every catalog-registered plugin today (manifest consistency requires fetch-artifact-record for the catalog capability), but the constructor guard keeps the marker honest for any future manifest shape.",
-  "deviations": "None. Prettier reformatted three long lines in protocol.ts after the first commit attempt failed the pre-commit gate; formatting-only."
+  "notes": "ACQUISITION: resolveRegistryArtifact detects delegated providers via capabilities.extensions['openpacker/artifact-bytes'] === 'host-fetch' and fetches bytes itself (fetchDelegatedArtifactBytes in registry.ts): published size must be a positive finite number else UNRESOLVABLE; the location must parse, be HTTPS, carry no credentials, and sit on the origin of record.endpoint else UNSAFE_PATH; the download runs through BoundedFetchTransport with allowedOrigins=[endpoint origin] and maximumBytes=published size; over-size (transport UPSTREAM_RESPONSE_TOO_LARGE) and under-size both surface as OpmError SIZE_MISMATCH, sha256 mismatch as DIGEST_MISMATCH with the same message shape the project.ts call sites use. options.fetch is threaded into the transport (production falls back to globalThis.fetch). First-party path is byte-identical: the existing uriOrigin/allowed/ociNamed logic at old lines ~401-413 was not touched and non-delegated providers still return record.rawBody (covered by the marker-absent test and the unchanged registry/ephemeral/supply-chain suites). REDIRECT VERDICT: BoundedFetchTransport is safe to rely on — it fetches with redirect:'manual' and re-runs assertAllowedProviderUrl (origin allowlist + no credentials) on every hop, refuses HTTPS downgrades, and strips cross-origin headers (adapter-core index.ts:755-794); a redirect cannot escape the endpoint-origin allowlist. SANDBOX NATIVE-EXEC VERDICT: no gap, packages/sandbox untouched — proven empirically twice: a manual runSandboxedPackageProcess probe and the automated test 'runs a store-resident native tool through the package sandbox' (bwrap, enforced=true, exit 0). The package-exec bwrap profile ro-binds argv[0] and its dirname (backends/native.ts:279-296) in addition to the declared storePaths, so store-resident executables under declared storePaths run without any profile change. MODE-PRESERVATION VERDICT: preserved, no fix needed — the materializer normalizes any exec bit to 0o755 and chmods extracted files (packages/materializer/src/index.ts:462,343); the host-fetch tests assert the exec bit on the materialized tool and the opmx e2e executes it. BINS: RegistryArtifact.bins carries ProviderExecutable[] from inspection.executables ?? []; binDeclarationsFromExecutables (bins.ts) maps them 1:1 into BinDeclaration; ephemeral materialiseExact and both project.ts call sites (direct line ~1195, transitive line ~826) pin them into LockPackage.bins; req.bins still wins on the direct path, npm archive discovery still runs when nothing declared bins, so first-party locks are unchanged. LOCKFILE: parseLockPackage previously dropped interpreter/entry on read while serializeLockfile wrote them — fixed minimally (validated union, unknown values fail closed as INVALID_LOCK); without this a locked plugin tool would have lost its native interpreter. NATIVE: BinDeclaration.interpreter and WrittenBinShim.interpreter gained 'native' with a doc line; shimScriptFor has a native ambient body spawning the target directly; opmx spawnDeclared runs the verified store file itself through the same runSandboxedPackageProcess funnel (not process.execPath). E2E: apps/opm/test/plugin-tool-fixture.ts seeds a store-resident plugin whose inspect declares a native executable and whose fetch-artifact-record carries honest digest/size/locations; 'acquires and runs a plugin-served native tool' stubs globalThis.fetch to serve the tar and runs `opmx --plugin acme demo` to exit 0 with the tool's stdout — the full ADR 0040 loop through the real plugin protocol. The pre-existing gap test 'resolves a plugin-served purl type through the plugin' was updated: it still fails closed at digest verification (exit 7), but now against host-downloaded bytes rather than canonical record bytes.",
+  "deviations": "Everything landed in one commit (92821a9) rather than several — a staging slip swept the native-interpreter files into the acquisition commit; content is unchanged and all gates passed on it. The existing opm.test.ts gap test had to be updated because the behavior it documented (fail closed on canonical record bytes) is exactly the gap this layer closes. lock.ts interpreter/entry round-trip fix was not enumerated in the layer scope but is required for 'bins plumbing into locks' to survive a lock write/read. apps/opm/test/plugin-tool-fixture.ts duplicates plugin-fixture.ts helpers on purpose; layer 04 should fold it back when it upgrades the seeded fixture's tool bytes. Prettier reformatted docs/plans/plugin-execution/sdlc-state.md (untracked state file, formatting-only) because branch-scope agent:check checks it."
 }
