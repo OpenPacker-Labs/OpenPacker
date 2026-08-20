@@ -183,6 +183,13 @@
     },
     "retrievedAt": "2026-08-02T00:00:00Z"
   },
+  "executables": [
+    {
+      "name": "demo-tool",
+      "path": "bin/demo-tool.js",
+      "interpreter": "node"
+    }
+  ],
   "warnings": [
     {
       "code": "STALE_METADATA",

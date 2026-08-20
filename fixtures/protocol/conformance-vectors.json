@@ -2150,6 +2150,62 @@
       "levels": ["PREX-N"]
     },
     {
+      "name": "delegated-adapter-inspection-result-bin-dotdot-path",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executables/0/path",
+          "value": "../evil.sh"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result-bin-absolute-path",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executables/0/path",
+          "value": "/bin/sh"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result-bin-unsafe-name",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executables/0/name",
+          "value": "a/b"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result-bin-unknown-interpreter",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executables/0/interpreter",
+          "value": "ruby"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
       "name": "delegated-adapter-record-result",
       "file": "delegated-adapter/record-result.json",
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterRecordResult",
