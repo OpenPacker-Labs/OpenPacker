@@ -375,6 +375,7 @@ const roots: string[] = [];
 
 afterEach(async () => {
   delete process.env.OPM_HOST_FETCH_TOKEN_ENVS;
+  delete process.env.OPM_HOST_FETCH_HEADER_ENVS;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -884,6 +885,24 @@ describe('registerInstalledPlugins', () => {
     expect(result.refused[0]?.message).not.toMatch(/tok68value/u);
   });
 
+  it('refuses --allow-env of OPM_HOST_FETCH_HEADER_ENVS names even without the prefix', async () => {
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    const root = await fixtureRoot();
+    const { result } = await registerWithCannedAnswers(root, {
+      allowEnvironment: ['JFROG_API_KEY'],
+      environment: { JFROG_API_KEY: 'jfrog-key' },
+    });
+    expect(result.registered).toEqual([]);
+    expect(result.refused).toEqual([
+      expect.objectContaining({
+        name: 'acme',
+        code: 'UNSAFE_ENV',
+        message: expect.stringContaining('JFROG_API_KEY'),
+      }),
+    ]);
+    expect(result.refused[0]?.message).not.toMatch(/jfrog-key/u);
+  });
+
   it('refuses --allow-env of a plugin token env name from hostFetchTokenEnvNames', async () => {
     const root = await fixtureRoot();
     const { result } = await registerWithCannedAnswers(root, {
@@ -1244,6 +1263,32 @@ describe('verifyPluginBindings', () => {
     ).rejects.toMatchObject({
       code: 'UNSAFE_ENV',
       message: expect.stringContaining('ACME_TOKEN'),
+    });
+  });
+
+  it('refuses --allow-env of a binding extra-header env name', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await expect(
+      verifyPluginBindings(
+        {
+          'dev.example.acme-adapter': {
+            storeDigest: await boundDigest(fixture.storeRoot),
+            artifactOriginExtraHeaderEnvs: ['JFROG_API_KEY'],
+          },
+        },
+        {
+          storeRoot: fixture.storeRoot,
+          registry: new AdapterRegistry(),
+          allowEnvironment: ['JFROG_API_KEY'],
+          environment: { JFROG_API_KEY: 'jfrog-key' },
+          inspectExecutable: async (path: string) => fakeIdentity(path),
+          sandboxRun: async () => sandboxOutcome(''),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UNSAFE_ENV',
+      message: expect.stringContaining('JFROG_API_KEY'),
     });
   });
 
