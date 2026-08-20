@@ -129,6 +129,8 @@ interface FixtureVersion {
   servedBytes?: Uint8Array;
   status?: 'active' | 'deprecated' | 'deleted';
   publishedAt?: string;
+  /** Overrides the default "last listed is latest" flag. */
+  isLatest?: boolean;
 }
 
 function pluginArtifact(manifest: Uint8Array, executable = 'acme-adapter') {
@@ -173,7 +175,7 @@ function registryFixture(
         versions: versions.map((entry, index) => ({
           version: entry.version,
           status: entry.status ?? 'active',
-          isLatest: index === versions.length - 1,
+          isLatest: entry.isLatest ?? index === versions.length - 1,
           publishedAt: entry.publishedAt ?? '2020-01-01T00:00:00.000Z',
         })),
       }),
@@ -356,6 +358,29 @@ describe('plugin add', () => {
       now,
     });
     expect(installed.exactPurl).toBe('pkg:opm-plugin/acme@1.10.0');
+  });
+
+  it('refuses a registry that claims multiple latest versions', async () => {
+    // Two entries claiming isLatest contradict each other; the host must fail
+    // closed rather than guess which recency assertion to believe.
+    const artifact = pluginArtifact(
+      pluginManifest('dev.example.acme-adapter', 'acme-adapter'),
+    );
+    const transport = registryFixture({
+      acme: [
+        { version: '1.0.0', artifact, isLatest: true },
+        { version: '1.1.0', artifact, isLatest: true },
+      ],
+    });
+    await expect(
+      addPlugin({
+        name: 'acme',
+        endpoint: ENDPOINT,
+        transport,
+        storeRoot: await storeRoot(),
+        now,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_RESPONSE' });
   });
 
   it('installs an exact version when asked', async () => {

@@ -613,6 +613,7 @@ function handleError(error: unknown, io: CliIo): number {
         case 'OFFLINE':
         case 'UPSTREAM_UNAVAILABLE':
         case 'UPSTREAM_RESPONSE_TOO_LARGE':
+        case 'INVALID_PROVIDER_RESPONSE':
         case 'PLUGIN_ERROR':
         case 'PLUGIN_FAILED':
           return EXIT_CODES.unavailable;
