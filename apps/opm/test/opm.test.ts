@@ -525,6 +525,15 @@ describe('opmx --plugin', () => {
     const restore = withPluginHome(home);
     const previousCache = process.env.OPM_TOOL_CACHE;
     process.env.OPM_TOOL_CACHE = cache;
+    // The seeded fixture's descriptor is honest metadata: its digest is not
+    // the digest of any servable bytes. The host fetches the location itself
+    // (ADR 0040), so the run now fails closed on the downloaded bytes rather
+    // than on the canonical record bytes — still a digest refusal.
+    vi.stubGlobal(
+      'fetch',
+      (async () =>
+        new Response(new Uint8Array(42), { status: 200 })) as typeof fetch,
+    );
     try {
       const { seedPluginStore } = await import('./plugin-fixture.js');
       await seedPluginStore(home);
@@ -536,14 +545,47 @@ describe('opmx --plugin', () => {
       cap = capture();
       const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
       // The plugin answered registry-definition/enumerate/inspect over the
-      // protocol: resolution reached artifact acquisition, where the run
-      // fails closed — the v1 delegated protocol carries catalog metadata,
-      // never artifact bytes, so the canonical record bytes cannot digest to
-      // the published artifact digest.
+      // protocol: resolution reached host-side artifact acquisition, where
+      // the downloaded bytes digest differently from what the plugin
+      // published, so the run fails closed.
       expect(exit, cap.err).toBe(7);
-      expect(cap.err).toMatch(/Digest mismatch/);
+      expect(cap.err).toMatch(/digest mismatch/i);
       expect(cap.err).not.toMatch(/no adapter is registered/i);
     } finally {
+      vi.unstubAllGlobals();
+      restore();
+      if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
+      else process.env.OPM_TOOL_CACHE = previousCache;
+    }
+  }, 30_000);
+
+  // End to end: the plugin declares a native tool, the host downloads and
+  // verifies the bytes, and opmx runs the verified store file through the
+  // sandbox — the full ADR 0040 loop.
+  it('acquires and runs a plugin-served native tool', async () => {
+    if (!bwrapReady) return;
+    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
+    const cache = await mkdtemp(join(tmpdir(), 'opmx-cache-'));
+    temps.push(home, cache);
+    const restore = withPluginHome(home);
+    const previousCache = process.env.OPM_TOOL_CACHE;
+    process.env.OPM_TOOL_CACHE = cache;
+    const { ACME_TOOL_ENDPOINT, ACME_TOOL_TAR, seedRunnablePluginStore } =
+      await import('./plugin-tool-fixture.js');
+    vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
+      if (String(input) === `${ACME_TOOL_ENDPOINT}/artifacts/demo-1.0.0.tar`)
+        return new Response(ACME_TOOL_TAR, { status: 200 });
+      return new Response('missing', { status: 404 });
+    }) as typeof fetch);
+    try {
+      await seedRunnablePluginStore(home);
+      const cap = capture();
+      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
+      expect(exit, cap.err).toBe(0);
+      expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0/);
+      expect(cap.out).toBe('acme-tool-ran\n');
+    } finally {
+      vi.unstubAllGlobals();
       restore();
       if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
       else process.env.OPM_TOOL_CACHE = previousCache;

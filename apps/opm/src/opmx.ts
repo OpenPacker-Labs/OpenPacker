@@ -275,6 +275,19 @@ async function spawnDeclared(
       `${bin.name} needs the .NET runtime on PATH`,
     );
   }
+  if (bin.interpreter === 'native') {
+    // A native tool needs no interpreter: the verified store file is itself
+    // the program, run through the same sandbox funnel as everything else.
+    const target = join(storePath, ...bin.path.split('/').filter(Boolean));
+    return spawnProcess(
+      target,
+      args,
+      io,
+      cwd,
+      sandboxCtx,
+      `${bin.name} is missing from the tool cache`,
+    );
+  }
   const target = join(storePath, ...bin.path.split('/').filter(Boolean));
   return spawnTool(target, args, io, cwd, sandboxCtx);
 }

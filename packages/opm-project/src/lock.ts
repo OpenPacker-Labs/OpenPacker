@@ -1,7 +1,7 @@
 import { parseCanonicalJson } from '@openpacker/canonical';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import { readStableFile, writeStableFile } from './paths.js';
-import type { LockPackage, OpmLockfile } from './types.js';
+import type { BinDeclaration, LockPackage, OpmLockfile } from './types.js';
 import { OpmError } from './types.js';
 
 const LIFECYCLE_STATUSES = new Set([
@@ -146,7 +146,35 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
         `Package "${alias}" bins[${index}] needs name and path`,
       );
     }
-    return { name: bin.name, path: bin.path };
+    // interpreter/entry ride along so a lock round-trip keeps how the bin
+    // runs; an unknown value fails closed rather than silently becoming Node.
+    const rawInterpreter = bin.interpreter;
+    const interpreter: BinDeclaration['interpreter'] =
+      rawInterpreter === 'node' ||
+      rawInterpreter === 'python' ||
+      rawInterpreter === 'dotnet' ||
+      rawInterpreter === 'native'
+        ? rawInterpreter
+        : undefined;
+    if (rawInterpreter !== undefined && interpreter === undefined) {
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Package "${alias}" bins[${index}] has invalid interpreter`,
+      );
+    }
+    const binEntry = bin.entry;
+    if (binEntry !== undefined && typeof binEntry !== 'string') {
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Package "${alias}" bins[${index}] has invalid entry`,
+      );
+    }
+    return {
+      name: bin.name,
+      path: bin.path,
+      ...(interpreter === undefined ? {} : { interpreter }),
+      ...(binEntry === undefined ? {} : { entry: binEntry }),
+    };
   });
   const reason = pkg.reason;
   if (reason !== 'direct' && reason !== 'transitive') {
