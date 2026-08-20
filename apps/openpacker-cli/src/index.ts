@@ -6,6 +6,7 @@ import { isAbsolute, relative } from 'node:path';
 import { get } from 'node:https';
 import { Readable } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isPrivateAddress } from '@openpacker/adapter-core';
 import {
   streamFromBytes,
   type ArtifactSource,
@@ -795,51 +796,6 @@ async function pinnedHttpsStream(
     );
     request.once('error', reject);
   });
-}
-
-function isPrivateAddress(value: string): boolean {
-  const address = value.toLowerCase();
-  if (address.includes(':')) {
-    if (address.startsWith('::ffff:'))
-      return classifyEmbeddedIpv4(address.slice('::ffff:'.length));
-    // NAT64 (64:ff9b::/96) and the deprecated IPv4-compatible form (::/96)
-    // embed a full IPv4 address in their low 32 bits; classify by it.
-    for (const prefix of ['64:ff9b::', '64:ff9b:0:0:0:0:']) {
-      if (address.startsWith(prefix))
-        return classifyEmbeddedIpv4(address.slice(prefix.length));
-    }
-    if (address.startsWith('::')) {
-      const embedded = embeddedIpv4Address(address.slice(2));
-      if (embedded !== undefined) return isPrivateAddress(embedded);
-    }
-    return (
-      address === '::' ||
-      address === '::1' ||
-      address.startsWith('fc') ||
-      address.startsWith('fd') ||
-      /^fe[89ab]/u.test(address)
-    );
-  }
-  const octets = address.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((part) => part < 0 || part > 255))
-    return true;
-  const [first, second] = octets as [number, number, number, number];
-  return (
-    first === 0 ||
-    first === 10 ||
-    first === 127 ||
-    (first === 100 && second >= 64 && second <= 127) ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    first >= 224
-  );
-}
-
-/** Fail closed when an address family known to embed IPv4 cannot be parsed. */
-function classifyEmbeddedIpv4(suffix: string): boolean {
-  const embedded = embeddedIpv4Address(suffix);
-  return embedded === undefined || isPrivateAddress(embedded);
 }
 
 function embeddedIpv4Address(value: string): string | undefined {
