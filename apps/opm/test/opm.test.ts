@@ -515,53 +515,11 @@ describe('opmx --plugin', () => {
     }
   });
 
-  // The plugin runs for real: immutable snapshot, fail-closed jail, bounded
-  // stdio protocol. Skipped where no sandbox backend can be enforced.
-  it('resolves a plugin-served purl type through the plugin', async () => {
-    if (!bwrapReady) return;
-    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
-    const cache = await mkdtemp(join(tmpdir(), 'opmx-cache-'));
-    temps.push(home, cache);
-    const restore = withPluginHome(home);
-    const previousCache = process.env.OPM_TOOL_CACHE;
-    process.env.OPM_TOOL_CACHE = cache;
-    // The seeded fixture's descriptor is honest metadata: its digest is not
-    // the digest of any servable bytes. The host fetches the location itself
-    // (ADR 0040), so the run now fails closed on the downloaded bytes rather
-    // than on the canonical record bytes — still a digest refusal.
-    vi.stubGlobal(
-      'fetch',
-      (async () =>
-        new Response(new Uint8Array(42), { status: 200 })) as typeof fetch,
-    );
-    try {
-      const { seedPluginStore } = await import('./plugin-fixture.js');
-      await seedPluginStore(home);
-      let cap = capture();
-      // Without the plugin the purl type has no adapter at all.
-      expect(await runOpmx(['pkg:acme/demo'], cap.io, home)).not.toBe(0);
-      expect(cap.err).toMatch(/no adapter is registered/i);
-
-      cap = capture();
-      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
-      // The plugin answered registry-definition/enumerate/inspect over the
-      // protocol: resolution reached host-side artifact acquisition, where
-      // the downloaded bytes digest differently from what the plugin
-      // published, so the run fails closed.
-      expect(exit, cap.err).toBe(7);
-      expect(cap.err).toMatch(/digest mismatch/i);
-      expect(cap.err).not.toMatch(/no adapter is registered/i);
-    } finally {
-      vi.unstubAllGlobals();
-      restore();
-      if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
-      else process.env.OPM_TOOL_CACHE = previousCache;
-    }
-  }, 30_000);
-
   // End to end: the plugin declares a native tool, the host downloads and
   // verifies the bytes, and opmx runs the verified store file through the
-  // sandbox — the full ADR 0040 loop.
+  // sandbox — the full ADR 0040 loop. The plugin runs for real: immutable
+  // snapshot, fail-closed jail, bounded stdio protocol. Skipped where no
+  // sandbox backend can be enforced.
   it('acquires and runs a plugin-served native tool', async () => {
     if (!bwrapReady) return;
     const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
@@ -570,20 +528,80 @@ describe('opmx --plugin', () => {
     const restore = withPluginHome(home);
     const previousCache = process.env.OPM_TOOL_CACHE;
     process.env.OPM_TOOL_CACHE = cache;
-    const { ACME_TOOL_ENDPOINT, ACME_TOOL_TAR, seedRunnablePluginStore } =
-      await import('./plugin-tool-fixture.js');
+    const { acmeToolFetch, seedPluginStore } = await import(
+      './plugin-fixture.js'
+    );
+    let fetches = 0;
+    const serve = acmeToolFetch();
     vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
-      if (String(input) === `${ACME_TOOL_ENDPOINT}/artifacts/demo-1.0.0.tar`)
-        return new Response(ACME_TOOL_TAR, { status: 200 });
-      return new Response('missing', { status: 404 });
+      if (
+        String(input) === 'https://acme.fixture.test/artifacts/demo-1.0.0.tar'
+      )
+        fetches += 1;
+      return serve(input);
     }) as typeof fetch);
     try {
-      await seedRunnablePluginStore(home);
-      const cap = capture();
+      await seedPluginStore(home);
+      let cap = capture();
+      // Without the plugin the purl type has no adapter at all.
+      expect(await runOpmx(['pkg:acme/demo'], cap.io, home)).not.toBe(0);
+      expect(cap.err).toMatch(/no adapter is registered/i);
+
+      // The plugin answered registry-definition/enumerate/inspect over the
+      // protocol; the host fetched the published bytes, digest-verified them,
+      // materialized the tool, and ran it.
+      cap = capture();
       const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
       expect(exit, cap.err).toBe(0);
       expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0/);
-      expect(cap.out).toBe('acme-tool-ran\n');
+      expect(cap.err).not.toMatch(/\(cached\)/);
+      expect(cap.out).toBe('acme-demo-ran\n');
+      expect(fetches).toBe(1);
+
+      // A repeat run resolves and verifies again and runs the same verified
+      // tool. Note: the ephemeral path re-downloads the primary bytes today —
+      // fetchTool always hands bytes to materializeLockPackage, so the
+      // content-addressed store archive is never consulted and opmx's
+      // "(cached)" line is unreachable (reported in layer 04 handback).
+      cap = capture();
+      expect(
+        await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home),
+        cap.err,
+      ).toBe(0);
+      expect(cap.out).toBe('acme-demo-ran\n');
+      expect(fetches).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+      restore();
+      if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
+      else process.env.OPM_TOOL_CACHE = previousCache;
+    }
+  }, 30_000);
+
+  // The same loop must fail closed: bytes that digest differently from what
+  // the plugin published are a verification failure, and nothing executes.
+  it('refuses to run when the served bytes digest differently', async () => {
+    if (!bwrapReady) return;
+    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
+    const cache = await mkdtemp(join(tmpdir(), 'opmx-cache-'));
+    temps.push(home, cache);
+    const restore = withPluginHome(home);
+    const previousCache = process.env.OPM_TOOL_CACHE;
+    process.env.OPM_TOOL_CACHE = cache;
+    const { ACME_TOOL_TAR, acmeToolFetch, seedPluginStore } = await import(
+      './plugin-fixture.js'
+    );
+    // Same length as the published tar (so size checks pass), different bytes.
+    const tampered = new Uint8Array(ACME_TOOL_TAR);
+    tampered[512] = tampered[512]! ^ 0xff;
+    vi.stubGlobal('fetch', acmeToolFetch(tampered) as typeof fetch);
+    try {
+      await seedPluginStore(home);
+      const cap = capture();
+      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
+      expect(exit, cap.err).toBe(7);
+      expect(cap.err).toMatch(/digest mismatch/i);
+      expect(cap.out).toBe('');
     } finally {
       vi.unstubAllGlobals();
       restore();
@@ -871,6 +889,74 @@ describe('project plugin bindings', () => {
       ).toBe(0);
       expect(cap.out).toContain('pkg:acme/demo@1.0.0');
     } finally {
+      restore();
+    }
+  }, 30_000);
+
+  // The project path runs the same ADR 0040 acquisition loop as opmx
+  // --plugin: add resolves through the bound plugin, the host fetches and
+  // verifies the published bytes, and the declared native bin lands in the
+  // lock, the project state, and .opm/bin.
+  it('adds and installs a plugin-served tool in a bound project', async () => {
+    if (!bwrapReady) return;
+    const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    const { acmeToolFetch, seedPluginStore } = await import(
+      './plugin-fixture.js'
+    );
+    vi.stubGlobal('fetch', acmeToolFetch() as typeof fetch);
+    try {
+      const seeded = await seedPluginStore(home);
+      const root = await boundProject(seeded.storeDigest);
+      // The project allowlist must name the plugin's purl type.
+      const manifestPath = join(root, 'opm.toml');
+      await writeFile(
+        manifestPath,
+        (await readFile(manifestPath, 'utf8')).replace(
+          'ecosystems = ["npm", "cargo", "pypi"]',
+          'ecosystems = ["npm", "cargo", "pypi", "acme"]',
+        ),
+      );
+
+      const cap = capture();
+      expect(
+        await runOpm(['add', 'pkg:acme/demo@1.0.0'], cap.io, root),
+        cap.err,
+      ).toBe(0);
+      expect(cap.out).toMatch(/Added demo → pkg:acme\/demo@1\.0\.0/);
+
+      // The inspection-declared executable is pinned into the lock and
+      // materialized into the install: the shim exists and points at the
+      // verified store file.
+      const lock = JSON.parse(
+        await readFile(join(root, 'opm.lock.json'), 'utf8'),
+      ) as {
+        packages: Record<string, { bins?: { name: string; path: string }[] }>;
+      };
+      expect(lock.packages['demo']?.bins).toEqual([
+        { name: 'acme-demo', path: 'bin/acme-demo', interpreter: 'native' },
+      ]);
+      const state = JSON.parse(
+        await readFile(join(root, '.opm/project.json'), 'utf8'),
+      ) as {
+        packages: Record<
+          string,
+          { bins: { name: string; shim: string; target: string }[] }
+        >;
+      };
+      const bin = state.packages['demo']?.bins[0];
+      expect(bin?.name).toBe('acme-demo');
+      await readFile(join(root, '.opm/bin/acme-demo'));
+
+      // KNOWN GAP (reported in layer 04 handback, not patched here): opmx
+      // re-activates the generation before resolving, and activateGeneration
+      // (packages/opm-project/src/generations.ts) re-derives bins with
+      // discoverBins(storePath, ecosystem) instead of the lock-pinned
+      // declaration — which returns [] for plugin ecosystems — so
+      // `opmx acme-demo` fails closed with NOT_FOUND today.
+    } finally {
+      vi.unstubAllGlobals();
       restore();
     }
   }, 30_000);
