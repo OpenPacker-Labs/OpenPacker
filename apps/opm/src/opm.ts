@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { registerInstalledPlugins } from '@openpacker/plugin-host';
 import {
   addPlugin,
   listPlugins,
@@ -108,7 +109,27 @@ export async function runOpm(
 ): Promise<number> {
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
-    configureDefaultAdapters();
+    const adapterRegistry = configureDefaultAdapters();
+    // Delegated adapter plugins (ADR 0039) register after the first-party
+    // set: a plugin never displaces a bundled adapter (conflicts are
+    // refused), and a tampered or broken plugin is reported and skipped —
+    // it fails closed, it never takes the CLI down with it.
+    try {
+      const pluginRegistration = await registerInstalledPlugins({
+        registry: adapterRegistry,
+      });
+      for (const refused of pluginRegistration.refused)
+        io.stderr.write(
+          `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
+        );
+    } catch (error) {
+      // A store-level failure (corrupt index, unsafe root) leaves every
+      // plugin unregistered; their purl types stay unsupported, which is
+      // the fail-closed answer, and `opm plugin` can still repair the store.
+      io.stderr.write(
+        `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
+      );
+    }
     const args = parseArgs(argv);
     if (
       args.command === 'help' ||
@@ -1010,6 +1031,9 @@ Delegated adapter plugins (user-level, never installed by default):
   opm plugin remove <name>            remove a plugin and its store entry
   The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
   lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.
+  Installed plugins register as adapters at startup; a plugin that fails
+  verification is reported on stderr and skipped (its ecosystem stays
+  unsupported rather than answering untrusted).
 
 Registries (catalog, from adapter discovery): ${registryEcosystems().join(', ') || '(none configured)'}
 Host/profile install uses the same verbs when Registry Definition advertises install.

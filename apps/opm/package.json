@@ -32,6 +32,7 @@
   "dependencies": {
     "@openpacker/adapters-default": "0.1.0",
     "@openpacker/opm-project": "0.1.0",
+    "@openpacker/plugin-host": "0.1.0",
     "@openpacker/plugin-store": "0.1.0"
   },
   "devDependencies": {
