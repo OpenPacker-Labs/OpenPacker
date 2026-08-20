@@ -391,17 +391,24 @@ pinned origin, name a token env var (never a secret value) in
 `artifact_origin_token_envs` or `OPM_HOST_FETCH_TOKEN_ENVS`. Pin even a public
 hostname if it requires a bearer — a public endpoint is not an Authorization
 grant. Pin plus bearer is any-path consent on that origin, so use the smallest
-pin set. `OPM_HOST_FETCH_BEARER` is not a grant unless that name is listed.
+pin set. `OPM_HOST_FETCH_BEARER` is not a grant unless that name is listed. An
+origin may also attach one extra operator-named header (for example
+`X-JFrog-Art-Api`) from `artifact_origin_extra_header_names` /
+`artifact_origin_extra_header_envs` or `OPM_HOST_FETCH_HEADER_NAMES` /
+`OPM_HOST_FETCH_HEADER_ENVS`. Extra header is independent of Bearer. The plugin
+cannot name headers.
 
 ```sh
 export OPM_HOST_FETCH_ORIGINS=https://artifacts.internal.example
 export OPM_HOST_FETCH_TOKEN_ENVS=ACME_ARTIFACTS_TOKEN
+export OPM_HOST_FETCH_HEADER_NAMES=X-JFrog-Art-Api
+export OPM_HOST_FETCH_HEADER_ENVS=JFROG_API_KEY
 ```
 
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
-`--allow-env` of `OPM_HOST_FETCH_*` or of a host-fetch token env name is
-refused. `opmx --offline` refuses an ephemeral resolve outright.
+`--allow-env` of `OPM_HOST_FETCH_*` or of a host-fetch token or extra-header env
+name is refused. `opmx --offline` refuses an ephemeral resolve outright.
 
 A project pins the plugins it relies on in `opm.toml`, keyed by the plugin's
 manifest id, against the store entry digest that `opm plugin list` prints:
@@ -411,6 +418,8 @@ manifest id, against the store entry digest that `opm plugin list` prints:
 store_digest = "sha256:…"
 artifact_origins = ["https://artifacts.internal.example"]
 artifact_origin_token_envs = ["ACME_ARTIFACTS_TOKEN"]
+artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]
+artifact_origin_extra_header_envs = ["JFROG_API_KEY"]
 ```
 
 A binding is a pin, never an acquisition: project commands that read or mutate

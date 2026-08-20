@@ -802,6 +802,8 @@ describe('project plugin bindings', () => {
     expect(cap.out).toMatch(/artifact_origins/);
     expect(cap.out).toMatch(/artifact_origin_token_envs/);
     expect(cap.out).toMatch(/OPM_HOST_FETCH_TOKEN_ENVS/);
+    expect(cap.out).toMatch(/artifact_origin_extra_header_names/);
+    expect(cap.out).toMatch(/OPM_HOST_FETCH_HEADER_NAMES/);
   });
 
   function withPluginHome(home: string): () => void {

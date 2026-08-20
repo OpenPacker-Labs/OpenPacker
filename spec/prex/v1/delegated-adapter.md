@@ -54,6 +54,8 @@ Projects bind plugins in `opm.toml` without embedding credentials:
 store_digest = "sha256:…"
 artifact_origins = ["https://artifacts.internal.example"]
 artifact_origin_token_envs = ["ACME_ARTIFACTS_TOKEN"]
+artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]
+artifact_origin_extra_header_envs = ["JFROG_API_KEY"]
 ```
 
 The section key MUST equal the manifest `id`. `store_digest` pins the exact
@@ -63,11 +65,18 @@ array of HTTPS origin-form pins (no userinfo, path, query, or hash). Those
 origins union with `OPM_HOST_FETCH_ORIGINS` for this plugin's host-fetch
 allowlist. Duplicate origins in one list MUST fail closed. A binding MAY list
 `artifact_origin_token_envs`, a parallel array of env-var names or empty strings
-for those origins; present length MUST equal `artifact_origins`. The binding MAY
-name origins and env-var names; it MUST NOT carry secret values and MUST NOT
-acquire. User-level pins live outside the project so `opmx --plugin` works
-without a project; a project binding MUST reference an already-installed store
-entry and never triggers acquisition by itself.
+for those origins; present length MUST equal `artifact_origins`. A binding MAY
+list `artifact_origin_extra_header_names` and
+`artifact_origin_extra_header_envs`, parallel arrays of one extra header name
+(RFC 7230 token or empty) and its env-var name per origin; if either array is
+present both MUST be present and length MUST equal `artifact_origins`. Empty
+header name `""` means no extra header for that origin. Forbidden header names
+include `authorization`, `cookie`, `cookie2`, `proxy-authorization`, `host`, and
+hop-by-hop headers; invalid names MUST fail closed at parse. The binding MAY
+name origins, env-var names, and extra header names; it MUST NOT carry secret
+values and MUST NOT acquire. User-level pins live outside the project so
+`opmx --plugin` works without a project; a project binding MUST reference an
+already-installed store entry and never triggers acquisition by itself.
 
 ## Execution
 
@@ -128,9 +137,15 @@ credentials because the plugin asked. The host MAY attach
 per-origin env-var name is configured (`artifact_origin_token_envs` or
 `OPM_HOST_FETCH_TOKEN_ENVS`) **and** that env is set, RFC 6750 token68, with no
 leading `Bearer ` prefix. `OPM_HOST_FETCH_BEARER` is not a process-wide grant
-unless that name is listed. The plugin MUST NOT name headers. The plugin never
-proxies artifact bytes; `rawBody` remains the canonical bytes of the answered
-body.
+unless that name is listed. The host MAY also attach one extra operator-named
+header when the hop origin is in `pins` **and** a per-origin extra-header name
+and env-var name are configured (`artifact_origin_extra_header_names` /
+`artifact_origin_extra_header_envs` or `OPM_HOST_FETCH_HEADER_NAMES` /
+`OPM_HOST_FETCH_HEADER_ENVS`) **and** that env is set, printable ASCII with no
+CR, LF, or NUL, at most 4096 bytes. Extra header is independent of Bearer: an
+origin MAY have Bearer, extra header, both, or neither. The plugin MUST NOT name
+headers. The plugin never proxies artifact bytes; `rawBody` remains the
+canonical bytes of the answered body.
 
 ## Executables
 
