@@ -352,6 +352,37 @@ recorded in `plugins.json` there. The plugin registry is selected with
 `OPM_REGISTRY_OPM_PLUGIN`; there is no default and no plugin discovery. Offline
 install works only from an already-pinned, digest-verified cache entry.
 
+Installed plugins register as adapters at `opm` startup, so the purl types they
+serve work in `opm search` / `versions` / `resolve` like any other registry. For
+an ephemeral run, name the plugin explicitly — the flag never installs:
+
+```sh
+opmx --plugin acme pkg:acme/some-tool
+opmx --plugin acme some-tool    # when the plugin serves exactly one purl type
+```
+
+A plugin's declared environment stays unforwarded unless each name is granted
+with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
+`opmx --offline` refuses an ephemeral resolve, as always.
+
+A project pins the plugins it relies on in `opm.toml`, keyed by the plugin's
+manifest id, against the store entry digest that `opm plugin list` prints:
+
+```toml
+[plugins.dev.example.acme-adapter]
+store_digest = "sha256:…"
+```
+
+A binding is a pin, never an acquisition: project commands (`add`, `install`,
+`sync`, `resolve`) verify the plugin is installed and that its store entry still
+digests to the pinned value, and fail closed (`PLUGIN_NOT_INSTALLED` /
+`PLUGIN_DIGEST_MISMATCH`) otherwise. Version 1 delegates only the read-only
+registry-definition and catalog surfaces, so a plugin answers metadata —
+versions, identity, records — while artifact bytes still come from a source the
+host can verify; an ephemeral run of a plugin-served tool resolves through the
+plugin and then fails closed at digest verification rather than executing
+unverifiable bytes.
+
 ---
 
 ## Resolution sources

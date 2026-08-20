@@ -10,6 +10,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createNativeBackend,
+  findTrustedSandboxHelper,
+} from '@openpacker/sandbox';
 import { runOpm } from '../src/opm.js';
 import { runOpmx } from '../src/opmx.js';
 
@@ -257,7 +261,8 @@ describe('opm + opmx CLI', () => {
       Buffer.concat([toolBytes, Buffer.from('\n# tampered')]),
     );
     cap = capture();
-    expect(await runOpmx(['demo-tool'], cap.io, root)).toBe(9);
+    // A tampered store entry is a verification failure (7), matching opm.
+    expect(await runOpmx(['demo-tool'], cap.io, root)).toBe(7);
     expect(cap.err).toMatch(/store tree does not match/u);
     await writeFile(toolPath, toolBytes);
 
@@ -408,6 +413,126 @@ describe('opmx argument forwarding', () => {
       '-b',
     ]);
   });
+
+  it('parses --plugin, --allow-env and --offline ahead of the selector', async () => {
+    const { parseForTest } = await import('../src/opmx.js');
+    const parsed = parseForTest([
+      '--plugin',
+      'acme',
+      '--plugin=globex',
+      '--allow-env',
+      'ACME_TOKEN',
+      '--offline',
+      'pkg:acme/demo',
+      '--version',
+    ]);
+    expect(parsed.plugins).toEqual(['acme', 'globex']);
+    expect(parsed.allowEnv).toEqual(['ACME_TOKEN']);
+    expect(parsed.offline).toBe(true);
+    expect(parsed.positionals).toEqual(['pkg:acme/demo']);
+    // The tool's own flags stay the tool's.
+    expect(parsed.passthrough).toEqual(['--version']);
+    // Defaults: no plugins, online.
+    const plain = parseForTest(['demo-tool']);
+    expect(plain.plugins).toEqual([]);
+    expect(plain.allowEnv).toEqual([]);
+    expect(plain.offline).toBe(false);
+  });
+});
+
+const nativeBackend = createNativeBackend();
+const bwrapReady =
+  process.platform === 'linux' &&
+  findTrustedSandboxHelper('bwrap') !== undefined &&
+  nativeBackend?.id === 'native-bwrap';
+
+describe('opmx --plugin', () => {
+  const PLUGIN_ENV = ['OPM_PLUGIN_HOME'] as const;
+
+  function withPluginHome(home: string): () => void {
+    const previous = PLUGIN_ENV.map(
+      (name) => [name, process.env[name]] as const,
+    );
+    process.env.OPM_PLUGIN_HOME = home;
+    return () => {
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    };
+  }
+
+  it('refuses a plugin that is not installed instead of acquiring one', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      const cap = capture();
+      expect(
+        await runOpmx(['--plugin', 'ghost', 'pkg:acme/demo'], cap.io, home),
+      ).toBe(4);
+      expect(cap.err).toMatch(/Plugin "ghost" is not installed/);
+      expect(cap.err).toMatch(/opm plugin add ghost/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('refuses an ephemeral resolve in offline mode', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      const { seedPluginStore } = await import('./plugin-fixture.js');
+      await seedPluginStore(home);
+      const cap = capture();
+      expect(
+        await runOpmx(
+          ['--offline', '--plugin', 'acme', 'pkg:acme/demo'],
+          cap.io,
+          home,
+        ),
+      ).toBe(8);
+      expect(cap.err).toMatch(/offline/i);
+    } finally {
+      restore();
+    }
+  });
+
+  // The plugin runs for real: immutable snapshot, fail-closed jail, bounded
+  // stdio protocol. Skipped where no sandbox backend can be enforced.
+  it('resolves a plugin-served purl type through the plugin', async () => {
+    if (!bwrapReady) return;
+    const home = await mkdtemp(join(tmpdir(), 'opmx-plugin-'));
+    const cache = await mkdtemp(join(tmpdir(), 'opmx-cache-'));
+    temps.push(home, cache);
+    const restore = withPluginHome(home);
+    const previousCache = process.env.OPM_TOOL_CACHE;
+    process.env.OPM_TOOL_CACHE = cache;
+    try {
+      const { seedPluginStore } = await import('./plugin-fixture.js');
+      await seedPluginStore(home);
+      let cap = capture();
+      // Without the plugin the purl type has no adapter at all.
+      expect(await runOpmx(['pkg:acme/demo'], cap.io, home)).not.toBe(0);
+      expect(cap.err).toMatch(/no adapter is registered/i);
+
+      cap = capture();
+      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
+      // The plugin answered registry-definition/enumerate/inspect over the
+      // protocol: resolution reached artifact acquisition, where the run
+      // fails closed — the v1 delegated protocol carries catalog metadata,
+      // never artifact bytes, so the canonical record bytes cannot digest to
+      // the published artifact digest.
+      expect(exit, cap.err).toBe(7);
+      expect(cap.err).toMatch(/Digest mismatch/);
+      expect(cap.err).not.toMatch(/no adapter is registered/i);
+    } finally {
+      restore();
+      if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
+      else process.env.OPM_TOOL_CACHE = previousCache;
+    }
+  }, 30_000);
 });
 
 describe('opm plugin', () => {
@@ -592,4 +717,101 @@ describe('opm plugin', () => {
       restore();
     }
   });
+});
+
+describe('project plugin bindings', () => {
+  function withPluginHome(home: string): () => void {
+    const previous = process.env.OPM_PLUGIN_HOME;
+    process.env.OPM_PLUGIN_HOME = home;
+    return () => {
+      if (previous === undefined) delete process.env.OPM_PLUGIN_HOME;
+      else process.env.OPM_PLUGIN_HOME = previous;
+    };
+  }
+
+  async function boundProject(storeDigest: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'opm-bound-'));
+    temps.push(root);
+    const cap = capture();
+    expect(await runOpm(['init', '--name', 'bound-demo'], cap.io, root)).toBe(
+      0,
+    );
+    await writeFile(
+      join(root, 'opm.toml'),
+      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[plugins.dev.example.acme-adapter]\nstore_digest = "${storeDigest}"\n`,
+    );
+    return root;
+  }
+
+  it('verifies the binding and lets project commands proceed', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      const { seedPluginStore } = await import('./plugin-fixture.js');
+      const seeded = await seedPluginStore(home);
+      const root = await boundProject(seeded.storeDigest);
+      const cap = capture();
+      // sync re-resolves the (empty) manifest; the bound plugin is verified
+      // and registered first, offline and without any acquisition.
+      expect(await runOpm(['sync', '--offline'], cap.io, root), cap.err).toBe(
+        0,
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('fails closed when the installed entry digests differently', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      const { seedPluginStore } = await import('./plugin-fixture.js');
+      await seedPluginStore(home);
+      const root = await boundProject(`sha256:${'b'.repeat(64)}`);
+      const cap = capture();
+      expect(await runOpm(['sync', '--offline'], cap.io, root)).toBe(7);
+      expect(cap.err).toMatch(/binds plugin "dev\.example\.acme-adapter"/);
+      expect(cap.err).toMatch(/sha256:b{64}/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('refuses a binding to a plugin that is not installed', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      // A store exists but holds no plugin; the binding must not acquire one.
+      const root = await boundProject(`sha256:${'b'.repeat(64)}`);
+      const cap = capture();
+      expect(await runOpm(['sync', '--offline'], cap.io, root)).toBe(4);
+      expect(cap.err).toMatch(/not installed/);
+      expect(cap.err).toMatch(/never acquires/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('serves the bound purl type through the plugin', async () => {
+    if (!bwrapReady) return;
+    const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
+    temps.push(home);
+    const restore = withPluginHome(home);
+    try {
+      const { seedPluginStore } = await import('./plugin-fixture.js');
+      const seeded = await seedPluginStore(home);
+      const root = await boundProject(seeded.storeDigest);
+      const cap = capture();
+      expect(
+        await runOpm(['versions', 'pkg:acme/demo'], cap.io, root),
+        cap.err,
+      ).toBe(0);
+      expect(cap.out).toContain('pkg:acme/demo@1.0.0');
+    } finally {
+      restore();
+    }
+  }, 30_000);
 });

@@ -38,6 +38,7 @@
   "devDependencies": {
     "@openpacker/adapter-core": "0.1.0",
     "@openpacker/canonical": "0.1.0",
+    "@openpacker/sandbox": "0.1.0",
     "@types/node": "24.2.1"
   }
 }
