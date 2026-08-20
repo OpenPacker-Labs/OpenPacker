@@ -377,12 +377,12 @@ A binding is a pin, never an acquisition: project commands that read or mutate
 the manifest, lock, or store (`add`, `install`, `sync`, `remove`, `uninstall`,
 `resolve`) verify the plugin is installed and that its store entry still digests
 to the pinned value, and fail closed (`PLUGIN_NOT_INSTALLED` /
-`PLUGIN_DIGEST_MISMATCH`) otherwise. Version 1 delegates only the read-only
-registry-definition and catalog surfaces, so a plugin answers metadata —
-versions, identity, records — while artifact bytes still come from a source the
-host can verify; an ephemeral run of a plugin-served tool resolves through the
-plugin and then fails closed at digest verification rather than executing
-unverifiable bytes.
+`PLUGIN_DIGEST_MISMATCH`) otherwise. Version 1 delegates the registry-definition
+and catalog surfaces, so a plugin answers metadata — versions, identity,
+records, executable declarations — while artifact bytes are fetched host-side
+from the record's published locations and verified against the published digest
+before any use (ADR 0040); a plugin that withholds or misstates them fails
+closed rather than executing unverifiable bytes.
 
 ---
 
