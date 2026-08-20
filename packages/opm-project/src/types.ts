@@ -57,12 +57,19 @@ export interface PackProviderSource {
 /**
  * A project's pin of an installed delegated adapter plugin (ADR 0039,
  * spec/prex/v1/delegated-adapter.md §Binding). The key is the plugin's
- * manifest `id`; the binding never acquires — it only verifies an
+ * manifest `id`. The binding may name extra HTTPS artifact origins; it
+ * never carries secret values and never acquires — it only verifies an
  * already-installed store entry.
  */
 export interface PluginBinding {
   /** Digest of the content-addressed plugin store entry (`sha256:…`). */
   storeDigest: string;
+  /**
+   * HTTPS origin-form pins this plugin may fetch from in addition to
+   * `record.endpoint`, and which may resolve private. Never secrets.
+   * Unique; origin-form via `normalizePinnedOrigin`.
+   */
+  artifactOrigins?: readonly string[];
 }
 
 export type RequirementScope =

@@ -1,3 +1,4 @@
+import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
 import type { PolicyInput } from '@openpacker/contracts';
 import type {
   NativeProjectionLevel,
@@ -104,6 +105,13 @@ export function serializeManifest(manifest: OpmManifest): string {
     const binding = manifest.plugins![id]!;
     lines.push(`[plugins.${id}]`);
     lines.push(`store_digest = ${tomlString(binding.storeDigest)}`);
+    if (
+      binding.artifactOrigins !== undefined &&
+      binding.artifactOrigins.length > 0
+    )
+      lines.push(
+        `artifact_origins = ${tomlStringArray(binding.artifactOrigins)}`,
+      );
     lines.push('');
   }
 
@@ -285,7 +293,10 @@ export function parseManifest(text: string): OpmManifest {
     }
   >();
   let pluginId: string | undefined;
-  const pluginScratch = new Map<string, { store_digest?: string }>();
+  const pluginScratch = new Map<
+    string,
+    { store_digest?: string; artifact_origins?: string[] }
+  >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -469,11 +480,18 @@ export function parseManifest(text: string): OpmManifest {
           `Plugin field outside [plugins.<id>] at line ${i + 1}`,
         );
       const scratch = pluginScratch.get(pluginId) ?? {};
-      // A binding carries exactly one fact: which store entry is pinned. No
-      // endpoints, no credentials — acquisition is never the manifest's job.
+      // A binding names the store entry and MAY name extra artifact origins.
+      // It still never carries secret values and never acquires.
       if (key === 'store_digest' && typeof value === 'string')
         scratch.store_digest = value;
-      else
+      else if (key === 'artifact_origins') {
+        if (!Array.isArray(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Plugin field "artifact_origins" must be an array of strings at line ${i + 1}`,
+          );
+        scratch.artifact_origins = parsePluginArtifactOrigins(value);
+      } else
         throw new OpmError(
           'INVALID_MANIFEST',
           `Unknown plugin field "${key}" at line ${i + 1}`,
@@ -640,7 +658,13 @@ export function parseManifest(text: string): OpmManifest {
           'INVALID_MANIFEST',
           `Plugin "${id}" is missing required store_digest`,
         );
-      plugins[id] = { storeDigest: assertDigest(scratch.store_digest) };
+      plugins[id] = {
+        storeDigest: assertDigest(scratch.store_digest),
+        ...(scratch.artifact_origins !== undefined &&
+        scratch.artifact_origins.length > 0
+          ? { artifactOrigins: scratch.artifact_origins }
+          : {}),
+      };
     }
     manifest.plugins = plugins;
   }
@@ -996,4 +1020,30 @@ function packProviderKey(id: string): string {
   if (!PACK_PROVIDER_ID.test(id))
     throw new OpmError('INVALID_MANIFEST', `Invalid pack provider id "${id}"`);
   return id;
+}
+
+function parsePluginArtifactOrigins(values: readonly string[]): string[] {
+  const origins: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    let origin: string;
+    try {
+      origin = normalizePinnedOrigin(value);
+    } catch (error) {
+      if (
+        error instanceof ProviderError &&
+        error.code === 'INVALID_PROVIDER_ENDPOINT'
+      )
+        throw new OpmError('INVALID_MANIFEST', error.message);
+      throw error;
+    }
+    if (seen.has(origin))
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        `Plugin artifact_origins lists duplicate origin ${origin}`,
+      );
+    seen.add(origin);
+    origins.push(origin);
+  }
+  return origins;
 }
