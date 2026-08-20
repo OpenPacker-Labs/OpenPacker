@@ -118,7 +118,7 @@ declaring the executables the package provides:
 - `name` is a single safe path segment matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` —
   never a separator, never empty;
 - `path` is a relative POSIX path with `/` separators — never absolute, never
-  containing a `..` segment;
+  containing a `..` segment, never a backslash;
 - `interpreter` is `node` (the default when absent), `python`, `dotnet`, or
   `native`; `native` means the host executes the verified store file directly;
 - `entry` is required if and only if `interpreter` is `python`, in

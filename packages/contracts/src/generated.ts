@@ -2809,7 +2809,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
             type: 'string',
             minLength: 1,
             maxLength: 4096,
-            pattern: '^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\u0000]+$',
+            pattern: '^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\u0000\\\\]+$',
           },
           interpreter: {
             $comment:

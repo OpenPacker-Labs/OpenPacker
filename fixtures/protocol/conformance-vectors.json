@@ -2178,6 +2178,20 @@
       "levels": ["PREX-N"]
     },
     {
+      "name": "delegated-adapter-inspection-result-bin-backslash-path",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/executables/0/path",
+          "value": "bin\\evil.sh"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
       "name": "delegated-adapter-inspection-result-bin-unsafe-name",
       "file": "delegated-adapter/inspection-result.json",
       "mutations": [
