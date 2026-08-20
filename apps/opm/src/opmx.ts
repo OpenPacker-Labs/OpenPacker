@@ -447,7 +447,13 @@ function parse(argv: string[]): {
       continue;
     }
     if (arg.startsWith('--allow-env=')) {
-      allowEnv.push(arg.slice('--allow-env='.length));
+      const name = arg.slice('--allow-env='.length);
+      if (name === '')
+        throw new OpmError(
+          'USAGE',
+          'opmx --allow-env requires an environment variable name',
+        );
+      allowEnv.push(name);
       i += 1;
       continue;
     }

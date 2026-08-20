@@ -373,9 +373,10 @@ manifest id, against the store entry digest that `opm plugin list` prints:
 store_digest = "sha256:…"
 ```
 
-A binding is a pin, never an acquisition: project commands (`add`, `install`,
-`sync`, `resolve`) verify the plugin is installed and that its store entry still
-digests to the pinned value, and fail closed (`PLUGIN_NOT_INSTALLED` /
+A binding is a pin, never an acquisition: project commands that read or mutate
+the manifest, lock, or store (`add`, `install`, `sync`, `remove`, `uninstall`,
+`resolve`) verify the plugin is installed and that its store entry still digests
+to the pinned value, and fail closed (`PLUGIN_NOT_INSTALLED` /
 `PLUGIN_DIGEST_MISMATCH`) otherwise. Version 1 delegates only the read-only
 registry-definition and catalog surfaces, so a plugin answers metadata —
 versions, identity, records — while artifact bytes still come from a source the

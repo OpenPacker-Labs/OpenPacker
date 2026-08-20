@@ -790,6 +790,8 @@ describe('project plugin bindings', () => {
       expect(await runOpm(['sync', '--offline'], cap.io, root)).toBe(7);
       expect(cap.err).toMatch(/binds plugin "dev\.example\.acme-adapter"/);
       expect(cap.err).toMatch(/sha256:b{64}/);
+      // remove mutates the manifest and lock, so it verifies the binding too.
+      expect(await runOpm(['remove', 'demo-tool'], cap.io, root)).toBe(7);
     } finally {
       restore();
     }
