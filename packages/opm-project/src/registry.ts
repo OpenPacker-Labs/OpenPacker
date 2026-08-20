@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
@@ -489,6 +490,38 @@ function readArtifactDescriptor(
 }
 
 /**
+ * Inspect artifacts that are the same object `fetchArtifactRecord` returns.
+ * Manifests, blobs, and other siblings share sha256+size+location shape but
+ * are not the bytes the store verifies.
+ */
+const INSTALLABLE_ARCHIVE_ROLES: ReadonlySet<string> = new Set([
+  'package-archive',
+  'wheel',
+  'sdist',
+  'distribution',
+]);
+
+function assertRecordMatchesDescriptor(
+  bytes: Uint8Array,
+  descriptor: { digest: string; size?: number },
+  exactPurl: string,
+): void {
+  if (descriptor.size !== undefined && bytes.byteLength !== descriptor.size)
+    throw new OpmError(
+      'SIZE_MISMATCH',
+      `Registry size mismatch for ${exactPurl}: ` +
+        `expected ${descriptor.size} bytes, got ${bytes.byteLength}`,
+    );
+  const actual = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  if (actual !== descriptor.digest)
+    throw new OpmError(
+      'DIGEST_MISMATCH',
+      `Registry digest mismatch for ${exactPurl}: ` +
+        `the inspect descriptor reported ${descriptor.digest}, the bytes hash to ${actual}`,
+    );
+}
+
+/**
  * Fail closed when the published download location sits on an origin this
  * ecosystem's transports are not allowed to read. A registry that starts
  * handing back another host is the interesting failure, so it is refused by
@@ -608,12 +641,15 @@ export async function resolveRegistryArtifactDeferred(
     };
   }
 
-  // A first-party inspection that publishes the whole artifact descriptor
-  // makes the record call — the download — deferrable. The origin rule is
-  // applied eagerly so a hijacked location is refused whether or not a cache
-  // already holds the bytes.
+  // A first-party inspection that publishes the *installable archive*
+  // (nativeRole package-archive / wheel / sdist / distribution) makes the
+  // record call — the download — deferrable. Inspect artifacts that are a
+  // different object than fetchArtifactRecord returns (OCI manifests vs the
+  // layout tar) must not become the cache key: hashing the layout against the
+  // manifest digest is a false DIGEST_MISMATCH and a first-party regression.
   const published = inspection.package.artifacts.find(
     (artifact) =>
+      INSTALLABLE_ARCHIVE_ROLES.has(artifact.nativeRole) &&
       artifact.digest?.algorithm === 'sha256' &&
       typeof artifact.digest.value === 'string' &&
       artifact.digest.value.length > 0 &&
@@ -633,8 +669,11 @@ export async function resolveRegistryArtifactDeferred(
       uri: descriptor.uri,
       bins,
       registryId,
-      fetchBytes: async () =>
-        (await provider.fetchArtifactRecord(inspectedPurl)).rawBody,
+      fetchBytes: async () => {
+        const record = await provider.fetchArtifactRecord(inspectedPurl);
+        assertRecordMatchesDescriptor(record.rawBody, descriptor, exactPurl);
+        return record.rawBody;
+      },
     };
   }
 
@@ -708,6 +747,7 @@ async function fetchDelegatedArtifactBytes(input: {
       `Refusing to fetch ${input.exactPurl} from ${input.uri}: ` +
         'artifact locations must be HTTPS and carry no credentials.',
     );
+  assertHostFetchAddress(location, input.exactPurl);
   if (location.origin !== endpointOrigin)
     throw new OpmError(
       'UNSAFE_PATH',
@@ -751,4 +791,71 @@ async function fetchDelegatedArtifactBytes(input: {
         `the ${input.ecosystem} provider reported ${input.digest}, the bytes hash to ${actual}`,
     );
   return { bytes: body, size };
+}
+
+/**
+ * Host-fetch is a new network path the plugin names. A sandboxed plugin
+ * cannot reach the network itself; the host must not fetch private,
+ * loopback, link-local, or NAT64-mapped addresses on its behalf.
+ */
+function assertHostFetchAddress(location: URL, exactPurl: string): void {
+  const hostname = location.hostname.replace(/^\[|\]$/gu, '');
+  if (!isIP(hostname) || !isPrivateAddress(hostname)) return;
+  throw new OpmError(
+    'UNSAFE_PATH',
+    `Refusing to fetch ${exactPurl} from ${location.origin}: ` +
+      'host-side artifact locations must not be a private or local address.',
+  );
+}
+
+function isPrivateAddress(value: string): boolean {
+  const address = value.toLowerCase();
+  if (address.includes(':')) {
+    if (address.startsWith('::ffff:'))
+      return classifyEmbeddedIpv4(address.slice('::ffff:'.length));
+    for (const prefix of ['64:ff9b::', '64:ff9b:0:0:0:0:']) {
+      if (address.startsWith(prefix))
+        return classifyEmbeddedIpv4(address.slice(prefix.length));
+    }
+    if (address.startsWith('::')) {
+      const embedded = embeddedIpv4Address(address.slice(2));
+      if (embedded !== undefined) return isPrivateAddress(embedded);
+    }
+    return (
+      address === '::' ||
+      address === '::1' ||
+      address.startsWith('fc') ||
+      address.startsWith('fd') ||
+      /^fe[89ab]/u.test(address)
+    );
+  }
+  const octets = address.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((part) => part < 0 || part > 255))
+    return true;
+  const [first, second] = octets as [number, number, number, number];
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
+}
+
+function classifyEmbeddedIpv4(suffix: string): boolean {
+  const embedded = embeddedIpv4Address(suffix);
+  return embedded === undefined || isPrivateAddress(embedded);
+}
+
+function embeddedIpv4Address(value: string): string | undefined {
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(value);
+  if (hex) {
+    const high = parseInt(hex[1]!, 16);
+    const low = parseInt(hex[2]!, 16);
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+  }
+  return /^(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(value)?.[1];
 }

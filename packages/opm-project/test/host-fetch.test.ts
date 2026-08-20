@@ -132,11 +132,13 @@ function acmeProvider(input: {
   hostFetch: boolean;
   body?: DescriptorOverrides;
   executables?: ProviderInspection['executables'];
+  endpoint?: string;
 }): CatalogProvider {
+  const endpoint = input.endpoint ?? ENDPOINT;
   const recordBody = descriptor(input.body);
   const record: ProviderRecord = {
     key: EXACT,
-    endpoint: ENDPOINT,
+    endpoint,
     body: recordBody,
     // The delegated protocol carries metadata only: rawBody is the canonical
     // bytes of the descriptor, never the artifact.
@@ -336,6 +338,36 @@ describe('delegated host-fetch acquisition', () => {
         fetch: fetchStub(tarRoute),
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+  });
+
+  it('fails closed on a private or local host-fetch address', async () => {
+    for (const origin of [
+      'https://127.0.0.1',
+      'https://169.254.169.254',
+      'https://[::1]',
+      'https://[::ffff:127.0.0.1]',
+      'https://[64:ff9b::7f00:1]',
+    ]) {
+      registerAcme(
+        acmeProvider({
+          hostFetch: true,
+          endpoint: origin,
+          body: {
+            locations: [{ uri: `${origin}/artifacts/demo.tar` }],
+          },
+        }),
+      );
+      let fetched = false;
+      await expect(
+        resolveRegistryArtifact('acme', EXACT, {
+          fetch: (async () => {
+            fetched = true;
+            return new Response(TOOL_TAR);
+          }) as unknown as typeof fetch,
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(fetched).toBe(false);
+    }
   });
 
   it('fails closed on a location outside the endpoint origin', async () => {
