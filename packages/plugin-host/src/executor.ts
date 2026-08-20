@@ -243,7 +243,9 @@ export class DelegatedPluginExecutor {
         input.params,
       );
     } finally {
-      await authority.close();
+      // Closing the snapshot fd is best-effort cleanup: a raw fs error here
+      // must not escape as an untyped failure or mask an in-flight one.
+      await authority.close().catch(() => undefined);
     }
   }
 
