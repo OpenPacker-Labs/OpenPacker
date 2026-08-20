@@ -89,7 +89,14 @@ class DelegatedCatalogProvider implements CatalogProvider {
       qualifierSupport: 'none',
       targetSpecificSemantics: false,
       offlineReplay: false,
-      extensions: {},
+      extensions: {
+        // The stdio protocol carries metadata only: when the manifest admits
+        // fetch-artifact-record, artifact bytes are fetched host-side from
+        // the record's locations and digest-verified (spec Artifact bytes).
+        ...(admitsOperation(manifest, 'fetch-artifact-record')
+          ? { 'openpacker/artifact-bytes': 'host-fetch' }
+          : {}),
+      },
     };
   }
 

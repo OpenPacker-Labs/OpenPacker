@@ -1,25 +1,23 @@
 {
-  "layer": "01-spec",
-  "commits": ["1248610", "368c8ed", "1f4db2c", "5cbf578", "3b65b46"],
+  "layer": "02-host",
+  "commits": ["9d18041", "d7162ae"],
   "gates": {
-    "check:contracts": "pass",
-    "test:conformance": "pass",
-    "test:docs": "pass",
-    "typecheck @openpacker/contracts": "pass",
+    "test @openpacker/adapter-core": "pass (26 tests)",
+    "typecheck @openpacker/adapter-core": "pass",
+    "build @openpacker/adapter-core": "pass",
+    "test @openpacker/plugin-host": "pass (51 tests)",
+    "typecheck @openpacker/plugin-host": "pass",
+    "build @openpacker/plugin-host": "pass",
     "agent:check:staged (pre-commit, every commit)": "pass"
   },
   "filesChanged": [
-    "spec/prex/v1/delegated-adapter.md",
-    "spec/prex/v1/schemas/delegated-adapter.schema.json",
-    "packages/contracts/schemas/delegated-adapter.schema.json",
-    "packages/contracts/src/generated.ts",
-    "fixtures/protocol/delegated-adapter/inspection-result.json",
-    "fixtures/protocol/conformance-vectors.json",
-    "docs/adr/0040-delegated-plugins-deliver-artifact-bytes-and-executables.md",
-    "docs/adr/0039-third-party-ecosystems-arrive-as-delegated-adapter-plugins.md",
-    "docs/adr/README.md",
-    "docs/guides/opm.md"
+    "packages/adapter-core/src/index.ts",
+    "packages/adapter-core/src/index.test.ts",
+    "packages/plugin-host/src/protocol.ts",
+    "packages/plugin-host/src/module.ts",
+    "packages/plugin-host/test/plugin-host.test.ts",
+    ".sdlc/report.json"
   ],
-  "notes": "Spec + schema amended in lockstep per schema-first rule; mirror is byte-identical (regenerated via npm run generate -w @openpacker/contracts, which writes packages/contracts/schemas itself). New $defs.DelegatedAdapterBin (name safe-segment pattern, relative POSIX path pattern refusing absolute + '..', interpreter enum node|python|dotnet|native, entry maxLength 1024 — 'entry required iff python' is normative prose in the spec and must be enforced host-side in layer 02; JSON Schema cannot express that per-bin conditional cleanly here). DelegatedAdapterInspectionResult.executables is optional, maxItems 64. generated.ts now exports type DelegatedAdapterBin and ProviderInspection-side consumers will see executables on the wire type. The host-fetch marker openpacker/artifact-bytes: \"host-fetch\" is specified as a provider capability extension (adapter-core ProviderCapabilities.extensions is a free-form record, cf. existing 'openpacker.dev/ecosystem' key) — layer 02 must surface it from the plugin host; it does NOT fit common.schema.json Extensions propertyNames (no slashes), so it was deliberately not put in the RegistryDefinition extensions container. Conformance gained 4 negative vectors (dotdot path, absolute path, unsafe name, unknown interpreter). docs/plans/plugin-execution/sdlc-state.md remains untracked; coordinator owns it. No runtime .ts behavior changed beyond regenerated contracts.",
-  "deviations": "Task said to add the executables example to fixtures/protocol/delegated-adapter/example.json, but that file is a DelegatedAdapterManifest (additionalProperties: false — executables would fail validation). The inspect example validated against DelegatedAdapterInspectionResult is inspection-result.json, so the executables array (one node-interpreter bin) was added there instead."
+  "notes": "adapter-core: new ProviderExecutable interface matching the DelegatedAdapterBin wire shape (absent interpreter = node; entry is the python module:callable; native executes the verified store file directly) and ProviderInspection.executables as optional provider metadata validated by consumers. plugin-host: validateOperationResult's inspect case now runs validateBins after the schema + purl checks, failing closed as INVALID_RESPONSE on unsafe names, absolute/backslash/'..' paths, unknown interpreters, entry-without-python, python-without-valid-entry, >64 declarations, and duplicate names — the schema-only prose rules are enforced host-side and the safety invariants are re-asserted at the trust boundary (defense in depth; several invalid classes are already schema-rejected and stay INVALID_RESPONSE either way). The plugin's answer is preserved exactly: undefined executables stays absent, [] stays []. DelegatedCatalogProvider now sets capabilities.extensions['openpacker/artifact-bytes'] = 'host-fetch' iff the manifest admits fetch-artifact-record (same admitsOperation condition that adds 'artifact' to operations); no other extensions existed to keep. packages/plugin-host/src/manifest.ts needed no changes: layer 01 did not alter the DelegatedAdapterManifest wire type and admitsOperation semantics are unchanged. Python entry pattern reuses the opm-project bins shape /^[A-Za-z0-9_.]+:[A-Za-z0-9_.]+$/. Layer 03 acquisition can rely on the marker being present on every catalog-registered plugin today (manifest consistency requires fetch-artifact-record for the catalog capability), but the constructor guard keeps the marker honest for any future manifest shape.",
+  "deviations": "None. Prettier reformatted three long lines in protocol.ts after the first commit attempt failed the pre-commit gate; formatting-only."
 }

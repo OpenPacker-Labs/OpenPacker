@@ -24,10 +24,12 @@ import {
 } from '@openpacker/sandbox';
 import type { DelegatedExecutableIdentity } from '@openpacker/pack-provider';
 import {
+  delegatedAdapterModule,
   registerInstalledPlugins,
   registerPlugin,
   validateOperationResult,
   verifyPluginBindings,
+  type DelegatedPluginExecutor,
 } from '../src/index.js';
 import { listPlugins } from '@openpacker/plugin-store';
 import { parseCanonicalJson } from '@openpacker/canonical';
@@ -915,6 +917,154 @@ describe('registerInstalledPlugins', () => {
       expect.objectContaining({ name: 'acme', code: 'DIGEST_MISMATCH' }),
     ]);
     expect(registry.has('acme')).toBe(false);
+  });
+});
+
+// Host-side executables validation (spec Executables section): the schema
+// bounds shape; this pass enforces the prose rules and re-asserts the safety
+// invariants at the trust boundary, failing closed as INVALID_RESPONSE.
+describe('inspect executables', () => {
+  const inspect = (executables: unknown) =>
+    validateOperationResult(
+      fixtureManifest(),
+      'inspect',
+      {
+        package: PACKAGE_INSTANCE,
+        record: WIRE_RECORD,
+        ...(executables === undefined ? {} : { executables }),
+      } as unknown as JsonValue,
+      { exactPurl: 'pkg:acme/demo@1.0.0' },
+    );
+
+  it('accepts valid declarations across every interpreter', () => {
+    const inspection = inspect([
+      { name: 'demo', path: 'bin/demo.js' },
+      {
+        name: 'demo.py',
+        path: 'lib/demo/main.py',
+        interpreter: 'python',
+        entry: 'demo.cli:main',
+      },
+      { name: 'demo-net', path: 'tools/demo.dll', interpreter: 'dotnet' },
+      { name: 'demo-native', path: 'bin/demo', interpreter: 'native' },
+    ]) as { executables?: readonly unknown[] };
+    expect(inspection.executables).toHaveLength(4);
+  });
+
+  it('omits executables when the plugin answered none', () => {
+    expect(inspect(undefined)).not.toHaveProperty('executables');
+    expect((inspect([]) as { executables: unknown[] }).executables).toEqual([]);
+  });
+
+  const invalidBins: [string, unknown][] = [
+    ['an unsafe name', [{ name: 'a/b', path: 'bin/a' }]],
+    ['an absolute path', [{ name: 'a', path: '/bin/a' }]],
+    ['a .. path segment', [{ name: 'a', path: 'bin/../a' }]],
+    ['a backslash path', [{ name: 'a', path: 'bin\\a' }]],
+    ['a drive-prefixed path', [{ name: 'a', path: 'C:/bin/a' }]],
+    [
+      'an unknown interpreter',
+      [{ name: 'a', path: 'bin/a', interpreter: 'ruby' }],
+    ],
+    [
+      'an entry without the python interpreter',
+      [{ name: 'a', path: 'bin/a.js', entry: 'demo.cli:main' }],
+    ],
+    [
+      'python without an entry',
+      [{ name: 'a', path: 'bin/a.py', interpreter: 'python' }],
+    ],
+    [
+      'python with a malformed entry',
+      [{ name: 'a', path: 'bin/a.py', interpreter: 'python', entry: 'broken' }],
+    ],
+    [
+      'duplicate names',
+      [
+        { name: 'a', path: 'bin/a' },
+        { name: 'a', path: 'bin/b' },
+      ],
+    ],
+  ];
+  for (const [label, executables] of invalidBins)
+    it(`fails closed on ${label}`, () => {
+      expect(() => inspect(executables)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_RESPONSE' }),
+      );
+    });
+
+  it('fails closed on more than 64 declarations', () => {
+    const executables = Array.from({ length: 65 }, (_, index) => ({
+      name: `bin-${index}`,
+      path: `bin/${index}`,
+    }));
+    expect(() => inspect(executables)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' }),
+    );
+  });
+
+  it('surfaces validated executables through catalog inspect', async () => {
+    const root = await fixtureRoot();
+    const executables = [
+      { name: 'demo', path: 'bin/demo.js' },
+      {
+        name: 'demo-py',
+        path: 'lib/demo.py',
+        interpreter: 'python',
+        entry: 'demo.cli:main',
+      },
+    ];
+    const { registry } = await registerWithCannedAnswers(root, {
+      answer: (operation, _input, canned) =>
+        operation === 'inspect'
+          ? sandboxOutcome(
+              okResponse({
+                package: PACKAGE_INSTANCE,
+                record: WIRE_RECORD,
+                executables,
+              } as unknown as JsonValue),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    const inspection = await catalog.inspect('pkg:acme/demo@1.0.0');
+    expect(inspection.executables).toEqual(executables);
+  });
+
+  it('preserves an absent executables answer through catalog inspect', async () => {
+    const root = await fixtureRoot();
+    // The canned inspect answer carries no executables key at all.
+    const { registry } = await registerWithCannedAnswers(root);
+    const catalog = await registry.catalogFor('acme');
+    const inspection = await catalog.inspect('pkg:acme/demo@1.0.0');
+    expect(inspection.executables).toBeUndefined();
+  });
+});
+
+describe('artifact-bytes capability marker', () => {
+  it('advertises host-side fetching when fetch-artifact-record is admitted', async () => {
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root);
+    const catalog = await registry.catalogFor('acme');
+    expect(catalog.capabilities.operations).toContain('artifact');
+    expect(catalog.capabilities.extensions).toEqual({
+      'openpacker/artifact-bytes': 'host-fetch',
+    });
+  });
+
+  it('omits the marker when the manifest admits no fetch-artifact-record', () => {
+    // A catalog manifest without fetch-artifact-record is refused at load, so
+    // exercise the provider constructor directly.
+    const manifest = fixtureManifest();
+    delete manifest.commands['fetch-artifact-record'];
+    const executor = {
+      invoke: async () => {
+        throw new Error('must not be invoked');
+      },
+    } as unknown as DelegatedPluginExecutor;
+    const catalog = delegatedAdapterModule(manifest, executor).catalog!({});
+    expect(catalog.capabilities.operations).not.toContain('artifact');
+    expect(catalog.capabilities.extensions).toEqual({});
   });
 });
 

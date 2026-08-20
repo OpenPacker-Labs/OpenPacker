@@ -17,6 +17,8 @@ import {
   parseVers,
   packageNodeId,
   providerErrorForStatus,
+  type ProviderExecutable,
+  type ProviderInspection,
   rangeToConstraint,
   renderRange,
   semanticLoss,
@@ -349,4 +351,25 @@ it('preserves HEAD across a 303 serviceability redirect', async () => {
     method: 'HEAD',
   });
   expect(methods).toEqual(['HEAD', 'HEAD']);
+});
+
+it('ProviderInspection composes provider-declared executables', () => {
+  const executables: readonly ProviderExecutable[] = [
+    { name: 'demo', path: 'bin/demo.js' },
+    {
+      name: 'demo-py',
+      path: 'bin/demo.py',
+      interpreter: 'python',
+      entry: 'demo.cli:main',
+    },
+    { name: 'demo-native', path: 'bin/demo', interpreter: 'native' },
+  ];
+  // The type carries provider metadata as declared; validation of the wire
+  // rules lives at the trust boundary in plugin-host, not in this shape.
+  const inspection: Pick<ProviderInspection, 'executables'> = { executables };
+  expect(inspection.executables).toHaveLength(3);
+  expect(inspection.executables?.[1]).toMatchObject({
+    interpreter: 'python',
+    entry: 'demo.cli:main',
+  });
 });
