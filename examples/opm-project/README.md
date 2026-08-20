@@ -32,4 +32,8 @@ opmx demo-tool --version
 | `.opm/`         | Local store + bins (created on sync)                         |
 
 See **[docs/guides/opm.md](../../docs/guides/opm.md)** for the full command
-reference.
+reference — including
+[delegated adapter plugins](../../docs/guides/opm.md#delegated-adapter-plugins):
+`opm plugin add` pins a third-party ecosystem plugin, and
+`opmx --plugin <name> pkg:<type>/<tool>` resolves, host-fetches,
+digest-verifies, and runs the tools it serves.

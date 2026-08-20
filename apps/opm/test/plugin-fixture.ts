@@ -162,9 +162,28 @@ export function fixturePluginTransport(): FixtureHttpTransport {
  * the same shape `opm plugin add` leaves behind (pin index + tree-digest
  * verified entry), with an executable that speaks the bounded stdio protocol
  * instead of the trivial echo the acquisition fixture ships.
+ *
+ * Honesty invariant: the plugin is the metadata authority and the stdio
+ * protocol stays metadata-only. Its fetch-artifact-record answer carries the
+ * true sha256 and size of the real tool tar and a location on the record
+ * endpoint's origin; the host downloads the bytes itself (bounded transport,
+ * same-origin as the record endpoint, no credentials) and digest-verifies
+ * them before anything is materialized or run (ADR 0040).
  */
 
-const ACME_DIGEST = 'a'.repeat(64);
+export const ACME_TOOL_ENDPOINT = 'https://acme.fixture.test';
+
+/** The tool the seeded plugin serves: a standalone POSIX sh executable. */
+export const ACME_TOOL_SCRIPT = '#!/bin/sh\necho acme-demo-ran "$@"\n';
+
+export const ACME_TOOL_TAR = tar([
+  {
+    name: 'bin/acme-demo',
+    data: new TextEncoder().encode(ACME_TOOL_SCRIPT),
+    mode: 0o755,
+  },
+]);
+const TOOL_DIGEST = createHash('sha256').update(ACME_TOOL_TAR).digest('hex');
 
 const ACME_DEFINITION = {
   registryDefinitionVersion: '1',
@@ -191,7 +210,7 @@ const ACME_IDENTITY = {
 };
 
 const ACME_INSTANCE = {
-  nodeId: `sha256:${ACME_DIGEST}`,
+  nodeId: `sha256:${TOOL_DIGEST}`,
   identity: { ...ACME_IDENTITY, exactPurl: 'pkg:acme/demo@1.0.0' },
   nativeVersion: '1.0.0',
   normalizedVersion: '1.0.0',
@@ -203,23 +222,21 @@ const ACME_INSTANCE = {
   artifacts: [],
   lifecycle: { status: 'published', eligible: true, warnings: [] },
   sourceSnapshots: [],
-  metadataDigest: { algorithm: 'sha256', value: ACME_DIGEST },
+  metadataDigest: { algorithm: 'sha256', value: TOOL_DIGEST },
   nativeSemantics: { version: 'acme-1', data: {} },
   semanticLoss: [],
 };
 
 /**
- * The artifact record the plugin answers with. The delegated protocol carries
- * metadata only (spec §Operations): the host reconstructs the record bytes as
- * the canonical bytes of this body, so a plugin-served artifact cannot carry
- * tool bytes and acquisition fails closed at digest verification. The digest
- * here is deliberately honest metadata, not a real artifact.
+ * The artifact record the plugin answers with: honest metadata. The digest
+ * and size are those of the real tool tar (ACME_TOOL_TAR), and the location
+ * sits on the record endpoint's origin so the host-side fetch is allowed.
  */
 const ACME_ARTIFACT_BODY = {
-  digest: { algorithm: 'sha256', value: ACME_DIGEST },
-  size: 42,
+  digest: { algorithm: 'sha256', value: TOOL_DIGEST },
+  size: ACME_TOOL_TAR.byteLength,
   mediaType: 'application/x-tar',
-  locations: [{ uri: 'https://acme.fixture.test/artifacts/demo-1.0.0.tar' }],
+  locations: [{ uri: `${ACME_TOOL_ENDPOINT}/artifacts/demo-1.0.0.tar` }],
   registryMetadata: {
     registryId: 'urn:openpacker:registry:acme-fixture',
     status: 'active',
@@ -230,7 +247,7 @@ const ACME_ARTIFACT_BODY = {
 
 const ACME_RECORD = {
   key: 'pkg:acme/demo@1.0.0',
-  endpoint: 'https://acme.fixture.test',
+  endpoint: ACME_TOOL_ENDPOINT,
   body: ACME_ARTIFACT_BODY,
   retrievedAt: '2020-01-01T00:00:00Z',
 };
@@ -241,6 +258,17 @@ const ACME_RECORD = {
 const ACME_METADATA_RECORD = {
   ...ACME_RECORD,
   body: { time: { '1.0.0': '2020-01-01T00:00:00.000Z' } },
+};
+
+// The inspection declares the package's executables (spec §Executables): one
+// native bin inside the artifact the record above publishes.
+const ACME_INSPECTION = {
+  package: ACME_INSTANCE,
+  record: ACME_METADATA_RECORD,
+  executables: [
+    { name: 'acme-demo', path: 'bin/acme-demo', interpreter: 'native' },
+  ],
+  warnings: [],
 };
 
 function okResponse(result: unknown): string {
@@ -261,11 +289,26 @@ case "$op" in
   registry-definition) printf '%s' ${answer(ACME_DEFINITION)} ;;
   identify) printf '%s' ${answer([ACME_IDENTITY])} ;;
   enumerate) printf '%s' ${answer(['pkg:acme/demo@1.0.0'])} ;;
-  inspect) printf '%s' ${answer({ package: ACME_INSTANCE, record: ACME_METADATA_RECORD, warnings: [] })} ;;
+  inspect) printf '%s' ${answer(ACME_INSPECTION)} ;;
   fetch-artifact-record) printf '%s' ${answer(ACME_RECORD)} ;;
   *) exit 9 ;;
 esac
 `;
+}
+
+/**
+ * A global-fetch stand-in for the fixture transport the host-side artifact
+ * download runs through: serves the tool tar from its published location
+ * (pass `body` to serve tampered bytes) and 404s everything else.
+ */
+export function acmeToolFetch(
+  body: Uint8Array = ACME_TOOL_TAR,
+): (input: URL | Request | string) => Promise<Response> {
+  return async (input) => {
+    if (String(input) === `${ACME_TOOL_ENDPOINT}/artifacts/demo-1.0.0.tar`)
+      return new Response(body, { status: 200 });
+    return new Response('missing', { status: 404 });
+  };
 }
 
 export interface SeededPluginStore {
