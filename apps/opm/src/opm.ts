@@ -602,6 +602,37 @@ function handleError(error: unknown, io: CliIo): number {
         return EXIT_CODES.internal;
     }
   }
+  // Delegated plugin operations surface ProviderError, which is not an
+  // OpmError but carries the same string codes; map them instead of reporting
+  // a generic internal error.
+  if (error instanceof Error && 'code' in error) {
+    const code = (error as { code: unknown }).code;
+    if (typeof code === 'string') {
+      io.stderr.write(`opm: ${error.message}\n`);
+      switch (code) {
+        case 'OFFLINE':
+        case 'UPSTREAM_UNAVAILABLE':
+        case 'UPSTREAM_RESPONSE_TOO_LARGE':
+        case 'PLUGIN_ERROR':
+        case 'PLUGIN_FAILED':
+          return EXIT_CODES.unavailable;
+        case 'PACKAGE_NOT_FOUND':
+        case 'ARTIFACT_NOT_FOUND':
+        case 'PLUGIN_NOT_INSTALLED':
+          return EXIT_CODES.notFound;
+        case 'DIGEST_MISMATCH':
+        case 'SIZE_MISMATCH':
+          return EXIT_CODES.verificationFailed;
+        case 'INVALID_PURL':
+        case 'UNSUPPORTED_OPERATION':
+          return EXIT_CODES.invalidInput;
+        case 'UNRESOLVABLE':
+          return EXIT_CODES.unsatisfiable;
+        default:
+          return EXIT_CODES.internal;
+      }
+    }
+  }
   const message = error instanceof Error ? error.message : String(error);
   io.stderr.write(`opm: internal error: ${message}\n`);
   return EXIT_CODES.internal;

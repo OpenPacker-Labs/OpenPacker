@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runOpm } from '../src/opm.js';
 import { runOpmx } from '../src/opmx.js';
 
@@ -451,6 +451,46 @@ describe('opm plugin', () => {
       const cap = capture();
       expect(await runOpm(['plugin', 'add', 'acme'], cap.io, home)).toBe(8);
       expect(cap.err).toMatch(/OPM_REGISTRY_OPM_PLUGIN/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('maps provider errors to honest exit codes instead of internal', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      // The CLI acquires through the configured registry; stub global fetch
+      // with the fixture registry, which knows only the plugin "acme".
+      const { fixturePluginTransport } = await import('./plugin-fixture.js');
+      const transport = fixturePluginTransport();
+      vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+        try {
+          const response = await transport.request({
+            url: String(input),
+            method: 'GET',
+            headers: {},
+          });
+          return new Response(new Uint8Array(response.body), {
+            status: response.status,
+            headers: response.headers,
+          });
+        } catch {
+          return new Response('not found', { status: 404 });
+        }
+      });
+      process.env.OPM_REGISTRY_OPM_PLUGIN = 'https://plugins.fixture.test';
+      try {
+        const cap = capture();
+        // Unknown plugin: the registry answers 404, the provider throws
+        // ProviderError PACKAGE_NOT_FOUND — not-found (4), not internal (9).
+        expect(await runOpm(['plugin', 'add', 'ghost'], cap.io, home)).toBe(4);
+        expect(cap.err).toMatch(/not found/iu);
+        expect(cap.err).not.toMatch(/internal error/u);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     } finally {
       restore();
     }
