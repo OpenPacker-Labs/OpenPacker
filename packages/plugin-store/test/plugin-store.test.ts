@@ -331,6 +331,31 @@ describe('plugin add', () => {
     expect(installed.exactPurl).toBe('pkg:opm-plugin/acme@1.1.0');
   });
 
+  it('trusts the registry isLatest flag, not lexical order (1.10.0 > 1.9.0)', async () => {
+    // Regression: a lexicographic sort of purl strings ranks "...@1.9.0"
+    // after "...@1.10.0", so the wrong version was picked as newest.
+    const v9 = pluginArtifact(
+      pluginManifest('dev.example.acme-adapter', 'acme-adapter'),
+    );
+    const v10 = pluginArtifact(
+      pluginManifest('dev.example.acme-adapter', 'acme-adapter'),
+    );
+    const transport = registryFixture({
+      acme: [
+        { version: '1.9.0', artifact: v9 },
+        { version: '1.10.0', artifact: v10 },
+      ],
+    });
+    const installed = await addPlugin({
+      name: 'acme',
+      endpoint: ENDPOINT,
+      transport,
+      storeRoot: await storeRoot(),
+      now,
+    });
+    expect(installed.exactPurl).toBe('pkg:opm-plugin/acme@1.10.0');
+  });
+
   it('installs an exact version when asked', async () => {
     const artifact = pluginArtifact(
       pluginManifest('dev.example.acme-adapter', 'acme-adapter'),

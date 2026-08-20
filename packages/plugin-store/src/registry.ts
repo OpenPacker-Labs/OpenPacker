@@ -264,13 +264,28 @@ export class PluginRegistryProvider implements CatalogProvider {
   ): Promise<readonly string[]> {
     const { name } = splitPluginPurl(basePurlValue);
     const list = await this.#client.versions(name, signal);
-    return list.versions
-      .filter((version) => version.status !== 'deleted')
-      .map(
-        (version) =>
-          `pkg:${PLUGIN_PURL_TYPE}/${encodeName(name)}@${version.version}`,
-      )
-      .sort();
+    const listed = list.versions.filter(
+      (version) => version.status !== 'deleted',
+    );
+    // "Newest" is the registry's own recency assertion, never a lexical sort
+    // of version strings (1.10.0 sorts before 1.9.0 lexicographically): the
+    // VersionList carries `isLatest`, and callers take the last entry as the
+    // newest. The protocol defines no list order, so the remaining entries
+    // keep the registry's order and nothing else is inferred.
+    const latest = listed.filter((version) => version.isLatest);
+    if (latest.length > 1)
+      throw new ProviderError(
+        'INVALID_PROVIDER_RESPONSE',
+        `Registry claims ${latest.length} latest versions of ${name}; refusing to guess.`,
+      );
+    const ordered =
+      latest.length === 1
+        ? [...listed.filter((version) => !version.isLatest), latest[0]!]
+        : listed;
+    return ordered.map(
+      (version) =>
+        `pkg:${PLUGIN_PURL_TYPE}/${encodeName(name)}@${version.version}`,
+    );
   }
 
   async inspect(
