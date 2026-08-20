@@ -162,6 +162,34 @@ export async function runOpmx(
     const pkgId = resolved.packageAlias
       ? state.packages[resolved.packageAlias]?.purl
       : undefined;
+    // Dispatch on the bin's declared interpreter, exactly as an ephemeral
+    // run does: a native or Python or .NET bin is not a Node script, and
+    // running it through process.execPath is a deferred crash, not a run.
+    const owner =
+      resolved.packageAlias === undefined
+        ? undefined
+        : state.packages[resolved.packageAlias];
+    const declared = owner?.bins.find((bin) => bin.name === resolved.name);
+    if (owner !== undefined && declared !== undefined) {
+      return await spawnDeclared(
+        {
+          name: declared.name,
+          path: declared.path,
+          ...(declared.interpreter === undefined
+            ? {}
+            : { interpreter: declared.interpreter }),
+          ...(declared.entry === undefined ? {} : { entry: declared.entry }),
+        },
+        owner.storePath,
+        passthrough,
+        io,
+        cwd,
+        Object.values(state.packages).map((pkg) => pkg.storePath),
+        pkgId,
+        projectPolicy,
+        root,
+      );
+    }
     return await spawnTool(resolved.target, passthrough, io, cwd, {
       projectRoot: root,
       storePaths: Object.values(state.packages).map((p) => p.storePath),
@@ -230,9 +258,11 @@ async function spawnDeclared(
   runtimePaths: readonly string[] = [storePath],
   packageId?: string,
   policy?: PolicyInput,
+  projectRoot?: string,
 ): Promise<number> {
   const sandboxCtx = {
     storePaths: runtimePaths.length > 0 ? runtimePaths : [storePath],
+    ...(projectRoot === undefined ? {} : { projectRoot }),
     ...(packageId === undefined ? {} : { packageId }),
     ...(policy === undefined ? {} : { policy }),
   };

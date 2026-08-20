@@ -32,6 +32,7 @@ import {
   listGenerations,
   readEnvironmentState,
   readProjectState,
+  readGeneration,
   readLockfile,
   readManifestFile,
   recordGeneration,
@@ -53,6 +54,7 @@ import {
   removePackage,
   serializeManifest,
   storeKeyFromDigest,
+  storePathForDigest,
   syncProject,
   uninstallProject,
   writeBinShims,
@@ -63,6 +65,7 @@ import {
   captureFactsFromSourceUri,
   whyPackage,
   OpmError,
+  type Generation,
 } from '../src/index.js';
 import { packTarGzip } from '@openpacker/project-io';
 import {
@@ -2121,6 +2124,149 @@ describe('environment generations', () => {
     expect(environment.OPM_GENERATION).toBe('1');
     expect(environment.OPM_ENVIRONMENT).toBe('default');
     expect(environment.PATH?.startsWith(environment.OPM_BIN!)).toBe(true);
+  });
+});
+
+describe('generation member bins', () => {
+  // A delegated plugin ecosystem has no on-disk bin convention, so the
+  // declared bins pinned at install must survive activation through the
+  // generation record — discovery alone would find nothing.
+  async function seedAcmeStoreEntry(root: string) {
+    const digest = `sha256:${createHash('sha256')
+      .update('acme demo tool')
+      .digest('hex')}`;
+    const storePath = storePathForDigest(root, digest);
+    await mkdir(join(storePath, 'bin'), { recursive: true });
+    await writeFile(
+      join(storePath, 'bin', 'acme-demo'),
+      '#!/bin/sh\necho acme-demo-ran\n',
+      { mode: 0o755 },
+    );
+    return { digest, storePath };
+  }
+
+  it('records declared bins on the member and activates them without discovery', async () => {
+    const root = await tempProject();
+    const { digest, storePath } = await seedAcmeStoreEntry(root);
+    // Honesty anchor: re-deriving from the store tree finds nothing for this
+    // ecosystem, so any bin activation produces came from the record.
+    expect(await discoverBins(storePath, 'acme')).toEqual([]);
+
+    const generation = await recordGeneration({
+      root,
+      packages: {
+        demo: {
+          alias: 'demo',
+          purl: 'pkg:acme/demo@1.0.0',
+          digest,
+          storePath,
+          bins: [
+            {
+              name: 'acme-demo',
+              path: 'bin/acme-demo',
+              shim: join(root, '.opm', 'bin', 'acme-demo'),
+              target: join(storePath, 'bin', 'acme-demo'),
+              interpreter: 'native',
+            },
+          ],
+          installedAt: new Date().toISOString(),
+        },
+      },
+      lockDigest: `sha256:${'1'.repeat(64)}`,
+    });
+    // The derived shim/target paths stay out of the record; activation
+    // re-derives them from the store path and bin directory.
+    expect(generation.members[0]?.bins).toEqual([
+      { name: 'acme-demo', path: 'bin/acme-demo', interpreter: 'native' },
+    ]);
+
+    // The digest-verified read path accepts and round-trips the field.
+    const read = await readGeneration(root, generation.generationDigest);
+    expect(read.members[0]?.bins).toEqual(generation.members[0]?.bins);
+
+    const state = await activateGeneration({ root, generation: read });
+    expect(state.packages['demo']?.bins).toHaveLength(1);
+    expect(state.packages['demo']?.bins[0]).toMatchObject({
+      name: 'acme-demo',
+      path: 'bin/acme-demo',
+      interpreter: 'native',
+    });
+    await readFile(join(root, '.opm', 'bin', 'acme-demo'));
+
+    // The written project state keeps how the bin runs through validation.
+    const persisted = await readProjectState(projectPaths(root).projectState);
+    expect(persisted?.packages['demo']?.bins[0]).toMatchObject({
+      name: 'acme-demo',
+      path: 'bin/acme-demo',
+      interpreter: 'native',
+    });
+  });
+
+  it('falls back to on-disk discovery for a member whose record predates pinned bins', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [current] = await listGenerations(root);
+    if (!current) throw new Error('expected generation');
+    // A record written before members carried bins: same record, no field.
+    const { generationDigest: _currentDigest, ...currentBody } = current;
+    const legacyBody = {
+      ...currentBody,
+      members: current.members.map(({ bins: _bins, ...member }) => member),
+    };
+    const legacy = {
+      ...legacyBody,
+      generationDigest: generationDigest(legacyBody),
+    };
+
+    const state = await activateGeneration({ root, generation: legacy });
+    // Exactly what discovery found at install time, found again from the tree.
+    expect(state.packages['demo-tool']?.bins.map((bin) => bin.name)).toEqual(
+      current.members[0]?.bins?.map((bin) => bin.name),
+    );
+    expect(state.packages['demo-tool']?.bins.length).toBeGreaterThan(0);
+  });
+
+  it('fails closed on malformed bins in a stored member', async () => {
+    const root = await tempProject();
+    await addPackage({
+      root,
+      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+      offline: true,
+    });
+    const [current] = await listGenerations(root);
+    if (!current?.members[0]) throw new Error('expected generation');
+    const { generationDigest: _currentDigest, ...currentBody } = current;
+    // The records are digest-valid — what must be refused is the bins shape.
+    const forge = (bins: unknown): Generation => {
+      const forged = {
+        ...currentBody,
+        members: [{ ...current.members[0]!, bins }],
+      } as Omit<Generation, 'generationDigest'>;
+      return { ...forged, generationDigest: generationDigest(forged) };
+    };
+    for (const bins of [
+      [{ name: 'demo-tool', path: 'bin/tool.js', interpreter: 'powershell' }],
+      [{ name: 'demo-tool', path: '../escape.js' }],
+      'not-an-array',
+    ]) {
+      const generation = forge(bins);
+      await writeFile(
+        join(
+          root,
+          '.opm',
+          'generations',
+          `${generation.generationDigest.replace(/^sha256:/u, '')}.json`,
+        ),
+        `${JSON.stringify(generation, null, 2)}\n`,
+      );
+      await expect(
+        readGeneration(root, generation.generationDigest),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    }
   });
 });
 
