@@ -1,5 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+// Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import {
   canonicalProjectionDigest,
