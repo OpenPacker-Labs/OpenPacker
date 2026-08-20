@@ -11,6 +11,7 @@ import type {
 } from '@openpacker/adapter-core';
 import { findTrustedSandboxHelper } from '@openpacker/sandbox';
 import {
+  binDeclarationsFromExecutables,
   fetchTool,
   parseLockfile,
   requireAdapterRegistry,
@@ -392,6 +393,24 @@ describe('delegated bins flow', () => {
     } finally {
       await rm(cacheRoot, { recursive: true, force: true });
     }
+  });
+
+  // binDeclarationsFromExecutables re-asserts the safety invariants locally
+  // rather than inheriting them from whoever produced the declarations.
+  it('refuses provider executables whose path escapes the store', () => {
+    for (const path of ['../evil', '/bin/evil', 'bin\\evil', 'C:/evil', '']) {
+      expect(() =>
+        binDeclarationsFromExecutables([{ name: 'demo', path }]),
+      ).toThrowError(expect.objectContaining({ code: 'UNSAFE_BIN' }));
+    }
+    expect(() =>
+      binDeclarationsFromExecutables([{ name: 'a/b', path: 'bin/demo' }]),
+    ).toThrow();
+    expect(
+      binDeclarationsFromExecutables([
+        { name: 'demo', path: 'bin/demo', interpreter: 'native' },
+      ]),
+    ).toEqual([{ name: 'demo', path: 'bin/demo', interpreter: 'native' }]);
   });
 });
 

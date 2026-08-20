@@ -64,6 +64,7 @@ export {
 } from './spec.js';
 
 export {
+  binDeclarationsFromExecutables,
   discoverBins,
   discoverDotnetBins,
   discoverNpmBins,

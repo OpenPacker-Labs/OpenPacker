@@ -274,16 +274,36 @@ export async function discoverBins(
  * (spec delegated-adapter.md §Executables); the shapes match field for field.
  * These ecosystems have no on-disk convention `discoverBins` could find, so
  * this declaration is the only way their bins reach a lockfile.
+ *
+ * The safety invariants are re-asserted here, not inherited from whoever
+ * produced the declarations: plugin-host validates today, but a lock bin must
+ * never become a path that escapes the store whoever wrote it down.
  */
 export function binDeclarationsFromExecutables(
   executables: readonly ProviderExecutable[],
 ): BinDeclaration[] {
-  return executables.map((bin) => ({
-    name: bin.name,
-    path: bin.path,
-    ...(bin.interpreter === undefined ? {} : { interpreter: bin.interpreter }),
-    ...(bin.entry === undefined ? {} : { entry: bin.entry }),
-  }));
+  return executables.map((bin) => {
+    const segments = bin.path.split('/').filter((part) => part !== '');
+    if (
+      segments.length === 0 ||
+      segments.includes('..') ||
+      bin.path.startsWith('/') ||
+      bin.path.includes('\\') ||
+      /^[A-Za-z]:/u.test(bin.path)
+    )
+      throw new OpmError(
+        'UNSAFE_BIN',
+        `Provider-declared bin path escapes its store: ${bin.path}`,
+      );
+    return {
+      name: assertSafeSegment(bin.name, 'bin name'),
+      path: bin.path,
+      ...(bin.interpreter === undefined
+        ? {}
+        : { interpreter: bin.interpreter }),
+      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+    };
+  });
 }
 
 function joinPosix(...parts: string[]): string {

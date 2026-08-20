@@ -205,6 +205,7 @@ function exitForError(error: unknown): number {
     case 'PLUGIN_FAILED':
       return EXIT_CODES.unavailable;
     case 'DIGEST_MISMATCH':
+    case 'SIZE_MISMATCH':
     case 'PLUGIN_DIGEST_MISMATCH':
     case 'INVALID_DIGEST':
       return EXIT_CODES.verificationFailed;
