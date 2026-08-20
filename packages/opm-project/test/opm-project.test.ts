@@ -171,6 +171,49 @@ describe('manifest TOML', () => {
       },
     });
   });
+
+  it('round-trips delegated adapter plugin bindings', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const text = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: { 'dev.example.acme-adapter': { storeDigest: digest } },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(text).toContain('[plugins.dev.example.acme-adapter]');
+    expect(parseManifest(text).plugins).toEqual({
+      'dev.example.acme-adapter': { storeDigest: digest },
+    });
+  });
+
+  it('rejects malformed plugin bindings', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    // store_digest is the one fact a binding carries; it is required.
+    expect(() =>
+      parseManifest('[project]\nname = "x"\n\n[plugins.dev.example.acme]\n'),
+    ).toThrowError(/missing required store_digest/);
+    // Unknown fields are refused, like every other section.
+    expect(() =>
+      parseManifest(
+        '[project]\nname = "x"\n\n[plugins.dev.example.acme]\n' +
+          `store_digest = "${digest}"\nendpoint = "https://acme.example"\n`,
+      ),
+    ).toThrowError(/Unknown plugin field "endpoint"/);
+    // The pin must be a real sha256 digest.
+    expect(() =>
+      parseManifest(
+        '[plugins.dev.example.acme]\nstore_digest = "sha256:xyz"\n',
+      ),
+    ).toThrowError(/Invalid digest/);
+    // The key is the plugin's manifest id; anything else is not a binding.
+    expect(() =>
+      parseManifest(`[plugins.ACME]\nstore_digest = "${digest}"\n`),
+    ).toThrowError(/Invalid plugin id/);
+    // Unknown sections keep failing closed.
+    expect(() =>
+      parseManifest('[pluginsx.acme]\nstore_digest = "x"\n'),
+    ).toThrowError(/Unsupported TOML section/);
+  });
 });
 
 describe('parsePackageSpec', () => {

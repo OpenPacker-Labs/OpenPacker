@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { registerPlugin } from '@openpacker/plugin-host';
 import {
   OpmError,
   activateGeneration,
@@ -44,14 +46,58 @@ export async function runOpmx(
       return argv.length === 0 ? EXIT_CODES.usage : EXIT_CODES.success;
     }
 
-    const { packageAlias, binName, positionals, passthrough } = parse(argv);
+    const { packageAlias, binName, positionals, passthrough, ...flags } =
+      parse(argv);
+
+    // Process entry registers adapters; core never imports ecosystems by name.
+    // opmx is its own process entry, so an ephemeral `pkg:` run needs the
+    // default registry here just as `opm` installs it for its commands.
+    const adapterRegistry = configureDefaultAdapters();
+
+    // `--plugin <name>` makes an already-installed delegated adapter plugin
+    // answer before the run resolves the tool (ADR 0039). The flag never
+    // acquires: an uninstalled name is PLUGIN_NOT_INSTALLED.
+    const registeredPlugins = [];
+    if (flags.plugins.length > 0) {
+      const environment = grantedEnvironment(flags.allowEnv);
+      for (const name of flags.plugins)
+        registeredPlugins.push(
+          await registerPlugin(name, {
+            registry: adapterRegistry,
+            allowEnvironment: flags.allowEnv,
+            environment,
+          }),
+        );
+    }
 
     // A PURL means "run this tool", not "run something this project
     // installed" — the npx/uvx/pipx-run shape. It deliberately does not need a
-    // project, since the whole point is not having to make one.
-    const requested = packageAlias ?? positionals[0];
+    // project, since the whole point is not having to make one. With
+    // --plugin, a bare tool name means the plugin's purl type; that is only
+    // unambiguous when the named plugins declare exactly one.
+    let requested = packageAlias ?? positionals[0];
+    if (
+      requested !== undefined &&
+      !requested.startsWith('pkg:') &&
+      registeredPlugins.length > 0
+    ) {
+      const types = [
+        ...new Set(registeredPlugins.flatMap((plugin) => plugin.purlTypes)),
+      ];
+      if (types.length !== 1)
+        throw new OpmError(
+          'USAGE',
+          `Cannot tell which purl type "${requested}" belongs to: the named ` +
+            `plugins serve ${types.join(', ') || 'none'}. ` +
+            `Pass a full purl, e.g. pkg:<type>/${requested}.`,
+        );
+      requested = `pkg:${types[0]}/${requested}`;
+    }
     if (requested !== undefined && requested.startsWith('pkg:')) {
-      const tool = await fetchTool({ purl: requested });
+      const tool = await fetchTool({
+        purl: requested,
+        ...(flags.offline ? { offline: true } : {}),
+      });
       const bin = selectToolBin(tool, binName);
       // Say which version actually ran. An unpinned ephemeral run resolves to
       // whatever is newest, so it is a different thing tomorrow.
@@ -123,22 +169,47 @@ export async function runOpmx(
       ...(projectPolicy === undefined ? {} : { policy: projectPolicy }),
     });
   } catch (error) {
-    if (error instanceof OpmError) {
-      io.stderr.write(`opmx: ${error.message}\n`);
-      if (error.code === 'NOT_FOUND' || error.code === 'NO_PROJECT')
-        return EXIT_CODES.notFound;
-      if (error.code === 'USAGE') return EXIT_CODES.usage;
-      if (
-        error.code === 'SANDBOX_UNAVAILABLE' ||
-        error.code === 'POLICY_DENIED'
-      )
-        return EXIT_CODES.policyDenied;
-      return EXIT_CODES.internal;
-    }
     io.stderr.write(
       `opmx: ${error instanceof Error ? error.message : String(error)}\n`,
     );
-    return EXIT_CODES.internal;
+    return exitForError(error);
+  }
+}
+
+/**
+ * Exit status for a failure, by error code.
+ *
+ * Plugin operations surface ProviderError, which is not an OpmError; both
+ * carry a string `code`, and both map here instead of collapsing into a
+ * generic internal error.
+ */
+function exitForError(error: unknown): number {
+  let code: string | undefined;
+  if (error instanceof OpmError) code = error.code;
+  else if (error instanceof Error && 'code' in error) {
+    const candidate = (error as { code: unknown }).code;
+    if (typeof candidate === 'string') code = candidate;
+  }
+  switch (code) {
+    case 'NOT_FOUND':
+    case 'NO_PROJECT':
+    case 'PLUGIN_NOT_INSTALLED':
+      return EXIT_CODES.notFound;
+    case 'USAGE':
+      return EXIT_CODES.usage;
+    case 'SANDBOX_UNAVAILABLE':
+    case 'POLICY_DENIED':
+      return EXIT_CODES.policyDenied;
+    case 'OFFLINE':
+    case 'PLUGIN_ERROR':
+    case 'PLUGIN_FAILED':
+      return EXIT_CODES.unavailable;
+    case 'DIGEST_MISMATCH':
+    case 'PLUGIN_DIGEST_MISMATCH':
+    case 'INVALID_DIGEST':
+      return EXIT_CODES.verificationFailed;
+    default:
+      return EXIT_CODES.internal;
   }
 }
 
@@ -291,16 +362,45 @@ async function spawnProcess(
 
 export const parseForTest = (argv: string[]) => parse(argv);
 
+/**
+ * Values for `--allow-env` names, read from the operator's own environment at
+ * the moment of consent — mirroring `opm pack --allow-env`: a name is granted
+ * explicitly, its value is never written anywhere opm controls.
+ */
+function grantedEnvironment(
+  names: readonly string[],
+): Readonly<Record<string, string>> {
+  const environment: Record<string, string> = {};
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
+      throw new OpmError('USAGE', `Invalid --allow-env name: ${name}`);
+    const value = process.env[name];
+    if (value === undefined)
+      throw new OpmError(
+        'USAGE',
+        `--allow-env ${name}: the variable is not set in this environment`,
+      );
+    environment[name] = value;
+  }
+  return environment;
+}
+
 function parse(argv: string[]): {
   packageAlias?: string;
   binName?: string;
   positionals: string[];
   passthrough: string[];
+  plugins: string[];
+  allowEnv: string[];
+  offline: boolean;
 } {
   let packageAlias: string | undefined;
   let binName: string | undefined;
   const positionals: string[] = [];
   const passthrough: string[] = [];
+  const plugins: string[] = [];
+  const allowEnv: string[] = [];
+  let offline = false;
   let i = 0;
   let seenSelector = false;
   while (i < argv.length) {
@@ -316,6 +416,49 @@ function parse(argv: string[]): {
     }
     if (arg.startsWith('--package=')) {
       packageAlias = arg.slice('--package='.length);
+      i += 1;
+      continue;
+    }
+    if (arg === '--plugin') {
+      const name = argv[i + 1];
+      if (name === undefined || name.startsWith('--'))
+        throw new OpmError('USAGE', 'opmx --plugin requires a plugin name');
+      plugins.push(name);
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('--plugin=')) {
+      const name = arg.slice('--plugin='.length);
+      if (name === '')
+        throw new OpmError('USAGE', 'opmx --plugin requires a plugin name');
+      plugins.push(name);
+      i += 1;
+      continue;
+    }
+    if (arg === '--allow-env') {
+      const name = argv[i + 1];
+      if (name === undefined || name.startsWith('--'))
+        throw new OpmError(
+          'USAGE',
+          'opmx --allow-env requires an environment variable name',
+        );
+      allowEnv.push(name);
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('--allow-env=')) {
+      const name = arg.slice('--allow-env='.length);
+      if (name === '')
+        throw new OpmError(
+          'USAGE',
+          'opmx --allow-env requires an environment variable name',
+        );
+      allowEnv.push(name);
+      i += 1;
+      continue;
+    }
+    if (arg === '--offline') {
+      offline = true;
       i += 1;
       continue;
     }
@@ -354,6 +497,9 @@ function parse(argv: string[]): {
     ...(binName !== undefined ? { binName } : {}),
     positionals,
     passthrough,
+    plugins,
+    allowEnv,
+    offline,
   };
 }
 
@@ -370,6 +516,14 @@ No project required:
   opmx pkg:npm/json@11.0.0 -- --version
   opmx pkg:npm/json                     # newest published version
   opmx pkg:npm/some-tool --bin other    # when a package ships several
+
+Third-party purl types come from delegated adapter plugins (opm plugin add).
+--plugin names an installed plugin to register for this run; it never
+installs one:
+  opmx --plugin acme pkg:acme/some-tool
+  opmx --plugin acme some-tool    # when the plugin serves one purl type
+A plugin's declared environment stays unforwarded unless each name is granted
+with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
 Tools are cached content-addressed, so a repeat run downloads nothing. The
 resolved version is printed to stderr, because an unpinned run is a different

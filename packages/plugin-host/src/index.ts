@@ -9,7 +9,10 @@
 
 export {
   registerInstalledPlugins,
+  registerPlugin,
+  verifyPluginBindings,
   type PluginRefusal,
+  type RegisteredPlugin,
   type RegisterInstalledPluginsOptions,
   type RegisterInstalledPluginsResult,
 } from './register.js';

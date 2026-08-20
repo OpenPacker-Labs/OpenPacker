@@ -4,6 +4,7 @@
  * kept tiny and local so the CLI tests read as CLI tests.
  */
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
 import { canonicalBytes } from '@openpacker/canonical';
 
@@ -154,4 +155,191 @@ export function fixturePluginTransport(): FixtureHttpTransport {
       ],
     ]),
   );
+}
+
+/**
+ * A store-resident acme plugin that actually answers the delegated protocol:
+ * the same shape `opm plugin add` leaves behind (pin index + tree-digest
+ * verified entry), with an executable that speaks the bounded stdio protocol
+ * instead of the trivial echo the acquisition fixture ships.
+ */
+
+const ACME_DIGEST = 'a'.repeat(64);
+
+const ACME_DEFINITION = {
+  registryDefinitionVersion: '1',
+  registryId: 'urn:openpacker:registry:acme-fixture',
+  displayName: 'Acme fixture registry',
+  purlTypes: ['acme'],
+  resources: [
+    { '@id': '#metadata', '@type': 'prex.registry.package-metadata/1' },
+    { '@id': '#enumerate', '@type': 'prex.registry.enumerate-versions/1' },
+    { '@id': '#artifact', '@type': 'prex.registry.artifact/1' },
+  ],
+};
+
+const ACME_IDENTITY = {
+  canonicalPurl: 'pkg:acme/demo',
+  purlType: 'acme',
+  name: 'demo',
+  qualifiers: {},
+  nativeCoordinates: [],
+  aliases: [],
+  sourceRefs: [],
+  publisherRefs: [],
+  externalRefs: [],
+};
+
+const ACME_INSTANCE = {
+  nodeId: `sha256:${ACME_DIGEST}`,
+  identity: { ...ACME_IDENTITY, exactPurl: 'pkg:acme/demo@1.0.0' },
+  nativeVersion: '1.0.0',
+  normalizedVersion: '1.0.0',
+  versionSortKey: '1.0.0',
+  requirements: [],
+  capabilities: [],
+  conflicts: [],
+  cardinalityConstraints: [],
+  artifacts: [],
+  lifecycle: { status: 'published', eligible: true, warnings: [] },
+  sourceSnapshots: [],
+  metadataDigest: { algorithm: 'sha256', value: ACME_DIGEST },
+  nativeSemantics: { version: 'acme-1', data: {} },
+  semanticLoss: [],
+};
+
+/**
+ * The artifact record the plugin answers with. The delegated protocol carries
+ * metadata only (spec §Operations): the host reconstructs the record bytes as
+ * the canonical bytes of this body, so a plugin-served artifact cannot carry
+ * tool bytes and acquisition fails closed at digest verification. The digest
+ * here is deliberately honest metadata, not a real artifact.
+ */
+const ACME_ARTIFACT_BODY = {
+  digest: { algorithm: 'sha256', value: ACME_DIGEST },
+  size: 42,
+  mediaType: 'application/x-tar',
+  locations: [{ uri: 'https://acme.fixture.test/artifacts/demo-1.0.0.tar' }],
+  registryMetadata: {
+    registryId: 'urn:openpacker:registry:acme-fixture',
+    status: 'active',
+    publishedAt: '2020-01-01T00:00:00.000Z',
+    isLatest: true,
+  },
+};
+
+const ACME_RECORD = {
+  key: 'pkg:acme/demo@1.0.0',
+  endpoint: 'https://acme.fixture.test',
+  body: ACME_ARTIFACT_BODY,
+  retrievedAt: '2020-01-01T00:00:00Z',
+};
+
+// inspect carries the metadata document; publishedAt evidence uses the same
+// packument shape the npm adapter produces (`time[version]`), which is what
+// the supply-chain release-age policy reads.
+const ACME_METADATA_RECORD = {
+  ...ACME_RECORD,
+  body: { time: { '1.0.0': '2020-01-01T00:00:00.000Z' } },
+};
+
+function okResponse(result: unknown): string {
+  return JSON.stringify({
+    delegatedAdapterResponseVersion: '1',
+    ok: true,
+    result,
+  });
+}
+
+/** Standalone POSIX sh plugin answering each operation from a canned table. */
+function answeringScript(): string {
+  const answer = (result: unknown) => `'${okResponse(result)}'`;
+  return `#!/bin/sh
+op="$1"
+cat >/dev/null
+case "$op" in
+  registry-definition) printf '%s' ${answer(ACME_DEFINITION)} ;;
+  identify) printf '%s' ${answer([ACME_IDENTITY])} ;;
+  enumerate) printf '%s' ${answer(['pkg:acme/demo@1.0.0'])} ;;
+  inspect) printf '%s' ${answer({ package: ACME_INSTANCE, record: ACME_METADATA_RECORD, warnings: [] })} ;;
+  fetch-artifact-record) printf '%s' ${answer(ACME_RECORD)} ;;
+  *) exit 9 ;;
+esac
+`;
+}
+
+export interface SeededPluginStore {
+  storeRoot: string;
+  storePath: string;
+  /** Manifest id — the key `[plugins.<id>]` bindings use. */
+  id: string;
+  /** Artifact digest naming the store entry; what a project binding pins. */
+  storeDigest: string;
+}
+
+/**
+ * Write a plugin store entry directly, exactly as `opm plugin add` leaves it:
+ * validated manifest, executable, and a pin index whose tree digest covers
+ * the materialized entry. No registry or network is involved.
+ */
+export async function seedPluginStore(
+  storeRoot: string,
+): Promise<SeededPluginStore> {
+  const { stableStoreTreeDigest, writeStableFile } = await import(
+    '@openpacker/opm-project'
+  );
+  const id = 'dev.example.acme-adapter';
+  const manifest = {
+    delegatedAdapterVersion: '1',
+    id,
+    purlTypes: ['acme'],
+    capabilities: ['registry-definition', 'catalog'],
+    executable: 'acme-adapter',
+    commands: {
+      'registry-definition': { arguments: ['registry-definition'] },
+      identify: { arguments: ['identify'] },
+      enumerate: { arguments: ['enumerate'] },
+      inspect: { arguments: ['inspect'] },
+      'fetch-artifact-record': { arguments: ['fetch-artifact-record'] },
+    },
+    authority: { network: 'never', environment: [] },
+  };
+  const storeDigest = `sha256:${createHash('sha256')
+    .update(id)
+    .update('answering-fixture')
+    .digest('hex')}`;
+  const storePath = join(storeRoot, `sha256-${storeDigest.slice(7)}`);
+  await writeStableFile(
+    join(storePath, 'plugin.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  await writeStableFile(
+    join(storePath, 'acme-adapter'),
+    answeringScript(),
+    0o755,
+  );
+  const treeDigest = await stableStoreTreeDigest(storePath);
+  await writeStableFile(
+    join(storeRoot, 'plugins.json'),
+    `${JSON.stringify(
+      {
+        pluginStoreVersion: 1,
+        plugins: {
+          acme: {
+            id,
+            name: 'acme',
+            exactPurl: 'pkg:opm-plugin/acme@1.0.0',
+            storeDigest,
+            treeDigest,
+            manifestPath: 'plugin.json',
+            installedAt: '2026-08-20T00:00:00.000Z',
+            format: 'tar',
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { storeRoot, storePath, id, storeDigest };
 }

@@ -2,7 +2,10 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
-import { registerInstalledPlugins } from '@openpacker/plugin-host';
+import {
+  registerInstalledPlugins,
+  verifyPluginBindings,
+} from '@openpacker/plugin-host';
 import {
   addPlugin,
   listPlugins,
@@ -47,6 +50,7 @@ import {
   syncProject,
   uninstallProject,
   whyPackage,
+  type AdapterRegistry,
   type Generation,
 } from '@openpacker/opm-project';
 
@@ -187,6 +191,9 @@ export async function runOpm(
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const offline = offlineOverride(args);
+        // A project that binds plugins resolves through them; verify the
+        // binding before any registry read it could influence.
+        await registerBoundPlugins(root, adapterRegistry);
         const result = await addPackage({
           allowElevation: args.options.has('allow-elevation'),
           dryRun: args.options.has('dry-run'),
@@ -212,6 +219,8 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
+        // remove rewrites the manifest and lock; verify bound plugins first.
+        await registerBoundPlugins(root, adapterRegistry);
         await removePackage({
           root,
           alias,
@@ -223,6 +232,7 @@ export async function runOpm(
       case 'install': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
+        await registerBoundPlugins(root, adapterRegistry);
         const result = await installProject({
           root,
           ...(offline === undefined ? {} : { offline }),
@@ -240,6 +250,7 @@ export async function runOpm(
       case 'uninstall': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
+        await registerBoundPlugins(root, adapterRegistry);
         await uninstallProject({
           root,
           ...(alias !== undefined ? { alias } : {}),
@@ -255,6 +266,7 @@ export async function runOpm(
       case 'update': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
+        await registerBoundPlugins(root, adapterRegistry);
         // update = sync for v1 (re-resolve from manifest)
         const result = await syncProject({
           root,
@@ -328,6 +340,11 @@ export async function runOpm(
       case 'resolve': {
         const target = args.positionals[0];
         if (!target) throw usage('opm resolve requires a package or PURL');
+        // resolve works without a project, but inside one its bindings are
+        // part of the resolution authority and are verified first.
+        const projectRoot = await findOpmRoot(cwd);
+        if (projectRoot !== undefined)
+          await registerBoundPlugins(projectRoot, adapterRegistry);
         const range = option(args, 'range');
         const graph = await resolveGraph({
           roots: [{ purl: target, ...(range === undefined ? {} : { range }) }],
@@ -604,6 +621,7 @@ function handleError(error: unknown, io: CliIo): number {
       case 'UNRESOLVABLE':
         return EXIT_CODES.unsatisfiable;
       case 'DIGEST_MISMATCH':
+      case 'PLUGIN_DIGEST_MISMATCH':
       case 'SIZE_MISMATCH':
       case 'UNSAFE_PATH':
       case 'UNSAFE_BIN':
@@ -612,6 +630,8 @@ function handleError(error: unknown, io: CliIo): number {
       case 'OFFLINE':
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
+      case 'PLUGIN_ERROR':
+      case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':
         return EXIT_CODES.unavailable;
       case 'ECOSYSTEM_DENIED':
@@ -947,6 +967,27 @@ function offlineOverride(args: Parsed): boolean | undefined {
   return offline ? true : online ? false : undefined;
 }
 
+/**
+ * Verify and register the project's `[plugins.<id>]` bindings (ADR 0039)
+ * before a project operation resolves anything.
+ *
+ * A binding is a pin, never an acquisition: an uninstalled plugin or a store
+ * digest that differs from the bound one fails closed
+ * (PLUGIN_NOT_INSTALLED / PLUGIN_DIGEST_MISMATCH).
+ */
+async function registerBoundPlugins(
+  root: string,
+  registry: AdapterRegistry,
+): Promise<void> {
+  const manifest = await readManifestFile(projectPaths(root).manifest);
+  if (
+    manifest.plugins === undefined ||
+    Object.keys(manifest.plugins).length === 0
+  )
+    return;
+  await verifyPluginBindings(manifest.plugins, { registry });
+}
+
 function explicitlyGrantedEnvironment(
   args: Parsed,
 ): Readonly<Record<string, string>> {
@@ -1029,6 +1070,10 @@ Delegated adapter plugins (user-level, never installed by default):
   opm plugin add <name>[@version]     install from the plugin registry
   opm plugin list                     show installed plugins and their pins
   opm plugin remove <name>            remove a plugin and its store entry
+  opmx --plugin <name> <tool>         ephemeral-run a plugin-served purl type
+  [plugins.<id>] store_digest = "sha256:…" in opm.toml pins an installed
+  plugin for this project; the binding never acquires, and project commands
+  fail closed when the installed entry digests differently.
   The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
   lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.
   Installed plugins register as adapters at startup; a plugin that fails

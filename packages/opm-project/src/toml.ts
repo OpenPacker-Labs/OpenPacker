@@ -4,10 +4,12 @@ import type {
   OpmManifest,
   PackProviderSource,
   PackageRequirement,
+  PluginBinding,
   RegistrySource,
   RequirementScope,
 } from './types.js';
 import { OpmError } from './types.js';
+import { assertDigest } from './paths.js';
 import { defaultSupplyChainPolicyInput } from './supply-chain.js';
 
 /**
@@ -95,6 +97,13 @@ export function serializeManifest(manifest: OpmManifest): string {
       lines.push(
         `allow_environment = ${tomlStringArray(provider.allowEnvironment)}`,
       );
+    lines.push('');
+  }
+
+  for (const id of Object.keys(manifest.plugins ?? {}).sort()) {
+    const binding = manifest.plugins![id]!;
+    lines.push(`[plugins.${id}]`);
+    lines.push(`store_digest = ${tomlString(binding.storeDigest)}`);
     lines.push('');
   }
 
@@ -275,6 +284,8 @@ export function parseManifest(text: string): OpmManifest {
       allow_environment?: string[];
     }
   >();
+  let pluginId: string | undefined;
+  const pluginScratch = new Map<string, { store_digest?: string }>();
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -338,6 +349,20 @@ export function parseManifest(text: string): OpmManifest {
         sandboxPackageId = undefined;
         if (!packProviderScratch.has(packProviderId))
           packProviderScratch.set(packProviderId, {});
+      } else if (name.startsWith('plugins.')) {
+        section = 'plugins';
+        // The key is the plugin's manifest id (e.g. dev.example.acme-adapter);
+        // dotted ids work because the remainder is taken verbatim. Quoted
+        // keys are unwrapped the same way sandbox package keys are.
+        pluginId = name.slice('plugins.'.length).replace(/^"(.*)"$/u, '$1');
+        if (!PLUGIN_ID.test(pluginId))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Invalid plugin id "${pluginId}" at line ${i + 1}`,
+          );
+        packageAlias = undefined;
+        sandboxPackageId = undefined;
+        if (!pluginScratch.has(pluginId)) pluginScratch.set(pluginId, {});
       } else if (name.startsWith('packages.')) {
         section = 'packages';
         packageAlias = name.slice('packages.'.length);
@@ -437,6 +462,23 @@ export function parseManifest(text: string): OpmManifest {
           `Unknown pack provider field "${key}" at line ${i + 1}`,
         );
       packProviderScratch.set(packProviderId, scratch);
+    } else if (section === 'plugins') {
+      if (pluginId === undefined)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Plugin field outside [plugins.<id>] at line ${i + 1}`,
+        );
+      const scratch = pluginScratch.get(pluginId) ?? {};
+      // A binding carries exactly one fact: which store entry is pinned. No
+      // endpoints, no credentials — acquisition is never the manifest's job.
+      if (key === 'store_digest' && typeof value === 'string')
+        scratch.store_digest = value;
+      else
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown plugin field "${key}" at line ${i + 1}`,
+        );
+      pluginScratch.set(pluginId, scratch);
     } else if (section === 'policy') {
       // A misspelled policy key must not be a silently weaker policy. Every
       // other section rejects unknown fields; the governance section is the
@@ -588,6 +630,19 @@ export function parseManifest(text: string): OpmManifest {
       };
     }
     manifest.packProviders = providers;
+  }
+
+  if (pluginScratch.size > 0) {
+    const plugins: Record<string, PluginBinding> = {};
+    for (const [id, scratch] of pluginScratch) {
+      if (!scratch.store_digest)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Plugin "${id}" is missing required store_digest`,
+        );
+      plugins[id] = { storeDigest: assertDigest(scratch.store_digest) };
+    }
+    manifest.plugins = plugins;
   }
 
   if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
@@ -933,6 +988,9 @@ function escapeKey(key: string): string {
 }
 
 const PACK_PROVIDER_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/u;
+
+// spec/prex/v1 DelegatedAdapterId: the same dotted-lowercase shape.
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/u;
 
 function packProviderKey(id: string): string {
   if (!PACK_PROVIDER_ID.test(id))

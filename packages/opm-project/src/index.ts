@@ -11,6 +11,7 @@ export type {
   OpmManifest,
   PackageRequirement,
   PackProviderSource,
+  PluginBinding,
   RegistrySource,
   ParsedPackageSpec,
   ProjectState,
