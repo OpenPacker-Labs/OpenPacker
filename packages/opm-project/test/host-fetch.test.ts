@@ -227,10 +227,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPM_HOST_FETCH_ORIGINS;
   delete process.env.OPM_HOST_FETCH_TOKEN_ENVS;
+  delete process.env.OPM_HOST_FETCH_HEADER_NAMES;
+  delete process.env.OPM_HOST_FETCH_HEADER_ENVS;
   delete process.env.OPM_HOST_FETCH_BEARER;
   delete process.env.ACME_TOKEN;
   delete process.env.ACME_A_TOKEN;
   delete process.env.ACME_B_TOKEN;
+  delete process.env.JFROG_API_KEY;
+  delete process.env.JFROG_A_KEY;
+  delete process.env.JFROG_B_KEY;
 });
 
 describe('delegated host-fetch acquisition', () => {
@@ -496,6 +501,10 @@ describe('delegated host-fetch acquisition', () => {
     origins: readonly string[],
     id = 'dev.test.acme',
     tokenEnvs?: readonly string[],
+    extraHeaders?: {
+      names: readonly string[];
+      envs: readonly string[];
+    },
   ): RegistryOptions['pluginBindings'] {
     return {
       [id]: {
@@ -504,6 +513,12 @@ describe('delegated host-fetch acquisition', () => {
         ...(tokenEnvs === undefined
           ? {}
           : { artifactOriginTokenEnvs: tokenEnvs }),
+        ...(extraHeaders === undefined
+          ? {}
+          : {
+              artifactOriginExtraHeaderNames: extraHeaders.names,
+              artifactOriginExtraHeaderEnvs: extraHeaders.envs,
+            }),
       },
     };
   }
@@ -710,36 +725,53 @@ describe('delegated host-fetch acquisition', () => {
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   });
 
-  function requestAuthorization(init?: RequestInit): string | undefined {
+  function requestHeader(
+    init: RequestInit | undefined,
+    headerName: string,
+  ): string | undefined {
     if (init?.headers === undefined) return undefined;
     const headers = init.headers;
-    if (headers instanceof Headers)
-      return headers.get('authorization') ?? undefined;
+    const lower = headerName.toLowerCase();
+    if (headers instanceof Headers) return headers.get(headerName) ?? undefined;
     if (Array.isArray(headers)) {
-      const hit = headers.find(
-        ([name]) => name.toLowerCase() === 'authorization',
-      );
+      const hit = headers.find(([name]) => name.toLowerCase() === lower);
       return hit?.[1];
     }
     for (const [name, value] of Object.entries(
       headers as Record<string, string>,
     )) {
-      if (name.toLowerCase() === 'authorization') return value;
+      if (name.toLowerCase() === lower) return value;
     }
     return undefined;
   }
 
+  function requestAuthorization(init?: RequestInit): string | undefined {
+    return requestHeader(init, 'authorization');
+  }
+
   function recordingTarFetch(routes?: Readonly<Record<string, Uint8Array>>): {
-    calls: { url: string; authorization: string | undefined }[];
+    calls: {
+      url: string;
+      authorization: string | undefined;
+      extra: string | undefined;
+    }[];
     fetch: typeof fetch;
   } {
-    const calls: { url: string; authorization: string | undefined }[] = [];
+    const calls: {
+      url: string;
+      authorization: string | undefined;
+      extra: string | undefined;
+    }[] = [];
     const table = routes ?? {};
     return {
       calls,
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        calls.push({ url, authorization: requestAuthorization(init) });
+        calls.push({
+          url,
+          authorization: requestAuthorization(init),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
         const body = table[url] ?? TOOL_TAR;
         if (table[url] === undefined && Object.keys(table).length > 0)
           return new Response('missing', { status: 404 });
@@ -773,6 +805,7 @@ describe('delegated host-fetch acquisition', () => {
       {
         url: 'https://a.example/artifacts/demo.tar',
         authorization: undefined,
+        extra: undefined,
       },
     ]);
   });
@@ -823,6 +856,7 @@ describe('delegated host-fetch acquisition', () => {
       {
         url: `${ENDPOINT}/artifacts/demo-1.0.0.tar`,
         authorization: undefined,
+        extra: undefined,
       },
     ]);
   });
@@ -919,6 +953,7 @@ describe('delegated host-fetch acquisition', () => {
       {
         url: 'https://a.example/not-the-artifact',
         authorization: 'Bearer tok68value',
+        extra: undefined,
       },
     ]);
   });
@@ -1052,6 +1087,263 @@ describe('delegated host-fetch acquisition', () => {
     });
     await resolveRegistryArtifact('acme', EXACT, { fetch });
     expect(calls[0]?.authorization).toBe('Bearer tok68value');
+  });
+
+  it('attaches an extra header only on a pinned origin', async () => {
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const pinned = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch: pinned.fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example'],
+        'dev.test.acme',
+        undefined,
+        { names: ['X-JFrog-Art-Api'], envs: ['JFROG_API_KEY'] },
+      ),
+    });
+    expect(pinned.calls).toEqual([
+      {
+        url: 'https://a.example/artifacts/demo.tar',
+        authorization: undefined,
+        extra: 'jfrog-key',
+      },
+    ]);
+
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const unpinned = recordingTarFetch(tarRoute);
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch: unpinned.fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example'],
+        'dev.test.acme',
+        undefined,
+        { names: ['X-JFrog-Art-Api'], envs: ['JFROG_API_KEY'] },
+      ),
+    });
+    expect(unpinned.calls[0]?.extra).toBeUndefined();
+  });
+
+  it('attaches Bearer and extra header independently on one origin', async () => {
+    process.env.ACME_TOKEN = 'tok68value';
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example'],
+        'dev.test.acme',
+        ['ACME_TOKEN'],
+        { names: ['X-JFrog-Art-Api'], envs: ['JFROG_API_KEY'] },
+      ),
+    });
+    expect(calls).toEqual([
+      {
+        url: 'https://a.example/artifacts/demo.tar',
+        authorization: 'Bearer tok68value',
+        extra: 'jfrog-key',
+      },
+    ]);
+  });
+
+  it('suppresses an extra header when the project names an empty header name', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_HEADER_NAMES = 'X-JFrog-Art-Api';
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example'],
+        'dev.test.acme',
+        undefined,
+        { names: [''], envs: [''] },
+      ),
+    });
+    expect(calls[0]?.extra).toBeUndefined();
+  });
+
+  it('round-trips a suppressing empty extra-header name through parse and serialize', async () => {
+    const parsed = parseManifest(
+      serializeManifest({
+        project: { name: 'demo', ecosystems: ['acme'] },
+        packages: {},
+        plugins: {
+          'dev.test.acme': {
+            storeDigest: BINDING_DIGEST,
+            artifactOrigins: ['https://a.example'],
+            artifactOriginExtraHeaderNames: [''],
+            artifactOriginExtraHeaderEnvs: [''],
+          },
+        },
+        options: { offline: false, layout: 'opm' },
+      }),
+    );
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_HEADER_NAMES = 'X-JFrog-Art-Api';
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: parsed.plugins,
+    });
+    expect(calls[0]?.extra).toBeUndefined();
+  });
+
+  it('does not fail a GET to origin A when origin B extra-header env is unset', async () => {
+    process.env.JFROG_A_KEY = 'key-a';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example', 'https://b.example'],
+        'dev.test.acme',
+        undefined,
+        {
+          names: ['X-JFrog-Art-Api', 'X-JFrog-Art-Api'],
+          envs: ['JFROG_A_KEY', 'JFROG_B_KEY'],
+        },
+      ),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls[0]?.extra).toBe('key-a');
+  });
+
+  it('fails UNRESOLVABLE without fetching CR or LF in the extra-header value', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const bindings = acmeBinding(
+      ['https://a.example'],
+      'dev.test.acme',
+      undefined,
+      { names: ['X-JFrog-Art-Api'], envs: ['JFROG_API_KEY'] },
+    );
+    for (const value of ['bad\rvalue', 'bad\nvalue']) {
+      process.env.JFROG_API_KEY = value;
+      const { calls, fetch } = recordingTarFetch({
+        'https://a.example/artifacts/demo.tar': TOOL_TAR,
+      });
+      try {
+        await resolveRegistryArtifact('acme', EXACT, {
+          fetch,
+          pluginBindings: bindings,
+        });
+        throw new Error('expected UNRESOLVABLE');
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'UNRESOLVABLE' });
+        expect(error).toBeInstanceOf(OpmError);
+        expect((error as Error).message).toContain('JFROG_API_KEY');
+        expect((error as Error).message).not.toMatch(/bad/u);
+      }
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('refuses extra-header env names Cookie, Authorization, and Host at parse', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    for (const name of ['Cookie', 'Authorization', 'Host']) {
+      process.env.OPM_HOST_FETCH_HEADER_NAMES = name;
+      let fetched = false;
+      await expect(
+        resolveRegistryArtifact('acme', EXACT, {
+          fetch: (async () => {
+            fetched = true;
+            return new Response(TOOL_TAR);
+          }) as unknown as typeof fetch,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      expect(fetched).toBe(false);
+    }
+  });
+
+  it('refuses HEADER_NAMES arity mismatch', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_HEADER_NAMES = 'X-JFrog-Art-Api,';
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub({
+          'https://a.example/artifacts/demo.tar': TOOL_TAR,
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+  });
+
+  it('attaches an env-only extra header when HEADER_NAMES names the header', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_HEADER_NAMES = 'X-JFrog-Art-Api';
+    process.env.OPM_HOST_FETCH_HEADER_ENVS = 'JFROG_API_KEY';
+    process.env.JFROG_API_KEY = 'jfrog-key';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, { fetch });
+    expect(calls[0]?.extra).toBe('jfrog-key');
   });
 
   it('keeps rawBody behavior when the provider does not ask for host-fetch', async () => {
