@@ -28,5 +28,6 @@ export const MEDIA_TYPES = {
   packReceipt: 'application/vnd.openpacker.pack-receipt.v1+json',
   delegatedPackProvider:
     'application/vnd.openpacker.delegated-pack-provider.v1+json',
+  delegatedAdapter: 'application/vnd.openpacker.delegated-adapter.v1+json',
   problem: 'application/problem+json',
 } as const;

@@ -40,6 +40,7 @@ Accepted decisions:
 36. [Sandboxed installs and package execution](0036-sandboxed-installs-and-execution.md)
 37. [Delegated pack providers plan; the host authorizes and executes](0037-delegated-pack-providers-plan-host-executes.md)
 38. [Delegated providers execute immutable standalone snapshots](0038-delegated-providers-execute-immutable-standalone-snapshots.md)
+39. [Third-party ecosystems arrive as delegated adapter plugins](0039-third-party-ecosystems-arrive-as-delegated-adapter-plugins.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.
