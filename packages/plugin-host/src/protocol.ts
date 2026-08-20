@@ -1,5 +1,6 @@
 import { ProviderError, parsePurl } from '@openpacker/adapter-core';
 import type {
+  ProviderExecutable,
   ProviderInspection,
   ProviderRecord,
 } from '@openpacker/adapter-core';
@@ -11,6 +12,7 @@ import {
   validateContract,
 } from '@openpacker/conformance';
 import type {
+  DelegatedAdapterBin,
   DelegatedAdapterInspectionResult,
   DelegatedAdapterManifest,
   DelegatedAdapterOperation,
@@ -48,6 +50,15 @@ const SNAPSHOT_RESULT_SCHEMA =
  */
 const RFC3339_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Normative executables rules (spec/prex/v1/delegated-adapter.md): the name
+ * safe-segment pattern mirrors the schema; `entry` is a Python
+ * `module:callable`, the same shape opm-project's bins validation accepts.
+ */
+const BIN_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PYTHON_ENTRY_PATTERN = /^[A-Za-z0-9_.]+:[A-Za-z0-9_.]+$/;
+const MAX_BIN_DECLARATIONS = 64;
 
 /** Requests are schema-bounded to KiBs already; this is the hard stop. */
 export const MAX_REQUEST_BYTES = 65_536;
@@ -223,6 +234,11 @@ export function validateOperationResult(
       const inspection: ProviderInspection = {
         package: wire.package,
         record: wireRecordToRecord(wire.record, invalid),
+        // The plugin's answer is preserved exactly: absent stays absent, and
+        // an empty array stays an empty array ("declares no executables").
+        ...(wire.executables === undefined
+          ? {}
+          : { executables: validateBins(wire.executables, invalid) }),
         warnings: wire.warnings ?? [],
       };
       return inspection;
@@ -270,6 +286,60 @@ function validateSchema<T>(
         .join('; ')}`,
     );
   return value as unknown as T;
+}
+
+/**
+ * Enforce the normative Executables rules on a schema-validated array. The
+ * schema already bounded shape, lengths and the name/path patterns; this pass
+ * re-asserts those safety invariants at the trust boundary (defense in
+ * depth) and enforces the rules the schema cannot express: `entry` required
+ * if and only if the interpreter is python, unique names, and the count cap.
+ */
+function validateBins(
+  bins: readonly DelegatedAdapterBin[],
+  invalid: Invalid,
+): readonly ProviderExecutable[] {
+  if (bins.length > MAX_BIN_DECLARATIONS)
+    throw invalid(`executables exceeds ${MAX_BIN_DECLARATIONS} declarations`);
+  const names = new Set<string>();
+  return bins.map((bin) => {
+    if (!BIN_NAME_PATTERN.test(bin.name))
+      throw invalid(`executables name is not a safe path segment: ${bin.name}`);
+    if (bin.path.startsWith('/') || bin.path.includes('\\'))
+      throw invalid(
+        `executables path must be a relative POSIX path: ${bin.path}`,
+      );
+    if (bin.path.split('/').includes('..'))
+      throw invalid(`executables path contains a .. segment: ${bin.path}`);
+    if (
+      bin.interpreter !== undefined &&
+      !['node', 'python', 'dotnet', 'native'].includes(bin.interpreter)
+    )
+      throw invalid(
+        `executables has an unknown interpreter: ${bin.interpreter}`,
+      );
+    if (bin.interpreter === 'python') {
+      if (bin.entry === undefined || !PYTHON_ENTRY_PATTERN.test(bin.entry))
+        throw invalid(
+          `executables ${bin.name} needs a module:callable entry for the python interpreter`,
+        );
+    } else if (bin.entry !== undefined) {
+      throw invalid(
+        `executables ${bin.name} declares an entry without the python interpreter`,
+      );
+    }
+    if (names.has(bin.name))
+      throw invalid(`executables has a duplicate name: ${bin.name}`);
+    names.add(bin.name);
+    return {
+      name: bin.name,
+      path: bin.path,
+      ...(bin.interpreter === undefined
+        ? {}
+        : { interpreter: bin.interpreter }),
+      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+    };
+  });
 }
 
 /**
