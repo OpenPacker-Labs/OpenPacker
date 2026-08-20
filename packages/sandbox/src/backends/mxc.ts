@@ -71,6 +71,11 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           'UNAVAILABLE',
           'MXC cannot consume stable executable handle authorities',
         );
+      if (input.stdin !== undefined)
+        throw new SandboxBackendError(
+          'UNAVAILABLE',
+          'MXC cannot deliver bounded stdin to the sandboxed process',
+        );
       // Prefer config-based spawn when present; fall back to a constrained
       // host spawn only if the SDK surface differs — but never silently drop
       // the jail: if we cannot configure MXC, fail.
