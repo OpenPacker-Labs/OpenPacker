@@ -7,6 +7,7 @@ import {
   type CatalogProvider,
   type HttpTransport,
   type ProviderExecutable,
+  type ProviderInspection,
 } from '@openpacker/adapter-core';
 import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
@@ -368,6 +369,71 @@ export async function resolveRegistryArtifact(
   const registryId = (await registryDefinitionFor(ecosystem, options))
     .registryId;
   const inspection = await provider.inspect(exactPurl);
+  const inspectedPurl = assertInspectedPurl(ecosystem, exactPurl, inspection);
+  // Fetch the immutable identity established by inspection. In particular,
+  // never resolve a mutable OCI tag a second time after it was pinned.
+  const record = await provider.fetchArtifactRecord(inspectedPurl);
+  const descriptor = readArtifactDescriptor(record.body, ecosystem, exactPurl);
+
+  // Delegated providers answer metadata only (spec delegated-adapter.md
+  // §Artifact bytes): the host fetches the bytes itself, bounded by the
+  // published size and verified against the published digest. First-party
+  // providers keep the bytes their own bounded transport already verified.
+  if (hostFetchesArtifactBytes(provider)) {
+    const fetched = await fetchDelegatedArtifactBytes({
+      ecosystem,
+      exactPurl: inspectedPurl,
+      endpoint: record.endpoint,
+      uri: descriptor.uri,
+      size: descriptor.size,
+      digest: descriptor.digest,
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    });
+    return {
+      exactPurl: inspectedPurl,
+      version: inspection.package.nativeVersion ?? '',
+      digest: descriptor.digest,
+      size: fetched.size,
+      mediaType: descriptor.mediaType,
+      uri: descriptor.uri,
+      bytes: fetched.bytes,
+      bins: inspection.executables ?? [],
+      registryId,
+    };
+  }
+
+  assertArtifactUriAllowed(descriptor.uri, ecosystem, exactPurl, options);
+
+  return {
+    exactPurl: inspectedPurl,
+    version: inspection.package.nativeVersion ?? '',
+    digest: descriptor.digest,
+    size: descriptor.size ?? 0,
+    mediaType: descriptor.mediaType,
+    uri: descriptor.uri,
+    bytes: record.rawBody,
+    bins: inspection.executables ?? [],
+    registryId,
+  };
+}
+
+/** The delegated provider marker: metadata authority, host-fetched bytes. */
+function hostFetchesArtifactBytes(provider: CatalogProvider): boolean {
+  return (
+    provider.capabilities.extensions?.['openpacker/artifact-bytes'] ===
+    'host-fetch'
+  );
+}
+
+/**
+ * The exact identity an inspection resolved, failing closed on a missing or
+ * substituted one. Shared by every artifact resolution entry point.
+ */
+function assertInspectedPurl(
+  ecosystem: string,
+  exactPurl: string,
+  inspection: ProviderInspection,
+): string {
   const inspectedPurl = inspection.package.identity.exactPurl;
   if (!inspectedPurl)
     throw new OpmError(
@@ -381,16 +447,25 @@ export async function resolveRegistryArtifact(
     assertPackageIdentityMatchesRequest(exactPurl, {
       exactPurl: inspectedPurl,
     });
-  // Fetch the immutable identity established by inspection. In particular,
-  // never resolve a mutable OCI tag a second time after it was pinned.
-  const record = await provider.fetchArtifactRecord(inspectedPurl);
-  const descriptor = record.body as {
+  return inspectedPurl;
+}
+
+/**
+ * The artifact descriptor a metadata body publishes, failing closed when the
+ * sha256 digest or the download location is absent: without them nothing
+ * downstream can verify what it fetches.
+ */
+function readArtifactDescriptor(
+  body: unknown,
+  ecosystem: string,
+  exactPurl: string,
+): { digest: string; size?: number; mediaType: string; uri: string } {
+  const descriptor = body as {
     digest?: { algorithm?: string; value?: string };
     size?: number;
     mediaType?: string;
     locations?: readonly { uri?: string }[];
   };
-
   const algorithm = descriptor.digest?.algorithm;
   const value = descriptor.digest?.value;
   if (algorithm !== 'sha256' || !value)
@@ -399,44 +474,32 @@ export async function resolveRegistryArtifact(
       `The ${ecosystem} registry did not publish a sha256 digest for ${exactPurl}, ` +
         `so the download cannot be verified. Pass --source with a digest you trust.`,
     );
-
   const uri = descriptor.locations?.find((location) => location.uri)?.uri;
   if (!uri)
     throw new OpmError(
       'UNRESOLVABLE',
       `The ${ecosystem} registry published no download location for ${exactPurl}.`,
     );
+  return {
+    digest: `${algorithm}:${value}`,
+    ...(descriptor.size === undefined ? {} : { size: descriptor.size }),
+    mediaType: descriptor.mediaType ?? 'application/octet-stream',
+    uri,
+  };
+}
 
-  // Delegated providers answer metadata only (spec delegated-adapter.md
-  // §Artifact bytes): the host fetches the bytes itself, bounded by the
-  // published size and verified against the published digest. First-party
-  // providers keep the bytes their own bounded transport already verified.
-  if (
-    provider.capabilities.extensions?.['openpacker/artifact-bytes'] ===
-    'host-fetch'
-  ) {
-    const fetched = await fetchDelegatedArtifactBytes({
-      ecosystem,
-      exactPurl: inspectedPurl,
-      endpoint: record.endpoint,
-      uri,
-      size: descriptor.size,
-      digest: `${algorithm}:${value}`,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-    });
-    return {
-      exactPurl: inspectedPurl,
-      version: inspection.package.nativeVersion ?? '',
-      digest: `${algorithm}:${value}`,
-      size: fetched.size,
-      mediaType: descriptor.mediaType ?? 'application/octet-stream',
-      uri,
-      bytes: fetched.bytes,
-      bins: inspection.executables ?? [],
-      registryId,
-    };
-  }
-
+/**
+ * Fail closed when the published download location sits on an origin this
+ * ecosystem's transports are not allowed to read. A registry that starts
+ * handing back another host is the interesting failure, so it is refused by
+ * name rather than left to the transport.
+ */
+function assertArtifactUriAllowed(
+  uri: string,
+  ecosystem: string,
+  exactPurl: string,
+  options: RegistryOptions,
+): void {
   const uriOrigin = new URL(uri).origin;
   const allowed = options.endpoint
     ? [new URL(safeRegistryEndpoint(options.endpoint, ecosystem)).origin]
@@ -450,17 +513,147 @@ export async function resolveRegistryArtifact(
       `${exactPurl} points at ${uriOrigin}, which is not an allowed ` +
         `origin for ${ecosystem} (${allowed.join(', ')}).`,
     );
+}
 
+/**
+ * An artifact resolution whose byte download is deferred whenever the
+ * provider lets the digest be known without it.
+ *
+ * Registry metadata is always read fresh — an unpinned purl is a different
+ * thing tomorrow — but artifact bytes are content-addressed, so a caller with
+ * a digest-keyed cache (the ephemeral tool cache) can skip the download when
+ * the resolved digest is already held, and call {@link fetchBytes} when it is
+ * not.
+ */
+export interface DeferredRegistryArtifact {
+  exactPurl: string;
+  version: string;
+  digest: string;
+  size: number;
+  mediaType: string;
+  uri: string;
+  bins: readonly ProviderExecutable[];
+  registryId: string;
+  /**
+   * The artifact bytes, when learning the digest already downloaded them: a
+   * first-party fetch-artifact-record carries the bytes it hashes. Absent
+   * whenever the download could be deferred — then {@link fetchBytes} is the
+   * acquisition to run on a cache miss.
+   */
+  bytes?: Uint8Array;
+  /**
+   * Acquire the artifact bytes, verified against the published digest and
+   * size exactly as {@link resolveRegistryArtifact} verifies them.
+   */
+  fetchBytes: () => Promise<Uint8Array>;
+}
+
+/**
+ * Resolve an artifact's identity with the byte download deferred.
+ *
+ * Same metadata, same fail-closed checks as {@link resolveRegistryArtifact};
+ * the only difference is when bytes move. A delegated provider's record is
+ * cheap metadata and the host-side download is deferred wholesale. A
+ * first-party inspection that publishes the full artifact descriptor (sha256
+ * digest, size, location) defers the record call that is itself the download;
+ * anything else falls back to reading the record, which carries the bytes.
+ */
+export async function resolveRegistryArtifactDeferred(
+  ecosystem: string,
+  exactPurl: string,
+  options: RegistryOptions = {},
+): Promise<DeferredRegistryArtifact> {
+  const provider = await providerForWithDiscovery(ecosystem, options, [
+    'prex.registry.package-metadata/1',
+    'prex.registry.artifact/1',
+  ]);
+  const registryId = (await registryDefinitionFor(ecosystem, options))
+    .registryId;
+  const inspection = await provider.inspect(exactPurl);
+  const inspectedPurl = assertInspectedPurl(ecosystem, exactPurl, inspection);
+  const version = inspection.package.nativeVersion ?? '';
+  const bins = inspection.executables ?? [];
+
+  // Delegated providers answer metadata only (spec delegated-adapter.md
+  // §Artifact bytes): the record is cheap, and the byte download is the
+  // host's to make — deferred until the caller says the cache missed.
+  if (hostFetchesArtifactBytes(provider)) {
+    const record = await provider.fetchArtifactRecord(inspectedPurl);
+    const descriptor = readArtifactDescriptor(
+      record.body,
+      ecosystem,
+      exactPurl,
+    );
+    return {
+      exactPurl: inspectedPurl,
+      version,
+      digest: descriptor.digest,
+      size: descriptor.size ?? 0,
+      mediaType: descriptor.mediaType,
+      uri: descriptor.uri,
+      bins,
+      registryId,
+      fetchBytes: async () =>
+        (
+          await fetchDelegatedArtifactBytes({
+            ecosystem,
+            exactPurl: inspectedPurl,
+            endpoint: record.endpoint,
+            uri: descriptor.uri,
+            size: descriptor.size,
+            digest: descriptor.digest,
+            ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+          })
+        ).bytes,
+    };
+  }
+
+  // A first-party inspection that publishes the whole artifact descriptor
+  // makes the record call — the download — deferrable. The origin rule is
+  // applied eagerly so a hijacked location is refused whether or not a cache
+  // already holds the bytes.
+  const published = inspection.package.artifacts.find(
+    (artifact) =>
+      artifact.digest?.algorithm === 'sha256' &&
+      typeof artifact.digest.value === 'string' &&
+      artifact.digest.value.length > 0 &&
+      Number.isFinite(artifact.size) &&
+      artifact.size > 0 &&
+      artifact.locations.some((location) => typeof location.uri === 'string'),
+  );
+  if (published !== undefined) {
+    const descriptor = readArtifactDescriptor(published, ecosystem, exactPurl);
+    assertArtifactUriAllowed(descriptor.uri, ecosystem, exactPurl, options);
+    return {
+      exactPurl: inspectedPurl,
+      version,
+      digest: descriptor.digest,
+      size: descriptor.size ?? 0,
+      mediaType: descriptor.mediaType,
+      uri: descriptor.uri,
+      bins,
+      registryId,
+      fetchBytes: async () =>
+        (await provider.fetchArtifactRecord(inspectedPurl)).rawBody,
+    };
+  }
+
+  // Otherwise the record call is the only way to learn the digest, and it
+  // carries the bytes: resolve exactly as resolveRegistryArtifact does.
+  const record = await provider.fetchArtifactRecord(inspectedPurl);
+  const descriptor = readArtifactDescriptor(record.body, ecosystem, exactPurl);
+  assertArtifactUriAllowed(descriptor.uri, ecosystem, exactPurl, options);
   return {
     exactPurl: inspectedPurl,
-    version: inspection.package.nativeVersion ?? '',
-    digest: `${algorithm}:${value}`,
+    version,
+    digest: descriptor.digest,
     size: descriptor.size ?? 0,
-    mediaType: descriptor.mediaType ?? 'application/octet-stream',
-    uri,
+    mediaType: descriptor.mediaType,
+    uri: descriptor.uri,
     bytes: record.rawBody,
-    bins: inspection.executables ?? [],
+    bins,
     registryId,
+    fetchBytes: async () => record.rawBody,
   };
 }
 

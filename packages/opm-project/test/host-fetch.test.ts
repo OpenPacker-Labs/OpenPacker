@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -411,6 +418,195 @@ describe('delegated bins flow', () => {
         { name: 'demo', path: 'bin/demo', interpreter: 'native' },
       ]),
     ).toEqual([{ name: 'demo', path: 'bin/demo', interpreter: 'native' }]);
+  });
+});
+
+describe('ephemeral tool cache', () => {
+  const EXECUTABLES = [
+    { name: 'demo', path: 'bin/demo', interpreter: 'native' as const },
+  ];
+
+  /** Count provider calls so a test can prove what is re-resolved per run. */
+  function counted(
+    provider: CatalogProvider,
+    counts: { inspect: number; record: number },
+  ): CatalogProvider {
+    return {
+      ...provider,
+      async inspect(...args) {
+        counts.inspect += 1;
+        return provider.inspect(...args);
+      },
+      async fetchArtifactRecord(...args) {
+        counts.record += 1;
+        return provider.fetchArtifactRecord(...args);
+      },
+    };
+  }
+
+  /** Count host-side byte downloads; the only global-fetch user on this path. */
+  function countingFetch(routes: Readonly<Record<string, Uint8Array>>): {
+    downloads: () => number;
+  } {
+    let count = 0;
+    vi.stubGlobal('fetch', ((input: URL | Request | string) => {
+      count += 1;
+      return fetchStub(routes)(input);
+    }) as typeof fetch);
+    return { downloads: () => count };
+  }
+
+  it('serves a repeat run from the cache without re-downloading bytes', async () => {
+    const counts = { inspect: 0, record: 0 };
+    registerAcme(
+      counted(
+        acmeProvider({ hostFetch: true, executables: EXECUTABLES }),
+        counts,
+      ),
+    );
+    const fetch_ = countingFetch(tarRoute);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
+    try {
+      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(first.cached).toBe(false);
+      expect(fetch_.downloads()).toBe(1);
+      const afterFirst = { ...counts };
+
+      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(second.cached).toBe(true);
+      expect(second.storePath).toBe(first.storePath);
+      expect(second.bins).toEqual(first.bins);
+      // The byte download is the only traffic a cache hit skips...
+      expect(fetch_.downloads()).toBe(1);
+      // ...resolution metadata is re-read on every run: an unpinned purl is a
+      // different thing tomorrow, and the cache is keyed by what the registry
+      // says today.
+      expect(counts.inspect).toBeGreaterThan(afterFirst.inspect);
+      expect(counts.record).toBeGreaterThan(afterFirst.record);
+      // The rebuilt tree is the verified one.
+      expect(
+        await readFile(join(second.storePath, 'bin', 'demo'), 'utf8'),
+      ).toBe(TOOL_SCRIPT);
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('downloads again when the registry re-pins the digest', async () => {
+    // Resolution is never cached: a record that suddenly names different bytes
+    // is a cache miss for the new digest, not a hit for the old one.
+    const otherTar = tarEntry(
+      'bin/demo',
+      new TextEncoder().encode('#!/bin/sh\necho acme-tool-v2\n'),
+      0o755,
+    );
+    const routes: Record<string, Uint8Array> = { ...tarRoute };
+    let served = descriptor();
+    const base = acmeProvider({ hostFetch: true, executables: EXECUTABLES });
+    const shifting: CatalogProvider = {
+      ...base,
+      async fetchArtifactRecord() {
+        return {
+          key: EXACT,
+          endpoint: ENDPOINT,
+          body: served,
+          rawBody: new TextEncoder().encode(JSON.stringify(served)),
+          retrievedAt: '2020-01-01T00:00:00Z',
+        };
+      },
+    };
+    registerAcme(shifting);
+    const fetch_ = countingFetch(routes);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
+    try {
+      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(first.digest).toBe(`sha256:${TOOL_DIGEST}`);
+
+      served = descriptor({
+        digest: { algorithm: 'sha256', value: sha256(otherTar) },
+        size: otherTar.byteLength,
+      });
+      routes[`${ENDPOINT}/artifacts/demo-1.0.0.tar`] = otherTar;
+
+      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(second.cached).toBe(false);
+      expect(second.digest).toBe(`sha256:${sha256(otherTar)}`);
+      expect(second.storePath).not.toBe(first.storePath);
+      expect(fetch_.downloads()).toBe(2);
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rebuilds a tampered store tree from the verified archive, offline of the network', async () => {
+    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
+    const fetch_ = countingFetch(tarRoute);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
+    try {
+      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const target = join(first.storePath, 'bin', 'demo');
+      await writeFile(target, 'tampered');
+
+      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(second.cached).toBe(true);
+      expect(fetch_.downloads()).toBe(1);
+      expect(await readFile(target, 'utf8')).toBe(TOOL_SCRIPT);
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls through to download and verify when the cache entry is corrupt, and self-heals', async () => {
+    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
+    const fetch_ = countingFetch(tarRoute);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
+    try {
+      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      // Same length, different bytes: only the digest check can catch it.
+      const archive = `${first.storePath}.artifact`;
+      await chmod(archive, 0o644);
+      await writeFile(
+        archive,
+        TOOL_TAR.map((byte) => byte ^ 0xff),
+      );
+
+      // The corrupt entry must not make a runnable tool fail: the run falls
+      // back to the bounded download and verifies as if uncached.
+      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(second.cached).toBe(false);
+      expect(fetch_.downloads()).toBe(2);
+      expect(
+        await readFile(join(second.storePath, 'bin', 'demo'), 'utf8'),
+      ).toBe(TOOL_SCRIPT);
+
+      // Self-healed: the archive now holds the verified bytes again.
+      const third = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(third.cached).toBe(true);
+      expect(fetch_.downloads()).toBe(2);
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('re-downloads when the archive is gone but the tree survived', async () => {
+    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
+    const fetch_ = countingFetch(tarRoute);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
+    try {
+      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      await rm(`${first.storePath}.artifact`, { force: true });
+
+      // The tree alone is not a trusted cache entry — nothing re-verified it
+      // against the digest — so the bytes move again.
+      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      expect(second.cached).toBe(false);
+      expect(fetch_.downloads()).toBe(2);
+      expect(
+        await readFile(join(second.storePath, 'bin', 'demo'), 'utf8'),
+      ).toBe(TOOL_SCRIPT);
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
   });
 });
 

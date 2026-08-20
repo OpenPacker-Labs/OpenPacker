@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
 import {
   DEFAULT_REGISTRY_ENDPOINTS,
@@ -586,5 +587,86 @@ describe('ephemeral tool selection', () => {
     await expect(
       fetchTool({ purl: 'pkg:cocoapods/demo@1.0.0' }),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_ECOSYSTEM' });
+  });
+});
+
+describe('ephemeral tool cache (first-party)', () => {
+  // fetchTool takes no transport, so the default npm endpoint is served
+  // through a stubbed global fetch; the tarball URL stands in for the byte
+  // download and the packument URL for registry metadata.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+  const PACKUMENT_URL = 'https://registry.npmjs.org/demo-tool';
+  const TARBALL_URL =
+    'https://registry.npmjs.org/demo-tool/-/demo-tool-1.1.0.tgz';
+
+  it('skips the byte download when the resolved digest is already cached', async () => {
+    const tgz = new Uint8Array(
+      await readFile(join(repoRoot, 'fixtures/opm/demo-tool-1.1.0.tgz')),
+    );
+    // The packument publishes a sha256 SRI and the byte size, so the
+    // inspection alone pins the artifact descriptor and the record call —
+    // the download — is deferred until the cache says it is needed.
+    const packument = {
+      name: 'demo-tool',
+      'dist-tags': { latest: '1.1.0' },
+      time: { '1.1.0': '2020-01-01T00:00:00.000Z' },
+      versions: {
+        '1.1.0': {
+          name: 'demo-tool',
+          version: '1.1.0',
+          dist: {
+            tarball: TARBALL_URL,
+            integrity: `sha256-${createHash('sha256').update(tgz).digest('base64')}`,
+            size: tgz.byteLength,
+          },
+        },
+      },
+    };
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === PACKUMENT_URL)
+        return new Response(JSON.stringify(packument), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url === TARBALL_URL)
+        return new Response(tgz, {
+          status: 200,
+          headers: { 'content-type': 'application/octet-stream' },
+        });
+      return new Response('missing', { status: 404 });
+    }) as typeof fetch);
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-npm-cache-'));
+    const tarballs = () =>
+      requests.filter((url) => url.endsWith('.tgz')).length;
+    const packuments = () =>
+      requests.filter((url) => url === PACKUMENT_URL).length;
+    try {
+      const first = await fetchTool({
+        purl: 'pkg:npm/demo-tool@1.1.0',
+        cacheRoot,
+      });
+      expect(first.cached).toBe(false);
+      expect(first.bins.map((bin) => bin.name)).toEqual(['demo-tool']);
+      expect(tarballs()).toBe(1);
+      const metadataAfterFirst = packuments();
+
+      const second = await fetchTool({
+        purl: 'pkg:npm/demo-tool@1.1.0',
+        cacheRoot,
+      });
+      expect(second.cached).toBe(true);
+      expect(second.storePath).toBe(first.storePath);
+      expect(second.bins).toEqual(first.bins);
+      // The artifact bytes did not move again...
+      expect(tarballs()).toBe(1);
+      // ...but the registry metadata was re-read: resolution is not cached.
+      expect(packuments()).toBeGreaterThan(metadataAfterFirst);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(cacheRoot, { recursive: true, force: true });
+    }
   });
 });
