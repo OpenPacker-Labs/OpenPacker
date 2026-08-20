@@ -409,3 +409,111 @@ describe('opmx argument forwarding', () => {
     ]);
   });
 });
+
+describe('opm plugin', () => {
+  const PLUGIN_ENV = ['OPM_PLUGIN_HOME', 'OPM_REGISTRY_OPM_PLUGIN'] as const;
+
+  function withPluginEnv(home: string): () => void {
+    const previous = PLUGIN_ENV.map(
+      (name) => [name, process.env[name]] as const,
+    );
+    process.env.OPM_PLUGIN_HOME = home;
+    delete process.env.OPM_REGISTRY_OPM_PLUGIN;
+    return () => {
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    };
+  }
+
+  it('rejects unknown plugin subcommands with usage', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      let cap = capture();
+      expect(await runOpm(['plugin'], cap.io, home)).toBe(2);
+      expect(cap.err).toMatch(/Unknown plugin subcommand/);
+      cap = capture();
+      expect(await runOpm(['plugin', 'frobnicate'], cap.io, home)).toBe(2);
+      expect(cap.err).toMatch(/add \| remove \| list/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('fails closed when no plugin registry is configured', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      const cap = capture();
+      expect(await runOpm(['plugin', 'add', 'acme'], cap.io, home)).toBe(8);
+      expect(cap.err).toMatch(/OPM_REGISTRY_OPM_PLUGIN/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('lists an empty store honestly', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      const cap = capture();
+      expect(await runOpm(['plugin', 'list'], cap.io, home)).toBe(0);
+      expect(cap.out).toBe('(no plugins installed)\n');
+    } finally {
+      restore();
+    }
+  });
+
+  it('adds (idempotently), lists, and removes a seeded plugin', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      // Seed the user-level store through the store API against a fixture
+      // registry; the CLI flows under test are the pin-driven ones.
+      const { addPlugin } = await import('@openpacker/plugin-store');
+      const { configureAdapters } = await import('@openpacker/opm-project');
+      const { fixturePluginTransport } = await import('./plugin-fixture.js');
+      configureAdapters([]);
+      const seeded = await addPlugin({
+        name: 'acme',
+        endpoint: 'https://plugins.fixture.test',
+        transport: fixturePluginTransport(),
+        storeRoot: home,
+        now: () => '2026-08-20T00:00:00.000Z',
+      });
+
+      // `plugin add` of the same pin is idempotent and needs no registry.
+      let cap = capture();
+      expect(await runOpm(['plugin', 'add', 'acme'], cap.io, home)).toBe(0);
+      expect(cap.out).toMatch(
+        /already installed at pkg:opm-plugin\/acme@1\.0\.0/,
+      );
+      expect(cap.out).toMatch(new RegExp(`digest: ${seeded.storeDigest}`));
+
+      cap = capture();
+      expect(await runOpm(['plugin', 'list'], cap.io, home)).toBe(0);
+      expect(cap.out).toMatch(/^acme\tpkg:opm-plugin\/acme@1\.0\.0\tsha256:/m);
+
+      cap = capture();
+      expect(await runOpm(['plugin', 'remove', 'acme'], cap.io, home)).toBe(0);
+      expect(cap.out).toMatch(/Removed plugin acme/);
+
+      cap = capture();
+      expect(await runOpm(['plugin', 'list'], cap.io, home)).toBe(0);
+      expect(cap.out).toBe('(no plugins installed)\n');
+
+      // Removing again is an honest not-found, exit 4.
+      cap = capture();
+      expect(await runOpm(['plugin', 'remove', 'acme'], cap.io, home)).toBe(4);
+      expect(cap.err).toMatch(/not installed/);
+    } finally {
+      restore();
+    }
+  });
+});
