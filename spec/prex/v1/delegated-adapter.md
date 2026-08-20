@@ -48,7 +48,7 @@ digest of the installed store entry, and the manifest path within it.
 Projects bind plugins in `opm.toml` without embedding credentials:
 
 ```toml
-[plugins.acme]
+[plugins.dev-example-acme]
 store_digest = "sha256:…"
 ```
 
@@ -76,20 +76,23 @@ another, and cannot influence argv beyond its declared literal arguments.
 
 ## Operations
 
-| Operation               | Request params              | Result schema               |
-| ----------------------- | --------------------------- | --------------------------- |
-| `registry-definition`   | `offline`                   | `RegistryDefinition`        |
-| `identify`              | `query`, `offline`          | array of `PackageIdentity`  |
-| `enumerate`             | `basePurl`, `offline`       | array of exact purl strings |
-| `inspect`               | `exactPurl`, `offline`      | `ProviderInspection`        |
-| `fetch-artifact-record` | `exactPurl`, `offline`      | `ProviderRecord`            |
-| `snapshot`              | `evaluationTime`, `offline` | `SourceSnapshot`            |
+| Operation               | Request params              | Result schema                      |
+| ----------------------- | --------------------------- | ---------------------------------- |
+| `registry-definition`   | `offline`                   | `RegistryDefinition`               |
+| `identify`              | `query`, `offline`          | array of `PackageIdentity`         |
+| `enumerate`             | `basePurl`, `offline`       | array of exact purl strings        |
+| `inspect`               | `exactPurl`, `offline`      | `DelegatedAdapterInspectionResult` |
+| `fetch-artifact-record` | `exactPurl`, `offline`      | `DelegatedAdapterRecordResult`     |
+| `snapshot`              | `evaluationTime`, `offline` | `DelegatedAdapterSnapshotResult`   |
 
 `catalog` capability requires `identify`, `enumerate`, `inspect` and
-`fetch-artifact-record`; `snapshot` is optional. A host MUST bound request and
-response bytes, MUST reject responses that fail schema validation, and MUST
-treat nonzero exits, malformed output, or budget overruns as fail-closed
-provider errors.
+`fetch-artifact-record`; `snapshot` is optional. The `DelegatedAdapter*` result
+schemas are normative `$defs` of `schemas/delegated-adapter.schema.json`:
+`DelegatedAdapterInspectionResult.package` reuses `PackageInstance` and
+`DelegatedAdapterSnapshotResult` is exactly `SourceSnapshot` from
+`schemas/model.schema.json`. A host MUST bound request and response bytes, MUST
+reject responses that fail schema validation, and MUST treat nonzero exits,
+malformed output, or budget overruns as fail-closed provider errors.
 
 ## Authority
 

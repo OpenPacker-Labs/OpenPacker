@@ -240,6 +240,11 @@ export type DelegatedAdapterCommand = { arguments: Array<string> };
 export type DelegatedAdapterEnvironmentName = string;
 export type DelegatedAdapterExecutable = string;
 export type DelegatedAdapterId = string;
+export type DelegatedAdapterInspectionResult = {
+  package: PackageInstance;
+  record: DelegatedAdapterRecordResult;
+  warnings?: Array<DelegatedAdapterWarning>;
+};
 export type DelegatedAdapterManifest = {
   $schema?: string;
   delegatedAdapterVersion: '1';
@@ -260,6 +265,14 @@ export type DelegatedAdapterOperation =
   | 'fetch-artifact-record'
   | 'snapshot';
 export type DelegatedAdapterPurlType = string;
+export type DelegatedAdapterRecordResult = {
+  key: string;
+  endpoint: string;
+  etag?: string;
+  revision?: string;
+  body: JsonValue;
+  retrievedAt: string;
+};
 export type DelegatedAdapterRequest = {
   $schema?: string;
   delegatedAdapterRequestVersion: '1';
@@ -278,6 +291,12 @@ export type DelegatedAdapterResponse = {
   ok: boolean;
   result?: JsonValue;
   error?: { code: string; message: string };
+};
+export type DelegatedAdapterSnapshotResult = SourceSnapshot;
+export type DelegatedAdapterWarning = {
+  code: string;
+  message: string;
+  path?: string;
 };
 export type DelegatedPackArtifactIdentity = {
   delegatedPackArtifactIdentityVersion: '1';
@@ -2567,7 +2586,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
               'One entry per operation the plugin implements. catalog capability requires identify, enumerate, inspect and fetch-artifact-record; snapshot remains optional.',
             type: 'object',
             minProperties: 1,
-            maxProperties: 8,
+            maxProperties: 6,
             propertyNames: {
               $ref: '#/$defs/DelegatedAdapterOperation',
             },
@@ -2613,7 +2632,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           params: {
             type: 'object',
-            maxProperties: 8,
+            maxProperties: 5,
             properties: {
               query: {
                 type: 'string',
@@ -2677,6 +2696,122 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
         },
         additionalProperties: false,
+        allOf: [
+          {
+            $comment:
+              'ok and result/error are correlated: a successful response carries a result, a failed response carries an error.',
+            if: {
+              properties: {
+                ok: {
+                  const: true,
+                },
+              },
+              required: ['ok'],
+            },
+            then: {
+              required: ['result'],
+            },
+          },
+          {
+            if: {
+              properties: {
+                ok: {
+                  const: false,
+                },
+              },
+              required: ['ok'],
+            },
+            then: {
+              required: ['error'],
+            },
+          },
+        ],
+      },
+      DelegatedAdapterWarning: {
+        $comment:
+          'Non-fatal provider warning attached to an inspection result.',
+        type: 'object',
+        required: ['code', 'message'],
+        properties: {
+          code: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 128,
+          },
+          message: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 8192,
+          },
+          path: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+          },
+        },
+        additionalProperties: false,
+      },
+      DelegatedAdapterRecordResult: {
+        $comment:
+          'Wire shape of a provider record: the JSON body travels and the host reconstructs rawBody as its canonical bytes, so a plugin cannot desync the bytes from the body it answered with.',
+        type: 'object',
+        required: ['key', 'endpoint', 'body', 'retrievedAt'],
+        properties: {
+          key: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+          },
+          endpoint: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+          },
+          etag: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+          revision: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+          body: true,
+          retrievedAt: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 64,
+          },
+        },
+        additionalProperties: false,
+      },
+      DelegatedAdapterInspectionResult: {
+        $comment:
+          'Wire shape of a provider inspection: the catalog package instance, its provenance record, and optional non-fatal warnings.',
+        type: 'object',
+        required: ['package', 'record'],
+        properties: {
+          package: {
+            $ref: 'model.schema.json#/$defs/PackageInstance',
+          },
+          record: {
+            $ref: '#/$defs/DelegatedAdapterRecordResult',
+          },
+          warnings: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/DelegatedAdapterWarning',
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      DelegatedAdapterSnapshotResult: {
+        $comment:
+          'A snapshot result is exactly the normative SourceSnapshot wire shape.',
+        $ref: 'model.schema.json#/$defs/SourceSnapshot',
       },
     },
   },
