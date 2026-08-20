@@ -5,7 +5,8 @@ Date: 2026-08-20
 ## Status
 
 Accepted — amends
-[0039](0039-third-party-ecosystems-arrive-as-delegated-adapter-plugins.md)
+[0039](0039-third-party-ecosystems-arrive-as-delegated-adapter-plugins.md);
+amended by [0041](0041-host-fetch-operator-pins-and-credentials.md)
 
 ## Context
 
