@@ -372,8 +372,14 @@ opmx --plugin acme some-tool           # when the plugin serves exactly one purl
 one. The run is the full loop: the plugin answers `enumerate` / `inspect` /
 `fetch-artifact-record` over the bounded stdio protocol — metadata only; the
 host downloads the artifact itself from the record's published `locations`
-(HTTPS, no credentials, same origin as the record endpoint; private or local
-addresses refused unless `OPM_HOST_FETCH_ORIGINS` pins that origin), verifies
+(HTTPS, no credentials, query, or hash). The allowlist is the record endpoint
+origin union operator pins; pins are `OPM_HOST_FETCH_ORIGINS` union this
+plugin's `[plugins.<id>] artifact_origins`. Ephemeral `opmx --plugin` has no
+project binding, so pins are env only. A public HTTPS GET on the endpoint origin
+still needs no pin. Private, loopback, link-local, NAT64, or IPv4-mapped answers
+still need a pin that equals the location origin — `record.endpoint` is not a
+pin. An off-origin location (CDN split) is `UNSAFE_PATH` unless the operator
+named that origin. The plugin cannot expand the pin set. The host verifies
 sha256 and size against the published values, materializes the package into the
 content-addressed tool cache, and runs the executables the plugin's inspection
 declared. A withheld location or an off-origin download fails closed
@@ -390,6 +396,7 @@ manifest id, against the store entry digest that `opm plugin list` prints:
 ```toml
 [plugins.dev.example.acme-adapter]
 store_digest = "sha256:…"
+artifact_origins = ["https://artifacts.internal.example"]
 ```
 
 A binding is a pin, never an acquisition: project commands that read or mutate

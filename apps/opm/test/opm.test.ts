@@ -796,6 +796,13 @@ describe('opm plugin', () => {
 });
 
 describe('project plugin bindings', () => {
+  it('mentions artifact_origins in help', async () => {
+    const cap = capture();
+    expect(await runOpm(['--help'], cap.io, process.cwd())).toBe(0);
+    expect(cap.out).toMatch(/artifact_origins/);
+    expect(cap.out).not.toMatch(/artifact_origin_token_envs/);
+  });
+
   function withPluginHome(home: string): () => void {
     const previous = process.env.OPM_PLUGIN_HOME;
     process.env.OPM_PLUGIN_HOME = home;
@@ -814,7 +821,7 @@ describe('project plugin bindings', () => {
     );
     await writeFile(
       join(root, 'opm.toml'),
-      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[plugins.dev.example.acme-adapter]\nstore_digest = "${storeDigest}"\n`,
+      `${await readFile(join(root, 'opm.toml'), 'utf8')}\n[plugins.dev.example.acme-adapter]\nstore_digest = "${storeDigest}"\nartifact_origins = ["https://artifacts.internal.example"]\n`,
     );
     return root;
   }

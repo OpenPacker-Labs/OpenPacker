@@ -52,13 +52,19 @@ Projects bind plugins in `opm.toml` without embedding credentials:
 ```toml
 [plugins.dev-example-acme]
 store_digest = "sha256:…"
+artifact_origins = ["https://artifacts.internal.example"]
 ```
 
 The section key MUST equal the manifest `id`. `store_digest` pins the exact
 content-addressed store entry; a host MUST refuse a plugin whose materialized
-bytes digest differently. User-level pins live outside the project so
-`opmx --plugin` works without a project; a project binding MUST reference an
-already-installed store entry and never triggers acquisition by itself.
+bytes digest differently. A project binding MAY list `artifact_origins`, an
+array of HTTPS origin-form pins (no userinfo, path, query, or hash). Those
+origins union with `OPM_HOST_FETCH_ORIGINS` for this plugin's host-fetch
+allowlist. Duplicate origins in one list MUST fail closed. The binding MAY name
+origins; it MUST NOT carry secret values and MUST NOT acquire. User-level pins
+live outside the project so `opmx --plugin` works without a project; a project
+binding MUST reference an already-installed store entry and never triggers
+acquisition by itself.
 
 ## Execution
 
@@ -102,16 +108,20 @@ The stdio protocol carries metadata only; artifact bytes never travel through
 the plugin. A delegated provider signals host-side byte acquisition with the
 provider capability extension `openpacker/artifact-bytes: "host-fetch"`. For
 such a provider the `fetch-artifact-record` body MUST carry a sha256 `digest`, a
-byte `size`, and at least one `locations[].uri`. The host MUST fetch the bytes
-itself over HTTPS without credentials, from an origin it allowlists — the origin
-of the record's `endpoint` — MUST resolve the location and refuse private,
-loopback, link-local, NAT64, or IPv4-mapped answers unless that origin is
-operator-pinned, MUST bound the download by the published `size`, and MUST
-verify the sha256 digest before any use. A missing digest, a digest mismatch, an
-over-size body, a location outside the allowlisted origin, or an unpinned
-private address fails closed. The host MUST NOT attach credentials to the
-download. The plugin never proxies artifact bytes; `rawBody` remains the
-canonical bytes of the answered body.
+byte `size`, and at least one `locations[].uri`. Location URIs MUST be HTTPS
+with no userinfo, query, or hash. The host MUST fetch the bytes itself over
+HTTPS without credentials, from an origin it allowlists —
+`{ origin of record.endpoint } ∪ pins`, where `pins` is `OPM_HOST_FETCH_ORIGINS`
+union this plugin's `artifact_origins` — MUST resolve the location and refuse
+private, loopback, link-local, NAT64, or IPv4-mapped answers unless that origin
+is in `pins` (`record.endpoint` is not a pin), MUST bound the download by the
+published `size`, and MUST verify the sha256 digest before any use. The plugin
+MUST NOT add origins via `record.endpoint`, extra `locations[]`, or extra body
+fields. Extra `locations[]` are not walked. A missing digest, a digest mismatch,
+an over-size body, a location outside the allowlisted origin, a location URI
+with query or hash, or an unpinned private address fails closed. The host MUST
+NOT attach credentials to the download. The plugin never proxies artifact bytes;
+`rawBody` remains the canonical bytes of the answered body.
 
 ## Executables
 
