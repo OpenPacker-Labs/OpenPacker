@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
+  normalizePinnedOrigin,
   parsePurl,
   ProviderError,
   redactUrl,
@@ -13,7 +14,7 @@ import {
 } from '@openpacker/adapter-core';
 import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
-import type { OpmManifest } from './types.js';
+import type { OpmManifest, PluginBinding } from './types.js';
 import { MANIFEST_NAME } from './paths.js';
 import { requireAdapterRegistry } from './adapters.js';
 
@@ -145,24 +146,39 @@ export interface RegistryOptions {
    */
   lookup?: HostFetchLookup;
   now?: () => string;
+  /**
+   * Project plugin bindings keyed by manifest id. Host-fetch looks up
+   * `provider.providerId`. Absent on ephemeral runs.
+   */
+  pluginBindings?: Readonly<Record<string, PluginBinding>>;
 }
 
 /** Bind a project registry selection to the endpoint the adapter will use. */
 export function registryOptionsForEcosystem(
   ecosystem: string,
-  manifest: Pick<OpmManifest, 'registries'>,
+  manifest: Pick<OpmManifest, 'registries' | 'plugins'>,
   requested: RegistryOptions = {},
 ): RegistryOptions {
-  if (requested.endpoint !== undefined)
+  const withBindings =
+    requested.pluginBindings !== undefined
+      ? requested
+      : manifest.plugins === undefined
+        ? requested
+        : { ...requested, pluginBindings: manifest.plugins };
+  if (withBindings.endpoint !== undefined)
     return {
-      ...requested,
-      endpoint: safeRegistryEndpoint(requested.endpoint, ecosystem),
+      ...withBindings,
+      endpoint: safeRegistryEndpoint(withBindings.endpoint, ecosystem),
     };
-  const sourceId = sourceForEcosystem(ecosystem, manifest, requested.sourceId);
-  if (sourceId === undefined) return requested;
+  const sourceId = sourceForEcosystem(
+    ecosystem,
+    manifest,
+    withBindings.sourceId,
+  );
+  if (sourceId === undefined) return withBindings;
   const source = manifest.registries?.[sourceId];
-  if (source === undefined) return requested;
-  const { sourceId: _sourceId, ...options } = requested;
+  if (source === undefined) return withBindings;
+  const { sourceId: _sourceId, ...options } = withBindings;
   return {
     ...options,
     endpoint: safeRegistryEndpoint(source.url, ecosystem),
@@ -398,6 +414,7 @@ export async function resolveRegistryArtifact(
       uri: descriptor.uri,
       size: descriptor.size,
       digest: descriptor.digest,
+      providerId: provider.providerId,
       ...hostFetchCallOptions(options),
     });
     return {
@@ -645,6 +662,7 @@ export async function resolveRegistryArtifactDeferred(
             uri: descriptor.uri,
             size: descriptor.size,
             digest: descriptor.digest,
+            providerId: provider.providerId,
             ...hostFetchCallOptions(options),
           })
         ).bytes,
@@ -711,18 +729,22 @@ export async function resolveRegistryArtifactDeferred(
  * delegated-adapter.md §Artifact bytes, ADR 0040).
  *
  * The plugin is the metadata authority, never a byte proxy: the host downloads
- * from a location on the origin of the endpoint the record was answered with,
- * over HTTPS without credentials, bounded by the published size, and verifies
- * the sha256 digest before the bytes are anyone's artifact. Every gap in that
- * chain fails closed.
+ * from a location on an origin in `{endpoint origin} ∪ pins` (env ∪ this
+ * plugin's `artifact_origins`), over HTTPS without credentials, query, or
+ * hash, bounded by the published size, and verifies the sha256 digest before
+ * the bytes are anyone's artifact. Every gap in that chain fails closed.
  */
 function hostFetchCallOptions(options: RegistryOptions): {
   fetch?: typeof fetch;
   lookup?: HostFetchLookup;
+  pluginBindings?: Readonly<Record<string, PluginBinding>>;
 } {
   return {
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     ...(options.lookup === undefined ? {} : { lookup: options.lookup }),
+    ...(options.pluginBindings === undefined
+      ? {}
+      : { pluginBindings: options.pluginBindings }),
   };
 }
 
@@ -733,6 +755,8 @@ async function fetchDelegatedArtifactBytes(input: {
   uri: string;
   size: number | undefined;
   digest: string;
+  providerId?: string;
+  pluginBindings?: Readonly<Record<string, PluginBinding>>;
   fetch?: typeof fetch;
   lookup?: HostFetchLookup;
 }): Promise<{ bytes: Uint8Array; size: number }> {
@@ -750,7 +774,7 @@ async function fetchDelegatedArtifactBytes(input: {
   } catch {
     throw new OpmError(
       'UNSAFE_PATH',
-      `The ${input.ecosystem} registry answered from an endpoint that is not a URL: ${input.endpoint}.`,
+      `The ${input.ecosystem} registry answered from an endpoint that is not a URL.`,
     );
   }
   let location: URL;
@@ -762,24 +786,39 @@ async function fetchDelegatedArtifactBytes(input: {
       `The ${input.ecosystem} registry published an invalid download location for ${input.exactPurl}.`,
     );
   }
-  if (location.protocol !== 'https:' || location.username || location.password)
+  if (
+    location.protocol !== 'https:' ||
+    location.username ||
+    location.password ||
+    location.search !== '' ||
+    location.hash !== ''
+  )
     throw new OpmError(
       'UNSAFE_PATH',
       `Refusing to fetch ${input.exactPurl} from ${redactUrl(location)}: ` +
-        'artifact locations must be HTTPS and carry no credentials.',
+        'artifact locations must be HTTPS and carry no credentials, query, or hash.',
     );
-  if (location.origin !== endpointOrigin)
+  const envPins = parseHostFetchPinnedOrigins(
+    process.env.OPM_HOST_FETCH_ORIGINS,
+  );
+  const projectPins =
+    input.providerId === undefined
+      ? []
+      : (input.pluginBindings?.[input.providerId]?.artifactOrigins ?? []);
+  const pins = [...new Set([...envPins, ...projectPins])];
+  const allowlist = [endpointOrigin, ...pins];
+  if (!allowlist.includes(location.origin))
     throw new OpmError(
       'UNSAFE_PATH',
-      `${input.exactPurl} points at ${location.origin}, which is not the origin ` +
-        `of the endpoint that answered for it (${endpointOrigin}).`,
+      `${input.exactPurl} points at ${location.origin}, which is not an allowed ` +
+        `origin for this host-fetch (${[...new Set(allowlist)].join(', ')}).`,
     );
   let transport: BoundedFetchTransport;
   try {
     transport = new BoundedFetchTransport({
-      allowedOrigins: [endpointOrigin],
+      allowedOrigins: allowlist,
       destinationPolicy: 'classify-and-pin',
-      pinnedOrigins: hostFetchPinnedOrigins(),
+      pinnedOrigins: [...pins],
       maximumBytes: size,
       ...(input.fetch ? { fetch: input.fetch } : {}),
       ...(input.lookup ? { lookup: input.lookup } : {}),
@@ -831,14 +870,32 @@ async function fetchDelegatedArtifactBytes(input: {
   return { bytes: body, size };
 }
 
-function hostFetchPinnedOrigins(): string[] {
-  const raw = process.env.OPM_HOST_FETCH_ORIGINS?.trim() ?? '';
-  if (raw === '') return [];
+function parseHostFetchPinnedOrigins(raw: string | undefined): string[] {
+  const trimmed = raw?.trim() ?? '';
+  if (trimmed === '') return [];
   const origins: string[] = [];
-  for (const part of raw.split(',')) {
+  const seen = new Set<string>();
+  for (const part of trimmed.split(',')) {
     const value = part.trim();
     if (value === '') continue;
-    origins.push(value);
+    let origin: string;
+    try {
+      origin = normalizePinnedOrigin(value);
+    } catch (error) {
+      if (
+        error instanceof ProviderError &&
+        error.code === 'INVALID_PROVIDER_ENDPOINT'
+      )
+        throw new OpmError('INVALID_PROVIDER_ENDPOINT', error.message);
+      throw error;
+    }
+    if (seen.has(origin))
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        `OPM_HOST_FETCH_ORIGINS lists duplicate origin ${origin}`,
+      );
+    seen.add(origin);
+    origins.push(origin);
   }
   return origins;
 }
