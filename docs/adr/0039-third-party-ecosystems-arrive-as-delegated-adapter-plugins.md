@@ -52,5 +52,7 @@ Third-party ecosystem support is a **delegated adapter plugin**:
   unvalidated metadata into resolution, locks, or receipts.
 - The plugin store is user-level and content-addressed; two projects binding the
   same digest share bytes but no mutable state.
-- When the WIT component host lands, the manifest's command vocabulary maps onto
-  the `adapter` world operations; the UX and store do not change.
+- When the WIT component host lands, the manifest's command vocabulary is
+  informed by the `adapter` world operations — `fetch-artifact-record` answers
+  the record behind the world's `fetch-artifact`, and `snapshot` has no WIT
+  operation yet; the UX and store do not change.
