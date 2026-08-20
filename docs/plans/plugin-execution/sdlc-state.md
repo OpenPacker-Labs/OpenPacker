@@ -1,0 +1,85 @@
+# SDLC state — plugin-execution
+
+Initiative: make delegated adapter plugins actually install and run the tools
+they serve. Closes the v1 "metadata-only" gap: today a plugin-served purl
+resolves, then fails closed at digest verification because the bounded stdio
+protocol carries no artifact bytes, and no host path knows a plugin package's
+executables.
+
+Requested by user (2026-08-20): "that isn't a spec v2 decision or future design
+— that's right now. Fix it."
+
+## Phase
+
+planning → dispatch (layers 01–04 below)
+
+## Gap analysis (verified in code)
+
+- `resolveRegistryArtifact` (packages/opm-project/src/registry.ts:422) takes
+  `record.rawBody` as artifact bytes. For a delegated plugin, `rawBody` is the
+  canonical bytes of the JSON descriptor body
+  (packages/plugin-host/src/protocol.ts `wireRecordToRecord`), so
+  `bindVerifiedArtifactBytes` fails closed at digest verification. Fixture
+  documentation of the gap: apps/opm/test/plugin-fixture.ts
+  (`ACME_ARTIFACT_BODY` comment).
+- `discoverBins` (packages/opm-project/src/bins.ts:256) returns `[]` for plugin
+  purl types; a materialized plugin tool then cannot run.
+- `resolveRegistryArtifact` is the single acquisition funnel
+  (packages/opm-project/src/project.ts:826, :1195;
+  packages/opm-project/src/ephemeral.ts:166) — fixing it fixes both
+  `opmx --plugin` ephemeral runs and project `opm add`/`opm install`.
+
+## Decisions
+
+- **D1 — bytes travel host-side, never plugin-side.** The plugin's existing
+  `fetch-artifact-record` answer already carries `digest` / `size` / `mediaType`
+  / `locations`. The host detects a delegated provider via the capability
+  extension `openpacker/artifact-bytes: "host-fetch"`, downloads from a
+  `locations[].uri` itself (bounded transport, HTTPS + no credentials, origin
+  allowlist = origin of the record's `endpoint`, published `size` required as
+  the bound), and sha256-verifies against the published digest. The plugin stays
+  metadata authority — the same trust position a first-party registry holds; it
+  never proxies bytes, so the stdio protocol stays bounded and metadata-only.
+- **D2 — executables are provider metadata.** New `DelegatedAdapterBin` $def and
+  optional `executables` on `DelegatedAdapterInspectionResult`; adapter-core
+  `ProviderInspection` gains optional `executables`; the resolve path surfaces
+  them as `BinDeclaration`s and pins them into the lock package
+  (`materializeLockPackage` already prefers `pkg.bins` over disk discovery).
+  Host-side validation: single-segment safe name, relative POSIX path without
+  `..`, interpreter ∈ `node|python|dotnet|native`, `entry` required iff
+  `python`.
+- **D3 — `native` interpreter end to end.** Third-party package managers are
+  usually native binaries; `BinDeclaration.interpreter`, `opmx` spawn, and bin
+  shims gain a `native` branch that executes the verified store file directly
+  through the existing sandbox funnel. If the package-exec sandbox profile
+  denies exec from store paths, that is a genuine gap to fix in the sandbox
+  layer (behavior test decides).
+- **D4 — spec-first, per repo protocol boundary.** Amend
+  `spec/prex/v1/delegated-adapter.md` + schema, mirror to
+  `packages/contracts/schemas`, regenerate contracts, new ADR 0040 (amends 0039
+  per ADR 0028). `rawBody` stays the canonical bytes of the answered body —
+  honesty invariant unchanged.
+- **D5 — first-party paths unchanged.** No marker → today's `rawBody` behavior.
+  No UX changes to `opm plugin add|list|remove`, bindings, or the store.
+
+## Stack layers (one issue each, bottom-up)
+
+| Layer | Branch                               | Scope                                                                                                                                         | PR  |
+| ----- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                      |     |
+| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                |     |
+| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                   |     |
+| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                |     |
+| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter |     |
+
+## Gates
+
+- Per commit: `npm run agent:check:staged` (pre-commit hook, never bypassed).
+- Per PR: bottom-up rubber-duck + adversarial review, then squash-merge.
+- Pre-merge of stack top: full `npm run verify` green.
+
+## Open risks
+
+- Sandbox package-exec profile vs. native exec from store paths (D3).
+- `BoundedFetchTransport` redirect handling must not escape the origin allowlist
+  (verify in layer 03).
