@@ -3,6 +3,12 @@ import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
+  addPlugin,
+  listPlugins,
+  parsePluginSpec,
+  removePlugin,
+} from '@openpacker/plugin-store';
+import {
   OpmError,
   addPackage,
   collectGarbage,
@@ -86,6 +92,7 @@ const COMMANDS = new Set([
   'resolve',
   'manifest',
   'pack',
+  'plugin',
   'system',
   'generations',
   'rollback',
@@ -474,6 +481,10 @@ export async function runOpm(
       case 'system': {
         return runSystemCommand(args, io, cwd);
       }
+      case 'plugin': {
+        // await keeps subcommand errors inside runOpm's handler.
+        return await runPluginCommand(args, io);
+      }
       case 'generations': {
         const root = await requireOpmRoot(cwd);
         const state = await readEnvironmentState(root);
@@ -556,12 +567,18 @@ function handleError(error: unknown, io: CliIo): number {
     switch (error.code) {
       case 'NOT_FOUND':
       case 'NO_PROJECT':
+      case 'PLUGIN_NOT_INSTALLED':
         return EXIT_CODES.notFound;
       case 'AMBIGUOUS_SPEC':
       case 'INVALID_SPEC':
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
       case 'INVALID_CATALOG':
+      case 'INVALID_PLUGIN_SPEC':
+      case 'INVALID_PLUGIN_MANIFEST':
+      case 'INVALID_PLUGIN_ARTIFACT':
+      case 'PLUGIN_ALREADY_INSTALLED':
+      case 'PLUGIN_ID_CONFLICT':
         return EXIT_CODES.invalidInput;
       case 'UNRESOLVABLE':
         return EXIT_CODES.unsatisfiable;
@@ -574,12 +591,47 @@ function handleError(error: unknown, io: CliIo): number {
       case 'OFFLINE':
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
+      case 'PLUGIN_REGISTRY_UNCONFIGURED':
         return EXIT_CODES.unavailable;
       case 'ECOSYSTEM_DENIED':
       case 'POLICY':
+      case 'POLICY_DENIED':
+      case 'POLICY_INDETERMINATE':
         return EXIT_CODES.policyDenied;
       default:
         return EXIT_CODES.internal;
+    }
+  }
+  // Delegated plugin operations surface ProviderError, which is not an
+  // OpmError but carries the same string codes; map them instead of reporting
+  // a generic internal error.
+  if (error instanceof Error && 'code' in error) {
+    const code = (error as { code: unknown }).code;
+    if (typeof code === 'string') {
+      io.stderr.write(`opm: ${error.message}\n`);
+      switch (code) {
+        case 'OFFLINE':
+        case 'UPSTREAM_UNAVAILABLE':
+        case 'UPSTREAM_RESPONSE_TOO_LARGE':
+        case 'INVALID_PROVIDER_RESPONSE':
+        case 'PLUGIN_ERROR':
+        case 'PLUGIN_FAILED':
+          return EXIT_CODES.unavailable;
+        case 'PACKAGE_NOT_FOUND':
+        case 'ARTIFACT_NOT_FOUND':
+        case 'PLUGIN_NOT_INSTALLED':
+          return EXIT_CODES.notFound;
+        case 'DIGEST_MISMATCH':
+        case 'SIZE_MISMATCH':
+          return EXIT_CODES.verificationFailed;
+        case 'INVALID_PURL':
+        case 'UNSUPPORTED_OPERATION':
+          return EXIT_CODES.invalidInput;
+        case 'UNRESOLVABLE':
+          return EXIT_CODES.unsatisfiable;
+        default:
+          return EXIT_CODES.internal;
+      }
     }
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -675,6 +727,62 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-build' ||
     key === 'allow-network' ||
     key === 'allow-elevation'
+  );
+}
+
+/**
+ * Delegated adapter plugin management (ADR 0039). Plugins live in the
+ * user-level store (`OPM_PLUGIN_HOME` / XDG), never in a project.
+ *
+ * Subcommands: add | remove | list
+ */
+async function runPluginCommand(args: Parsed, io: CliIo): Promise<number> {
+  const sub = args.positionals[0];
+  if (sub === 'add') {
+    const spec = args.positionals[1];
+    if (!spec) throw usage('opm plugin add requires a plugin name');
+    const { name, version } = parsePluginSpec(spec);
+    const offline = offlineOverride(args);
+    const installed = await addPlugin({
+      name,
+      ...(version === undefined ? {} : { version }),
+      ...(offline === undefined ? {} : { offline }),
+    });
+    io.stdout.write(
+      installed.alreadyInstalled
+        ? `Plugin ${installed.name} is already installed at ${installed.exactPurl}\n`
+        : `Installed plugin ${installed.exactPurl}\n`,
+    );
+    io.stdout.write(
+      `  id:     ${installed.id}\n` +
+        `  digest: ${installed.storeDigest}\n` +
+        `  store:  ${installed.storePath}\n`,
+    );
+    return EXIT_CODES.success;
+  }
+  if (sub === 'remove') {
+    const name = args.positionals[1];
+    if (!name) throw usage('opm plugin remove requires a plugin name');
+    const removed = await removePlugin(name);
+    io.stdout.write(`Removed plugin ${removed.name} (${removed.exactPurl})\n`);
+    return EXIT_CODES.success;
+  }
+  if (sub === 'list') {
+    const plugins = await listPlugins();
+    if (plugins.length === 0) {
+      io.stdout.write('(no plugins installed)\n');
+      return EXIT_CODES.success;
+    }
+    for (const plugin of plugins) {
+      const missing = plugin.present ? '' : '  (store entry missing)';
+      io.stdout.write(
+        `${plugin.name}\t${plugin.exactPurl}\t${plugin.storeDigest}\t${plugin.installedAt}${missing}\n`,
+      );
+    }
+    return EXIT_CODES.success;
+  }
+  throw usage(
+    `Unknown plugin subcommand: ${sub ?? '(none)'}. Use add | remove | list.`,
   );
 }
 
@@ -895,6 +1003,13 @@ install (capability discovery). Examples:
   opm add pkg:nix/hello
   opm add pkg:deb/curl --allow-elevation --dry-run
   opm system available   # alias: list install-capable adapters
+
+Delegated adapter plugins (user-level, never installed by default):
+  opm plugin add <name>[@version]     install from the plugin registry
+  opm plugin list                     show installed plugins and their pins
+  opm plugin remove <name>            remove a plugin and its store entry
+  The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
+  lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.
 
 Registries (catalog, from adapter discovery): ${registryEcosystems().join(', ') || '(none configured)'}
 Host/profile install uses the same verbs when Registry Definition advertises install.

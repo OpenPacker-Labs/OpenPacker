@@ -33,13 +33,19 @@ export {
   assertSafeSegment,
   assertStoreKey,
   CATALOG_NAME,
+  ensureStableDirectory,
   LOCK_NAME,
   MANIFEST_NAME,
   OPM_DIR,
   projectPaths,
+  readStableFile,
+  readStableFileBytes,
+  removeStableFile,
+  removeStableTree,
   resolveContained,
   storeKeyFromDigest,
   storePathForDigest,
+  writeStableFile,
 } from './paths.js';
 
 export {
@@ -129,6 +135,7 @@ export {
   readStoreReferences,
   recordGeneration,
   rollbackTarget,
+  stableStoreTreeDigest,
   switchGeneration,
   type EnvironmentState,
   type Generation,

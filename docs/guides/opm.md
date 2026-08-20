@@ -251,25 +251,28 @@ their verifier evidence can be independently replayed.
 
 ## Commands
 
-| Command                   | What it does                                        |
-| ------------------------- | --------------------------------------------------- |
-| `opm init`                | Create `opm.toml` + `.opm/`                         |
-| `opm add <spec>`          | Add to manifest, resolve, lock, install             |
-| `opm remove <alias>`      | Drop from manifest + lock + install                 |
-| `opm install`             | Materialize lock into `.opm/store` + bins           |
-| `opm uninstall [alias]`   | Remove install (manifest/lock kept unless `remove`) |
-| `opm sync`                | Resolve manifest → lock → install (idempotent)      |
-| `opm update`              | Re-resolve from manifest (v1 = sync)                |
-| `opm list`                | Show aliases, PURLs, digests, install status        |
-| `opm why <alias>`         | Why a package is present                            |
-| `opm search <query>`      | Candidate packages in a registry                    |
-| `opm versions <purl>`     | Every published version, oldest first               |
-| `opm info <exact-purl>`   | Digest, size, media type, download URL              |
-| `opmx <bin\|pkg> [args…]` | Run an installed executable                         |
-| `opm generations`         | List the environment history; `*` marks current     |
-| `opm rollback [--to N]`   | Return to the previous generation, or a named one   |
-| `opm gc [--keep N]`       | Remove store paths no retained generation needs     |
-| `opm shell [--json]`      | Print the environment for this generation           |
+| Command                    | What it does                                        |
+| -------------------------- | --------------------------------------------------- |
+| `opm init`                 | Create `opm.toml` + `.opm/`                         |
+| `opm add <spec>`           | Add to manifest, resolve, lock, install             |
+| `opm remove <alias>`       | Drop from manifest + lock + install                 |
+| `opm install`              | Materialize lock into `.opm/store` + bins           |
+| `opm uninstall [alias]`    | Remove install (manifest/lock kept unless `remove`) |
+| `opm sync`                 | Resolve manifest → lock → install (idempotent)      |
+| `opm update`               | Re-resolve from manifest (v1 = sync)                |
+| `opm list`                 | Show aliases, PURLs, digests, install status        |
+| `opm why <alias>`          | Why a package is present                            |
+| `opm search <query>`       | Candidate packages in a registry                    |
+| `opm versions <purl>`      | Every published version, oldest first               |
+| `opm info <exact-purl>`    | Digest, size, media type, download URL              |
+| `opmx <bin\|pkg> [args…]`  | Run an installed executable                         |
+| `opm generations`          | List the environment history; `*` marks current     |
+| `opm rollback [--to N]`    | Return to the previous generation, or a named one   |
+| `opm gc [--keep N]`        | Remove store paths no retained generation needs     |
+| `opm shell [--json]`       | Print the environment for this generation           |
+| `opm plugin add <name>`    | Install a delegated adapter plugin (digest-pinned)  |
+| `opm plugin list`          | List installed plugins and their pins               |
+| `opm plugin remove <name>` | Remove a plugin and its store entry                 |
 
 ### Generations and rollback
 
@@ -326,6 +329,28 @@ opmx --package demo-tool --bin demo-tool -- --help
 
 Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
+
+### Delegated adapter plugins
+
+Third-party ecosystems arrive as delegated adapter plugins (ADR 0039): a
+standalone executable plus a `DelegatedAdapterManifest`, distributed as a PREX
+package under `pkg:opm-plugin/<name>`. Plugins extend opm itself; they never
+join a project's manifest, lock, or store. Nothing installs one by default:
+
+```sh
+opm plugin add acme          # or acme@1.0.0; prints the pinned digest
+opm plugin list              # installed plugins and their pins
+opm plugin remove acme
+```
+
+Acquisition is digest-pinned and policy-gated exactly like a package install,
+and the manifest is schema-validated at `plugin add` — a malformed or tampered
+plugin never reaches the store. Plugins materialize into a user-level
+content-addressed store (`OPM_PLUGIN_HOME`, else
+`$XDG_DATA_HOME/openpacker/plugins`, else `~/.local/share/openpacker/plugins`),
+recorded in `plugins.json` there. The plugin registry is selected with
+`OPM_REGISTRY_OPM_PLUGIN`; there is no default and no plugin discovery. Offline
+install works only from an already-pinned, digest-verified cache entry.
 
 ---
 
