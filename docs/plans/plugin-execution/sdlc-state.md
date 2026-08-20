@@ -64,13 +64,14 @@ planning → dispatch (layers 01–04 below)
 
 ## Stack layers (one issue each, bottom-up)
 
-| Layer | Branch                               | Scope                                                                                                                                         | PR  |
-| ----- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                      |     |
-| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                |     |
-| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                   |     |
-| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                |     |
-| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter |     |
+| Layer | Branch                               | Scope                                                                                                                                                                           | PR  |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 01    | sdlc/plugin-execution-01-spec        | spec amendment, schema $defs, mirrors, regenerated contracts, protocol fixture, ADR 0040                                                                                        |     |
+| 02    | sdlc/plugin-execution-02-host        | adapter-core `ProviderExecutable`/`ProviderInspection.executables`; plugin-host bin validation + capability marker; unit tests                                                  |     |
+| 03    | sdlc/plugin-execution-03-acquire     | host-fetch acquisition in `resolveRegistryArtifact`; bins plumbing into locks; `native` interpreter through bins/shims/opmx                                                     |     |
+| 04    | sdlc/plugin-execution-04-e2e         | fixture plugin serves real bytes + runnable tool; behavior/e2e `opmx --plugin`; guides/examples; closeout docs                                                                  |     |
+| 05    | sdlc/plugin-execution-05-generations | generation members record declared bins; activation prefers recorded over discovery; opmx project path dispatches on the declared interpreter                                   |     |
+| 06    | sdlc/plugin-execution-06-cache       | ephemeral tool cache hits: metadata-first resolution defers the byte download; a digest the store already holds skips it, with download fallthrough on any cache-shape surprise |     |
 
 ## Gates
 
