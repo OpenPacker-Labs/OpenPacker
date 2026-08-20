@@ -421,18 +421,28 @@ function parse(argv: string[]): {
     }
     if (arg === '--plugin') {
       const name = argv[i + 1];
-      if (name !== undefined) plugins.push(name);
+      if (name === undefined || name.startsWith('--'))
+        throw new OpmError('USAGE', 'opmx --plugin requires a plugin name');
+      plugins.push(name);
       i += 2;
       continue;
     }
     if (arg.startsWith('--plugin=')) {
-      plugins.push(arg.slice('--plugin='.length));
+      const name = arg.slice('--plugin='.length);
+      if (name === '')
+        throw new OpmError('USAGE', 'opmx --plugin requires a plugin name');
+      plugins.push(name);
       i += 1;
       continue;
     }
     if (arg === '--allow-env') {
       const name = argv[i + 1];
-      if (name !== undefined) allowEnv.push(name);
+      if (name === undefined || name.startsWith('--'))
+        throw new OpmError(
+          'USAGE',
+          'opmx --allow-env requires an environment variable name',
+        );
+      allowEnv.push(name);
       i += 2;
       continue;
     }

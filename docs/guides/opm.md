@@ -363,7 +363,7 @@ opmx --plugin acme some-tool    # when the plugin serves exactly one purl type
 
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
-`opmx --offline` refuses an ephemeral resolve, as always.
+`opmx --offline` refuses an ephemeral resolve outright.
 
 A project pins the plugins it relies on in `opm.toml`, keyed by the plugin's
 manifest id, against the store entry digest that `opm plugin list` prints:

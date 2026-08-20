@@ -219,6 +219,8 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
+        // remove rewrites the manifest and lock; verify bound plugins first.
+        await registerBoundPlugins(root, adapterRegistry);
         await removePackage({
           root,
           alias,
@@ -248,6 +250,7 @@ export async function runOpm(
       case 'uninstall': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
+        await registerBoundPlugins(root, adapterRegistry);
         await uninstallProject({
           root,
           ...(alias !== undefined ? { alias } : {}),

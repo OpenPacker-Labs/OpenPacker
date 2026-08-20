@@ -438,6 +438,22 @@ describe('opmx argument forwarding', () => {
     expect(plain.allowEnv).toEqual([]);
     expect(plain.offline).toBe(false);
   });
+
+  it('refuses a --plugin or --allow-env without a value', async () => {
+    const { parseForTest } = await import('../src/opmx.js');
+    // A trailing flag is a malformed invocation, not a silently dropped one.
+    expect(() => parseForTest(['--plugin'])).toThrow(/requires a plugin name/u);
+    expect(() => parseForTest(['--allow-env'])).toThrow(
+      /requires an environment variable name/u,
+    );
+    // Another flag is never consumed as the value.
+    expect(() => parseForTest(['--plugin', '--offline', 'demo'])).toThrow(
+      /requires a plugin name/u,
+    );
+    expect(() => parseForTest(['--plugin='])).toThrow(
+      /requires a plugin name/u,
+    );
+  });
 });
 
 const nativeBackend = createNativeBackend();
