@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+  "delegatedAdapterResponseVersion": "1",
+  "ok": true,
+  "result": {
+    "key": "pkg:npm/%40openpacker/demo-tool@1.0.0",
+    "endpoint": "https://fixtures.test/registry",
+    "etag": "\"fixture-1\"",
+    "revision": "2026-08-02T00:00:00Z",
+    "body": {
+      "name": "@openpacker/demo-tool",
+      "version": "1.0.0",
+      "dist": {
+        "tarball": "https://fixtures.test/demo-tool-1.0.0.tgz"
+      }
+    },
+    "retrievedAt": "2026-08-02T00:00:00Z"
+  }
+}

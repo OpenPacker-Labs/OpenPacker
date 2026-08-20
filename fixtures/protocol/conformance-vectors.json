@@ -2032,7 +2032,7 @@
       "file": "delegated-adapter/example.json",
       "mutations": [
         {
-          "operation": "remove",
+          "operation": "delete",
           "path": "/authority"
         }
       ],
@@ -2079,6 +2079,113 @@
         }
       ],
       "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-response-with-result",
+      "file": "delegated-adapter/response-result.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-response-ok-without-result",
+      "file": "delegated-adapter/response-result.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/result"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-response-error-without-error",
+      "file": "delegated-adapter/response.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/error"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result",
+      "file": "delegated-adapter/inspection-result.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result-without-record",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/record"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-inspection-result-unknown-field",
+      "file": "delegated-adapter/inspection-result.json",
+      "mutations": [
+        {
+          "operation": "set",
+          "path": "/rawBody",
+          "value": "e30="
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-record-result",
+      "file": "delegated-adapter/record-result.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterRecordResult",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-record-result-without-key",
+      "file": "delegated-adapter/record-result.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/key"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterRecordResult",
+      "valid": false,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-snapshot-result",
+      "file": "../golden/snapshot.json",
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterSnapshotResult",
+      "valid": true,
+      "levels": ["PREX-N"]
+    },
+    {
+      "name": "delegated-adapter-snapshot-result-without-root-digest",
+      "file": "../golden/snapshot.json",
+      "mutations": [
+        {
+          "operation": "delete",
+          "path": "/rootDigest"
+        }
+      ],
+      "schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterSnapshotResult",
       "valid": false,
       "levels": ["PREX-N"]
     }
