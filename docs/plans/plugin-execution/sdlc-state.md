@@ -11,7 +11,8 @@ Requested by user (2026-08-20): "that isn't a spec v2 decision or future design
 
 ## Phase
 
-planning → dispatch (layers 01–04 below)
+closeout — all six layers implemented; stack submitted; bottom-up review then
+squash-merge, then final `npm run verify` on main.
 
 ## Gap analysis (verified in code)
 
@@ -81,6 +82,17 @@ planning → dispatch (layers 01–04 below)
 
 ## Open risks
 
-- Sandbox package-exec profile vs. native exec from store paths (D3).
-- `BoundedFetchTransport` redirect handling must not escape the origin allowlist
-  (verify in layer 03).
+- ~~Sandbox package-exec profile vs. native exec from store paths (D3)~~ —
+  resolved in layer 03: bwrap ro-binds argv[0]/dirname + declared storePaths;
+  proven by an enforced-sandbox e2e.
+- ~~`BoundedFetchTransport` redirects~~ — resolved in layer 03:
+  `redirect: 'manual'`, origin allowlist + no-credentials re-checked per hop.
+
+## Boyscout defects fixed along the way
+
+- Generation activation discarded provider-declared bins (project `opmx <bin>`
+  failed for plugin ecosystems) — layer 05.
+- opmx project path spawned every bin through Node (latent crash for
+  python/dotnet/native project bins) — layer 05.
+- Ephemeral tool cache never hit; `(cached)` was unreachable — layer 06.
+- Lockfile parser dropped `interpreter`/`entry` on read — layer 03.
