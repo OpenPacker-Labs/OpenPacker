@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AdapterRegistry, type AdapterModule } from '@openpacker/adapter-host';
 import type {
   DelegatedAdapterManifest,
+  DelegatedAdapterOperation,
   JsonValue,
 } from '@openpacker/contracts';
 import {
@@ -21,7 +22,10 @@ import {
   type SandboxOutcome,
 } from '@openpacker/sandbox';
 import type { DelegatedExecutableIdentity } from '@openpacker/pack-provider';
-import { registerInstalledPlugins } from '../src/index.js';
+import {
+  registerInstalledPlugins,
+  validateOperationResult,
+} from '../src/index.js';
 import { parseCanonicalJson } from '@openpacker/canonical';
 
 /**
@@ -194,6 +198,8 @@ interface FixturePlugin {
   storeRoot: string;
   storePath: string;
   executablePath: string;
+  /** sha256 hex of the installed script, as registration computes it. */
+  executableDigest: string;
   manifest: DelegatedAdapterManifest;
 }
 
@@ -246,6 +252,7 @@ async function installFixturePlugin(
     storeRoot,
     storePath,
     executablePath: join(storePath, manifest.executable),
+    executableDigest: createHash('sha256').update(script).digest('hex'),
     manifest,
   };
 }
@@ -265,10 +272,13 @@ function sandboxOutcome(stdout: string): SandboxOutcome {
   };
 }
 
-function fakeIdentity(path: string): DelegatedExecutableIdentity {
+function fakeIdentity(
+  path: string,
+  digest: string = DIGEST,
+): DelegatedExecutableIdentity {
   return {
     path,
-    digest: { algorithm: 'sha256', value: DIGEST },
+    digest: { algorithm: 'sha256', value: digest },
     device: 1n,
     inode: 2n,
     size: 3n,
@@ -315,7 +325,9 @@ async function registerWithCannedAnswers(
   const result = await registerInstalledPlugins({
     storeRoot: fixture.storeRoot,
     registry,
-    inspectExecutable: async (path) => fakeIdentity(path),
+    // The stub authority must answer with the digest registration pinned.
+    inspectExecutable: async (path) =>
+      fakeIdentity(path, fixture.executableDigest),
     sandboxRun: async (input) => {
       calls.push(input);
       const operation = input.argv[1] ?? '';
@@ -552,7 +564,7 @@ describe('registerInstalledPlugins', () => {
       storeRoot: fixture.storeRoot,
       registry,
       inspectExecutable: async (path) => ({
-        ...fakeIdentity(path),
+        ...fakeIdentity(path, fixture.executableDigest),
         inode: revision,
       }),
       sandboxRun: async (input) => {
@@ -563,6 +575,113 @@ describe('registerInstalledPlugins', () => {
     await expect(registry.definitionFor('acme')).rejects.toMatchObject({
       code: 'AUTHORITY_NOT_DECLARED',
     });
+  });
+
+  it('refuses identify results outside the declared purl types', async () => {
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root, {
+      answer: (operation, _input, canned) =>
+        operation === 'identify'
+          ? sandboxOutcome(
+              okResponse([
+                {
+                  ...IDENTITY,
+                  canonicalPurl: 'pkg:other/demo',
+                  purlType: 'other',
+                },
+              ] as unknown as JsonValue),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    await expect(catalog.identify('demo')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
+  it('refuses an inspect answer for a different package than asked', async () => {
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root, {
+      answer: (operation, _input, canned) =>
+        operation === 'inspect'
+          ? sandboxOutcome(
+              okResponse({
+                package: {
+                  ...PACKAGE_INSTANCE,
+                  identity: {
+                    ...PACKAGE_INSTANCE.identity,
+                    exactPurl: 'pkg:acme/demo@2.0.0',
+                  },
+                },
+                record: WIRE_RECORD,
+              } as unknown as JsonValue),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    await expect(catalog.inspect('pkg:acme/demo@1.0.0')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
+  it('refuses an inspect answer whose exact purl type was never declared', async () => {
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root, {
+      // The plugin echoes the asked-for foreign purl exactly; equality with
+      // the request is not enough when the type was never declared.
+      answer: (operation, _input, canned) =>
+        operation === 'inspect'
+          ? sandboxOutcome(
+              okResponse({
+                package: {
+                  ...PACKAGE_INSTANCE,
+                  identity: {
+                    ...PACKAGE_INSTANCE.identity,
+                    exactPurl: 'pkg:other/demo@1.0.0',
+                  },
+                },
+                record: WIRE_RECORD,
+              } as unknown as JsonValue),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    await expect(catalog.inspect('pkg:other/demo@1.0.0')).rejects.toMatchObject(
+      { code: 'INVALID_RESPONSE' },
+    );
+  });
+
+  it('refuses a record whose retrievedAt is not an RFC 3339 timestamp', async () => {
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root, {
+      answer: (operation, _input, canned) =>
+        operation === 'fetch-artifact-record'
+          ? sandboxOutcome(
+              okResponse({
+                ...WIRE_RECORD,
+                retrievedAt: '2026-01-01',
+              } as unknown as JsonValue),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    await expect(
+      catalog.fetchArtifactRecord('pkg:acme/demo@1.0.0'),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('fails closed on an operation the protocol does not know', () => {
+    let caught: unknown;
+    try {
+      validateOperationResult(
+        fixtureManifest(),
+        'bogus' as DelegatedAdapterOperation,
+        {},
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'UNSUPPORTED_OPERATION' });
   });
 
   it('refuses operations the manifest does not declare', async () => {

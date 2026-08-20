@@ -2,24 +2,23 @@ import { ProviderError, parsePurl } from '@openpacker/adapter-core';
 import type {
   ProviderInspection,
   ProviderRecord,
-  ProviderWarning,
 } from '@openpacker/adapter-core';
 import type { RegistryDefinition } from '@openpacker/adapter-host';
 import { canonicalBytes } from '@openpacker/canonical';
 import {
   createPrexValidator,
   parseAndValidateContract,
-  validateCanonicalValue,
   validateContract,
 } from '@openpacker/conformance';
 import type {
+  DelegatedAdapterInspectionResult,
   DelegatedAdapterManifest,
   DelegatedAdapterOperation,
+  DelegatedAdapterRecordResult,
   DelegatedAdapterRequest,
   DelegatedAdapterResponse,
   JsonValue,
   PackageIdentity,
-  PackageInstance,
   SourceSnapshot,
 } from '@openpacker/contracts';
 import { DELEGATED_ADAPTER_RESPONSE_SCHEMA } from './manifest.js';
@@ -35,10 +34,20 @@ const REGISTRY_DEFINITION_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition';
 const PACKAGE_IDENTITY_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageIdentity';
-const PACKAGE_INSTANCE_SCHEMA =
-  'https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/PackageInstance';
-const SOURCE_SNAPSHOT_SCHEMA =
-  'https://openpacker.dev/spec/prex/v1/schemas/model.schema.json#/$defs/SourceSnapshot';
+const INSPECTION_RESULT_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterInspectionResult';
+const RECORD_RESULT_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterRecordResult';
+const SNAPSHOT_RESULT_SCHEMA =
+  'https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterSnapshotResult';
+
+/**
+ * RFC 3339 shape (a date-time with an explicit offset); Date.parse then
+ * rejects impossible dates the shape alone would admit. Wire timestamps are
+ * metadata the host reasons about, so "yesterday" or a bare date fail closed.
+ */
+const RFC3339_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** Requests are schema-bounded to KiBs already; this is the hard stop. */
 export const MAX_REQUEST_BYTES = 65_536;
@@ -109,17 +118,24 @@ export function parsePluginResponse(
   return response;
 }
 
-/** Validate one ok-result against the normative schema for its operation. */
+/**
+ * Validate one ok-result against the normative schema for its operation, then
+ * against the manifest and the request: a plugin may only answer with purl
+ * types it declared, and an inspect answer must be for the exact package the
+ * host asked about. Anything else fails closed as INVALID_RESPONSE.
+ */
 export function validateOperationResult(
   manifest: DelegatedAdapterManifest,
   operation: DelegatedAdapterOperation,
   result: JsonValue,
+  params: DelegatedAdapterRequest['params'] = {},
 ): unknown {
   const invalid = (message: string): ProviderError =>
     new ProviderError(
       'INVALID_RESPONSE',
       `Plugin ${manifest.id} ${operation}: ${message}`,
     );
+  const declared = new Set(manifest.purlTypes.map((t) => t.toLowerCase()));
   switch (operation) {
     case 'registry-definition': {
       const definition = validateSchema<RegistryDefinition>(
@@ -128,7 +144,6 @@ export function validateOperationResult(
         invalid,
       );
       // The definition must not claim ecosystems the manifest never declared.
-      const declared = new Set(manifest.purlTypes.map((t) => t.toLowerCase()));
       const extra = definition.purlTypes.filter(
         (type) => !declared.has(type.toLowerCase()),
       );
@@ -140,13 +155,21 @@ export function validateOperationResult(
     }
     case 'identify': {
       if (!Array.isArray(result)) throw invalid('result is not an array');
-      return result.map((item) =>
-        validateSchema<PackageIdentity>(PACKAGE_IDENTITY_SCHEMA, item, invalid),
-      );
+      return result.map((item) => {
+        const identity = validateSchema<PackageIdentity>(
+          PACKAGE_IDENTITY_SCHEMA,
+          item,
+          invalid,
+        );
+        if (!declared.has(identity.purlType.toLowerCase()))
+          throw invalid(
+            `identify result ${identity.canonicalPurl} is outside the declared purl types`,
+          );
+        return identity;
+      });
     }
     case 'enumerate': {
       if (!Array.isArray(result)) throw invalid('result is not an array');
-      const declared = new Set(manifest.purlTypes.map((t) => t.toLowerCase()));
       return result.map((item): string => {
         if (typeof item !== 'string')
           throw invalid('enumerate result is not strings');
@@ -168,38 +191,63 @@ export function validateOperationResult(
       });
     }
     case 'inspect': {
-      if (
-        result === null ||
-        typeof result !== 'object' ||
-        Array.isArray(result)
-      )
-        throw invalid('result is not an object');
-      const record = result as Record<string, JsonValue>;
-      for (const key of Object.keys(record))
-        if (!['package', 'record', 'warnings'].includes(key))
-          throw invalid(`unexpected field ${key}`);
-      const instance = record['package'];
-      const wireRecord = record['record'];
-      if (instance === undefined || wireRecord === undefined)
-        throw invalid('result requires package and record');
+      const wire = validateSchema<DelegatedAdapterInspectionResult>(
+        INSPECTION_RESULT_SCHEMA,
+        result,
+        invalid,
+      );
+      // The answer must be for the package the host asked about, in an
+      // ecosystem the manifest declared — anything else is a confused or
+      // malicious plugin, not data.
+      if (params.exactPurl === undefined)
+        throw invalid(
+          'inspect result cannot be checked: the request carried no exactPurl',
+        );
+      const answered = wire.package.identity.exactPurl;
+      if (answered !== params.exactPurl)
+        throw invalid(
+          `inspect answered ${answered ?? '(no exactPurl)'} for the requested ${params.exactPurl}`,
+        );
+      let answeredType;
+      try {
+        answeredType = parsePurl(answered).type;
+      } catch (error) {
+        throw invalid(
+          `inspect result is not a purl: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (!declared.has(answeredType))
+        throw invalid(
+          `inspect result ${answered} is outside the declared purl types`,
+        );
       const inspection: ProviderInspection = {
-        package: validateSchema<PackageInstance>(
-          PACKAGE_INSTANCE_SCHEMA,
-          instance,
-          invalid,
-        ),
-        record: parseWireRecord(wireRecord, invalid),
-        warnings: parseWireWarnings(record['warnings'], invalid),
+        package: wire.package,
+        record: wireRecordToRecord(wire.record, invalid),
+        warnings: wire.warnings ?? [],
       };
       return inspection;
     }
     case 'fetch-artifact-record':
-      return parseWireRecord(result, invalid);
+      return wireRecordToRecord(
+        validateSchema<DelegatedAdapterRecordResult>(
+          RECORD_RESULT_SCHEMA,
+          result,
+          invalid,
+        ),
+        invalid,
+      );
     case 'snapshot':
       return validateSchema<SourceSnapshot>(
-        SOURCE_SNAPSHOT_SCHEMA,
+        SNAPSHOT_RESULT_SCHEMA,
         result,
         invalid,
+      );
+    default:
+      // An operation outside the enum means the host and this validator
+      // disagree about the protocol; refuse rather than guess a shape.
+      throw new ProviderError(
+        'UNSUPPORTED_OPERATION',
+        `Plugin ${manifest.id}: unknown delegated operation ${String(operation)}`,
       );
   }
 }
@@ -225,100 +273,28 @@ function validateSchema<T>(
 }
 
 /**
- * Wire shape of a ProviderRecord: the JSON body travels, and the host
- * reconstructs rawBody as its canonical bytes — bytes a plugin cannot desync
- * from the body it answered with.
+ * Turn a schema-validated wire record into a ProviderRecord. The normative
+ * DelegatedAdapterRecordResult schema already bounded every field and
+ * validateContract already enforced canonical JSON (body included); what
+ * stays host-side is the timestamp check and reconstructing rawBody as the
+ * canonical bytes of the answered body — bytes a plugin cannot desync.
  */
-function parseWireRecord(value: JsonValue, invalid: Invalid): ProviderRecord {
-  if (value === null || typeof value !== 'object' || Array.isArray(value))
-    throw invalid('record is not an object');
-  const record = value as Record<string, JsonValue>;
-  for (const key of Object.keys(record))
-    if (
-      !['key', 'endpoint', 'etag', 'revision', 'body', 'retrievedAt'].includes(
-        key,
-      )
-    )
-      throw invalid(`record has unexpected field ${key}`);
-  const key = boundedString(record['key'], 'record.key', 4096, invalid);
-  const endpoint = boundedString(
-    record['endpoint'],
-    'record.endpoint',
-    4096,
-    invalid,
-  );
-  const retrievedAt = boundedString(
-    record['retrievedAt'],
-    'record.retrievedAt',
-    64,
-    invalid,
-  );
-  const etag =
-    record['etag'] === undefined
-      ? undefined
-      : boundedString(record['etag'], 'record.etag', 1024, invalid);
-  const revision =
-    record['revision'] === undefined
-      ? undefined
-      : boundedString(record['revision'], 'record.revision', 1024, invalid);
-  const body = record['body'];
-  if (body === undefined) throw invalid('record requires a body');
-  const canonicalErrors = validateCanonicalValue(body);
-  if (canonicalErrors.length > 0)
-    throw invalid(
-      `record body is not canonical JSON: ${canonicalErrors
-        .map((error) => error.message ?? 'is invalid')
-        .join('; ')}`,
-    );
+function wireRecordToRecord(
+  record: DelegatedAdapterRecordResult,
+  invalid: Invalid,
+): ProviderRecord {
+  if (
+    !RFC3339_PATTERN.test(record.retrievedAt) ||
+    !Number.isFinite(Date.parse(record.retrievedAt))
+  )
+    throw invalid('record.retrievedAt must be an RFC 3339 timestamp');
   return {
-    key,
-    endpoint,
-    ...(etag === undefined ? {} : { etag }),
-    ...(revision === undefined ? {} : { revision }),
-    body,
-    rawBody: canonicalBytes(body),
-    retrievedAt,
+    key: record.key,
+    endpoint: record.endpoint,
+    ...(record.etag === undefined ? {} : { etag: record.etag }),
+    ...(record.revision === undefined ? {} : { revision: record.revision }),
+    body: record.body,
+    rawBody: canonicalBytes(record.body),
+    retrievedAt: record.retrievedAt,
   };
-}
-
-function parseWireWarnings(
-  value: JsonValue | undefined,
-  invalid: Invalid,
-): ProviderWarning[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 64)
-    throw invalid('warnings is not an array of at most 64 entries');
-  return value.map((item): ProviderWarning => {
-    if (item === null || typeof item !== 'object' || Array.isArray(item))
-      throw invalid('warning is not an object');
-    const warning = item as Record<string, JsonValue>;
-    for (const key of Object.keys(warning))
-      if (!['code', 'message', 'path'].includes(key))
-        throw invalid(`warning has unexpected field ${key}`);
-    const code = boundedString(warning['code'], 'warning.code', 128, invalid);
-    const message = boundedString(
-      warning['message'],
-      'warning.message',
-      8192,
-      invalid,
-    );
-    const path =
-      warning['path'] === undefined
-        ? undefined
-        : boundedString(warning['path'], 'warning.path', 4096, invalid);
-    return { code, message, ...(path === undefined ? {} : { path }) };
-  });
-}
-
-function boundedString(
-  value: JsonValue | undefined,
-  field: string,
-  maximumLength: number,
-  invalid: Invalid,
-): string {
-  if (typeof value !== 'string' || value.length === 0)
-    throw invalid(`${field} must be a non-empty string`);
-  if (value.length > maximumLength)
-    throw invalid(`${field} exceeds ${maximumLength} characters`);
-  return value;
 }
