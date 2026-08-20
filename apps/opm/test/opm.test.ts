@@ -558,18 +558,18 @@ describe('opmx --plugin', () => {
       expect(cap.out).toBe('acme-demo-ran\n');
       expect(fetches).toBe(1);
 
-      // A repeat run resolves and verifies again and runs the same verified
-      // tool. Note: the ephemeral path re-downloads the primary bytes today —
-      // fetchTool always hands bytes to materializeLockPackage, so the
-      // content-addressed store archive is never consulted and opmx's
-      // "(cached)" line is unreachable (reported in layer 04 handback).
+      // A repeat run re-resolves the registry metadata (an unpinned run is a
+      // different thing tomorrow), but the resolved digest already names a
+      // content-addressed cache entry, so the bytes do not move again and the
+      // run reports the cache hit.
       cap = capture();
       expect(
         await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home),
         cap.err,
       ).toBe(0);
+      expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0 \(cached\)/);
       expect(cap.out).toBe('acme-demo-ran\n');
-      expect(fetches).toBe(2);
+      expect(fetches).toBe(1);
     } finally {
       vi.unstubAllGlobals();
       restore();

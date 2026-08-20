@@ -572,10 +572,12 @@ A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
 Tools live in a content-addressed cache under OPM_TOOL_CACHE (else
-XDG_CACHE_HOME, else ~/.cache/openpacker/x); a repeat run resolves and
-digest-verifies again rather than trusting what ran before. The resolved
-version is printed to stderr, because an unpinned run is a different thing
-tomorrow.
+XDG_CACHE_HOME, else ~/.cache/openpacker/x). Every run re-resolves the
+registry metadata — an unpinned run is a different thing tomorrow — but the
+artifact bytes move only when the resolved digest is not already cached: a
+repeat run rebuilds from the digest-verified store archive instead of
+downloading, and says so with "(cached)". The resolved version is printed to
+stderr either way.
 `;
 }
 
