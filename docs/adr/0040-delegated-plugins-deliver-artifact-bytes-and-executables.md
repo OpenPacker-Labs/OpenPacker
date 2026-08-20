@@ -25,9 +25,12 @@ bounded-protocol and fail-closed invariants of ADR 0039 stand.
   carries a sha256 `digest`, a byte `size`, and at least one `locations[].uri`;
   the host fetches the bytes itself over HTTPS without credentials, from the
   allowlisted origin of the record's `endpoint`, bounded by the published size,
-  and verifies the sha256 digest before any use. Absence or mismatch fails
-  closed. `rawBody` remains the canonical bytes of the answered body — the
-  honesty invariant is unchanged.
+  and verifies the sha256 digest before any use. The host resolves the location
+  and refuses private, loopback, link-local, NAT64, or IPv4-mapped answers
+  unless the origin is operator-pinned (`OPM_HOST_FETCH_ORIGINS`); the plugin
+  naming an origin is not a pin. The host never attaches credentials to the
+  download. Absence or mismatch fails closed. `rawBody` remains the canonical
+  bytes of the answered body — the honesty invariant is unchanged.
 - **Executables are provider metadata.** `DelegatedAdapterInspectionResult`
   gains an optional `executables` array of `DelegatedAdapterBin`: a safe
   single-segment `name`, a relative POSIX `path` without `..`, an `interpreter`

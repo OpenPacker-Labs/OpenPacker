@@ -221,6 +221,7 @@ const tarRoute = { [`${ENDPOINT}/artifacts/demo-1.0.0.tar`]: TOOL_TAR };
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  delete process.env.OPM_HOST_FETCH_ORIGINS;
 });
 
 describe('delegated host-fetch acquisition', () => {
@@ -368,6 +369,84 @@ describe('delegated host-fetch acquisition', () => {
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
       expect(fetched).toBe(false);
     }
+  });
+
+  it('fails closed when a hostname rebinds to a private address', async () => {
+    registerAcme(acmeProvider({ hostFetch: true }));
+    for (const address of [
+      '10.0.0.1',
+      '169.254.169.254',
+      '::ffff:127.0.0.1',
+      '64:ff9b::7f00:1',
+    ]) {
+      let fetched = false;
+      await expect(
+        resolveRegistryArtifact('acme', EXACT, {
+          fetch: (async () => {
+            fetched = true;
+            return new Response(TOOL_TAR);
+          }) as unknown as typeof fetch,
+          lookup: async () => [
+            { address, family: address.includes(':') ? 6 : 4 },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(fetched).toBe(false);
+    }
+  });
+
+  it('fails closed when the host-fetch location resolves to no addresses', async () => {
+    registerAcme(acmeProvider({ hostFetch: true }));
+    let fetched = false;
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: (async () => {
+          fetched = true;
+          return new Response(TOOL_TAR);
+        }) as unknown as typeof fetch,
+        lookup: async () => [],
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(fetched).toBe(false);
+  });
+
+  it('fetches a private origin only when the operator pinned it', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://acme.fixture.test';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: fetchStub(tarRoute),
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+  });
+
+  it('fetches a private IP literal only when the operator pinned that origin', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://127.0.0.1';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        endpoint: 'https://127.0.0.1',
+        body: {
+          locations: [{ uri: 'https://127.0.0.1/artifacts/demo.tar' }],
+        },
+      }),
+    );
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: fetchStub({ 'https://127.0.0.1/artifacts/demo.tar': TOOL_TAR }),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+  });
+
+  it('refuses a credentialed OPM_HOST_FETCH_ORIGINS pin', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS =
+      'https://user:secret@acme.fixture.test';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub(tarRoute),
+        lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   });
 
   it('fails closed on a location outside the endpoint origin', async () => {

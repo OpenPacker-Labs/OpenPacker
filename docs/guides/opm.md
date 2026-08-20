@@ -372,10 +372,11 @@ opmx --plugin acme some-tool           # when the plugin serves exactly one purl
 one. The run is the full loop: the plugin answers `enumerate` / `inspect` /
 `fetch-artifact-record` over the bounded stdio protocol — metadata only; the
 host downloads the artifact itself from the record's published `locations`
-(bounded transport, same origin as the record endpoint, no credentials),
-verifies sha256 and size against the published values, materializes the package
-into the content-addressed tool cache, and runs the executables the plugin's
-inspection declared. A withheld location or an off-origin download fails closed
+(HTTPS, no credentials, same origin as the record endpoint; private or local
+addresses refused unless `OPM_HOST_FETCH_ORIGINS` pins that origin), verifies
+sha256 and size against the published values, materializes the package into the
+content-addressed tool cache, and runs the executables the plugin's inspection
+declared. A withheld location or an off-origin download fails closed
 (`UNRESOLVABLE`/`UNSAFE_PATH`), and a size or digest mismatch fails closed as a
 verification failure (exit 7) — always before anything executes.
 
