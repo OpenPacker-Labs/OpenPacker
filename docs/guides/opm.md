@@ -369,8 +369,9 @@ host downloads the artifact itself from the record's published `locations`
 (bounded transport, same origin as the record endpoint, no credentials),
 verifies sha256 and size against the published values, materializes the package
 into the content-addressed tool cache, and runs the executables the plugin's
-inspection declared. A withheld location, an off-origin download, or a
-size/digest mismatch fails closed (exit 7) before anything executes.
+inspection declared. A withheld location or an off-origin download fails closed
+(`UNRESOLVABLE`/`UNSAFE_PATH`), and a size or digest mismatch fails closed as a
+verification failure (exit 7) — always before anything executes.
 
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
