@@ -11,12 +11,15 @@ import {
   formatPurl,
   header,
   isEcosystem,
+  isPrivateAddress,
+  normalizePinnedOrigin,
   parsePurl,
   parseSemver,
   parseSemverRange,
   parseVers,
   packageNodeId,
   providerErrorForStatus,
+  redactUrl,
   type ProviderExecutable,
   type ProviderInspection,
   rangeToConstraint,
@@ -371,5 +374,189 @@ it('ProviderInspection composes provider-declared executables', () => {
   expect(inspection.executables?.[1]).toMatchObject({
     interpreter: 'python',
     entry: 'demo.cli:main',
+  });
+});
+
+describe('classify-and-pin destination policy', () => {
+  const origin = 'https://registry.test';
+
+  function recordingFetch(): {
+    calls: { url: string; init?: RequestInit }[];
+    fetch: typeof fetch;
+  } {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    return {
+      calls,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          ...(init === undefined ? {} : { init }),
+        });
+        return new Response('ok');
+      }) as typeof fetch,
+    };
+  }
+
+  it('refuses a hostname that rebinds to a private address before fetching', async () => {
+    for (const address of [
+      '10.0.0.1',
+      '169.254.169.254',
+      '::ffff:127.0.0.1',
+      '64:ff9b::7f00:1',
+    ]) {
+      const { calls, fetch } = recordingFetch();
+      const transport = new BoundedFetchTransport({
+        allowedOrigins: [origin],
+        destinationPolicy: 'classify-and-pin',
+        lookup: async () => [
+          { address, family: address.includes(':') ? 6 : 4 },
+        ],
+        fetch,
+      });
+      await expect(
+        transport.request({ url: `${origin}/data` }),
+      ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('refuses an empty lookup before fetching', async () => {
+    const { calls, fetch } = recordingFetch();
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      lookup: async () => [],
+      fetch,
+    });
+    await expect(
+      transport.request({ url: `${origin}/data` }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(calls).toEqual([]);
+  });
+
+  it('throws on an HTTP pin without echoing userinfo', () => {
+    const secret = 'https://user:secret@127.0.0.1';
+    expect(
+      () =>
+        new BoundedFetchTransport({
+          allowedOrigins: [origin],
+          destinationPolicy: 'classify-and-pin',
+          pinnedOrigins: ['http://127.0.0.1'],
+        }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+    );
+    expect(
+      () =>
+        new BoundedFetchTransport({
+          allowedOrigins: [origin],
+          destinationPolicy: 'classify-and-pin',
+          pinnedOrigins: [secret],
+        }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+    );
+    try {
+      new BoundedFetchTransport({
+        allowedOrigins: [origin],
+        destinationPolicy: 'classify-and-pin',
+        pinnedOrigins: [secret],
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).not.toMatch(/user:secret/u);
+      expect((error as Error).message).not.toMatch(/secret/u);
+    }
+    expect(() => normalizePinnedOrigin('http://127.0.0.1')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+    );
+    expect(() => normalizePinnedOrigin(secret)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_PROVIDER_ENDPOINT' }),
+    );
+    try {
+      normalizePinnedOrigin(secret);
+    } catch (error) {
+      expect((error as Error).message).not.toMatch(/user:secret/u);
+      expect((error as Error).message).not.toMatch(/secret/u);
+    }
+  });
+
+  it('does not call DNS in default origin-allowlist mode', async () => {
+    let lookedUp = 0;
+    const { calls, fetch } = recordingFetch();
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      lookup: async () => {
+        lookedUp += 1;
+        return [{ address: '10.0.0.1', family: 4 }];
+      },
+      fetch,
+    });
+    const response = await transport.request({ url: `${origin}/data` });
+    expect(new TextDecoder().decode(response.body)).toBe('ok');
+    expect(lookedUp).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(
+      (calls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
+    ).toBeUndefined();
+  });
+
+  it('skips the Agent dispatcher when fetch is injected', async () => {
+    const { calls, fetch } = recordingFetch();
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [origin],
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      fetch,
+    });
+    await transport.request({ url: `${origin}/data` });
+    expect(calls).toHaveLength(1);
+    expect(
+      (calls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
+    ).toBeUndefined();
+  });
+
+  it('classifies every redirect hop', async () => {
+    const lookedUp: string[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${origin}/next` },
+      }),
+      new Response('ok'),
+    ];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      lookup: async (hostname) => {
+        lookedUp.push(hostname);
+        return [{ address: '1.1.1.1', family: 4 }];
+      },
+      fetch: (async () => responses.shift()!) as typeof fetch,
+    });
+    await transport.request({ url: `${origin}/start` });
+    expect(lookedUp).toEqual(['registry.test', 'registry.test']);
+  });
+});
+
+describe('pinned origin helpers', () => {
+  it('classifies loopback, link-local, NAT64, and mapped addresses as private', () => {
+    for (const address of [
+      '10.0.0.1',
+      '127.0.0.1',
+      '169.254.169.254',
+      '::1',
+      '::ffff:127.0.0.1',
+      '64:ff9b::7f00:1',
+    ])
+      expect(isPrivateAddress(address)).toBe(true);
+    expect(isPrivateAddress('1.1.1.1')).toBe(false);
+  });
+
+  it('redacts userinfo, query, and hash from URLs', () => {
+    expect(
+      redactUrl(new URL('https://user:secret@pinned.test/path?q=1#h')),
+    ).toBe('https://pinned.test/path');
   });
 });

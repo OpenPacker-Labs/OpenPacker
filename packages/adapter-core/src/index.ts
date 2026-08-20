@@ -1,3 +1,6 @@
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import { Agent } from 'undici';
 import {
   canonicalProjectionDigest,
   formatDigest,
@@ -649,8 +652,23 @@ export interface HttpTransport {
   request(request: HttpRequest): Promise<HttpResponse>;
 }
 
+export type DestinationPolicy = 'origin-allowlist' | 'classify-and-pin';
+
+export type HostLookup = (
+  hostname: string,
+) => Promise<readonly { address: string; family: number }[]>;
+
 export interface BoundedFetchOptions {
   allowedOrigins: readonly string[];
+  /** Default: 'origin-allowlist'. */
+  destinationPolicy?: DestinationPolicy;
+  /**
+   * Origins that may resolve to private/loopback/link-local/NAT64/mapped
+   * addresses. Never inferred from allowedOrigins. Default: empty.
+   * Each entry MUST pass normalizePinnedOrigin (HTTPS origin-form).
+   */
+  pinnedOrigins?: readonly string[];
+  lookup?: HostLookup;
   maximumBytes?: number;
   timeoutMilliseconds?: number;
   maximumRedirects?: number;
@@ -660,11 +678,14 @@ export interface BoundedFetchOptions {
   delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 }
 
+const nativeFetch: typeof fetch = globalThis.fetch;
+
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 const SENSITIVE_HEADERS = new Set([
   'authorization',
   'cookie',
+  'cookie2',
   'proxy-authorization',
   'x-api-key',
 ]);
@@ -680,6 +701,10 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
 
 export class BoundedFetchTransport implements HttpTransport {
   readonly #allowedOrigins: ReadonlySet<string>;
+  readonly #pinnedOrigins: ReadonlySet<string>;
+  readonly #destinationPolicy: DestinationPolicy;
+  readonly #lookup: HostLookup | undefined;
+  readonly #pinProduction: boolean;
   readonly #fetch: typeof fetch;
   readonly #delay: NonNullable<BoundedFetchOptions['delay']>;
   readonly #maximumBytes: number;
@@ -697,7 +722,17 @@ export class BoundedFetchTransport implements HttpTransport {
         'INVALID_PROVIDER_ENDPOINT',
         'Provider transport requires at least one allowed origin',
       );
+    this.#destinationPolicy = options.destinationPolicy ?? 'origin-allowlist';
+    this.#pinnedOrigins = new Set(
+      (options.pinnedOrigins ?? []).map(normalizePinnedOrigin),
+    );
     this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#pinProduction =
+      this.#destinationPolicy === 'classify-and-pin' &&
+      options.fetch === undefined &&
+      this.#fetch === nativeFetch;
+    this.#lookup =
+      options.lookup ?? (this.#pinProduction ? defaultHostLookup : undefined);
     this.#delay = options.delay ?? abortableDelay;
     this.#maximumBytes = options.maximumBytes ?? 128 * 1024 * 1024;
     this.#timeoutMilliseconds = options.timeoutMilliseconds ?? 30_000;
@@ -731,6 +766,20 @@ export class BoundedFetchTransport implements HttpTransport {
       request.signal === undefined
         ? deadline.signal
         : AbortSignal.any([request.signal, deadline.signal]);
+    let pin: { address: string; family: number } | undefined;
+    const agent = this.#pinProduction
+      ? new Agent({
+          connect: {
+            lookup: (_hostname, _options, callback) => {
+              if (pin === undefined) {
+                callback(new Error('No pinned address'), '', 4);
+                return;
+              }
+              callback(null, pin.address, pin.family);
+            },
+          },
+        })
+      : undefined;
     try {
       let url = parseProviderUrl(request.url);
       assertAllowedProviderUrl(url, this.#allowedOrigins);
@@ -754,15 +803,23 @@ export class BoundedFetchTransport implements HttpTransport {
       let retries = 0;
       for (;;) {
         throwIfAborted(signal);
-        const response = await abortable(
-          this.#fetch(url, {
-            method,
-            headers,
-            signal,
-            redirect: 'manual',
-          }),
+        if (this.#destinationPolicy === 'classify-and-pin') {
+          const resolved = await assertPinnedDestination(
+            url,
+            this.#pinnedOrigins,
+            this.#lookup,
+          );
+          if (resolved !== undefined) pin = resolved;
+          headers = stripSensitiveHeaders(headers);
+        }
+        const init: RequestInit & { dispatcher?: Agent } = {
+          method,
+          headers,
           signal,
-        );
+          redirect: 'manual',
+        };
+        if (agent !== undefined) init.dispatcher = agent;
+        const response = await abortable(this.#fetch(url, init), signal);
         if (REDIRECT_STATUSES.has(response.status)) {
           const location = response.headers.get('location');
           await response.body?.cancel();
@@ -824,6 +881,7 @@ export class BoundedFetchTransport implements HttpTransport {
       }
     } finally {
       clearTimeout(timer);
+      await agent?.close();
     }
   }
 }
@@ -844,6 +902,140 @@ function normalizeAllowedOrigin(value: string): string {
       `Allowed provider origin must be an HTTP(S) origin: ${value}`,
     );
   return url.origin;
+}
+
+/** HTTPS origin-form only. MUST NOT call normalizeAllowedOrigin. */
+export function normalizePinnedOrigin(value: string): string {
+  let url: URL;
+  try {
+    url = parseProviderUrl(value);
+  } catch {
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      'Pinned origin must be an HTTPS origin',
+    );
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.pathname !== '/' ||
+    url.search !== '' ||
+    url.hash !== ''
+  )
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `Pinned origin must be an HTTPS origin: ${redactUrl(url)}`,
+    );
+  return url.origin;
+}
+
+/** Origin + pathname only — drop userinfo, search, and hash. */
+export function redactUrl(url: URL): string {
+  return `${url.origin}${url.pathname}`;
+}
+
+export function isPrivateAddress(value: string): boolean {
+  const address = value.toLowerCase();
+  if (address.includes(':')) {
+    if (address.startsWith('::ffff:'))
+      return classifyEmbeddedIpv4(address.slice('::ffff:'.length));
+    for (const prefix of ['64:ff9b::', '64:ff9b:0:0:0:0:']) {
+      if (address.startsWith(prefix))
+        return classifyEmbeddedIpv4(address.slice(prefix.length));
+    }
+    if (address.startsWith('::')) {
+      const embedded = embeddedIpv4Address(address.slice(2));
+      if (embedded !== undefined) return isPrivateAddress(embedded);
+    }
+    return (
+      address === '::' ||
+      address === '::1' ||
+      address.startsWith('fc') ||
+      address.startsWith('fd') ||
+      /^fe[89ab]/u.test(address)
+    );
+  }
+  const octets = address.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((part) => part < 0 || part > 255))
+    return true;
+  const [first, second] = octets as [number, number, number, number];
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
+}
+
+function classifyEmbeddedIpv4(suffix: string): boolean {
+  const embedded = embeddedIpv4Address(suffix);
+  return embedded === undefined || isPrivateAddress(embedded);
+}
+
+function embeddedIpv4Address(value: string): string | undefined {
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(value);
+  if (hex) {
+    const high = parseInt(hex[1]!, 16);
+    const low = parseInt(hex[2]!, 16);
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+  }
+  return /^(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(value)?.[1];
+}
+
+async function defaultHostLookup(
+  hostname: string,
+): Promise<readonly { address: string; family: number }[]> {
+  return dnsLookup(hostname, { all: true });
+}
+
+async function assertPinnedDestination(
+  url: URL,
+  pinnedOrigins: ReadonlySet<string>,
+  lookup: HostLookup | undefined,
+): Promise<{ address: string; family: number } | undefined> {
+  const hostname = url.hostname.replace(/^\[|\]$/gu, '');
+  if (isIP(hostname)) {
+    refuseUnpinnedPrivateAddress(url, hostname, pinnedOrigins);
+    return { address: hostname, family: isIP(hostname) };
+  }
+  if (lookup === undefined) return undefined;
+  const addresses = await lookup(hostname);
+  if (addresses.length === 0)
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `Provider origin did not resolve to any address: ${url.origin}`,
+    );
+  for (const { address } of addresses)
+    refuseUnpinnedPrivateAddress(url, address, pinnedOrigins);
+  return addresses[0];
+}
+
+function refuseUnpinnedPrivateAddress(
+  url: URL,
+  address: string,
+  pinnedOrigins: ReadonlySet<string>,
+): void {
+  if (!isPrivateAddress(address)) return;
+  if (pinnedOrigins.has(url.origin)) return;
+  throw new ProviderError(
+    'INVALID_PROVIDER_ENDPOINT',
+    `Provider origin is not allowed: ${url.origin}`,
+  );
+}
+
+function stripSensitiveHeaders(
+  headers: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) => !SENSITIVE_HEADERS.has(name.toLowerCase()),
+    ),
+  );
 }
 
 function isLoopbackHostname(hostname: string): boolean {
