@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
   OpmError,
+  type BinDeclaration,
   type InstalledPackageRecord,
   type ProjectState,
 } from './types.js';
@@ -48,6 +49,18 @@ export interface GenerationMember {
   storePath: string;
   /** Required by generation v2; absent only on legacy v1 records. */
   treeDigest?: string;
+  /**
+   * The bins pinned when this member was installed — the lock's declared
+   * bins when it has them, else what install-time discovery found.
+   *
+   * Recorded because a generation must be self-sufficient: ecosystems with
+   * no on-disk convention (delegated plugin adapters) declare their bins
+   * through the provider, and re-deriving them from the store tree at
+   * activation would find nothing. Absent only on records that predate
+   * pinned bins; activation falls back to on-disk discovery for those,
+   * which is what those records always did.
+   */
+  bins?: BinDeclaration[];
 }
 
 export interface Generation {
@@ -356,7 +369,55 @@ function parseGeneration(text: string, digest: string): Generation {
       'INVALID_STATE',
       'Generation v2 is missing a tree digest',
     );
+  for (const member of generation.members)
+    validateMemberBins(member.bins, generation.sequence);
   return generation;
+}
+
+/**
+ * Fail closed on a stored member whose bins are malformed, the same way the
+ * sibling structural checks above do: an interpreter this does not know must
+ * not silently become Node at activation, and a path that escapes the store
+ * must never reach a shim.
+ */
+function validateMemberBins(
+  bins: GenerationMember['bins'],
+  sequence: number,
+): void {
+  if (bins === undefined) return;
+  if (!Array.isArray(bins))
+    throw new OpmError(
+      'INVALID_STATE',
+      `Generation ${sequence} member bins must be an array`,
+    );
+  for (const [index, bin] of bins.entries()) {
+    const what = `Generation ${sequence} member bins[${index}]`;
+    if (typeof bin !== 'object' || bin === null || Array.isArray(bin))
+      throw new OpmError('INVALID_STATE', `${what} must be an object`);
+    if (typeof bin.name !== 'string' || bin.name === '')
+      throw new OpmError('INVALID_STATE', `${what} name must be a string`);
+    assertSafeSegment(bin.name, `${what} name`);
+    if (typeof bin.path !== 'string' || bin.path === '')
+      throw new OpmError('INVALID_STATE', `${what} path must be a string`);
+    const segments = bin.path.split(/[/\\]/u).filter((part) => part !== '');
+    if (
+      segments.length === 0 ||
+      segments.includes('..') ||
+      bin.path.startsWith('/') ||
+      /^[A-Za-z]:/u.test(bin.path)
+    )
+      throw new OpmError('INVALID_STATE', `${what} path escapes its store`);
+    if (
+      bin.interpreter !== undefined &&
+      bin.interpreter !== 'node' &&
+      bin.interpreter !== 'python' &&
+      bin.interpreter !== 'dotnet' &&
+      bin.interpreter !== 'native'
+    )
+      throw new OpmError('INVALID_STATE', `${what} has invalid interpreter`);
+    if (bin.entry !== undefined && typeof bin.entry !== 'string')
+      throw new OpmError('INVALID_STATE', `${what} has invalid entry`);
+  }
 }
 
 export async function listGenerations(root: string): Promise<Generation[]> {
@@ -428,6 +489,18 @@ export async function recordGeneration(input: {
         digest: record.digest,
         storePath: record.storePath,
         treeDigest: await stableStoreTreeDigest(record.storePath),
+        // The declared bins the install wrote shims for, minus the derived
+        // shim/target paths (activation re-derives those). Recorded so a
+        // provider-declared bin survives activation even though its
+        // ecosystem has no on-disk convention discovery could find.
+        bins: record.bins.map((bin) => ({
+          name: bin.name,
+          path: bin.path,
+          ...(bin.interpreter === undefined
+            ? {}
+            : { interpreter: bin.interpreter }),
+          ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+        })),
       })),
     )
   ).sort((left, right) => (left.alias < right.alias ? -1 : 1));
@@ -828,7 +901,16 @@ export async function activateGeneration(input: {
             'DIGEST_MISMATCH',
             `Generation ${input.generation.sequence} store tree does not match ${expectedTreeDigest}`,
           );
-        const bins = await discoverBins(stableHandlePath(handle), ecosystem);
+        // Recorded bins win: a member installed after bins were pinned
+        // carries the declarations its install wrote shims for, and
+        // provider-declared bins have no on-disk convention to re-derive
+        // them from. Discovery is the fallback for records that predate
+        // pinned bins — absent `bins` means exactly that, so legacy
+        // generations activate exactly as they always did.
+        const bins =
+          member.bins === undefined
+            ? await discoverBins(stableHandlePath(handle), ecosystem)
+            : member.bins;
         for (const bin of bins) {
           const name = assertSafeSegment(bin.name, 'bin name');
           if (binNames.has(name))

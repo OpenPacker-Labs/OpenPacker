@@ -220,7 +220,28 @@ async function validateProjectState(
       const realTarget = await realpath(target);
       if (!isContained(realPackage, realTarget))
         throw invalidState(`${alias}.bins[${index}].target escapes its store`);
-      bins.push({ name, path: binPath, shim, target });
+      // interpreter/entry ride along exactly as the lock carries them; an
+      // unknown value fails closed rather than silently becoming Node.
+      const interpreter = bin.interpreter;
+      if (
+        interpreter !== undefined &&
+        interpreter !== 'node' &&
+        interpreter !== 'python' &&
+        interpreter !== 'dotnet' &&
+        interpreter !== 'native'
+      )
+        throw invalidState(`${alias}.bins[${index}].interpreter is unknown`);
+      const entry = bin.entry;
+      if (entry !== undefined && typeof entry !== 'string')
+        throw invalidState(`${alias}.bins[${index}].entry must be a string`);
+      bins.push({
+        name,
+        path: binPath,
+        shim,
+        target,
+        ...(interpreter === undefined ? {} : { interpreter }),
+        ...(entry === undefined ? {} : { entry }),
+      });
     }
     const installedAt = stringValue(record.installedAt, `${alias}.installedAt`);
     if (!Number.isFinite(Date.parse(installedAt)))

@@ -203,6 +203,14 @@ export interface InstalledPackageRecord {
     path: string;
     shim: string;
     target: string;
+    /**
+     * How the bin runs, recorded from the lock's bin declaration. Absent
+     * means Node, exactly as in BinDeclaration; `native` executes the
+     * verified store file itself.
+     */
+    interpreter?: 'node' | 'python' | 'dotnet' | 'native';
+    /** For Python console scripts: the `module:callable` to invoke. */
+    entry?: string;
   }[];
   installedAt: string;
   /**
