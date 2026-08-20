@@ -113,3 +113,22 @@ independent review), nits repaired mid-stack, squash-merged bottom-up, and
 - WIT component substrate per ADR 0032 when a TS component host exists.
 - Fresh Codex Security deep scan remains scheduled after the scanner account
   reset (2026-08-20 14:18 local); it is not a plugin-execution blocker.
+- Host-fetch still allowlists by hostname origin. Literal private/loopback/
+  NAT64/mapped addresses are refused (#117). DNS rebinding of a public hostname
+  onto a private address is residual, the same class as any hostname allowlist.
+
+## Post-merge review (2026-08-20)
+
+Independent review of `16ffe4e..0a4a028` plus a full `npm run verify` (exit 0,
+1135/1149 tests) found two defects, both repaired in
+[#117](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/117) (`527f5e6`):
+
+1. First-party OCI ephemeral path: deferred resolution used the inspect
+   _manifest_ digest as the store key while `fetchArtifactRecord` returns the
+   _layout tar_. Restricted the inspect shortcut to package-archive nativeRoles.
+2. Host-fetch SSRF: plugin-chosen origin strings that were loopback, link-local,
+   NAT64, or IPv4-mapped literals were fetched by the host. Those addresses are
+   now refused before download.
+
+Contracts/spec review passed. First-party project install, plugin add/list/
+remove, bins, generations, and the npm deferred cache path were not regressed.
