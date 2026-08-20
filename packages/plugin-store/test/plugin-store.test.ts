@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -698,6 +698,40 @@ describe('offline behaviour', () => {
       await readFile(join(repaired.storePath, PLUGIN_MANIFEST_NAME), 'utf8'),
     ) as { id: string };
     expect(manifest.id).toBe('dev.example.acme-adapter');
+  });
+
+  it('detects a tampered store entry via treeDigest and repairs from cache', async () => {
+    const fixture = acmeFixture();
+    const root = await storeRoot();
+    const installed = await addPlugin({
+      name: 'acme',
+      endpoint: ENDPOINT,
+      transport: fixture.transport,
+      storeRoot: root,
+      now,
+    });
+    // Flip one byte in the installed executable. The entry still exists, so
+    // only the pinned treeDigest can notice the tamper.
+    const executablePath = join(installed.storePath, 'acme-adapter');
+    const original = await readFile(executablePath);
+    const tampered = new Uint8Array(original);
+    tampered[10]! ^= 0xff;
+    await writeFile(executablePath, tampered);
+    const requests = fixture.transport.requests.length;
+    const repaired = await addPlugin({
+      name: 'acme',
+      offline: true,
+      storeRoot: root,
+      now,
+    });
+    // treeDigest mismatched, so the entry was re-materialized from the
+    // digest-verified `.artifact` cache — no fetch, original bytes restored.
+    expect(repaired.cached).toBe(true);
+    expect(repaired.alreadyInstalled).toBe(false);
+    expect(fixture.transport.requests.length).toBe(requests);
+    expect(new Uint8Array(await readFile(executablePath))).toEqual(
+      new Uint8Array(original),
+    );
   });
 
   it('refuses offline repair when neither entry nor cache is present', async () => {
