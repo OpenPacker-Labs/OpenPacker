@@ -669,6 +669,12 @@ export interface BoundedFetchOptions {
    * Each entry MUST pass normalizePinnedOrigin (HTTPS origin-form).
    */
   pinnedOrigins?: readonly string[];
+  /**
+   * Origin → env-var *name* (not the secret). Consulted only in
+   * classify-and-pin, only when url.origin is in pinnedOrigins, and
+   * resolved from process.env at this hop — not at construction.
+   */
+  pinnedTokenEnvNames?: ReadonlyMap<string, string>;
   lookup?: HostLookup;
   maximumBytes?: number;
   timeoutMilliseconds?: number;
@@ -699,10 +705,13 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
   'range',
   'user-agent',
 ]);
+/** RFC 6750 token68: 1*(unreserved / "+" / "/") *"=". */
+const TOKEN68 = /^[A-Za-z0-9\-._~+/]+=*$/u;
 
 export class BoundedFetchTransport implements HttpTransport {
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
+  readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
   readonly #destinationPolicy: DestinationPolicy;
   readonly #lookup: HostLookup | undefined;
   readonly #pinProduction: boolean;
@@ -727,6 +736,10 @@ export class BoundedFetchTransport implements HttpTransport {
     this.#pinnedOrigins = new Set(
       (options.pinnedOrigins ?? []).map(normalizePinnedOrigin),
     );
+    this.#pinnedTokenEnvNames =
+      options.pinnedTokenEnvNames === undefined
+        ? undefined
+        : new Map(options.pinnedTokenEnvNames);
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#pinProduction =
       this.#destinationPolicy === 'classify-and-pin' &&
@@ -812,6 +825,13 @@ export class BoundedFetchTransport implements HttpTransport {
           );
           if (resolved !== undefined) pin = resolved;
           headers = stripSensitiveHeaders(headers);
+          const bearer = authorizationBearerFor(
+            url,
+            this.#pinnedOrigins,
+            this.#pinnedTokenEnvNames,
+          );
+          if (bearer !== undefined)
+            headers = { ...headers, Authorization: bearer };
         }
         const init: RequestInit & { dispatcher?: Agent } = {
           method,
@@ -1037,6 +1057,42 @@ function stripSensitiveHeaders(
       ([name]) => !SENSITIVE_HEADERS.has(name.toLowerCase()),
     ),
   );
+}
+
+/**
+ * Rebuild Authorization from the already-merged origin → env-var name map.
+ * Missing or empty names mean no header. Values are read at this hop.
+ */
+function authorizationBearerFor(
+  url: URL,
+  pinnedOrigins: ReadonlySet<string>,
+  names: ReadonlyMap<string, string> | undefined,
+): string | undefined {
+  if (names === undefined || !pinnedOrigins.has(url.origin)) return undefined;
+  const envName = names.get(url.origin);
+  if (envName === undefined || envName === '') return undefined;
+  if (url.protocol !== 'https:')
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch bearer environment variable ${envName} cannot be sent over plaintext`,
+    );
+  const token = process.env[envName]?.trim() ?? '';
+  if (token === '')
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch bearer environment variable ${envName} is unset or empty`,
+    );
+  if (token.startsWith('Bearer '))
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch bearer environment variable ${envName} must not include a Bearer prefix`,
+    );
+  if (!TOKEN68.test(token))
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch bearer environment variable ${envName} is not a valid token`,
+    );
+  return `Bearer ${token}`;
 }
 
 function isLoopbackHostname(hostname: string): boolean {

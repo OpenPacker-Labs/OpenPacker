@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBoundedProviderMetadata,
   assertPackageIdentityMatchesRequest,
@@ -20,6 +20,7 @@ import {
   packageNodeId,
   providerErrorForStatus,
   redactUrl,
+  type HostLookup,
   type ProviderExecutable,
   type ProviderInspection,
   rangeToConstraint,
@@ -537,6 +538,247 @@ describe('classify-and-pin destination policy', () => {
     });
     await transport.request({ url: `${origin}/start` });
     expect(lookedUp).toEqual(['registry.test', 'registry.test']);
+  });
+});
+
+describe('classify-and-pin per-hop bearer', () => {
+  const originA = 'https://a.example';
+  const originB = 'https://b.example';
+  const TOKEN_A = 'PIN_TOKEN_A';
+  const TOKEN_B = 'PIN_TOKEN_B';
+  const publicLookup: HostLookup = async () => [
+    { address: '1.1.1.1', family: 4 },
+  ];
+
+  afterEach(() => {
+    delete process.env[TOKEN_A];
+    delete process.env[TOKEN_B];
+    delete process.env.OPM_HOST_FETCH_BEARER;
+  });
+
+  function requestAuthorization(
+    init: RequestInit | undefined,
+  ): string | undefined {
+    if (init?.headers === undefined) return undefined;
+    const headers = init.headers;
+    if (headers instanceof Headers)
+      return headers.get('authorization') ?? undefined;
+    if (Array.isArray(headers)) {
+      const hit = headers.find(
+        ([name]) => name.toLowerCase() === 'authorization',
+      );
+      return hit?.[1];
+    }
+    for (const [name, value] of Object.entries(
+      headers as Record<string, string>,
+    )) {
+      if (name.toLowerCase() === 'authorization') return value;
+    }
+    return undefined;
+  }
+
+  it('attaches a different bearer on each redirect hop', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    process.env[TOKEN_B] = 'tok68valueB';
+    const calls: { url: string; authorization: string | undefined }[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${originB}/next` },
+      }),
+      new Response('ok'),
+    ];
+    const lookedUp: string[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, originB],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA, originB],
+      pinnedTokenEnvNames: new Map([
+        [originA, TOKEN_A],
+        [originB, TOKEN_B],
+      ]),
+      lookup: async (hostname) => {
+        lookedUp.push(hostname);
+        return [{ address: '1.1.1.1', family: 4 }];
+      },
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          authorization: requestAuthorization(init),
+        });
+        return responses.shift()!;
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/start` });
+    expect(lookedUp).toEqual(['a.example', 'b.example']);
+    expect(calls).toEqual([
+      { url: `${originA}/start`, authorization: 'Bearer tok68valueA' },
+      { url: `${originB}/next`, authorization: 'Bearer tok68valueB' },
+    ]);
+  });
+
+  it('does not attach Authorization on an unpinned allowlisted hop', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    const calls: { url: string; authorization: string | undefined }[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${originB}/public` },
+      }),
+      new Response('ok'),
+    ];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, originB],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          authorization: requestAuthorization(init),
+        });
+        return responses.shift()!;
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/start` });
+    expect(calls).toEqual([
+      { url: `${originA}/start`, authorization: 'Bearer tok68valueA' },
+      { url: `${originB}/public`, authorization: undefined },
+    ]);
+  });
+
+  it('refuses an HTTPS to HTTP redirect before attaching bearer on the failed hop', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    const calls: { url: string; authorization: string | undefined }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, 'http://127.0.0.1'],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          authorization: requestAuthorization(init),
+        });
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'http://127.0.0.1/downgrade' },
+        });
+      }) as typeof fetch,
+    });
+    await expect(
+      transport.request({ url: `${originA}/start` }),
+    ).rejects.toMatchObject({
+      code: 'UPSTREAM_UNAVAILABLE',
+      message: expect.stringMatching(/HTTPS downgrade/u),
+    });
+    expect(calls).toEqual([
+      { url: `${originA}/start`, authorization: 'Bearer tok68valueA' },
+    ]);
+    expect(calls.some((call) => call.url.startsWith('http://'))).toBe(false);
+  });
+
+  it('strips leftover credentials then re-adds the hop bearer on same-origin 3xx', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    const calls: {
+      authorization: string | undefined;
+      cookie: string | undefined;
+    }[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${originA}/next` },
+      }),
+      new Response('ok'),
+    ];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        calls.push({
+          authorization: requestAuthorization(init),
+          cookie: headers?.Cookie ?? headers?.cookie,
+        });
+        return responses.shift()!;
+      }) as typeof fetch,
+    });
+    await transport.request({
+      url: `${originA}/start`,
+      headers: {
+        Authorization: 'Bearer leftover',
+        Cookie: 'session=1',
+      },
+    });
+    expect(calls).toEqual([
+      { authorization: 'Bearer tok68valueA', cookie: undefined },
+      { authorization: 'Bearer tok68valueA', cookie: undefined },
+    ]);
+  });
+
+  it('fails UNRESOLVABLE without fetching when the named env is missing', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        ...(init === undefined ? {} : { init }),
+      });
+      return new Response('ok');
+    }) as typeof fetch;
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      lookup: publicLookup,
+      fetch: fetchStub,
+    });
+    await expect(
+      transport.request({ url: `${originA}/data` }),
+    ).rejects.toMatchObject({
+      code: 'UNRESOLVABLE',
+      message: expect.stringContaining(TOKEN_A),
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('does not attach Authorization when OPM_HOST_FETCH_BEARER is set but the origin has no name', async () => {
+    process.env.OPM_HOST_FETCH_BEARER = 'tok68ambient';
+    const calls: { authorization: string | undefined }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ authorization: requestAuthorization(init) });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/data` });
+    expect(calls).toEqual([{ authorization: undefined }]);
+  });
+
+  it('does not attach a bearer in origin-allowlist mode', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    const calls: { authorization: string | undefined }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ authorization: requestAuthorization(init) });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/data` });
+    expect(calls).toEqual([{ authorization: undefined }]);
   });
 });
 
