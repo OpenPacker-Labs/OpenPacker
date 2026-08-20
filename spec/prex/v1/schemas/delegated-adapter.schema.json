@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json",
+  "title": "PREX delegated adapter manifest and stdio protocol",
+  "description": "Delegated adapter plugins answer registry-definition and catalog operations for third-party ecosystems. The host loads the manifest no-follow, executes only a bounded immutable snapshot of the operator-approved standalone executable through the fail-closed sandbox, passes a canonical request document on stdin, and validates every response against the normative PREX schemas before use. Undeclared capabilities fail closed.",
+  "$defs": {
+    "DelegatedAdapterId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+    },
+    "DelegatedAdapterPurlType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9+.-]*$"
+    },
+    "DelegatedAdapterEnvironmentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "DelegatedAdapterExecutable": {
+      "$comment": "Logical executable name used by plans and receipts, not an executable path. The host separately selects an approved absolute standalone source and executes its immutable snapshot at a private path.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+    },
+    "DelegatedAdapterCapability": {
+      "$comment": "Version 1 delegates read-only catalog surfaces only. Codec, installer, project-format and pack capabilities are not delegatable and fail closed.",
+      "enum": ["registry-definition", "catalog"]
+    },
+    "DelegatedAdapterOperation": {
+      "enum": [
+        "registry-definition",
+        "identify",
+        "enumerate",
+        "inspect",
+        "fetch-artifact-record",
+        "snapshot"
+      ]
+    },
+    "DelegatedAdapterCommand": {
+      "$comment": "Literal argv suffix appended after the immutable snapshot path for one operation. No templates, no shell text; the request document arrives on stdin.",
+      "type": "object",
+      "required": ["arguments"],
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![.]{1,2}$)[^{}]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DelegatedAdapterAuthority": {
+      "$comment": "Authority is a request, never a grant. The host separately requires user consent, offline-mode denial, and sandbox enforcement.",
+      "type": "object",
+      "required": ["network", "environment"],
+      "properties": {
+        "network": { "enum": ["never", "consent"] },
+        "environment": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/DelegatedAdapterEnvironmentName" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DelegatedAdapterManifest": {
+      "type": "object",
+      "required": [
+        "delegatedAdapterVersion",
+        "id",
+        "purlTypes",
+        "capabilities",
+        "executable",
+        "commands",
+        "authority"
+      ],
+      "properties": {
+        "$schema": { "type": "string", "format": "uri" },
+        "delegatedAdapterVersion": { "const": "1" },
+        "id": { "$ref": "#/$defs/DelegatedAdapterId" },
+        "displayName": { "type": "string", "maxLength": 255 },
+        "purlTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/DelegatedAdapterPurlType" }
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/DelegatedAdapterCapability" }
+        },
+        "executable": { "$ref": "#/$defs/DelegatedAdapterExecutable" },
+        "commands": {
+          "$comment": "One entry per operation the plugin implements. catalog capability requires identify, enumerate, inspect and fetch-artifact-record; snapshot remains optional.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "propertyNames": { "$ref": "#/$defs/DelegatedAdapterOperation" },
+          "additionalProperties": { "$ref": "#/$defs/DelegatedAdapterCommand" }
+        },
+        "environment": {
+          "$comment": "Static environment forwarded to every invocation after the operator allowlists each name. Values are literals, never secrets.",
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "$ref": "#/$defs/DelegatedAdapterEnvironmentName"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[^{}]+$"
+          }
+        },
+        "authority": { "$ref": "#/$defs/DelegatedAdapterAuthority" }
+      },
+      "additionalProperties": false
+    },
+    "DelegatedAdapterRequest": {
+      "$comment": "Versioned canonical JSON the host writes to the plugin's stdin. It never contains environment values, credentials, sandbox controls, or ambient host state.",
+      "type": "object",
+      "required": ["delegatedAdapterRequestVersion", "operation", "params"],
+      "properties": {
+        "$schema": { "type": "string", "format": "uri" },
+        "delegatedAdapterRequestVersion": { "const": "1" },
+        "operation": { "$ref": "#/$defs/DelegatedAdapterOperation" },
+        "params": {
+          "type": "object",
+          "maxProperties": 8,
+          "properties": {
+            "query": { "type": "string", "maxLength": 4096 },
+            "basePurl": { "type": "string", "maxLength": 4096 },
+            "exactPurl": { "type": "string", "maxLength": 4096 },
+            "evaluationTime": { "type": "string", "maxLength": 64 },
+            "offline": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "DelegatedAdapterResponse": {
+      "$comment": "Bounded canonical JSON the plugin writes to stdout. Error responses use a machine-readable code; hosts map failures to fail-closed provider errors. Result payloads MUST validate against the normative schema for the operation before the host uses them.",
+      "type": "object",
+      "required": ["delegatedAdapterResponseVersion", "ok"],
+      "properties": {
+        "$schema": { "type": "string", "format": "uri" },
+        "delegatedAdapterResponseVersion": { "const": "1" },
+        "ok": { "type": "boolean" },
+        "result": true,
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "message": { "type": "string", "minLength": 1, "maxLength": 8192 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

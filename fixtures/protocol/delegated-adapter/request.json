@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterRequest",
+  "delegatedAdapterRequestVersion": "1",
+  "operation": "inspect",
+  "params": {
+    "exactPurl": "pkg:acme/demo@1.0.0",
+    "offline": true
+  }
+}

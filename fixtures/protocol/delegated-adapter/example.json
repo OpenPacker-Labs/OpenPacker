@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterManifest",
+  "delegatedAdapterVersion": "1",
+  "id": "dev.example.acme-adapter",
+  "displayName": "Acme ecosystem adapter",
+  "purlTypes": ["acme"],
+  "capabilities": ["registry-definition", "catalog"],
+  "executable": "acme-adapter",
+  "commands": {
+    "registry-definition": { "arguments": ["registry-definition"] },
+    "identify": { "arguments": ["catalog", "identify"] },
+    "enumerate": { "arguments": ["catalog", "enumerate"] },
+    "inspect": { "arguments": ["catalog", "inspect"] },
+    "fetch-artifact-record": {
+      "arguments": ["catalog", "fetch-artifact-record"]
+    },
+    "snapshot": { "arguments": ["catalog", "snapshot"] }
+  },
+  "environment": {
+    "ACME_ADAPTER_LOG": "warn"
+  },
+  "authority": {
+    "network": "consent",
+    "environment": ["ACME_TOKEN"]
+  }
+}

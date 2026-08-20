@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json#/$defs/DelegatedAdapterResponse",
+  "delegatedAdapterResponseVersion": "1",
+  "ok": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "no package named demo"
+  }
+}
