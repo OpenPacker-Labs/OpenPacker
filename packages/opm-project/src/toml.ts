@@ -116,6 +116,14 @@ export function serializeManifest(manifest: OpmManifest): string {
       lines.push(
         `artifact_origin_token_envs = ${tomlStringArray(binding.artifactOriginTokenEnvs)}`,
       );
+    if (binding.artifactOriginExtraHeaderNames !== undefined)
+      lines.push(
+        `artifact_origin_extra_header_names = ${tomlStringArray(binding.artifactOriginExtraHeaderNames)}`,
+      );
+    if (binding.artifactOriginExtraHeaderEnvs !== undefined)
+      lines.push(
+        `artifact_origin_extra_header_envs = ${tomlStringArray(binding.artifactOriginExtraHeaderEnvs)}`,
+      );
     lines.push('');
   }
 
@@ -303,6 +311,8 @@ export function parseManifest(text: string): OpmManifest {
       store_digest?: string;
       artifact_origins?: string[];
       artifact_origin_token_envs?: string[];
+      artifact_origin_extra_header_names?: string[];
+      artifact_origin_extra_header_envs?: string[];
     }
   >();
   const policyScratch: Record<string, string | boolean | number | string[]> =
@@ -506,6 +516,20 @@ export function parseManifest(text: string): OpmManifest {
             `Plugin field "artifact_origin_token_envs" must be an array of strings at line ${i + 1}`,
           );
         scratch.artifact_origin_token_envs = [...value];
+      } else if (key === 'artifact_origin_extra_header_names') {
+        if (!Array.isArray(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Plugin field "artifact_origin_extra_header_names" must be an array of strings at line ${i + 1}`,
+          );
+        scratch.artifact_origin_extra_header_names = [...value];
+      } else if (key === 'artifact_origin_extra_header_envs') {
+        if (!Array.isArray(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Plugin field "artifact_origin_extra_header_envs" must be an array of strings at line ${i + 1}`,
+          );
+        scratch.artifact_origin_extra_header_envs = [...value];
       } else
         throw new OpmError(
           'INVALID_MANIFEST',
@@ -687,6 +711,11 @@ export function parseManifest(text: string): OpmManifest {
                 scratch.artifact_origins,
               ),
             }),
+        ...parsePluginArtifactOriginExtraHeaders(
+          scratch.artifact_origin_extra_header_names,
+          scratch.artifact_origin_extra_header_envs,
+          scratch.artifact_origins,
+        ),
       };
     }
     manifest.plugins = plugins;
@@ -1066,6 +1095,77 @@ function parsePluginArtifactOriginTokenEnvs(
       );
   }
   return [...values];
+}
+
+/** RFC 7230 header-field token. */
+const RFC7230_TOKEN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u;
+
+const FORBIDDEN_EXTRA_HEADER_NAMES = new Set([
+  'authorization',
+  'cookie',
+  'cookie2',
+  'proxy-authorization',
+  'host',
+  'connection',
+  'transfer-encoding',
+  'content-length',
+  'te',
+  'upgrade',
+  'trailer',
+  'keep-alive',
+  'content-type',
+  'accept-encoding',
+]);
+
+function parsePluginArtifactOriginExtraHeaders(
+  names: readonly string[] | undefined,
+  envs: readonly string[] | undefined,
+  origins: readonly string[] | undefined,
+): {
+  artifactOriginExtraHeaderNames?: readonly string[];
+  artifactOriginExtraHeaderEnvs?: readonly string[];
+} {
+  if (names === undefined && envs === undefined) return {};
+  if (names === undefined || envs === undefined)
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      'Plugin fields "artifact_origin_extra_header_names" and "artifact_origin_extra_header_envs" must both be present',
+    );
+  const originCount = origins?.length ?? 0;
+  if (names.length !== originCount || envs.length !== originCount)
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      'Plugin extra-header arrays length must match artifact_origins',
+    );
+  for (let i = 0; i < names.length; i += 1) {
+    const name = names[i]!;
+    const envName = envs[i]!;
+    if (name === '') {
+      if (envName !== '' && !TOKEN_ENV_NAME.test(envName))
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          'Plugin field "artifact_origin_extra_header_envs" entries must be env-var names or empty',
+        );
+      continue;
+    }
+    if (
+      !RFC7230_TOKEN.test(name) ||
+      FORBIDDEN_EXTRA_HEADER_NAMES.has(name.toLowerCase())
+    )
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'Plugin field "artifact_origin_extra_header_names" entries must be RFC 7230 tokens and not a forbidden header name',
+      );
+    if (!TOKEN_ENV_NAME.test(envName))
+      throw new OpmError(
+        'INVALID_MANIFEST',
+        'Plugin field "artifact_origin_extra_header_envs" entries must be env-var names when a header name is set',
+      );
+  }
+  return {
+    artifactOriginExtraHeaderNames: [...names],
+    artifactOriginExtraHeaderEnvs: [...envs],
+  };
 }
 
 function parsePluginArtifactOrigins(values: readonly string[]): string[] {

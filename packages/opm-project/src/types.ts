@@ -76,6 +76,16 @@ export interface PluginBinding {
    * Present including `[""]` must serialize so round-trip still suppresses.
    */
   artifactOriginTokenEnvs?: readonly string[];
+  /**
+   * Extra header names parallel to artifactOrigins; "" means none.
+   * undefined = key omitted (extraHeaderFor step 1 does not fire).
+   * Present including `[""]` must serialize so round-trip still suppresses.
+   */
+  artifactOriginExtraHeaderNames?: readonly string[];
+  /**
+   * Env-var names parallel to extra header names; same presence rule.
+   */
+  artifactOriginExtraHeaderEnvs?: readonly string[];
 }
 
 export type RequirementScope =
