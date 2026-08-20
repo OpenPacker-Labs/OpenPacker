@@ -309,6 +309,11 @@ function validateBins(
       throw invalid(
         `executables path must be a relative POSIX path: ${bin.path}`,
       );
+    // A drive prefix is an absolute root on Windows and a junk segment
+    // elsewhere; generation validation rejects it too — refuse it here, at
+    // the trust boundary, instead of failing later and elsewhere.
+    if (/^[A-Za-z]:/u.test(bin.path))
+      throw invalid(`executables path carries a drive prefix: ${bin.path}`);
     if (bin.path.split('/').includes('..'))
       throw invalid(`executables path contains a .. segment: ${bin.path}`);
     if (

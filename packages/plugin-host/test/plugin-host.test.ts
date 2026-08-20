@@ -961,6 +961,7 @@ describe('inspect executables', () => {
     ['an absolute path', [{ name: 'a', path: '/bin/a' }]],
     ['a .. path segment', [{ name: 'a', path: 'bin/../a' }]],
     ['a backslash path', [{ name: 'a', path: 'bin\\a' }]],
+    ['a drive-prefixed path', [{ name: 'a', path: 'C:/bin/a' }]],
     [
       'an unknown interpreter',
       [{ name: 'a', path: 'bin/a', interpreter: 'ruby' }],
