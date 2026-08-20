@@ -307,12 +307,48 @@ export async function readStableFile(
   }
 }
 
+/** Binary twin of readStableFile, for cached artifact bytes. */
+export async function readStableFileBytes(
+  path: string,
+  maximumBytes = 64 * 1024 * 1024,
+): Promise<Uint8Array> {
+  const parent = await openStableDirectory(dirname(path));
+  try {
+    await assertNamedDirectory(dirname(path), parent);
+    const contents = await readStableFileBytesAt(
+      parent,
+      basename(path),
+      maximumBytes,
+      path,
+    );
+    await assertNamedDirectory(dirname(path), parent);
+    return contents;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+      throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
+    throw error;
+  } finally {
+    await parent.close();
+  }
+}
+
 export async function readStableFileAt(
   parent: FileHandle,
   name: string,
   maximumBytes = 4 * 1024 * 1024,
   displayPath = name,
 ): Promise<string> {
+  return (
+    await readStableFileBytesAt(parent, name, maximumBytes, displayPath)
+  ).toString('utf8');
+}
+
+export async function readStableFileBytesAt(
+  parent: FileHandle,
+  name: string,
+  maximumBytes = 64 * 1024 * 1024,
+  displayPath = name,
+): Promise<Buffer> {
   assertSafeSegment(name, 'metadata file name');
   const file = await open(
     join(stableHandlePath(parent), name),
@@ -350,7 +386,7 @@ export async function readStableFileAt(
         'INPUT_CHANGED',
         `Metadata file changed while it was read: ${displayPath}`,
       );
-    return buffer.toString('utf8');
+    return buffer;
   } finally {
     await file.close();
   }
