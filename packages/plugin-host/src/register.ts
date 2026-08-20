@@ -40,6 +40,11 @@ export interface RegisterInstalledPluginsOptions
    * --allow-env picks). Never defaults to process.env.
    */
   environment?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Env-var names host-fetch may read for this run (toml token envs).
+   * `--allow-env` of these names is refused; grant does not win.
+   */
+  hostFetchTokenEnvNames?: readonly string[];
   /** Operator network consent; still denied per-operation in offline mode. */
   allowNetwork?: boolean;
   /** Injectable clock for adapter contexts. */
@@ -109,12 +114,30 @@ export async function registerPlugin(
  * against the pin before registration.
  */
 export async function verifyPluginBindings(
-  bindings: Readonly<Record<string, { storeDigest: string }>>,
+  bindings: Readonly<
+    Record<
+      string,
+      { storeDigest: string; artifactOriginTokenEnvs?: readonly string[] }
+    >
+  >,
   options: RegisterInstalledPluginsOptions = {},
 ): Promise<readonly RegisteredPlugin[]> {
   const storeRoot = options.storeRoot ?? pluginStoreRoot();
   const listed = await listPlugins({ storeRoot });
   const registered: RegisteredPlugin[] = [];
+  const tokenNames = Object.values(bindings).flatMap(
+    (binding) => binding.artifactOriginTokenEnvs ?? [],
+  );
+  const withTokenNames =
+    tokenNames.length === 0
+      ? options
+      : {
+          ...options,
+          hostFetchTokenEnvNames: [
+            ...(options.hostFetchTokenEnvNames ?? []),
+            ...tokenNames,
+          ],
+        };
   for (const [id, binding] of Object.entries(bindings)) {
     const plugin = listed.find((entry) => entry.id === id);
     if (plugin === undefined)
@@ -130,7 +153,7 @@ export async function verifyPluginBindings(
           `but the installed entry is ${plugin.storeDigest}. ` +
           'Re-pin the project or reinstall the pinned plugin; the binding is refused.',
       );
-    registered.push(await registerOne(plugin, storeRoot, options));
+    registered.push(await registerOne(plugin, storeRoot, withTokenNames));
   }
   return registered;
 }
@@ -279,6 +302,35 @@ function assertNoConflict(
  * the operator-granted map and are additionally granted to the sandbox
  * scrubber, mirroring configurePackProviders.
  */
+function hostFetchDeniedEnvNames(
+  options: RegisterInstalledPluginsOptions,
+): Set<string> {
+  const denied = new Set<string>();
+  for (const name of options.hostFetchTokenEnvNames ?? []) {
+    if (name !== '') denied.add(name);
+  }
+  const raw = process.env.OPM_HOST_FETCH_TOKEN_ENVS;
+  if (raw !== undefined && raw.trim() !== '') {
+    for (const name of raw.split(',').map((part) => part.trim())) {
+      if (name !== '') denied.add(name);
+    }
+  }
+  return denied;
+}
+
+function assertAllowEnvironmentSafe(
+  options: RegisterInstalledPluginsOptions,
+): void {
+  const denied = hostFetchDeniedEnvNames(options);
+  for (const name of options.allowEnvironment ?? []) {
+    if (name.startsWith('OPM_HOST_FETCH_') || denied.has(name))
+      throw new OpmError(
+        'UNSAFE_ENV',
+        `--allow-env ${name} is a host-fetch credential and cannot be granted to a plugin`,
+      );
+  }
+}
+
 function resolveEnvironment(
   manifest: DelegatedAdapterManifest,
   options: RegisterInstalledPluginsOptions,
@@ -287,6 +339,7 @@ function resolveEnvironment(
   grantedEnvironment: readonly string[];
   allowNetwork: boolean;
 } {
+  assertAllowEnvironmentSafe(options);
   const allowlist = new Set(options.allowEnvironment ?? []);
   const environment: Record<string, string> = {};
   for (const [name, value] of Object.entries(manifest.environment ?? {}))
