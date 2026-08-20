@@ -1,18 +1,25 @@
 {
-  "schemaVersion": "1",
-  "initiative": "review-followups",
-  "branch": "fix/review-followups",
-  "status": "ready-for-review",
-  "summary": "Resolves the six self-review findings, then the ten an adversarial review raised against those fixes: node identity in lock-import and maven, ordered-set collation in the Rust amend path, the gc reference closure, and tests that passed under the very bugs they claimed to cover.",
+  "layer": "01-spec",
+  "commits": ["1248610", "368c8ed", "1f4db2c", "5cbf578", "3b65b46"],
   "gates": {
-    "verify": "green",
-    "cargoTest": "23 passed",
-    "goldens": "16 moved, every hunk node-ID derived"
+    "check:contracts": "pass",
+    "test:conformance": "pass",
+    "test:docs": "pass",
+    "typecheck @openpacker/contracts": "pass",
+    "agent:check:staged (pre-commit, every commit)": "pass"
   },
-  "reviewFindingsAddressed": 16,
-  "residuals": [
-    "Nothing populates store references yet; gc computes the closure correctly in advance of that.",
-    "No JS producer applies the universe-v1 ordered-set projection, so the Rust amend path is the only implementation that sorts and nothing cross-checks the two.",
-    "PREX captures and verifies; it does not build or evaluate."
-  ]
+  "filesChanged": [
+    "spec/prex/v1/delegated-adapter.md",
+    "spec/prex/v1/schemas/delegated-adapter.schema.json",
+    "packages/contracts/schemas/delegated-adapter.schema.json",
+    "packages/contracts/src/generated.ts",
+    "fixtures/protocol/delegated-adapter/inspection-result.json",
+    "fixtures/protocol/conformance-vectors.json",
+    "docs/adr/0040-delegated-plugins-deliver-artifact-bytes-and-executables.md",
+    "docs/adr/0039-third-party-ecosystems-arrive-as-delegated-adapter-plugins.md",
+    "docs/adr/README.md",
+    "docs/guides/opm.md"
+  ],
+  "notes": "Spec + schema amended in lockstep per schema-first rule; mirror is byte-identical (regenerated via npm run generate -w @openpacker/contracts, which writes packages/contracts/schemas itself). New $defs.DelegatedAdapterBin (name safe-segment pattern, relative POSIX path pattern refusing absolute + '..', interpreter enum node|python|dotnet|native, entry maxLength 1024 — 'entry required iff python' is normative prose in the spec and must be enforced host-side in layer 02; JSON Schema cannot express that per-bin conditional cleanly here). DelegatedAdapterInspectionResult.executables is optional, maxItems 64. generated.ts now exports type DelegatedAdapterBin and ProviderInspection-side consumers will see executables on the wire type. The host-fetch marker openpacker/artifact-bytes: \"host-fetch\" is specified as a provider capability extension (adapter-core ProviderCapabilities.extensions is a free-form record, cf. existing 'openpacker.dev/ecosystem' key) — layer 02 must surface it from the plugin host; it does NOT fit common.schema.json Extensions propertyNames (no slashes), so it was deliberately not put in the RegistryDefinition extensions container. Conformance gained 4 negative vectors (dotdot path, absolute path, unsafe name, unknown interpreter). docs/plans/plugin-execution/sdlc-state.md remains untracked; coordinator owns it. No runtime .ts behavior changed beyond regenerated contracts.",
+  "deviations": "Task said to add the executables example to fixtures/protocol/delegated-adapter/example.json, but that file is a DelegatedAdapterManifest (additionalProperties: false — executables would fail validation). The inspect example validated against DelegatedAdapterInspectionResult is inspection-result.json, so the executables array (one node-interpreter bin) was added there instead."
 }
