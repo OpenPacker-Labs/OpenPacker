@@ -93,6 +93,25 @@ describe('@openpacker/sandbox', () => {
     expect(env.npm_package_name).toBe('demo');
   });
 
+  it('denies OPM_HOST_FETCH_ names even when they are not suffix-shaped', () => {
+    expect(isDeniedCredential('OPM_HOST_FETCH_BEARER')).toBe(true);
+    expect(isDeniedCredential('OPM_HOST_FETCH_TOKEN_ENVS')).toBe(true);
+    expect(isDeniedCredential('OPM_HOST_FETCH_ORIGINS')).toBe(true);
+    const env = scrubEnvironment({
+      parent: {
+        OPM_HOST_FETCH_BEARER: 'tok68value',
+        OPM_HOST_FETCH_TOKEN_ENVS: 'ACME_TOKEN',
+        OPM_HOST_FETCH_ORIGINS: 'https://a.example',
+        PATH: '/bin',
+      },
+      grantEnv: [],
+      jailHome: '/tmp/j',
+    });
+    expect(env.OPM_HOST_FETCH_BEARER).toBeUndefined();
+    expect(env.OPM_HOST_FETCH_TOKEN_ENVS).toBeUndefined();
+    expect(env.OPM_HOST_FETCH_ORIGINS).toBeUndefined();
+  });
+
   it('allows granted credential env names only when listed', () => {
     expect(isDeniedCredential('NPM_TOKEN')).toBe(true);
     const env = scrubEnvironment({

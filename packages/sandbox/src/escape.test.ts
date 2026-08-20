@@ -158,6 +158,9 @@ describe('credential scrubbing (hardened)', () => {
       isDeniedCredential('npm_config_//registry.npmjs.org/:_authToken'),
     ).toBe(true);
     expect(isDeniedCredential('GITHUB_TOKEN')).toBe(true);
+    expect(isDeniedCredential('OPM_HOST_FETCH_BEARER')).toBe(true);
+    expect(isDeniedCredential('OPM_HOST_FETCH_TOKEN_ENVS')).toBe(true);
+    expect(isDeniedCredential('OPM_HOST_FETCH_ORIGINS')).toBe(true);
   });
 
   it('uses minimal PATH by default', () => {
