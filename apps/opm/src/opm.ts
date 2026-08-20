@@ -578,6 +578,7 @@ function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_PLUGIN_MANIFEST':
       case 'INVALID_PLUGIN_ARTIFACT':
       case 'PLUGIN_ALREADY_INSTALLED':
+      case 'PLUGIN_ID_CONFLICT':
         return EXIT_CODES.invalidInput;
       case 'UNRESOLVABLE':
         return EXIT_CODES.unsatisfiable;

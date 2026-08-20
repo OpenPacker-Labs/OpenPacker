@@ -422,6 +422,19 @@ async function materializeAndPin(
 ): Promise<InstalledPlugin> {
   const inspected = await inspectPluginArtifact(artifact);
   pin.id = inspected.manifest.id;
+  // The manifest id is the name project bindings use, so it must be unique
+  // across the whole index, not just across install names: two plugins
+  // answering to one id would make `[plugins.<id>]` ambiguous.
+  const conflict = Object.values(index.plugins).find(
+    (other) => other.name !== pin.name && other.id === pin.id,
+  );
+  if (conflict !== undefined)
+    throw new OpmError(
+      'PLUGIN_ID_CONFLICT',
+      `Plugin "${pin.name}" declares manifest id "${pin.id}", which the ` +
+        `installed plugin "${conflict.name}" already provides. Remove it ` +
+        `first (opm plugin remove ${conflict.name}).`,
+    );
   const storeKey = storeKeyFromDigest(pin.storeDigest);
   const storePath = join(root, storeKey);
 

@@ -428,6 +428,46 @@ describe('plugin add', () => {
     });
   });
 
+  it('refuses a second plugin declaring an already-installed manifest id', async () => {
+    // Manifest ids name project bindings (`[plugins.<id>]`), so one id must
+    // not be provided by two install names.
+    const sharedId = 'dev.example.shared-adapter';
+    const transport = registryFixture({
+      acme: [
+        {
+          version: '1.0.0',
+          artifact: pluginArtifact(pluginManifest(sharedId, 'acme-adapter')),
+        },
+      ],
+      acme2: [
+        {
+          version: '1.0.0',
+          artifact: pluginArtifact(pluginManifest(sharedId, 'acme-adapter')),
+        },
+      ],
+    });
+    const root = await storeRoot();
+    await addPlugin({
+      name: 'acme',
+      endpoint: ENDPOINT,
+      transport,
+      storeRoot: root,
+      now,
+    });
+    await expect(
+      addPlugin({
+        name: 'acme2',
+        endpoint: ENDPOINT,
+        transport,
+        storeRoot: root,
+        now,
+      }),
+    ).rejects.toMatchObject({ code: 'PLUGIN_ID_CONFLICT' });
+    // The conflicting plugin was refused before anything was pinned.
+    const listed = await listPlugins({ storeRoot: root });
+    expect(listed.map((plugin) => plugin.name)).toEqual(['acme']);
+  });
+
   it('rejects bytes that do not match the digest the registry published', async () => {
     // The supply-chain case: the metadata states one digest, the location
     // serves other bytes. Verification must fail before anything is stored.
