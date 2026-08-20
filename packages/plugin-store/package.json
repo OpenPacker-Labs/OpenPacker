@@ -1,0 +1,38 @@
+{
+  "name": "@openpacker/plugin-store",
+  "version": "0.1.0",
+  "description": "User-level content-addressed store for delegated adapter plugins (pkg:opm-plugin/*)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/artifact-model": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/materializer": "0.1.0",
+    "@openpacker/opm-project": "0.1.0",
+    "@openpacker/policy": "0.1.0",
+    "@openpacker/registry-client": "0.1.0"
+  },
+  "devDependencies": {
+    "@openpacker/canonical": "0.1.0"
+  }
+}
