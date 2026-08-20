@@ -730,9 +730,10 @@ export async function resolveRegistryArtifactDeferred(
  *
  * The plugin is the metadata authority, never a byte proxy: the host downloads
  * from a location on an origin in `{endpoint origin} ∪ pins` (env ∪ this
- * plugin's `artifact_origins`), over HTTPS without credentials, query, or
- * hash, bounded by the published size, and verifies the sha256 digest before
- * the bytes are anyone's artifact. Every gap in that chain fails closed.
+ * plugin's `artifact_origins`), over HTTPS without query or hash, bounded by
+ * the published size, and verifies the sha256 digest before the bytes are
+ * anyone's artifact. An operator bearer attaches only when the hop origin is
+ * pinned and a per-origin env-var name is configured. Every gap fails closed.
  */
 function hostFetchCallOptions(options: RegistryOptions): {
   fetch?: typeof fetch;
@@ -801,10 +802,15 @@ async function fetchDelegatedArtifactBytes(input: {
   const envPins = parseHostFetchPinnedOrigins(
     process.env.OPM_HOST_FETCH_ORIGINS,
   );
-  const projectPins =
+  const envTokenNames = parseParallelTokenEnvNames(
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS,
+    envPins,
+  );
+  const binding =
     input.providerId === undefined
-      ? []
-      : (input.pluginBindings?.[input.providerId]?.artifactOrigins ?? []);
+      ? undefined
+      : input.pluginBindings?.[input.providerId];
+  const projectPins = binding?.artifactOrigins ?? [];
   const pins = [...new Set([...envPins, ...projectPins])];
   const allowlist = [endpointOrigin, ...pins];
   if (!allowlist.includes(location.origin))
@@ -813,12 +819,19 @@ async function fetchDelegatedArtifactBytes(input: {
       `${input.exactPurl} points at ${location.origin}, which is not an allowed ` +
         `origin for this host-fetch (${[...new Set(allowlist)].join(', ')}).`,
     );
+  const tokenEnvNames = mergeTokenEnvNames({
+    envPins,
+    envTokenNames,
+    projectPins,
+    projectTokenNames: binding?.artifactOriginTokenEnvs,
+  });
   let transport: BoundedFetchTransport;
   try {
     transport = new BoundedFetchTransport({
       allowedOrigins: allowlist,
       destinationPolicy: 'classify-and-pin',
       pinnedOrigins: [...pins],
+      pinnedTokenEnvNames: tokenEnvNames,
       maximumBytes: size,
       ...(input.fetch ? { fetch: input.fetch } : {}),
       ...(input.lookup ? { lookup: input.lookup } : {}),
@@ -852,6 +865,8 @@ async function fetchDelegatedArtifactBytes(input: {
       error.code === 'INVALID_PROVIDER_ENDPOINT'
     )
       throw new OpmError('UNSAFE_PATH', error.message);
+    if (error instanceof ProviderError && error.code === 'UNRESOLVABLE')
+      throw new OpmError('UNRESOLVABLE', error.message);
     throw error;
   }
   if (body.byteLength !== size)
@@ -868,6 +883,65 @@ async function fetchDelegatedArtifactBytes(input: {
         `the ${input.ecosystem} provider reported ${input.digest}, the bytes hash to ${actual}`,
     );
   return { bytes: body, size };
+}
+
+const TOKEN_ENV_NAME = /^[A-Z_][A-Z0-9_]*$/u;
+
+function parseParallelTokenEnvNames(
+  raw: string | undefined,
+  origins: readonly string[],
+): string[] | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const names = raw.split(',').map((part) => part.trim());
+  if (names.length !== origins.length)
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `OPM_HOST_FETCH_TOKEN_ENVS has ${names.length} entries but OPM_HOST_FETCH_ORIGINS has ${origins.length}`,
+    );
+  for (const name of names) {
+    if (name === '') continue;
+    if (!TOKEN_ENV_NAME.test(name))
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'OPM_HOST_FETCH_TOKEN_ENVS entry is not a valid environment variable name',
+      );
+  }
+  return names;
+}
+
+function tokenEnvNameFor(
+  origin: string,
+  input: {
+    projectPins: readonly string[];
+    projectTokenNames: readonly string[] | undefined;
+    envPins: readonly string[];
+    envTokenNames: readonly string[] | undefined;
+  },
+): string | undefined {
+  if (input.projectTokenNames !== undefined) {
+    const index = input.projectPins.indexOf(origin);
+    if (index !== -1) return input.projectTokenNames[index];
+  }
+  if (input.envTokenNames !== undefined) {
+    const index = input.envPins.indexOf(origin);
+    if (index !== -1) return input.envTokenNames[index];
+  }
+  return undefined;
+}
+
+function mergeTokenEnvNames(input: {
+  envPins: readonly string[];
+  envTokenNames: readonly string[] | undefined;
+  projectPins: readonly string[];
+  projectTokenNames: readonly string[] | undefined;
+}): Map<string, string> {
+  const pins = [...new Set([...input.envPins, ...input.projectPins])];
+  const names = new Map<string, string>();
+  for (const origin of pins) {
+    const name = tokenEnvNameFor(origin, input);
+    if (name !== undefined && name !== '') names.set(origin, name);
+  }
+  return names;
 }
 
 function parseHostFetchPinnedOrigins(raw: string | undefined): string[] {
