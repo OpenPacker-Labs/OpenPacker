@@ -153,9 +153,32 @@ export interface ProviderRecord<T = unknown> {
   retrievedAt: string;
 }
 
+/**
+ * A provider-declared executable entry point, matching the normative
+ * `DelegatedAdapterBin` wire shape. An absent `interpreter` means `node`;
+ * `entry` is the Python `module:callable` and is required if and only if the
+ * interpreter is `python`; `native` executes the verified store file
+ * directly.
+ *
+ * This is provider metadata: consumers MUST validate every declaration
+ * against the rules above before use and fail closed on anything else.
+ */
+export interface ProviderExecutable {
+  name: string;
+  path: string;
+  interpreter?: 'node' | 'python' | 'dotnet' | 'native' | undefined;
+  entry?: string | undefined;
+}
+
 export interface ProviderInspection {
   package: PackageInstance;
   record: ProviderRecord;
+  /**
+   * Executables the provider declares the package to carry. Absent means the
+   * provider answered none; provider metadata, validated by consumers before
+   * use.
+   */
+  executables?: readonly ProviderExecutable[];
   warnings: readonly ProviderWarning[];
 }
 
