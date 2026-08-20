@@ -235,6 +235,12 @@ export type DelegatedAdapterAuthority = {
   network: 'never' | 'consent';
   environment: Array<DelegatedAdapterEnvironmentName>;
 };
+export type DelegatedAdapterBin = {
+  name: string;
+  path: string;
+  interpreter?: 'node' | 'python' | 'dotnet' | 'native';
+  entry?: string;
+};
 export type DelegatedAdapterCapability = 'registry-definition' | 'catalog';
 export type DelegatedAdapterCommand = { arguments: Array<string> };
 export type DelegatedAdapterEnvironmentName = string;
@@ -243,6 +249,7 @@ export type DelegatedAdapterId = string;
 export type DelegatedAdapterInspectionResult = {
   package: PackageInstance;
   record: DelegatedAdapterRecordResult;
+  executables?: Array<DelegatedAdapterBin>;
   warnings?: Array<DelegatedAdapterWarning>;
 };
 export type DelegatedAdapterManifest = {
@@ -2451,7 +2458,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
     $id: 'https://openpacker.dev/spec/prex/v1/schemas/delegated-adapter.schema.json',
     title: 'PREX delegated adapter manifest and stdio protocol',
     description:
-      'Delegated adapter plugins answer registry-definition and catalog operations for third-party ecosystems. The host loads the manifest no-follow, executes only a bounded immutable snapshot of the operator-approved standalone executable through the fail-closed sandbox, passes a canonical request document on stdin, and validates every response against the normative PREX schemas before use. Undeclared capabilities fail closed.',
+      'Delegated adapter plugins answer registry-definition and catalog operations for third-party ecosystems. The host loads the manifest no-follow, executes only a bounded immutable snapshot of the operator-approved standalone executable through the fail-closed sandbox, passes a canonical request document on stdin, and validates every response against the normative PREX schemas before use. Inspection results may declare the executables a package provides; the stdio protocol carries metadata only, and artifact bytes are fetched host-side and verified against the published digest. Codec, installer, project-format and pack capabilities are not delegatable; undeclared capabilities fail closed.',
     $defs: {
       DelegatedAdapterId: {
         type: 'string',
@@ -2481,7 +2488,7 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
       DelegatedAdapterCapability: {
         $comment:
-          'Version 1 delegates read-only catalog surfaces only. Codec, installer, project-format and pack capabilities are not delegatable and fail closed.',
+          'Version 1 delegates registry-definition and catalog surfaces. Codec, installer, project-format and pack capabilities are not delegatable and fail closed.',
         enum: ['registry-definition', 'catalog'],
       },
       DelegatedAdapterOperation: {
@@ -2786,9 +2793,42 @@ export const schemaCatalog: Record<string, JsonValue> = {
         },
         additionalProperties: false,
       },
+      DelegatedAdapterBin: {
+        $comment:
+          "Executable declaration for a package a delegated provider serves. name is a single safe path segment; path is a relative POSIX path without absolute roots or '..' segments; entry is required iff interpreter is python (module:callable). Hosts validate before use and fail closed on anything else.",
+        type: 'object',
+        required: ['name', 'path'],
+        properties: {
+          name: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$',
+          },
+          path: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 4096,
+            pattern: '^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\u0000]+$',
+          },
+          interpreter: {
+            $comment:
+              'Runtime the host invokes; absent means node. native executes the verified store file directly.',
+            enum: ['node', 'python', 'dotnet', 'native'],
+          },
+          entry: {
+            $comment:
+              'Entry point in module:callable form; required iff interpreter is python.',
+            type: 'string',
+            minLength: 1,
+            maxLength: 1024,
+          },
+        },
+        additionalProperties: false,
+      },
       DelegatedAdapterInspectionResult: {
         $comment:
-          'Wire shape of a provider inspection: the catalog package instance, its provenance record, and optional non-fatal warnings.',
+          'Wire shape of a provider inspection: the catalog package instance, its provenance record, optional executable declarations, and optional non-fatal warnings.',
         type: 'object',
         required: ['package', 'record'],
         properties: {
@@ -2797,6 +2837,13 @@ export const schemaCatalog: Record<string, JsonValue> = {
           },
           record: {
             $ref: '#/$defs/DelegatedAdapterRecordResult',
+          },
+          executables: {
+            type: 'array',
+            maxItems: 64,
+            items: {
+              $ref: '#/$defs/DelegatedAdapterBin',
+            },
           },
           warnings: {
             type: 'array',
