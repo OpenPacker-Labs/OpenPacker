@@ -536,13 +536,16 @@ Third-party purl types come from delegated adapter plugins (opm plugin add).
 installs one:
   opmx --plugin acme pkg:acme/some-tool
   opmx --plugin acme some-tool    # when the plugin serves one purl type
+The plugin answers metadata only; the host downloads the tool bytes from the
+location the plugin publishes and digest-verifies them before anything runs.
 A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
-Tools are cached content-addressed, so a repeat run downloads nothing. The
-resolved version is printed to stderr, because an unpinned run is a different
-thing tomorrow. Cache location: OPM_TOOL_CACHE, else XDG_CACHE_HOME, else
-~/.cache/openpacker/x.
+Tools live in a content-addressed cache under OPM_TOOL_CACHE (else
+XDG_CACHE_HOME, else ~/.cache/openpacker/x); a repeat run resolves and
+digest-verifies again rather than trusting what ran before. The resolved
+version is printed to stderr, because an unpinned run is a different thing
+tomorrow.
 `;
 }
 

@@ -353,13 +353,24 @@ recorded in `plugins.json` there. The plugin registry is selected with
 install works only from an already-pinned, digest-verified cache entry.
 
 Installed plugins register as adapters at `opm` startup, so the purl types they
-serve work in `opm search` / `versions` / `resolve` like any other registry. For
-an ephemeral run, name the plugin explicitly — the flag never installs:
+serve work in `opm search` / `versions` / `resolve` like any other registry. End
+to end:
 
 ```sh
-opmx --plugin acme pkg:acme/some-tool
-opmx --plugin acme some-tool    # when the plugin serves exactly one purl type
+opm plugin add acme                    # once; digest-pinned into the store
+opmx --plugin acme pkg:acme/some-tool  # resolve → fetch → verify → run
+opmx --plugin acme some-tool           # when the plugin serves exactly one purl type
 ```
+
+`--plugin` names an already-installed plugin for that run; it never installs
+one. The run is the full loop: the plugin answers `enumerate` / `inspect` /
+`fetch-artifact-record` over the bounded stdio protocol — metadata only; the
+host downloads the artifact itself from the record's published `locations`
+(bounded transport, same origin as the record endpoint, no credentials),
+verifies sha256 and size against the published values, materializes the package
+into the content-addressed tool cache, and runs the executables the plugin's
+inspection declared. A withheld location, an off-origin download, or a
+size/digest mismatch fails closed (exit 7) before anything executes.
 
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.
