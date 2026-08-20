@@ -2,8 +2,10 @@
 
 `DelegatedAdapterManifest` is the portable configuration for a third-party
 ecosystem adapter that OPM executes out of process. It maps to a subset of the
-`adapter` world in `openpacker:prex-adapter@0.1.0`: version 1 delegates only the
-read-only registry-definition and catalog surfaces. Codec, installer,
+`adapter` world in `openpacker:prex-adapter@0.1.0`: version 1 delegates the
+registry-definition and catalog surfaces. An `inspect` result MAY declare the
+executables a package provides, and artifact bytes are acquired host-side as
+specified under [Artifact bytes](#artifact-bytes). Codec, installer,
 project-format and pack capabilities are not delegatable in version 1; a host
 MUST fail closed when an operation needs an undeclared capability.
 
@@ -76,14 +78,14 @@ another, and cannot influence argv beyond its declared literal arguments.
 
 ## Operations
 
-| Operation               | Request params              | Result schema                      |
-| ----------------------- | --------------------------- | ---------------------------------- |
-| `registry-definition`   | `offline`                   | `RegistryDefinition`               |
-| `identify`              | `query`, `offline`          | array of `PackageIdentity`         |
-| `enumerate`             | `basePurl`, `offline`       | array of exact purl strings        |
-| `inspect`               | `exactPurl`, `offline`      | `DelegatedAdapterInspectionResult` |
-| `fetch-artifact-record` | `exactPurl`, `offline`      | `DelegatedAdapterRecordResult`     |
-| `snapshot`              | `evaluationTime`, `offline` | `DelegatedAdapterSnapshotResult`   |
+| Operation               | Request params              | Result schema                                                |
+| ----------------------- | --------------------------- | ------------------------------------------------------------ |
+| `registry-definition`   | `offline`                   | `RegistryDefinition`                                         |
+| `identify`              | `query`, `offline`          | array of `PackageIdentity`                                   |
+| `enumerate`             | `basePurl`, `offline`       | array of exact purl strings                                  |
+| `inspect`               | `exactPurl`, `offline`      | `DelegatedAdapterInspectionResult` (may carry `executables`) |
+| `fetch-artifact-record` | `exactPurl`, `offline`      | `DelegatedAdapterRecordResult`                               |
+| `snapshot`              | `evaluationTime`, `offline` | `DelegatedAdapterSnapshotResult`                             |
 
 `catalog` capability requires `identify`, `enumerate`, `inspect` and
 `fetch-artifact-record`; `snapshot` is optional. The `DelegatedAdapter*` result
@@ -93,6 +95,37 @@ schemas are normative `$defs` of `schemas/delegated-adapter.schema.json`:
 `schemas/model.schema.json`. A host MUST bound request and response bytes, MUST
 reject responses that fail schema validation, and MUST treat nonzero exits,
 malformed output, or budget overruns as fail-closed provider errors.
+
+## Artifact bytes
+
+The stdio protocol carries metadata only; artifact bytes never travel through
+the plugin. A delegated provider signals host-side byte acquisition with the
+provider capability extension `openpacker/artifact-bytes: "host-fetch"`. For
+such a provider the `fetch-artifact-record` body MUST carry a sha256 `digest`, a
+byte `size`, and at least one `locations[].uri`. The host MUST fetch the bytes
+itself over HTTPS without credentials, from an origin it allowlists — the origin
+of the record's `endpoint` — MUST bound the download by the published `size`,
+and MUST verify the sha256 digest before any use. A missing digest, a digest
+mismatch, an over-size body, or a location outside the allowlisted origin fails
+closed. The plugin never proxies artifact bytes; `rawBody` remains the canonical
+bytes of the answered body.
+
+## Executables
+
+An `inspect` result MAY carry `executables`, an array of `DelegatedAdapterBin`
+declaring the executables the package provides:
+
+- `name` is a single safe path segment matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` —
+  never a separator, never empty;
+- `path` is a relative POSIX path with `/` separators — never absolute, never
+  containing a `..` segment;
+- `interpreter` is `node` (the default when absent), `python`, `dotnet`, or
+  `native`; `native` means the host executes the verified store file directly;
+- `entry` is required if and only if `interpreter` is `python`, in
+  `module:callable` form.
+
+A host MUST validate every declaration against these rules before use and MUST
+fail closed on anything else.
 
 ## Authority
 
