@@ -344,6 +344,9 @@ export class PluginRegistryProvider implements CatalogProvider {
         'ARTIFACT_NOT_FOUND',
         `Registry has no artifact location or digest for ${exactPurl}.`,
       );
+    // Deliberate: only the first published location is tried. Mirror
+    // fallback would fetch bytes from origins the operator never configured,
+    // and the digest pin already guarantees the bytes or a loud failure.
     const uri = distribution.locations[0]!;
     const bytes = await this.#download(uri, distribution, signal);
     const body = {

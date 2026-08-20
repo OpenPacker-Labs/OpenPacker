@@ -758,6 +758,11 @@ async function writePluginIndex(
   indexPath: string,
   index: PluginIndex,
 ): Promise<void> {
+  // Single-writer assumption: `opm plugin` is an interactive CLI, so the
+  // read-modify-write of plugins.json carries no interlock. Two concurrent
+  // opm processes could lose each other's pin; that is accepted for v1 (the
+  // same assumption the project store makes) rather than hidden behind a
+  // lock file.
   await writeStableFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 }
 
