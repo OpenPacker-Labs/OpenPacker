@@ -219,6 +219,7 @@ export async function runInSandbox(
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
           directoryAuthorities: authorities,
+          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
           ...(input.executableAuthority === undefined
             ? {}
             : { executableAuthority: input.executableAuthority }),

@@ -10,6 +10,7 @@ export {
   parsePluginSpec,
   pluginStoreRoot,
   removePlugin,
+  verifiedPluginEntry,
   PLUGIN_INDEX_NAME,
   PLUGIN_MANIFEST_NAME,
   type AddPluginOptions,

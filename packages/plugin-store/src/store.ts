@@ -581,6 +581,28 @@ async function inspectPluginArtifact(
   return { manifest, manifestEntry, executableEntry };
 }
 
+/**
+ * Resolve a pin to its store entry path after re-verifying the materialized
+ * tree against the pinned digest. This is the load-time gate for hosts that
+ * execute store contents: a missing or tampered entry fails closed here,
+ * before a manifest is read or an executable is approved.
+ */
+export async function verifiedPluginEntry(
+  pin: PluginPin,
+  options: PluginStoreOptions = {},
+): Promise<string> {
+  const root = options.storeRoot ?? pluginStoreRoot();
+  const storePath = join(root, storeKeyFromDigest(pin.storeDigest));
+  if (!(await verifyEntry(root, pin)))
+    throw new OpmError(
+      'DIGEST_MISMATCH',
+      `Plugin store entry for ${pin.exactPurl} is missing or no longer ` +
+        `digests to the pinned ${pin.treeDigest}; repair it with ` +
+        `\`opm plugin remove ${pin.name}\` and \`opm plugin add ${pin.name}\`.`,
+    );
+  return storePath;
+}
+
 export async function removePlugin(
   name: string,
   options: PluginStoreOptions = {},

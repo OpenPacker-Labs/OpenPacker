@@ -13,6 +13,7 @@ import {
   pluginRegistryModule,
   pluginStoreRoot,
   removePlugin,
+  verifiedPluginEntry,
   PLUGIN_INDEX_NAME,
   PLUGIN_MANIFEST_NAME,
   PLUGIN_PURL_TYPE,
@@ -833,6 +834,43 @@ describe('plugin list / remove', () => {
     await rm(installed.storePath, { recursive: true });
     const listed = await listPlugins({ storeRoot: root });
     expect(listed[0]?.present).toBe(false);
+  });
+});
+
+describe('verifiedPluginEntry', () => {
+  it('returns the store path for an intact pin', async () => {
+    const fixture = acmeFixture();
+    const root = await storeRoot();
+    const installed = await addPlugin({
+      name: 'acme',
+      endpoint: ENDPOINT,
+      transport: fixture.transport,
+      storeRoot: root,
+      now,
+    });
+    await expect(
+      verifiedPluginEntry(installed, { storeRoot: root }),
+    ).resolves.toBe(installed.storePath);
+  });
+
+  it('fails closed when the entry is tampered or missing', async () => {
+    const fixture = acmeFixture();
+    const root = await storeRoot();
+    const installed = await addPlugin({
+      name: 'acme',
+      endpoint: ENDPOINT,
+      transport: fixture.transport,
+      storeRoot: root,
+      now,
+    });
+    await writeFile(join(installed.storePath, PLUGIN_MANIFEST_NAME), '{}');
+    await expect(
+      verifiedPluginEntry(installed, { storeRoot: root }),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
+    await rm(installed.storePath, { recursive: true });
+    await expect(
+      verifiedPluginEntry(installed, { storeRoot: root }),
+    ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
 });
 

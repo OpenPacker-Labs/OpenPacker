@@ -42,6 +42,7 @@ export function createMockBackend(options?: {
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
+        ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
         inheritedFds: [
           ...directoryFds,
           ...(input.executableAuthority === undefined
@@ -175,6 +176,8 @@ export async function spawnCapture(input: {
   maximumStdoutBytes?: number;
   maximumStderrBytes?: number;
   maximumOutputBytes?: number;
+  /** Bounded bytes for the child's stdin; absent means /dev/null. */
+  stdin?: Uint8Array;
   treeContainment?: 'pid-namespace' | 'test-only';
   inheritedFds?: readonly number[];
 }): Promise<{
@@ -233,9 +236,20 @@ export async function spawnCapture(input: {
       const child = spawn(command, args, {
         cwd: input.cwd,
         env: { ...input.env },
-        stdio: ['ignore', 'pipe', 'pipe', ...(input.inheritedFds ?? [])],
+        stdio: [
+          input.stdin === undefined ? 'ignore' : 'pipe',
+          'pipe',
+          'pipe',
+          ...(input.inheritedFds ?? []),
+        ],
         detached: process.platform !== 'win32',
       });
+      if (input.stdin !== undefined && child.stdin) {
+        // A child that exits before reading closes the pipe early; the close
+        // event remains authoritative for the outcome.
+        child.stdin.on('error', () => undefined);
+        child.stdin.end(Buffer.from(input.stdin));
+      }
       const output = new BoundedOutput({
         maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
         maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,

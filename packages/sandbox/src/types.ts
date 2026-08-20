@@ -87,6 +87,12 @@ export interface RunInSandboxInput {
   cwd: string;
   /** Additional env merged after scrub; grants.env may inherit parent keys. */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Bounded bytes written to the child's standard input; absent means the
+   * child inherits no input (stdin is /dev/null). Callers bound the bytes
+   * before handing them over — this is a transport, not a limit.
+   */
+  stdin?: Uint8Array;
   policy: SandboxPolicy;
   /** Optional package id for grant lookup. */
   packageId?: string;
@@ -152,6 +158,8 @@ export interface SandboxBackend {
     profile: SandboxProfile;
     legacyFatRoot?: boolean;
     timeoutMs?: number;
+    /** Bounded bytes for the child's stdin; absent means /dev/null. */
+    stdin?: Uint8Array;
     maximumStdoutBytes: number;
     maximumStderrBytes: number;
     maximumOutputBytes: number;

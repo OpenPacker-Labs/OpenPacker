@@ -556,4 +556,40 @@ describe('opm plugin', () => {
       restore();
     }
   });
+
+  it('loads installed plugins silently and reports a tampered entry', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opm-plugin-cli-'));
+    temps.push(home);
+    const restore = withPluginEnv(home);
+    try {
+      const { addPlugin } = await import('@openpacker/plugin-store');
+      const { configureAdapters } = await import('@openpacker/opm-project');
+      const { fixturePluginTransport } = await import('./plugin-fixture.js');
+      configureAdapters([]);
+      const seeded = await addPlugin({
+        name: 'acme',
+        endpoint: 'https://plugins.fixture.test',
+        transport: fixturePluginTransport(),
+        storeRoot: home,
+        now: () => '2026-08-20T00:00:00.000Z',
+      });
+
+      // An intact plugin registers at startup without a word.
+      let cap = capture();
+      expect(await runOpm(['plugin', 'list'], cap.io, home)).toBe(0);
+      expect(cap.err).toBe('');
+
+      // A tampered store entry fails closed: the plugin is not loaded, the
+      // refusal is reported, and the CLI keeps working so the store can be
+      // repaired.
+      await writeFile(join(seeded.storePath, 'plugin.json'), '{}\n');
+      cap = capture();
+      expect(await runOpm(['plugin', 'list'], cap.io, home)).toBe(0);
+      expect(cap.err).toMatch(/plugin acme was not loaded/);
+      expect(cap.err).toMatch(/DIGEST_MISMATCH|digest/iu);
+      expect(cap.out).toMatch(/^acme\tpkg:opm-plugin\/acme@1\.0\.0/m);
+    } finally {
+      restore();
+    }
+  });
 });

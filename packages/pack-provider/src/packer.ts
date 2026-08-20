@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, type Dirent } from 'node:fs';
 import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   ProviderError,
@@ -35,24 +34,17 @@ import {
   type SandboxOutcome,
 } from '@openpacker/sandbox';
 
+import {
+  assertExecutableIdentity,
+  inspectDelegatedExecutable,
+  openDelegatedExecutable,
+  type DelegatedExecutableAuthority,
+  type DelegatedExecutableIdentity,
+} from './executable.js';
+
 type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
-export interface DelegatedExecutableIdentity {
-  path: string;
-  digest: { algorithm: 'sha256'; value: string };
-  device: bigint;
-  inode: bigint;
-  size: bigint;
-  ctimeNanoseconds: bigint;
-  mtimeNanoseconds: bigint;
-}
-
 type InspectExecutable = (path: string) => Promise<DelegatedExecutableIdentity>;
-interface DelegatedExecutableAuthority {
-  identity: DelegatedExecutableIdentity;
-  fd: number;
-  close(): Promise<void>;
-}
 type OpenExecutableAuthority = (
   path: string,
 ) => Promise<DelegatedExecutableAuthority>;
@@ -64,9 +56,6 @@ const DEFAULT_LIMITS: ManifestPackagePackerLimits = {
   totalArtifactBytes: 2_147_483_648n,
   readChunkBytes: 64 * 1_024,
 };
-
-const MAX_DELEGATED_EXECUTABLE_BYTES = 64 * 1_024 * 1_024;
-const LINUX_O_TMPFILE = 0x40_0000 | constants.O_DIRECTORY;
 
 export interface ManifestPackagePackerLimits {
   outputEntries: number;
@@ -580,182 +569,6 @@ export class ManifestPackagePacker implements PackagePacker {
     );
     return outcome;
   }
-}
-
-async function inspectDelegatedExecutable(
-  path: string,
-): Promise<DelegatedExecutableIdentity> {
-  const authority = await openDelegatedExecutable(path);
-  try {
-    return authority.identity;
-  } finally {
-    await authority.close();
-  }
-}
-
-async function openDelegatedExecutable(
-  path: string,
-): Promise<DelegatedExecutableAuthority> {
-  if (!isAbsolute(path) || process.platform !== 'linux') unsafeExecutable(path);
-  const before = await lstat(path, { bigint: true });
-  if (
-    !before.isFile() ||
-    before.isSymbolicLink() ||
-    (before.mode & 0o111n) === 0n ||
-    before.size > BigInt(MAX_DELEGATED_EXECUTABLE_BYTES)
-  )
-    unsafeExecutable(path);
-  const source = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  let snapshot: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    const opened = await source.stat({ bigint: true });
-    if (!sameExecutableMetadata(before, opened)) unsafeExecutable(path);
-    const sourceHash = createHash('sha256');
-    const buffer = new Uint8Array(64 * 1024);
-    let offset = 0;
-    const writer = await open(
-      tmpdir(),
-      LINUX_O_TMPFILE | constants.O_RDWR,
-      0o700,
-    );
-    try {
-      snapshot = await open(stableHandlePath(writer), constants.O_RDONLY);
-      while (offset < Number(opened.size)) {
-        const { bytesRead } = await source.read(
-          buffer,
-          0,
-          Math.min(buffer.byteLength, Number(opened.size) - offset),
-          offset,
-        );
-        if (bytesRead === 0) break;
-        sourceHash.update(buffer.subarray(0, bytesRead));
-        let written = 0;
-        while (written < bytesRead) {
-          const { bytesWritten } = await writer.write(
-            buffer,
-            written,
-            bytesRead - written,
-            offset + written,
-          );
-          if (bytesWritten === 0) unsafeExecutable(path);
-          written += bytesWritten;
-        }
-        offset += bytesRead;
-      }
-      await writer.sync();
-      await writer.chmod(0o500);
-    } finally {
-      await writer.close();
-    }
-    const [after, namedAfter] = await Promise.all([
-      source.stat({ bigint: true }),
-      lstat(path, { bigint: true }),
-    ]);
-    if (
-      BigInt(offset) !== opened.size ||
-      !sameExecutableMetadata(opened, after) ||
-      !sameExecutableMetadata(opened, namedAfter)
-    )
-      unsafeExecutable(path);
-    const snapshotInfo = await snapshot.stat({ bigint: true });
-    if (!snapshotInfo.isFile() || snapshotInfo.size !== opened.size)
-      unsafeExecutable(path);
-    const sourceDigest = sourceHash.digest('hex');
-    const snapshotDigest = await hashOpenFile(snapshot, Number(opened.size));
-    if (snapshotDigest !== sourceDigest) unsafeExecutable(path);
-    return {
-      identity: {
-        path,
-        digest: { algorithm: 'sha256', value: snapshotDigest },
-        device: opened.dev,
-        inode: opened.ino,
-        size: opened.size,
-        ctimeNanoseconds: timestampNanoseconds(opened, 'ctime'),
-        mtimeNanoseconds: timestampNanoseconds(opened, 'mtime'),
-      },
-      fd: snapshot.fd,
-      close: async () => await snapshot!.close(),
-    };
-  } catch (error) {
-    await snapshot?.close().catch(() => undefined);
-    throw error;
-  } finally {
-    await source.close().catch(() => undefined);
-  }
-}
-
-async function hashOpenFile(
-  handle: Awaited<ReturnType<typeof open>>,
-  size: number,
-): Promise<string> {
-  const hash = createHash('sha256');
-  const buffer = new Uint8Array(64 * 1024);
-  let offset = 0;
-  while (offset < size) {
-    const { bytesRead } = await handle.read(
-      buffer,
-      0,
-      Math.min(buffer.byteLength, size - offset),
-      offset,
-    );
-    if (bytesRead === 0) break;
-    hash.update(buffer.subarray(0, bytesRead));
-    offset += bytesRead;
-  }
-  if (offset !== size) throw new Error('Executable snapshot was truncated');
-  return hash.digest('hex');
-}
-
-function sameExecutableMetadata(
-  left: Awaited<ReturnType<typeof lstat>>,
-  right: Awaited<ReturnType<typeof lstat>>,
-): boolean {
-  return (
-    left.isFile() &&
-    right.isFile() &&
-    !left.isSymbolicLink() &&
-    !right.isSymbolicLink() &&
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    timestampNanoseconds(left, 'ctime') ===
-      timestampNanoseconds(right, 'ctime') &&
-    timestampNanoseconds(left, 'mtime') === timestampNanoseconds(right, 'mtime')
-  );
-}
-
-function timestampNanoseconds(
-  info: Awaited<ReturnType<typeof lstat>>,
-  kind: 'ctime' | 'mtime',
-): bigint {
-  const milliseconds = `${kind}Ms` as 'ctimeMs' | 'mtimeMs';
-  const value = info[milliseconds];
-  return typeof value === 'bigint'
-    ? value * 1_000_000n
-    : BigInt(Math.trunc(value * 1_000_000));
-}
-
-async function assertExecutableIdentity(
-  expected: DelegatedExecutableIdentity,
-  actual: DelegatedExecutableIdentity,
-): Promise<void> {
-  if (
-    expected.path !== actual.path ||
-    expected.device !== actual.device ||
-    expected.inode !== actual.inode ||
-    expected.size !== actual.size ||
-    expected.ctimeNanoseconds !== actual.ctimeNanoseconds ||
-    expected.mtimeNanoseconds !== actual.mtimeNanoseconds ||
-    expected.digest.value !== actual.digest.value
-  )
-    unsafeExecutable(expected.path);
-}
-
-function unsafeExecutable(path: string): never {
-  throw new ProviderError(
-    'AUTHORITY_NOT_DECLARED',
-    `Delegated provider executable is not a stable approved regular file: ${path}`,
-  );
 }
 
 export function manifestPackagePackers(
