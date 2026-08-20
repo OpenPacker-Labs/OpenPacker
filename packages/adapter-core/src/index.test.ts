@@ -782,6 +782,249 @@ describe('classify-and-pin per-hop bearer', () => {
   });
 });
 
+describe('classify-and-pin per-hop extra header', () => {
+  const originA = 'https://a.example';
+  const originB = 'https://b.example';
+  const HEADER_ENV_A = 'PIN_HEADER_A';
+  const HEADER_ENV_B = 'PIN_HEADER_B';
+  const TOKEN_A = 'PIN_TOKEN_A';
+  const publicLookup: HostLookup = async () => [
+    { address: '1.1.1.1', family: 4 },
+  ];
+
+  afterEach(() => {
+    delete process.env[HEADER_ENV_A];
+    delete process.env[HEADER_ENV_B];
+    delete process.env[TOKEN_A];
+  });
+
+  function requestHeader(
+    init: RequestInit | undefined,
+    headerName: string,
+  ): string | undefined {
+    if (init?.headers === undefined) return undefined;
+    const headers = init.headers;
+    const lower = headerName.toLowerCase();
+    if (headers instanceof Headers) return headers.get(headerName) ?? undefined;
+    if (Array.isArray(headers)) {
+      const hit = headers.find(([name]) => name.toLowerCase() === lower);
+      return hit?.[1];
+    }
+    for (const [name, value] of Object.entries(
+      headers as Record<string, string>,
+    )) {
+      if (name.toLowerCase() === lower) return value;
+    }
+    return undefined;
+  }
+
+  function requestAuthorization(
+    init: RequestInit | undefined,
+  ): string | undefined {
+    return requestHeader(init, 'authorization');
+  }
+
+  it('attaches an extra header only on a pinned origin', async () => {
+    process.env[HEADER_ENV_A] = 'jfrog-key-a';
+    const calls: {
+      url: string;
+      extra: string | undefined;
+    }[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${originB}/public` },
+      }),
+      new Response('ok'),
+    ];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, originB],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
+        return responses.shift()!;
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/start` });
+    expect(calls).toEqual([
+      { url: `${originA}/start`, extra: 'jfrog-key-a' },
+      { url: `${originB}/public`, extra: undefined },
+    ]);
+  });
+
+  it('attaches Bearer and extra header independently on one origin', async () => {
+    process.env[TOKEN_A] = 'tok68valueA';
+    process.env[HEADER_ENV_A] = 'jfrog-key-a';
+    const calls: {
+      authorization: string | undefined;
+      extra: string | undefined;
+    }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          authorization: requestAuthorization(init),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/data` });
+    expect(calls).toEqual([
+      { authorization: 'Bearer tok68valueA', extra: 'jfrog-key-a' },
+    ]);
+  });
+
+  it('rebuilds a different extra header on each redirect hop', async () => {
+    process.env[HEADER_ENV_A] = 'key-a';
+    process.env[HEADER_ENV_B] = 'key-b';
+    const calls: { url: string; extra: string | undefined }[] = [];
+    const responses = [
+      new Response(null, {
+        status: 302,
+        headers: { location: `${originB}/next` },
+      }),
+      new Response('ok'),
+    ];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, originB],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA, originB],
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+        [originB, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_B }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
+        return responses.shift()!;
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/start` });
+    expect(calls).toEqual([
+      { url: `${originA}/start`, extra: 'key-a' },
+      { url: `${originB}/next`, extra: 'key-b' },
+    ]);
+  });
+
+  it('fails UNRESOLVABLE without fetching when extra-header env is missing', async () => {
+    const calls: { url: string }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA],
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push({ url: String(input) });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await expect(
+      transport.request({ url: `${originA}/data` }),
+    ).rejects.toMatchObject({
+      code: 'UNRESOLVABLE',
+      message: expect.stringContaining(HEADER_ENV_A),
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('does not fail origin A when origin B extra-header env is unset', async () => {
+    process.env[HEADER_ENV_A] = 'key-a';
+    const calls: { url: string; extra: string | undefined }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA, originB],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [originA, originB],
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+        [originB, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_B }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/data` });
+    expect(calls).toEqual([{ url: `${originA}/data`, extra: 'key-a' }]);
+  });
+
+  it('fails UNRESOLVABLE without fetching CR or LF in the extra-header value', async () => {
+    // process.env cannot store NUL (C strings truncate); CR/LF remain.
+    for (const value of ['bad\rvalue', 'bad\nvalue']) {
+      process.env[HEADER_ENV_A] = value;
+      const calls: { url: string }[] = [];
+      const transport = new BoundedFetchTransport({
+        allowedOrigins: [originA],
+        destinationPolicy: 'classify-and-pin',
+        pinnedOrigins: [originA],
+        pinnedExtraHeaders: new Map([
+          [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+        ]),
+        lookup: publicLookup,
+        fetch: (async (input: RequestInfo | URL) => {
+          calls.push({ url: String(input) });
+          return new Response('ok');
+        }) as typeof fetch,
+      });
+      try {
+        await transport.request({ url: `${originA}/data` });
+        throw new Error('expected UNRESOLVABLE');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'UNRESOLVABLE',
+          message: expect.stringContaining(HEADER_ENV_A),
+        });
+        expect((error as Error).message).not.toMatch(/bad/u);
+      }
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('does not attach an extra header in origin-allowlist mode', async () => {
+    process.env[HEADER_ENV_A] = 'jfrog-key-a';
+    const calls: { extra: string | undefined }[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [originA],
+      pinnedOrigins: [originA],
+      pinnedExtraHeaders: new Map([
+        [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ extra: requestHeader(init, 'X-JFrog-Art-Api') });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${originA}/data` });
+    expect(calls).toEqual([{ extra: undefined }]);
+  });
+});
+
 describe('pinned origin helpers', () => {
   it('classifies loopback, link-local, NAT64, and mapped addresses as private', () => {
     for (const address of [
