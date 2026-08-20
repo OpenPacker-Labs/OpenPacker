@@ -1,0 +1,36 @@
+{
+  "name": "@openpacker/plugin-host",
+  "version": "0.1.0",
+  "description": "Delegated adapter plugin host: executes installed opm-plugin store entries over the bounded stdio protocol (ADR 0039)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/adapter-host": "0.1.0",
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/conformance": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@openpacker/opm-project": "0.1.0",
+    "@openpacker/pack-provider": "0.1.0",
+    "@openpacker/plugin-store": "0.1.0",
+    "@openpacker/sandbox": "0.1.0"
+  }
+}
