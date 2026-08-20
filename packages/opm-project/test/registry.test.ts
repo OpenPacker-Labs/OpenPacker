@@ -29,6 +29,7 @@ import {
   bindVerifiedArtifactBytes,
   sealVerifiedArtifactBinding,
 } from '../src/install.js';
+import { resolveRegistryArtifactDeferred } from '../src/registry.js';
 
 /**
  * Registry resolution, driven through a fixture transport.
@@ -379,6 +380,25 @@ describe('artifact resolution', () => {
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
   });
 
+  it('refuses a hijacked origin on the deferred inspect-descriptor path too', async () => {
+    const hijacked = structuredClone(PACKUMENT);
+    hijacked.versions['1.1.0'].dist.tarball =
+      'https://evil.example/demo-1.1.0.tgz';
+    hijacked.versions['1.1.0'].dist.size = TARBALL.byteLength;
+    const transport = new FixtureHttpTransport(
+      npmFixtures(hijacked, 'https://evil.example/demo-1.1.0.tgz'),
+    );
+    await expect(
+      resolveRegistryArtifactDeferred('npm', 'pkg:npm/demo@1.1.0', {
+        transport,
+        now: () => '2026-08-04T00:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(
+      transport.requests.filter((request) => request.url.endsWith('.tgz')),
+    ).toHaveLength(0);
+  });
+
   it('rejects registry metadata for a different package identity', async () => {
     const substituted = structuredClone(PACKUMENT);
     substituted.versions['1.1.0'].name = 'attacker-package';
@@ -512,6 +532,27 @@ describe('OCI image materialisation', () => {
         configDigest.slice('sha256:'.length),
         layerDigest.slice('sha256:'.length),
       ]),
+    );
+  });
+
+  it('deferred resolution uses the layout-tar digest, not the inspect manifest digest', async () => {
+    const eager = await resolveRegistryArtifact(
+      'oci',
+      'pkg:oci/library/demo?tag=1.0',
+      { fetch: ociFetch(), now: () => '2026-08-04T00:00:00Z' },
+    );
+    const deferred = await resolveRegistryArtifactDeferred(
+      'oci',
+      'pkg:oci/library/demo?tag=1.0',
+      { fetch: ociFetch(), now: () => '2026-08-04T00:00:00Z' },
+    );
+    expect(deferred.digest).toBe(eager.digest);
+    expect(deferred.digest).not.toBe(eager.version);
+    expect(deferred.bytes).toEqual(eager.bytes);
+    const fetched = await deferred.fetchBytes();
+    expect(fetched).toEqual(eager.bytes);
+    expect(`sha256:${createHash('sha256').update(fetched).digest('hex')}`).toBe(
+      eager.digest,
     );
   });
 });
