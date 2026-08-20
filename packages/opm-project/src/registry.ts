@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
+import { Readable } from 'node:stream';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
@@ -15,6 +18,8 @@ import { OpmError } from './types.js';
 import type { OpmManifest } from './types.js';
 import { MANIFEST_NAME } from './paths.js';
 import { requireAdapterRegistry } from './adapters.js';
+
+const nativeFetch: typeof fetch = globalThis.fetch;
 
 /**
  * Resolving a PURL against the ecosystem's real registry.
@@ -118,6 +123,11 @@ export function allowedOriginsFor(ecosystem: string): string[] {
   ];
 }
 
+/** One DNS answer for host-fetch classification and pin. */
+export type HostFetchLookup = (
+  hostname: string,
+) => Promise<readonly { address: string; family: number }[]>;
+
 export interface RegistryOptions {
   offline?: boolean;
   /**
@@ -134,6 +144,12 @@ export interface RegistryOptions {
   endpoint?: string;
   transport?: HttpTransport;
   fetch?: typeof fetch;
+  /**
+   * Host-fetch DNS seam. Production resolves with `dns.lookup({ all: true })`.
+   * Tests inject answers so a hostname that rebinds to a private address is
+   * refused without touching the network.
+   */
+  lookup?: HostFetchLookup;
   now?: () => string;
 }
 
@@ -388,7 +404,7 @@ export async function resolveRegistryArtifact(
       uri: descriptor.uri,
       size: descriptor.size,
       digest: descriptor.digest,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      ...hostFetchCallOptions(options),
     });
     return {
       exactPurl: inspectedPurl,
@@ -635,7 +651,7 @@ export async function resolveRegistryArtifactDeferred(
             uri: descriptor.uri,
             size: descriptor.size,
             digest: descriptor.digest,
-            ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+            ...hostFetchCallOptions(options),
           })
         ).bytes,
     };
@@ -706,6 +722,16 @@ export async function resolveRegistryArtifactDeferred(
  * the sha256 digest before the bytes are anyone's artifact. Every gap in that
  * chain fails closed.
  */
+function hostFetchCallOptions(options: RegistryOptions): {
+  fetch?: typeof fetch;
+  lookup?: HostFetchLookup;
+} {
+  return {
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.lookup === undefined ? {} : { lookup: options.lookup }),
+  };
+}
+
 async function fetchDelegatedArtifactBytes(input: {
   ecosystem: string;
   exactPurl: string;
@@ -714,6 +740,7 @@ async function fetchDelegatedArtifactBytes(input: {
   size: number | undefined;
   digest: string;
   fetch?: typeof fetch;
+  lookup?: HostFetchLookup;
 }): Promise<{ bytes: Uint8Array; size: number }> {
   // The published size is the download bound; without it there is no bound.
   const size = input.size;
@@ -747,17 +774,38 @@ async function fetchDelegatedArtifactBytes(input: {
       `Refusing to fetch ${input.exactPurl} from ${input.uri}: ` +
         'artifact locations must be HTTPS and carry no credentials.',
     );
-  assertHostFetchAddress(location, input.exactPurl);
+  const pinnedOrigins = hostFetchPinnedOrigins();
+  // Injected `fetch` is the unit-test seam. A stubbed globalThis.fetch (the
+  // fetchTool tests) must keep using that stub — it is not the native
+  // fetch, so we skip real DNS. Production (native fetch, no inject)
+  // always resolves, classifies, and pins. Injected `lookup` still
+  // classifies a hostname that rebinds to a private address.
+  const fetchImpl = input.fetch ?? globalThis.fetch;
+  const pinProduction = input.fetch === undefined && fetchImpl === nativeFetch;
+  const lookup =
+    input.lookup ?? (pinProduction ? defaultHostFetchLookup : undefined);
+  await assertHostFetchDestination(
+    location,
+    input.exactPurl,
+    pinnedOrigins,
+    lookup,
+  );
   if (location.origin !== endpointOrigin)
     throw new OpmError(
       'UNSAFE_PATH',
       `${input.exactPurl} points at ${location.origin}, which is not the origin ` +
         `of the endpoint that answered for it (${endpointOrigin}).`,
     );
+  const fetch = pinProduction
+    ? pinnedHostFetch(lookup ?? defaultHostFetchLookup, {
+        exactPurl: input.exactPurl,
+        pinnedOrigins,
+      })
+    : fetchImpl;
   const transport = new BoundedFetchTransport({
     allowedOrigins: [endpointOrigin],
     maximumBytes: size,
-    ...(input.fetch === undefined ? {} : { fetch: input.fetch }),
+    fetch,
   });
   let body: Uint8Array;
   try {
@@ -793,19 +841,181 @@ async function fetchDelegatedArtifactBytes(input: {
   return { bytes: body, size };
 }
 
+function hostFetchPinnedOrigins(): ReadonlySet<string> {
+  const raw = process.env.OPM_HOST_FETCH_ORIGINS?.trim() ?? '';
+  if (raw === '') return new Set();
+  const origins = new Set<string>();
+  for (const part of raw.split(',')) {
+    const value = part.trim();
+    if (value === '') continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        `OPM_HOST_FETCH_ORIGINS entry is not a URL: ${value}`,
+      );
+    }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password)
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        `OPM_HOST_FETCH_ORIGINS entry must be HTTPS without credentials: ${value}`,
+      );
+    origins.add(parsed.origin);
+  }
+  return origins;
+}
+
+async function defaultHostFetchLookup(
+  hostname: string,
+): Promise<readonly { address: string; family: number }[]> {
+  return dnsLookup(hostname, { all: true });
+}
+
 /**
  * Host-fetch is a new network path the plugin names. A sandboxed plugin
  * cannot reach the network itself; the host must not fetch private,
- * loopback, link-local, or NAT64-mapped addresses on its behalf.
+ * loopback, link-local, or NAT64-mapped addresses on its behalf unless the
+ * operator pinned that origin.
  */
-function assertHostFetchAddress(location: URL, exactPurl: string): void {
+async function assertHostFetchDestination(
+  location: URL,
+  exactPurl: string,
+  pinnedOrigins: ReadonlySet<string>,
+  lookup: HostFetchLookup | undefined,
+): Promise<void> {
   const hostname = location.hostname.replace(/^\[|\]$/gu, '');
-  if (!isIP(hostname) || !isPrivateAddress(hostname)) return;
+  if (isIP(hostname)) {
+    refuseUnpinnedPrivateAddress(location, hostname, exactPurl, pinnedOrigins);
+    return;
+  }
+  if (lookup === undefined) return;
+  const addresses = await lookup(hostname);
+  if (addresses.length === 0)
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Refusing to fetch ${exactPurl} from ${location.origin}: ` +
+        'the host-side location did not resolve to any address.',
+    );
+  for (const { address } of addresses)
+    refuseUnpinnedPrivateAddress(location, address, exactPurl, pinnedOrigins);
+}
+
+function refuseUnpinnedPrivateAddress(
+  location: URL,
+  address: string,
+  exactPurl: string,
+  pinnedOrigins: ReadonlySet<string>,
+): void {
+  if (!isPrivateAddress(address)) return;
+  if (pinnedOrigins.has(location.origin)) return;
   throw new OpmError(
     'UNSAFE_PATH',
     `Refusing to fetch ${exactPurl} from ${location.origin}: ` +
-      'host-side artifact locations must not be a private or local address.',
+      'host-side artifact locations must not resolve to a private or local ' +
+      'address unless the origin is operator-pinned (OPM_HOST_FETCH_ORIGINS).',
   );
+}
+
+function pinnedHostFetch(
+  lookup: HostFetchLookup,
+  context: { exactPurl: string; pinnedOrigins: ReadonlySet<string> },
+): typeof fetch {
+  return (async (input, init) => {
+    const url = new URL(
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url,
+    );
+    if (url.protocol !== 'https:' || url.username || url.password)
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Refusing to fetch ${context.exactPurl} from ${url.href}: ` +
+          'artifact locations must be HTTPS and carry no credentials.',
+      );
+    await assertHostFetchDestination(
+      url,
+      context.exactPurl,
+      context.pinnedOrigins,
+      lookup,
+    );
+    const hostname = url.hostname.replace(/^\[|\]$/gu, '');
+    const resolved = isIP(hostname)
+      ? { address: hostname, family: isIP(hostname) }
+      : (await lookup(hostname))[0];
+    if (resolved === undefined)
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Refusing to fetch ${context.exactPurl} from ${url.origin}: ` +
+          'the host-side location did not resolve to any address.',
+      );
+    return httpsRequestPinned(url, resolved, {
+      method: init?.method ?? 'GET',
+      headers: stripCredentialHeaders(init?.headers),
+      ...(init?.signal instanceof AbortSignal ? { signal: init.signal } : {}),
+    });
+  }) as typeof fetch;
+}
+
+function stripCredentialHeaders(
+  headers: HeadersInit | undefined,
+): Record<string, string> {
+  if (headers === undefined) return {};
+  const out: Record<string, string> = {};
+  new Headers(headers).forEach((value, key) => {
+    const name = key.toLowerCase();
+    if (
+      name === 'authorization' ||
+      name === 'cookie' ||
+      name === 'cookie2' ||
+      name === 'proxy-authorization'
+    )
+      return;
+    out[key] = value;
+  });
+  return out;
+}
+
+function httpsRequestPinned(
+  url: URL,
+  resolved: { address: string; family: number },
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    signal?: AbortSignal;
+  },
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(
+      url,
+      {
+        method: init.method,
+        headers: init.headers,
+        ...(init.signal === undefined ? {} : { signal: init.signal }),
+        lookup: (_hostname, _options, callback) => {
+          callback(null, resolved.address, resolved.family);
+        },
+      },
+      (incoming) => {
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (value === undefined) continue;
+          headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+        }
+        resolve(
+          new Response(Readable.toWeb(incoming) as ReadableStream<Uint8Array>, {
+            status: incoming.statusCode ?? 0,
+            headers,
+          }),
+        );
+      },
+    );
+    request.once('error', reject);
+    request.end();
+  });
 }
 
 function isPrivateAddress(value: string): boolean {

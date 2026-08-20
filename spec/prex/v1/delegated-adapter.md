@@ -104,11 +104,14 @@ provider capability extension `openpacker/artifact-bytes: "host-fetch"`. For
 such a provider the `fetch-artifact-record` body MUST carry a sha256 `digest`, a
 byte `size`, and at least one `locations[].uri`. The host MUST fetch the bytes
 itself over HTTPS without credentials, from an origin it allowlists — the origin
-of the record's `endpoint` — MUST bound the download by the published `size`,
-and MUST verify the sha256 digest before any use. A missing digest, a digest
-mismatch, an over-size body, or a location outside the allowlisted origin fails
-closed. The plugin never proxies artifact bytes; `rawBody` remains the canonical
-bytes of the answered body.
+of the record's `endpoint` — MUST resolve the location and refuse private,
+loopback, link-local, NAT64, or IPv4-mapped answers unless that origin is
+operator-pinned, MUST bound the download by the published `size`, and MUST
+verify the sha256 digest before any use. A missing digest, a digest mismatch, an
+over-size body, a location outside the allowlisted origin, or an unpinned
+private address fails closed. The host MUST NOT attach credentials to the
+download. The plugin never proxies artifact bytes; `rawBody` remains the
+canonical bytes of the answered body.
 
 ## Executables
 
