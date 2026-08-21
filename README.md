@@ -52,6 +52,7 @@ node ../../apps/opm/dist/opmx.js demo-tool --version
 | Command                 | Purpose                                    |
 | ----------------------- | ------------------------------------------ |
 | `opm init`              | Create `opm.toml` + `.opm/`                |
+| `opm import --native`   | Ingest native manifests into `opm.toml`    |
 | `opm add <spec>`        | Add package to manifest, lock, and install |
 | `opm remove <alias>`    | Remove from manifest, lock, and install    |
 | `opm install`           | Materialize everything in `opm.lock.json`  |
