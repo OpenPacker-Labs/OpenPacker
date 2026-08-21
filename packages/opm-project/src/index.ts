@@ -146,6 +146,11 @@ export {
 } from './generations.js';
 
 export {
+  sharedStoreRoot,
+  materializeThroughSharedStore,
+} from './shared-store.js';
+
+export {
   DEFAULT_REGISTRY_ENDPOINTS,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,

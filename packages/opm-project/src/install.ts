@@ -24,6 +24,10 @@ import type {
   ProjectState,
 } from './types.js';
 import { recordGeneration, stableStoreTreeDigest } from './generations.js';
+import {
+  materializeThroughSharedStore,
+  sharedStoreRoot,
+} from './shared-store.js';
 import { OpmError } from './types.js';
 import {
   discoverBins,
@@ -40,6 +44,7 @@ import {
   PROJECT_STATE,
   projectPaths,
   readStableFile,
+  readStableFileBytes,
   revalidateStableDirectory,
   removeStableFile,
   removeStableTree,
@@ -633,49 +638,46 @@ export async function materializeLockPackage(input: {
     const stableArchivePath = `${stableStorePath}.artifact`;
     let cached = false;
     let bytes = suppliedBytes ?? capability?.bytes;
-    if (bytes === undefined && !force) {
-      try {
-        bytes = await fetchArtifactBytes(stableArchivePath, true, {
-          expectedBytes: pkg.size,
-        });
-        cached = true;
-      } catch (error) {
-        if (!(error instanceof OpmError) || error.code !== 'NOT_FOUND')
-          throw error;
+    const loadVerifiedBytes = async (): Promise<Uint8Array> => {
+      let loaded = bytes;
+      if (loaded === undefined && !force) {
+        try {
+          loaded = await fetchArtifactBytes(stableArchivePath, true, {
+            expectedBytes: pkg.size,
+          });
+          cached = true;
+        } catch (error) {
+          if (!(error instanceof OpmError) || error.code !== 'NOT_FOUND')
+            throw error;
+        }
       }
-    }
-    if (
-      bytes === undefined &&
-      (pkg.source.startsWith('https:') || pkg.source.startsWith('http:'))
-    )
-      throw new OpmError(
-        'UNVERIFIED_ARTIFACT',
-        `Refusing to refetch ${pkg.purl} outside its bounded provider transport`,
-      );
-    bytes ??= await fetchArtifactBytes(pkg.source, offline, {
-      expectedBytes: pkg.size,
-    });
-    const actual = digestOf(bytes);
-    if (actual !== pkg.digest) {
-      throw new OpmError(
-        'DIGEST_MISMATCH',
-        `Digest mismatch for ${pkg.alias}: expected ${pkg.digest}, got ${actual}`,
-      );
-    }
-    if (bytes.byteLength !== pkg.size) {
-      throw new OpmError(
-        'SIZE_MISMATCH',
-        `Size mismatch for ${pkg.alias}: expected ${pkg.size}, got ${bytes.byteLength}`,
-      );
-    }
-
-    const descriptor = await descriptorForBytes({
-      bytes,
-      descriptorId: pkg.storeKey,
-      mediaType: pkg.mediaType,
-      artifactType: 'package',
-      nativeRole: 'native-package',
-    });
+      if (
+        loaded === undefined &&
+        (pkg.source.startsWith('https:') || pkg.source.startsWith('http:'))
+      )
+        throw new OpmError(
+          'UNVERIFIED_ARTIFACT',
+          `Refusing to refetch ${pkg.purl} outside its bounded provider transport`,
+        );
+      loaded ??= await fetchArtifactBytes(pkg.source, offline, {
+        expectedBytes: pkg.size,
+      });
+      const actual = digestOf(loaded);
+      if (actual !== pkg.digest) {
+        throw new OpmError(
+          'DIGEST_MISMATCH',
+          `Digest mismatch for ${pkg.alias}: expected ${pkg.digest}, got ${actual}`,
+        );
+      }
+      if (loaded.byteLength !== pkg.size) {
+        throw new OpmError(
+          'SIZE_MISMATCH',
+          `Size mismatch for ${pkg.alias}: expected ${pkg.size}, got ${loaded.byteLength}`,
+        );
+      }
+      bytes = loaded;
+      return loaded;
+    };
 
     const stagedName = `.${basename(storePath)}.materialize-${randomUUID()}`;
     const stagedPath = join(paths.store, stagedName);
@@ -684,16 +686,44 @@ export async function materializeLockPackage(input: {
     let sandboxOutcomes: SandboxOutcome[] = [];
     let treeDigest: string;
     try {
-      await materialize({
-        source: bytesSource(bytes),
-        descriptor,
-        // materialize opens and holds its own stable parent authority. Passing
-        // a /proc/self/fd path would make that walker traverse the procfs
-        // symlink as though it were project data and can alias one of its own
-        // new fds.
-        destination: stagedPath,
-        format: pkg.format as ArchiveFormat,
-      });
+      const sharedRoot = sharedStoreRoot();
+      if (sharedRoot !== undefined) {
+        if (bytes !== undefined) await loadVerifiedBytes();
+        await materializeThroughSharedStore({
+          digest: pkg.digest,
+          projectStorePath: stagedPath,
+          bytes: bytes !== undefined ? bytes : loadVerifiedBytes,
+          format: pkg.format as ArchiveFormat,
+        });
+        if (bytes === undefined) {
+          try {
+            bytes = await readStableFileBytes(
+              join(sharedRoot, `${storeKeyFromDigest(pkg.digest)}.artifact`),
+            );
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        }
+      } else {
+        bytes = await loadVerifiedBytes();
+        const descriptor = await descriptorForBytes({
+          bytes,
+          descriptorId: pkg.storeKey,
+          mediaType: pkg.mediaType,
+          artifactType: 'package',
+          nativeRole: 'native-package',
+        });
+        await materialize({
+          source: bytesSource(bytes),
+          descriptor,
+          // materialize opens and holds its own stable parent authority. Passing
+          // a /proc/self/fd path would make that walker traverse the procfs
+          // symlink as though it were project data and can alias one of its own
+          // new fds.
+          destination: stagedPath,
+          format: pkg.format as ArchiveFormat,
+        });
+      }
       await revalidateStableDirectory(paths.store, storeHandle);
 
       // Lifecycle execution is confined to the unpublished quarantine tree.
@@ -765,7 +795,7 @@ export async function materializeLockPackage(input: {
       );
     }
     await revalidateStableDirectory(paths.store, storeHandle);
-    if (!cached || force)
+    if (bytes !== undefined && (!cached || force))
       await writeStableFileAt(
         storeHandle,
         basename(archivePath),

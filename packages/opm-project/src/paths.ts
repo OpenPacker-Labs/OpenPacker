@@ -64,6 +64,24 @@ export function projectPaths(root: string): ProjectPaths {
 }
 
 /**
+ * Absolute `OPM_STORE_HOME` when set. Unset/blank means the shared CAS is off.
+ * Relative values fail closed: a cwd-relative store would silently follow the
+ * caller.
+ */
+export function sharedStoreHome(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const value = env.OPM_STORE_HOME?.trim();
+  if (!value) return undefined;
+  if (!isAbsolute(value))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `OPM_STORE_HOME must be an absolute path, got "${value}"`,
+    );
+  return value;
+}
+
+/**
  * Windows device names, reserved at every directory level and still reserved
  * with an extension — `CON`, `CON.cmd` and `nul` are devices, not files. A bin
  * shim written as `CON.cmd` on Windows writes to the console.
