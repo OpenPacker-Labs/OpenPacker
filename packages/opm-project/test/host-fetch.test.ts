@@ -229,6 +229,7 @@ const ORIGINAL_USERPROFILE = process.env.USERPROFILE;
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPM_HOST_FETCH_ORIGINS;
+  delete process.env.OPM_HOST_FETCH_REQUIRE_PIN;
   delete process.env.OPM_HOST_FETCH_TOKEN_ENVS;
   delete process.env.OPM_HOST_FETCH_HEADER_NAMES;
   delete process.env.OPM_HOST_FETCH_HEADER_ENVS;
@@ -260,6 +261,31 @@ describe('delegated host-fetch acquisition', () => {
     expect(artifact.digest).toBe(`sha256:${TOOL_DIGEST}`);
     expect(artifact.uri).toBe(`${ENDPOINT}/artifacts/demo-1.0.0.tar`);
     expect(requested).toEqual([`${ENDPOINT}/artifacts/demo-1.0.0.tar`]);
+  });
+
+  it('lets OPM_HOST_FETCH_REQUIRE_PIN refuse an unpinned public endpoint origin', async () => {
+    process.env.OPM_HOST_FETCH_REQUIRE_PIN = '1';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    let fetched = false;
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: (async () => {
+          fetched = true;
+          return new Response(TOOL_TAR);
+        }) as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(fetched).toBe(false);
+  });
+
+  it('fetches when OPM_HOST_FETCH_REQUIRE_PIN and the origin is pinned', async () => {
+    process.env.OPM_HOST_FETCH_REQUIRE_PIN = 'true';
+    process.env.OPM_HOST_FETCH_ORIGINS = ENDPOINT;
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: fetchStub(tarRoute),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
   });
 
   it('surfaces inspect executables as artifact bins', async () => {

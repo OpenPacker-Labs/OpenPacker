@@ -35,7 +35,11 @@ WIT wasmtime host; `[workspace]` in `opm.toml`; `opm login` / OIDC;
 npmjs/PyPI/crates publish; `OPM_HOST_FETCH_REQUIRE_PIN` / path allowlists /
 `rejectUnauthorized: false`.
 
-Shipped residuals (honest, not forgotten): Maven catalog.json overlay is probed
-only when a `.sha256` sibling is absent. Shared CAS hardlinks mean a later
-lifecycle-script grant would mutate shared inodes (scripts stay denied). Go
-inspect retract is the version's own `.mod`, not a later `@latest` retract scan.
+Shipped residuals remaining: WIT wasmtime host; `[workspace]` in `opm.toml`;
+`opm login` / OIDC; npmjs/PyPI/crates publish; host-fetch path allowlists;
+`rejectUnauthorized: false`.
+
+Follow-up repair (this session): Maven overlay always probed; Go inspect reads
+newest listed `.mod` for `retract`; shared CAS isolates hardlinks before
+lifecycle scripts; `opm auth set --origin` pin-only;
+`OPM_HOST_FETCH_REQUIRE_PIN`.

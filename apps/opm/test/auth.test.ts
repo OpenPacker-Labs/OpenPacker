@@ -103,6 +103,24 @@ describe('opm auth', () => {
     expect(empty.out).toMatch(/no origins/);
   });
 
+  it('pins an origin without a token env name', async () => {
+    const set = capture();
+    expect(
+      await runOpm(
+        ['auth', 'set', '--origin', 'https://registry.internal.example'],
+        set.io,
+      ),
+    ).toBe(0);
+    expect(set.out).toMatch(/Pinned https:\/\/registry\.internal\.example/);
+    expect(set.out).not.toMatch(/to env/);
+    const list = capture();
+    expect(await runOpm(['auth', 'list'], list.io)).toBe(0);
+    expect(list.out).toMatch(/https:\/\/registry\.internal\.example\t\(pin\)/);
+    const raw = await readFile(process.env.OPM_AUTH_CONFIG!, 'utf8');
+    expect(raw).toMatch(/"https:\/\/registry\.internal\.example"/);
+    expect(raw).not.toMatch(/tokenEnv/);
+  });
+
   it('writes mode 0600 on POSIX', async () => {
     if (process.platform === 'win32') return;
     const cap = capture();

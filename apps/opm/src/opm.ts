@@ -1132,7 +1132,7 @@ Delegated adapter plugins (user-level, never installed by default):
   unsupported rather than answering untrusted).
 
 Auth (env names only):
-  opm auth set --origin <https-origin> --token-env <NAME>
+  opm auth set --origin <https-origin> [--token-env <NAME>]
   opm auth list
   opm auth unset --origin <https-origin>
   Remembers which environment variable holds a bearer for a pinned HTTPS origin.

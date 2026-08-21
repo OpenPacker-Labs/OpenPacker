@@ -122,6 +122,17 @@ describe('parseAuthConfig', () => {
     } satisfies AuthConfig);
   });
 
+  it('parses a pin-only origin with no tokenEnv', () => {
+    const parsed = parseAuthConfig(`{
+  "version": 1,
+  "origins": {
+    "https://registry.internal.example": {}
+  }
+}
+`);
+    expect(parsed.origins['https://registry.internal.example']).toEqual({});
+  });
+
   it('treats missing file-shaped empty object as invalid', () => {
     expect(() => parseAuthConfig('{}')).toThrowError(OpmError);
     try {

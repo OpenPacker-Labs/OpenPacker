@@ -22,7 +22,7 @@ import { OpmError } from './types.js';
 
 export interface AuthConfig {
   version: 1;
-  origins: Record<string, { tokenEnv: string }>;
+  origins: Record<string, { tokenEnv?: string }>;
 }
 
 const TOKEN_ENV_NAME = /^[A-Z_][A-Z0-9_]*$/u;
@@ -99,7 +99,7 @@ export function parseAuthConfig(raw: string): AuthConfig {
     Array.isArray(record.origins)
   )
     throw new OpmError('INVALID_SPEC', 'Auth config origins must be an object');
-  const origins: Record<string, { tokenEnv: string }> = {};
+  const origins: Record<string, { tokenEnv?: string }> = {};
   for (const [key, entry] of Object.entries(
     record.origins as Record<string, unknown>,
   )) {
@@ -129,11 +129,19 @@ export function parseAuthConfig(raw: string): AuthConfig {
         `Unknown field ${extraFields[0]} on auth origin ${origin}`,
       );
     }
+    if (fields.tokenEnv === undefined) {
+      origins[origin] = {};
+      continue;
+    }
     if (typeof fields.tokenEnv !== 'string')
       throw new OpmError(
         'INVALID_SPEC',
-        `Auth config origin ${origin} is missing tokenEnv`,
+        `Auth config origin ${origin} tokenEnv must be a string`,
       );
+    if (fields.tokenEnv === '') {
+      origins[origin] = {};
+      continue;
+    }
     assertTokenEnvName(fields.tokenEnv);
     origins[origin] = { tokenEnv: fields.tokenEnv };
   }
@@ -164,17 +172,24 @@ export async function readAuthConfig(
 
 export async function upsertAuthOrigin(input: {
   origin: string;
-  tokenEnv: string;
+  tokenEnv?: string;
   path?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<AuthConfig> {
-  assertTokenEnvName(input.tokenEnv);
+  if (input.tokenEnv !== undefined && input.tokenEnv !== '')
+    assertTokenEnvName(input.tokenEnv);
   const origin = pinnedOrigin(input.origin);
   const path = input.path ?? defaultAuthConfigPath(input.env ?? process.env);
   const current = await readAuthConfig({ path });
   const next: AuthConfig = {
     version: 1,
-    origins: { ...current.origins, [origin]: { tokenEnv: input.tokenEnv } },
+    origins: {
+      ...current.origins,
+      [origin]:
+        input.tokenEnv === undefined || input.tokenEnv === ''
+          ? {}
+          : { tokenEnv: input.tokenEnv },
+    },
   };
   await writeAuthConfig(path, next);
   return next;
@@ -203,7 +218,7 @@ export function tokenEnvNameForOrigin(
 }
 
 export function hostFetchTokenEnvNamesFromAuth(config: AuthConfig): string[] {
-  return Object.values(config.origins).map((entry) => entry.tokenEnv);
+  return Object.values(config.origins).map((entry) => entry.tokenEnv ?? '');
 }
 
 /**
@@ -240,7 +255,7 @@ export function applyAuthConfigToEnvNames(input: {
   const extra: { origin: string; tokenEnv: string }[] = [];
   for (const [origin, entry] of Object.entries(input.config.origins)) {
     if (seen.has(origin)) continue;
-    extra.push({ origin, tokenEnv: entry.tokenEnv });
+    extra.push({ origin, tokenEnv: entry.tokenEnv ?? '' });
   }
   if (extra.length === 0)
     return {
@@ -313,11 +328,14 @@ function assertNoSecrets(value: unknown, path: string): void {
 }
 
 function serializeAuthConfig(config: AuthConfig): string {
-  const origins: Record<string, { tokenEnv: string }> = {};
+  const origins: Record<string, { tokenEnv?: string }> = {};
   for (const key of Object.keys(config.origins).sort()) {
     const entry = config.origins[key];
     if (entry === undefined) continue;
-    origins[key] = { tokenEnv: entry.tokenEnv };
+    origins[key] =
+      entry.tokenEnv === undefined || entry.tokenEnv === ''
+        ? {}
+        : { tokenEnv: entry.tokenEnv };
   }
   return `${JSON.stringify({ version: 1, origins }, null, 2)}\n`;
 }

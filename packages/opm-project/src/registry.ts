@@ -871,6 +871,11 @@ async function fetchDelegatedArtifactBytes(input: {
       : input.pluginBindings?.[input.providerId];
   const projectPins = binding?.artifactOrigins ?? [];
   const pins = [...new Set([...envPins, ...projectPins])];
+  if (hostFetchRequiresPin() && !pins.includes(location.origin))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `OPM_HOST_FETCH_REQUIRE_PIN refuses ${redactUrl(location)}: the hop origin is not operator-pinned.`,
+    );
   const allowlist = [endpointOrigin, ...pins];
   if (!allowlist.includes(location.origin))
     throw new OpmError(
@@ -1133,6 +1138,11 @@ function mergeExtraHeaders(input: {
     if (header !== undefined && header.name !== '') headers.set(origin, header);
   }
   return headers;
+}
+
+function hostFetchRequiresPin(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.OPM_HOST_FETCH_REQUIRE_PIN?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
 function parseHostFetchPinnedOrigins(raw: string | undefined): string[] {

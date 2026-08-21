@@ -446,6 +446,9 @@ export OPM_HOST_FETCH_ORIGINS=https://artifacts.internal.example
 export OPM_HOST_FETCH_TOKEN_ENVS=ACME_ARTIFACTS_TOKEN
 export OPM_HOST_FETCH_HEADER_NAMES=X-JFrog-Art-Api
 export OPM_HOST_FETCH_HEADER_ENVS=JFROG_API_KEY
+# Optional: every host-fetch hop origin must be in the pin set (endpoint origin
+# is not enough).
+export OPM_HOST_FETCH_REQUIRE_PIN=1
 ```
 
 ### `opm auth` (env names only)
@@ -455,10 +458,15 @@ env** on a **pinned origin**. `opm auth` is a user-level origin → token-env-na
 map so operators do not re-export those names ad hoc.
 
 ```sh
+opm auth set --origin https://registry.internal.example
 opm auth set --origin https://npm.internal.example --token-env NPM_TOKEN
 opm auth list
 opm auth unset --origin https://npm.internal.example
 ```
+
+`--origin` alone is a pin (private-address host-fetch, or
+`OPM_HOST_FETCH_REQUIRE_PIN=1`). `--token-env` still records a name, never a
+secret.
 
 The file (`OPM_AUTH_CONFIG` or `$XDG_CONFIG_HOME/openpacker/auth.json`, mode
 `0600` on POSIX) stores **names only**. Mint tokens outside opm (cloud CLI,

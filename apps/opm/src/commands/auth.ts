@@ -27,10 +27,10 @@ const EXIT = {
 } as const;
 
 const AUTH_USAGE = `Auth (env names only):
-  opm auth set --origin <https-origin> --token-env <NAME>
+  opm auth set --origin <https-origin> [--token-env <NAME>]
   opm auth list
   opm auth unset --origin <https-origin>
-Mint tokens outside opm. This command records environment variable names, never values.
+Pin an origin without --token-env. Mint tokens outside opm; --token-env records a name, never a value.
 `;
 
 /**
@@ -76,14 +76,21 @@ export async function runAuthCommand(
 async function runSet(args: AuthArgs, io: AuthCliIo): Promise<number> {
   const origin = option(args, 'origin');
   const tokenEnv = option(args, 'token-env');
-  if (origin === undefined || tokenEnv === undefined) {
+  if (origin === undefined) {
     io.stderr.write(
-      `opm auth set requires --origin <https-origin> and --token-env <NAME>\n\n${AUTH_USAGE}`,
+      `opm auth set requires --origin <https-origin>\n\n${AUTH_USAGE}`,
     );
     return EXIT.usage;
   }
-  await upsertAuthOrigin({ origin, tokenEnv });
-  io.stdout.write(`Pinned ${origin} to env ${tokenEnv}\n`);
+  await upsertAuthOrigin({
+    origin,
+    ...(tokenEnv === undefined ? {} : { tokenEnv }),
+  });
+  io.stdout.write(
+    tokenEnv === undefined
+      ? `Pinned ${origin}\n`
+      : `Pinned ${origin} to env ${tokenEnv}\n`,
+  );
   return EXIT.success;
 }
 
@@ -97,7 +104,7 @@ async function runList(io: AuthCliIo): Promise<number> {
   for (const origin of origins) {
     const entry = config.origins[origin];
     if (entry === undefined) continue;
-    io.stdout.write(`${origin}\t${entry.tokenEnv}\n`);
+    io.stdout.write(`${origin}\t${entry.tokenEnv ?? '(pin)'}\n`);
   }
   return EXIT.success;
 }
