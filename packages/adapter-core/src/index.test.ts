@@ -1,3 +1,6 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBoundedProviderMetadata,
@@ -1303,6 +1306,54 @@ describe('classify-and-pin ambient credentials', () => {
       },
     ]);
     expect(calls[0]!.credentials).not.toBe('include');
+  });
+});
+
+describe('BoundedFetchTransport gzip', () => {
+  it('decompresses gzip on the native fetch path', async () => {
+    const payload = Buffer.from('gzip-body-ok');
+    const compressed = gzipSync(payload);
+    const server = createServer((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'text/plain',
+        'content-encoding': 'gzip',
+        'content-length': String(compressed.byteLength),
+      });
+      res.end(compressed);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    try {
+      const { port } = server.address() as AddressInfo;
+      const origin = `http://127.0.0.1:${port}`;
+      const transport = new BoundedFetchTransport({
+        allowedOrigins: [origin],
+      });
+      const response = await transport.request({ url: `${origin}/data` });
+      expect(new TextDecoder().decode(response.body)).toBe('gzip-body-ok');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it('does not disable decompression on the classify-and-pin Agent path', async () => {
+    const origin = 'https://registry.test';
+    const headers: string[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const value = new Headers(init?.headers).get('accept-encoding');
+        if (value !== null) headers.push(value);
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${origin}/data` });
+    expect(headers.some((value) => /identity/iu.test(value))).toBe(false);
   });
 });
 
