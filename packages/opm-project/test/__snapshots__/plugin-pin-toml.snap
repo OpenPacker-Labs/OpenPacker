@@ -1,0 +1,5 @@
+store_digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+artifact_origins = ["https://artifacts.internal.example"]
+artifact_origin_token_envs = ["ACME_ARTIFACTS_TOKEN"]
+artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]
+artifact_origin_extra_header_envs = ["JFROG_API_KEY"]

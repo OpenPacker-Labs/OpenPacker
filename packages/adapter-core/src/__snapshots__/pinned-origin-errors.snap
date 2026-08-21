@@ -1,0 +1,5 @@
+http-loopback -> Pinned origin must be an HTTPS origin: http://127.0.0.1/
+credentialed -> Pinned origin must be an HTTPS origin: https://pinned.test/
+path -> Pinned origin must be an HTTPS origin: https://pinned.test/foo
+query -> Pinned origin must be an HTTPS origin: https://pinned.test/
+not-a-url -> Pinned origin must be an HTTPS origin

@@ -1,0 +1,26 @@
+{
+  "default": {
+    "allowedOrigins": [
+      "https://pypi.org",
+      "https://files.pythonhosted.org"
+    ],
+    "pinnedOrigins": []
+  },
+  "override": {
+    "allowedOrigins": [
+      "https://pypi.internal.example"
+    ],
+    "pinnedOrigins": [
+      "https://pypi.internal.example"
+    ]
+  },
+  "overrideWithCdn": {
+    "allowedOrigins": [
+      "https://pypi.internal.example",
+      "https://files.pythonhosted.org"
+    ],
+    "pinnedOrigins": [
+      "https://pypi.internal.example"
+    ]
+  }
+}
