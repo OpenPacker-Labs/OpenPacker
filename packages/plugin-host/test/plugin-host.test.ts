@@ -309,6 +309,7 @@ async function registerWithCannedAnswers(
       canned: SandboxOutcome,
     ) => SandboxOutcome;
     allowEnvironment?: readonly string[];
+    hostFetchTokenEnvNames?: readonly string[];
     environment?: Readonly<Record<string, string | undefined>>;
     allowNetwork?: boolean;
     limits?: {
@@ -356,6 +357,9 @@ async function registerWithCannedAnswers(
     ...(options.allowEnvironment === undefined
       ? {}
       : { allowEnvironment: options.allowEnvironment }),
+    ...(options.hostFetchTokenEnvNames === undefined
+      ? {}
+      : { hostFetchTokenEnvNames: options.hostFetchTokenEnvNames }),
     ...(options.environment === undefined
       ? {}
       : { environment: options.environment }),
@@ -370,6 +374,7 @@ async function registerWithCannedAnswers(
 const roots: string[] = [];
 
 afterEach(async () => {
+  delete process.env.OPM_HOST_FETCH_TOKEN_ENVS;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -838,6 +843,63 @@ describe('registerInstalledPlugins', () => {
     ).toHaveLength(1);
   });
 
+  it('refuses --allow-env of OPM_HOST_FETCH_ names', async () => {
+    const root = await fixtureRoot();
+    for (const name of [
+      'OPM_HOST_FETCH_BEARER',
+      'OPM_HOST_FETCH_TOKEN_ENVS',
+      'OPM_HOST_FETCH_ORIGINS',
+    ]) {
+      const { result } = await registerWithCannedAnswers(root, {
+        allowEnvironment: [name],
+        environment: { [name]: 'tok68value' },
+      });
+      expect(result.registered).toEqual([]);
+      expect(result.refused).toEqual([
+        expect.objectContaining({
+          name: 'acme',
+          code: 'UNSAFE_ENV',
+          message: expect.stringContaining(name),
+        }),
+      ]);
+      expect(result.refused[0]?.message).not.toMatch(/tok68value/u);
+    }
+  });
+
+  it('refuses --allow-env of OPM_HOST_FETCH_TOKEN_ENVS names even without the prefix', async () => {
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'ACME_TOKEN';
+    const root = await fixtureRoot();
+    const { result } = await registerWithCannedAnswers(root, {
+      allowEnvironment: ['ACME_TOKEN'],
+      environment: { ACME_TOKEN: 'tok68value' },
+    });
+    expect(result.registered).toEqual([]);
+    expect(result.refused).toEqual([
+      expect.objectContaining({
+        name: 'acme',
+        code: 'UNSAFE_ENV',
+        message: expect.stringContaining('ACME_TOKEN'),
+      }),
+    ]);
+    expect(result.refused[0]?.message).not.toMatch(/tok68value/u);
+  });
+
+  it('refuses --allow-env of a plugin token env name from hostFetchTokenEnvNames', async () => {
+    const root = await fixtureRoot();
+    const { result } = await registerWithCannedAnswers(root, {
+      allowEnvironment: ['ACME_TOKEN'],
+      hostFetchTokenEnvNames: ['ACME_TOKEN'],
+      environment: { ACME_TOKEN: 'tok68value' },
+    });
+    expect(result.registered).toEqual([]);
+    expect(result.refused).toEqual([
+      expect.objectContaining({
+        name: 'acme',
+        code: 'UNSAFE_ENV',
+      }),
+    ]);
+  });
+
   it('forwards only allowlisted declared environment', async () => {
     const root = await fixtureRoot();
     const run = await registerWithCannedAnswers(root, {
@@ -1157,6 +1219,32 @@ describe('verifyPluginBindings', () => {
         { storeRoot: fixture.storeRoot, registry: new AdapterRegistry() },
       ),
     ).rejects.toMatchObject({ code: 'PLUGIN_DIGEST_MISMATCH' });
+  });
+
+  it('refuses --allow-env of a binding artifact_origin_token_envs name', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    await expect(
+      verifyPluginBindings(
+        {
+          'dev.example.acme-adapter': {
+            storeDigest: await boundDigest(fixture.storeRoot),
+            artifactOriginTokenEnvs: ['ACME_TOKEN'],
+          },
+        },
+        {
+          storeRoot: fixture.storeRoot,
+          registry: new AdapterRegistry(),
+          allowEnvironment: ['ACME_TOKEN'],
+          environment: { ACME_TOKEN: 'tok68value' },
+          inspectExecutable: async (path: string) => fakeIdentity(path),
+          sandboxRun: async () => sandboxOutcome(''),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UNSAFE_ENV',
+      message: expect.stringContaining('ACME_TOKEN'),
+    });
   });
 
   it('refuses a binding to a plugin that is not installed', async () => {

@@ -296,9 +296,77 @@ describe('manifest TOML', () => {
     expect(() =>
       parseManifest(
         `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+          'artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]\n',
+      ),
+    ).toThrowError(/Unknown plugin field "artifact_origin_extra_header_names"/);
+  });
+
+  it('round-trips artifact_origin_token_envs including a suppressing empty name', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const text = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: {
+        'dev.example.acme-adapter': {
+          storeDigest: digest,
+          artifactOrigins: ['https://artifacts.internal.example'],
+          artifactOriginTokenEnvs: [''],
+        },
+      },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(text).toContain('artifact_origin_token_envs = [""]');
+    const parsed = parseManifest(text);
+    expect(parsed.plugins).toEqual({
+      'dev.example.acme-adapter': {
+        storeDigest: digest,
+        artifactOrigins: ['https://artifacts.internal.example'],
+        artifactOriginTokenEnvs: [''],
+      },
+    });
+    expect(serializeManifest(parsed)).toContain(
+      'artifact_origin_token_envs = [""]',
+    );
+
+    const omitted = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: {
+        'dev.example.acme-adapter': {
+          storeDigest: digest,
+          artifactOrigins: ['https://artifacts.internal.example'],
+        },
+      },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(omitted).not.toContain('artifact_origin_token_envs');
+    expect(
+      parseManifest(omitted).plugins?.['dev.example.acme-adapter']
+        ?.artifactOriginTokenEnvs,
+    ).toBeUndefined();
+  });
+
+  it('fails closed on invalid artifact_origin_token_envs', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const plugin = (origins: string, tokens: string) =>
+      `[project]\nname = "x"\n\n[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+      `artifact_origins = ${origins}\nartifact_origin_token_envs = ${tokens}\n`;
+
+    expect(() =>
+      parseManifest(plugin('["https://a.example"]', '["ACME_A", ""]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(plugin('["https://a.example"]', '["acme_token"]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() => parseManifest(plugin('[]', '[""]'))).toThrow(
+      expect.objectContaining({ code: 'INVALID_MANIFEST' }),
+    );
+    expect(() =>
+      parseManifest(
+        `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
           'artifact_origin_token_envs = ["ACME_TOKEN"]\n',
       ),
-    ).toThrowError(/Unknown plugin field "artifact_origin_token_envs"/);
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
   });
 });
 

@@ -1074,8 +1074,12 @@ Delegated adapter plugins (user-level, never installed by default):
   [plugins.<id>] store_digest = "sha256:…" in opm.toml pins an installed
   plugin for this project; optional artifact_origins lists extra HTTPS
   origins the host may fetch this plugin's artifacts from (union with
-  OPM_HOST_FETCH_ORIGINS). The binding never acquires, and project commands
-  fail closed when the installed entry digests differently.
+  OPM_HOST_FETCH_ORIGINS). Optional artifact_origin_token_envs lists
+  env-var names (never values) parallel to those origins;
+  OPM_HOST_FETCH_TOKEN_ENVS is the process-wide parallel list for
+  OPM_HOST_FETCH_ORIGINS. OPM_HOST_FETCH_BEARER is not a grant unless that
+  name is listed. The binding never acquires, and project commands fail
+  closed when the installed entry digests differently.
   The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
   lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.
   Installed plugins register as adapters at startup; a plugin that fails

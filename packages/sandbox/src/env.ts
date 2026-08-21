@@ -99,6 +99,7 @@ const DENY_PREFIXES = [
   'LINODE_',
   'TF_VAR_',
   'OP_',
+  'OPM_HOST_FETCH_',
 ] as const;
 
 const DENY_SUBSTRING = [

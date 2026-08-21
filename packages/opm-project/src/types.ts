@@ -70,6 +70,12 @@ export interface PluginBinding {
    * Unique; origin-form via `normalizePinnedOrigin`.
    */
   artifactOrigins?: readonly string[];
+  /**
+   * Env-var names parallel to artifactOrigins; "" means no token.
+   * undefined = key omitted (tokenEnvNameFor step 1 does not fire).
+   * Present including `[""]` must serialize so round-trip still suppresses.
+   */
+  artifactOriginTokenEnvs?: readonly string[];
 }
 
 export type RequirementScope =

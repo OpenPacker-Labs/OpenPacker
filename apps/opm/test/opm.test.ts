@@ -800,7 +800,8 @@ describe('project plugin bindings', () => {
     const cap = capture();
     expect(await runOpm(['--help'], cap.io, process.cwd())).toBe(0);
     expect(cap.out).toMatch(/artifact_origins/);
-    expect(cap.out).not.toMatch(/artifact_origin_token_envs/);
+    expect(cap.out).toMatch(/artifact_origin_token_envs/);
+    expect(cap.out).toMatch(/OPM_HOST_FETCH_TOKEN_ENVS/);
   });
 
   function withPluginHome(home: string): () => void {

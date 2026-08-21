@@ -20,11 +20,14 @@ import { findTrustedSandboxHelper } from '@openpacker/sandbox';
 import {
   binDeclarationsFromExecutables,
   fetchTool,
+  OpmError,
   parseLockfile,
+  parseManifest,
   requireAdapterRegistry,
   resolveRegistryArtifact,
   runSandboxedPackageProcess,
   serializeLockfile,
+  serializeManifest,
   writeBinShims,
   type AdapterModule,
   type LockPackage,
@@ -223,6 +226,11 @@ const tarRoute = { [`${ENDPOINT}/artifacts/demo-1.0.0.tar`]: TOOL_TAR };
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPM_HOST_FETCH_ORIGINS;
+  delete process.env.OPM_HOST_FETCH_TOKEN_ENVS;
+  delete process.env.OPM_HOST_FETCH_BEARER;
+  delete process.env.ACME_TOKEN;
+  delete process.env.ACME_A_TOKEN;
+  delete process.env.ACME_B_TOKEN;
 });
 
 describe('delegated host-fetch acquisition', () => {
@@ -487,9 +495,16 @@ describe('delegated host-fetch acquisition', () => {
   function acmeBinding(
     origins: readonly string[],
     id = 'dev.test.acme',
+    tokenEnvs?: readonly string[],
   ): RegistryOptions['pluginBindings'] {
     return {
-      [id]: { storeDigest: BINDING_DIGEST, artifactOrigins: origins },
+      [id]: {
+        storeDigest: BINDING_DIGEST,
+        artifactOrigins: origins,
+        ...(tokenEnvs === undefined
+          ? {}
+          : { artifactOriginTokenEnvs: tokenEnvs }),
+      },
     };
   }
 
@@ -693,6 +708,350 @@ describe('delegated host-fetch acquisition', () => {
         fetch: fetchStub(tarRoute),
       }),
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+  });
+
+  function requestAuthorization(init?: RequestInit): string | undefined {
+    if (init?.headers === undefined) return undefined;
+    const headers = init.headers;
+    if (headers instanceof Headers)
+      return headers.get('authorization') ?? undefined;
+    if (Array.isArray(headers)) {
+      const hit = headers.find(
+        ([name]) => name.toLowerCase() === 'authorization',
+      );
+      return hit?.[1];
+    }
+    for (const [name, value] of Object.entries(
+      headers as Record<string, string>,
+    )) {
+      if (name.toLowerCase() === 'authorization') return value;
+    }
+    return undefined;
+  }
+
+  function recordingTarFetch(routes?: Readonly<Record<string, Uint8Array>>): {
+    calls: { url: string; authorization: string | undefined }[];
+    fetch: typeof fetch;
+  } {
+    const calls: { url: string; authorization: string | undefined }[] = [];
+    const table = routes ?? {};
+    return {
+      calls,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, authorization: requestAuthorization(init) });
+        const body = table[url] ?? TOOL_TAR;
+        if (table[url] === undefined && Object.keys(table).length > 0)
+          return new Response('missing', { status: 404 });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/octet-stream' },
+        });
+      }) as typeof fetch,
+    };
+  }
+
+  it('suppresses a token when the project names an empty token env', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'ACME_TOKEN';
+    process.env.ACME_TOKEN = 'tok68value';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(['https://a.example'], 'dev.test.acme', ['']),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls).toEqual([
+      {
+        url: 'https://a.example/artifacts/demo.tar',
+        authorization: undefined,
+      },
+    ]);
+  });
+
+  it('round-trips a suppressing empty token env through parse and serialize', async () => {
+    const digest = BINDING_DIGEST;
+    const parsed = parseManifest(
+      serializeManifest({
+        project: { name: 'demo', ecosystems: ['acme'] },
+        packages: {},
+        plugins: {
+          'dev.test.acme': {
+            storeDigest: digest,
+            artifactOrigins: ['https://a.example'],
+            artifactOriginTokenEnvs: [''],
+          },
+        },
+        options: { offline: false, layout: 'opm' },
+      }),
+    );
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'ACME_TOKEN';
+    process.env.ACME_TOKEN = 'tok68value';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: parsed.plugins,
+    });
+    expect(calls[0]?.authorization).toBeUndefined();
+  });
+
+  it('does not treat OPM_HOST_FETCH_BEARER as a grant unless named', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = ENDPOINT;
+    process.env.OPM_HOST_FETCH_BEARER = 'tok68ambient';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const { calls, fetch } = recordingTarFetch(tarRoute);
+    const artifact = await resolveRegistryArtifact('acme', EXACT, { fetch });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls).toEqual([
+      {
+        url: `${ENDPOINT}/artifacts/demo-1.0.0.tar`,
+        authorization: undefined,
+      },
+    ]);
+  });
+
+  it('does not attach Authorization on a public unpinned endpoint', async () => {
+    process.env.ACME_TOKEN = 'tok68value';
+    process.env.OPM_HOST_FETCH_BEARER = 'tok68ambient';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const { calls, fetch } = recordingTarFetch(tarRoute);
+    const artifact = await resolveRegistryArtifact('acme', EXACT, { fetch });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls[0]?.authorization).toBeUndefined();
+  });
+
+  it('omits Authorization on the second toml origin when its token env is empty', async () => {
+    process.env.ACME_A_TOKEN = 'tok68valueA';
+    const bindings = acmeBinding(
+      ['https://a.example', 'https://b.example'],
+      'dev.test.acme',
+      ['ACME_A_TOKEN', ''],
+    );
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const first = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch: first.fetch,
+      pluginBindings: bindings,
+    });
+    expect(first.calls[0]?.authorization).toBe('Bearer tok68valueA');
+
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://b.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const second = recordingTarFetch({
+      'https://b.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch: second.fetch,
+      pluginBindings: bindings,
+    });
+    expect(second.calls[0]?.authorization).toBeUndefined();
+  });
+
+  it('does not fail a GET to origin A when origin B token is unset', async () => {
+    process.env.ACME_A_TOKEN = 'tok68valueA';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(
+        ['https://a.example', 'https://b.example'],
+        'dev.test.acme',
+        ['ACME_A_TOKEN', 'ACME_B_TOKEN'],
+      ),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls[0]?.authorization).toBe('Bearer tok68valueA');
+  });
+
+  it('sends Authorization on any path of a pinned authed origin', async () => {
+    process.env.ACME_TOKEN = 'tok68value';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/not-the-artifact' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/not-the-artifact': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      pluginBindings: acmeBinding(['https://a.example'], 'dev.test.acme', [
+        'ACME_TOKEN',
+      ]),
+    });
+    expect(calls).toEqual([
+      {
+        url: 'https://a.example/not-the-artifact',
+        authorization: 'Bearer tok68value',
+      },
+    ]);
+  });
+
+  it('fails UNRESOLVABLE without fetching an invalid or prefixed token', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const bindings = acmeBinding(['https://a.example'], 'dev.test.acme', [
+      'ACME_TOKEN',
+    ]);
+    for (const value of [
+      'tok=en',
+      'tok68value\r\ninjected',
+      'Bearer tok68value',
+    ]) {
+      process.env.ACME_TOKEN = value;
+      const { calls, fetch } = recordingTarFetch({
+        'https://a.example/artifacts/demo.tar': TOOL_TAR,
+      });
+      try {
+        await resolveRegistryArtifact('acme', EXACT, {
+          fetch,
+          pluginBindings: bindings,
+        });
+        throw new Error('expected UNRESOLVABLE');
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'UNRESOLVABLE' });
+        expect(error).toBeInstanceOf(OpmError);
+        expect((error as Error).message).toContain('ACME_TOKEN');
+        expect((error as Error).message).not.toMatch(/tok68value/u);
+        expect((error as Error).message).not.toMatch(/tok=en/u);
+        expect((error as Error).message).not.toMatch(/injected/u);
+      }
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('keeps the artifact uri credential-free after an authed fetch', async () => {
+    process.env.ACME_TOKEN = 'tok68value';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: recordingTarFetch({
+        'https://a.example/artifacts/demo.tar': TOOL_TAR,
+      }).fetch,
+      pluginBindings: acmeBinding(['https://a.example'], 'dev.test.acme', [
+        'ACME_TOKEN',
+      ]),
+    });
+    const uri = new URL(artifact.uri);
+    expect(uri.username).toBe('');
+    expect(uri.password).toBe('');
+    expect(uri.search).toBe('');
+    expect(uri.hash).toBe('');
+    const lock = parseLockfile(
+      serializeLockfile({
+        schemaVersion: 1,
+        generatedBy: 'opm',
+        packages: {
+          demo: {
+            alias: 'demo',
+            purl: EXACT,
+            version: '1.0.0',
+            digest: `sha256:${TOOL_DIGEST}`,
+            size: TOOL_TAR.byteLength,
+            format: 'tar',
+            mediaType: 'application/x-tar',
+            source: artifact.uri,
+            storeKey: `sha256-${TOOL_DIGEST}`,
+            bins: [],
+            reason: 'direct',
+            ecosystem: 'acme',
+          },
+        },
+      }),
+    );
+    const source = new URL(lock.packages['demo']!.source);
+    expect(source.username).toBe('');
+    expect(source.password).toBe('');
+    expect(source.search).toBe('');
+    expect(source.hash).toBe('');
+  });
+
+  it('refuses TOKEN_ENVS arity mismatch and invalid names', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'ACME_A_TOKEN,';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub({
+          'https://a.example/artifacts/demo.tar': TOOL_TAR,
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'acme_token';
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub({
+          'https://a.example/artifacts/demo.tar': TOOL_TAR,
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+  });
+
+  it('attaches an env-only pin bearer when TOKEN_ENVS names the var', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://a.example';
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS = 'ACME_TOKEN';
+    process.env.ACME_TOKEN = 'tok68value';
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: { locations: [{ uri: 'https://a.example/artifacts/demo.tar' }] },
+      }),
+    );
+    const { calls, fetch } = recordingTarFetch({
+      'https://a.example/artifacts/demo.tar': TOOL_TAR,
+    });
+    await resolveRegistryArtifact('acme', EXACT, { fetch });
+    expect(calls[0]?.authorization).toBe('Bearer tok68value');
   });
 
   it('keeps rawBody behavior when the provider does not ask for host-fetch', async () => {
