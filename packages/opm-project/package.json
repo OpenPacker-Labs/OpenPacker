@@ -39,6 +39,7 @@
     "@openpacker/policy": "0.1.0",
     "@openpacker/project-io": "0.1.0",
     "@openpacker/sandbox": "0.1.0",
+    "@openpacker/sdk": "0.1.0",
     "shell-quote": "1.10.0"
   },
   "devDependencies": {

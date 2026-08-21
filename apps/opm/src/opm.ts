@@ -98,6 +98,8 @@ const COMMANDS = new Set([
   'resolve',
   'manifest',
   'pack',
+  'publish',
+  'yank',
   'plugin',
   'auth',
   'system',
@@ -298,6 +300,14 @@ export async function runOpm(
         );
         writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
+      }
+      case 'publish': {
+        const { runPublishCommand } = await import('./commands/publish.js');
+        return await runPublishCommand(args, io, cwd);
+      }
+      case 'yank': {
+        const { runYankCommand } = await import('./commands/yank.js');
+        return await runYankCommand(args, io, cwd);
       }
       case 'list': {
         const root = await requireOpmRoot(cwd);
@@ -1084,6 +1094,12 @@ Pack a project:
   Delegated providers come from [pack.providers.<id>] in opm.toml.
   Provider builds require --allow-build; network additionally requires --allow-network.
   Provider environment is empty unless each name is granted with --allow-env NAME.
+
+Publish to a PREX registry (not npmjs, PyPI, or crates.io):
+  opm publish --from <dir> --registry <url>
+  opm publish --pack <ecosystem> --package-version <v> --registry <url>
+  opm yank <exact-purl> --registry <url> --reason <text>
+  OPM_PREX_REGISTRY is the default registry URL. --offline is refused.
 
 Host/profile installers use the same verbs when the registry advertises
 install (capability discovery). Examples:

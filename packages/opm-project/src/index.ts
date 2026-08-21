@@ -150,6 +150,11 @@ export {
 } from './shared-store.js';
 
 export {
+  publishPackedArtifact,
+  yankRegistryVersion,
+} from './publish-client.js';
+
+export {
   DEFAULT_REGISTRY_ENDPOINTS,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,

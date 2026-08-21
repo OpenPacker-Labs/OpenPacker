@@ -45,6 +45,7 @@ import { SqliteStateStore, type OpenPackerStateStore } from './store.js';
 
 export * from './operations.js';
 export * from './reference.js';
+export * from './publish-store.js';
 export * from './store.js';
 
 export interface OpenPackerDaemonOptions {
