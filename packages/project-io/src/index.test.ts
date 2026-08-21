@@ -518,6 +518,13 @@ describe('materialiseTree', () => {
       }
       expect(staging).toBeDefined();
       const stagedPath = join(root, staging!);
+      // Wait until the copy has started so the substitution races the open
+      // staging handle, not a directory that does not exist yet.
+      while (!settled) {
+        if (await lstat(join(stagedPath, 'large.bin')).catch(() => undefined))
+          break;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
       await rename(stagedPath, `${stagedPath}.original`);
       await mkdir(stagedPath);
       await writeFile(join(stagedPath, 'attacker'), 'not published');
