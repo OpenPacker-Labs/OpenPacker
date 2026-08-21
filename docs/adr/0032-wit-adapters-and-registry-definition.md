@@ -80,3 +80,8 @@ host.
 Normative protocol text and schemas override this ADR on conflict. Conformance
 fixtures for Registry Definition live under
 `fixtures/protocol/registry-definition/`.
+
+OpenPacker v1 loads WIT-shaped TypeScript modules and sandboxed native plugins;
+it does not load WebAssembly components. The WIT world remains the normative ABI
+shape. A wasmtime host is a future initiative. See
+[ADR 0042](0042-upm-v1-gaps.md).

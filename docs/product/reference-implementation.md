@@ -70,11 +70,13 @@ through `createReferenceOperations({ codecs })`, and `/v1/capabilities`
 advertises exactly the registry's types.
 
 Coverage caveats: the PyPI lock import consumes a JSON projection of `uv.lock`
-(the native TOML must be converted first), and the Maven provider's `inspect`
-reads OpenPacker-authored `*.catalog.json` sidecars — it does not parse POMs and
-cannot inspect packages on a stock Maven repository. The automated gates
-exercise npm, Cargo, and NuGet providers end-to-end; PyPI, Go, and Maven are
-covered by codec/lock-parser tests only.
+(the native TOML must be converted first). The Maven provider's `inspect` parses
+the version POM and optional checksum siblings on a stock Maven repository
+layout; `*.catalog.json` remains an optional overlay (probed when a `.sha256`
+sibling is absent). The automated gates exercise npm, Cargo, NuGet, PyPI, Go,
+and Maven providers end-to-end against offline fixtures (PyPI Warehouse JSON, Go
+module-proxy list/info/mod/zip, Maven POM+checksums). go.sum `h1` digests remain
+module content-tree hashes, not OpenPacker sha256 of zip bytes.
 
 ## Demonstration matrix
 

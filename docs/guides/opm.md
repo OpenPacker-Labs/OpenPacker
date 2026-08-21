@@ -14,7 +14,15 @@ OpenPacker still ships the PREX control plane
 manage a project’s packages. Use **`opm`**.
 
 Package publishers can use [`opm pack`](opm-pack.md) for deterministic native
-artifacts or explicit native-tool delegation.
+artifacts or explicit native-tool delegation. `opm publish` / `opm yank` send
+those packed native bytes to a PREX registry (`POST /v1/openpacker/publish` and
+lifecycle apply), never to npmjs, PyPI, or crates.io. The reference daemon's
+publish extension stays unavailable unless `OPENPACKER_PUBLISH_STORE` is an
+absolute directory. Default registry URL is `OPM_PREX_REGISTRY` or `--registry`.
+`--offline` is refused.
+
+OpenPacker v1 loads WIT-shaped TypeScript adapters and sandboxed native plugins;
+it does not load Wasm components.
 
 ---
 
@@ -140,10 +148,18 @@ my-project/
   .opm/
     catalog.json     # optional local package catalog
     store/           # content-addressed extracted packages
+                     # (optional OPM_STORE_HOME hardlink/copy source)
     bin/             # shims for executables
     links/           # alias → store metadata
     project.json     # installed set
 ```
+
+When `OPM_STORE_HOME` is set to an absolute path, verified package trees are
+also kept there as `sha256-<hex>/` entries. Projects hardlink (or copy on
+`EXDEV`) into `.opm/store`; the project store path stays project-local and
+project GC never deletes the shared root. Unset leaves today's project-only
+store. Relative values fail closed (`UNSAFE_PATH`). Env-only; there is no toml
+`shared_store` key.
 
 ### `opm.toml`
 
@@ -273,28 +289,31 @@ their verifier evidence can be independently replayed.
 
 ## Commands
 
-| Command                    | What it does                                        |
-| -------------------------- | --------------------------------------------------- |
-| `opm init`                 | Create `opm.toml` + `.opm/`                         |
-| `opm add <spec>`           | Add to manifest, resolve, lock, install             |
-| `opm remove <alias>`       | Drop from manifest + lock + install                 |
-| `opm install`              | Materialize lock into `.opm/store` + bins           |
-| `opm uninstall [alias]`    | Remove install (manifest/lock kept unless `remove`) |
-| `opm sync`                 | Resolve manifest → lock → install (idempotent)      |
-| `opm update`               | Re-resolve from manifest (v1 = sync)                |
-| `opm list`                 | Show aliases, PURLs, digests, install status        |
-| `opm why <alias>`          | Why a package is present                            |
-| `opm search <query>`       | Candidate packages in a registry                    |
-| `opm versions <purl>`      | Every published version, oldest first               |
-| `opm info <exact-purl>`    | Digest, size, media type, download URL              |
-| `opmx <bin\|pkg> [args…]`  | Run an installed executable                         |
-| `opm generations`          | List the environment history; `*` marks current     |
-| `opm rollback [--to N]`    | Return to the previous generation, or a named one   |
-| `opm gc [--keep N]`        | Remove store paths no retained generation needs     |
-| `opm shell [--json]`       | Print the environment for this generation           |
-| `opm plugin add <name>`    | Install a delegated adapter plugin (digest-pinned)  |
-| `opm plugin list`          | List installed plugins and their pins               |
-| `opm plugin remove <name>` | Remove a plugin and its store entry                 |
+| Command                                  | What it does                                                                                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                       |
+| `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                           |
+| `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                               |
+| `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                         |
+| `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                               |
+| `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                    |
+| `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`. |
+| `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                      |
+| `opm why <alias>`                        | Why a package is present                                                                                                                                          |
+| `opm search <query>`                     | Candidate packages in a registry                                                                                                                                  |
+| `opm versions <purl>`                    | Every published version, oldest first                                                                                                                             |
+| `opm info <exact-purl>`                  | Digest, size, media type, download URL                                                                                                                            |
+| `opmx <bin\|pkg> [args…]`                | Run an installed executable                                                                                                                                       |
+| `opm generations`                        | List the environment history; `*` marks current                                                                                                                   |
+| `opm rollback [--to N]`                  | Return to the previous generation, or a named one                                                                                                                 |
+| `opm gc [--keep N]`                      | Remove store paths no retained generation needs                                                                                                                   |
+| `opm shell [--json]`                     | Print the environment for this generation                                                                                                                         |
+| `opm plugin add <name>`                  | Install a delegated adapter plugin (digest-pinned)                                                                                                                |
+| `opm plugin list`                        | List installed plugins and their pins                                                                                                                             |
+| `opm plugin remove <name>`               | Remove a plugin and its store entry                                                                                                                               |
+| `opm publish --from <dir>\|--pack <eco>` | Publish packed native bytes to a PREX registry                                                                                                                    |
+| `opm yank <exact-purl>`                  | Yank one published version via lifecycle apply                                                                                                                    |
+| `opm auth set\|list\|unset`              | Origin → token-env **name** map (no secrets)                                                                                                                      |
 
 ### Generations and rollback
 
@@ -428,6 +447,28 @@ export OPM_HOST_FETCH_TOKEN_ENVS=ACME_ARTIFACTS_TOKEN
 export OPM_HOST_FETCH_HEADER_NAMES=X-JFrog-Art-Api
 export OPM_HOST_FETCH_HEADER_ENVS=JFROG_API_KEY
 ```
+
+### `opm auth` (env names only)
+
+Private registries need tokens. ADR 0041 already specifies Bearer from a **named
+env** on a **pinned origin**. `opm auth` is a user-level origin → token-env-name
+map so operators do not re-export those names ad hoc.
+
+```sh
+opm auth set --origin https://npm.internal.example --token-env NPM_TOKEN
+opm auth list
+opm auth unset --origin https://npm.internal.example
+```
+
+The file (`OPM_AUTH_CONFIG` or `$XDG_CONFIG_HOME/openpacker/auth.json`, mode
+`0600` on POSIX) stores **names only**. Mint tokens outside opm (cloud CLI,
+`gh`, vault, human paste) and export the named variable in the process
+environment. There is no `opm login`, OIDC, device-code flow, or `--token` that
+writes bearer material.
+
+At process start, `opm` appends auth-config origins that are not already present
+onto `OPM_HOST_FETCH_ORIGINS` / `OPM_HOST_FETCH_TOKEN_ENVS`. Operator-set lists
+are not overridden. `process.env[tokenEnv]` is never written.
 
 A plugin's declared environment stays unforwarded unless each name is granted
 with `--allow-env NAME` (repeatable), mirroring `opm pack --allow-env`.

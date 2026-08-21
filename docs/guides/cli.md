@@ -27,6 +27,10 @@ npx openpacker --help
 ```
 
 Most commands talk to a local daemon (`openpackerd` via `openpacker serve`).
+`POST /v1/openpacker/publish` stays `PROVIDER_CAPABILITY_MISSING` unless
+`OPENPACKER_PUBLISH_STORE` points at an absolute directory. That opt-in is the
+reference filesystem publish/yank store; it does not publish to native
+registries.
 
 ---
 

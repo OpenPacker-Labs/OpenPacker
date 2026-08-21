@@ -30,7 +30,7 @@
     "test:live": "npm run test:live --workspace @openpacker/oci && npm run test:live --workspace @openpacker/adapter-nix",
     "test:pack-parity": "npm exec -- vitest run packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs",
     "test:pack-parity:native": "node scripts/pack-parity-container.mjs",
-    "test:fuzz": "node scripts/fuzz-smoke.mjs",
+    "test:fuzz": "node scripts/fuzz-smoke.mjs && node tests/fuzz/upm-auth-config.mjs && node tests/fuzz/upm-maven-pom.mjs",
     "test:docs": "node docs/operations/documentation-smoke.mjs",
     "security:codex": "node scripts/codex-security.mjs",
     "security:codex:dry-run": "npm run security:codex -- --dry-run",

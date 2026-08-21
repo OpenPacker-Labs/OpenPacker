@@ -121,7 +121,7 @@ export async function checkTestInventory(root) {
     e2e: 'node scripts/run-gate.mjs e2e',
     compat: 'node scripts/run-gate.mjs compat',
     browser: 'node scripts/run-gate.mjs browser',
-    fuzz: 'node scripts/fuzz-smoke.mjs',
+    fuzz: 'node scripts/fuzz-smoke.mjs && node tests/fuzz/upm-auth-config.mjs && node tests/fuzz/upm-maven-pom.mjs',
     coverage: 'node scripts/coverage.mjs',
     parity:
       'npm exec -- vitest run packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs',
@@ -197,19 +197,27 @@ export async function checkTestInventory(root) {
         'packages/lock-import/src/snapshot.test.ts',
         'packages/adapter-core/src/host-fetch.snapshot.test.ts',
         'packages/opm-project/test/host-fetch.snapshot.test.ts',
+        'packages/opm-project/test/update.test.ts',
+        'packages/adapter-maven/src/index.test.ts',
       ],
       vitest: [
         'packages/canonical/test/snapshot.test.ts',
         'packages/lock-import/src/snapshot.test.ts',
         'packages/adapter-core/src/host-fetch.snapshot.test.ts',
         'packages/opm-project/test/host-fetch.snapshot.test.ts',
+        'packages/opm-project/test/update.test.ts',
+        'packages/adapter-maven/src/index.test.ts',
       ],
     },
     {
       type: 'fuzz',
       script: 'test:fuzz',
       command: commands.fuzz,
-      oracles: ['scripts/fuzz-smoke.mjs'],
+      oracles: [
+        'scripts/fuzz-smoke.mjs',
+        'tests/fuzz/upm-auth-config.mjs',
+        'tests/fuzz/upm-maven-pom.mjs',
+      ],
     },
     {
       type: 'pact',
@@ -225,10 +233,14 @@ export async function checkTestInventory(root) {
       oracles: [
         'examples/epoch-consumer/test/pact.chaos.test.ts',
         'packages/adapter-core/src/host-fetch.chaos.test.ts',
+        'packages/opm-project/test/shared-store.chaos.test.ts',
+        'apps/openpackerd/test/publish.chaos.test.ts',
       ],
       vitest: [
         'examples/epoch-consumer/test/pact.chaos.test.ts',
         'packages/adapter-core/src/host-fetch.chaos.test.ts',
+        'packages/opm-project/test/shared-store.chaos.test.ts',
+        'apps/openpackerd/test/publish.chaos.test.ts',
       ],
     },
     {
@@ -238,10 +250,14 @@ export async function checkTestInventory(root) {
       oracles: [
         'examples/epoch-consumer/test/pact.mutation.test.ts',
         'packages/opm-project/test/host-fetch.mutation.test.ts',
+        'packages/opm-project/test/update.mutation.test.ts',
+        'packages/adapter-maven/src/inspect.mutation.test.ts',
       ],
       vitest: [
         'examples/epoch-consumer/test/pact.mutation.test.ts',
         'packages/opm-project/test/host-fetch.mutation.test.ts',
+        'packages/opm-project/test/update.mutation.test.ts',
+        'packages/adapter-maven/src/inspect.mutation.test.ts',
       ],
     },
     {
