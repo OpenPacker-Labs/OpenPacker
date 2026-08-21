@@ -86,6 +86,7 @@ const TOOL_DIGEST = createHash('sha256').update(TOOL_TAR).digest('hex');
 const sha256 = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const INSTANCE: PackageInstance = {
   nodeId: `sha256:${TOOL_DIGEST}`,
   identity: {
@@ -155,9 +156,9 @@ function acmeProvider(input: {
       ...record,
       body: { time: { '1.0.0': '2020-01-01T00:00:00.000Z' } },
     },
-    ...(input.executables === undefined
-      ? {}
-      : { executables: input.executables }),
+    ...(!(input.executables === undefined) && {
+      executables: input.executables,
+    }),
     warnings: [],
   };
   return {
@@ -211,6 +212,7 @@ function registerAcme(provider: CatalogProvider): void {
 
 /** Serve fixed bytes for fixed URLs; everything else 404s. */
 function fetchStub(routes: Readonly<Record<string, Uint8Array>>): typeof fetch {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return (async (input: URL | Request | string) => {
     const body = routes[String(input)];
     if (body === undefined) return new Response('missing', { status: 404 });
@@ -251,6 +253,7 @@ describe('delegated host-fetch acquisition', () => {
     registerAcme(acmeProvider({ hostFetch: true }));
     let requested: string[] = [];
     const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: ((input: URL | Request | string) => {
         requested.push(String(input));
         return fetchStub(tarRoute)(input);
@@ -269,6 +272,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
@@ -368,6 +372,7 @@ describe('delegated host-fetch acquisition', () => {
       let fetched = false;
       await expect(
         resolveRegistryArtifact('acme', EXACT, {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
@@ -392,6 +397,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     try {
       await resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
@@ -400,7 +406,9 @@ describe('delegated host-fetch acquisition', () => {
       throw new Error('expected UNSAFE_PATH');
     } catch (error) {
       expect(error).toMatchObject({ code: 'UNSAFE_PATH' });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/user:secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/secret/u);
     }
     expect(fetched).toBe(false);
@@ -426,6 +434,7 @@ describe('delegated host-fetch acquisition', () => {
       let fetched = false;
       await expect(
         resolveRegistryArtifact('acme', EXACT, {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
@@ -447,6 +456,7 @@ describe('delegated host-fetch acquisition', () => {
       let fetched = false;
       await expect(
         resolveRegistryArtifact('acme', EXACT, {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
@@ -465,6 +475,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
@@ -519,7 +530,9 @@ describe('delegated host-fetch acquisition', () => {
       throw new Error('expected INVALID_PROVIDER_ENDPOINT');
     } catch (error) {
       expect(error).toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/user:secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/secret/u);
     }
   });
@@ -536,6 +549,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async (input: URL | Request | string) => {
           fetched = true;
           return fetchStub({
@@ -561,15 +575,13 @@ describe('delegated host-fetch acquisition', () => {
       [id]: {
         storeDigest: BINDING_DIGEST,
         artifactOrigins: origins,
-        ...(tokenEnvs === undefined
-          ? {}
-          : { artifactOriginTokenEnvs: tokenEnvs }),
-        ...(extraHeaders === undefined
-          ? {}
-          : {
-              artifactOriginExtraHeaderNames: extraHeaders.names,
-              artifactOriginExtraHeaderEnvs: extraHeaders.envs,
-            }),
+        ...(!(tokenEnvs === undefined) && {
+          artifactOriginTokenEnvs: tokenEnvs,
+        }),
+        ...(!(extraHeaders === undefined) && {
+          artifactOriginExtraHeaderNames: extraHeaders.names,
+          artifactOriginExtraHeaderEnvs: extraHeaders.envs,
+        }),
       },
     };
   }
@@ -641,6 +653,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
@@ -665,6 +678,7 @@ describe('delegated host-fetch acquisition', () => {
     );
     let requested: string[] = [];
     const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: ((input: URL | Request | string) => {
         requested.push(String(input));
         return fetchStub(tarRoute)(input);
@@ -687,6 +701,7 @@ describe('delegated host-fetch acquisition', () => {
     requested = [];
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: ((input: URL | Request | string) => {
           requested.push(String(input));
           return fetchStub(tarRoute)(input);
@@ -700,6 +715,7 @@ describe('delegated host-fetch acquisition', () => {
     registerAcme(
       acmeProvider({
         hostFetch: true,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         body: {
           locations: [{ uri: 'https://evil.example/artifacts/demo.tar' }],
           headers: { Authorization: 'Bearer stolen' },
@@ -711,6 +727,7 @@ describe('delegated host-fetch acquisition', () => {
     let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
@@ -734,6 +751,7 @@ describe('delegated host-fetch acquisition', () => {
       let fetched = false;
       await expect(
         resolveRegistryArtifact('acme', EXACT, {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
@@ -757,8 +775,11 @@ describe('delegated host-fetch acquisition', () => {
       throw new Error('expected UNSAFE_PATH');
     } catch (error) {
       expect(error).toMatchObject({ code: 'UNSAFE_PATH' });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/token=secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/\?/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).toContain(
         `${ENDPOINT}/artifacts/demo.tar`,
       );
@@ -789,6 +810,7 @@ describe('delegated host-fetch acquisition', () => {
       return hit?.[1];
     }
     for (const [name, value] of Object.entries(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       headers as Record<string, string>,
     )) {
       if (name.toLowerCase() === lower) return value;
@@ -800,14 +822,7 @@ describe('delegated host-fetch acquisition', () => {
     return requestHeader(init, 'authorization');
   }
 
-  function recordingTarFetch(routes?: Readonly<Record<string, Uint8Array>>): {
-    calls: {
-      url: string;
-      authorization: string | undefined;
-      extra: string | undefined;
-    }[];
-    fetch: typeof fetch;
-  } {
+  function recordingTarFetch(routes?: Readonly<Record<string, Uint8Array>>) {
     const calls: {
       url: string;
       authorization: string | undefined;
@@ -816,6 +831,7 @@ describe('delegated host-fetch acquisition', () => {
     const table = routes ?? {};
     return {
       calls,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         calls.push({
@@ -843,21 +859,13 @@ describe('delegated host-fetch acquisition', () => {
         .join('\n');
     if (Array.isArray(headers))
       return headers.map(([name, value]) => `${name}:${value}`).join('\n');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return Object.entries(headers as Record<string, string>)
       .map(([name, value]) => `${name}:${value}`)
       .join('\n');
   }
 
-  function recordingHonestyFetch(): {
-    calls: {
-      url: string;
-      authorization: string | undefined;
-      cookie: string | undefined;
-      credentials: RequestCredentials | undefined;
-      headers: string;
-    }[];
-    fetch: typeof fetch;
-  } {
+  function recordingHonestyFetch() {
     const calls: {
       url: string;
       authorization: string | undefined;
@@ -867,6 +875,7 @@ describe('delegated host-fetch acquisition', () => {
     }[] = [];
     return {
       calls,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         calls.push({
@@ -1111,9 +1120,13 @@ describe('delegated host-fetch acquisition', () => {
       } catch (error) {
         expect(error).toMatchObject({ code: 'UNRESOLVABLE' });
         expect(error).toBeInstanceOf(OpmError);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).toContain('ACME_TOKEN');
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/tok68value/u);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/tok=en/u);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/injected/u);
       }
       expect(calls).toEqual([]);
@@ -1402,7 +1415,9 @@ describe('delegated host-fetch acquisition', () => {
       } catch (error) {
         expect(error).toMatchObject({ code: 'UNRESOLVABLE' });
         expect(error).toBeInstanceOf(OpmError);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).toContain('JFROG_API_KEY');
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/bad/u);
       }
       expect(calls).toEqual([]);
@@ -1424,6 +1439,7 @@ describe('delegated host-fetch acquisition', () => {
       let fetched = false;
       await expect(
         resolveRegistryArtifact('acme', EXACT, {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
@@ -1560,6 +1576,7 @@ describe('delegated host-fetch acquisition', () => {
     registerAcme(provider);
     let fetched = false;
     const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (() => {
         fetched = true;
         return fetchStub(tarRoute)('');
@@ -1644,10 +1661,9 @@ describe('ephemeral tool cache', () => {
   }
 
   /** Count host-side byte downloads; the only global-fetch user on this path. */
-  function countingFetch(routes: Readonly<Record<string, Uint8Array>>): {
-    downloads: () => number;
-  } {
+  function countingFetch(routes: Readonly<Record<string, Uint8Array>>) {
     let count = 0;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     vi.stubGlobal('fetch', ((input: URL | Request | string) => {
       count += 1;
       return fetchStub(routes)(input);

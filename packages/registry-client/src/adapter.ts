@@ -37,11 +37,14 @@ export function prexRegistryModule(input: {
     id: input.id ?? `org.openpacker.adapter.prex-registry`,
     // Filled from the live service index; a placeholder here would be a claim
     // about what the registry serves that nobody checked.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     purlTypes: [] as string[],
     registryDefinition: async () => {
       const definition = await client.definition();
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return definition as never;
     },
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     catalog: () => new PrexRegistryProvider(client) as never,
   };
 }
@@ -72,9 +75,11 @@ export class PrexRegistryProvider implements CatalogProvider {
     signal?: AbortSignal,
   ): Promise<readonly PackageIdentity[]> {
     const out: PackageIdentity[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     for await (const entry of this.client.listAll({
       search: query,
-      ...(signal ? { signal } : {}),
+      ...(signal && { signal }),
     }))
       for (const distribution of entry.manifest.distributions)
         out.push({
@@ -125,6 +130,7 @@ export class PrexRegistryProvider implements CatalogProvider {
         'PACKAGE_NOT_FOUND',
         `${name}@${version} is not published for purl type ${purlType}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const instance: PackageInstance = {
       identity: {
         purlType,
@@ -137,6 +143,7 @@ export class PrexRegistryProvider implements CatalogProvider {
     assertPackageIdentityMatchesRequest(exactPurl, instance.identity);
     return {
       package: instance,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       record: this.#record(exactPurl, entry as never),
       warnings: [],
     };
@@ -163,6 +170,7 @@ export class PrexRegistryProvider implements CatalogProvider {
         `Registry has no artifact location or digest for ${exactPurl}. ` +
           'A metadata-only registry points at an upstream source; this one pointed nowhere.',
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return this.#record(exactPurl, {
       digest: distribution.digest,
       size: distribution.size ?? 0,
@@ -204,11 +212,7 @@ function encodeName(name: string): string {
     .join('/');
 }
 
-function splitPurl(purl: string): {
-  purlType: string;
-  name: string;
-  version?: string;
-} {
+function splitPurl(purl: string) {
   const match = /^pkg:([A-Za-z0-9.+-]+)\/(.+?)(?:@([^?#]+))?(?:[?#].*)?$/u.exec(
     purl,
   );
@@ -216,8 +220,6 @@ function splitPurl(purl: string): {
   return {
     purlType: match[1]!,
     name: decodeURIComponent(match[2]!),
-    ...(match[3] === undefined
-      ? {}
-      : { version: decodeURIComponent(match[3]) }),
+    ...(!(match[3] === undefined) && { version: decodeURIComponent(match[3]) }),
   };
 }

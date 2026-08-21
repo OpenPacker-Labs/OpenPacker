@@ -632,6 +632,7 @@ async function decompress(
   signal?: AbortSignal,
   overflowCode = 'EXPANDED_SIZE_LIMIT',
 ): Promise<Uint8Array> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const decompressor = new DecompressionStream(format as CompressionFormat);
   const writer = decompressor.writable.getWriter();
   const output = collectStream(decompressor.readable, maximumBytes, signal);

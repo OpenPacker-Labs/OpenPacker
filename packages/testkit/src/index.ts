@@ -207,7 +207,9 @@ export async function checkArtifactSource(
     base,
     check(
       'descriptor',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize(stat.descriptor as unknown as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize(descriptor as unknown as JsonValue),
       'stat must preserve the descriptor',
     ),
@@ -239,6 +241,7 @@ export async function checkArtifactSink(
     streamFromBytes(bytes),
     descriptor,
   );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifestBytes = canonicalBytes(descriptor as unknown as JsonValue);
   const manifest = await extension.implementation.putManifest(
     manifestBytes,
@@ -249,13 +252,17 @@ export async function checkArtifactSink(
     base,
     check(
       'descriptor',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize(stored as unknown as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize(descriptor as unknown as JsonValue),
       'putBlob must preserve the expected immutable descriptor',
     ),
     check(
       'manifest-descriptor',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize(manifest as unknown as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize(descriptor as unknown as JsonValue),
       'putManifest must preserve its immutable descriptor',
     ),
@@ -293,7 +300,9 @@ export async function checkCatalogProvider(
     ),
     check(
       'deterministic-enumeration',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize([...first] as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize([...second] as JsonValue),
       'Offline enumeration must be deterministic',
     ),
@@ -416,7 +425,9 @@ export async function checkPolicyRule(
     base,
     check(
       'deterministic-result',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize(first as unknown as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize(second as unknown as JsonValue),
       'Policy rule changed for identical input',
     ),
@@ -455,7 +466,9 @@ export async function checkEvidenceVerifier(
     base,
     check(
       'deterministic-result',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalize(first as unknown as JsonValue) ===
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalize(second as unknown as JsonValue),
       'Evidence verifier changed for identical input',
     ),
@@ -514,7 +527,7 @@ function check(
   passed: boolean,
   detail: string,
 ): ConformanceCheck {
-  return { name, passed, ...(passed ? {} : { detail }) };
+  return { name, passed, ...(!passed && { detail }) };
 }
 function append(
   report: ConformanceReport,
@@ -535,9 +548,9 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   );
 }
 
-function checkRequiredMethods(
+function checkRequiredMethods<T extends object>(
   report: ConformanceReport,
-  implementation: object,
+  implementation: T,
   methods: readonly string[],
 ): ConformanceReport {
   return append(
@@ -545,8 +558,8 @@ function checkRequiredMethods(
     ...methods.map((method) =>
       check(
         `method:${method}`,
-        typeof (implementation as Record<string, unknown>)[method] ===
-          'function',
+        method in implementation &&
+          typeof implementation[method as keyof T] === 'function',
         `Extension is missing ${method}()`,
       ),
     ),

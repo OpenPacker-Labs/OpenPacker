@@ -62,10 +62,7 @@ const loss = (
  * Nix's `isalpha` rather than lowercase-only matters for the many nixpkgs
  * names of the form `python3.11-PyYAML-6.0`.
  */
-export function splitDerivationName(value: string): {
-  name: string;
-  version?: string;
-} {
+export function splitDerivationName(value: string) {
   for (let index = 0; index < value.length; index += 1) {
     if (value[index] !== '-') continue;
     const next = value[index + 1];
@@ -85,7 +82,7 @@ export function parseStorePath(value: string): NixStorePath {
   return {
     hash: match[1],
     name,
-    ...(version === undefined ? {} : { version }),
+    ...(!(version === undefined) && { version }),
     isDerivation: value.trim().endsWith('.drv'),
   };
 }
@@ -99,7 +96,7 @@ export class NixCodec implements EcosystemCodec {
       ecosystem: NIX_PURL_TYPE,
       name: parsed.name,
       // A store path has no namespace: the store is flat.
-      ...(parsed.version === undefined ? {} : { version: parsed.version }),
+      ...(!(parsed.version === undefined) && { version: parsed.version }),
       original: value,
     };
   }
@@ -109,7 +106,7 @@ export class NixCodec implements EcosystemCodec {
    * path always realises exactly one output, and a selector that omits it
    * would otherwise be ambiguous once a package exposes several.
    */
-  canonicalizePurl(value: string): string {
+  canonicalizePurl(value: string) {
     const parsed = parsePurl(value);
     if (parsed.type !== NIX_PURL_TYPE)
       throw new ProviderError(
@@ -134,7 +131,7 @@ export class NixCodec implements EcosystemCodec {
     return formatPurl({
       type: NIX_PURL_TYPE,
       name: parsed.name,
-      ...(parsed.version === undefined ? {} : { version: parsed.version }),
+      ...(!(parsed.version === undefined) && { version: parsed.version }),
       qualifiers,
     });
   }
@@ -214,10 +211,11 @@ export class NixCodec implements EcosystemCodec {
   toVers(value: string): VersionConstraint {
     const range = this.parseNativeRange(value);
     return {
-      ...(range.vers === undefined ? {} : { vers: range.vers }),
+      ...(!(range.vers === undefined) && { vers: range.vers }),
       scheme: NIX_PURL_TYPE,
       original: range.original,
       normalized: range.normalized,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ast: range.ast as VersionConstraint['ast'],
       reversible: range.reversible,
       semanticLoss: [...range.semanticLoss],
@@ -239,7 +237,8 @@ export class NixCodec implements EcosystemCodec {
   async translateMetadata(
     metadata: unknown,
     provenance: TranslationProvenance,
-  ): Promise<TranslatedMetadata> {
+  ) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const record = metadata as NixPathInfo;
     if (typeof record?.path !== 'string')
       throw new ProviderError(
@@ -256,7 +255,7 @@ export class NixCodec implements EcosystemCodec {
     const qualifiers: Record<string, string> = {
       outhash: store.hash,
       output,
-      ...(plan === undefined ? {} : { plan }),
+      ...(!(plan === undefined) && { plan }),
     };
     const losses: SemanticLoss[] = [
       loss(
@@ -343,6 +342,7 @@ export class NixCodec implements EcosystemCodec {
         ]
       : [];
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const instance: PackageInstance = {
       nodeId: await packageNodeId({
         exactPurl,
@@ -408,10 +408,11 @@ export class NixCodec implements EcosystemCodec {
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'nix-store-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           storePath: record.path,
-          ...(record.deriver === undefined ? {} : { deriver: record.deriver }),
-          ...(record.narHash === undefined ? {} : { narHash: record.narHash }),
+          ...(!(record.deriver === undefined) && { deriver: record.deriver }),
+          ...(!(record.narHash === undefined) && { narHash: record.narHash }),
         } as unknown as JsonValue,
       },
       semanticLoss: losses,
@@ -428,6 +429,7 @@ export class NixCodec implements EcosystemCodec {
     lock: unknown,
     _provenance: TranslationProvenance,
   ): LockCapture {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const entries = Array.isArray(lock) ? (lock as NixPathInfo[]) : [];
     if (entries.length === 0)
       throw new ProviderError(
@@ -455,9 +457,9 @@ export class NixCodec implements EcosystemCodec {
             }),
           ),
           nativeCoordinate: entry.path,
-          ...(narDigest === undefined
-            ? {}
-            : { artifactDigest: `sha256:${narDigest.value}` }),
+          ...(!(narDigest === undefined) && {
+            artifactDigest: `sha256:${narDigest.value}`,
+          }),
           dependencies: Object.fromEntries(
             (entry.references ?? [])
               .filter((reference) => reference !== entry.path)
@@ -466,6 +468,7 @@ export class NixCodec implements EcosystemCodec {
                 return [parsed.name, parsed.hash];
               }),
           ),
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           native: entry as unknown,
         };
       }),

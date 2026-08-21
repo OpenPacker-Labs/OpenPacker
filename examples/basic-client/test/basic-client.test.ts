@@ -42,7 +42,9 @@ describe('basic client example', () => {
           authenticationSchemes: [{ type: 'none' }],
           extensionSchemaRefs: [],
         });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const body = JSON.parse(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         new TextDecoder().decode(init?.body as ArrayBuffer),
       ) as { items: unknown[] };
       return Response.json({

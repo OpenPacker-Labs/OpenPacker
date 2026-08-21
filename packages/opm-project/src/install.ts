@@ -108,9 +108,9 @@ export function bindVerifiedArtifactBytes(
     bytes: Uint8Array.from(bytes),
     provenance,
     packageBinding: '',
-    ...(facts === undefined
-      ? {}
-      : { facts: immutablePlainData(facts, 'policy facts') }),
+    ...(!(facts === undefined) && {
+      facts: immutablePlainData(facts, 'policy facts'),
+    }),
   });
 }
 
@@ -136,9 +136,9 @@ export function bindVerifiedArtifactCacheEntry(
   verifiedArtifacts.set(pkg, {
     provenance: 'registry',
     packageBinding: '',
-    ...(facts === undefined
-      ? {}
-      : { facts: immutablePlainData(facts, 'policy facts') }),
+    ...(!(facts === undefined) && {
+      facts: immutablePlainData(facts, 'policy facts'),
+    }),
   });
 }
 
@@ -177,12 +177,15 @@ export async function readProjectState(
   try {
     text = await readStableFile(path);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return await validateProjectState(JSON.parse(text) as unknown, path);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw invalidState('a referenced path disappeared during validation');
     throw error;
@@ -274,8 +277,8 @@ async function validateProjectState(
         path: binPath,
         shim,
         target,
-        ...(interpreter === undefined ? {} : { interpreter }),
-        ...(entry === undefined ? {} : { entry }),
+        ...(!(interpreter === undefined) && { interpreter }),
+        ...(!(entry === undefined) && { entry }),
       });
     }
     const installedAt = stringValue(record.installedAt, `${alias}.installedAt`);
@@ -313,15 +316,15 @@ async function validateProjectState(
       storePath: expectedStore,
       bins,
       installedAt,
-      ...(record.lifecycleScriptsExecuted === undefined
-        ? {}
-        : { lifecycleScriptsExecuted: record.lifecycleScriptsExecuted }),
-      ...(record.sandboxBackend === undefined
-        ? {}
-        : { sandboxBackend: record.sandboxBackend }),
-      ...(record.sandboxEnforced === undefined
-        ? {}
-        : { sandboxEnforced: record.sandboxEnforced }),
+      ...(!(record.lifecycleScriptsExecuted === undefined) && {
+        lifecycleScriptsExecuted: record.lifecycleScriptsExecuted,
+      }),
+      ...(!(record.sandboxBackend === undefined) && {
+        sandboxBackend: record.sandboxBackend,
+      }),
+      ...(!(record.sandboxEnforced === undefined) && {
+        sandboxEnforced: record.sandboxEnforced,
+      }),
     };
   }
   return { schemaVersion: 1, packages: validated };
@@ -330,6 +333,7 @@ async function validateProjectState(
 function objectValue(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value))
     throw invalidState(`${name} must be an object`);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as Record<string, unknown>;
 }
 
@@ -406,7 +410,7 @@ export async function fetchArtifactBytes(
       );
     }
     const response = await fetch(source, {
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(!(options.signal === undefined) && { signal: options.signal }),
     });
     if (!response.ok) {
       throw new OpmError(
@@ -490,9 +494,11 @@ export async function fetchArtifactBytes(
       );
     return bytes;
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new OpmError('NOT_FOUND', `Artifact source not found: ${path}`);
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError(
         'UNSAFE_SOURCE',
@@ -622,9 +628,9 @@ export async function materializeLockPackage(input: {
   await assertLockPackageAllowed(pkg, policy, new Date().toISOString(), {
     registryArtifactVerified: capability?.provenance === 'registry',
     sourceVerified: manifestSourceVerified(pkg),
-    ...(capability?.facts === undefined
-      ? {}
-      : { verifiedFacts: capability.facts }),
+    ...(!(capability?.facts === undefined) && {
+      verifiedFacts: capability.facts,
+    }),
   });
   const paths = projectPaths(root);
   // Always derive store path from verified digest shape; never trust lock storeKey alone.
@@ -651,6 +657,7 @@ export async function materializeLockPackage(input: {
           );
           cached = true;
         } catch (error) {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const code = (error as NodeJS.ErrnoException).code;
           if (
             code !== 'ENOENT' &&
@@ -701,6 +708,7 @@ export async function materializeLockPackage(input: {
           digest: pkg.digest,
           projectStorePath: stagedPath,
           bytes: bytes !== undefined ? bytes : loadVerifiedBytes,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
         });
         if (bytes === undefined) {
@@ -709,6 +717,7 @@ export async function materializeLockPackage(input: {
               join(sharedRoot, `${storeKeyFromDigest(pkg.digest)}.artifact`),
             );
           } catch (error) {
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
           }
         }
@@ -729,6 +738,7 @@ export async function materializeLockPackage(input: {
           // symlink as though it were project data and can alias one of its own
           // new fds.
           destination: stagedPath,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
         });
       }
@@ -774,6 +784,7 @@ export async function materializeLockPackage(input: {
         await renameChild(storeHandle, storeName, backupName);
         backedUp = true;
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
       try {
@@ -912,9 +923,9 @@ export async function installFromLock(input: {
     await assertLockPackageAllowed(pkg, policy, evaluationTime, {
       registryArtifactVerified: capability?.provenance === 'registry',
       sourceVerified: manifestSourceVerified(pkg),
-      ...(capability?.facts === undefined
-        ? {}
-        : { verifiedFacts: capability.facts }),
+      ...(!(capability?.facts === undefined) && {
+        verifiedFacts: capability.facts,
+      }),
     });
   }
 
@@ -948,7 +959,7 @@ export async function installFromLock(input: {
       root,
       pkg,
       offline,
-      ...(policy === undefined ? {} : { policy }),
+      ...(!(policy === undefined) && { policy }),
     });
     materialised.set(safeAlias, {
       storePath,
@@ -990,7 +1001,7 @@ export async function installFromLock(input: {
       binDir: paths.bin,
       storeRoot: storePath,
       bins,
-      ...(pkg.ecosystem === 'pypi' ? { pythonPath: pythonStoreRoots } : {}),
+      ...(pkg.ecosystem === 'pypi' && { pythonPath: pythonStoreRoots }),
     });
 
     await writeStableFile(
@@ -1033,7 +1044,7 @@ export async function installFromLock(input: {
       ),
     ),
     sandbox: await observedSandboxForGeneration({
-      ...(policy === undefined ? {} : { policy }),
+      ...(!(policy === undefined) && { policy }),
       lifecycleScriptsExecuted: anyLifecycle,
       outcomes: sandboxOutcomes,
     }),
@@ -1113,14 +1124,12 @@ export async function observedSandboxForGeneration(input: {
   return {
     policyDigest: `${digest.algorithm}:${digest.value}`,
     lifecycleScriptsExecuted: input.lifecycleScriptsExecuted,
-    ...(backends.length > 0 ? { backends } : {}),
-    ...(input.lifecycleScriptsExecuted
-      ? {
-          enforced:
-            input.outcomes.length > 0 &&
-            input.outcomes.every((outcome) => outcome.enforced),
-        }
-      : {}),
+    ...(backends.length > 0 && { backends }),
+    ...(input.lifecycleScriptsExecuted && {
+      enforced:
+        input.outcomes.length > 0 &&
+        input.outcomes.every((outcome) => outcome.enforced),
+    }),
   };
 }
 

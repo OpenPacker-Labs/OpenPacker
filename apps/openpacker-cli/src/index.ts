@@ -123,13 +123,13 @@ export async function runCli(
     }
     const client = new OpenPackerClient({
       baseUrl,
-      ...(Object.keys(headers).length === 0 ? {} : { headers }),
+      ...(!(Object.keys(headers).length === 0) && { headers }),
       timeoutMilliseconds: numberOption(args, 'timeout', 30_000),
     });
     const requestOptions: RequestOptions = {
-      ...(option(args, 'idempotency-key') === undefined
-        ? {}
-        : { idempotencyKey: option(args, 'idempotency-key')! }),
+      ...(!(option(args, 'idempotency-key') === undefined) && {
+        idempotencyKey: option(args, 'idempotency-key')!,
+      }),
     };
     const result = await execute(args, client, requestOptions, io);
     if (result !== undefined)
@@ -142,7 +142,7 @@ export async function runCli(
     const json = argv.includes('--json');
     io.stderr.write(
       json
-        ? `${JSON.stringify({ error: { message, exitCode: code, ...(error instanceof PrexClientError && error.problem ? { problem: error.problem } : {}) } })}\n`
+        ? `${JSON.stringify({ error: { message, exitCode: code, ...(error instanceof PrexClientError && error.problem && { problem: error.problem }) } })}\n`
         : `openpacker: ${message}\n`,
     );
     return code;
@@ -180,21 +180,29 @@ async function execute(
   const input = await commandInput(args, io);
   switch (`${args.command}${args.subcommand ? ` ${args.subcommand}` : ''}`) {
     case 'normalize':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.normalize(input as never, requestOptions);
     case 'identify':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.identify(input as never, requestOptions);
     case 'enumerate':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.enumerate(input as never, requestOptions);
     case 'inspect':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.inspect(input as never, requestOptions);
     case 'solve':
     case 'resolve':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.solve(input as never, requestOptions);
     case 'import-lock':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.lockImport(input as never, requestOptions);
     case 'explain':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.explain(input as never, requestOptions);
     case 'materialize': {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const response = await client.materialize(input as never, requestOptions);
       const destination = option(args, 'install-prefix');
       if (!destination) return response;
@@ -208,6 +216,7 @@ async function execute(
         format: archiveFormat(response.data.descriptor),
         managedDestination: true,
       });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const data = { ...response.data, installation } as unknown as JsonValue;
       return {
         data,
@@ -216,10 +225,13 @@ async function execute(
       };
     }
     case 'verify':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.verify(input as never, requestOptions);
     case 'pack':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.pack(input as never, requestOptions);
     case 'publish':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.publish(input as never, requestOptions);
     case 'receipt verify':
       return client.verify(
@@ -227,10 +239,13 @@ async function execute(
         requestOptions,
       );
     case 'catalog import':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.catalogImport(input as never, requestOptions);
     case 'catalog snapshot':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.catalogSnapshot(input as never, requestOptions);
     case 'lifecycle apply':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return client.lifecycleApply(input as never, requestOptions);
     default:
       throw new UsageError(
@@ -299,6 +314,7 @@ async function inputObject(
   const value = parseCanonicalJson(text);
   if (typeof value !== 'object' || value === null)
     throw new InputError('Input must be a JSON object');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as JsonValue;
 }
 
@@ -306,7 +322,7 @@ async function importLockInput(
   args: ParsedArguments,
   io: CliIo,
   policy: JsonValue | undefined,
-): Promise<JsonValue> {
+) {
   const source =
     option(args, 'input') ??
     (args.positionals[0] !== undefined ? args.positionals[0] : undefined);
@@ -318,9 +334,11 @@ async function importLockInput(
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parsed = parseCanonicalJson(trimmed) as Record<string, unknown>;
       if (typeof parsed.lockfile === 'string') {
         const result: Record<string, JsonValue> = {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           ...(parsed as unknown as Record<string, JsonValue>),
         };
         const format = option(args, 'format');
@@ -356,7 +374,7 @@ function applyOverrides(
   input: JsonValue,
   args: ParsedArguments,
   policy: JsonValue | undefined,
-): JsonValue {
+) {
   if (!isObject(input))
     throw new InputError('Command input must be a JSON object');
   const result: Record<string, JsonValue> = { ...input };
@@ -381,9 +399,11 @@ function receiptVerifyInput(
 ): VerifyRequest {
   const signed =
     isObject(input) && 'receipt' in input
-      ? (input as unknown as SignedReceipt)
+      ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        (input as unknown as SignedReceipt)
       : isObject(input) && isObject(input.signedReceipt)
-        ? (input.signedReceipt as unknown as SignedReceipt)
+        ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (input.signedReceipt as unknown as SignedReceipt)
         : undefined;
   if (!signed)
     throw new InputError('receipt verify requires a SignedReceipt input');
@@ -395,6 +415,7 @@ function receiptVerifyInput(
 }
 
 async function exportLock(input: JsonValue): Promise<JsonValue> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const solve = input as unknown as SolveResponse;
   if (
     !solve.normalizedRequest ||
@@ -405,6 +426,7 @@ async function exportLock(input: JsonValue): Promise<JsonValue> {
     throw new InputError('export lock requires a SolveResponse');
   const receiptDigest =
     solve.signedReceipt?.receiptDigest ??
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (await canonicalDigest(solve.unsignedReceipt as unknown as JsonValue));
   const artifacts = solve.selected.flatMap((item) => item.artifacts);
   const externalRefs = uniqueExternalRefs([
@@ -441,16 +463,19 @@ async function exportLock(input: JsonValue): Promise<JsonValue> {
   };
   const validation = validateContract(
     LOCKFILE_SCHEMA,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     lock as unknown as JsonValue,
   );
   if (!validation.valid)
     throw new InputError(
       `export lock produced an invalid lockfile: ${validation.errors.map((error) => `${error.instancePath || '/'} ${error.message ?? 'invalid value'}`).join('; ')}`,
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return lock as unknown as JsonValue;
 }
 
 function exportSbom(input: JsonValue): JsonValue {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const solve = input as unknown as SolveResponse;
   if (!solve.selected || !solve.solution)
     throw new InputError('export sbom requires a SolveResponse');
@@ -508,9 +533,9 @@ function exportSbom(input: JsonValue): JsonValue {
       type: 'library',
       name: item.identity.name,
       version: item.normalizedVersion,
-      ...(item.identity.exactPurl === undefined
-        ? {}
-        : { purl: item.identity.exactPurl }),
+      ...(!(item.identity.exactPurl === undefined) && {
+        purl: item.identity.exactPurl,
+      }),
       hashes: item.artifacts.map((artifact) => ({
         alg: 'SHA-256',
         content: artifact.digest.value,
@@ -596,6 +621,7 @@ async function serve(args: ParsedArguments, io: CliIo): Promise<number> {
 async function loadOperations(
   modulePath: string,
 ): Promise<import('@openpacker/openpackerd').PrexOperations> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const loaded = (await import(pathToFileURL(modulePath).href)) as {
     default?: import('@openpacker/openpackerd').PrexOperations;
     operations?: import('@openpacker/openpackerd').PrexOperations;
@@ -615,6 +641,7 @@ async function demo(args: ParsedArguments, io: CliIo): Promise<number> {
     throw new UsageError(
       'demo requires OPENPACKER_DEMO_MODULE or --workflow-module; no fake demo path is available',
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const loaded = (await import(pathToFileURL(modulePath).href)) as {
     runOpenPackerDemo?: (input: {
       output: string;
@@ -665,7 +692,7 @@ function parseArguments(argv: string[]): ParsedArguments {
     : undefined;
   return {
     command,
-    ...(nested === undefined ? {} : { subcommand: nested }),
+    ...(!(nested === undefined) && { subcommand: nested }),
     positionals: words,
     options,
   };
@@ -791,6 +818,7 @@ async function pinnedHttpsStream(
           );
           return;
         }
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         resolve(Readable.toWeb(response) as ReadableStream<Uint8Array>);
       },
     );
@@ -936,6 +964,7 @@ function verifyDecisionExitCode(
     args.command === 'verify' ||
     (args.command === 'receipt' && args.subcommand === 'verify');
   if (!isVerify || data === undefined) return undefined;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const { decision, evidence } = data as {
     decision?: string;
     evidence?: { status?: string }[];

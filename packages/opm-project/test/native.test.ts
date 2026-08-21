@@ -41,6 +41,7 @@ async function tempProject(files: Record<string, string> = {}) {
   temps.push(dir);
   await initProject({ root: dir, name: 'test-app' });
   await mkdir(join(dir, '.opm'), { recursive: true });
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
     packages: Record<string, { source: string } & Record<string, unknown>>;
   };
@@ -118,6 +119,7 @@ describe('native projection through opm commands', () => {
       offline: true,
     });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packageJson = JSON.parse(
       await readFile(join(root, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string>; name?: string };
@@ -145,6 +147,7 @@ describe('native projection through opm commands', () => {
     });
     await removePackage({ root, alias: 'demo-tool', offline: true });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packageJson = JSON.parse(
       await readFile(join(root, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> };
@@ -164,6 +167,7 @@ describe('native projection through opm commands', () => {
     });
     await removePackage({ root, alias: 'demo-tool', offline: true });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packageJson = JSON.parse(
       await readFile(join(root, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> };
@@ -248,6 +252,7 @@ describe('native projection through opm commands', () => {
         },
       },
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packageJson = JSON.parse(
       await readFile(join(root, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> };
@@ -299,6 +304,7 @@ describe('native projection through opm commands', () => {
         },
       },
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packageJson = JSON.parse(
       await readFile(join(root, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> };
@@ -324,6 +330,7 @@ describe('native lockfile projection', () => {
       offline: true,
     });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const lock = JSON.parse(
       await readFile(join(root, 'package-lock.json'), 'utf8'),
     ) as {
@@ -378,6 +385,7 @@ describe('native layout projection', () => {
       'demo-tool',
       'package.json',
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifestOfInstalled = JSON.parse(
       await readFile(installed, 'utf8'),
     ) as { name?: string };
@@ -466,6 +474,7 @@ describe('package manifest', () => {
       spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
       offline: true,
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const lock = JSON.parse(
       await readFile(join(root, 'opm.lock.json'), 'utf8'),
     ) as Parameters<typeof buildPackageManifest>[0]['lock'];

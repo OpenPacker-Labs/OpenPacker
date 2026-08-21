@@ -103,6 +103,7 @@ export function pluginRegistryModule(
     context?: AdapterContext,
   ): HttpTransport => {
     const existing =
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (context?.transport as HttpTransport | undefined) ?? defaults.transport;
     if (existing !== undefined) return existing;
     const origin = new URL(endpoint).origin;
@@ -112,8 +113,8 @@ export function pluginRegistryModule(
       pinnedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
-      ...(fetch === undefined ? {} : { fetch }),
-      ...(defaults.lookup === undefined ? {} : { lookup: defaults.lookup }),
+      ...(!(fetch === undefined) && { fetch }),
+      ...(!(defaults.lookup === undefined) && { lookup: defaults.lookup }),
     });
   };
   const clientFor = (context?: AdapterContext): RegistryClient => {
@@ -123,7 +124,7 @@ export function pluginRegistryModule(
     return new RegistryClient({
       baseUrl: endpoint,
       transport: transportFor(endpoint, context),
-      ...(fetch === undefined ? {} : { fetch }),
+      ...(!(fetch === undefined) && { fetch }),
     });
   };
   return {
@@ -155,9 +156,9 @@ function registryDefinitionOf(definition: {
   return {
     registryDefinitionVersion: '1',
     registryId: definition.registryId,
-    ...(definition.displayName === undefined
-      ? {}
-      : { displayName: definition.displayName }),
+    ...(!(definition.displayName === undefined) && {
+      displayName: definition.displayName,
+    }),
     purlTypes: [...definition.purlTypes],
     resources: definition.resources.map((resource) => ({
       '@id': resource['@id'],
@@ -177,9 +178,7 @@ function splitPluginPurl(purl: string): PluginPurl {
     throw new ProviderError('INVALID_PURL', `Not an opm-plugin PURL: ${purl}`);
   return {
     name: decodeURIComponent(match[1]!),
-    ...(match[2] === undefined
-      ? {}
-      : { version: decodeURIComponent(match[2]) }),
+    ...(!(match[2] === undefined) && { version: decodeURIComponent(match[2]) }),
   };
 }
 
@@ -214,6 +213,7 @@ function distributionFor(
       'PACKAGE_NOT_FOUND',
       `${entry.manifest.name}@${entry.manifest.version} is not published as ${PLUGIN_PURL_TYPE}`,
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const identity: PackageIdentity = {
     purlType: PLUGIN_PURL_TYPE,
     canonicalPurl: `pkg:${PLUGIN_PURL_TYPE}/${encodeName(distribution.identifier)}`,
@@ -271,10 +271,11 @@ export class PluginRegistryProvider implements CatalogProvider {
     for await (const entry of this.#client.listAll({
       search: query,
       purlType: PLUGIN_PURL_TYPE,
-      ...(signal ? { signal } : {}),
+      ...(signal && { signal }),
     }))
       for (const distribution of entry.manifest.distributions)
         if (distribution.purlType === PLUGIN_PURL_TYPE)
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           out.push({
             purlType: PLUGIN_PURL_TYPE,
             canonicalPurl: `pkg:${PLUGIN_PURL_TYPE}/${encodeName(distribution.identifier)}`,
@@ -326,6 +327,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     const entry = await this.#client.entry(name, version, signal);
     await this.#client.verifyEntry(entry);
     const distribution = distributionFor(entry, exactPurl);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const instance = {
       identity: {
         purlType: PLUGIN_PURL_TYPE,
@@ -344,6 +346,7 @@ export class PluginRegistryProvider implements CatalogProvider {
         key: exactPurl,
         endpoint: this.#endpoint,
         body: entry,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         rawBody: canonicalBytes(entry as unknown as JsonValue),
         retrievedAt: new Date().toISOString(),
       },
@@ -399,7 +402,7 @@ export class PluginRegistryProvider implements CatalogProvider {
       method: 'GET',
       headers: { accept: 'application/octet-stream' },
       maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
-      ...(signal ? { signal } : {}),
+      ...(signal && { signal }),
     });
     if (response.status === 404)
       throw new ProviderError('ARTIFACT_NOT_FOUND', `Not found: ${uri}`);

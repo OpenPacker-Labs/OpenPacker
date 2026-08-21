@@ -160,13 +160,13 @@ export async function runInSandbox(
     await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
     const env = scrubEnvironment({
-      ...(input.env === undefined ? {} : { extra: input.env }),
-      ...(packageGrants.env === undefined
-        ? {}
-        : { grantEnv: packageGrants.env }),
+      ...(!(input.env === undefined) && { extra: input.env }),
+      ...(!(packageGrants.env === undefined) && {
+        grantEnv: packageGrants.env,
+      }),
       jailHome,
       minimalPath: profile === 'package-exec' && resolved.minimalPath,
-      ...(interpreter === undefined ? {} : { interpreter }),
+      ...(!(interpreter === undefined) && { interpreter }),
     });
     const hostEnv = scrubEnvironment({
       jailHome,
@@ -219,12 +219,12 @@ export async function runInSandbox(
           maximumStderrBytes: resolved.maximumStderrBytes,
           maximumOutputBytes: resolved.maximumOutputBytes,
           directoryAuthorities: authorities,
-          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
-          ...(input.executableAuthority === undefined
-            ? {}
-            : { executableAuthority: input.executableAuthority }),
-          ...(timeoutMs > 0 ? { timeoutMs } : {}),
-          ...(signal === undefined ? {} : { signal }),
+          ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+          ...(!(input.executableAuthority === undefined) && {
+            executableAuthority: input.executableAuthority,
+          }),
+          ...(timeoutMs > 0 && { timeoutMs }),
+          ...(!(signal === undefined) && { signal }),
         });
       } finally {
         if (timer) clearTimeout(timer);

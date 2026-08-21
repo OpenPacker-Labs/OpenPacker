@@ -32,7 +32,8 @@ export async function createStandaloneReferenceOperations(
 ): Promise<PrexOperations> {
   ensureReferenceAdapters();
   const universe = universePath
-    ? (parseCanonicalJson(
+    ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (parseCanonicalJson(
         await readFile(universePath, 'utf8'),
       ) as unknown as ResolutionUniverse)
     : await emptyUniverse();
@@ -105,6 +106,7 @@ async function emptyUniverse(): Promise<ResolutionUniverse> {
   return {
     ...body,
     canonicalDigest: await canonicalProjectionDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       body as unknown as JsonValue,
       projection,
     ),

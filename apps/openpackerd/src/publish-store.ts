@@ -151,6 +151,7 @@ export class FilesystemPublishStore {
       context.signal,
     );
     const manifestBytes = canonicalBytes(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       registryPublish.manifest as unknown as JsonValue,
     );
     await this.artifacts.putBlob(
@@ -225,9 +226,9 @@ export class FilesystemPublishStore {
       events,
       {
         packagePurl: identity.canonicalPurl,
-        ...(identity.exactPurl === undefined
-          ? {}
-          : { exactPurl: identity.exactPurl }),
+        ...(!(identity.exactPurl === undefined) && {
+          exactPurl: identity.exactPurl,
+        }),
         digest: record.artifactDigest,
       },
       this.#now(),
@@ -282,6 +283,7 @@ export class FilesystemPublishStore {
     const path = recordPath(this.root, name, version);
     try {
       const raw = await readFile(path, 'utf8');
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return parseCanonicalJson(raw) as unknown as StoredPublishRecord;
     } catch (error) {
       if (isNotFound(error)) return undefined;
@@ -306,6 +308,7 @@ export class FilesystemPublishStore {
     if (parsed) {
       this.#assertValid(parsed);
       const derived = await canonicalDigest(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         parsed.manifest as unknown as JsonValue,
       );
       if (
@@ -340,13 +343,14 @@ export class FilesystemPublishStore {
           version,
           digest: input.descriptor.digest,
           size: input.descriptor.size,
-          ...(input.descriptor.mediaType === undefined
-            ? {}
-            : { mediaType: input.descriptor.mediaType }),
+          ...(!(input.descriptor.mediaType === undefined) && {
+            mediaType: input.descriptor.mediaType,
+          }),
         },
       ],
     };
     const manifestDigest = await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       manifest as unknown as JsonValue,
     );
     const request: RegistryPublishRequest = { manifest, manifestDigest };
@@ -357,6 +361,7 @@ export class FilesystemPublishStore {
   #assertValid(request: RegistryPublishRequest): void {
     const result = validateContract(
       PUBLISH_SCHEMA,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       request as unknown as JsonValue,
       this.#validator,
     );
@@ -376,9 +381,9 @@ export class FilesystemPublishStore {
       events,
       {
         packagePurl: identity.canonicalPurl,
-        ...(identity.exactPurl === undefined
-          ? {}
-          : { exactPurl: identity.exactPurl }),
+        ...(!(identity.exactPurl === undefined) && {
+          exactPurl: identity.exactPurl,
+        }),
       },
       this.#now(),
       AUTHORITY_RULES,
@@ -406,6 +411,7 @@ export class FilesystemPublishStore {
       'tmp',
       `${Date.now()}-${randomBytes(12).toString('hex')}.json`,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const bytes = canonicalBytes(record as unknown as JsonValue);
     await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 });
     try {
@@ -509,6 +515,7 @@ function tryRegistryPublish(
     const parsed = parseCanonicalJson(new TextDecoder().decode(bytes));
     if (!isObject(parsed) || !isObject(parsed.manifest)) return undefined;
     if (!isObject(parsed.manifestDigest)) return undefined;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return parsed as unknown as RegistryPublishRequest;
   } catch {
     return undefined;

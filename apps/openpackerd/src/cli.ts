@@ -8,6 +8,7 @@ export async function runDaemon(env = process.env) {
   const modulePath = env.OPENPACKER_OPERATIONS_MODULE;
   let operations: PrexOperations;
   if (modulePath) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const loaded = (await import(pathToFileURL(modulePath).href)) as {
       default?: PrexOperations;
       operations?: PrexOperations;

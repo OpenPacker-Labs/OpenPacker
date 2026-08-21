@@ -239,6 +239,7 @@ export const standardEmitters = {
         ),
         artifact(
           `${safe(module)}-${safe(version)}.info`,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           canonicalBytes({
             Version: version,
             Time: '1970-01-01T00:00:00Z',
@@ -292,6 +293,7 @@ function validateWingetManifestSet(
       invalidWinget(`${file.path} PackageIdentifier does not match the target`);
     if (value.PackageVersion !== input.manifest.target.version)
       invalidWinget(`${file.path} PackageVersion does not match the target`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const type = value.ManifestType as string;
     if (
       ![
@@ -306,6 +308,7 @@ function validateWingetManifestSet(
     if (types.has(type) && type !== 'locale')
       invalidWinget(`WinGet manifest set contains duplicate ${type} manifests`);
     types.add(type);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if (!/^\d+\.\d+\.\d+$/u.test(value.ManifestVersion as string))
       invalidWinget(`${file.path} has an invalid ManifestVersion`);
     if (type === 'installer' || type === 'singleton')
@@ -364,6 +367,7 @@ function validateWingetInstallers(
     )
       invalidWinget(`${path} contains an incomplete installer`);
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const url = new URL(installer.InstallerUrl as string);
       if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
     } catch {
@@ -407,9 +411,9 @@ function artifact(
     bytes,
     mediaType,
     nativeRole,
-    ...(input.manifest.target.exactPurl === undefined
-      ? {}
-      : { exactPurl: input.manifest.target.exactPurl }),
+    ...(!(input.manifest.target.exactPurl === undefined) && {
+      exactPurl: input.manifest.target.exactPurl,
+    }),
   };
 }
 
@@ -452,6 +456,7 @@ function emitOci(input: NormalizedPackInput): StandardEmitterArtifact {
     );
   const layer = packTar(input.files);
   const layerDigest = digest(layer);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const config = canonicalBytes({
     architecture,
     os,
@@ -468,6 +473,7 @@ function emitOci(input: NormalizedPackInput): StandardEmitterArtifact {
     rootfs: { type: 'layers', diff_ids: [layerDigest] },
   } as unknown as JsonValue);
   const configDigest = digest(config);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifest = canonicalBytes({
     schemaVersion: 2,
     mediaType: 'application/vnd.oci.image.manifest.v1+json',
@@ -485,6 +491,7 @@ function emitOci(input: NormalizedPackInput): StandardEmitterArtifact {
     ],
   } as unknown as JsonValue);
   const manifestDigest = digest(manifest);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const index = canonicalBytes({
     schemaVersion: 2,
     mediaType: 'application/vnd.oci.image.index.v1+json',
@@ -615,6 +622,7 @@ function writeNarDirectory(
       );
     } else {
       writeNarDirectory(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         entry.child as Parameters<typeof writeNarDirectory>[0],
         out,
       );

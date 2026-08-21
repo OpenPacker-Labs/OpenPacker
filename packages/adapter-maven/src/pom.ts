@@ -85,13 +85,13 @@ export function parseMavenPom(xml: string): MavenPomDocument {
   const description = xmlText(root.description);
   const parent = readParent(root.parent);
   return {
-    ...(groupId === undefined ? {} : { groupId }),
-    ...(artifactId === undefined ? {} : { artifactId }),
-    ...(version === undefined ? {} : { version }),
-    ...(packaging === undefined ? {} : { packaging }),
-    ...(name === undefined ? {} : { name }),
-    ...(description === undefined ? {} : { description }),
-    ...(parent === undefined ? {} : { parent }),
+    ...(!(groupId === undefined) && { groupId }),
+    ...(!(artifactId === undefined) && { artifactId }),
+    ...(!(version === undefined) && { version }),
+    ...(!(packaging === undefined) && { packaging }),
+    ...(!(name === undefined) && { name }),
+    ...(!(description === undefined) && { description }),
+    ...(!(parent === undefined) && { parent }),
     properties: readProperties(root.properties),
     dependencies: readDependencies(record(root.dependencies)),
     dependencyManagement: readDependencies(
@@ -104,7 +104,7 @@ export function parseMavenPom(xml: string): MavenPomDocument {
 export function interpolateMavenExpression(
   value: string,
   properties: Readonly<Record<string, string>>,
-): { value: string; unresolved: boolean } {
+) {
   let current = value;
   for (let depth = 0; depth < 16; depth += 1) {
     if (!current.includes('${')) return { value: current, unresolved: false };
@@ -134,9 +134,9 @@ export function resolvedPomCoordinates(
   const version = resolveToken(pom.version, properties);
   const packaging = resolveToken(pom.packaging, properties) ?? 'jar';
   return {
-    ...(groupId === undefined ? {} : { groupId }),
-    ...(artifactId === undefined ? {} : { artifactId }),
-    ...(version === undefined ? {} : { version }),
+    ...(!(groupId === undefined) && { groupId }),
+    ...(!(artifactId === undefined) && { artifactId }),
+    ...(!(version === undefined) && { version }),
     packaging,
     complete:
       groupId !== undefined &&
@@ -145,10 +145,7 @@ export function resolvedPomCoordinates(
   };
 }
 
-export function resolvedPomDependencies(pom: MavenPomDocument): {
-  included: MavenDependency[];
-  skippedUnresolved: MavenDependency[];
-} {
+export function resolvedPomDependencies(pom: MavenPomDocument) {
   const coordinates = resolvedPomCoordinates(pom);
   const properties = {
     ...pom.properties,
@@ -184,9 +181,7 @@ function isImportBom(dependency: MavenDependency): boolean {
   return (dependency.scope ?? '').toLowerCase() === 'import';
 }
 
-function interpolationProperties(
-  pom: MavenPomDocument,
-): Record<string, string> {
+function interpolationProperties(pom: MavenPomDocument) {
   return {
     ...pom.properties,
     ...projectPropertyKeys(
@@ -203,7 +198,7 @@ function projectPropertyKeys(
   artifactId: string | undefined,
   version: string | undefined,
   packaging: string | undefined,
-): Record<string, string> {
+) {
   const properties: Record<string, string> = {};
   assignAliases(
     properties,
@@ -270,13 +265,13 @@ function resolveDependency(
     groupId,
     artifactId,
     version,
-    ...(type === undefined ? {} : { type }),
-    ...(classifier === undefined ? {} : { classifier }),
-    ...(dependency.scope === undefined ? {} : { scope: dependency.scope }),
-    ...(dependency.optional === undefined
-      ? {}
-      : { optional: dependency.optional }),
-    ...(exclusions === undefined ? {} : { exclusions }),
+    ...(!(type === undefined) && { type }),
+    ...(!(classifier === undefined) && { classifier }),
+    ...(!(dependency.scope === undefined) && { scope: dependency.scope }),
+    ...(!(dependency.optional === undefined) && {
+      optional: dependency.optional,
+    }),
+    ...(!(exclusions === undefined) && { exclusions }),
   };
 }
 
@@ -308,13 +303,13 @@ function readParent(value: unknown): MavenPomParent | undefined {
   )
     return undefined;
   return {
-    ...(groupId === undefined ? {} : { groupId }),
-    ...(artifactId === undefined ? {} : { artifactId }),
-    ...(version === undefined ? {} : { version }),
+    ...(!(groupId === undefined) && { groupId }),
+    ...(!(artifactId === undefined) && { artifactId }),
+    ...(!(version === undefined) && { version }),
   };
 }
 
-function readProperties(value: unknown): Record<string, string> {
+function readProperties(value: unknown) {
   const node = record(value);
   if (node === undefined) return {};
   const properties: Record<string, string> = {};
@@ -366,12 +361,12 @@ function readDependency(value: unknown): MavenDependency | undefined {
   return {
     groupId,
     artifactId,
-    ...(version === undefined ? {} : { version }),
-    ...(type === undefined ? {} : { type }),
-    ...(classifier === undefined ? {} : { classifier }),
-    ...(scope === undefined ? {} : { scope }),
-    ...(optional === undefined ? {} : { optional }),
-    ...(exclusions === undefined ? {} : { exclusions }),
+    ...(!(version === undefined) && { version }),
+    ...(!(type === undefined) && { type }),
+    ...(!(classifier === undefined) && { classifier }),
+    ...(!(scope === undefined) && { scope }),
+    ...(!(optional === undefined) && { optional }),
+    ...(!(exclusions === undefined) && { exclusions }),
   };
 }
 
@@ -407,6 +402,7 @@ function xmlText(value: unknown): string | undefined {
 function record(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     return undefined;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as Record<string, unknown>;
 }
 

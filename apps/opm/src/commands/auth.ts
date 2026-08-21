@@ -47,7 +47,7 @@ export async function applyAuthConfigForProcess(
   const applied = applyAuthConfigToEnvNames({
     config,
     origins,
-    ...(tokenEnvs !== undefined ? { tokenEnvs } : {}),
+    ...(tokenEnvs !== undefined && { tokenEnvs }),
   });
   if (!applied.changed) return;
   env.OPM_HOST_FETCH_ORIGINS = applied.origins.join(',');
@@ -84,7 +84,7 @@ async function runSet(args: AuthArgs, io: AuthCliIo): Promise<number> {
   }
   await upsertAuthOrigin({
     origin,
-    ...(tokenEnv === undefined ? {} : { tokenEnv }),
+    ...(!(tokenEnv === undefined) && { tokenEnv }),
   });
   io.stdout.write(
     tokenEnv === undefined

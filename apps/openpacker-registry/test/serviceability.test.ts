@@ -19,6 +19,7 @@ function answering(
       const answer = routes[request.url];
       if (answer === undefined) throw new Error('no route');
       if (answer instanceof Error) throw answer;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return {
         status: answer.status,
         headers: answer.headers ?? {},

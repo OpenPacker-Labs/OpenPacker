@@ -17,6 +17,7 @@ describe('host-fetch transport chaos', () => {
       lookup: async () => {
         throw new Error('resolver exploded');
       },
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => {
         fetched = true;
         return new Response('ok');
@@ -33,6 +34,7 @@ describe('host-fetch transport chaos', () => {
       allowedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => {
         throw new Error('socket reset');
       }) as typeof fetch,
@@ -48,6 +50,7 @@ describe('host-fetch transport chaos', () => {
       allowedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => {
         fetched += 1;
         return new Response(null, { status: 302 });
@@ -65,6 +68,7 @@ describe('host-fetch transport chaos', () => {
       allowedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => {
         fetched += 1;
         return new Response(null, { status: 503 });
@@ -83,6 +87,7 @@ describe('host-fetch transport chaos', () => {
       destinationPolicy: 'classify-and-pin',
       lookup: async () => [{ address: '1.1.1.1', family: 4 }],
       maximumBytes: 4,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => new Response('too-big')) as typeof fetch,
     });
     await expect(

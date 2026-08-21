@@ -106,9 +106,9 @@ export class StandardPackagePacker implements PackagePacker {
       await writeFileAtomic(path, artifact.bytes);
       artifacts.push({
         path,
-        ...(artifact.exactPurl === undefined
-          ? {}
-          : { exactPurl: artifact.exactPurl }),
+        ...(!(artifact.exactPurl === undefined) && {
+          exactPurl: artifact.exactPurl,
+        }),
         mediaType: artifact.mediaType,
         size: artifact.bytes.byteLength,
         digest: `sha256:${createHash('sha256').update(artifact.bytes).digest('hex')}`,

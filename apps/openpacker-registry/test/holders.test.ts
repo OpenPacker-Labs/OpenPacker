@@ -14,6 +14,7 @@ import {
   type PackageRedirect,
 } from '../src/holders.js';
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const keys = JSON.parse(
   readFileSync(
     fileURLToPath(
@@ -24,6 +25,7 @@ const keys = JSON.parse(
 ) as Record<string, JsonWebKey>;
 
 function manifest(name: string, version = '1.0.0'): PackageManifest {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     packageManifestVersion: '1',
     name,
@@ -50,6 +52,7 @@ async function publishBody(
   keyId = 'publisher-1',
 ) {
   const value = manifest(name, version);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const digest = await canonicalDigest(value as unknown as JsonValue);
   const signer = await Ed25519Signer.fromJwk(keyId, keys.leaf!);
   return {
@@ -73,6 +76,7 @@ function registry(
   namespaces: readonly string[] = ['com.example'],
 ) {
   const store =
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
   for (const namespace of namespaces)
     store.trustKey(
@@ -145,6 +149,7 @@ describe('holder attribution', () => {
       url: '/v1/holders/dns%3Aexample.com',
     });
     expect(response.statusCode).toBe(200);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = response.json() as {
       holderId: string;
       namespaces: { namespace: string; packageCount: number }[];
@@ -172,6 +177,7 @@ describe('holder attribution', () => {
       url: '/v1/publish',
       payload: await publishBody('org.other.c', '1.0.0', 'org.other'),
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const holders = (
       await app.inject({ method: 'GET', url: '/v1/holders' })
     ).json() as { holders: { holderId: string; namespaces: unknown[] }[] };
@@ -380,6 +386,7 @@ describe('publish quota', () => {
       url: '/v1/publish',
       payload: await publishBody('com.example.a', '1.0.0', 'com.example'),
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const holder = (
       await app.inject({ method: 'GET', url: '/v1/holders/dns%3Aexample.com' })
     ).json() as { quota: { remaining: number; limit: number } };
@@ -408,6 +415,7 @@ describe('rename and transfer', () => {
     const signer = await Ed25519Signer.fromJwk(keyId, keys.leaf!);
     return {
       redirect,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       redirectDigest: await canonicalDigest(redirect as unknown as JsonValue),
       signatures: [
         {

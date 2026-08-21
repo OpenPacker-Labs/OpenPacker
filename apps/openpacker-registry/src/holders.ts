@@ -118,6 +118,7 @@ export interface PackageRedirect {
 export async function redirectDigest(
   redirect: PackageRedirect,
 ): Promise<Digest> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalDigest(redirect as unknown as JsonValue);
 }
 

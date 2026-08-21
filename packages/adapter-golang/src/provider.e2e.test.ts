@@ -217,6 +217,7 @@ describe('Go module proxy provider e2e (offline fixtures)', () => {
       const inspection = await provider.inspect(`${DEMO_ZSTD_PURL}@v1.0.0`);
       expect(inspection.package.requirements).toEqual([]);
       expect(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         (inspection.package.nativeSemantics.data as { requires: unknown })
           .requires,
       ).toEqual([]);

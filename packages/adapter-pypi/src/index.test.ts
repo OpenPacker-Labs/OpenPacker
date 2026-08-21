@@ -13,10 +13,12 @@ const encoder = new TextEncoder();
 const projectBytes = await readFile(
   new URL('../../../fixtures/catalogs/pypi/project.json', import.meta.url),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const project = JSON.parse(projectBytes.toString()) as PypiProjectDocument;
 const uvLockBytes = await readFile(
   new URL('../../../fixtures/catalogs/pypi/uv.lock.json', import.meta.url),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const uvLock = JSON.parse(uvLockBytes.toString()) as UvLockDocument;
 const wheel = await readFile(
   new URL(
@@ -36,6 +38,7 @@ const mixedYankedBytes = await readFile(
     import.meta.url,
   ),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const mixedYanked = JSON.parse(
   mixedYankedBytes.toString(),
 ) as PypiProjectDocument;

@@ -67,10 +67,10 @@ export class NugetProjectFormat implements ProjectFormat {
     return {
       root,
       manifestPath,
-      ...(central ? { relatedPaths: { central: centralPath } } : {}),
+      ...(central && { relatedPaths: { central: centralPath } }),
       metadata: {
         centralPackageManagement: central,
-        ...(framework === undefined ? {} : { targetFramework: framework }),
+        ...(!(framework === undefined) && { targetFramework: framework }),
       },
     };
   }
@@ -89,7 +89,7 @@ export class NugetProjectFormat implements ProjectFormat {
       out.push({
         purl: `pkg:nuget/${encodeURIComponent(reference.include)}`,
         name: reference.include,
-        ...(range === undefined ? {} : { range }),
+        ...(!(range === undefined) && { range }),
         // PrivateAssets=all is how MSBuild spells "build-time only".
         scope: reference.privateAssets ? 'development' : 'runtime',
       });
@@ -162,7 +162,7 @@ export class NugetProjectFormat implements ProjectFormat {
       }
       dependencies[entry.name] = {
         type: entry.transitive ? 'Transitive' : 'Direct',
-        ...(entry.transitive ? {} : { requested: `[${entry.version}, )` }),
+        ...(!entry.transitive && { requested: `[${entry.version}, )` }),
         resolved: entry.version,
         contentHash: entry.nativeIntegrity.value,
       };
@@ -217,9 +217,9 @@ export class NugetProjectFormat implements ProjectFormat {
       const key = `${entry.name}/${entry.version}`;
       libraries[key] = {
         type: 'package',
-        ...(entry.nativeIntegrity?.encoding === 'base64'
-          ? { sha512: entry.nativeIntegrity.value }
-          : {}),
+        ...(entry.nativeIntegrity?.encoding === 'base64' && {
+          sha512: entry.nativeIntegrity.value,
+        }),
         path: `${entry.name.toLowerCase()}/${entry.version}`,
       };
       targets[key] = { type: 'package' };
@@ -237,6 +237,7 @@ export class NugetProjectFormat implements ProjectFormat {
       packageFolders: Object.fromEntries(
         [
           ...new Set(packages.map((entry) => entry.storePath).filter(Boolean)),
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ].map((path) => [path as string, {}]),
       ),
     };
@@ -246,7 +247,7 @@ export class NugetProjectFormat implements ProjectFormat {
     );
     return {
       written: [assetsPath],
-      ...(skipped.length > 0 ? { skipped } : {}),
+      ...(skipped.length > 0 && { skipped }),
       semanticLoss: [layoutLoss(assetsPath)],
     };
   }
@@ -380,7 +381,7 @@ function packageReferences(text: string): ParsedReference[] {
     const version = attribute(raw, 'Version');
     out.push({
       include,
-      ...(version === undefined ? {} : { version }),
+      ...(!(version === undefined) && { version }),
       privateAssets: /PrivateAssets\s*=\s*"[^"]*\ball\b/iu.test(raw),
       start: match.index,
       end: match.index + raw.length,

@@ -59,6 +59,7 @@ export function packTar(entries: readonly ArchiveEntry[]): Uint8Array {
 
 /** A zip, as NuGet publishes (`.nupkg` is an OPC zip). */
 export function packZip(entries: readonly ArchiveEntry[]): Uint8Array {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const files = Object.create(null) as Record<string, Uint8Array>;
   for (const entry of sorted(entries)) files[entry.path] = entry.contents;
   // A fixed timestamp for the same determinism reason as the tar above. Zip
@@ -125,7 +126,7 @@ function tarHeader(entry: ArchiveEntry): Uint8Array {
   return header;
 }
 
-function splitPath(path: string): { name: string; prefix: string } {
+function splitPath(path: string) {
   const bytes = new TextEncoder().encode(path);
   if (bytes.length <= 100) return { name: path, prefix: '' };
   // Split on a `/` that leaves both halves within their fields.

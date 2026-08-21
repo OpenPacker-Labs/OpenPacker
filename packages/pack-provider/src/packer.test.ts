@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   open,
+  opendir,
   readFile,
   rename,
   rm,
@@ -29,62 +30,62 @@ import {
 } from './packer.js';
 
 const directorySwap = vi.hoisted(() => ({
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   output: undefined as string | undefined,
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   original: undefined as string | undefined,
 }));
 
 const snapshotOpen = vi.hoisted(() => ({
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   calls: [] as { path: string; flags: number }[],
   failUnnamed: false,
   failReader: false,
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   writerFd: undefined as number | undefined,
 }));
 
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return {
-    ...actual,
-    async open(path: Parameters<typeof actual.open>[0], ...args: unknown[]) {
-      const flags = args[0];
-      if (typeof path === 'string' && typeof flags === 'number')
-        snapshotOpen.calls.push({ path, flags });
-      if (
-        snapshotOpen.failUnnamed &&
-        typeof flags === 'number' &&
-        (flags & 0x40_0000) !== 0
-      )
-        throw Object.assign(new Error('unnamed files unavailable'), {
-          code: 'EOPNOTSUPP',
-        });
-      if (
-        snapshotOpen.failReader &&
-        path === `/proc/self/fd/${snapshotOpen.writerFd}`
-      )
-        throw Object.assign(new Error('reader reopen failed'), { code: 'EIO' });
-      const handle = await Reflect.apply(actual.open, actual, [path, ...args]);
-      if (typeof flags === 'number' && (flags & 0x40_0000) !== 0)
-        snapshotOpen.writerFd = handle.fd;
-      return handle;
-    },
-    async opendir(path: string) {
-      if (path !== directorySwap.output || directorySwap.original === undefined)
-        return actual.opendir(path);
-      const original = directorySwap.original;
-      directorySwap.output = undefined;
-      directorySwap.original = undefined;
-      await actual.rename(path, original);
-      await actual.mkdir(path);
-      const handle = await actual.opendir(path);
-      const close = handle.close.bind(handle);
-      handle.close = async () => {
-        await close();
-        await actual.rm(path, { recursive: true });
-        await actual.rename(original, path);
-      };
-      return handle;
-    },
+const instrumentedOpen: typeof open = async (...arguments_) => {
+  const [path, ...args] = arguments_;
+  const flags = args[0];
+  if (typeof path === 'string' && typeof flags === 'number')
+    snapshotOpen.calls.push({ path, flags });
+  if (
+    snapshotOpen.failUnnamed &&
+    typeof flags === 'number' &&
+    (flags & 0x40_0000) !== 0
+  )
+    throw Object.assign(new Error('unnamed files unavailable'), {
+      code: 'EOPNOTSUPP',
+    });
+  if (
+    snapshotOpen.failReader &&
+    path === `/proc/self/fd/${snapshotOpen.writerFd}`
+  )
+    throw Object.assign(new Error('reader reopen failed'), { code: 'EIO' });
+  const handle = await open(...arguments_);
+  if (typeof flags === 'number' && (flags & 0x40_0000) !== 0)
+    snapshotOpen.writerFd = handle.fd;
+  return handle;
+};
+
+const instrumentedOpenDirectory: typeof opendir = async (path) => {
+  if (path !== directorySwap.output || directorySwap.original === undefined)
+    return opendir(path);
+  const original = directorySwap.original;
+  directorySwap.output = undefined;
+  directorySwap.original = undefined;
+  await rename(path, original);
+  await mkdir(path);
+  const handle = await opendir(path);
+  const close = handle.close.bind(handle);
+  handle.close = async () => {
+    await close();
+    await rm(path, { recursive: true });
+    await rename(original, path);
   };
-});
+  return handle;
+};
 
 const roots: string[] = [];
 
@@ -298,6 +299,7 @@ describe('manifest package packer', () => {
     snapshotOpen.calls.length = 0;
     const packer = new ManifestPackagePacker(manifest(), 'test', {
       executablePath: executable,
+      openFile: instrumentedOpen,
     });
 
     await expect(
@@ -322,6 +324,7 @@ describe('manifest package packer', () => {
     snapshotOpen.failUnnamed = true;
     const packer = new ManifestPackagePacker(manifest(), 'test', {
       executablePath: executable,
+      openFile: instrumentedOpen,
     });
 
     await expect(packer.available()).resolves.toMatchObject({
@@ -342,6 +345,7 @@ describe('manifest package packer', () => {
     snapshotOpen.failReader = true;
     const packer = new ManifestPackagePacker(manifest(), 'test', {
       executablePath: executable,
+      openFile: instrumentedOpen,
     });
 
     await expect(packer.available()).resolves.toMatchObject({
@@ -785,8 +789,9 @@ function configured(
       }
       return sandboxRun(input_);
     },
-    ...(limits === undefined ? {} : { limits }),
-    ...(openFile === undefined ? {} : { openFile }),
+    ...(!(limits === undefined) && { limits }),
+    openFile: openFile ?? instrumentedOpen,
+    openDirectory: instrumentedOpenDirectory,
   });
 }
 

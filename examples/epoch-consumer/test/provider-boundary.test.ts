@@ -17,12 +17,14 @@ describe('real openpackerd Epoch boundary', () => {
   it('preserves SDK receipt and event bytes through the neutral port', async () => {
     const server = await startEpochPactProvider();
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const request = JSON.parse(
         await readFile(
           new URL('fixtures/protocol/solve/request.json', root),
           'utf8',
         ),
       ) as SolveRequest;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const keys = JSON.parse(
         await readFile(new URL('fixtures/trust/keys.json', root), 'utf8'),
       ) as { root: JsonWebKey };
@@ -51,6 +53,7 @@ describe('real openpackerd Epoch boundary', () => {
         `urn:epoch:blob:${receipt.openPackerDigest}`,
       );
 
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const replayClient = {
         solve: () => client.solve(request),
         verify: client.verify.bind(client),

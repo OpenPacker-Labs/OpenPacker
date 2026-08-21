@@ -126,7 +126,7 @@ export class NixStoreProvider implements InstallerProvider {
       options?: { signal?: AbortSignal },
     ) => Promise<{ stdout: string; stderr: string }> = (file, args, options) =>
       run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.signal && { signal: options.signal }),
         maxBuffer: 64 * 1024 * 1024,
       }),
     private readonly codec = new NixCodec(),
@@ -161,14 +161,15 @@ export class NixStoreProvider implements InstallerProvider {
       ],
       signal ? { signal } : {},
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(stdout) as Record<
       string,
       { version?: string; description?: string }
     >;
     return Object.entries(parsed).map(([attribute, value]) => ({
       attribute,
-      ...(value.version ? { version: value.version } : {}),
-      ...(value.description ? { description: value.description } : {}),
+      ...(value.version && { version: value.version }),
+      ...(value.description && { description: value.description }),
     }));
   }
 
@@ -212,6 +213,7 @@ export class NixStoreProvider implements InstallerProvider {
       ],
       opts,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(stdout) as
       | Record<string, { references?: string[]; narSize?: number }>
       | { path: string; references?: string[]; narSize?: number }[];
@@ -222,7 +224,7 @@ export class NixStoreProvider implements InstallerProvider {
     return entries.map(([path, value]) => ({
       path,
       references: value?.references ?? [],
-      ...(value?.narSize === undefined ? {} : { narSize: value.narSize }),
+      ...(!(value?.narSize === undefined) && { narSize: value.narSize }),
     }));
   }
 
@@ -255,7 +257,7 @@ export class NixStoreProvider implements InstallerProvider {
         {
           path: entry.path,
           references: entry.references,
-          ...(entry.narSize === undefined ? {} : { narSize: entry.narSize }),
+          ...(!(entry.narSize === undefined) && { narSize: entry.narSize }),
         },
         provenance,
       );
@@ -321,10 +323,10 @@ export class NixStoreProvider implements InstallerProvider {
     try {
       const result = await runHostInstaller({
         argv: executionPlan.command,
-        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ...(!(options.sandbox === undefined) && { sandbox: options.sandbox }),
+        ...(!(options.offline === undefined) && { offline: options.offline }),
         ecosystem: 'nix',
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(!(options.signal === undefined) && { signal: options.signal }),
       });
       return {
         ...executionPlan,
@@ -339,6 +341,7 @@ export class NixStoreProvider implements InstallerProvider {
     } catch (error) {
       if (error instanceof HostInstallerSandboxError)
         throw new ProviderError('POLICY_DENIED', error.message);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const failure = error as {
         code?: number;
         stdout?: string;

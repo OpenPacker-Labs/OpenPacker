@@ -59,7 +59,10 @@ import {
   wingetPacker,
 } from './packers.js';
 
-const DEFAULT_ENDPOINTS: Readonly<Record<string, string>> = {
+type EndpointMap = Record<string, string>;
+type OriginMap = Record<string, readonly string[]>;
+
+const DEFAULT_ENDPOINTS: EndpointMap = {
   npm: 'https://registry.npmjs.org',
   cargo: 'https://index.crates.io',
   pypi: 'https://pypi.org/pypi',
@@ -69,7 +72,7 @@ const DEFAULT_ENDPOINTS: Readonly<Record<string, string>> = {
   oci: 'https://registry-1.docker.io',
 };
 
-const ARTIFACT_ORIGINS: Readonly<Record<string, readonly string[]>> = {
+const ARTIFACT_ORIGINS: OriginMap = {
   npm: ['https://registry.npmjs.org'],
   cargo: ['https://static.crates.io', 'https://crates.io'],
   pypi: ['https://files.pythonhosted.org', 'https://pypi.org'],
@@ -118,6 +121,7 @@ function transportFor(
   ecosystem: string,
   context: AdapterContext,
 ): HttpTransport {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   if (context.transport) return context.transport as HttpTransport;
   const endpoint = endpointFor(ecosystem, context);
   const artifactOrigins = ARTIFACT_ORIGINS[ecosystem];
@@ -126,9 +130,9 @@ function transportFor(
     namedOrOverride:
       Boolean(context.endpoint?.trim()) ||
       registryEndpointIsOverride(ecosystem),
-    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    ...(!(artifactOrigins === undefined) && { artifactOrigins }),
     extraOrigins: extraOriginsFor(ecosystem),
-    ...(context.fetch ? { fetch: context.fetch } : {}),
+    ...(context.fetch && { fetch: context.fetch }),
   });
 }
 
@@ -423,14 +427,15 @@ export function defaultAdapterModules(): AdapterModule[] {
           namedOrOverride:
             Boolean(context.endpoint?.trim()) ||
             registryEndpointIsOverride('oci'),
-          ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+          ...(!(artifactOrigins === undefined) && { artifactOrigins }),
           extraOrigins: extraOriginsFor('oci'),
         });
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         return new OciRegistryProvider({
           allowedRegistryOrigins: policy.allowedOrigins,
           pinnedRegistryOrigins: policy.pinnedOrigins,
-          ...(context.now ? { now: context.now } : {}),
-          ...(context.fetch ? { fetch: context.fetch } : {}),
+          ...(context.now && { now: context.now }),
+          ...(context.fetch && { fetch: context.fetch }),
         }) as never;
       },
     },

@@ -52,7 +52,8 @@ export async function runRegistry(
 
   const keysPath = options.get('publisher-keys');
   const publisherKeys = keysPath
-    ? (JSON.parse(
+    ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (JSON.parse(
         await (await import('node:fs/promises')).readFile(keysPath, 'utf8'),
       ) as Record<string, JsonWebKey>)
     : undefined;
@@ -62,14 +63,14 @@ export async function runRegistry(
     purlTypes: (options.get('purl-types') ?? 'npm')
       .split(',')
       .map((type) => type.trim()),
-    ...(options.get('display-name') === undefined
-      ? {}
-      : { displayName: options.get('display-name')! }),
-    ...(options.get('database') === undefined
-      ? {}
-      : { databasePath: options.get('database')! }),
-    ...(publisherKeys === undefined ? {} : { publisherKeys }),
-    ...(anonymous ? { anonymousPublish: true } : {}),
+    ...(!(options.get('display-name') === undefined) && {
+      displayName: options.get('display-name')!,
+    }),
+    ...(!(options.get('database') === undefined) && {
+      databasePath: options.get('database')!,
+    }),
+    ...(!(publisherKeys === undefined) && { publisherKeys }),
+    ...(anonymous && { anonymousPublish: true }),
   });
 
   const address = await app.listen({

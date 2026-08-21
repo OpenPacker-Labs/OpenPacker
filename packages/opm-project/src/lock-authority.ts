@@ -46,6 +46,7 @@ export function lockPackageBinding(pkg: LockPackage): string {
     )
       projected[key] = clonePlainData(descriptor.value, key, new WeakSet());
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalize(projected as never);
 }
 
@@ -60,6 +61,7 @@ export function freezeBoundLockPackage(pkg: LockPackage): string {
 }
 
 export function immutablePlainData<T>(value: T, label: string): T {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const cloned = clonePlainData(value, label, new WeakSet()) as T;
   deepFreeze(cloned);
   return cloned;

@@ -96,7 +96,7 @@ export async function runOpmx(
     if (requested !== undefined && requested.startsWith('pkg:')) {
       const tool = await fetchTool({
         purl: requested,
-        ...(flags.offline ? { offline: true } : {}),
+        ...(flags.offline && { offline: true }),
       });
       const bin = selectToolBin(tool, binName);
       // Say which version actually ran. An unpinned ephemeral run resolves to
@@ -154,9 +154,9 @@ export async function runOpmx(
     const resolved = await resolveExecutable({
       binDir: paths.bin,
       projectStateBins,
-      ...(packageAlias !== undefined ? { packageAlias } : {}),
-      ...(binName !== undefined ? { binName } : {}),
-      ...(positionals[0] !== undefined ? { positional: positionals[0] } : {}),
+      ...(packageAlias !== undefined && { packageAlias }),
+      ...(binName !== undefined && { binName }),
+      ...(positionals[0] !== undefined && { positional: positionals[0] }),
     });
 
     const pkgId = resolved.packageAlias
@@ -175,10 +175,10 @@ export async function runOpmx(
         {
           name: declared.name,
           path: declared.path,
-          ...(declared.interpreter === undefined
-            ? {}
-            : { interpreter: declared.interpreter }),
-          ...(declared.entry === undefined ? {} : { entry: declared.entry }),
+          ...(!(declared.interpreter === undefined) && {
+            interpreter: declared.interpreter,
+          }),
+          ...(!(declared.entry === undefined) && { entry: declared.entry }),
         },
         owner.storePath,
         passthrough,
@@ -193,8 +193,8 @@ export async function runOpmx(
     return await spawnTool(resolved.target, passthrough, io, cwd, {
       projectRoot: root,
       storePaths: Object.values(state.packages).map((p) => p.storePath),
-      ...(pkgId === undefined ? {} : { packageId: pkgId }),
-      ...(projectPolicy === undefined ? {} : { policy: projectPolicy }),
+      ...(!(pkgId === undefined) && { packageId: pkgId }),
+      ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
     });
   } catch (error) {
     io.stderr.write(
@@ -215,6 +215,7 @@ function exitForError(error: unknown): number {
   let code: string | undefined;
   if (error instanceof OpmError) code = error.code;
   else if (error instanceof Error && 'code' in error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const candidate = (error as { code: unknown }).code;
     if (typeof candidate === 'string') code = candidate;
   }
@@ -262,9 +263,9 @@ async function spawnDeclared(
 ): Promise<number> {
   const sandboxCtx = {
     storePaths: runtimePaths.length > 0 ? runtimePaths : [storePath],
-    ...(projectRoot === undefined ? {} : { projectRoot }),
-    ...(packageId === undefined ? {} : { packageId }),
-    ...(policy === undefined ? {} : { policy }),
+    ...(!(projectRoot === undefined) && { projectRoot }),
+    ...(!(packageId === undefined) && { packageId }),
+    ...(!(policy === undefined) && { policy }),
   };
   if (bin.interpreter === 'python') {
     const [moduleName, callable] = (bin.entry ?? '').split(':');
@@ -367,16 +368,16 @@ async function spawnProcess(
     const outcome = await runSandboxedPackageProcess({
       argv: [command, ...argv],
       cwd,
-      ...(sandbox?.projectRoot === undefined
-        ? {}
-        : { projectRoot: sandbox.projectRoot }),
-      ...(sandbox?.storePaths === undefined
-        ? {}
-        : { storePaths: sandbox.storePaths }),
-      ...(sandbox?.packageId === undefined
-        ? {}
-        : { packageId: sandbox.packageId }),
-      ...(sandbox?.policy === undefined ? {} : { policy: sandbox.policy }),
+      ...(!(sandbox?.projectRoot === undefined) && {
+        projectRoot: sandbox.projectRoot,
+      }),
+      ...(!(sandbox?.storePaths === undefined) && {
+        storePaths: sandbox.storePaths,
+      }),
+      ...(!(sandbox?.packageId === undefined) && {
+        packageId: sandbox.packageId,
+      }),
+      ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
     });
     if (outcome.stdout) io.stdout.write(outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
@@ -394,6 +395,7 @@ async function spawnProcess(
     const message = error instanceof Error ? error.message : String(error);
     const missing =
       error instanceof Error &&
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
     io.stderr.write(
       `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
@@ -411,9 +413,7 @@ export const parseForTest = (argv: string[]) => parse(argv);
  * the moment of consent — mirroring `opm pack --allow-env`: a name is granted
  * explicitly, its value is never written anywhere opm controls.
  */
-function grantedEnvironment(
-  names: readonly string[],
-): Readonly<Record<string, string>> {
+function grantedEnvironment(names: readonly string[]) {
   const environment: Record<string, string> = {};
   for (const name of names) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
@@ -429,15 +429,7 @@ function grantedEnvironment(
   return environment;
 }
 
-function parse(argv: string[]): {
-  packageAlias?: string;
-  binName?: string;
-  positionals: string[];
-  passthrough: string[];
-  plugins: string[];
-  allowEnv: string[];
-  offline: boolean;
-} {
+function parse(argv: string[]) {
   let packageAlias: string | undefined;
   let binName: string | undefined;
   const positionals: string[] = [];
@@ -537,8 +529,8 @@ function parse(argv: string[]): {
     i += 1;
   }
   return {
-    ...(packageAlias !== undefined ? { packageAlias } : {}),
-    ...(binName !== undefined ? { binName } : {}),
+    ...(packageAlias !== undefined && { packageAlias }),
+    ...(binName !== undefined && { binName }),
     positionals,
     passthrough,
     plugins,

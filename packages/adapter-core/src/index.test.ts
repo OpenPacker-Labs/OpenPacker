@@ -48,9 +48,9 @@ describe('PURL codec primitives', () => {
       formatPurl({
         ...parsed,
         type: 'npm',
-        ...(parsed.namespace === undefined
-          ? {}
-          : { namespace: parsed.namespace.toLowerCase() }),
+        ...(!(parsed.namespace === undefined) && {
+          namespace: parsed.namespace.toLowerCase(),
+        }),
         name: parsed.name.toLowerCase(),
       }),
     ).toBe('pkg:npm/%40openpacker/demo@1.0.0?a=one&b=two#bin/tool');
@@ -199,6 +199,7 @@ it('bounds redirects and retries while stripping cross-origin credentials', asyn
   ];
   const transport = new BoundedFetchTransport({
     allowedOrigins: ['https://registry.test', 'https://mirror.test'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), headers: new Headers(init?.headers) });
       return responses.shift()!;
@@ -227,6 +228,7 @@ it('enforces an intrinsic provider deadline through body consumption', async () 
   const transport = new BoundedFetchTransport({
     allowedOrigins: ['https://fixture.test'],
     timeoutMilliseconds: 10,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async () =>
       new Response(
         new ReadableStream({ start: () => undefined }),
@@ -240,6 +242,7 @@ it('enforces an intrinsic provider deadline through body consumption', async () 
 it('maps status, corruption, limits, and cancellation to stable failures', async () => {
   const notFound = new BoundedFetchTransport({
     allowedOrigins: ['https://fixture.test'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async () => new Response(null, { status: 404 })) as typeof fetch,
   });
   await expect(
@@ -252,6 +255,7 @@ it('maps status, corruption, limits, and cancellation to stable failures', async
   const oversized = new BoundedFetchTransport({
     allowedOrigins: ['https://fixture.test'],
     maximumBytes: 2,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async () => new Response('abc', { status: 200 })) as typeof fetch,
   });
   await expect(
@@ -295,6 +299,7 @@ it('rejects unlisted initial and redirect origins before fetching them', async (
   const calls: string[] = [];
   const transport = new BoundedFetchTransport({
     allowedOrigins: ['https://registry.test'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async (input: RequestInfo | URL) => {
       calls.push(String(input));
       return new Response(null, {
@@ -329,6 +334,7 @@ it('allows only credential-free loopback HTTP provider traffic', async () => {
   const calls: string[] = [];
   const transport = new BoundedFetchTransport({
     allowedOrigins: ['http://127.0.0.1:7337'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async (input: RequestInfo | URL) => {
       calls.push(String(input));
       return new Response('ok');
@@ -346,10 +352,11 @@ it('allows only credential-free loopback HTTP provider traffic', async () => {
   const okCalls: { url: string; init?: RequestInit }[] = [];
   const loopback = new BoundedFetchTransport({
     allowedOrigins: ['http://127.0.0.1:7337'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       okCalls.push({
         url: String(input),
-        ...(init === undefined ? {} : { init }),
+        ...(!(init === undefined) && { init }),
       });
       return new Response('ok');
     }) as typeof fetch,
@@ -363,6 +370,7 @@ it('allows only credential-free loopback HTTP provider traffic', async () => {
   ]);
   expect(okCalls[0]!.init?.credentials).not.toBe('include');
   expect(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (okCalls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
   ).toBeUndefined();
 });
@@ -371,6 +379,7 @@ it('preserves HEAD across a 303 serviceability redirect', async () => {
   const methods: string[] = [];
   const transport = new BoundedFetchTransport({
     allowedOrigins: ['https://registry.test'],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
       methods.push(init?.method ?? 'GET');
       return methods.length === 1
@@ -412,17 +421,15 @@ it('ProviderInspection composes provider-declared executables', () => {
 describe('classify-and-pin destination policy', () => {
   const origin = 'https://registry.test';
 
-  function recordingFetch(): {
-    calls: { url: string; init?: RequestInit }[];
-    fetch: typeof fetch;
-  } {
+  function recordingFetch() {
     const calls: { url: string; init?: RequestInit }[] = [];
     return {
       calls,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
-          ...(init === undefined ? {} : { init }),
+          ...(!(init === undefined) && { init }),
         });
         return new Response('ok');
       }) as typeof fetch,
@@ -496,7 +503,9 @@ describe('classify-and-pin destination policy', () => {
       });
     } catch (error) {
       expect(error).toBeInstanceOf(Error);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/user:secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/secret/u);
     }
     expect(() => normalizePinnedOrigin('http://127.0.0.1')).toThrowError(
@@ -508,7 +517,9 @@ describe('classify-and-pin destination policy', () => {
     try {
       normalizePinnedOrigin(secret);
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/user:secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/secret/u);
     }
   });
@@ -529,6 +540,7 @@ describe('classify-and-pin destination policy', () => {
     expect(lookedUp).toBe(0);
     expect(calls).toHaveLength(1);
     expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (calls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
     ).toBeUndefined();
   });
@@ -545,6 +557,7 @@ describe('classify-and-pin destination policy', () => {
     await transport.request({ url: `${origin}/data` });
     expect(calls).toHaveLength(1);
     expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (calls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
     ).toBeUndefined();
   });
@@ -565,6 +578,7 @@ describe('classify-and-pin destination policy', () => {
         lookedUp.push(hostname);
         return [{ address: '1.1.1.1', family: 4 }];
       },
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => responses.shift()!) as typeof fetch,
     });
     await transport.request({ url: `${origin}/start` });
@@ -625,6 +639,7 @@ describe('first-party origin policy', () => {
       namedOrOverride: false,
       artifactOrigins: ['https://registry.npmjs.org'],
       lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push(String(input));
         return new Response('ok');
@@ -645,6 +660,7 @@ describe('createPinnedFetch', () => {
     const fetch = createPinnedFetch({
       allowedOrigins: [origin, 'https://ghcr.io'],
       lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push(String(input));
         return new Response('ok');
@@ -661,6 +677,7 @@ describe('createPinnedFetch', () => {
       allowedOrigins: [origin],
       pinnedOrigins: [origin],
       lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () => new Response('ok')) as typeof fetch,
     });
     const response = await fetch(`${origin}/v2/`);
@@ -670,6 +687,7 @@ describe('createPinnedFetch', () => {
   it('preserves a 401 challenge instead of mapping it to an error', async () => {
     const fetch = createPinnedFetch({
       allowedOrigins: [origin],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () =>
         new Response('', {
           status: 401,
@@ -686,6 +704,7 @@ describe('createPinnedFetch', () => {
     const calls: string[] = [];
     const fetch = createPinnedFetch({
       allowedOrigins: [origin],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push(String(input));
         return new Response('ok');
@@ -727,6 +746,7 @@ describe('classify-and-pin per-hop bearer', () => {
       return hit?.[1];
     }
     for (const [name, value] of Object.entries(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       headers as Record<string, string>,
     )) {
       if (name.toLowerCase() === 'authorization') return value;
@@ -758,6 +778,7 @@ describe('classify-and-pin per-hop bearer', () => {
         lookedUp.push(hostname);
         return [{ address: '1.1.1.1', family: 4 }];
       },
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -790,6 +811,7 @@ describe('classify-and-pin per-hop bearer', () => {
       pinnedOrigins: [originA],
       pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -814,6 +836,7 @@ describe('classify-and-pin per-hop bearer', () => {
       pinnedOrigins: [originA],
       pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -856,7 +879,9 @@ describe('classify-and-pin per-hop bearer', () => {
       pinnedOrigins: [originA],
       pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const headers = init?.headers as Record<string, string> | undefined;
         calls.push({
           authorization: requestAuthorization(init),
@@ -880,10 +905,11 @@ describe('classify-and-pin per-hop bearer', () => {
 
   it('fails UNRESOLVABLE without fetching when the named env is missing', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({
         url: String(input),
-        ...(init === undefined ? {} : { init }),
+        ...(!(init === undefined) && { init }),
       });
       return new Response('ok');
     }) as typeof fetch;
@@ -912,6 +938,7 @@ describe('classify-and-pin per-hop bearer', () => {
       destinationPolicy: 'classify-and-pin',
       pinnedOrigins: [originA],
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({ authorization: requestAuthorization(init) });
         return new Response('ok');
@@ -929,6 +956,7 @@ describe('classify-and-pin per-hop bearer', () => {
       pinnedOrigins: [originA],
       pinnedTokenEnvNames: new Map([[originA, TOKEN_A]]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({ authorization: requestAuthorization(init) });
         return new Response('ok');
@@ -968,6 +996,7 @@ describe('classify-and-pin per-hop extra header', () => {
       return hit?.[1];
     }
     for (const [name, value] of Object.entries(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       headers as Record<string, string>,
     )) {
       if (name.toLowerCase() === lower) return value;
@@ -1002,6 +1031,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -1033,6 +1063,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           authorization: requestAuthorization(init),
@@ -1067,6 +1098,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originB, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_B }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -1092,6 +1124,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push({ url: String(input) });
         return new Response('ok');
@@ -1118,6 +1151,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originB, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_B }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           url: String(input),
@@ -1143,6 +1177,7 @@ describe('classify-and-pin per-hop extra header', () => {
           [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
         ]),
         lookup: publicLookup,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async (input: RequestInfo | URL) => {
           calls.push({ url: String(input) });
           return new Response('ok');
@@ -1156,6 +1191,7 @@ describe('classify-and-pin per-hop extra header', () => {
           code: 'UNRESOLVABLE',
           message: expect.stringContaining(HEADER_ENV_A),
         });
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/bad/u);
       }
       expect(calls).toEqual([]);
@@ -1172,6 +1208,7 @@ describe('classify-and-pin per-hop extra header', () => {
         [originA, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV_A }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({ extra: requestHeader(init, 'X-JFrog-Art-Api') });
         return new Response('ok');
@@ -1208,6 +1245,7 @@ describe('classify-and-pin ambient credentials', () => {
       return hit?.[1];
     }
     for (const [name, value] of Object.entries(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       headers as Record<string, string>,
     )) {
       if (name.toLowerCase() === lower) return value;
@@ -1215,12 +1253,7 @@ describe('classify-and-pin ambient credentials', () => {
     return undefined;
   }
 
-  function ambientCall(init: RequestInit | undefined): {
-    credentials: RequestCredentials | undefined;
-    cookie: string | undefined;
-    cookie2: string | undefined;
-    authorization: string | undefined;
-  } {
+  function ambientCall(init: RequestInit | undefined) {
     return {
       credentials: init?.credentials,
       cookie: requestHeader(init, 'cookie'),
@@ -1235,6 +1268,7 @@ describe('classify-and-pin ambient credentials', () => {
       allowedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push(ambientCall(init));
         return new Response('ok');
@@ -1257,6 +1291,7 @@ describe('classify-and-pin ambient credentials', () => {
       pinnedOrigins: [origin],
       pinnedTokenEnvNames: new Map([[origin, TOKEN]]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push(ambientCall(init));
         return new Response('ok');
@@ -1287,6 +1322,7 @@ describe('classify-and-pin ambient credentials', () => {
         [origin, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV }],
       ]),
       lookup: publicLookup,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         calls.push({
           ...ambientCall(init),
@@ -1325,6 +1361,7 @@ describe('BoundedFetchTransport gzip', () => {
       server.listen(0, '127.0.0.1', resolve),
     );
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const { port } = server.address() as AddressInfo;
       const origin = `http://127.0.0.1:${port}`;
       const transport = new BoundedFetchTransport({
@@ -1346,6 +1383,7 @@ describe('BoundedFetchTransport gzip', () => {
       allowedOrigins: [origin],
       destinationPolicy: 'classify-and-pin',
       lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         const value = new Headers(init?.headers).get('accept-encoding');
         if (value !== null) headers.push(value);

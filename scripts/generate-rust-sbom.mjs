@@ -20,13 +20,13 @@ export function rustMetadataToCycloneDx(metadata) {
     name: item.name,
     version: item.version,
     purl: references.get(item.id),
-    ...(item.license ? { licenses: [{ expression: item.license }] } : {}),
-    ...(item.checksum
-      ? { hashes: [{ alg: 'SHA-256', content: item.checksum }] }
-      : {}),
-    ...(item.source
-      ? { externalReferences: [{ type: 'distribution', url: item.source }] }
-      : {}),
+    licenses: item.license ? [{ expression: item.license }] : undefined,
+    hashes: item.checksum
+      ? [{ alg: 'SHA-256', content: item.checksum }]
+      : undefined,
+    externalReferences: item.source
+      ? [{ type: 'distribution', url: item.source }]
+      : undefined,
   }));
   const dependencies = [...(metadata.resolve?.nodes ?? [])]
     .sort((left, right) => compare(left.id, right.id))

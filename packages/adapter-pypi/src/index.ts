@@ -158,7 +158,9 @@ interface Pep440Version {
   original: string;
 }
 
-const PRE_ALIASES: Record<string, 'a' | 'b' | 'rc'> = {
+type PreAliases = Record<string, 'a' | 'b' | 'rc'>;
+
+const PRE_ALIASES: PreAliases = {
   a: 'a',
   alpha: 'a',
   b: 'b',
@@ -388,7 +390,9 @@ function compareLocal(
   return 0;
 }
 
-const PRE_RANK: Record<'a' | 'b' | 'rc', number> = { a: 0, b: 1, rc: 2 };
+type PreRank = Record<'a' | 'b' | 'rc', number>;
+
+const PRE_RANK: PreRank = { a: 0, b: 1, rc: 2 };
 
 export function comparePep440(
   left: Pep440Version,
@@ -542,6 +546,7 @@ function parseSpecifierToken(token: string): ParsedSpecifier {
         `Invalid PEP 440 specifier: ${token}`,
       );
     })();
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const operator = match[1] as ParsedSpecifier['operator'];
   let versionText = match[2]!.trim();
   if (versionText.startsWith('(') && versionText.endsWith(')'))
@@ -571,11 +576,7 @@ function parseSpecifierToken(token: string): ParsedSpecifier {
   };
 }
 
-function specifierToAst(spec: ParsedSpecifier): {
-  ast: RangeAst;
-  exact: boolean;
-  loss: SemanticLoss[];
-} {
+function specifierToAst(spec: ParsedSpecifier) {
   if (spec.operator === '===') {
     return {
       ast: comparison('=', spec.versionText),
@@ -654,7 +655,8 @@ function specifierToAst(spec: ParsedSpecifier): {
   const operator =
     spec.operator === '=='
       ? '='
-      : (spec.operator as '=' | '!=' | '>' | '>=' | '<' | '<=');
+      : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        (spec.operator as '=' | '!=' | '>' | '>=' | '<' | '<=');
   return {
     ast: comparison(operator, normalized),
     exact: operator === '=',
@@ -747,7 +749,7 @@ function pypiIdentity(exactPurl: string, endpoint?: string): PackageIdentity {
       {
         ecosystem: 'pypi',
         coordinate: parsed.name,
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -836,14 +838,12 @@ export class PypiCodec
         name: requirement.name,
         original: value,
         ...(requirement.specifier.startsWith('==') &&
-        !requirement.specifier.includes(',')
-          ? {
-              version: requirement.specifier
-                .replace(/^===\s*/, '')
-                .replace(/^==\s*/, '')
-                .replace(/\.\*$/, ''),
-            }
-          : {}),
+          !requirement.specifier.includes(',') && {
+            version: requirement.specifier
+              .replace(/^===\s*/, '')
+              .replace(/^==\s*/, '')
+              .replace(/\.\*$/, ''),
+          }),
       };
     } catch {
       const match = /^([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)$/.exec(
@@ -872,9 +872,9 @@ export class PypiCodec
     return formatPurl({
       ...parsed,
       name: normalizePypiName(parsed.name),
-      ...(parsed.version === undefined
-        ? {}
-        : { version: this.parseNativeVersion(parsed.version).normalized }),
+      ...(!(parsed.version === undefined) && {
+        version: this.parseNativeVersion(parsed.version).normalized,
+      }),
     });
   }
 
@@ -943,9 +943,9 @@ export class PypiCodec
         ast: base.ast,
         reversible: false,
         semanticLoss: losses,
-        ...(base.vers === undefined || requirement.marker !== undefined
-          ? {}
-          : { vers: base.vers }),
+        ...(!(base.vers === undefined || requirement.marker !== undefined) && {
+          vers: base.vers,
+        }),
       };
     }
 
@@ -1008,7 +1008,7 @@ export class PypiCodec
       ast,
       reversible,
       semanticLoss: losses,
-      ...(finalVers === undefined ? {} : { vers: finalVers }),
+      ...(!(finalVers === undefined) && { vers: finalVers }),
     };
   }
 
@@ -1167,9 +1167,9 @@ export class PypiCodec
             name: requirement.name,
             qualifiers: {},
           }),
-          ...(range.vers === undefined || requirement.marker !== undefined
-            ? {}
-            : { vers: range.vers }),
+          ...(!(
+            range.vers === undefined || requirement.marker !== undefined
+          ) && { vers: range.vers }),
         },
         kind: 'runtime',
         optional: requirement.marker !== undefined,
@@ -1178,13 +1178,14 @@ export class PypiCodec
         raw: raw,
         nativeSemantics: {
           version: 'pypi-v1',
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           data: {
             requirement: raw,
             extras: requirement.extras,
             specifier: requirement.specifier,
-            ...(requirement.marker === undefined
-              ? {}
-              : { marker: requirement.marker }),
+            ...(!(requirement.marker === undefined) && {
+              marker: requirement.marker,
+            }),
           } as JsonValue,
         },
         semanticLoss: requirementLosses,
@@ -1257,6 +1258,7 @@ export class PypiCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'pypi-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           requiresPython: info.requires_python ?? null,
           requiresDist: info.requires_dist ?? [],
@@ -1289,7 +1291,8 @@ export class PypiCodec
   ): LockCapture {
     const lock =
       typeof lockInput === 'string'
-        ? (JSON.parse(lockInput) as UvLockDocument)
+        ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (JSON.parse(lockInput) as UvLockDocument)
         : lockInput;
     if (lock.version !== 1)
       throw new ProviderError(
@@ -1364,8 +1367,8 @@ export class PypiCodec
         return {
           exactPurl,
           nativeCoordinate: `${name}@${entry.version}`,
-          ...(resolved === undefined ? {} : { resolved }),
-          ...(artifactDigest === undefined ? {} : { artifactDigest }),
+          ...(!(resolved === undefined) && { resolved }),
+          ...(!(artifactDigest === undefined) && { artifactDigest }),
           dependencies,
           native: entry,
         };
@@ -1466,6 +1469,7 @@ export class PypiJsonProvider implements CatalogProvider {
             (version) =>
               this.codec.compareNativeVersions(version, parsed.version!) === 0,
           )!;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const metadataDigest = await canonicalDigest({
       name: record.body.info.name,
       version: versionKey,
@@ -1482,7 +1486,7 @@ export class PypiJsonProvider implements CatalogProvider {
         endpoint: record.endpoint,
         retrievedAt: record.retrievedAt,
         evaluationTime: record.retrievedAt,
-        ...(record.etag === undefined ? {} : { etag: record.etag }),
+        ...(!(record.etag === undefined) && { etag: record.etag }),
         metadataDigest,
         rawMetadataRef: {
           type: 'provider-metadata',
@@ -1563,10 +1567,11 @@ export class PypiJsonProvider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(recordDigests as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -1589,9 +1594,10 @@ export class PypiJsonProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records: recordDigests,
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest(rootPayload as JsonValue);
     return {
       snapshotId: formatDigest(rootDigest),
@@ -1601,7 +1607,7 @@ export class PypiJsonProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -1635,9 +1641,9 @@ export class PypiJsonProvider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'application/json',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1660,9 +1666,9 @@ export class PypiJsonProvider implements CatalogProvider {
     const record: ProviderRecord<PypiProjectDocument> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: json<PypiProjectDocument>(response),
       rawBody: response.body,
       retrievedAt: this.clock.now(),

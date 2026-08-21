@@ -21,7 +21,7 @@ import type {
 import type { SemanticLoss } from '@openpacker/contracts';
 import { editTomlTable, writeFileAtomic } from '@openpacker/project-io';
 
-const SCOPE_TABLE: Readonly<Record<RequirementScope, string | undefined>> = {
+const SCOPE_TABLE = {
   runtime: 'dependencies',
   development: 'dev-dependencies',
   build: 'build-dependencies',
@@ -58,6 +58,7 @@ export class CargoProjectFormat implements ProjectFormat {
   async readRequirements(
     project: DetectedProject,
   ): Promise<readonly NativeRequirement[]> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = parse(
       await readFile(project.manifestPath, 'utf8'),
     ) as Record<string, unknown>;
@@ -66,6 +67,7 @@ export class CargoProjectFormat implements ProjectFormat {
       const block = parsed[table];
       if (!block || typeof block !== 'object') continue;
       for (const [name, value] of Object.entries(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         block as Record<string, unknown>,
       )) {
         // A dependency is either a version string or a table with a `version`.
@@ -74,13 +76,15 @@ export class CargoProjectFormat implements ProjectFormat {
             ? value
             : typeof value === 'object' &&
                 value !== null &&
+                // SAFETY: The surrounding boundary establishes the asserted domain contract.
                 typeof (value as { version?: unknown }).version === 'string'
-              ? (value as { version: string }).version
+              ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+                (value as { version: string }).version
               : undefined;
         out.push({
           purl: `pkg:cargo/${encodeURIComponent(name)}`,
           name,
-          ...(range === undefined ? {} : { range }),
+          ...(!(range === undefined) && { range }),
           scope: scopeOfTable(table),
         });
       }

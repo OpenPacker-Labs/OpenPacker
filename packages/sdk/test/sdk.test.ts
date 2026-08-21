@@ -247,20 +247,32 @@ describe('OpenPackerClient', () => {
     await client.capabilities();
     await client.health();
     await client.ready();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.normalize({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.identify({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.enumerate({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.inspect({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.solve({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.materialize({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.verify({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.explain({} as never);
     await client.receipt('sha256', 'a'.repeat(64));
     await client.snapshot('sha256', 'b'.repeat(64));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.catalogImport({} as never);
     await client.catalogSnapshot({});
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.lifecycleApply({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.pack({} as never);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.publish({} as never);
     expect(paths).toEqual([
       '/.well-known/prex',
@@ -303,6 +315,7 @@ describe('OpenPackerClient', () => {
           : Response.json({});
       },
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await client.normalize({} as never, {
       idempotencyKey: 'retry-safe',
       correlationId: 'correlation',

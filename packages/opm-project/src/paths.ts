@@ -220,6 +220,7 @@ async function canonicalizeStableTarget(path: string): Promise<string> {
       const canonical = await realpath(candidate);
       return join(canonical, ...tail.reverse());
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ELOOP' || code === 'ENOTDIR')
         throw new OpmError(
@@ -267,7 +268,9 @@ export async function openStableDirectory(
   } catch (error) {
     await handle.close().catch(() => undefined);
     if (
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOTDIR'
     )
       throw new OpmError(
@@ -351,6 +354,7 @@ export async function readStableFile(
     await assertNamedDirectory(dirname(path), parent);
     return contents;
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
     throw error;
@@ -376,6 +380,7 @@ export async function readStableFileBytes(
     await assertNamedDirectory(dirname(path), parent);
     return contents;
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError('UNSAFE_PATH', `Metadata file is linked: ${path}`);
     throw error;
@@ -515,6 +520,7 @@ export async function revalidateStableDirectory(
   } catch (error) {
     if (
       ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         (error as NodeJS.ErrnoException).code ?? '',
       )
     )

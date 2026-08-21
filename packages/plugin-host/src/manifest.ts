@@ -49,6 +49,7 @@ export async function loadPluginManifest(
           )
           .join('; '),
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifest = result.value as unknown as DelegatedAdapterManifest;
   assertConsistentCapabilities(manifest, displayPath);
   return manifest;

@@ -200,15 +200,13 @@ describe('NugetProjectFormat — packages.lock.json', () => {
     digest: `sha256:${'0'.repeat(64)}`,
     size: 10,
     transitive: false,
-    ...(hash
-      ? {
-          nativeIntegrity: {
-            algorithm: 'sha512',
-            value: hash,
-            encoding: 'base64',
-          },
-        }
-      : {}),
+    ...(hash && {
+      nativeIntegrity: {
+        algorithm: 'sha512',
+        value: hash,
+        encoding: 'base64',
+      },
+    }),
   });
 
   it('keys the lock by the project target framework', async () => {
@@ -218,6 +216,7 @@ describe('NugetProjectFormat — packages.lock.json', () => {
         entry('Serilog', '4.0.0', 'BASE64HASH=='),
       ]);
       expect(result.written).toHaveLength(1);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const lock = JSON.parse(await fixture.read('packages.lock.json')) as {
         version: number;
         dependencies: Record<string, Record<string, { contentHash: string }>>;

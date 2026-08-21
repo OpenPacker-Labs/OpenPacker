@@ -52,6 +52,7 @@ describe('neutral Epoch consumer boundary', () => {
       },
     });
     const cursors: number[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const client = {
       async eventPage(cursor: number) {
         cursors.push(cursor);

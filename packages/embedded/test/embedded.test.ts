@@ -48,6 +48,7 @@ describe('embedded binding boundary', () => {
         'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       ),
     ).toBe(true);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(resolver.bruteForceOracle({} as never)).toEqual({
       selectedNodeIds: [],
       assignmentsChecked: 1,
@@ -60,6 +61,7 @@ describe('embedded binding boundary', () => {
       Object.assign(bindings(), { default: init }),
     );
     expect(init).toHaveBeenCalledOnce();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(resolver.check({} as never, {} as never)).toEqual({
       valid: true,
       diagnostics: [],

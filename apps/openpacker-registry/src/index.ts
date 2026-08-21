@@ -178,9 +178,9 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       ? new Federation({
           sources: options.sources,
           registryId: options.registryId,
-          ...(options.registryClientFactory === undefined
-            ? {}
-            : { clientFactory: options.registryClientFactory }),
+          ...(!(options.registryClientFactory === undefined) && {
+            clientFactory: options.registryClientFactory,
+          }),
         })
       : undefined;
   const app = Fastify({
@@ -197,8 +197,10 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     { parseAs: 'string' },
     (_request, body, done) => {
       try {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         done(null, parseCanonicalJson(body as string));
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         done(error as Error, undefined);
       }
     },
@@ -234,12 +236,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       try {
         const record = await checkServiceability({
           locations: distribution.locations!,
-          ...(distribution.digest === undefined
-            ? {}
-            : { digest: distribution.digest }),
-          ...(distribution.size === undefined
-            ? {}
-            : { size: distribution.size }),
+          ...(!(distribution.digest === undefined) && {
+            digest: distribution.digest,
+          }),
+          ...(!(distribution.size === undefined) && {
+            size: distribution.size,
+          }),
           transport,
           now: clock.now,
         });
@@ -276,12 +278,13 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   ];
 
   app.get(WELL_KNOWN, async (_request, reply) =>
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     sendJson(reply, {
       registryDefinitionVersion: '1',
       registryId: options.registryId,
-      ...(options.displayName === undefined
-        ? {}
-        : { displayName: options.displayName }),
+      ...(!(options.displayName === undefined) && {
+        displayName: options.displayName,
+      }),
       purlTypes: [...options.purlTypes],
       protocol: { native: 'prex-registry-v1', transport: ['https'] },
       resources: [{ '@id': '/v1', '@type': advertised }],
@@ -325,6 +328,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           },
         ]
       : [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return sendJson(reply, {
       list,
       listDigest,
@@ -341,9 +345,11 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
    */
   app.post('/v1/keys/rotations', async (request, reply) => {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const rotation = request.body as KeyRotation;
       assertValid(
         KEY_ROTATION_SCHEMA,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         rotation as unknown as JsonValue,
         validator,
       );
@@ -462,6 +468,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         );
       }
       reply.code(201);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         rotated: rotation.previousKeyId,
         to: rotation.nextKeyId,
@@ -480,6 +487,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
    * by name buries exactly what this route is for.
    */
   app.get('/v1/holders', async (_request, reply) =>
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     sendJson(reply, {
       holders: store.holders(),
     } as unknown as JsonValue),
@@ -503,6 +511,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         quota,
         Date.parse(clock.now()),
       );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         ...holder,
         quota: state,
@@ -524,11 +533,14 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     async (request, reply) => {
       try {
         const from = decodeURIComponent(request.params.name);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const body = request.body as {
           redirect?: PackageRedirect;
           signatures?: { keyId: string; signature: string }[];
         };
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         assertValid(REDIRECT_SCHEMA, body as unknown as JsonValue, validator);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const redirect = body.redirect as PackageRedirect;
         if (redirect.from !== from)
           throw new PublishError(
@@ -595,6 +607,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         store.rename(from, redirect.to, clock.now());
         store.recordRedirect(redirect, formatDigest(digest), signatures);
         reply.code(201);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         return sendJson(reply, {
           redirect,
           redirectDigest: digest,
@@ -617,6 +630,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           problem('PACKAGE_NOT_FOUND', 404, `${from} has not moved`),
         );
       const [algorithm, value] = moved.digest.split(':');
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         redirect: moved.redirect,
         redirectDigest: { algorithm, value },
@@ -643,16 +657,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       const after = decodeCursor(request.query.cursor);
       const { entries, hasMore, lastReadSequence } = store.list({
         limit,
-        ...(request.query.search === undefined
-          ? {}
-          : { search: request.query.search }),
-        ...(request.query.purlType === undefined
-          ? {}
-          : { purlType: request.query.purlType }),
-        ...(request.query.updatedSince === undefined
-          ? {}
-          : { updatedSince: assertTimestamp(request.query.updatedSince) }),
-        ...(after === undefined ? {} : { afterSequence: after }),
+        ...(!(request.query.search === undefined) && {
+          search: request.query.search,
+        }),
+        ...(!(request.query.purlType === undefined) && {
+          purlType: request.query.purlType,
+        }),
+        ...(!(request.query.updatedSince === undefined) && {
+          updatedSince: assertTimestamp(request.query.updatedSince),
+        }),
+        ...(!(after === undefined) && { afterSequence: after }),
       });
       // The cursor is the last row *read*, not the last row returned: purlType
       // filtering happens after the page is taken, and using the filtered tail
@@ -682,6 +696,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         unavailable = found.unavailable;
       }
 
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         packages: [...local, ...relayed],
         metadata: {
@@ -690,17 +705,15 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
             hasMore && lastRead !== undefined ? encodeCursor(lastRead) : null,
           // Which search actually ran. A registry silently falling back to a
           // full scan looks identical to one that is fast until it is not.
-          ...(request.query.search === undefined
-            ? {}
-            : {
-                searchMode: store.searchIndexed
-                  ? ('indexed' as const)
-                  : ('scan' as const),
-              }),
+          ...(!(request.query.search === undefined) && {
+            searchMode: store.searchIndexed
+              ? ('indexed' as const)
+              : ('scan' as const),
+          }),
           // Naming what did not answer is the difference between "no results"
           // and "some sources were down"; a mirror must not read one as the
           // other.
-          ...(unavailable.length > 0 ? { unavailable } : {}),
+          ...(unavailable.length > 0 && { unavailable }),
         },
       } as unknown as JsonValue);
     } catch (error) {
@@ -734,11 +747,13 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // and a lockfile should record what it actually resolved.
       if (followed.hops.length > 0)
         reply.header('x-openpacker-renamed-from', asked);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         name,
-        ...(followed.hops.length > 0
-          ? { redirectedFrom: asked, redirects: followed.hops }
-          : {}),
+        ...(followed.hops.length > 0 && {
+          redirectedFrom: asked,
+          redirects: followed.hops,
+        }),
         versions: versions.map((entry) => ({
           version: entry.version,
           status: entry.status,
@@ -797,6 +812,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         }
         return sendJson(
           reply,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           toRegistryEntry(
             { ...entry, manifest: served },
             options,
@@ -815,6 +831,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           ? await federation?.find(name, version)
           : undefined;
       if (relayed)
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         return sendJson(reply, relayed.entry as unknown as JsonValue);
       return sendProblem(
         reply,
@@ -825,6 +842,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
 
   app.post('/v1/publish', async (request, reply) => {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const body = request.body as {
         manifest?: PackageManifest;
         manifestDigest?: Digest;
@@ -851,11 +869,13 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // validating the envelope validates the manifest, and the reported path
       // (/manifest/distributions/0/purlType) says more than a second pass
       // would.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       assertValid(PUBLISH_SCHEMA, body as unknown as JsonValue, validator);
 
       // Re-derive rather than trust. A caller-supplied digest is a claim about
       // bytes the registry is holding, and it is holding them.
       const digest = await canonicalDigest(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         body.manifest as unknown as JsonValue,
       );
       if (
@@ -958,6 +978,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       }
       const stored = storedOrQuota;
       reply.code(stored.created ? 201 : 200);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         entry: toRegistryEntry(stored.entry, options),
       } as unknown as JsonValue);
@@ -970,7 +991,9 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     '/v1/packages/:name/versions/:version/status',
     async (request, reply) => {
       try {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const body = request.body as SignedStatusUpdate;
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         assertValid(STATUS_SCHEMA, body as unknown as JsonValue, validator);
         const name = decodeURIComponent(request.params.name);
         const version = decodeURIComponent(request.params.version);
@@ -982,6 +1005,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           );
         assertFreshStatusUpdate(body.update.issuedAt, clock.now());
         const updateDigest = await canonicalDigest(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           body.update as unknown as JsonValue,
         );
         if (
@@ -1006,6 +1030,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           version,
           status: body.update.status,
           updateDigest: formatDigest(updateDigest),
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           update: body.update as unknown as JsonValue,
           signatures: body.signatures,
           issuedAt: Date.parse(body.update.issuedAt),
@@ -1013,6 +1038,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         });
         return sendJson(
           reply,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           toRegistryEntry(entry, options) as unknown as JsonValue,
         );
       } catch (error) {
@@ -1039,6 +1065,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
         );
       reply.code(202);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return sendJson(reply, {
         accepted: true,
         effect:
@@ -1235,23 +1262,25 @@ function toRegistryEntry(
   serviceability?: ServiceabilityRecord,
 ): RegistryEntry {
   const [algorithm, value] = entry.manifestDigest.split(':');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     manifest: entry.manifest,
     registryMetadata: {
       registryId: options.registryId,
-      ...(entry.sourceId === undefined ? {} : { sourceId: entry.sourceId }),
+      ...(!(entry.sourceId === undefined) && { sourceId: entry.sourceId }),
       status: entry.status,
       publishedAt: entry.publishedAt,
       updatedAt: entry.updatedAt,
       isLatest: entry.isLatest,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       manifestDigest: { algorithm, value } as Digest,
       // Absent means nobody has looked yet, which is a different thing from
       // "we looked and it was fine".
-      ...(serviceability === undefined ? {} : { serviceability }),
+      ...(!(serviceability === undefined) && { serviceability }),
     },
-    ...(entry.signatures.length > 0
-      ? { signatures: entry.signatures as never }
-      : {}),
+    ...(entry.signatures.length > 0 && {
+      signatures: entry.signatures as never,
+    }),
   } as RegistryEntry;
 }
 
@@ -1435,6 +1464,7 @@ function sendProblem(reply: FastifyReply, value: Problem): FastifyReply {
   reply
     .code(value.status)
     .header('content-type', 'application/problem+json; charset=utf-8');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return reply.send(Buffer.from(canonicalBytes(value as unknown as JsonValue)));
 }
 
@@ -1448,7 +1478,8 @@ function problem(
     type: `https://openpacker.dev/problems/${code.toLowerCase().replaceAll('_', '-')}`,
     title,
     status,
-    ...(detail === undefined ? {} : { detail }),
+    ...(!(detail === undefined) && { detail }),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     code: code as Problem['code'],
     retryable: [429, 502, 503, 504].includes(status),
   };

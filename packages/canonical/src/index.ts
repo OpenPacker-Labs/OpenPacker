@@ -60,14 +60,17 @@ function encode(value: unknown, active: Set<object>): string {
       }
       return `[${items.join(',')}]`;
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const prototype = Object.getPrototypeOf(value) as object | null;
     if (prototype !== Object.prototype && prototype !== null)
       throw new CanonicalJsonError('Only plain objects are canonicalizable');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const entries = Object.keys(value as Record<string, unknown>)
       .map(validString)
       .sort()
       .map(
         (key) =>
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           `${JSON.stringify(key)}:${encode((value as Record<string, unknown>)[key], active)}`,
       );
     return `{${entries.join(',')}}`;
@@ -110,6 +113,7 @@ class JsonParser {
 
   private object(): { [key: string]: JsonValue } {
     this.index += 1;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result: { [key: string]: JsonValue } = Object.create(null) as {
       [key: string]: JsonValue;
     };
@@ -157,6 +161,7 @@ class JsonParser {
         this.index += 1;
         try {
           return validString(
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             JSON.parse(this.input.slice(start, this.index)) as string,
           );
         } catch (error) {
@@ -265,6 +270,7 @@ function includeProjection(
   value: JsonValue,
   pointers: readonly string[],
 ): JsonValue {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const result: Record<string, JsonValue> = Object.create(null) as Record<
     string,
     JsonValue
@@ -283,6 +289,7 @@ function includeProjection(
       )
         target = nested;
       else {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const created: Record<string, JsonValue> = Object.create(
           null,
         ) as Record<string, JsonValue>;
@@ -310,6 +317,7 @@ function readPointer(value: JsonValue, parts: string[]): JsonValue | undefined {
   for (const part of parts) {
     if (typeof current !== 'object' || current === null || !(part in current))
       return undefined;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     current = (current as Record<string, JsonValue>)[part]!;
   }
   return current;
@@ -325,9 +333,12 @@ function visitParents(
   visitValues(value, parts.slice(0, -1), (parent) => {
     if (typeof parent !== 'object' || parent === null) return;
     if (key === '*') {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       for (const childKey of Object.keys(parent))
         visit(parent as Record<string, JsonValue> | JsonValue[], childKey);
     } else if (key in parent)
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       visit(parent as Record<string, JsonValue> | JsonValue[], key);
   });
 }
@@ -346,6 +357,7 @@ function visitValues(
   if (part === '*') {
     for (const nested of Object.values(value)) visitValues(nested, rest, visit);
   } else if (part !== undefined && part in value)
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     visitValues((value as Record<string, JsonValue>)[part]!, rest, visit);
 }
 

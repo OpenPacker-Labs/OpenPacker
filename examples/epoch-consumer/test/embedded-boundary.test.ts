@@ -43,5 +43,6 @@ describe('Epoch embedded resolver boundary', () => {
 });
 
 async function readJson<T>(path: string): Promise<T> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return JSON.parse(await readFile(new URL(path, root), 'utf8')) as T;
 }

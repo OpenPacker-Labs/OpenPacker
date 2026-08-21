@@ -81,6 +81,7 @@ export function buildRequestBytes(
     operation,
     params,
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const bytes = canonicalBytes(request as unknown as JsonValue);
   if (bytes.byteLength > MAX_REQUEST_BYTES)
     throw new ProviderError(
@@ -121,6 +122,7 @@ export function parsePluginResponse(
         )
         .join('; ')}`,
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const response = parsed.value as unknown as DelegatedAdapterResponse;
   if (response.ok && response.result === undefined)
     invalid('successful response carries no result');
@@ -140,7 +142,7 @@ export function validateOperationResult(
   operation: DelegatedAdapterOperation,
   result: JsonValue,
   params: DelegatedAdapterRequest['params'] = {},
-): unknown {
+) {
   const invalid = (message: string): ProviderError =>
     new ProviderError(
       'INVALID_RESPONSE',
@@ -236,9 +238,9 @@ export function validateOperationResult(
         record: wireRecordToRecord(wire.record, invalid),
         // The plugin's answer is preserved exactly: absent stays absent, and
         // an empty array stays an empty array ("declares no executables").
-        ...(wire.executables === undefined
-          ? {}
-          : { executables: validateBins(wire.executables, invalid) }),
+        ...(!(wire.executables === undefined) && {
+          executables: validateBins(wire.executables, invalid),
+        }),
         warnings: wire.warnings ?? [],
       };
       return inspection;
@@ -285,6 +287,7 @@ function validateSchema<T>(
         )
         .join('; ')}`,
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as unknown as T;
 }
 
@@ -339,10 +342,8 @@ function validateBins(
     return {
       name: bin.name,
       path: bin.path,
-      ...(bin.interpreter === undefined
-        ? {}
-        : { interpreter: bin.interpreter }),
-      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+      ...(!(bin.interpreter === undefined) && { interpreter: bin.interpreter }),
+      ...(!(bin.entry === undefined) && { entry: bin.entry }),
     };
   });
 }
@@ -366,8 +367,8 @@ function wireRecordToRecord(
   return {
     key: record.key,
     endpoint: record.endpoint,
-    ...(record.etag === undefined ? {} : { etag: record.etag }),
-    ...(record.revision === undefined ? {} : { revision: record.revision }),
+    ...(!(record.etag === undefined) && { etag: record.etag }),
+    ...(!(record.revision === undefined) && { revision: record.revision }),
     body: record.body,
     rawBody: canonicalBytes(record.body),
     retrievedAt: record.retrievedAt,

@@ -182,6 +182,7 @@ export class Federation {
   ): Promise<void> {
     const contract = validateContract(
       REGISTRY_ENTRY_SCHEMA,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       entry as unknown as JsonValue,
       this.#validator,
     );

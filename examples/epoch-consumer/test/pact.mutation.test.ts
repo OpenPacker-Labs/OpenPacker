@@ -44,6 +44,7 @@ afterAll(async () => provider.close());
 
 describe('committed Pact mutation coverage', () => {
   it('kills request, status, header, and body drift in every interaction', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const original = JSON.parse(
       await readFile(committedPact, 'utf8'),
     ) as PactDocument;

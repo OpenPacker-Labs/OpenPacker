@@ -51,12 +51,7 @@ export const DEFAULT_PLUGIN_LIMITS: DelegatedPluginLimits = {
 const SANDBOX_CHANNEL_CEILING = 1_048_576;
 const SANDBOX_COMBINED_CEILING = 2_097_152;
 
-function clampedLimits(limits: DelegatedPluginLimits): {
-  stdout: number;
-  stderr: number;
-  combined: number;
-  response: number;
-} {
+function clampedLimits(limits: DelegatedPluginLimits) {
   const stdout = Math.min(limits.responseBytes, SANDBOX_CHANNEL_CEILING);
   const stderr = Math.min(limits.stderrBytes, SANDBOX_CHANNEL_CEILING);
   return {
@@ -282,15 +277,13 @@ export class DelegatedPluginExecutor {
       readonlyPaths: [this.#storePath],
       network,
       profile: 'package-exec',
-      ...(authority.fd < 0
-        ? {}
-        : {
-            executableAuthority: {
-              fd: authority.fd,
-              path: authority.identity.path,
-            },
-          }),
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(authority.fd < 0) && {
+        executableAuthority: {
+          fd: authority.fd,
+          path: authority.identity.path,
+        },
+      }),
+      ...(!(signal === undefined) && { signal }),
     });
     await assertExecutableIdentity(
       authority.identity,

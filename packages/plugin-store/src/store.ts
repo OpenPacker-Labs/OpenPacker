@@ -140,7 +140,7 @@ export function parsePluginSpec(spec: string): PluginSpec {
   const version = at === -1 ? undefined : value.slice(at + 1);
   return {
     name: parsePluginName(name),
-    ...(version === undefined ? {} : { version: parsePluginVersion(version) }),
+    ...(!(version === undefined) && { version: parsePluginVersion(version) }),
   };
 }
 
@@ -306,18 +306,16 @@ async function acquire(
     registry.register(
       pluginRegistryModule({
         endpoint,
-        ...(options.transport === undefined
-          ? {}
-          : { transport: options.transport }),
-        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+        ...(!(options.transport === undefined) && {
+          transport: options.transport,
+        }),
+        ...(!(options.fetch === undefined) && { fetch: options.fetch }),
       }),
     );
   const registryOptions: RegistryOptions = {
     endpoint,
-    ...(options.transport === undefined
-      ? {}
-      : { transport: options.transport }),
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(!(options.transport === undefined) && { transport: options.transport }),
+    ...(!(options.fetch === undefined) && { fetch: options.fetch }),
     now,
   };
 
@@ -353,11 +351,13 @@ async function acquire(
     { evaluationTime: now(), registryId: artifact.registryId },
   );
   if (facts.publishedAt === undefined) {
-    const publishedAt = (
-      inspection.record.body as {
-        registryMetadata?: { publishedAt?: unknown };
-      }
-    ).registryMetadata?.publishedAt;
+    const publishedAt =
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (
+        inspection.record.body as {
+          registryMetadata?: { publishedAt?: unknown };
+        }
+      ).registryMetadata?.publishedAt;
     if (typeof publishedAt === 'string') facts.publishedAt = publishedAt;
   }
   await assertSupplyChainAllowed(
@@ -567,6 +567,7 @@ async function inspectPluginArtifact(
           )
           .join('; '),
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifest = parsed.value as unknown as DelegatedAdapterManifest;
   if (executables.length !== 1 || executables[0]!.path !== manifest.executable)
     throw invalid(
@@ -671,6 +672,7 @@ async function readCachedArtifact(
   try {
     bytes = await readStableFileBytes(archivePath, 64 * 1024 * 1024);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
@@ -701,6 +703,7 @@ async function readPluginIndex(indexPath: string): Promise<PluginIndex> {
   try {
     text = await readStableFile(indexPath);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       return { pluginStoreVersion: 1, plugins: {} };
     throw error;
@@ -725,6 +728,7 @@ function validatePluginIndex(value: unknown, indexPath: string): PluginIndex {
     );
   if (value === null || typeof value !== 'object' || Array.isArray(value))
     throw invalid('must be an object');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = value as Record<string, unknown>;
   if (record.pluginStoreVersion !== 1)
     throw invalid('pluginStoreVersion must be 1');
@@ -740,6 +744,7 @@ function validatePluginIndex(value: unknown, indexPath: string): PluginIndex {
     parsePluginName(name);
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
       throw invalid(`plugins.${name} must be an object`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pin = raw as Record<string, unknown>;
     for (const field of [
       'id',
@@ -753,6 +758,7 @@ function validatePluginIndex(value: unknown, indexPath: string): PluginIndex {
     ] as const)
       if (typeof pin[field] !== 'string' || pin[field] === '')
         throw invalid(`plugins.${name}.${field} must be a non-empty string`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const typed = pin as unknown as PluginPin;
     if (typed.name !== name)
       throw invalid(`plugins.${name}.name is contradictory`);

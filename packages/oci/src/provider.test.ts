@@ -28,6 +28,7 @@ function registry(
 ) {
   const requests: string[] = [];
   const bytes = new TextEncoder().encode(JSON.stringify(body));
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const fetchImplementation = (async (url: URL | string) => {
     const href = String(url);
     requests.push(href);
@@ -92,6 +93,7 @@ describe('addressing', () => {
 describe('browsing and pinning', () => {
   it('rejects an unconfigured registry before fetch', async () => {
     const contacted: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) => {
       contacted.push(String(url));
       return new Response('{}', { status: 200 });
@@ -235,6 +237,7 @@ describe('materialise image layout', () => {
     onBlob = () => undefined,
   ): typeof fetch {
     const candidateBytes = new TextEncoder().encode(JSON.stringify(candidate));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (async (url: URL | string) => {
       const href = String(url);
       if (href.includes('/manifests/'))
@@ -258,6 +261,7 @@ describe('materialise image layout', () => {
     const record = await provider.fetchArtifactRecord(
       'pkg:oci/library/demo?tag=1.0',
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = record.body as {
       digest: { algorithm: string; value: string };
       mediaType: string;

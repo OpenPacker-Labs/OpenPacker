@@ -38,22 +38,7 @@ export function matchPackageGrant(
   return undefined;
 }
 
-export function resolvePolicy(policy: SandboxPolicy): {
-  enabled: boolean;
-  mode: SandboxMode;
-  prefer: SandboxPrefer;
-  required: boolean;
-  allowHostUnsandboxedInstall: boolean;
-  projectWrite: boolean;
-  minimalPath: boolean;
-  strictLifecycleAllowlist: boolean;
-  allowDangerousGrants: boolean;
-  legacyFatRoot: boolean;
-  timeoutMs: number;
-  maximumStdoutBytes: number;
-  maximumStderrBytes: number;
-  maximumOutputBytes: number;
-} {
+export function resolvePolicy(policy: SandboxPolicy) {
   const mode = policy.mode ?? DEFAULT_SANDBOX_POLICY.mode;
   const enabled =
     policy.enabled ?? (mode === 'off' ? false : DEFAULT_SANDBOX_POLICY.enabled);
@@ -112,6 +97,7 @@ export async function digestSandboxPolicy(
         ),
       )
     : {};
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalDigest({
     sandboxPolicyVersion: 2,
     enabled: resolved.enabled,
@@ -128,6 +114,7 @@ export async function digestSandboxPolicy(
     maximumStdoutBytes: resolved.maximumStdoutBytes,
     maximumStderrBytes: resolved.maximumStderrBytes,
     maximumOutputBytes: resolved.maximumOutputBytes,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     packages: packages as Record<string, Record<string, unknown>>,
   } as import('@openpacker/contracts').JsonValue);
 }

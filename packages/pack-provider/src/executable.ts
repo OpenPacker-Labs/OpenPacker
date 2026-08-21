@@ -46,8 +46,9 @@ export type OpenDelegatedExecutableAuthority = (
 
 export async function inspectDelegatedExecutable(
   path: string,
+  openFile: typeof open = open,
 ): Promise<DelegatedExecutableIdentity> {
-  const authority = await openDelegatedExecutable(path);
+  const authority = await openDelegatedExecutable(path, openFile);
   try {
     return authority.identity;
   } finally {
@@ -57,6 +58,7 @@ export async function inspectDelegatedExecutable(
 
 export async function openDelegatedExecutable(
   path: string,
+  openFile: typeof open = open,
 ): Promise<DelegatedExecutableAuthority> {
   if (!isAbsolute(path) || process.platform !== 'linux') unsafeExecutable(path);
   const before = await lstat(path, { bigint: true });
@@ -67,21 +69,24 @@ export async function openDelegatedExecutable(
     before.size > BigInt(MAX_DELEGATED_EXECUTABLE_BYTES)
   )
     unsafeExecutable(path);
-  const source = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  let snapshot: Awaited<ReturnType<typeof open>> | undefined;
+  const source = await openFile(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW,
+  );
+  let snapshot: Awaited<ReturnType<typeof openFile>> | undefined;
   try {
     const opened = await source.stat({ bigint: true });
     if (!sameExecutableMetadata(before, opened)) unsafeExecutable(path);
     const sourceHash = createHash('sha256');
     const buffer = new Uint8Array(64 * 1024);
     let offset = 0;
-    const writer = await open(
+    const writer = await openFile(
       tmpdir(),
       LINUX_O_TMPFILE | constants.O_RDWR,
       0o700,
     );
     try {
-      snapshot = await open(stableHandlePath(writer), constants.O_RDONLY);
+      snapshot = await openFile(stableHandlePath(writer), constants.O_RDONLY);
       while (offset < Number(opened.size)) {
         const { bytesRead } = await source.read(
           buffer,
@@ -210,6 +215,7 @@ function timestampNanoseconds(
   info: Awaited<ReturnType<typeof lstat>>,
   kind: 'ctime' | 'mtime',
 ): bigint {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const milliseconds = `${kind}Ms` as 'ctimeMs' | 'mtimeMs';
   const value = info[milliseconds];
   return typeof value === 'bigint'

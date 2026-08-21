@@ -231,6 +231,7 @@ describe('materializeThroughSharedStore', () => {
       env: { OPM_STORE_HOME: sharedHome },
       linkFile: async () => {
         linkAttempts += 1;
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const error = new Error('cross-device link') as NodeJS.ErrnoException;
         error.code = 'EXDEV';
         throw error;

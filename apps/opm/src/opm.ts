@@ -161,7 +161,7 @@ export async function runOpm(
         const name = option(args, 'name');
         const result = await initProject({
           root,
-          ...(name !== undefined ? { name } : {}),
+          ...(name !== undefined && { name }),
           force: args.options.has('force'),
         });
         io.stdout.write(
@@ -203,7 +203,7 @@ export async function runOpm(
         // Host/profile install is capability-driven and does not need a project.
         if (!source) {
           const parsed = parsePackageSpec(spec, {
-            ...(ecosystemOpt !== undefined ? { ecosystem: ecosystemOpt } : {}),
+            ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
           });
           const ecosystem = parsed.ecosystem ?? ecosystemFromPurl(parsed.purl);
           if (await requireAdapterRegistry().prefersHostInstall(ecosystem)) {
@@ -229,10 +229,10 @@ export async function runOpm(
           dryRun: args.options.has('dry-run'),
           root,
           spec,
-          ...(ecosystemOpt !== undefined ? { ecosystem: ecosystemOpt } : {}),
-          ...(source !== undefined ? { source } : {}),
-          ...(alias !== undefined ? { alias } : {}),
-          ...(offline === undefined ? {} : { offline }),
+          ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
+          ...(source !== undefined && { source }),
+          ...(alias !== undefined && { alias }),
+          ...(!(offline === undefined) && { offline }),
         });
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
@@ -254,7 +254,7 @@ export async function runOpm(
         await removePackage({
           root,
           alias,
-          ...(offline === undefined ? {} : { offline }),
+          ...(!(offline === undefined) && { offline }),
         });
         io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
@@ -265,7 +265,7 @@ export async function runOpm(
         await registerBoundPlugins(root, adapterRegistry);
         const result = await installProject({
           root,
-          ...(offline === undefined ? {} : { offline }),
+          ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.state.packages).length;
         io.stdout.write(
@@ -283,7 +283,7 @@ export async function runOpm(
         await registerBoundPlugins(root, adapterRegistry);
         await uninstallProject({
           root,
-          ...(alias !== undefined ? { alias } : {}),
+          ...(alias !== undefined && { alias }),
         });
         io.stdout.write(
           alias
@@ -298,7 +298,7 @@ export async function runOpm(
         await registerBoundPlugins(root, adapterRegistry);
         const result = await syncProject({
           root,
-          ...(offline === undefined ? {} : { offline }),
+          ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.lock.packages).length;
         io.stdout.write(
@@ -313,9 +313,9 @@ export async function runOpm(
         await registerBoundPlugins(root, adapterRegistry);
         const result = await updateProject({
           root,
-          ...(args.positionals.length > 0 ? { aliases: args.positionals } : {}),
+          ...(args.positionals.length > 0 && { aliases: args.positionals }),
           latest: args.options.has('latest'),
-          ...(offline === undefined ? {} : { offline }),
+          ...(!(offline === undefined) && { offline }),
         });
         io.stdout.write(
           result.updated.length === 0
@@ -401,14 +401,12 @@ export async function runOpm(
           await registerBoundPlugins(projectRoot, adapterRegistry);
         const range = option(args, 'range');
         const graph = await resolveGraph({
-          roots: [{ purl: target, ...(range === undefined ? {} : { range }) }],
-          ...(option(args, 'candidates') === undefined
-            ? {}
-            : {
-                bounds: {
-                  candidatesPerPackage: Number(option(args, 'candidates')),
-                },
-              }),
+          roots: [{ purl: target, ...(!(range === undefined) && { range }) }],
+          ...(!(option(args, 'candidates') === undefined) && {
+            bounds: {
+              candidatesPerPackage: Number(option(args, 'candidates')),
+            },
+          }),
         });
         if (graph.truncated.length > 0)
           io.stderr.write(
@@ -463,12 +461,12 @@ export async function runOpm(
           lock,
           producedAt: new Date().toISOString(),
           producer: { id: 'org.openpacker.opm', version: OPM_VERSION },
-          ...(option(args, 'name') === undefined
-            ? {}
-            : { name: option(args, 'name')! }),
-          ...(option(args, 'package-version') === undefined
-            ? {}
-            : { version: option(args, 'package-version')! }),
+          ...(!(option(args, 'name') === undefined) && {
+            name: option(args, 'name')!,
+          }),
+          ...(!(option(args, 'package-version') === undefined) && {
+            version: option(args, 'package-version')!,
+          }),
         });
         const destination = option(args, 'output');
         if (destination) {
@@ -523,26 +521,22 @@ export async function runOpm(
           strategy,
           name: option(args, 'name') ?? projectManifest.project.name,
           version: packageVersion,
-          ...(output === undefined ? {} : { outputDirectory: output }),
-          ...(provider === undefined ? {} : { provider }),
-          ...(configured === undefined
-            ? {}
-            : {
-                authorizedEnvironment: configured.authorizedEnvironment,
-              }),
+          ...(!(output === undefined) && { outputDirectory: output }),
+          ...(!(provider === undefined) && { provider }),
+          ...(!(configured === undefined) && {
+            authorizedEnvironment: configured.authorizedEnvironment,
+          }),
           allowBuild: args.options.has('allow-build'),
           allowNetwork: args.options.has('allow-network'),
           offline: offlineOverride(args) ?? projectManifest.options.offline,
           dryRun: args.options.has('dry-run'),
           nativeMetadata: {
-            ...(option(args, 'os') === undefined
-              ? {}
-              : { 'dev.openpacker.oci.os': option(args, 'os')! }),
-            ...(option(args, 'arch') === undefined
-              ? {}
-              : {
-                  'dev.openpacker.oci.architecture': option(args, 'arch')!,
-                }),
+            ...(!(option(args, 'os') === undefined) && {
+              'dev.openpacker.oci.os': option(args, 'os')!,
+            }),
+            ...(!(option(args, 'arch') === undefined) && {
+              'dev.openpacker.oci.architecture': option(args, 'arch')!,
+            }),
           },
         });
         if (!result.performed) {
@@ -612,7 +606,7 @@ export async function runOpm(
         const keepValue = option(args, 'keep');
         const result = await collectGarbage({
           root,
-          ...(keepValue === undefined ? {} : { keep: Number(keepValue) }),
+          ...(!(keepValue === undefined) && { keep: Number(keepValue) }),
           dryRun: args.options.has('dry-run'),
         });
         const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
@@ -705,6 +699,7 @@ function handleError(error: unknown, io: CliIo): number {
   // OpmError but carries the same string codes; map them instead of reporting
   // a generic internal error.
   if (error instanceof Error && 'code' in error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
       io.stderr.write(`opm: ${error.message}\n`);
@@ -846,8 +841,8 @@ async function runPluginCommand(args: Parsed, io: CliIo): Promise<number> {
     const offline = offlineOverride(args);
     const installed = await addPlugin({
       name,
-      ...(version === undefined ? {} : { version }),
-      ...(offline === undefined ? {} : { offline }),
+      ...(!(version === undefined) && { version }),
+      ...(!(offline === undefined) && { offline }),
     });
     io.stdout.write(
       installed.alreadyInstalled
@@ -1048,9 +1043,7 @@ async function registerBoundPlugins(
   await verifyPluginBindings(manifest.plugins, { registry });
 }
 
-function explicitlyGrantedEnvironment(
-  args: Parsed,
-): Readonly<Record<string, string>> {
+function explicitlyGrantedEnvironment(args: Parsed) {
   const names = args.optionValues.get('allow-env') ?? [];
   if (args.options.has('allow-env') && names.length === 0)
     throw usage('opm pack --allow-env requires an environment variable name');

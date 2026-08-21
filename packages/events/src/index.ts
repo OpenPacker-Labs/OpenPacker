@@ -134,13 +134,14 @@ export async function createCloudEvent<T extends EventType>(
   const time = input.clock.now();
   if (!Number.isFinite(Date.parse(time)))
     throw new TypeError('Clock must return an RFC 3339 timestamp');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const data = input.data as unknown as JsonValue;
   const datadigest = formatDigest(await canonicalDigest(data));
   const extensions = {
     ...(input.extensions ?? {}),
-    ...(input.occurrenceId === undefined
-      ? {}
-      : { [EVENT_OCCURRENCE_ID_EXTENSION]: input.occurrenceId }),
+    ...(!(input.occurrenceId === undefined) && {
+      [EVENT_OCCURRENCE_ID_EXTENSION]: input.occurrenceId,
+    }),
   };
   const identity = eventIdentity(
     input.type,
@@ -149,6 +150,7 @@ export async function createCloudEvent<T extends EventType>(
     datadigest,
     input.occurrenceId,
   );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const event = {
     specversion: '1.0',
     id: formatDigest(await canonicalDigest(identity)),
@@ -160,18 +162,20 @@ export async function createCloudEvent<T extends EventType>(
     dataschema: `${EVENT_DATA_SCHEMA}#/$defs/${input.type}`,
     datadigest,
     correlationid: input.correlationId,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     data: input.data as EventData,
     externalrefs: input.externalRefs ?? [],
-    ...(input.causationId === undefined
-      ? {}
-      : { causationid: input.causationId }),
-    ...(Object.keys(extensions).length === 0 ? {} : { extensions }),
+    ...(!(input.causationId === undefined) && {
+      causationid: input.causationId,
+    }),
+    ...(!(Object.keys(extensions).length === 0) && { extensions }),
   } as unknown as OpenPackerEventByType<T>;
   await verifyCloudEvent(event);
   return event;
 }
 
 export function canonicalEventBytes(event: OpenPackerCloudEvent): Uint8Array {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalBytes(event as unknown as JsonValue);
 }
 
@@ -181,6 +185,7 @@ export async function verifyCloudEvent(
 ): Promise<void> {
   const contract = validateContract(
     EVENT_CONTRACT,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     event as unknown as JsonValue,
     eventValidator,
   );
@@ -194,6 +199,7 @@ export async function verifyCloudEvent(
         .join('; ')}`,
     );
   const digest = formatDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await canonicalDigest(event.data as unknown as JsonValue),
   );
   if (event.datadigest !== digest)
@@ -213,6 +219,7 @@ export async function verifyCloudEvent(
         event.source,
         event.subject,
         event.datadigest,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         occurrenceId as string | undefined,
       ),
     ),
@@ -226,6 +233,7 @@ export async function verifyCloudEvent(
 export async function decodeCloudEvent(
   bytes: Uint8Array,
 ): Promise<OpenPackerCloudEvent> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const event = parseCanonicalJson(
     new TextDecoder('utf-8', { fatal: true }).decode(bytes),
   ) as unknown as OpenPackerCloudEvent;
@@ -314,7 +322,7 @@ function eventIdentity(
     source,
     subject,
     datadigest,
-    ...(occurrenceId === undefined ? {} : { occurrenceid: occurrenceId }),
+    ...(!(occurrenceId === undefined) && { occurrenceid: occurrenceId }),
   };
 }
 

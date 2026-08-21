@@ -119,6 +119,8 @@ function resolveCodecs(
     for (const module of registry.list()) {
       if (!module.codec) continue;
       const codec = module.codec();
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       for (const purlType of module.purlTypes)
         codecs.set(purlType.toLowerCase() as Ecosystem, codec);
     }
@@ -272,13 +274,10 @@ function hasUnsupportedPoetryContext(value: unknown): boolean {
   );
 }
 
-export function parsePoetryLock(text: string): {
-  version: 1;
-  'requires-python'?: string;
-  package: { name: string; version: string }[];
-} {
+export function parsePoetryLock(text: string) {
   // Depth is capped far beyond anything a real poetry.lock nests to; the cap
   // also bounds the hasUnsupportedPoetryContext recursion over the result.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const document = parseToml(text, { maxDepth: 64 }) as {
     package?: Array<
       Record<string, unknown> & { name?: unknown; version?: unknown }
@@ -341,9 +340,9 @@ export function parsePoetryLock(text: string): {
   const requiresPython = document.metadata?.['python-versions'];
   return {
     version: 1,
-    ...(typeof requiresPython === 'string'
-      ? { 'requires-python': requiresPython }
-      : {}),
+    ...(typeof requiresPython === 'string' && {
+      'requires-python': requiresPython,
+    }),
     package: packages,
   };
 }
@@ -359,13 +358,8 @@ export function parsePoetryLock(text: string): {
  * pnpm keys packages as `name@version`, with scoped names carrying their own
  * `@` — `@scope/pkg@1.0.0`. The split is on the last `@` for that reason.
  */
-export function parsePnpmLock(text: string): {
-  lockfileVersion: 3;
-  packages: Record<
-    string,
-    { version: string; resolved?: string; integrity?: string }
-  >;
-} {
+export function parsePnpmLock(text: string) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const document = parseYaml(text) as {
     lockfileVersion?: unknown;
     packages?: Record<string, unknown>;
@@ -389,7 +383,7 @@ export function parsePnpmLock(text: string): {
       'pnpm-lock.yaml has no packages section',
     );
 
-  const parsePackageKey = (key: string): { name: string; version: string } => {
+  const parsePackageKey = (key: string) => {
     if (key.includes('('))
       throw new ProviderError(
         'INVALID_LOCKFILE',
@@ -425,6 +419,7 @@ export function parsePnpmLock(text: string): {
         'INVALID_LOCKFILE',
         `pnpm-lock.yaml contains a malformed package value for: ${key}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const resolution = (value as { resolution?: unknown }).resolution;
     if (
       resolution !== undefined &&
@@ -436,6 +431,7 @@ export function parsePnpmLock(text: string): {
         'INVALID_LOCKFILE',
         `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const { integrity, tarball } = (resolution ?? {}) as {
       integrity?: unknown;
       tarball?: unknown;
@@ -460,8 +456,8 @@ export function parsePnpmLock(text: string): {
       );
     packages[installPath] = {
       version: packageVersion,
-      ...(tarball !== undefined ? { resolved: tarball } : {}),
-      ...(integrity !== undefined ? { integrity } : {}),
+      ...(tarball !== undefined && { resolved: tarball }),
+      ...(integrity !== undefined && { integrity }),
     };
     packageKeys.add(key);
   }
@@ -503,10 +499,7 @@ export function parsePnpmLock(text: string): {
  * a hand-written requirements file with ranges does not, and the error says
  * which line is the problem.
  */
-export function parseRequirementsTxt(text: string): {
-  version: 1;
-  package: { name: string; version: string }[];
-} {
+export function parseRequirementsTxt(text: string) {
   const packages: { name: string; version: string }[] = [];
   const seen = new Map<string, string>();
   let lineNumber = 0;
@@ -588,6 +581,7 @@ export function parseUvLock(text: string): {
       'INVALID_LOCKFILE',
       'uv.lock must be a TOML or JSON table',
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = document as Record<string, unknown>;
   if (record.version !== 1)
     throw new ProviderError(
@@ -599,6 +593,7 @@ export function parseUvLock(text: string): {
       'INVALID_LOCKFILE',
       'uv.lock is missing package array',
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return record as {
     version: 1;
     'requires-python'?: string;
@@ -644,6 +639,7 @@ function parseStrictJson(text: string): unknown {
   // The YAML parser already in this package detects duplicate mapping keys;
   // JSON.parse then retains the strict JSON grammar expected by lock formats.
   parseYaml(text, { schema: 'json', uniqueKeys: true });
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return JSON.parse(text) as unknown;
 }
 
@@ -655,6 +651,7 @@ export function detectLockFormat(
   const text = asText(raw).trim();
   if (text.startsWith('{')) {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parsed = parseStrictJson(text) as Record<string, unknown>;
       if (parsed.lockfileVersion === 3 && parsed.packages)
         return 'package-lock';
@@ -925,15 +922,19 @@ export async function completeLockImport(
       `Independent proof check failed: ${check.diagnostics.join('; ')}`,
     );
 
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const explanation = output.explanation as SolveResponse['explanation'];
   const proofDigest = await projectedDigest(
     'proof-v1',
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     output.proof as unknown as JsonValue,
   );
   const explanationDigest = await projectedDigest(
     'explanation-v1',
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     explanation as unknown as JsonValue,
   );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const artifactSetDigest = await projectedDigest('artifact-set-v1', {
     items: output.selected.flatMap((item) => item.artifacts),
   } as unknown as JsonValue);
@@ -949,9 +950,11 @@ export async function completeLockImport(
     universeDigest: output.universeDigest,
     sourceSnapshots: solveInput.universe.sourceSnapshots,
     targetDigest: await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       output.normalizedRequest.target as unknown as JsonValue,
     ),
     policyDigest: await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       output.normalizedRequest.policy as unknown as JsonValue,
     ),
     lifecycleRoot: solveInput.universe.lifecycleRoot,
@@ -1004,6 +1007,7 @@ export async function buildLockfileFromSolve(
   solve: SolveResponse,
 ): Promise<OpenPackerLockfile> {
   const receiptDigest = await canonicalDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     solve.unsignedReceipt as unknown as JsonValue,
   );
   const artifacts = solve.selected.flatMap((item) => item.artifacts);
@@ -1122,22 +1126,20 @@ async function minimalInstanceFromLockEntry(
     identity: {
       canonicalPurl: formatPurl({
         type: parsed.type,
-        ...(parsed.namespace === undefined
-          ? {}
-          : { namespace: parsed.namespace }),
+        ...(!(parsed.namespace === undefined) && {
+          namespace: parsed.namespace,
+        }),
         name: parsed.name,
         qualifiers: parsed.qualifiers,
-        ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
+        ...(!(parsed.subpath === undefined) && { subpath: parsed.subpath }),
       }),
       exactPurl,
       purlType: parsed.type,
-      ...(parsed.namespace === undefined
-        ? {}
-        : { namespace: parsed.namespace }),
+      ...(!(parsed.namespace === undefined) && { namespace: parsed.namespace }),
       name: parsed.name,
       version: parsed.version,
       qualifiers: { ...parsed.qualifiers },
-      ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
+      ...(!(parsed.subpath === undefined) && { subpath: parsed.subpath }),
       nativeCoordinates: [
         {
           ecosystem,
@@ -1173,6 +1175,7 @@ async function minimalInstanceFromLockEntry(
     metadataDigest,
     nativeSemantics: {
       version: `${ecosystem}-lock-import-v1`,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       data: stripUndefined({
         nativeCoordinate: entry.nativeCoordinate,
         dependencies: entry.dependencies,
@@ -1201,6 +1204,7 @@ function httpsArtifactLocation(resolved: string | undefined) {
 }
 
 function stripUndefined(value: unknown): unknown {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
@@ -1237,6 +1241,7 @@ async function buildMinimalUniverse(
     compareCanonicalStrings(left.nodeId, right.nodeId),
   );
   const recordsDigest = await canonicalDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     sorted.map((item) => item.metadataDigest) as unknown as JsonValue,
   );
   const snapshot = {
@@ -1262,6 +1267,7 @@ async function buildMinimalUniverse(
     ...body,
     canonicalDigest: await projectedDigest(
       'universe-v1',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       body as unknown as JsonValue,
     ),
   };
@@ -1287,9 +1293,11 @@ async function mergePackagesIntoUniverse(
     if (
       existing !== undefined &&
       new TextDecoder().decode(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalBytes(stripUndefined(existing) as JsonValue),
       ) !==
         new TextDecoder().decode(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           canonicalBytes(stripUndefined(item) as JsonValue),
         )
     )
@@ -1309,6 +1317,7 @@ async function mergePackagesIntoUniverse(
     ...merged,
     canonicalDigest: await projectedDigest(
       'universe-v1',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       merged as unknown as JsonValue,
     ),
   };

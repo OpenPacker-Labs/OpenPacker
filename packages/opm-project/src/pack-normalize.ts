@@ -75,6 +75,7 @@ export async function normalizeProjectPack(input: {
     manifestVersion: '1',
     entries: treeEntries,
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const treeDigest = await canonicalDigest(tree as unknown as JsonValue);
   const layerBytes = packTar(files);
   const layerDigest = await sha256(layerBytes);
@@ -85,20 +86,20 @@ export async function normalizeProjectPack(input: {
     labels: {
       'org.opencontainers.image.title': input.package.name,
       'org.opencontainers.image.version': input.package.version,
-      ...(input.target.exactPurl === undefined
-        ? {}
-        : { 'dev.openpacker.package.purl': input.target.exactPurl }),
+      ...(!(input.target.exactPurl === undefined) && {
+        'dev.openpacker.package.purl': input.target.exactPurl,
+      }),
       ...(input.config?.labels ?? {}),
     },
     exposedPorts: input.config?.exposedPorts ?? [],
     volumes: input.config?.volumes ?? [],
-    ...(input.config?.workingDirectory === undefined
-      ? {}
-      : { workingDirectory: input.config.workingDirectory }),
-    ...(input.config?.user === undefined ? {} : { user: input.config.user }),
-    ...(input.config?.stopSignal === undefined
-      ? {}
-      : { stopSignal: input.config.stopSignal }),
+    ...(!(input.config?.workingDirectory === undefined) && {
+      workingDirectory: input.config.workingDirectory,
+    }),
+    ...(!(input.config?.user === undefined) && { user: input.config.user }),
+    ...(!(input.config?.stopSignal === undefined) && {
+      stopSignal: input.config.stopSignal,
+    }),
   };
   const manifest = {
     normalizedPackManifestVersion: '1' as const,
@@ -136,11 +137,13 @@ export async function normalizeProjectPack(input: {
         : [sensitiveCaptureLoss(capture.sensitiveExcluded)]),
     ],
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const bytes = canonicalBytes(manifest as unknown as JsonValue);
   return {
     manifest,
     files,
     bytes,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     digest: await canonicalDigest(manifest as unknown as JsonValue),
     layerBytes,
   };

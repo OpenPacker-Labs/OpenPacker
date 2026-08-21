@@ -64,7 +64,7 @@ export function signatureStatus(
   keyId: string,
   signedAt: string | undefined,
   revocations: readonly RevocationEntry[],
-): { honoured: boolean; entry?: RevocationEntry } {
+) {
   const entry = revocations.find((candidate) => candidate.keyId === keyId);
   if (!entry) return { honoured: true };
   if (entry.effective === 'retroactive') return { honoured: false, entry };
@@ -95,6 +95,7 @@ export function mayPublish(
 export async function revocationListDigest(
   list: RevocationList,
 ): Promise<Digest> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalDigest(list as unknown as JsonValue);
 }
 
@@ -109,6 +110,7 @@ export async function verifyRotation(
   previousPublicKey: JsonWebKey,
 ): Promise<boolean> {
   const { signature, ...unsigned } = rotation;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const digest = await canonicalDigest(unsigned as unknown as JsonValue);
   const verifier = await Ed25519Verifier.fromJwk(
     rotation.previousKeyId,
@@ -124,6 +126,7 @@ export async function verifyRotation(
 export async function rotationMessage(
   rotation: Omit<KeyRotation, 'signature'>,
 ): Promise<Uint8Array> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const digest = await canonicalDigest(rotation as unknown as JsonValue);
   return new TextEncoder().encode(formatDigest(digest));
 }

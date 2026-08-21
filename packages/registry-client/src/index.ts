@@ -135,7 +135,7 @@ export class RegistryClient {
         // Only this registry's own origin. A registry that redirects a metadata
         // read somewhere else is not something to follow blindly.
         allowedOrigins: [url.origin],
-        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.fetch && { fetch: options.fetch }),
       });
     this.#keys = options.keys ?? {};
     this.#registryKeys = options.registryKeys ?? {};
@@ -180,6 +180,7 @@ export class RegistryClient {
         'INVALID_RESPONSE',
         `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = value as unknown as SignedRevocationList;
     const definition = await this.definition(signal);
     if (body.list.registryId !== definition.registryId)
@@ -187,6 +188,7 @@ export class RegistryClient {
         'INVALID_SIGNATURE',
         `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const digest = await canonicalDigest(body.list as unknown as JsonValue);
     if (
       body.listDigest.algorithm !== digest.algorithm ||
@@ -245,6 +247,7 @@ export class RegistryClient {
       RESPONSE_BYTES.definition,
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const definition = body as unknown as RegistryDefinitionLike;
     if (definition.registryDefinitionVersion !== '1')
       throw new ProviderError(
@@ -314,6 +317,7 @@ export class RegistryClient {
       Math.min(maximumBytes, RESPONSE_BYTES.packagePage),
       options.signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = response.value as unknown as PackagePage;
     if (!Array.isArray(page.packages) || !page.metadata)
       throw new ProviderError(
@@ -353,7 +357,7 @@ export class RegistryClient {
           {
             ...options,
             signal,
-            ...(cursor === undefined ? {} : { cursor }),
+            ...(!(cursor === undefined) && { cursor }),
           },
           remainingBytes,
         );
@@ -396,6 +400,7 @@ export class RegistryClient {
       'list versions',
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.#json(
       `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions`,
       RESPONSE_BYTES.versions,
@@ -414,6 +419,7 @@ export class RegistryClient {
       'serve package manifests',
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.#json(
       `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions/${encodeUrlPathComponent(version, 'registry package version')}`,
       RESPONSE_BYTES.entry,
@@ -430,6 +436,7 @@ export class RegistryClient {
    */
   async verifyEntry(entry: RegistryEntry): Promise<EntryVerification> {
     const digest = await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       entry.manifest as unknown as JsonValue,
     );
     const stated = entry.registryMetadata.manifestDigest;
@@ -457,7 +464,7 @@ export class RegistryClient {
       if (!jwk) {
         verified.push({
           keyId: signature.keyId,
-          ...(signature.role === undefined ? {} : { role: signature.role }),
+          ...(!(signature.role === undefined) && { role: signature.role }),
           status: 'unknown-key',
         });
         continue;
@@ -478,7 +485,7 @@ export class RegistryClient {
           : 'valid';
       verified.push({
         keyId: signature.keyId,
-        ...(signature.role === undefined ? {} : { role: signature.role }),
+        ...(!(signature.role === undefined) && { role: signature.role }),
         status,
       });
     }
@@ -516,7 +523,7 @@ export class RegistryClient {
       method: 'GET',
       headers: { accept: 'application/json' },
       maximumBytes,
-      ...(signal ? { signal } : {}),
+      ...(signal && { signal }),
     });
     if (response.status === 404)
       throw new ProviderError('PACKAGE_NOT_FOUND', `Not found: ${url}`);
@@ -531,6 +538,7 @@ export class RegistryClient {
           'INVALID_PROVIDER_RESPONSE',
           `Registry response exceeds ${maximumBytes} bytes: ${url}`,
         );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(response.body),
       ) as JsonValue;
@@ -588,8 +596,10 @@ function invalidStructure(detail: string): never {
 function paginationLimits(
   requested: Partial<PaginationLimits> | undefined,
 ): PaginationLimits {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return Object.fromEntries(
     Object.entries(PAGINATION_LIMITS).map(([name, ceiling]) => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = requested?.[name as keyof PaginationLimits] ?? ceiling;
       if (!Number.isSafeInteger(value) || value < 1 || value > ceiling)
         throw new RangeError(

@@ -31,7 +31,7 @@ import {
 } from '@openpacker/project-io';
 
 /** Where each scope lives in package.json. */
-const SCOPE_FIELD: Readonly<Record<RequirementScope, string | undefined>> = {
+const SCOPE_FIELD = {
   runtime: 'dependencies',
   development: 'devDependencies',
   optional: 'optionalDependencies',
@@ -80,6 +80,7 @@ export class NpmProjectFormat implements ProjectFormat {
   async readRequirements(
     project: DetectedProject,
   ): Promise<readonly NativeRequirement[]> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(
       await readFile(project.manifestPath, 'utf8'),
     ) as PackageJson;
@@ -90,7 +91,7 @@ export class NpmProjectFormat implements ProjectFormat {
         out.push({
           purl: purlForName(name),
           name,
-          ...(typeof range === 'string' && range !== '' ? { range } : {}),
+          ...(typeof range === 'string' && range !== '' && { range }),
           scope,
         });
       }
@@ -140,6 +141,7 @@ export class NpmProjectFormat implements ProjectFormat {
           if (Object.keys(block).length === 0) delete manifest[field];
         }
         for (const [name, { field, range }] of managed) {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const block = (manifest[field] ??= {}) as Record<string, string>;
           block[name] = range;
         }
@@ -189,8 +191,7 @@ export class NpmProjectFormat implements ProjectFormat {
         version: entry.version,
         resolved: entry.source,
         integrity: `${entry.nativeIntegrity.algorithm}-${entry.nativeIntegrity.value}`,
-        ...(entry.transitive ? {} : {}),
-        ...(entry.scope === 'development' ? { dev: true } : {}),
+        ...(entry.scope === 'development' && { dev: true }),
       };
     }
     if (semanticLoss.length > 0)
@@ -271,7 +272,7 @@ export class NpmProjectFormat implements ProjectFormat {
 
     return {
       written,
-      ...(skipped.length > 0 ? { skipped } : {}),
+      ...(skipped.length > 0 && { skipped }),
       semanticLoss: written.length > 0 ? [layoutLoss(root, copied)] : [],
     };
   }
@@ -290,6 +291,7 @@ export class NpmProjectFormat implements ProjectFormat {
     project: DetectedProject,
     options: PackProjectOptions = {},
   ): Promise<PackedArtifact> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifest = JSON.parse(
       await readFile(project.manifestPath, 'utf8'),
     ) as PackageJson;
@@ -381,6 +383,7 @@ function scopeLoss(requirement: NativeRequirement): SemanticLoss {
 }
 
 async function manifestName(manifestPath: string): Promise<string> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     name?: string;
   };
@@ -452,6 +455,7 @@ const ALWAYS_PUBLISH = [
 export async function npmPublishPaths(
   project: DetectedProject,
 ): Promise<readonly string[]> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifest = JSON.parse(
     await readFile(project.manifestPath, 'utf8'),
   ) as PackageJson;

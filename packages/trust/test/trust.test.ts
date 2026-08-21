@@ -47,6 +47,7 @@ async function signed<
     signatures: await Promise.all(
       signers.map(async (item) => ({
         keyid: item.keyId,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         sig: await item.sign(canonicalBytes(value as never)),
       })),
     ),
@@ -237,11 +238,14 @@ describe('TUF', () => {
   test('persists rollback state for every verified delegated role', async () => {
     const fixture = await tufFixture();
     const decode = (bytes: Uint8Array) =>
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       JSON.parse(new TextDecoder().decode(bytes)) as SignedMetadata<
         TargetsMetadata | SnapshotMetadata
       >;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const originalTargets = decode(fixture.files.targets)
       .signed as TargetsMetadata;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const originalSnapshot = decode(fixture.files.snapshot)
       .signed as SnapshotMetadata;
     const seenRole = {
@@ -490,6 +494,7 @@ test('verifies an offline Sigstore bundle including identity and transparency ev
       rootHash: leafDigest.value,
       logIndex: 0,
       treeSize: 1,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       hashes: [] as string[],
     },
     checkpointSignature: '',

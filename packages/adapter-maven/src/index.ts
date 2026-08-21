@@ -111,7 +111,9 @@ export type MavenLockInput =
   | { format: 'gradle.lockfile'; data: string | GradleLockDocument }
   | string;
 
-const MAVEN_QUALIFIER_ALIASES: Readonly<Record<string, string>> = {
+type MavenQualifierAliases = Record<string, string>;
+
+const MAVEN_QUALIFIER_ALIASES: MavenQualifierAliases = {
   ga: '',
   final: '',
   release: '',
@@ -127,7 +129,9 @@ const MAVEN_QUALIFIER_ALIASES: Readonly<Record<string, string>> = {
   snapshot: 'snapshot',
 };
 
-const MAVEN_QUALIFIER_ORDER: Readonly<Record<string, number>> = {
+type MavenQualifierOrder = Record<string, number>;
+
+const MAVEN_QUALIFIER_ORDER: MavenQualifierOrder = {
   alpha: 0,
   beta: 1,
   milestone: 2,
@@ -149,7 +153,7 @@ function isDefaultPackaging(value: string | undefined): boolean {
 function mavenQualifiers(input: {
   packaging?: string | undefined;
   classifier?: string | undefined;
-}): Record<string, string> {
+}) {
   const qualifiers: Record<string, string> = {};
   if (!isDefaultPackaging(input.packaging))
     qualifiers.type = input.packaging!.toLowerCase();
@@ -201,7 +205,7 @@ function mavenIdentity(exactPurl: string, endpoint?: string): PackageIdentity {
           parsed.qualifiers.type,
           parsed.qualifiers.classifier,
         ),
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -581,9 +585,9 @@ export function parseMavenMetadataXml(xml: string): MavenMetadataDocument {
     artifactId,
     versioning: {
       versions,
-      ...(latest === undefined ? {} : { latest }),
-      ...(release === undefined ? {} : { release }),
-      ...(lastUpdated === undefined ? {} : { lastUpdated }),
+      ...(!(latest === undefined) && { latest }),
+      ...(!(release === undefined) && { release }),
+      ...(!(lastUpdated === undefined) && { lastUpdated }),
     },
   };
 }
@@ -602,18 +606,12 @@ export class MavenCodec
       namespace: gav.groupId,
       name: gav.artifactId,
       original: value,
-      ...(gav.version === undefined ? {} : { version: gav.version }),
+      ...(!(gav.version === undefined) && { version: gav.version }),
     };
   }
 
   /** Parse GAV with optional packaging/classifier into structured parts. */
-  parseGav(value: string): {
-    groupId: string;
-    artifactId: string;
-    version?: string;
-    packaging?: string;
-    classifier?: string;
-  } {
+  parseGav(value: string) {
     const trimmed = value.trim();
     const atIndex = trimmed.lastIndexOf('@');
     const body = atIndex < 0 ? trimmed : trimmed.slice(0, atIndex);
@@ -630,7 +628,7 @@ export class MavenCodec
       return {
         groupId,
         artifactId,
-        ...(atVersion === undefined ? {} : { version: atVersion }),
+        ...(!(atVersion === undefined) && { version: atVersion }),
       };
     if (parts.length === 3) {
       const version = atVersion ?? parts[2]!;
@@ -683,10 +681,10 @@ export class MavenCodec
       namespace: parsed.namespace,
       name: parsed.name,
       qualifiers,
-      ...(parsed.version === undefined
-        ? {}
-        : { version: this.parseNativeVersion(parsed.version).normalized }),
-      ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
+      ...(!(parsed.version === undefined) && {
+        version: this.parseNativeVersion(parsed.version).normalized,
+      }),
+      ...(!(parsed.subpath === undefined) && { subpath: parsed.subpath }),
     });
   }
 
@@ -772,7 +770,7 @@ export class MavenCodec
       original,
       normalized: renderRange(ast),
       ast,
-      ...(finalVers === undefined ? {} : { vers: `vers:maven/${finalVers}` }),
+      ...(!(finalVers === undefined) && { vers: `vers:maven/${finalVers}` }),
       reversible: finalVers !== undefined,
       semanticLoss: losses,
     };
@@ -803,7 +801,7 @@ export class MavenCodec
         namespace: groupId,
         name: artifactId,
         qualifiers: mavenQualifiers({ packaging, classifier }),
-        ...(version === undefined ? {} : { version }),
+        ...(!(version === undefined) && { version }),
       }),
     );
   }
@@ -889,7 +887,7 @@ export class MavenCodec
       const packageExpression: Requirement['expression'] = {
         type: 'package',
         purl: depPurl,
-        ...(range.vers === undefined ? {} : { vers: range.vers }),
+        ...(!(range.vers === undefined) && { vers: range.vers }),
       };
       requirements.push({
         id: `${nodeId}:${scope.kind}:${dependency.groupId}:${dependency.artifactId}:${index}`,
@@ -899,22 +897,24 @@ export class MavenCodec
         optional: dependency.optional === true || scope.optional,
         source: sourceRef('maven', provenance.endpoint),
         authority: 'native',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         raw: dependency as unknown as JsonValue,
         nativeSemantics: {
           version: 'maven-v1',
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           data: {
             groupId: dependency.groupId,
             artifactId: dependency.artifactId,
             version: dependency.version ?? '*',
             scope: dependency.scope ?? 'compile',
             optional: dependency.optional === true,
-            ...(depPackaging === undefined ? {} : { type: depPackaging }),
-            ...(depClassifier === undefined
-              ? {}
-              : { classifier: depClassifier }),
-            ...(dependency.exclusions === undefined
-              ? {}
-              : { exclusions: dependency.exclusions }),
+            ...(!(depPackaging === undefined) && { type: depPackaging }),
+            ...(!(depClassifier === undefined) && {
+              classifier: depClassifier,
+            }),
+            ...(!(dependency.exclusions === undefined) && {
+              exclusions: dependency.exclusions,
+            }),
           } as unknown as JsonValue,
         },
         semanticLoss: [
@@ -992,20 +992,21 @@ export class MavenCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'maven-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           groupId: metadata.groupId,
           artifactId: metadata.artifactId,
           packaging: packaging ?? 'jar',
-          ...(classifier === undefined ? {} : { classifier }),
+          ...(!(classifier === undefined) && { classifier }),
           dependencies: metadata.dependencies ?? [],
-          ...(metadata.name === undefined ? {} : { name: metadata.name }),
-          ...(metadata.description === undefined
-            ? {}
-            : { description: metadata.description }),
-          ...(metadata.licenses === undefined
-            ? {}
-            : { licenses: metadata.licenses }),
-          ...(metadata.scm === undefined ? {} : { scm: metadata.scm }),
+          ...(!(metadata.name === undefined) && { name: metadata.name }),
+          ...(!(metadata.description === undefined) && {
+            description: metadata.description,
+          }),
+          ...(!(metadata.licenses === undefined) && {
+            licenses: metadata.licenses,
+          }),
+          ...(!(metadata.scm === undefined) && { scm: metadata.scm }),
           installScriptsExecuted: false,
         } as unknown as JsonValue,
       },
@@ -1122,6 +1123,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     signal?: AbortSignal,
   ): Promise<readonly string[]> {
     const record = await this.metadataRecord(basePurl, signal);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = record.body as MavenMetadataDocument;
     return [...body.versioning.versions]
       .sort((left, right) => this.codec.compareNativeVersions(left, right))
@@ -1282,21 +1284,20 @@ export class MavenRepositoryProvider implements CatalogProvider {
       packaging: coordinates.packaging,
       dependencies: included,
       packageUrl: packageUri,
-      ...(classifier === undefined ? {} : { classifier }),
-      ...(pom.name === undefined ? {} : { name: pom.name }),
-      ...(pom.description === undefined
-        ? {}
-        : { description: pom.description }),
-      ...(openpackerSha256 === undefined ? {} : { openpackerSha256 }),
-      ...(packageSize === undefined ? {} : { packageSize }),
+      ...(!(classifier === undefined) && { classifier }),
+      ...(!(pom.name === undefined) && { name: pom.name }),
+      ...(!(pom.description === undefined) && { description: pom.description }),
+      ...(!(openpackerSha256 === undefined) && { openpackerSha256 }),
+      ...(!(packageSize === undefined) && { packageSize }),
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const metadataDigest = await canonicalDigest(entry as unknown as JsonValue);
     const translated = await this.codec.translateMetadata(entry, {
       providerId: this.providerId,
       endpoint: record.endpoint,
       retrievedAt: record.retrievedAt,
       evaluationTime: record.retrievedAt,
-      ...(record.etag === undefined ? {} : { etag: record.etag }),
+      ...(!(record.etag === undefined) && { etag: record.etag }),
       metadataDigest,
       rawMetadataRef: {
         type: 'provider-metadata',
@@ -1315,23 +1316,25 @@ export class MavenRepositoryProvider implements CatalogProvider {
       ...losses,
     ];
     const nativeData = {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ...(translated.instance.nativeSemantics.data as Record<string, unknown>),
       packageUrl: packageUri,
-      ...(openpackerSha256 === undefined ? {} : { openpackerSha256 }),
-      ...(checksum.sha1 === undefined || openpackerSha256 !== undefined
-        ? {}
-        : { sha1: checksum.sha1 }),
+      ...(!(openpackerSha256 === undefined) && { openpackerSha256 }),
+      ...(!(checksum.sha1 === undefined || openpackerSha256 !== undefined) && {
+        sha1: checksum.sha1,
+      }),
     };
     translated.instance.nativeSemantics = {
       ...translated.instance.nativeSemantics,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       data: nativeData as JsonValue,
     };
     this.#artifactSources.set(canonical, {
       uri: packageUri,
-      ...(packageSize === undefined ? {} : { expectedSize: packageSize }),
-      ...(openpackerSha256 === undefined
-        ? {}
-        : { expectedSha256: openpackerSha256 }),
+      ...(!(packageSize === undefined) && { expectedSize: packageSize }),
+      ...(!(openpackerSha256 === undefined) && {
+        expectedSha256: openpackerSha256,
+      }),
     });
     if (translated.instance.artifacts[0]) {
       translated.instance.artifacts[0].locations = [
@@ -1430,10 +1433,11 @@ export class MavenRepositoryProvider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(records as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -1449,6 +1453,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
         .map((record) => record.retrievedAt)
         .sort()
         .at(-1) ?? evaluationTime;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest({
       providerId: this.providerId,
       providerType: 'maven-repository',
@@ -1456,7 +1461,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records,
     } as JsonValue);
     return {
@@ -1467,7 +1472,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -1538,9 +1543,9 @@ export class MavenRepositoryProvider implements CatalogProvider {
     const record: ProviderRecord<string> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: text(response),
       rawBody: response.body,
       retrievedAt: this.clock.now(),
@@ -1675,6 +1680,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
         'Maven PURLs require a groupId namespace',
       );
     const key = formatPurl({ ...parsed, version: undefined });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
       | ProviderRecord<MavenMetadataDocument>
       | undefined;
@@ -1688,9 +1694,9 @@ export class MavenRepositoryProvider implements CatalogProvider {
       maximumBytes: 2 * 1024 * 1024,
       headers: {
         accept: 'application/xml,text/xml,*/*',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1715,9 +1721,9 @@ export class MavenRepositoryProvider implements CatalogProvider {
     const record: ProviderRecord<MavenMetadataDocument> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),

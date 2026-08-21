@@ -375,6 +375,7 @@ describe('OCM mapping', () => {
       exactPurl: 'pkg:npm/demo@1.0.0',
       resources: [{ name: 'demo', artifact }],
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const invalid = structuredClone(descriptor) as unknown as {
       component: {
         provider: { name: string };
@@ -387,6 +388,7 @@ describe('OCM mapping', () => {
     invalid.component.provider.name = '';
     invalid.component.resources[0]!.name = '';
     invalid.component.resources[0]!.digest.hashAlgorithm = 'MD5';
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(() => validateOcmDescriptor(invalid as never)).toThrowError(
       expect.objectContaining({ code: 'INVALID_FIELD' }),
     );

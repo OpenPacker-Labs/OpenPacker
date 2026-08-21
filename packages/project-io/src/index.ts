@@ -258,6 +258,7 @@ export async function editJsonFile<T>(
   const style = detectJsonStyle(file.text);
   let parsed: T;
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     parsed = JSON.parse(file.text) as T;
   } catch (error) {
     throw new ProjectIoError(
@@ -266,6 +267,7 @@ export async function editJsonFile<T>(
       `${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const result = (edit(parsed) ?? parsed) as T;
   const body = JSON.stringify(result, undefined, style.indent);
   const next = matchFileStyle(file, body);

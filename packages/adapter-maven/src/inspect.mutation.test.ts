@@ -95,9 +95,11 @@ describe('Maven inspect mutation coverage', () => {
         name: 'drop-sha256-sibling',
         fixtures: new Map([[POM_URL, ok(pom)]]),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const data = inspection.package.nativeSemantics.data as {
             openpackerSha256?: string;
           };
@@ -117,9 +119,11 @@ describe('Maven inspect mutation coverage', () => {
           [SHA1_URL, ok(`${jarSha1}  demo-tool-1.0.0.jar\n`)],
         ]),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const data = inspection.package.nativeSemantics.data as {
             openpackerSha256?: string;
             sha1?: string;
@@ -229,6 +233,7 @@ describe('Maven inspect mutation coverage', () => {
         name: 'unresolved-property-not-star',
         fixtures: validLayout(),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;

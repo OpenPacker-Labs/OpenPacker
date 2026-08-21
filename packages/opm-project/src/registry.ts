@@ -33,7 +33,10 @@ import { requireAdapterRegistry } from './adapters.js';
  * Default endpoints used when synthesising Registry Definitions and
  * allowlists. Overrides via `OPM_REGISTRY_<ECOSYSTEM>` still apply.
  */
-export const DEFAULT_REGISTRY_ENDPOINTS: Readonly<Record<string, string>> = {
+type RegistryEndpointMap = Record<string, string>;
+type RegistryOriginMap = Record<string, readonly string[]>;
+
+export const DEFAULT_REGISTRY_ENDPOINTS: RegistryEndpointMap = {
   npm: 'https://registry.npmjs.org',
   cargo: 'https://index.crates.io',
   pypi: 'https://pypi.org/pypi',
@@ -73,7 +76,7 @@ export const REGISTRY_ECOSYSTEMS: readonly string[] = Object.freeze([
   'oci',
 ]);
 
-const ARTIFACT_ORIGINS: Readonly<Record<string, readonly string[]>> = {
+const ARTIFACT_ORIGINS: RegistryOriginMap = {
   npm: ['https://registry.npmjs.org'],
   cargo: ['https://static.crates.io', 'https://crates.io'],
   pypi: ['https://files.pythonhosted.org', 'https://pypi.org'],
@@ -145,7 +148,7 @@ function firstPartyPolicy(
     endpoint,
     namedOrOverride:
       options.endpoint !== undefined || registryEndpointIsOverride(ecosystem),
-    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    ...(!(artifactOrigins === undefined) && { artifactOrigins }),
     extraOrigins: parseRegistryExtraOrigins(ecosystem),
   });
 }
@@ -172,10 +175,10 @@ export function firstPartyTransport(
     endpoint,
     namedOrOverride:
       options.endpoint !== undefined || registryEndpointIsOverride(ecosystem),
-    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    ...(!(artifactOrigins === undefined) && { artifactOrigins }),
     extraOrigins: parseRegistryExtraOrigins(ecosystem),
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-    ...(options.lookup ? { lookup: options.lookup } : {}),
+    ...(options.fetch && { fetch: options.fetch }),
+    ...(options.lookup && { lookup: options.lookup }),
   });
 }
 
@@ -339,14 +342,14 @@ export async function providerForWithDiscovery(
     return await registry.catalogFor(
       ecosystem,
       {
-        ...(options.offline !== undefined ? { offline: options.offline } : {}),
-        ...(options.sourceId === undefined
-          ? {}
-          : { sourceId: options.sourceId }),
-        ...(endpoint === undefined ? {} : { endpoint }),
-        ...(transport === undefined ? {} : { transport }),
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-        ...(options.now ? { now: options.now } : {}),
+        ...(options.offline !== undefined && { offline: options.offline }),
+        ...(!(options.sourceId === undefined) && {
+          sourceId: options.sourceId,
+        }),
+        ...(!(endpoint === undefined) && { endpoint }),
+        ...(!(transport === undefined) && { transport }),
+        ...(options.fetch && { fetch: options.fetch }),
+        ...(options.now && { now: options.now }),
       },
       requiredResources,
     );
@@ -368,10 +371,10 @@ export async function registryDefinitionFor(
       : registryEndpoint(ecosystem));
   return requireAdapterRegistry().definitionFor(ecosystem, {
     offline: true,
-    ...(options.sourceId === undefined ? {} : { sourceId: options.sourceId }),
-    ...(endpoint === undefined
-      ? {}
-      : { endpoint: safeRegistryEndpoint(endpoint, ecosystem) }),
+    ...(!(options.sourceId === undefined) && { sourceId: options.sourceId }),
+    ...(!(endpoint === undefined) && {
+      endpoint: safeRegistryEndpoint(endpoint, ecosystem),
+    }),
   });
 }
 
@@ -394,9 +397,9 @@ export async function searchRegistry(
   return found.map((identity) => ({
     canonicalPurl: identity.canonicalPurl,
     name: identity.name,
-    ...(identity.namespace === undefined
-      ? {}
-      : { namespace: identity.namespace }),
+    ...(!(identity.namespace === undefined) && {
+      namespace: identity.namespace,
+    }),
   }));
 }
 
@@ -539,7 +542,8 @@ function readArtifactDescriptor(
   body: unknown,
   ecosystem: string,
   exactPurl: string,
-): { digest: string; size?: number; mediaType: string; uri: string } {
+) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const descriptor = body as {
     digest?: { algorithm?: string; value?: string };
     size?: number;
@@ -562,7 +566,7 @@ function readArtifactDescriptor(
     );
   return {
     digest: `${algorithm}:${value}`,
-    ...(descriptor.size === undefined ? {} : { size: descriptor.size }),
+    ...(!(descriptor.size === undefined) && { size: descriptor.size }),
     mediaType: descriptor.mediaType ?? 'application/octet-stream',
     uri,
   };
@@ -789,17 +793,13 @@ export async function resolveRegistryArtifactDeferred(
  * hop origin is pinned and a per-origin env-var name is configured. Every gap
  * fails closed.
  */
-function hostFetchCallOptions(options: RegistryOptions): {
-  fetch?: typeof fetch;
-  lookup?: HostFetchLookup;
-  pluginBindings?: Readonly<Record<string, PluginBinding>>;
-} {
+function hostFetchCallOptions(options: RegistryOptions) {
   return {
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-    ...(options.lookup === undefined ? {} : { lookup: options.lookup }),
-    ...(options.pluginBindings === undefined
-      ? {}
-      : { pluginBindings: options.pluginBindings }),
+    ...(!(options.fetch === undefined) && { fetch: options.fetch }),
+    ...(!(options.lookup === undefined) && { lookup: options.lookup }),
+    ...(!(options.pluginBindings === undefined) && {
+      pluginBindings: options.pluginBindings,
+    }),
   };
 }
 
@@ -906,8 +906,8 @@ async function fetchDelegatedArtifactBytes(input: {
       pinnedTokenEnvNames: tokenEnvNames,
       pinnedExtraHeaders: extraHeaders,
       maximumBytes: size,
-      ...(input.fetch ? { fetch: input.fetch } : {}),
-      ...(input.lookup ? { lookup: input.lookup } : {}),
+      ...(input.fetch && { fetch: input.fetch }),
+      ...(input.lookup && { lookup: input.lookup }),
     });
   } catch (error) {
     if (

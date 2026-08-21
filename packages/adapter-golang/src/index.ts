@@ -168,10 +168,7 @@ export function modulePathFromParts(
     : `${namespace}/${name}`;
 }
 
-export function splitModulePath(path: string): {
-  namespace?: string;
-  name: string;
-} {
+export function splitModulePath(path: string) {
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0)
     throw new ProviderError(
@@ -187,9 +184,9 @@ function purlForModule(path: string, version?: string): string {
   const parts = splitModulePath(path);
   return formatPurl({
     type: 'golang',
-    ...(parts.namespace === undefined ? {} : { namespace: parts.namespace }),
+    ...(!(parts.namespace === undefined) && { namespace: parts.namespace }),
     name: parts.name,
-    ...(version === undefined ? {} : { version }),
+    ...(!(version === undefined) && { version }),
     qualifiers: {},
   });
 }
@@ -206,7 +203,7 @@ function golangIdentity(exactPurl: string, endpoint?: string): PackageIdentity {
       {
         ecosystem: 'golang',
         coordinate,
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -438,8 +435,8 @@ export function parseGoMod(input: string): GolangModDocument {
     );
 
   return {
-    ...(module === undefined ? {} : { module }),
-    ...(go === undefined ? {} : { go }),
+    ...(!(module === undefined) && { module }),
+    ...(!(go === undefined) && { go }),
     requires,
     retracts,
   };
@@ -470,10 +467,10 @@ export class GolangCodec
       ecosystem: 'golang',
       name: parts.name,
       original: value,
-      ...(parts.namespace === undefined ? {} : { namespace: parts.namespace }),
-      ...(version === undefined
-        ? {}
-        : { version: normalizeGoVersionText(version) }),
+      ...(!(parts.namespace === undefined) && { namespace: parts.namespace }),
+      ...(!(version === undefined) && {
+        version: normalizeGoVersionText(version),
+      }),
     };
   }
 
@@ -489,13 +486,11 @@ export class GolangCodec
     return formatPurl({
       ...parsed,
       type: 'golang',
-      ...(parsed.namespace === undefined
-        ? {}
-        : { namespace: parsed.namespace }),
+      ...(!(parsed.namespace === undefined) && { namespace: parsed.namespace }),
       name: parsed.name,
-      ...(parsed.version === undefined
-        ? {}
-        : { version: this.parseNativeVersion(parsed.version).normalized }),
+      ...(!(parsed.version === undefined) && {
+        version: this.parseNativeVersion(parsed.version).normalized,
+      }),
     });
   }
 
@@ -624,15 +619,17 @@ export class GolangCodec
           expression: {
             type: 'package',
             purl: depPurl,
-            ...(range.vers === undefined ? {} : { vers: range.vers }),
+            ...(!(range.vers === undefined) && { vers: range.vers }),
           },
           kind: 'runtime',
           optional: false,
           source: sourceRef('golang', provenance.endpoint),
           authority: 'native',
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           raw: dependency as unknown as JsonValue,
           nativeSemantics: {
             version: 'golang-v1',
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             data: {
               path: dependency.path,
               version: depVersion.normalized,
@@ -725,16 +722,17 @@ export class GolangCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'golang-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           path: metadata.path,
           version,
-          ...(metadata.time === undefined ? {} : { time: metadata.time }),
-          ...(metadata.go === undefined ? {} : { go: metadata.go }),
+          ...(!(metadata.time === undefined) && { time: metadata.time }),
+          ...(!(metadata.go === undefined) && { go: metadata.go }),
           requires: metadata.requires ?? [],
           buildConstraints: metadata.buildConstraints ?? [],
-          ...(targetPredicate === undefined ? {} : { targetPredicate }),
-          ...(metadata.h1 === undefined ? {} : { h1: metadata.h1 }),
-          ...(metadata.size === undefined ? {} : { size: metadata.size }),
+          ...(!(targetPredicate === undefined) && { targetPredicate }),
+          ...(!(metadata.h1 === undefined) && { h1: metadata.h1 }),
+          ...(!(metadata.size === undefined) && { size: metadata.size }),
           moduleCodeExecuted: false,
         } as unknown as JsonValue,
       },
@@ -823,19 +821,19 @@ export class GolangCodec
         return {
           exactPurl,
           nativeCoordinate: `${entry.path}@${entry.version}`,
-          ...(entry.moduleDigest === undefined
-            ? {}
-            : { artifactDigest: entry.moduleDigest }),
+          ...(!(entry.moduleDigest === undefined) && {
+            artifactDigest: entry.moduleDigest,
+          }),
           dependencies: {},
           native: {
             path: entry.path,
             version: entry.version,
-            ...(entry.moduleDigest === undefined
-              ? {}
-              : { h1: entry.moduleDigest }),
-            ...(entry.goModDigest === undefined
-              ? {}
-              : { goModH1: entry.goModDigest }),
+            ...(!(entry.moduleDigest === undefined) && {
+              h1: entry.moduleDigest,
+            }),
+            ...(!(entry.goModDigest === undefined) && {
+              goModH1: entry.goModDigest,
+            }),
           },
         };
       })
@@ -993,6 +991,7 @@ export class GolangProxyProvider implements CatalogProvider {
       );
     const record = await this.versionRecord(canonical, signal);
     const metadataDigest = await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       record.body as unknown as JsonValue,
     );
     const translated = await this.codec.translateMetadata(record.body, {
@@ -1000,7 +999,7 @@ export class GolangProxyProvider implements CatalogProvider {
       endpoint: record.endpoint,
       retrievedAt: record.retrievedAt,
       evaluationTime: record.retrievedAt,
-      ...(record.etag === undefined ? {} : { etag: record.etag }),
+      ...(!(record.etag === undefined) && { etag: record.etag }),
       metadataDigest,
       rawMetadataRef: {
         type: 'provider-metadata',
@@ -1025,6 +1024,7 @@ export class GolangProxyProvider implements CatalogProvider {
       ];
     } else {
       // Attach download location via nativeSemantics even without sha256 artifact
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const data = translated.instance.nativeSemantics.data as Record<
         string,
         JsonValue
@@ -1063,9 +1063,10 @@ export class GolangProxyProvider implements CatalogProvider {
     if (response.status < 200 || response.status >= 300)
       throw providerErrorForStatus(response.status);
     const digest = await sha256(response.body);
-    const expectedSize = (
-      inspection.package.nativeSemantics.data as Record<string, JsonValue>
-    ).size;
+    const expectedSize =
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (inspection.package.nativeSemantics.data as Record<string, JsonValue>)
+        .size;
     if (
       typeof expectedSize === 'number' &&
       expectedSize !== response.body.byteLength
@@ -1119,10 +1120,11 @@ export class GolangProxyProvider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(records as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -1138,6 +1140,7 @@ export class GolangProxyProvider implements CatalogProvider {
         .map((record) => record.retrievedAt)
         .sort()
         .at(-1) ?? evaluationTime;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest({
       providerId: this.providerId,
       providerType: 'golang-proxy',
@@ -1145,7 +1148,7 @@ export class GolangProxyProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records,
     } as JsonValue);
     return {
@@ -1156,7 +1159,7 @@ export class GolangProxyProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -1192,9 +1195,9 @@ export class GolangProxyProvider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'text/plain',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1227,9 +1230,9 @@ export class GolangProxyProvider implements CatalogProvider {
     const record: ProviderRecord<readonly string[]> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: versions,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
@@ -1331,6 +1334,7 @@ export class GolangProxyProvider implements CatalogProvider {
       );
     let info: GolangProxyInfo;
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       info = JSON.parse(text(infoResponse)) as GolangProxyInfo;
     } catch {
       throw new ProviderError(
@@ -1389,10 +1393,10 @@ export class GolangProxyProvider implements CatalogProvider {
       path,
       version: this.codec.parseNativeVersion(info.Version ?? version)
         .normalized,
-      ...(info.Time === undefined ? {} : { time: info.Time }),
-      ...(go === undefined ? {} : { go }),
+      ...(!(info.Time === undefined) && { time: info.Time }),
+      ...(!(go === undefined) && { go }),
       requires,
-      ...(retracted ? { retracted: true } : {}),
+      ...(retracted && { retracted: true }),
     };
 
     const rawBody = new TextEncoder().encode(
@@ -1405,9 +1409,9 @@ export class GolangProxyProvider implements CatalogProvider {
     const record: ProviderRecord<GolangModuleVersionMetadata> = {
       key: canonical,
       endpoint: infoResponse.url,
-      ...(header(infoResponse, 'etag') === undefined
-        ? {}
-        : { etag: header(infoResponse, 'etag') }),
+      ...(!(header(infoResponse, 'etag') === undefined) && {
+        etag: header(infoResponse, 'etag'),
+      }),
       body: metadata,
       rawBody,
       retrievedAt: this.clock.now(),

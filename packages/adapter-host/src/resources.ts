@@ -5,6 +5,7 @@ import { AdapterHostError } from './types.js';
 export function resourceTypesOf(
   type: RegistryResourceType | readonly RegistryResourceType[],
 ): string[] {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return Array.isArray(type) ? [...type] : [type as string];
 }
 

@@ -19,7 +19,7 @@ export {
   tryGetAdapterRegistry,
 } from './registry.js';
 export {
-  assertWitShapedModule,
+  assertWitContractModule,
   parseServiceIndex,
   serviceIndexBytes,
 } from './bridge.js';

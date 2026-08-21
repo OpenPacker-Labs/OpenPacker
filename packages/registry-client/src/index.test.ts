@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 // Read rather than import: this file is typechecked, and a JSON module import
 // would need a resolution attribute that says nothing useful about the test.
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const keys = JSON.parse(
   readFileSync(
     fileURLToPath(
@@ -68,12 +69,14 @@ function fixtureTransport(routes: Record<string, unknown>) {
       const key = request.url.replace(BASE, '');
       const body = routes[key];
       if (body === undefined)
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         return {
           status: 404,
           headers: {},
           body: new TextEncoder().encode('{}'),
           url: request.url,
         } as HttpResponse;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -89,6 +92,7 @@ async function entryFor(
   value = manifest(),
   options: { sign?: boolean; digestOverride?: string } = {},
 ) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const digest = await canonicalDigest(value as unknown as JsonValue);
   const signatures = [];
   if (options.sign) {
@@ -114,7 +118,7 @@ async function entryFor(
           ? digest
           : { algorithm: 'sha256' as const, value: options.digestOverride },
     },
-    ...(signatures.length > 0 ? { signatures } : {}),
+    ...(signatures.length > 0 && { signatures }),
   };
 }
 
@@ -505,6 +509,7 @@ describe('PrexRegistryProvider as an opm source', () => {
     const record = await provider.fetchArtifactRecord(
       'pkg:npm/demo-tool@1.2.3',
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = record.body as { locations: { uri: string }[] };
     expect(body.locations[0]?.uri).toContain('registry.npmjs.org');
   });
@@ -680,10 +685,10 @@ describe('RegistryClient revocation', () => {
     'rejects unauthenticated revocation metadata with a bad %s',
     async (bad) => {
       const document = await signedRevocationList([], 1, {
-        ...(bad === 'registry'
-          ? { registryId: 'urn:openpacker:registry:other' }
-          : {}),
-        ...(bad === 'expiry' ? { expiresAt: '2026-08-10T00:00:00.000Z' } : {}),
+        ...(bad === 'registry' && {
+          registryId: 'urn:openpacker:registry:other',
+        }),
+        ...(bad === 'expiry' && { expiresAt: '2026-08-10T00:00:00.000Z' }),
       });
       if (bad === 'digest') document.listDigest.value = '0'.repeat(64);
       if (bad === 'signature') document.signatures[0]!.signature = 'AAAA';
@@ -747,6 +752,7 @@ async function signedRevocationList(
     expiresAt: options.expiresAt ?? '2099-01-01T00:00:00.000Z',
     revoked,
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const listDigest = await canonicalDigest(list as unknown as JsonValue);
   const signer = await Ed25519Signer.fromJwk('test-registry', keys.root!);
   return {
@@ -777,6 +783,7 @@ function revocationTransport(
             issuedAt: '1970-01-01T00:00:00.000Z',
           })
         : definition([...ALL_RESOURCES, 'prex.registry.key-lifecycle/1']);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },

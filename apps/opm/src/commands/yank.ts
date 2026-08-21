@@ -30,8 +30,8 @@ export async function runYankCommand(
   const reason = option(args, 'reason');
   const result = await yankRegistryVersion({
     purl,
-    ...(registry === undefined ? {} : { registry }),
-    ...(reason === undefined ? {} : { reason }),
+    ...(!(registry === undefined) && { registry }),
+    ...(!(reason === undefined) && { reason }),
     env: process.env,
   });
   const subject = result.applied.subject;

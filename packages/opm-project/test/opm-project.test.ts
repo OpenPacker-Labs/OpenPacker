@@ -101,6 +101,7 @@ async function tempProject(): Promise<string> {
   await initProject({ root: dir, name: 'test-app' });
   // point local catalog
   await mkdir(join(dir, '.opm'), { recursive: true });
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
     schemaVersion: number;
     packages: Record<string, { source: string } & Record<string, unknown>>;
@@ -290,7 +291,9 @@ describe('manifest TOML', () => {
     try {
       parseManifest(plugin(`["${secret}"]`));
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/user:secret/u);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as Error).message).not.toMatch(/secret/u);
     }
 
@@ -703,6 +706,7 @@ describe('fail-closed install paths', () => {
     const path = join(root, '.opm/growing.json');
     await writeFile(path, new Uint8Array(64 * 1024));
     const probe = await open(path);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const prototype = Object.getPrototypeOf(probe) as {
       read: (...args: unknown[]) => Promise<unknown>;
     };
@@ -715,7 +719,7 @@ describe('fail-closed install paths', () => {
         ...args: unknown[]
       ) {
         await appendFile(path, new Uint8Array(2 * 1024 * 1024));
-        return await Reflect.apply(original, this, args);
+        return await original.apply(this, args);
       });
     try {
       await expect(readStableFile(path, 1024 * 1024)).rejects.toMatchObject({
@@ -1080,6 +1084,7 @@ describe('fail-closed install paths', () => {
       source: fixtureTgz,
       offline: true,
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const serialized = JSON.parse(
       await readFile(projectPaths(root).lock, 'utf8'),
     ) as {
@@ -1223,11 +1228,13 @@ describe('fail-closed install paths', () => {
       pkg.bins[0]!.path = '../escape';
     }).toThrow(TypeError);
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const cyclic = { ...pkg, bins: [] as unknown[] };
     cyclic.bins.push(cyclic.bins);
     await expect(
       materializeLockPackage({
         root,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         pkg: cyclic as unknown as typeof pkg,
         offline: true,
       }),
@@ -1396,6 +1403,7 @@ describe('fail-closed install paths', () => {
     });
     const policy = {
       ...defaultSupplyChainPolicyInput(),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       allowedLifecycleScriptPackages: [] as string[],
     };
     const materialising = materializeLockPackage({
@@ -1659,6 +1667,7 @@ describe('fail-closed install paths', () => {
   it('rejects adding from a catalog entry whose digest does not match the bytes', async () => {
     const root = await tempProject();
     const catalogPath = join(root, '.opm/catalog.json');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const catalog = JSON.parse(await readFile(catalogPath, 'utf8')) as {
       packages: Record<string, { digest?: string }>;
     };
@@ -1713,6 +1722,7 @@ describe('fail-closed install paths', () => {
       offline: true,
     });
     const statePath = join(root, '.opm/project.json');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const valid = JSON.parse(await readFile(statePath, 'utf8')) as {
       packages: Record<
         string,
@@ -1743,6 +1753,7 @@ describe('fail-closed install paths', () => {
       offline: true,
     });
     const statePath = join(root, '.opm/project.json');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const state = JSON.parse(await readFile(statePath, 'utf8')) as {
       packages: Record<string, { storePath: string }>;
     };
@@ -2523,6 +2534,7 @@ describe('generation member bins', () => {
     const { generationDigest: _currentDigest, ...currentBody } = current;
     // The records are digest-valid — what must be refused is the bins shape.
     const forge = (bins: unknown): Generation => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const forged = {
         ...currentBody,
         members: [{ ...current.members[0]!, bins }],

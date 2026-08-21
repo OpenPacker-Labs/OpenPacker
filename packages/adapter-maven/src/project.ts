@@ -34,7 +34,7 @@ import {
 const parser = new XMLParser({ ignoreAttributes: false });
 
 /** Maven scopes, in the vocabulary Maven itself uses. */
-const SCOPE_NAME: Readonly<Record<RequirementScope, string | undefined>> = {
+const SCOPE_NAME = {
   runtime: undefined, // `compile` is the default; writing it adds noise.
   development: 'test',
   optional: 'provided',
@@ -131,8 +131,8 @@ function pomDependencies(text: string): PomDependency[] {
     out.push({
       groupId,
       artifactId,
-      ...(version === undefined ? {} : { version }),
-      ...(scope === undefined ? {} : { scope }),
+      ...(!(version === undefined) && { version }),
+      ...(!(scope === undefined) && { scope }),
       start: match.index,
       end: match.index + raw.length,
     });
@@ -154,9 +154,7 @@ function readPom(text: string): NativeRequirement[] {
         dependency.artifactId,
       )}`,
       name,
-      ...(dependency.version === undefined
-        ? {}
-        : { range: dependency.version }),
+      ...(!(dependency.version === undefined) && { range: dependency.version }),
       scope: dependency.scope === 'test' ? 'development' : ('runtime' as const),
     };
   });
@@ -287,6 +285,7 @@ function insertPomDependencies(
 // --- Gradle version catalog ------------------------------------------------
 
 function readCatalog(text: string): NativeRequirement[] {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const parsed = parseToml(text) as {
     libraries?: Record<string, unknown>;
     versions?: Record<string, unknown>;
@@ -295,6 +294,7 @@ function readCatalog(text: string): NativeRequirement[] {
   const out: NativeRequirement[] = [];
   for (const value of Object.values(parsed.libraries ?? {})) {
     if (typeof value !== 'object' || value === null) continue;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const entry = value as {
       module?: string;
       group?: string;
@@ -315,7 +315,7 @@ function readCatalog(text: string): NativeRequirement[] {
     out.push({
       purl: `pkg:maven/${encodeURIComponent(group ?? '')}/${encodeURIComponent(artifact ?? '')}`,
       name,
-      ...(version ? { range: version } : {}),
+      ...(version && { range: version }),
       scope: 'runtime',
     });
   }

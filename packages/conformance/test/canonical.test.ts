@@ -16,6 +16,7 @@ const fixtureRoot = path.resolve(
 
 describe('canonical golden vectors', () => {
   it('matches exact bytes and SHA-256 digests', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fixture = JSON.parse(
       await readFile(path.join(fixtureRoot, 'objects.json'), 'utf8'),
     ) as {
@@ -30,6 +31,7 @@ describe('canonical golden vectors', () => {
   });
 
   it('rejects every negative text vector', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fixture = JSON.parse(
       await readFile(path.join(fixtureRoot, 'negative.json'), 'utf8'),
     ) as { vectors: Array<{ json: string; error: string }> };

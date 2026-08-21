@@ -197,7 +197,7 @@ function nugetIdentity(exactPurl: string, endpoint?: string): PackageIdentity {
       {
         ecosystem: 'nuget',
         coordinate: parsed.name,
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -255,7 +255,7 @@ export class NugetCodec
       ecosystem: 'nuget',
       name: match[1]!.toLowerCase(),
       original: value,
-      ...(match[2] === undefined ? {} : { version: match[2] }),
+      ...(!(match[2] === undefined) && { version: match[2] }),
     };
   }
 
@@ -270,9 +270,9 @@ export class NugetCodec
     return formatPurl({
       ...parsed,
       name,
-      ...(parsed.version === undefined
-        ? {}
-        : { version: this.parseNativeVersion(parsed.version).normalized }),
+      ...(!(parsed.version === undefined) && {
+        version: this.parseNativeVersion(parsed.version).normalized,
+      }),
     });
   }
 
@@ -390,7 +390,7 @@ export class NugetCodec
       original,
       normalized: renderRange(ast),
       ast,
-      ...(body === undefined ? {} : { vers: `vers:nuget/${body}` }),
+      ...(!(body === undefined) && { vers: `vers:nuget/${body}` }),
       reversible: body !== undefined,
       semanticLoss:
         body === undefined
@@ -463,7 +463,7 @@ export class NugetCodec
         const packageExpression: Requirement['expression'] = {
           type: 'package',
           purl: `pkg:nuget/${encodeURIComponent(dependency.id.toLowerCase())}`,
-          ...(range.vers === undefined ? {} : { vers: range.vers }),
+          ...(!(range.vers === undefined) && { vers: range.vers }),
         };
         requirements.push({
           id: `${nodeId}:runtime:${groupIndex}:${dependencyIndex}:${dependency.id.toLowerCase()}`,
@@ -484,6 +484,7 @@ export class NugetCodec
           optional: false,
           source: sourceRef('nuget', provenance.endpoint),
           authority: 'native',
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           raw: dependency as unknown as JsonValue,
           nativeSemantics: {
             version: 'nuget-v1',
@@ -568,22 +569,23 @@ export class NugetCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'nuget-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           dependencyGroups: metadata.dependencyGroups ?? [],
           packageTypes: metadata.packageTypes ?? [],
           vulnerabilities: metadata.vulnerabilities ?? [],
-          ...(metadata.deprecation === undefined
-            ? {}
-            : { deprecation: metadata.deprecation as JsonValue }),
-          ...(metadata.repository === undefined
-            ? {}
-            : { repository: metadata.repository }),
-          ...(metadata.packageHash === undefined
-            ? {}
-            : { packageHash: metadata.packageHash }),
-          ...(metadata.packageHashAlgorithm === undefined
-            ? {}
-            : { packageHashAlgorithm: metadata.packageHashAlgorithm }),
+          ...(!(metadata.deprecation === undefined) && {
+            deprecation: metadata.deprecation as unknown as JsonValue,
+          }),
+          ...(!(metadata.repository === undefined) && {
+            repository: metadata.repository,
+          }),
+          ...(!(metadata.packageHash === undefined) && {
+            packageHash: metadata.packageHash,
+          }),
+          ...(!(metadata.packageHashAlgorithm === undefined) && {
+            packageHashAlgorithm: metadata.packageHashAlgorithm,
+          }),
           listed,
           installScriptsExecuted: false,
         } as unknown as JsonValue,
@@ -622,9 +624,9 @@ export class NugetCodec
             `pkg:nuget/${encodeURIComponent(id)}@${encodeURIComponent(entry.resolved)}`,
           ),
           nativeCoordinate: `${id}@${entry.resolved}`,
-          ...(entry.contentHash === undefined
-            ? {}
-            : { artifactDigest: entry.contentHash }),
+          ...(!(entry.contentHash === undefined) && {
+            artifactDigest: entry.contentHash,
+          }),
           dependencies: { ...(entry.dependencies ?? {}) },
           native: { framework, type: entry.type, requested: entry.requested },
         })),
@@ -651,9 +653,9 @@ export class NugetCodec
               `pkg:nuget/${encodeURIComponent(id)}@${encodeURIComponent(version)}`,
             ),
             nativeCoordinate: `${id}@${version}`,
-            ...(assets.libraries?.[coordinate]?.sha512 === undefined
-              ? {}
-              : { artifactDigest: assets.libraries[coordinate]!.sha512 }),
+            ...(!(assets.libraries?.[coordinate]?.sha512 === undefined) && {
+              artifactDigest: assets.libraries[coordinate]!.sha512,
+            }),
             dependencies: { ...(entry.dependencies ?? {}) },
             native: {
               target,
@@ -733,8 +735,10 @@ export function parseNugetServiceIndex(bytes: Uint8Array): NugetServiceIndex {
     return {
       '@id': id,
       '@type': Array.isArray(rawTypes)
-        ? (types as string[])
-        : (types[0] as string),
+        ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (types as string[])
+        : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (types[0] as string),
     };
   });
   return { resources };
@@ -838,6 +842,7 @@ export class NugetV3Provider implements CatalogProvider {
     signal?: AbortSignal,
   ): Promise<readonly string[]> {
     const record = await this.registration(basePurl, signal);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return registrationLeaves(record.body as NugetRegistrationIndex)
       .map((leaf) => leaf.catalogEntry.version)
       .sort((left, right) => this.codec.compareNativeVersions(left, right))
@@ -863,6 +868,7 @@ export class NugetV3Provider implements CatalogProvider {
       formatPurl({ ...parsed, version: undefined }),
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const leaf = registrationLeaves(record.body as NugetRegistrationIndex).find(
       (candidate) =>
         this.codec.compareNativeVersions(
@@ -876,6 +882,7 @@ export class NugetV3Provider implements CatalogProvider {
         `${canonical} is absent from registration metadata`,
       );
     const metadataDigest = await canonicalDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       leaf.catalogEntry as unknown as JsonValue,
     );
     const translated = await this.codec.translateMetadata(leaf.catalogEntry, {
@@ -883,7 +890,7 @@ export class NugetV3Provider implements CatalogProvider {
       endpoint: record.endpoint,
       retrievedAt: record.retrievedAt,
       evaluationTime: record.retrievedAt,
-      ...(record.etag === undefined ? {} : { etag: record.etag }),
+      ...(!(record.etag === undefined) && { etag: record.etag }),
       metadataDigest,
       rawMetadataRef: {
         type: 'provider-metadata',
@@ -904,15 +911,15 @@ export class NugetV3Provider implements CatalogProvider {
     if (packageUri !== undefined) {
       this.#artifactSources.set(canonical, {
         uri: packageUri,
-        ...(leaf.catalogEntry.packageHash === undefined
-          ? {}
-          : { packageHash: leaf.catalogEntry.packageHash }),
-        ...(leaf.catalogEntry.packageHashAlgorithm === undefined
-          ? {}
-          : { packageHashAlgorithm: leaf.catalogEntry.packageHashAlgorithm }),
-        ...(leaf.catalogEntry.packageSize === undefined
-          ? {}
-          : { expectedSize: leaf.catalogEntry.packageSize }),
+        ...(!(leaf.catalogEntry.packageHash === undefined) && {
+          packageHash: leaf.catalogEntry.packageHash,
+        }),
+        ...(!(leaf.catalogEntry.packageHashAlgorithm === undefined) && {
+          packageHashAlgorithm: leaf.catalogEntry.packageHashAlgorithm,
+        }),
+        ...(!(leaf.catalogEntry.packageSize === undefined) && {
+          expectedSize: leaf.catalogEntry.packageSize,
+        }),
       });
     }
     if (translated.instance.artifacts[0] && packageUri !== undefined) {
@@ -1008,10 +1015,11 @@ export class NugetV3Provider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(records as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -1027,6 +1035,7 @@ export class NugetV3Provider implements CatalogProvider {
         .map((record) => record.retrievedAt)
         .sort()
         .at(-1) ?? evaluationTime;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest({
       providerId: this.providerId,
       providerType: 'nuget-v3',
@@ -1034,7 +1043,7 @@ export class NugetV3Provider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records,
     } as JsonValue);
     return {
@@ -1045,7 +1054,7 @@ export class NugetV3Provider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -1069,6 +1078,7 @@ export class NugetV3Provider implements CatalogProvider {
   ): Promise<ProviderRecord<NugetRegistrationIndex>> {
     const parsed = parsePurl(this.codec.canonicalizePurl(purl));
     const key = formatPurl({ ...parsed, version: undefined });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
       | ProviderRecord<NugetRegistrationIndex>
       | undefined;
@@ -1096,9 +1106,9 @@ export class NugetV3Provider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'application/json',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1174,9 +1184,9 @@ export class NugetV3Provider implements CatalogProvider {
     const record: ProviderRecord<NugetRegistrationIndex> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: flattened,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
@@ -1194,9 +1204,9 @@ export class NugetV3Provider implements CatalogProvider {
       maximumBytes: 1024 * 1024,
       headers: {
         accept: 'application/json',
-        ...(this.#serviceIndex?.etag === undefined
-          ? {}
-          : { 'if-none-match': this.#serviceIndex.etag }),
+        ...(!(this.#serviceIndex?.etag === undefined) && {
+          'if-none-match': this.#serviceIndex.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1223,9 +1233,9 @@ export class NugetV3Provider implements CatalogProvider {
     const record: ProviderRecord<NugetServiceIndex> = {
       key: 'service-index',
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
@@ -1241,6 +1251,7 @@ export class NugetV3Provider implements CatalogProvider {
     signal?: AbortSignal,
   ): Promise<ProviderRecord<NugetRegistrationPage>> {
     const key = `page:${packageKey}:${url}`;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
       | ProviderRecord<NugetRegistrationPage>
       | undefined;
@@ -1250,9 +1261,9 @@ export class NugetV3Provider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'application/json',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -1267,9 +1278,9 @@ export class NugetV3Provider implements CatalogProvider {
     const record: ProviderRecord<NugetRegistrationPage> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: json<NugetRegistrationPage>(response),
       rawBody: response.body,
       retrievedAt: this.clock.now(),

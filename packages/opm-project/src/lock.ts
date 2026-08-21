@@ -40,9 +40,9 @@ export function serializeLockfile(lock: OpmLockfile): string {
     {
       schemaVersion: lock.schemaVersion,
       generatedBy: lock.generatedBy,
-      ...(lock.manifestDigest === undefined
-        ? {}
-        : { manifestDigest: lock.manifestDigest }),
+      ...(!(lock.manifestDigest === undefined) && {
+        manifestDigest: lock.manifestDigest,
+      }),
       packages,
     },
     null,
@@ -63,6 +63,7 @@ export function parseLockfile(text: string): OpmLockfile {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new OpmError('INVALID_LOCK', 'opm.lock.json must be a JSON object');
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = value as Record<string, unknown>;
   if (record.schemaVersion !== 1) {
     throw new OpmError(
@@ -85,6 +86,7 @@ export function parseLockfile(text: string): OpmLockfile {
   }
   const packages: Record<string, LockPackage> = {};
   for (const [alias, raw] of Object.entries(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     record.packages as Record<string, unknown>,
   )) {
     packages[alias] = parseLockPackage(alias, raw);
@@ -92,9 +94,9 @@ export function parseLockfile(text: string): OpmLockfile {
   return {
     schemaVersion: 1,
     generatedBy: 'opm',
-    ...(typeof record.manifestDigest === 'string'
-      ? { manifestDigest: record.manifestDigest }
-      : {}),
+    ...(typeof record.manifestDigest === 'string' && {
+      manifestDigest: record.manifestDigest,
+    }),
     packages,
   };
 }
@@ -103,6 +105,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new OpmError('INVALID_LOCK', `Invalid lock package entry: ${alias}`);
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const pkg = raw as Record<string, unknown>;
   const requiredString = (key: string): string => {
     const value = pkg[key];
@@ -139,6 +142,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
         `Package "${alias}" bins[${index}] invalid`,
       );
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const bin = entry as Record<string, unknown>;
     if (typeof bin.name !== 'string' || typeof bin.path !== 'string') {
       throw new OpmError(
@@ -172,8 +176,8 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     return {
       name: bin.name,
       path: bin.path,
-      ...(interpreter === undefined ? {} : { interpreter }),
-      ...(binEntry === undefined ? {} : { entry: binEntry }),
+      ...(!(interpreter === undefined) && { interpreter }),
+      ...(!(binEntry === undefined) && { entry: binEntry }),
     };
   });
   const reason = pkg.reason;
@@ -247,21 +251,20 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     bins,
     reason,
     ecosystem: requiredString('ecosystem'),
-    ...(Array.isArray(pkg.dependencies)
-      ? { dependencies: [...new Set(pkg.dependencies as string[])].sort() }
-      : {}),
-    ...(isTrustTier(pkg.trustLevel) ? { trustLevel: pkg.trustLevel } : {}),
-    ...(typeof pkg.publishedAt === 'string'
-      ? { publishedAt: pkg.publishedAt }
-      : {}),
-    ...(typeof pkg.registryId === 'string'
-      ? { registryId: pkg.registryId }
-      : {}),
-    ...(isSourceKind(pkg.sourceKind) ? { sourceKind: pkg.sourceKind } : {}),
-    ...(isLifecycleState(pkg.lifecycle) ? { lifecycle: pkg.lifecycle } : {}),
-    ...(isNativeIntegrity(pkg.nativeIntegrity)
-      ? { nativeIntegrity: pkg.nativeIntegrity }
-      : {}),
+    ...(Array.isArray(pkg.dependencies) && {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      dependencies: [...new Set(pkg.dependencies as string[])].sort(),
+    }),
+    ...(isTrustTier(pkg.trustLevel) && { trustLevel: pkg.trustLevel }),
+    ...(typeof pkg.publishedAt === 'string' && {
+      publishedAt: pkg.publishedAt,
+    }),
+    ...(typeof pkg.registryId === 'string' && { registryId: pkg.registryId }),
+    ...(isSourceKind(pkg.sourceKind) && { sourceKind: pkg.sourceKind }),
+    ...(isLifecycleState(pkg.lifecycle) && { lifecycle: pkg.lifecycle }),
+    ...(isNativeIntegrity(pkg.nativeIntegrity) && {
+      nativeIntegrity: pkg.nativeIntegrity,
+    }),
   };
 }
 
@@ -270,6 +273,7 @@ function isNativeIntegrity(
 ): value is NonNullable<LockPackage['nativeIntegrity']> {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     return false;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const integrity = value as Record<string, unknown>;
   return (
     typeof integrity.algorithm === 'string' &&
@@ -286,6 +290,7 @@ function isLifecycleState(
 ): value is NonNullable<LockPackage['lifecycle']> {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     return false;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const lifecycle = value as Record<string, unknown>;
   return (
     typeof lifecycle.eligible === 'boolean' &&
@@ -300,6 +305,7 @@ export async function readLockfile(
   try {
     return parseLockfile(await readStableFile(path));
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }

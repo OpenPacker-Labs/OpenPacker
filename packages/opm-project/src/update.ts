@@ -78,12 +78,12 @@ export async function updateProject(input: {
       root: input.root,
       manifest,
       offline,
-      ...(input.catalogPaths === undefined
-        ? {}
-        : { catalogPaths: input.catalogPaths }),
-      ...(input.registryOptions === undefined
-        ? {}
-        : { registryOptions: input.registryOptions }),
+      ...(!(input.catalogPaths === undefined) && {
+        catalogPaths: input.catalogPaths,
+      }),
+      ...(!(input.registryOptions === undefined) && {
+        registryOptions: input.registryOptions,
+      }),
     });
     return finish(
       input.root,
@@ -135,9 +135,9 @@ export async function updateProject(input: {
       manifest,
       offline,
       latest,
-      ...(input.registryOptions === undefined
-        ? {}
-        : { registryOptions: input.registryOptions }),
+      ...(!(input.registryOptions === undefined) && {
+        registryOptions: input.registryOptions,
+      }),
     });
     if (version === undefined)
       throw new OpmError(
@@ -184,12 +184,12 @@ export async function updateProject(input: {
     root: input.root,
     manifest: resolutionManifest,
     offline,
-    ...(input.catalogPaths === undefined
-      ? {}
-      : { catalogPaths: input.catalogPaths }),
-    ...(input.registryOptions === undefined
-      ? {}
-      : { registryOptions: input.registryOptions }),
+    ...(!(input.catalogPaths === undefined) && {
+      catalogPaths: input.catalogPaths,
+    }),
+    ...(!(input.registryOptions === undefined) && {
+      registryOptions: input.registryOptions,
+    }),
   });
   lock.manifestDigest = manifestDigest(committed);
   await assertLockStillPresent(paths.lock, startedWithLock);
@@ -227,7 +227,7 @@ async function unchanged(
     lock,
     state,
     updated: [],
-    ...(native === undefined ? {} : { native }),
+    ...(!(native === undefined) && { native }),
   };
 }
 
@@ -257,7 +257,7 @@ async function finish(
     root,
     lock,
     offline,
-    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({ root, manifest, lock });
   return {
@@ -265,7 +265,7 @@ async function finish(
     lock,
     state,
     updated,
-    ...(native === undefined ? {} : { native }),
+    ...(!(native === undefined) && { native }),
   };
 }
 

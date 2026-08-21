@@ -202,6 +202,7 @@ describe('lock-import planning', () => {
 
   it('fails lock completion when requested evidence or loss policy is unmet', async () => {
     const solveInput = await planNativeLockImport(cargoLock);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const resolver = {
       solve: () => {
         throw new Error('resolver must not run');

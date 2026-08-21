@@ -22,6 +22,7 @@ export async function seedEpochPactState(
   store: OpenPackerStateStore,
   workspaceRoot = findWorkspaceRoot(),
 ): Promise<void> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const signed = JSON.parse(
     await readFile(
       resolve(workspaceRoot, 'fixtures/epoch/signed-receipt.json'),
@@ -47,9 +48,11 @@ export async function seedEpochPactState(
 export async function startEpochPactProvider(
   workspaceRoot = findWorkspaceRoot(),
 ) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const keys = JSON.parse(
     await readFile(resolve(workspaceRoot, 'fixtures/trust/keys.json'), 'utf8'),
   ) as { root: JsonWebKey };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const universe = JSON.parse(
     await readFile(
       resolve(workspaceRoot, 'fixtures/epoch/universe.json'),

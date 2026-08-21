@@ -187,6 +187,7 @@ describe('nix path-info translation', () => {
   it('turns references into requirements and drops the self reference', async () => {
     const { instance } = await codec.translateMetadata(entry, provenance);
     expect(instance.requirements).toHaveLength(1);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const expression = instance.requirements[0]?.expression as {
       purl: string;
       qualifiers: Record<string, string>;

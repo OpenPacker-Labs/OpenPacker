@@ -7,6 +7,7 @@ const encoder = new TextEncoder();
 const packumentBytes = await readFile(
   new URL('../../../fixtures/catalogs/npm/packument.json', import.meta.url),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const packument = JSON.parse(packumentBytes.toString()) as NpmPackument;
 const archive = await readFile(
   new URL(
@@ -97,6 +98,7 @@ it('enumerates deterministic fixture metadata and keeps dist-tags mutable', asyn
   expect(inspected.package.semanticLoss.map((loss) => loss.code)).toContain(
     'NPM_LIFECYCLE_SCRIPTS_NOT_EXECUTED',
   );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   expect((inspected.record.body as NpmPackument)['dist-tags']).toEqual({
     latest: '1.1.0',
   });

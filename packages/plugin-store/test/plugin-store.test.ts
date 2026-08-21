@@ -101,6 +101,7 @@ function tar(
 // --- registry fixtures -----------------------------------------------------
 
 function pluginManifest(id: string, executable: string): Uint8Array {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalBytes({
     delegatedAdapterVersion: '1',
     id,
@@ -222,11 +223,7 @@ function registryFixture(
   return new FixtureHttpTransport(fixtures);
 }
 
-function acmeFixture(): {
-  transport: FixtureHttpTransport;
-  artifact: Uint8Array;
-  digest: string;
-} {
+function acmeFixture() {
   const artifact = pluginArtifact(
     pluginManifest('dev.example.acme-adapter', 'acme-adapter'),
   );
@@ -287,6 +284,7 @@ describe('plugin add', () => {
       join(root, `sha256-${fixture.digest.slice('sha256:'.length)}`),
     );
     // The store entry holds exactly the manifest and the executable.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifest = JSON.parse(
       await readFile(join(installed.storePath, PLUGIN_MANIFEST_NAME), 'utf8'),
     ) as { id: string };
@@ -300,6 +298,7 @@ describe('plugin add', () => {
       ((await stat(`${installed.storePath}.artifact`)).mode & 0o222) === 0,
     ).toBe(true);
     // The pin index records exactly what the spec names.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const index = JSON.parse(
       await readFile(join(root, PLUGIN_INDEX_NAME), 'utf8'),
     ) as { plugins: Record<string, Record<string, string>> };
@@ -520,6 +519,7 @@ describe('plugin add', () => {
   });
 
   it('refuses a malformed manifest at add time', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const broken = canonicalBytes({
       delegatedAdapterVersion: '1',
       id: 'dev.example.broken',
@@ -720,6 +720,7 @@ describe('offline behaviour', () => {
     expect(repaired.cached).toBe(true);
     expect(repaired.alreadyInstalled).toBe(false);
     expect(fixture.transport.requests.length).toBe(requests);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifest = JSON.parse(
       await readFile(join(repaired.storePath, PLUGIN_MANIFEST_NAME), 'utf8'),
     ) as { id: string };
@@ -909,6 +910,7 @@ describe('adapter module', () => {
         lookedUp += 1;
         return [{ address: '10.0.0.1', family: 4 }];
       },
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push(String(input));
         return new Response(

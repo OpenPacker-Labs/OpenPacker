@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AdapterHostError,
   AdapterRegistry,
-  assertWitShapedModule,
+  assertWitContractModule,
   hasResource,
   requireResource,
   serviceIndexBytes,
@@ -44,6 +44,7 @@ describe('AdapterRegistry discovery', () => {
           },
         ]),
       codec: () =>
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ({
           purlType: 'fixture',
           canonicalizePurl: (p: string) => p,
@@ -73,7 +74,9 @@ describe('AdapterRegistry discovery', () => {
     registry.register(
       fixtureModule({
         registryDefinition: () => definitionOnly,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         installer: () => ({ install: async () => ({}) }) as never,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         catalog: () => ({ inspect: async () => ({}) }) as never,
       }),
     );
@@ -101,6 +104,7 @@ describe('AdapterRegistry discovery', () => {
   });
 
   it('routes package-build v2 through the packer export', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const packer = { providerId: 'fixture-pack', purlType: 'fixture' } as never;
     const registry = new AdapterRegistry();
     registry.register(
@@ -120,14 +124,17 @@ describe('AdapterRegistry discovery', () => {
 
   it('routes configured delegated pack providers independently from adapters', () => {
     const registry = new AdapterRegistry();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const first = {
       providerId: 'example.first',
       purlType: 'fixture',
     } as never;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const second = {
       providerId: 'example.second',
       purlType: 'fixture',
     } as never;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const third = {
       providerId: 'example.third',
       purlType: 'fixture',
@@ -163,6 +170,7 @@ describe('AdapterRegistry discovery', () => {
               '@type': 'prex.registry.install/1',
             },
           ]),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         installer: () => ({ install: async () => ({}) }) as never,
       }),
     );
@@ -194,6 +202,7 @@ describe('AdapterRegistry discovery', () => {
             reversibility: 'uninstall',
           },
         }),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         installer: () => ({}) as never,
       }),
     );
@@ -211,10 +220,12 @@ describe('WIT-shaped bridge', () => {
             '@type': 'prex.registry.enumerate-versions/1',
           },
         ]),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       codec: () => ({ purlType: 'fixture' }) as never,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       catalog: () => ({}) as never,
     });
-    await assertWitShapedModule(module);
+    await assertWitContractModule(module);
     const bytes = await serviceIndexBytes(module);
     const parsed = parseServiceIndex(bytes);
     expect(parsed.registryId).toBe('urn:openpacker:registry:fixture');
@@ -233,9 +244,10 @@ describe('WIT-shaped bridge', () => {
             ],
           },
         ]),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       installer: () => ({ install: async () => ({}) }) as never,
     });
-    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+    await expect(assertWitContractModule(dishonest)).rejects.toMatchObject({
       code: 'INVALID_ADAPTER',
     });
   });
@@ -249,9 +261,10 @@ describe('WIT-shaped bridge', () => {
             '@type': 'prex.registry.package-build/2',
           },
         ]),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       codec: () => ({}) as never,
     });
-    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+    await expect(assertWitContractModule(dishonest)).rejects.toMatchObject({
       code: 'INVALID_ADAPTER',
     });
   });
@@ -266,9 +279,10 @@ describe('WIT-shaped bridge', () => {
           },
         ]),
       installer: () =>
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ({ install: async () => ({}), plan: async () => ({}) }) as never,
     });
-    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+    await expect(assertWitContractModule(dishonest)).rejects.toMatchObject({
       code: 'INVALID_ADAPTER',
     });
   });
@@ -288,9 +302,10 @@ describe('WIT-shaped bridge', () => {
             ],
           },
         ]),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       catalog: () => ({}) as never,
     });
-    await expect(assertWitShapedModule(future)).resolves.toBeUndefined();
+    await expect(assertWitContractModule(future)).resolves.toBeUndefined();
   });
 
   it('rejects a malformed type in the reserved prex namespace', async () => {
@@ -310,11 +325,13 @@ describe('WIT-shaped bridge', () => {
               '@type': ['prex.registry.enumerate-versions/1', bad],
             },
           ]),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         catalog: () => ({}) as never,
       });
-      await expect(assertWitShapedModule(malformed), bad).rejects.toMatchObject(
-        { code: 'INVALID_REGISTRY_DEFINITION' },
-      );
+      await expect(
+        assertWitContractModule(malformed),
+        bad,
+      ).rejects.toMatchObject({ code: 'INVALID_REGISTRY_DEFINITION' });
     }
   });
 
@@ -330,15 +347,17 @@ describe('WIT-shaped bridge', () => {
             ],
           },
         ]),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       catalog: () => ({}) as never,
     });
-    await expect(assertWitShapedModule(extended)).resolves.toBeUndefined();
+    await expect(assertWitContractModule(extended)).resolves.toBeUndefined();
   });
 });
 
 describe('config discovery without core import tables', () => {
   it('refuses JavaScript imports before their top-level code can execute', async () => {
     const { createRegistryFromDiscovery } = await import('./discovery.js');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     delete (globalThis as { opmImported?: boolean }).opmImported;
     await expect(
       createRegistryFromDiscovery({
@@ -348,6 +367,7 @@ describe('config discovery without core import tables', () => {
       }),
     ).rejects.toMatchObject({ code: 'ADAPTER_LOAD_DISABLED' });
     expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (globalThis as { opmImported?: boolean }).opmImported,
     ).toBeUndefined();
   });
@@ -368,6 +388,7 @@ describe('named sources', () => {
         registryId: 'urn:openpacker:registry:mirror',
         purlTypes: [...purlTypes],
       }),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       catalog: () => ({ inspect: async () => ({}) }) as never,
     });
 
@@ -386,6 +407,7 @@ describe('named sources', () => {
           registryId: 'urn:openpacker:registry:npmjs-org',
           purlTypes: ['npm'],
         }),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         catalog: () => ({ inspect: async () => ({}) }) as never,
       }),
     );

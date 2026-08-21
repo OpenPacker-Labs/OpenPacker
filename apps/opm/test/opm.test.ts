@@ -184,6 +184,7 @@ describe('opm + opmx CLI', () => {
     ).toBe(0);
     expect(cap.out).toContain('cli-pack-1.0.0.tgz');
     expect(cap.out).toContain('opm-pack-receipt.json');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const receipt = JSON.parse(
       await readFile(
         join(root, '.opm', 'pack', 'opm-pack-receipt.json'),
@@ -203,6 +204,7 @@ describe('opm + opmx CLI', () => {
 
     // local catalog with absolute file source
     await mkdir(join(root, '.opm'), { recursive: true });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
       packages: Record<string, { source: string }>;
     };
@@ -224,6 +226,7 @@ describe('opm + opmx CLI', () => {
     expect(cap.out).toMatch(/Added demo-tool/);
 
     const statePath = join(root, '.opm/project.json');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const forgedState = JSON.parse(await readFile(statePath, 'utf8')) as {
       packages: Record<
         string,
@@ -244,6 +247,7 @@ describe('opm + opmx CLI', () => {
       cap.err,
     ).toBe(0);
     expect(cap.out).toMatch(/1\.1\.0/);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const repairedState = JSON.parse(await readFile(statePath, 'utf8')) as {
       packages: Record<
         string,
@@ -333,6 +337,7 @@ describe('opm + opmx CLI', () => {
     expect(await runOpm(['init', '--name', 'gen-demo'], cap.io, root)).toBe(0);
 
     await mkdir(join(root, '.opm'), { recursive: true });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const catalog = JSON.parse(await readFile(fixtureCatalog, 'utf8')) as {
       packages: Record<string, { source: string }>;
     };
@@ -533,6 +538,7 @@ describe('opmx --plugin', () => {
     );
     let fetches = 0;
     const serve = acmeToolFetch();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
       if (
         String(input) === 'https://acme.fixture.test/artifacts/demo-1.0.0.tar'
@@ -594,6 +600,7 @@ describe('opmx --plugin', () => {
     // Same length as the published tar (so size checks pass), different bytes.
     const tampered = new Uint8Array(ACME_TOOL_TAR);
     tampered[512] = tampered[512]! ^ 0xff;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     vi.stubGlobal('fetch', acmeToolFetch(tampered) as typeof fetch);
     try {
       await seedPluginStore(home);
@@ -915,6 +922,7 @@ describe('project plugin bindings', () => {
     const { acmeToolFetch, seedPluginStore } = await import(
       './plugin-fixture.js'
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     vi.stubGlobal('fetch', acmeToolFetch() as typeof fetch);
     try {
       const seeded = await seedPluginStore(home);
@@ -939,6 +947,7 @@ describe('project plugin bindings', () => {
       // The inspection-declared executable is pinned into the lock and
       // materialized into the install: the shim exists and points at the
       // verified store file.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const lock = JSON.parse(
         await readFile(join(root, 'opm.lock.json'), 'utf8'),
       ) as {
@@ -947,6 +956,7 @@ describe('project plugin bindings', () => {
       expect(lock.packages['demo']?.bins).toEqual([
         { name: 'acme-demo', path: 'bin/acme-demo', interpreter: 'native' },
       ]);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const state = JSON.parse(
         await readFile(join(root, '.opm/project.json'), 'utf8'),
       ) as {

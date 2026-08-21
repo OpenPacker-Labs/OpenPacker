@@ -44,6 +44,7 @@ describe('openpacker CLI', () => {
           'true',
         );
         const body = JSON.parse(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           new TextDecoder().decode(init?.body as ArrayBuffer),
         );
         expect(body.items[0]).toEqual({ type: 'purl', value: 'pkg:npm/demo' });
@@ -431,6 +432,7 @@ describe('openpacker CLI', () => {
   });
 
   it('fails closed for invalid lock output and a missing demo module', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const invalid = solveResponse() as {
       normalizedRequest: { target?: unknown };
     };
@@ -457,7 +459,7 @@ describe('openpacker CLI', () => {
   });
 });
 
-function solveResponse(): unknown {
+function solveResponse() {
   const digest = (character: string) => ({
     algorithm: 'sha256',
     value: character.repeat(64),

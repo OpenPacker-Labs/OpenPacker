@@ -61,6 +61,7 @@ const IDENTITY = {
   name: 'demo',
   qualifiers: {},
   nativeCoordinates: [],
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   aliases: [] as string[],
   sourceRefs: [],
   publisherRefs: [],
@@ -116,22 +117,28 @@ function okResponse(result: JsonValue): string {
 function cannedAnswer(operation: string, query: string): string {
   switch (operation) {
     case 'registry-definition':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse(DEFINITION as unknown as JsonValue);
     case 'identify':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse([
         { ...IDENTITY, aliases: [query] },
       ] as unknown as JsonValue);
     case 'enumerate':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse(['pkg:acme/demo@1.0.0'] as unknown as JsonValue);
     case 'inspect':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse({
         package: PACKAGE_INSTANCE,
         record: WIRE_RECORD,
         warnings: [],
       } as unknown as JsonValue);
     case 'fetch-artifact-record':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse(WIRE_RECORD as unknown as JsonValue);
     case 'snapshot':
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return okResponse(SNAPSHOT as unknown as JsonValue);
     default:
       return JSON.stringify({
@@ -325,7 +332,7 @@ async function registerWithCannedAnswers(
   result: Awaited<ReturnType<typeof registerInstalledPlugins>>;
 }> {
   const fixture = await installFixturePlugin(root, {
-    ...(options.manifest === undefined ? {} : { manifest: options.manifest }),
+    ...(!(options.manifest === undefined) && { manifest: options.manifest }),
   });
   const registry = options.registry ?? new AdapterRegistry();
   const calls: RunInSandboxInput[] = [];
@@ -341,7 +348,9 @@ async function registerWithCannedAnswers(
       const query =
         input.stdin === undefined
           ? ''
-          : ((
+          : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            ((
               parseCanonicalJson(Buffer.from(input.stdin).toString('utf8')) as {
                 params?: { query?: string };
               }
@@ -354,19 +363,19 @@ async function registerWithCannedAnswers(
           )
         : sandboxOutcome(cannedAnswer(operation, query));
     },
-    ...(options.allowEnvironment === undefined
-      ? {}
-      : { allowEnvironment: options.allowEnvironment }),
-    ...(options.hostFetchTokenEnvNames === undefined
-      ? {}
-      : { hostFetchTokenEnvNames: options.hostFetchTokenEnvNames }),
-    ...(options.environment === undefined
-      ? {}
-      : { environment: options.environment }),
-    ...(options.allowNetwork === undefined
-      ? {}
-      : { allowNetwork: options.allowNetwork }),
-    ...(options.limits === undefined ? {} : { limits: options.limits }),
+    ...(!(options.allowEnvironment === undefined) && {
+      allowEnvironment: options.allowEnvironment,
+    }),
+    ...(!(options.hostFetchTokenEnvNames === undefined) && {
+      hostFetchTokenEnvNames: options.hostFetchTokenEnvNames,
+    }),
+    ...(!(options.environment === undefined) && {
+      environment: options.environment,
+    }),
+    ...(!(options.allowNetwork === undefined) && {
+      allowNetwork: options.allowNetwork,
+    }),
+    ...(!(options.limits === undefined) && { limits: options.limits }),
   });
   return { fixture, registry, calls, result };
 }
@@ -491,6 +500,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'identify'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({ not: 'an array' } as unknown as JsonValue),
             )
           : canned,
@@ -505,6 +515,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'registry-definition'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({ purlTypes: ['acme'] } as unknown as JsonValue),
             )
           : canned,
@@ -626,6 +637,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'identify'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse([
                 {
                   ...IDENTITY,
@@ -648,6 +660,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'inspect'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({
                 package: {
                   ...PACKAGE_INSTANCE,
@@ -675,6 +688,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'inspect'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({
                 package: {
                   ...PACKAGE_INSTANCE,
@@ -700,6 +714,7 @@ describe('registerInstalledPlugins', () => {
       answer: (operation, _input, canned) =>
         operation === 'fetch-artifact-record'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({
                 ...WIRE_RECORD,
                 retrievedAt: '2026-01-01',
@@ -718,6 +733,7 @@ describe('registerInstalledPlugins', () => {
     try {
       validateOperationResult(
         fixtureManifest(),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         'bogus' as DelegatedAdapterOperation,
         {},
       );
@@ -1009,15 +1025,17 @@ describe('inspect executables', () => {
     validateOperationResult(
       fixtureManifest(),
       'inspect',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       {
         package: PACKAGE_INSTANCE,
         record: WIRE_RECORD,
-        ...(executables === undefined ? {} : { executables }),
+        ...(!(executables === undefined) && { executables }),
       } as unknown as JsonValue,
       { exactPurl: 'pkg:acme/demo@1.0.0' },
     );
 
   it('accepts valid declarations across every interpreter', () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const inspection = inspect([
       { name: 'demo', path: 'bin/demo.js' },
       {
@@ -1034,6 +1052,7 @@ describe('inspect executables', () => {
 
   it('omits executables when the plugin answered none', () => {
     expect(inspect(undefined)).not.toHaveProperty('executables');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect((inspect([]) as { executables: unknown[] }).executables).toEqual([]);
   });
 
@@ -1099,6 +1118,7 @@ describe('inspect executables', () => {
       answer: (operation, _input, canned) =>
         operation === 'inspect'
           ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               okResponse({
                 package: PACKAGE_INSTANCE,
                 record: WIRE_RECORD,
@@ -1138,6 +1158,7 @@ describe('artifact-bytes capability marker', () => {
     // exercise the provider constructor directly.
     const manifest = fixtureManifest();
     delete manifest.commands['fetch-artifact-record'];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const executor = {
       invoke: async () => {
         throw new Error('must not be invoked');

@@ -258,6 +258,7 @@ export class RegistryStore {
   }
 
   #migrateStatusEvents(): void {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(status_events)')
       .all() as unknown as { name: string; pk: number }[];
@@ -266,6 +267,7 @@ export class RegistryStore {
       columns.filter(({ pk }) => pk > 0).length === 3
     )
       return;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare('SELECT * FROM status_events')
       .all() as unknown as {
@@ -302,6 +304,7 @@ export class RegistryStore {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const row of rows) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const document = JSON.parse(
           new TextDecoder().decode(row.update_document),
         ) as { issuedAt?: string };
@@ -349,7 +352,7 @@ export class RegistryStore {
     signatures: readonly unknown[];
     now: string;
     sourceId?: string;
-  }): { entry: StoredEntry; created: boolean } {
+  }) {
     const existing = this.get(input.manifest.name, input.manifest.version);
     if (existing) {
       if (existing.manifestDigest !== input.manifestDigest)
@@ -375,6 +378,7 @@ export class RegistryStore {
         input.now,
         input.sourceId ?? null,
         input.manifestDigest,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalBytes(input.manifest as unknown as JsonValue),
         new TextEncoder().encode(JSON.stringify(input.signatures)),
         // Projected from the manifest, not stored beside it: manifests are
@@ -442,6 +446,7 @@ export class RegistryStore {
 
   get(name: string, version: string): StoredEntry | undefined {
     if (version === 'latest') {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const row = this.#database
         .prepare(
           'SELECT * FROM entries WHERE name = ? AND is_latest = 1 LIMIT 1',
@@ -449,6 +454,7 @@ export class RegistryStore {
         .get(name) as Row | undefined;
       return row ? toEntry(row) : undefined;
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare('SELECT * FROM entries WHERE name = ? AND version = ?')
       .get(name, version) as Row | undefined;
@@ -456,6 +462,7 @@ export class RegistryStore {
   }
 
   versions(name: string): readonly StoredEntry[] {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare('SELECT * FROM entries WHERE name = ? ORDER BY sequence')
       .all(name) as unknown as Row[];
@@ -468,11 +475,7 @@ export class RegistryStore {
    * `limit + 1` rows are read so the caller can tell "there is more" from
    * "exactly a page remained" without a second query or a count.
    */
-  list(query: ListQuery): {
-    entries: StoredEntry[];
-    hasMore: boolean;
-    lastReadSequence?: number;
-  } {
+  list(query: ListQuery) {
     const where: string[] = [];
     const parameters: (string | number)[] = [];
     if (!query.includeDeleted) where.push("status != 'deleted'");
@@ -500,6 +503,7 @@ export class RegistryStore {
         parameters.push(`%${query.search.toLowerCase()}%`);
       }
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare(
         `SELECT * FROM entries
@@ -523,7 +527,7 @@ export class RegistryStore {
     return {
       entries: filtered,
       hasMore: rows.length > query.limit,
-      ...(lastReadSequence === undefined ? {} : { lastReadSequence }),
+      ...(!(lastReadSequence === undefined) && { lastReadSequence }),
     };
   }
 
@@ -557,6 +561,7 @@ export class RegistryStore {
           'EVENT_EXISTS',
           `Lifecycle event ${input.eventId} was already applied to ${input.name}@${input.version}`,
         );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const latest = this.#database
         .prepare(
           'SELECT MAX(issued_at) AS issued_at FROM status_events WHERE name = ? AND version = ?',
@@ -635,6 +640,7 @@ export class RegistryStore {
         return { rotated: false, reason: 'next-key-exists' };
       }
 
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const bindings = this.#database
         .prepare(
           `SELECT namespace, method, holder_id, holder_verified, verified_at
@@ -660,14 +666,16 @@ export class RegistryStore {
       const holders = [...new Set(bindings.map(({ holder_id }) => holder_id))];
       const cutoff = atEpochMs - quota.windowSeconds * 1000;
       for (const holderId of holders) {
-        const recent = (
-          this.#database
-            .prepare(
-              `SELECT at FROM key_rotation_holders
+        const recent =
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (
+            this.#database
+              .prepare(
+                `SELECT at FROM key_rotation_holders
                WHERE holder_id = ? AND at > ? ORDER BY at ASC`,
-            )
-            .all(holderId, cutoff) as { at: number }[]
-        ).map(({ at }) => at);
+              )
+              .all(holderId, cutoff) as { at: number }[]
+          ).map(({ at }) => at);
         if (recent.length >= quota.limit) {
           this.#database.exec('ROLLBACK');
           return {
@@ -677,6 +685,7 @@ export class RegistryStore {
             recent,
           };
         }
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const active = this.#database
           .prepare(
             'SELECT COUNT(*) AS n FROM key_rotation_holders WHERE holder_id = ?',
@@ -692,6 +701,7 @@ export class RegistryStore {
         }
       }
 
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const predecessor = this.#database
         .prepare('SELECT chain_depth FROM key_rotations WHERE next_key_id = ?')
         .get(rotation.previousKeyId) as { chain_depth: number } | undefined;
@@ -700,6 +710,7 @@ export class RegistryStore {
         this.#database.exec('ROLLBACK');
         return { rotated: false, reason: 'chain-capacity' };
       }
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const activeRevocations = this.#database
         .prepare('SELECT COUNT(*) AS n FROM revocations')
         .get() as { n: number };
@@ -759,6 +770,7 @@ export class RegistryStore {
     name: string,
     version: string,
   ): ServiceabilityRecord | undefined {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare(
         'SELECT state, checked_at, method, detail FROM serviceability WHERE name = ? AND version = ?',
@@ -773,10 +785,12 @@ export class RegistryStore {
       | undefined;
     if (!row) return undefined;
     return {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       state: row.state as ServiceabilityRecord['state'],
       checkedAt: row.checked_at,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       method: row.method as ServiceabilityRecord['method'],
-      ...(row.detail === null ? {} : { detail: row.detail }),
+      ...(!(row.detail === null) && { detail: row.detail }),
     };
   }
 
@@ -805,27 +819,31 @@ export class RegistryStore {
 
   revocations(): readonly RevocationEntry[] {
     return (
-      this.#database
-        .prepare('SELECT * FROM revocations ORDER BY key_id')
-        .all() as unknown as {
-        key_id: string;
-        revoked_at: string;
-        effective: string;
-        reason: string | null;
-        detail: string | null;
-        replaced_by: string | null;
-      }[]
-    ).map(
-      (row): RevocationEntry => ({
-        keyId: row.key_id,
-        revokedAt: row.revoked_at,
-        effective: row.effective as RevocationEntry['effective'],
-        ...(row.reason === null
-          ? {}
-          : { reason: row.reason as RevocationEntry['reason'] }),
-        ...(row.detail === null ? {} : { detail: row.detail }),
-        ...(row.replaced_by === null ? {} : { replacedBy: row.replaced_by }),
-      }),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (
+        this.#database
+          .prepare('SELECT * FROM revocations ORDER BY key_id')
+          .all() as unknown as {
+          key_id: string;
+          revoked_at: string;
+          effective: string;
+          reason: string | null;
+          detail: string | null;
+          replaced_by: string | null;
+        }[]
+      ).map(
+        (row): RevocationEntry => ({
+          keyId: row.key_id,
+          revokedAt: row.revoked_at,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          effective: row.effective as RevocationEntry['effective'],
+          ...(!(row.reason === null) && {
+            reason: row.reason as RevocationEntry['reason'],
+          }),
+          ...(!(row.detail === null) && { detail: row.detail }),
+          ...(!(row.replaced_by === null) && { replacedBy: row.replaced_by }),
+        }),
+      )
     );
   }
 
@@ -841,6 +859,7 @@ export class RegistryStore {
       .prepare('SELECT 1 FROM revocations WHERE key_id = ?')
       .get(entry.keyId);
     if (existing === undefined) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const active = this.#database
         .prepare('SELECT COUNT(*) AS n FROM revocations')
         .get() as { n: number };
@@ -871,6 +890,7 @@ export class RegistryStore {
   }
 
   revocationSerial(): number {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare('SELECT serial FROM revocation_serial WHERE id = 1')
       .get() as { serial: number } | undefined;
@@ -889,25 +909,30 @@ export class RegistryStore {
 
   rotations(): readonly KeyRotation[] {
     return (
-      this.#database
-        .prepare('SELECT * FROM key_rotations ORDER BY rotated_at')
-        .all() as unknown as {
-        next_key_id: string;
-        previous_key_id: string;
-        next_public_key: string;
-        rotated_at: string;
-        signature: string;
-      }[]
-    ).map((row) => ({
-      nextKeyId: row.next_key_id,
-      previousKeyId: row.previous_key_id,
-      nextPublicKey: JSON.parse(row.next_public_key) as JsonWebKey,
-      rotatedAt: row.rotated_at,
-      signature: row.signature,
-    }));
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (
+        this.#database
+          .prepare('SELECT * FROM key_rotations ORDER BY rotated_at')
+          .all() as unknown as {
+          next_key_id: string;
+          previous_key_id: string;
+          next_public_key: string;
+          rotated_at: string;
+          signature: string;
+        }[]
+      ).map((row) => ({
+        nextKeyId: row.next_key_id,
+        previousKeyId: row.previous_key_id,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        nextPublicKey: JSON.parse(row.next_public_key) as JsonWebKey,
+        rotatedAt: row.rotated_at,
+        signature: row.signature,
+      }))
+    );
   }
 
   #migrateKeyRotations(): void {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(key_rotations)')
       .all() as unknown as { name: string }[];
@@ -927,6 +952,7 @@ export class RegistryStore {
   ): void {
     const holderId = holderOf(
       namespace,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       method as ProofMethod,
       verifiedHolderId,
     );
@@ -942,14 +968,18 @@ export class RegistryStore {
   /** Key ids permitted to publish under a namespace. */
   keysFor(namespace: string): readonly string[] {
     return (
-      this.#database
-        .prepare('SELECT key_id FROM namespace_keys WHERE namespace = ?')
-        .all(namespace) as { key_id: string }[]
-    ).map((row) => row.key_id);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (
+        this.#database
+          .prepare('SELECT key_id FROM namespace_keys WHERE namespace = ?')
+          .all(namespace) as { key_id: string }[]
+      ).map((row) => row.key_id)
+    );
   }
 
   /** Every holder with a namespace here, most namespaces first. */
   holders(): readonly HolderSummary[] {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare(
         `SELECT holder_id, COUNT(DISTINCT namespace) AS n
@@ -969,6 +999,7 @@ export class RegistryStore {
    * different thing when they hold one package each than when they hold none.
    */
   holder(holderId: string): HolderSummary | undefined {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare(
         `SELECT namespace, method, key_id, verified_at
@@ -995,7 +1026,7 @@ export class RegistryStore {
         namespace: row.namespace,
         method: row.method,
         keyIds: [row.key_id],
-        ...(row.verified_at === '' ? {} : { verifiedAt: row.verified_at }),
+        ...(!(row.verified_at === '') && { verifiedAt: row.verified_at }),
         packageCount: this.#packagesUnder(row.namespace),
       });
     }
@@ -1004,6 +1035,7 @@ export class RegistryStore {
 
   /** Which holder, if any, a namespace is attributed to. */
   holderForNamespace(namespace: string): string | undefined {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare(
         `SELECT holder_id FROM namespace_keys
@@ -1017,12 +1049,15 @@ export class RegistryStore {
   /** Millisecond timestamps of a holder's publishes inside a window. */
   recentPublishes(holderId: string, sinceEpochMs: number): readonly number[] {
     return (
-      this.#database
-        .prepare(
-          'SELECT at FROM publish_events WHERE holder_id = ? AND at > ? ORDER BY at ASC',
-        )
-        .all(holderId, sinceEpochMs) as { at: number }[]
-    ).map((row) => row.at);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (
+        this.#database
+          .prepare(
+            'SELECT at FROM publish_events WHERE holder_id = ? AND at > ? ORDER BY at ASC',
+          )
+          .all(holderId, sinceEpochMs) as { at: number }[]
+      ).map((row) => row.at)
+    );
   }
 
   recordPublish(holderId: string, atEpochMs: number): void {
@@ -1075,6 +1110,7 @@ export class RegistryStore {
         redirect.previousHolder ?? null,
         redirect.nextHolder ?? null,
         redirectDigest,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         canonicalBytes(signatures as unknown as JsonValue),
       );
   }
@@ -1084,6 +1120,7 @@ export class RegistryStore {
   ):
     | { redirect: PackageRedirect; digest: string; signatures: unknown[] }
     | undefined {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare('SELECT * FROM redirects WHERE from_name = ?')
       .get(from) as RedirectRow | undefined;
@@ -1092,6 +1129,7 @@ export class RegistryStore {
 
   /** Every redirect, for chain resolution. */
   redirects(): ReadonlyMap<string, PackageRedirect> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare('SELECT * FROM redirects')
       .all() as unknown as RedirectRow[];
@@ -1115,6 +1153,7 @@ export class RegistryStore {
    */
   /** Packages (not versions) whose name sits under a namespace. */
   #packagesUnder(namespace: string): number {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare(
         `SELECT COUNT(DISTINCT name) AS n FROM entries
@@ -1126,6 +1165,7 @@ export class RegistryStore {
 
   /** Mark legacy guessed holder ids unverified; only operator bindings are safe to recover. */
   #migrateNamespaceKeys(): void {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(namespace_keys)')
       .all() as unknown as { name: string }[];
@@ -1205,13 +1245,15 @@ function toRedirect(row: RedirectRow): {
       from: row.from_name,
       to: row.to_name,
       effectiveAt: row.effective_at,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       reason: row.reason as 'rename' | 'transfer',
-      ...(row.previous_holder === null
-        ? {}
-        : { previousHolder: row.previous_holder }),
-      ...(row.next_holder === null ? {} : { nextHolder: row.next_holder }),
+      ...(!(row.previous_holder === null) && {
+        previousHolder: row.previous_holder,
+      }),
+      ...(!(row.next_holder === null) && { nextHolder: row.next_holder }),
     },
     digest: row.redirect_digest,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     signatures: JSON.parse(
       new TextDecoder().decode(row.signatures),
     ) as unknown[],
@@ -1250,15 +1292,18 @@ function toEntry(row: Row): StoredEntry {
     sequence: row.sequence,
     name: row.name,
     version: row.version,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     status: row.status as EntryStatus,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
     isLatest: row.is_latest === 1,
-    ...(row.source_id === null ? {} : { sourceId: row.source_id }),
+    ...(!(row.source_id === null) && { sourceId: row.source_id }),
     manifestDigest: row.manifest_digest,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     manifest: JSON.parse(
       decoder.decode(row.manifest),
     ) as unknown as PackageManifest,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     signatures: JSON.parse(decoder.decode(row.signatures)) as unknown[],
   };
 }

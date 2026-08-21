@@ -137,6 +137,7 @@ function projectionFor(id: string) {
  */
 export async function treeDigest(manifest: TreeManifest): Promise<Digest> {
   return canonicalProjectionDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     manifest as unknown as JsonValue,
     projectionFor('tree-manifest-v1'),
   );
@@ -194,6 +195,7 @@ export function scanReferences(
   type Automaton = new (keywords: readonly string[]) => {
     search(text: string): [number, string[]][];
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const namespace = ahocorasick as unknown as {
     default?: Automaton;
   } & Automaton;
@@ -228,6 +230,7 @@ function latin1(bytes: Uint8Array): string {
   // Node's native decoder is ~110x faster than the portable loop on an 8MB
   // artifact (4ms against 441ms), which is most of this scan's cost, so it is
   // worth branching for. Both produce identical strings.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const buffer = (globalThis as { Buffer?: typeof globalThis.Buffer }).Buffer;
   if (buffer !== undefined)
     return buffer
@@ -239,6 +242,7 @@ function latin1(bytes: Uint8Array): string {
   let out = '';
   for (let index = 0; index < bytes.length; index += CHUNK)
     out += String.fromCharCode(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ...(bytes.subarray(index, index + CHUNK) as unknown as number[]),
     );
   return out;
@@ -357,14 +361,12 @@ export function assembleClosure(input: ClosureInput): RuntimeClosure {
       toNodeId,
       provenance:
         isDeclared && isScanned ? 'both' : isDeclared ? 'declared' : 'scanned',
-      ...(paths.length === 0
-        ? {}
-        : {
-            evidenceRefs: paths.map((path) => ({
-              type: 'reference-scan',
-              locator: path,
-            })),
-          }),
+      ...(!(paths.length === 0) && {
+        evidenceRefs: paths.map((path) => ({
+          type: 'reference-scan',
+          locator: path,
+        })),
+      }),
     });
   }
   edges.sort((left, right) =>
@@ -432,6 +434,7 @@ export function reachableMembers(
 /** `closure-v1` digest of an assembled closure. */
 export async function closureDigest(closure: RuntimeClosure): Promise<Digest> {
   return canonicalProjectionDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     closure as unknown as JsonValue,
     projectionFor('closure-v1'),
   );

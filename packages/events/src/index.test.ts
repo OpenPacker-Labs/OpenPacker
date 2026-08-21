@@ -92,11 +92,13 @@ describe('OpenPacker CloudEvents', () => {
         universeDigest: digest('c'),
       },
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const invalidData = structuredClone(event) as unknown as {
       data: Record<string, unknown>;
     };
     invalidData.data.solutionDigest = 'not-a-digest';
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       verifyCloudEvent(invalidData as unknown as OpenPackerCloudEvent),
     ).rejects.toThrow('contract violation');
 

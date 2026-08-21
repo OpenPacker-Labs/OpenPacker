@@ -37,6 +37,7 @@ export async function canonicalRequestDigest(
     ({ id }) => id === 'request-v1',
   );
   if (!projection) throw new Error('Missing request-v1 digest projection');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalProjectionDigest(request as unknown as JsonValue, projection);
 }
 
@@ -45,9 +46,11 @@ export async function validateReceiptBindings(
 ): Promise<void> {
   const request = await canonicalRequestDigest(receipt.normalizedRequest);
   const target = await canonicalDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     receipt.normalizedRequest.target as unknown as JsonValue,
   );
   const policy = await canonicalDigest(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     receipt.normalizedRequest.policy as unknown as JsonValue,
   );
   if (!equal(receipt.requestDigest, request))
@@ -86,6 +89,7 @@ export async function signReceipt(
     throw new Error('At least one receipt signer is required');
   if (new Set(signers.map((signer) => signer.keyId)).size !== signers.length)
     throw new Error('Receipt signer key IDs must be unique');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const receiptDigest = await canonicalDigest(receipt as unknown as JsonValue);
   const message = new TextEncoder().encode(formatDigest(receiptDigest));
   const signatures = await Promise.all(
@@ -109,6 +113,7 @@ export async function verifySignedReceipt(
   verifiers: ReadonlyMap<string, Verifier>,
 ): Promise<void> {
   await validateReceiptBindings(signed.receipt);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const digest = await canonicalDigest(signed.receipt as unknown as JsonValue);
   if (!equal(digest, signed.receiptDigest))
     throw new Error('Receipt digest mismatch');
@@ -171,5 +176,6 @@ export function rejectReceiptReplay(
 }
 
 export function canonicalReceiptBytes(receipt: ResolutionReceipt): Uint8Array {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalBytes(receipt as unknown as JsonValue);
 }

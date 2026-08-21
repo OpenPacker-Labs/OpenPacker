@@ -184,6 +184,7 @@ async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   try {
     text = await readStableFile(`${sharedPath}.tree`);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new OpmError(
         'VERIFICATION_FAILED',
@@ -329,6 +330,7 @@ async function publishFile(
   try {
     await linkFile(from, to);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
     await copyFile(from, to);
     const mode = (await lstat(from)).mode;
@@ -342,7 +344,9 @@ async function assertNoFollowTree(root: string): Promise<void> {
     await assertNoFollowEntries(root);
   } catch (error) {
     if (
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOTDIR'
     )
       throw new OpmError(

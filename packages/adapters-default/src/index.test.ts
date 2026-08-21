@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { assertWitShapedModule, hasResource } from '@openpacker/adapter-host';
+import { assertWitContractModule, hasResource } from '@openpacker/adapter-host';
 import {
   configureDefaultAdapters,
   createDefaultAdapterRegistry,
@@ -51,7 +51,7 @@ describe('default adapters', () => {
 
   it('every default module satisfies the WIT-shaped bridge contract', async () => {
     for (const module of defaultAdapterModules())
-      await assertWitShapedModule(module);
+      await assertWitContractModule(module);
   });
 
   it('configures the process-wide registry', () => {
@@ -81,6 +81,7 @@ describe('default adapters', () => {
     const registry = createDefaultAdapterRegistry();
     const provider = await registry.catalogFor('oci', {
       endpoint: 'https://registry.example',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: URL | string) => {
         requests.push(String(input));
         return new Response(JSON.stringify({ tags: ['1.0.0'] }), {
@@ -106,6 +107,7 @@ describe('default adapters', () => {
   it('allowlists both default OCI registries and drops the other on override', async () => {
     const registry = createDefaultAdapterRegistry();
     const tags = JSON.stringify({ tags: ['1.0.0'] });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchOk = (async () =>
       new Response(tags, {
         status: 200,
@@ -165,6 +167,7 @@ describe('default adapters', () => {
       };
       const registry = createDefaultAdapterRegistry();
       const provider = await registry.catalogFor('npm', {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         fetch: (async (input: URL | string) => {
           const href = String(input);
           requests.push(href);

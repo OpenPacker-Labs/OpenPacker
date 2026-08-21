@@ -162,9 +162,8 @@ function completeExpression(input) {
     return {
       ...input,
       then: completeExpression(input.then),
-      ...(input.else === undefined
-        ? {}
-        : { else: completeExpression(input.else) }),
+      else:
+        input.else === undefined ? undefined : completeExpression(input.else),
     };
   return input;
 }
@@ -207,11 +206,11 @@ async function instance({
     canonicalPurl,
     exactPurl,
     purlType: parsed.type,
-    ...(parsed.namespace === undefined ? {} : { namespace: parsed.namespace }),
+    namespace: parsed.namespace,
     name: parsed.name,
     version: parsed.version,
     qualifiers: parsed.qualifiers,
-    ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
+    subpath: parsed.subpath,
     nativeCoordinates: [{ ecosystem: purlType, coordinate: name, version }],
     aliases: [],
     sourceRefs: [source],
@@ -940,7 +939,7 @@ async function emit(store, type, subject, data, time, occurrenceId) {
     data,
     correlationId: 'openpacker-demo',
     clock: { now: () => time },
-    ...(occurrenceId ? { occurrenceId } : {}),
+    occurrenceId,
   });
   await verifyCloudEvent(event, canonicalBytes(event));
   store.appendEvent(event);
@@ -1433,9 +1432,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
         type: 'library',
         name: item.identity.name,
         version: item.normalizedVersion,
-        ...(item.identity.exactPurl === undefined
-          ? {}
-          : { purl: item.identity.exactPurl }),
+        purl: item.identity.exactPurl,
         licenses: [{ expression: 'MIT' }],
         hashes: item.artifacts.map((artifact) => ({
           alg: 'SHA-256',

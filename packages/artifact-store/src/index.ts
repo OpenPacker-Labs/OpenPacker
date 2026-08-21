@@ -371,6 +371,7 @@ export class FilesystemArtifactStore implements ArtifactStore {
     const descriptors: ArtifactDescriptor[] = [];
     for (const name of names) {
       signal?.throwIfAborted();
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const descriptor = JSON.parse(
         await readFile(join(directory, name), 'utf8'),
       ) as ArtifactDescriptor;

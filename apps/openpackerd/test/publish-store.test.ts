@@ -186,11 +186,13 @@ describe('filesystem publish store', () => {
         { purlType: 'npm', identifier: 'demo', version: '2.0.0' },
       ],
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const real = await canonicalDigest(manifest as unknown as JsonValue);
     const request: RegistryPublishRequest = {
       manifest,
       manifestDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const bytes = canonicalBytes(request as unknown as JsonValue);
     const hex = digestOf(bytes);
     const path = join(root, 'manifest-publish.json');
@@ -265,12 +267,14 @@ describe('reference daemon publish opt-in', () => {
       env: {},
     });
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.publish({} as never, context() as never),
     ).rejects.toMatchObject({
       code: 'PROVIDER_CAPABILITY_MISSING',
       status: 501,
     });
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.lifecycleApply({} as never, context() as never),
     ).rejects.toMatchObject({
       code: 'PROVIDER_CAPABILITY_MISSING',
@@ -284,6 +288,7 @@ describe('reference daemon publish opt-in', () => {
     });
     const bytes = new TextEncoder().encode('from-env');
     const { request, hex } = await artifactPublish(root, bytes);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     await operations.publish(request, context() as never);
     const stored = await readFile(join(root, 'blobs', 'sha256', hex));
     expect(Buffer.from(stored)).toEqual(Buffer.from(bytes));

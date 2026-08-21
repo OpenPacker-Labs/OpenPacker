@@ -64,13 +64,13 @@ export async function runPublishCommand(
       ecosystem: pack,
       version: packageVersion,
       name: option(args, 'name') ?? manifest.project.name,
-      ...(from === undefined ? {} : { outputDirectory: from }),
+      ...(!(from === undefined) && { outputDirectory: from }),
     };
   }
   const result = await publishPackedArtifact({
-    ...(from === undefined ? {} : { from }),
-    ...(packInput === undefined ? {} : { pack: packInput }),
-    ...(registry === undefined ? {} : { registry }),
+    ...(!(from === undefined) && { from }),
+    ...(!(packInput === undefined) && { pack: packInput }),
+    ...(!(registry === undefined) && { registry }),
     env: process.env,
   });
   const name =
