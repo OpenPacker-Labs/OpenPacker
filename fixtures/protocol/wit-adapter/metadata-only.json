@@ -1,0 +1,29 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:wit-adapter-metadata",
+  "displayName": "WIT-shaped metadata-only service index (no search)",
+  "purlTypes": ["generic"],
+  "protocol": {
+    "native": "fixture-v1",
+    "transport": ["https"]
+  },
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/metadata/",
+      "@type": [
+        "prex.registry.package-metadata/1",
+        "prex.registry.enumerate-versions/1"
+      ]
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/artifacts/",
+      "@type": "prex.registry.artifact/1"
+    }
+  ],
+  "features": {
+    "offlineReplay": true,
+    "installSideEffects": "none",
+    "reversibility": "none",
+    "requiresElevation": "never"
+  }
+}
