@@ -6,6 +6,7 @@ import {
   parseRequirementsTxt,
   parsePnpmLock,
   parsePoetryLock,
+  parseUvLock,
   planLockCapture,
   planNativeLockImport,
 } from './index.js';
@@ -26,6 +27,10 @@ const uvLock = await readFile(
   new URL('../../../fixtures/locks/pypi/uv.lock.json', import.meta.url),
   'utf8',
 );
+const uvLockToml = await readFile(
+  new URL('../../../fixtures/locks/pypi/uv.lock', import.meta.url),
+  'utf8',
+);
 const goSum = await readFile(
   new URL('../../../fixtures/locks/golang/go.sum', import.meta.url),
   'utf8',
@@ -41,6 +46,7 @@ describe('lock-import planning', () => {
     expect(detectLockFormat(cargoLock)).toBe('cargo-lock');
     expect(detectLockFormat(nugetAssets)).toBe('nuget-assets');
     expect(detectLockFormat(uvLock)).toBe('uv-lock');
+    expect(detectLockFormat(uvLockToml)).toBe('uv-lock');
     expect(detectLockFormat(goSum)).toBe('go-sum');
     expect(detectLockFormat(gradleLock)).toBe('gradle-lockfile');
   });
@@ -95,6 +101,7 @@ describe('lock-import planning', () => {
     expect(
       pypi.lockedExactPurls.some((purl) => purl.startsWith('pkg:pypi/')),
     ).toBe(true);
+    expect(pypi.format).toBe('uv-lock');
 
     const golang = await planLockCapture(goSum);
     expect(golang.ecosystem).toBe('golang');
@@ -367,6 +374,62 @@ describe('pnpm-lock.yaml import', () => {
         lock("  'a@1.0.0':\n    resolution: {integrity: sha512-z}\n"),
       ),
     ).toBe('pnpm-lock');
+  });
+});
+
+describe('native uv.lock TOML import', () => {
+  it('detects the file uv writes, not the JSON projection', () => {
+    expect(detectLockFormat(uvLockToml)).toBe('uv-lock');
+    expect(uvLockToml.trimStart().startsWith('{')).toBe(false);
+    expect(uvLockToml).toMatch(/^version\s*=\s*1/m);
+    expect(uvLockToml).toMatch(/\[\[package\]\]/);
+  });
+
+  it('parses TOML into the same document the JSON projection carries', () => {
+    const fromToml = parseUvLock(uvLockToml);
+    const fromJson = parseUvLock(uvLock);
+    expect(fromToml.version).toBe(1);
+    expect(fromJson.version).toBe(1);
+    expect(fromToml['requires-python']).toBe(fromJson['requires-python']);
+    expect(fromToml.package.map((entry) => entry.name)).toEqual(
+      fromJson.package.map((entry) => entry.name),
+    );
+    expect(fromToml.package.map((entry) => entry.version)).toEqual(
+      fromJson.package.map((entry) => entry.version),
+    );
+  });
+
+  it('captures native TOML under native-capture-v1 with pypi pins', async () => {
+    const plan = await planLockCapture(uvLockToml);
+    expect(plan.format).toBe('uv-lock');
+    expect(plan.ecosystem).toBe('pypi');
+    expect(
+      plan.lockedExactPurls.some((purl) => purl.startsWith('pkg:pypi/')),
+    ).toBe(true);
+    expect(plan.lockedExactPurls).toContain('pkg:pypi/demo-tool@1.0.0');
+    expect(
+      plan.semanticLoss.some(
+        (loss) => loss.code === 'NATIVE_RESULT_CAPTURE_ONLY',
+      ),
+    ).toBe(true);
+
+    const jsonPlan = await planLockCapture(uvLock);
+    expect(jsonPlan.format).toBe('uv-lock');
+    expect(jsonPlan.lockedExactPurls).toEqual(plan.lockedExactPurls);
+
+    const input = await planNativeLockImport(uvLockToml);
+    expect(input.request.semantics.profile).toBe('native-capture-v1');
+    expect(input.request.environment.locked).toEqual(
+      expect.arrayContaining(['pkg:pypi/demo-tool@1.0.0']),
+    );
+  });
+
+  it('is not mistaken for Cargo.lock, which also uses [[package]]', () => {
+    expect(
+      detectLockFormat(
+        'version = 3\n\n[[package]]\nname = "a"\nversion = "1.0"\n',
+      ),
+    ).toBe('cargo-lock');
   });
 });
 

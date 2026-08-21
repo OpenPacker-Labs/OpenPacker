@@ -133,8 +133,8 @@ export interface UvLockPackage {
 }
 
 /**
- * Structured representation of uv.lock version 1 (TOML projected to JSON).
- * Primary freeze format for the PyPI codec.
+ * Structured representation of uv.lock version 1 (native TOML or JSON
+ * projection). Primary freeze format for the PyPI codec.
  */
 export interface UvLockDocument {
   version: number;

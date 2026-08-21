@@ -30,7 +30,8 @@ npx openpacker import-lock --input fixtures/locks/npm/package-lock.json --json
 ```
 
 **Formats.** package-lock v3, Cargo.lock, NuGet project.assets /
-packages.lock.json, uv.lock (JSON projection), go.sum, gradle.lockfile.
+packages.lock.json, uv.lock (native TOML or JSON projection), go.sum,
+gradle.lockfile.
 
 ## UC-2 — Cross-ecosystem deterministic solve
 
