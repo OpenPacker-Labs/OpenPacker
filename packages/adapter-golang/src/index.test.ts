@@ -118,6 +118,20 @@ describe('Golang codec', () => {
     expect(parseExactBuildConstraint('!windows')).toBeUndefined();
   });
 
+  it('maps retracted module metadata to yanked lifecycle', async () => {
+    const translated = await codec.translateMetadata(
+      { ...metadata, retracted: true },
+      provenance,
+    );
+    expect(translated.instance.lifecycle).toMatchObject({
+      status: 'yanked',
+      eligible: false,
+    });
+    expect(
+      translated.instance.lifecycle.warnings.map((warning) => warning.code),
+    ).toContain('GOLANG_RETRACTED');
+  });
+
   it('translates module metadata with h1 SemanticLoss and exact build predicates', async () => {
     const translated = await codec.translateMetadata(metadata, provenance);
     expect(translated.instance.identity.exactPurl).toBe(
