@@ -7,8 +7,9 @@ origins, and credentials.
 
 ## Phase
 
-dispatch — layers 01–02 independently verified. Layer 03 (`artifact_origins`) in
-flight.
+closeout — all seven layers independently verified locally. Full
+`npm run verify` running at stack top before squash-merge. CI is dispatch-only;
+billing-red does not block merge.
 
 ## Backend
 
@@ -37,11 +38,11 @@ User-resolved open questions: no require-pin profile; first-party pin-mode now
 | ----- | -------------------------------------------- | ------------------------------------------------------------------ | ---------------- |
 | 01    | sdlc/host-fetch-deferred-01-pin-mode         | Extract classify-and-pin into BoundedFetchTransport (undici Agent) | verified locally |
 | 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           | verified locally |
-| 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   |                  |
-| 04    | sdlc/host-fetch-deferred-04-bearer           | Per-origin bearer + sandbox deny + `--allow-env` refusal           |                  |
-| 05    | sdlc/host-fetch-deferred-05-extra-header     | Extra operator header grant                                        |                  |
-| 06    | sdlc/host-fetch-deferred-06-honesty          | Ambient-credential honesty tests                                   |                  |
-| 07    | sdlc/host-fetch-deferred-07-first-party      | First-party classify-and-pin + CDN narrowing + OCI wrap            |                  |
+| 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   | verified locally |
+| 04    | sdlc/host-fetch-deferred-04-bearer           | Per-origin bearer + sandbox deny + `--allow-env` refusal           | verified locally |
+| 05    | sdlc/host-fetch-deferred-05-extra-header     | Extra operator header grant                                        | verified locally |
+| 06    | sdlc/host-fetch-deferred-06-honesty          | Ambient-credential honesty tests                                   | verified locally |
+| 07    | sdlc/host-fetch-deferred-07-first-party      | First-party classify-and-pin + CDN narrowing + OCI wrap            | verified locally |
 
 ## Gates
 
