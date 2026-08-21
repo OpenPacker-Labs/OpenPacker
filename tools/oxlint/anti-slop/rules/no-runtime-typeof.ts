@@ -50,6 +50,22 @@ function hasDeclaredType(node: ESTree.Expression): boolean {
   return false;
 }
 
+function isPublicContext(node: ESTree.Node): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (current.type === 'ExportNamedDeclaration') return true;
+    if (current.type === 'ClassBody') return true;
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    )
+      return false;
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
 export const noRuntimeTypeofRule = defineRule({
   meta: {
@@ -84,6 +100,7 @@ export const noRuntimeTypeofRule = defineRule({
           option.allowInTypeGuards === true;
         if (
           node.operator === 'typeof' &&
+          isPublicContext(node) &&
           !hasDeclaredType(node.argument) &&
           (!allowInTypeGuards || !isInsideTypeGuard(node))
         ) {

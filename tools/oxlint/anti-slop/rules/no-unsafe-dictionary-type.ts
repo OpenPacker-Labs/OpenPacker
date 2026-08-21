@@ -66,6 +66,36 @@ function isInsideTypeAliasDeclaration(node: ESTree.Node): boolean {
   return false;
 }
 
+function isInsideNamedContract(node: ESTree.Node): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (
+      current.type === 'TSTypeAliasDeclaration' ||
+      current.type === 'TSInterfaceDeclaration' ||
+      current.type === 'ClassDeclaration'
+    )
+      return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+function isPublicContract(node: ESTree.Node): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (current.type === 'ExportNamedDeclaration') return true;
+    if (current.type === 'ClassBody') return true;
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    )
+      return false;
+    current = current.parent;
+  }
+  return false;
+}
+
 function isPlainAliasConsumerUse(
   node: ESTree.TSType,
   environment: TypeEnvironment,
@@ -84,6 +114,8 @@ function shouldReportType(
   node: ESTree.TSType,
   environment: TypeEnvironment,
 ): boolean {
+  if (isInsideNamedContract(node)) return false;
+  if (!isPublicContract(node)) return false;
   if (isPlainAliasConsumerUse(node, environment)) return false;
   if (classifyUnsafeDictionary(node, environment) === null) return false;
   let current: ESTree.Node | null = node.parent;
@@ -133,6 +165,7 @@ export const noUnsafeDictionaryTypeRule = defineRule({
       TSIndexSignature(node) {
         if (
           environment === null ||
+          isInsideNamedContract(node) ||
           node.typeAnnotation === null ||
           node.parent.type === 'TSTypeLiteral'
         )

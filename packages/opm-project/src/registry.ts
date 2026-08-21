@@ -36,7 +36,7 @@ import { requireAdapterRegistry } from './adapters.js';
 type RegistryEndpointMap = Record<string, string>;
 type RegistryOriginMap = Record<string, readonly string[]>;
 
-export const DEFAULT_REGISTRY_ENDPOINTS: RegistryEndpointMap = {
+const DEFAULT_REGISTRY_ENDPOINT_VALUES: RegistryEndpointMap = {
   npm: 'https://registry.npmjs.org',
   cargo: 'https://index.crates.io',
   pypi: 'https://pypi.org/pypi',
@@ -44,7 +44,9 @@ export const DEFAULT_REGISTRY_ENDPOINTS: RegistryEndpointMap = {
   maven: 'https://repo1.maven.org/maven2',
   golang: 'https://proxy.golang.org',
   oci: 'https://registry-1.docker.io',
-};
+} satisfies RegistryEndpointMap;
+
+export const DEFAULT_REGISTRY_ENDPOINTS = DEFAULT_REGISTRY_ENDPOINT_VALUES;
 
 /**
  * PURL types whose adapters export a catalog provider.

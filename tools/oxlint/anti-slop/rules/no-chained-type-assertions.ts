@@ -77,12 +77,22 @@ export const noChainedTypeAssertionsRule = defineRule({
         !isForbiddenAssertionChain(node)
       )
         return;
-      if (
-        context.sourceCode
-          .getCommentsBefore(node)
-          .some((comment) => /\bSAFETY\s*:/u.test(comment.value))
-      )
-        return;
+      let current: ESTree.Node | null = node;
+      while (current !== null && current.type !== 'Program') {
+        if (
+          context.sourceCode
+            .getCommentsBefore(current)
+            .some((comment) => /\bSAFETY\s*:/u.test(comment.value))
+        )
+          return;
+        if (
+          current.type === 'VariableDeclaration' ||
+          current.type === 'ReturnStatement' ||
+          current.type === 'ExpressionStatement'
+        )
+          break;
+        current = current.parent;
+      }
       context.report({ node, messageId: 'chained' });
     };
 

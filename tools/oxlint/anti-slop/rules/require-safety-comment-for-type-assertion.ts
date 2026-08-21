@@ -45,6 +45,22 @@ function hasSafetyComment(
   }
 }
 
+function isPublicContract(node: TypeAssertion): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (current.type === 'ExportNamedDeclaration') return true;
+    if (current.type === 'ClassBody') return true;
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    )
+      return false;
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Require every non-const type assertion to state the invariant TypeScript cannot express. */
 export const requireSafetyCommentForTypeAssertionRule = defineRule({
   meta: {
@@ -60,7 +76,11 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
   },
   createOnce(context) {
     const checkAssertion = (node: TypeAssertion) => {
-      if (isConstAssertion(node) || hasSafetyComment(context.sourceCode, node))
+      if (
+        !isPublicContract(node) ||
+        isConstAssertion(node) ||
+        hasSafetyComment(context.sourceCode, node)
+      )
         return;
       context.report({ node, messageId: 'missingSafetyComment' });
     };

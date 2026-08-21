@@ -533,6 +533,15 @@ function exactHttpsOrigin(value: string, label: string): string {
  * Credentials are optional. When absent this performs the anonymous flow,
  * which is what public repositories serve.
  */
+type WellKnownTokenOrigins = Readonly<Record<string, readonly string[]>>;
+
+const WELL_KNOWN_TOKEN_ORIGINS: WellKnownTokenOrigins = {
+  'https://registry-1.docker.io': ['https://auth.docker.io'],
+  'https://index.docker.io': ['https://auth.docker.io'],
+  'https://ghcr.io': ['https://ghcr.io'],
+  'https://quay.io': ['https://quay.io'],
+};
+
 export class BearerTokenAuthentication implements RegistryAuthentication {
   readonly #tokens = new Map<string, { token: string; expiresAt: number }>();
   readonly #fetch: typeof fetch;
@@ -550,14 +559,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
    * is that the list is not attacker-influenced. Anything else needs
    * `allowedTokenOrigins`.
    */
-  static readonly WELL_KNOWN_TOKEN_ORIGINS: Readonly<
-    Record<string, readonly string[]>
-  > = {
-    'https://registry-1.docker.io': ['https://auth.docker.io'],
-    'https://index.docker.io': ['https://auth.docker.io'],
-    'https://ghcr.io': ['https://ghcr.io'],
-    'https://quay.io': ['https://quay.io'],
-  };
+  static readonly WELL_KNOWN_TOKEN_ORIGINS = WELL_KNOWN_TOKEN_ORIGINS;
 
   constructor(
     options: {

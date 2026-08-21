@@ -154,6 +154,22 @@ function hasParentAssertion(node: ESTree.Node): boolean {
   );
 }
 
+function isPublicContract(node: ESTree.Node): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (current.type === 'ExportNamedDeclaration') return true;
+    if (current.type === 'ClassBody') return true;
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    )
+      return false;
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Detect sound syntactic cases where a known value is explicitly widened and loses evidence. */
 export const noKnownValueWideningRule = defineRule({
   meta: {
@@ -176,6 +192,7 @@ export const noKnownValueWideningRule = defineRule({
       subject: string,
     ) => {
       if (destination === null) return;
+      if (!isPublicContract(expression)) return;
       if (
         isDictionaryAccumulatorTarget(destination) &&
         isEmptyObjectExpression(expression)

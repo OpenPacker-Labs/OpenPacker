@@ -7,6 +7,7 @@ import {
   type JsonValue,
   type PackageInstance,
   type PolicyInput,
+  type Requirement,
 } from '@openpacker/contracts';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
@@ -363,7 +364,7 @@ function compareDotted(
  * hard edge on every host.
  */
 export function shouldFollowRequirement(
-  requirement: unknown,
+  requirement: Requirement,
   env: HostEnvironment,
 ) {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.

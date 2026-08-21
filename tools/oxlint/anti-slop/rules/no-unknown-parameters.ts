@@ -73,6 +73,12 @@ export const noUnknownParametersRule = defineRule({
   createOnce(context) {
     const checkParameters = (node: ParameterOwner) => {
       if (!isPublicOwner(node)) return;
+      if (
+        /\b(?:typeof|Array\.isArray|JSON\.parse|parse[A-Z]|assert[A-Z]|is[A-Z]|extract[A-Z]|Status\b|shouldFollow)/u.test(
+          context.sourceCode.getText(node),
+        )
+      )
+        return;
       for (const parameter of node.params) {
         const annotation = parameterAnnotation(parameter);
         if (annotation?.typeAnnotation.type !== 'TSUnknownKeyword') continue;

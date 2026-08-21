@@ -879,6 +879,16 @@ export async function planNativeLockImport(
   return buildCaptureSolveInput(plan, options);
 }
 
+type EmbeddedSolveOutput = {
+  normalizedRequest: SolveRequest;
+  requestDigest: Digest;
+  universeDigest: Digest;
+  selected: PackageInstance[];
+  solution: SolveResponse['solution'];
+  proof: SolveResponse['proof'];
+  explanation: unknown;
+};
+
 export interface EmbeddedSolveLike {
   solve(input: { request: SolveRequest; universe: ResolutionUniverse }): {
     normalizedRequest: SolveRequest;
@@ -891,7 +901,7 @@ export interface EmbeddedSolveLike {
   };
   check(
     input: { request: SolveRequest; universe: ResolutionUniverse },
-    output: unknown,
+    output: EmbeddedSolveOutput,
   ): { valid: boolean; diagnostics: string[] };
 }
 
