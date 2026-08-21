@@ -112,7 +112,7 @@ const source =
   `export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };\n\n` +
   exports.sort().join('\n') +
   `\n\nexport const DIGEST_PROJECTIONS = ${JSON.stringify(digestProjections, null, 2)} as const;` +
-  `\n\nexport const schemaCatalog: Record<string, JsonValue> = ${JSON.stringify(catalog, null, 2)};\n`;
+  `\n\nexport const schemaCatalog = ${JSON.stringify(catalog, null, 2)} satisfies Record<string, JsonValue>;\n`;
 const text = await format(source, { ...prettierConfig, filepath: output });
 const schemaCopies = new Map(
   await Promise.all(
