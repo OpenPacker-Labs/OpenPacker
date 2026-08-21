@@ -24,9 +24,9 @@ import {
   assertSafeSegment,
   ensureStableDirectory,
   openStableDirectory,
+  readDirChildWithTypes,
   readStableFile,
   sharedStoreHome,
-  stableHandlePath,
   storeKeyFromDigest,
   writeStableFile,
 } from './paths.js';
@@ -94,9 +94,7 @@ export async function isolateProjectStoreFromSharedLinks(
 async function isolateEntries(root: string): Promise<void> {
   const handle = await openStableDirectory(root);
   try {
-    const entries = await readdir(stableHandlePath(handle), {
-      withFileTypes: true,
-    });
+    const entries = await readDirChildWithTypes(handle);
     for (const entry of entries) {
       assertSafeSegment(entry.name, 'store entry');
       const path = join(root, entry.name);
@@ -296,9 +294,7 @@ async function linkEntries(
 ): Promise<void> {
   const handle = await openStableDirectory(source);
   try {
-    const entries = await readdir(stableHandlePath(handle), {
-      withFileTypes: true,
-    });
+    const entries = await readDirChildWithTypes(handle);
     for (const entry of entries) {
       assertSafeSegment(entry.name, 'store entry');
       const from = join(source, entry.name);
@@ -362,9 +358,7 @@ async function assertNoFollowTree(root: string): Promise<void> {
 async function assertNoFollowEntries(root: string): Promise<void> {
   const handle = await openStableDirectory(root);
   try {
-    const entries = await readdir(stableHandlePath(handle), {
-      withFileTypes: true,
-    });
+    const entries = await readDirChildWithTypes(handle);
     for (const entry of entries) {
       assertSafeSegment(entry.name, 'store entry');
       const child = join(root, entry.name);

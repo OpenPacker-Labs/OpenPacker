@@ -19,6 +19,17 @@ import {
   resolve,
   sep,
 } from 'node:path';
+import {
+  handlePathForPlatform,
+  lstatChild,
+  mkdirChild,
+  openChild,
+  removeChild,
+  renameChild,
+  stableHandlePath as projectIoStableHandlePath,
+  supportsStableHandles,
+  StableHandleError,
+} from '@openpacker/project-io';
 import { OpmError } from './types.js';
 
 export const MANIFEST_NAME = 'opm.toml';
@@ -236,13 +247,13 @@ export async function openStableDirectory(
   );
   try {
     for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      const child = join(stableHandlePath(handle), part);
       if (create)
-        await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+        await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== 'EEXIST') throw error;
         });
-      const next = await open(
-        child,
+      const next = await openChild(
+        handle,
+        part,
         constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
       );
       if (!(await next.stat()).isDirectory()) {
@@ -267,19 +278,42 @@ export async function openStableDirectory(
   }
 }
 
+export {
+  openChild,
+  mkdirChild,
+  renameChild,
+  removeChild,
+  readDirChild,
+  readDirChildWithTypes,
+} from '@openpacker/project-io';
+
 export function stableHandlePath(handle: FileHandle): string {
-  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
-  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
-  throw new OpmError(
-    'UNSAFE_PATH',
-    'Stable no-follow filesystem handles are unavailable on this platform',
-  );
+  try {
+    return projectIoStableHandlePath(handle);
+  } catch (error) {
+    if (error instanceof StableHandleError)
+      throw new OpmError('UNSAFE_PATH', error.message);
+    throw error;
+  }
+}
+
+export function handlePathForPlatformFd(
+  fd: number,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  try {
+    return handlePathForPlatform(fd, platform);
+  } catch (error) {
+    if (error instanceof StableHandleError)
+      throw new OpmError('UNSAFE_PATH', error.message);
+    throw error;
+  }
 }
 
 export function supportsStableProjectMetadata(
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return platform === 'linux' || platform === 'darwin';
+  return supportsStableHandles(platform);
 }
 
 export function assertStableProjectMetadataSupported(
@@ -368,8 +402,9 @@ export async function readStableFileBytesAt(
   displayPath = name,
 ): Promise<Buffer> {
   assertSafeSegment(name, 'metadata file name');
-  const file = await open(
-    join(stableHandlePath(parent), name),
+  const file = await openChild(
+    parent,
+    name,
     constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
   );
   try {
@@ -432,11 +467,11 @@ export async function writeStableFileAt(
   displayPath = name,
 ): Promise<void> {
   assertSafeSegment(name, 'metadata file name');
-  const directory = stableHandlePath(parent);
-  const temporary = join(directory, `.${name}.${randomUUID()}.tmp`);
+  const temporary = `.${name}.${randomUUID()}.tmp`;
   let file: FileHandle | undefined;
   try {
-    file = await open(
+    file = await openChild(
+      parent,
       temporary,
       constants.O_WRONLY |
         constants.O_CREAT |
@@ -450,15 +485,14 @@ export async function writeStableFileAt(
     await file.chmod(mode);
     await file.sync();
     const opened = await file.stat({ bigint: true });
-    const named = await lstat(temporary, { bigint: true });
+    const named = await lstatChild(parent, temporary);
     if (opened.dev !== named.dev || opened.ino !== named.ino)
       throw new OpmError(
         'INPUT_CHANGED',
         `Metadata staging file changed before publication: ${displayPath}`,
       );
-    const published = join(directory, name);
-    await rename(temporary, published);
-    const publishedInfo = await lstat(published, { bigint: true });
+    await renameChild(parent, temporary, name);
+    const publishedInfo = await lstatChild(parent, name);
     if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)
       throw new OpmError(
         'INPUT_CHANGED',
@@ -466,7 +500,9 @@ export async function writeStableFileAt(
       );
   } finally {
     await file?.close().catch(() => undefined);
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await removeChild(parent, temporary, { force: true }).catch(
+      () => undefined,
+    );
   }
 }
 
@@ -493,7 +529,7 @@ export async function revalidateStableDirectory(
 export async function removeStableFile(path: string): Promise<void> {
   const parent = await openStableDirectory(dirname(path));
   try {
-    await rm(join(stableHandlePath(parent), basename(path)), { force: true });
+    await removeChild(parent, basename(path), { force: true });
     await assertNamedDirectory(dirname(path), parent);
   } finally {
     await parent.close();
@@ -503,7 +539,7 @@ export async function removeStableFile(path: string): Promise<void> {
 export async function removeStableTree(path: string): Promise<void> {
   const parent = await openStableDirectory(dirname(path));
   try {
-    await rm(join(stableHandlePath(parent), basename(path)), {
+    await removeChild(parent, basename(path), {
       recursive: true,
       force: true,
     });

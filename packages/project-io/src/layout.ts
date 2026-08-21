@@ -29,6 +29,15 @@ import {
   sep,
 } from 'node:path';
 import { ProjectIoError } from './index.js';
+import {
+  lstatChild,
+  mkdirChild,
+  openChild,
+  readDirChildWithTypes,
+  removeChild,
+  renameChild,
+  supportsStableHandles,
+} from './handle-path.js';
 
 export interface MaterialiseResult {
   /** Files linked or copied. */
@@ -62,6 +71,7 @@ export async function materialiseTree(
   const handles: FileHandle[] = [rootHandle];
   const result: MaterialiseResult = { files: 0, copied: false };
   let staging: string | undefined;
+  let stagingParent = rootHandle;
   try {
     const parts = relative(resolve(root), resolve(destination)).split(sep);
     const name = parts.pop();
@@ -69,18 +79,18 @@ export async function materialiseTree(
     let parent = rootHandle;
     for (const part of parts) {
       if (!part || part === '.' || part === '..') throw unsafe(destination);
-      const childPath = join(handlePath(parent), part);
-      await mkdir(childPath).catch((error: NodeJS.ErrnoException) => {
+      await mkdirChild(parent, part).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'EEXIST') throw error;
       });
-      parent = await openDirectory(childPath, false);
+      parent = await openDirectoryAt(parent, part);
       handles.push(parent);
+      stagingParent = parent;
     }
 
-    const parentPath = handlePath(parent);
-    staging = join(parentPath, `.${name}.openpacker-${randomUUID()}`);
-    await mkdir(staging, { mode: 0o700 });
-    const stagingHandle = await openDirectory(staging, false);
+    const stagingName = `.${name}.openpacker-${randomUUID()}`;
+    staging = stagingName;
+    await mkdirChild(parent, stagingName);
+    const stagingHandle = await openDirectoryAt(parent, stagingName);
     handles.push(stagingHandle);
     const sourceHandle = await openStableDirectory(source, false);
     handles.push(sourceHandle);
@@ -96,15 +106,14 @@ export async function materialiseTree(
     );
     await assertTreeSnapshot(sourceHandle, sourceSnapshot);
     await assertTreeSnapshot(stagingHandle, stagedSnapshot);
-    const published = join(parentPath, name);
-    await assertNamedHandle(staging, stagingHandle);
-    await rm(published, { recursive: true, force: true });
+    const publishedLexical = resolve(destination);
+    await removeChild(parent, name, { recursive: true, force: true });
     await assertTreeSnapshot(sourceHandle, sourceSnapshot);
     await assertTreeSnapshot(stagingHandle, stagedSnapshot);
-    await assertNamedHandle(staging, stagingHandle);
-    await rename(staging, published);
+    await renameChild(parent, stagingName, name);
+    staging = undefined;
     try {
-      await assertNamedHandle(published, stagingHandle);
+      await assertNamedHandle(publishedLexical, stagingHandle);
       await assertTreeSnapshot(sourceHandle, sourceSnapshot);
       stagedSnapshot.set(
         '',
@@ -112,12 +121,11 @@ export async function materialiseTree(
       );
       await assertTreeSnapshot(stagingHandle, stagedSnapshot);
     } catch (error) {
-      await rm(published, { recursive: true, force: true }).catch(
+      await removeChild(parent, name, { recursive: true, force: true }).catch(
         () => undefined,
       );
       throw error;
     }
-    staging = undefined;
     return result;
   } catch (error) {
     if (
@@ -129,9 +137,10 @@ export async function materialiseTree(
     throw error;
   } finally {
     if (staging)
-      await rm(staging, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
+      await removeChild(stagingParent, staging, {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
     await Promise.all(
       handles.reverse().map(async (handle) => await handle.close()),
     );
@@ -146,18 +155,14 @@ async function walk(
   sourceSnapshot: Map<string, TreeEntrySnapshot>,
   destinationSnapshot: Map<string, TreeEntrySnapshot>,
 ): Promise<void> {
-  const sourcePath = handlePath(source);
-  const destinationPath = handlePath(destination);
   const sourceDirectoryBefore = await source.stat({ bigint: true });
-  const entries = await readdir(sourcePath, { withFileTypes: true });
+  const entries = await readDirChildWithTypes(source);
   for (const entry of entries) {
-    const from = join(sourcePath, entry.name);
-    const to = join(destinationPath, entry.name);
     const relativePath = at === '' ? entry.name : `${at}/${entry.name}`;
     if (entry.isDirectory()) {
-      const fromHandle = await openDirectory(from, false);
-      await mkdir(to);
-      const toHandle = await openDirectory(to, false);
+      const fromHandle = await openDirectoryAt(source, entry.name);
+      await mkdirChild(destination, entry.name);
+      const toHandle = await openDirectoryAt(destination, entry.name);
       try {
         await walk(
           fromHandle,
@@ -176,20 +181,23 @@ async function walk(
       // The store is built by the materializer, which already refuses
       // symlinks, devices and sockets. Anything else here is not something to
       // reproduce into a project directory on a guess.
-      throw unsafe(from);
+      throw unsafe(relativePath);
     }
-    const file = await open(
-      from,
+    const file = await openChild(
+      source,
+      entry.name,
       constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
     );
     let output: FileHandle | undefined;
     try {
       const before = await file.stat({ bigint: true });
-      if (!before.isFile()) throw unsafe(from);
-      if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw unsafe(from);
+      if (!before.isFile()) throw unsafe(relativePath);
+      if (before.size > BigInt(Number.MAX_SAFE_INTEGER))
+        throw unsafe(relativePath);
       const size = Number(before.size);
-      output = await open(
-        to,
+      output = await openChild(
+        destination,
+        entry.name,
         constants.O_WRONLY |
           constants.O_CREAT |
           constants.O_EXCL |
@@ -209,7 +217,7 @@ async function walk(
       const [after, outputInfo, namedOutput] = await Promise.all([
         file.stat({ bigint: true }),
         output.stat({ bigint: true }),
-        lstat(to, { bigint: true }),
+        lstatChild(destination, entry.name),
       ]);
       if (
         BigInt(offset) !== before.size ||
@@ -221,7 +229,7 @@ async function walk(
         outputInfo.dev !== namedOutput.dev ||
         outputInfo.ino !== namedOutput.ino
       )
-        throw unsafe(from);
+        throw unsafe(relativePath);
       await output.chmod((before.mode & 0o111n) !== 0n ? 0o755 : 0o644);
       const finalOutput = await output.stat({ bigint: true });
       destinationSnapshot.set(relativePath, snapshot('file', finalOutput));
@@ -235,7 +243,7 @@ async function walk(
   }
   const sourceDirectoryAfter = await source.stat({ bigint: true });
   if (!sameMetadata(sourceDirectoryBefore, sourceDirectoryAfter))
-    throw unsafe(sourcePath);
+    throw unsafe(at || '<source>');
   sourceSnapshot.set(at, snapshot('directory', sourceDirectoryBefore));
   destinationSnapshot.set(
     at,
@@ -249,11 +257,11 @@ async function assertTreeSnapshot(
 ): Promise<void> {
   const actual = new Map<string, TreeEntrySnapshot>();
   await captureTree(root, '', actual);
-  if (actual.size !== expected.size) throw unsafe(handlePath(root));
+  if (actual.size !== expected.size) throw unsafe('<directory handle>');
   for (const [path, snapshot] of expected) {
     const current = actual.get(path);
     if (!current || !sameSnapshot(snapshot, current))
-      throw unsafe(path === '' ? handlePath(root) : path);
+      throw unsafe(path === '' ? '<directory handle>' : path);
   }
 }
 
@@ -263,12 +271,10 @@ async function captureTree(
   out: Map<string, TreeEntrySnapshot>,
 ): Promise<void> {
   const before = await directory.stat({ bigint: true });
-  const directoryPath = handlePath(directory);
-  for (const entry of await readdir(directoryPath, { withFileTypes: true })) {
+  for (const entry of await readDirChildWithTypes(directory)) {
     const path = at === '' ? entry.name : `${at}/${entry.name}`;
-    const childPath = join(directoryPath, entry.name);
     if (entry.isDirectory()) {
-      const child = await openDirectory(childPath, false);
+      const child = await openDirectoryAt(directory, entry.name);
       try {
         await captureTree(child, path, out);
       } finally {
@@ -276,21 +282,22 @@ async function captureTree(
       }
       continue;
     }
-    if (!entry.isFile()) throw unsafe(childPath);
-    const file = await open(
-      childPath,
+    if (!entry.isFile()) throw unsafe(path);
+    const file = await openChild(
+      directory,
+      entry.name,
       constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
     );
     try {
       const info = await file.stat({ bigint: true });
-      if (!info.isFile()) throw unsafe(childPath);
+      if (!info.isFile()) throw unsafe(path);
       out.set(path, snapshot('file', info));
     } finally {
       await file.close();
     }
   }
   const after = await directory.stat({ bigint: true });
-  if (!sameMetadata(before, after)) throw unsafe(directoryPath);
+  if (!sameMetadata(before, after)) throw unsafe(at || '<directory handle>');
   out.set(at, snapshot('directory', before));
 }
 
@@ -386,18 +393,23 @@ async function openStableDirectory(
   let handle = await openDirectory(root, false);
   try {
     for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      const child = join(handlePath(handle), part);
       if (create)
-        await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+        await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== 'EEXIST') throw error;
         });
-      const next = await openDirectory(child, false);
+      const next = await openDirectoryAt(handle, part);
       await handle.close();
       handle = next;
     }
     return handle;
   } catch (error) {
     await handle.close().catch(() => undefined);
+    if (
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+    )
+      throw unsafe(path);
     throw error;
   }
 }
@@ -430,14 +442,6 @@ async function openDirectory(
       await handle.close();
       throw unsafe(path);
     }
-    const [opened, referenced] = await Promise.all([
-      handle.stat({ bigint: true }),
-      stat(handlePath(handle), { bigint: true }),
-    ]);
-    if (opened.dev !== referenced.dev || opened.ino !== referenced.ino) {
-      await handle.close();
-      throw unsafe(path);
-    }
     return handle;
   } catch (error) {
     if (
@@ -450,20 +454,26 @@ async function openDirectory(
   }
 }
 
-function handlePath(handle: FileHandle): string {
-  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
-  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
-  throw new ProjectIoError(
-    'UNSAFE_PATH',
-    String(handle.fd),
-    'Native layout requires stable no-follow directory handles on this platform',
+async function openDirectoryAt(
+  parent: FileHandle,
+  name: string,
+): Promise<FileHandle> {
+  const handle = await openChild(
+    parent,
+    name,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
   );
+  if (!(await handle.stat()).isDirectory()) {
+    await handle.close();
+    throw unsafe(name);
+  }
+  return handle;
 }
 
 export function supportsStableTreeLayout(
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return platform === 'linux' || platform === 'darwin';
+  return supportsStableHandles(platform);
 }
 
 function unsafe(path: string): ProjectIoError {
@@ -496,7 +506,7 @@ function assertContained(root: string, destination: string): void {
 export async function removeTree(path: string): Promise<void> {
   const parent = await openStableDirectory(dirname(resolve(path)), false);
   try {
-    await rm(join(handlePath(parent), resolve(path).split(sep).at(-1)!), {
+    await removeChild(parent, resolve(path).split(sep).at(-1)!, {
       recursive: true,
       force: true,
     });
@@ -533,12 +543,10 @@ export async function collectFilesFromHandle(
   let totalBytes = 0;
   const walkOne = async (directory: FileHandle, at: string): Promise<void> => {
     const beforeDirectory = await directory.stat({ bigint: true });
-    const directoryPath = handlePath(directory);
-    for (const entry of await readdir(directoryPath, { withFileTypes: true })) {
-      const from = join(directoryPath, entry.name);
+    for (const entry of await readDirChildWithTypes(directory)) {
       const path = at === '' ? entry.name : `${at}/${entry.name}`;
       if (entry.isDirectory()) {
-        const child = await openDirectory(from, false);
+        const child = await openDirectoryAt(directory, entry.name);
         try {
           await walkOne(child, path);
         } finally {
@@ -546,15 +554,16 @@ export async function collectFilesFromHandle(
         }
         continue;
       }
-      if (!entry.isFile()) throw unsafe(from);
-      const file = await open(
-        from,
+      if (!entry.isFile()) throw unsafe(path);
+      const file = await openChild(
+        directory,
+        entry.name,
         constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
       );
       try {
         const before = await file.stat({ bigint: true });
         if (!before.isFile() || before.size > 512n * 1024n * 1024n)
-          throw unsafe(from);
+          throw unsafe(path);
         const size = Number(before.size);
         if (totalBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
         const contents = new Uint8Array(size);
@@ -571,7 +580,7 @@ export async function collectFilesFromHandle(
         }
         const [after, named] = await Promise.all([
           file.stat({ bigint: true }),
-          lstat(from, { bigint: true }),
+          lstatChild(directory, entry.name),
         ]);
         if (
           offset !== size ||
@@ -579,7 +588,7 @@ export async function collectFilesFromHandle(
           after.dev !== named.dev ||
           after.ino !== named.ino
         )
-          throw unsafe(from);
+          throw unsafe(path);
         totalBytes += size;
         snapshots.set(path, snapshot('file', before));
         out.push({

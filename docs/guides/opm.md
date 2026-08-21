@@ -97,14 +97,12 @@ tools/dev-bin/opm --help            # one-off, no PATH setup at all
 
 On Windows, `opm.cmd` and `opmx.cmd` do the same thing, except that they ask
 turbo every time rather than checking file times first — a warm cache hit is
-about 0.4s. Project-state mutation (`init`, `add`, `install`, `update`,
-`remove`, generation switching and garbage collection) currently refuses with
-`UNSAFE_PATH`: Node does not expose the no-follow, handle-relative Windows
-filesystem primitive required to keep `.opm` metadata and shims race-safe.
-Packing also refuses on Windows because artifact and receipt publication uses
-the same no-follow atomic writer. Help and version remain available; `opm list`
-does not. This is an explicit capability withdrawal, not a fallback to pathname
-checks.
+about 0.4s. Project-state mutation uses the same no-follow, handle-relative open
+as Linux and macOS: POSIX maps an open directory through `/proc/self/fd` or
+`/dev/fd`, and Windows opens children with `NtCreateFile` relative to the parent
+OS handle (`RootDirectory`, reparse points refused) — openat semantics, never a
+lexical pathname fallback. Path escapes, symlink swaps, and linked metadata
+still fail closed with `UNSAFE_PATH`.
 
 ---
 

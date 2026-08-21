@@ -23,6 +23,52 @@ import {
   validateArchivePath,
 } from './index.js';
 
+describe('project-io archive round-trip', () => {
+  it('produces a tar the materializer can read back', async () => {
+    const { packTar, packTarGzip } = await import('@openpacker/project-io');
+    const bytes = packTarGzip([
+      {
+        path: 'package/package.json',
+        contents: new TextEncoder().encode('{"name":"demo"}'),
+      },
+      {
+        path: 'package/bin/cli.js',
+        contents: new TextEncoder().encode('#!/usr/bin/env node\n'),
+        executable: true,
+      },
+    ]);
+    // Round-tripped through the reader the store already uses, so the header
+    // fields and checksum are checked by something that did not write them.
+    const entriesRead = await inspectArchive(bytes, 'tar+gzip');
+    expect(entriesRead.map((file) => file.path).sort()).toEqual([
+      'package/bin/cli.js',
+      'package/package.json',
+    ]);
+    expect(
+      (
+        await inspectArchive(
+          packTar([
+            { path: 'plain.txt', contents: new TextEncoder().encode('plain') },
+          ]),
+          'tar',
+        )
+      ).map((file) => file.path),
+    ).toEqual(['plain.txt']);
+  });
+
+  it('uses the ustar prefix rather than truncating a long path', async () => {
+    const { packTarGzip } = await import('@openpacker/project-io');
+    const deep = `package/${'nested/'.repeat(20)}file.js`;
+    expect(deep.length).toBeGreaterThan(100);
+    const read = await inspectArchive(
+      packTarGzip([{ path: deep, contents: new TextEncoder().encode('x') }]),
+      'tar+gzip',
+    );
+    // Truncation here would silently produce a different file.
+    expect(read[0]?.path).toBe(deep);
+  });
+});
+
 function tar(
   entries: readonly {
     name: string;

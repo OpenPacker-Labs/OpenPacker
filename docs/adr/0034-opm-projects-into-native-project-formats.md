@@ -60,15 +60,15 @@ in a real project.
 The ADR 0022 sentence about not replacing native layouts is amended, not
 deleted: the `layout` level exists, but it is opt-in, and it states in its loss
 that the result is _equivalent to_ rather than _produced by_ the native tool.
-Native layout projection is limited to Linux and macOS, where OpenPacker can
-traverse and publish through runtime-verified no-follow directory handles.
-Windows refuses `layout` projection with `UNSAFE_PATH`; `manifest` and `lock`
-projection remain available there until Node exposes an equivalent safe
-fd-relative filesystem primitive. The broader `.opm` project-state workflow is
-likewise unavailable on Windows, including `opm list`. Packing is also refused:
-every standard, delegated and receipt writer uses the same no-follow atomic
-boundary. Help and version remain available. The CLI guide records that explicit
-withdrawal separately from projection depth.
+Native layout projection and `.opm` project-state mutation use the same
+no-follow, handle-relative open on Linux, macOS, and Windows. POSIX maps an open
+directory through `/proc/self/fd` or `/dev/fd`. Windows opens children with
+`NtCreateFile` relative to the parent OS handle (`RootDirectory`,
+`OBJ_DONT_REPARSE` / `FILE_OPEN_REPARSE_POINT`) — openat semantics, never a
+lexical pathname fallback or a `GetFinalPathNameByHandle` re-walk. Path escapes,
+symlink swaps, and linked metadata still fail closed with `UNSAFE_PATH`. A
+platform without that mapping still refuses rather than degrading to pathname
+checks.
 
 `opm` is now safe to run in an existing npm or .NET project: it adds what it
 manages and leaves everything else where it was. That is the property that made

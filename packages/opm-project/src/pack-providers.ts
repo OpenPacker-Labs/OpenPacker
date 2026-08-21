@@ -4,7 +4,7 @@ import {
   getAdapterRegistry,
 } from '@openpacker/adapter-host';
 import {
-  loadDelegatedPackProvider,
+  parseDelegatedPackProvider,
   manifestPackagePackers,
   type ManifestPackagePackerDependencies,
 } from '@openpacker/pack-provider';
@@ -13,7 +13,7 @@ import { OpmError } from './types.js';
 import {
   assertContainedRelativePath,
   openStableDirectory,
-  stableHandlePath,
+  readStableFileAt,
 } from './paths.js';
 
 export interface ConfiguredPackProviders {
@@ -51,8 +51,8 @@ export async function configurePackProviders(input: {
     );
     const directory = await openStableDirectory(dirname(displayPath));
     try {
-      provider = await loadDelegatedPackProvider(
-        join(stableHandlePath(directory), basename(displayPath)),
+      provider = parseDelegatedPackProvider(
+        JSON.parse(await readStableFileAt(directory, basename(displayPath))),
       );
     } catch (error) {
       throw new OpmError(

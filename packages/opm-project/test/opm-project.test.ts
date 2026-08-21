@@ -73,6 +73,7 @@ import {
   projectPaths,
   readStableFile,
   revalidateStableDirectory,
+  handlePathForPlatformFd,
   supportsStableProjectMetadata,
   writeStableFile,
 } from '../src/paths.js';
@@ -544,10 +545,22 @@ describe('catalog identity', () => {
 });
 
 describe('path containment', () => {
-  it('withdraws project metadata mutation where stable handles are unavailable', () => {
+  it('advertises stable project metadata on linux, darwin, and win32', () => {
     expect(supportsStableProjectMetadata('linux')).toBe(true);
     expect(supportsStableProjectMetadata('darwin')).toBe(true);
-    expect(supportsStableProjectMetadata('win32')).toBe(false);
+    expect(supportsStableProjectMetadata('win32')).toBe(true);
+    expect(supportsStableProjectMetadata('aix')).toBe(false);
+    expect(handlePathForPlatformFd(7, 'linux')).toBe('/proc/self/fd/7');
+    expect(handlePathForPlatformFd(7, 'darwin')).toBe('/dev/fd/7');
+    expect(handlePathForPlatformFd(7, 'win32')).toBe(
+      '\\\\?\\GLOBALROOT\\Handle\\7',
+    );
+    expect(() => handlePathForPlatformFd(7, 'win32')).not.toThrow(
+      /unavailable on this platform/i,
+    );
+    expect(() => handlePathForPlatformFd(7, 'aix')).toThrow(
+      /unavailable on this platform/i,
+    );
   });
 
   it('rejects unsafe aliases and store keys', () => {
@@ -1799,7 +1812,7 @@ describe('project lifecycle offline', () => {
 
   it('refuses list when stable project metadata is unavailable', async () => {
     const root = await tempProject();
-    await expect(listInstalled(root, 'win32')).rejects.toMatchObject({
+    await expect(listInstalled(root, 'aix')).rejects.toMatchObject({
       code: 'UNSAFE_PATH',
     });
   });
