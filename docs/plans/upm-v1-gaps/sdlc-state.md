@@ -3,7 +3,9 @@
 - **Initiative:** Rescoped UPM v1 gaps (Maven stock inspect, provider e2e
   oracles, real `opm update`, optional shared blob CAS, PREX publish/yank,
   `opm auth` env names, WIT honesty)
-- **Phase:** closeout
+- **Phase:** closed
+- **Verify:** `npm run verify` green locally on `295966e` after all eight swarms
+  and the honesty/inventory closeout.
 - **Trunk:** main
 - **Instruction:** [`swarm-instruction.md`](swarm-instruction.md)
   (self-contained one-shot swarm prompt; no phases)
