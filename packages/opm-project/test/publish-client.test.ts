@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalBytes } from '@openpacker/canonical';
 import type { JsonValue, PackReceipt } from '@openpacker/contracts';
 import { PACK_RECEIPT } from '../src/pack.js';
+import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   publishPackedArtifact,
   yankRegistryVersion,
@@ -150,6 +151,42 @@ describe('publishPackedArtifact', () => {
       }),
     );
     expect(result.response.descriptor.digest.value).toBe(digest);
+  });
+
+  it('reuses packProject when packing before publish', async () => {
+    configureDefaultAdapters();
+    const root = await mkdtemp(join(tmpdir(), 'opm-publish-pack-'));
+    roots.push(root);
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"demo","version":"1.0.0"}\n',
+    );
+    await writeFile(join(root, 'index.js'), 'export const value = 1;\n');
+    const posted: { url?: string } = {};
+    const result = await publishPackedArtifact({
+      pack: {
+        root,
+        ecosystem: 'npm',
+        version: '1.0.0',
+        name: 'demo',
+        outputDirectory: join(root, 'out'),
+      },
+      registry: 'http://127.0.0.1:17337/',
+      fetch: async (input, init) => {
+        posted.url = String(input);
+        const body = JSON.parse(
+          new TextDecoder().decode(init?.body as Uint8Array),
+        );
+        return jsonResponse(body);
+      },
+    });
+    expect(posted.url).toBe('http://127.0.0.1:17337/v1/openpacker/publish');
+    expect(result.request.location.annotations).toEqual(
+      expect.objectContaining({
+        'openpacker.package.name': 'demo',
+        'openpacker.package.version': '1.0.0',
+      }),
+    );
   });
 });
 

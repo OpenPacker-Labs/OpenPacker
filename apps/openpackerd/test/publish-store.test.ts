@@ -222,9 +222,44 @@ describe('filesystem publish store', () => {
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
     expect(real.value).toHaveLength(64);
   });
+
+  it('refuses offline publish and locations without identity', async () => {
+    const root = await tempDir('openpackerd-publish-offline-');
+    const store = createFilesystemPublishStore({ root });
+    const { request } = await artifactPublish(
+      root,
+      new TextEncoder().encode('offline'),
+    );
+    await expect(
+      store.publish(request, { ...context(), offline: true }),
+    ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
+    const noIdentity = {
+      ...request,
+      location: {
+        transport: request.location.transport,
+        uri: request.location.uri,
+        priority: request.location.priority,
+        rangeSupported: request.location.rangeSupported,
+      },
+    };
+    await expect(store.publish(noIdentity, context())).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+    });
+  });
 });
 
 describe('reference daemon publish opt-in', () => {
+  it('refuses a relative OPENPACKER_PUBLISH_STORE', async () => {
+    expect(() =>
+      createFilesystemPublishStore({ root: 'relative-store' }),
+    ).toThrow(/absolute directory/u);
+    await expect(
+      createStandaloneReferenceOperations(undefined, {
+        env: { OPENPACKER_PUBLISH_STORE: 'relative-store' },
+      }),
+    ).rejects.toThrow(/absolute directory/u);
+  });
+
   it('stays unavailable without OPENPACKER_PUBLISH_STORE', async () => {
     const operations = await createStandaloneReferenceOperations(undefined, {
       env: {},
