@@ -30,7 +30,7 @@ describe('lock-import capture plan snapshots', () => {
       semanticLossCodes: plan.semanticLoss.map((loss) => loss.code).sort(),
       sourceDigest: plan.sourceDigest,
     };
-    expect(`${JSON.stringify(summary, null, 2)}\n`).toMatchFileSnapshot(
+    await expect(`${JSON.stringify(summary, null, 2)}\n`).toMatchFileSnapshot(
       '__snapshots__/npm-capture-plan.snap',
     );
   });
@@ -45,7 +45,7 @@ describe('lock-import capture plan snapshots', () => {
       semanticLossCodes: plan.semanticLoss.map((loss) => loss.code).sort(),
       sourceDigest: plan.sourceDigest,
     };
-    expect(`${JSON.stringify(summary, null, 2)}\n`).toMatchFileSnapshot(
+    await expect(`${JSON.stringify(summary, null, 2)}\n`).toMatchFileSnapshot(
       '__snapshots__/cargo-capture-plan.snap',
     );
   });

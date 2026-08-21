@@ -13,7 +13,7 @@ import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
  * with `vitest run -u` and review the snapshot diff like a schema change.
  */
 describe('canonical rendering snapshots', () => {
-  it('pins the rendering of a representative nested document', () => {
+  it('pins the rendering of a representative nested document', async () => {
     const document: JsonValue = {
       zebra: [3, 1, 2],
       alpha: { nested: true, nothing: null },
@@ -22,12 +22,12 @@ describe('canonical rendering snapshots', () => {
       numbers: [0, 1, -42, 9007199254740991, 123456789],
       empty: { object: {}, array: [] },
     };
-    expect(canonicalize(document)).toMatchFileSnapshot(
+    await expect(canonicalize(document)).toMatchFileSnapshot(
       '__snapshots__/canonical-document.snap',
     );
   });
 
-  it('pins the projected rendering used by protocol digests', () => {
+  it('pins the projected rendering used by protocol digests', async () => {
     const projection = DIGEST_PROJECTIONS.projections.find(
       (candidate) => candidate.id === 'package-node-v1',
     );
@@ -44,7 +44,7 @@ describe('canonical rendering snapshots', () => {
       extraFieldExcludedByProjection: 'must not appear',
     } as unknown as JsonValue;
     const projected = projectCanonicalValue(node, projection);
-    expect(canonicalize(projected)).toMatchFileSnapshot(
+    await expect(canonicalize(projected)).toMatchFileSnapshot(
       '__snapshots__/package-node-projection.snap',
     );
   });
