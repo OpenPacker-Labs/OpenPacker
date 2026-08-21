@@ -41,8 +41,9 @@ export interface RegisterInstalledPluginsOptions
    */
   environment?: Readonly<Record<string, string | undefined>>;
   /**
-   * Env-var names host-fetch may read for this run (toml token envs).
-   * `--allow-env` of these names is refused; grant does not win.
+   * Env-var names host-fetch may read for this run (toml token and
+   * extra-header envs). `--allow-env` of these names is refused; grant
+   * does not win.
    */
   hostFetchTokenEnvNames?: readonly string[];
   /** Operator network consent; still denied per-operation in offline mode. */
@@ -117,7 +118,11 @@ export async function verifyPluginBindings(
   bindings: Readonly<
     Record<
       string,
-      { storeDigest: string; artifactOriginTokenEnvs?: readonly string[] }
+      {
+        storeDigest: string;
+        artifactOriginTokenEnvs?: readonly string[];
+        artifactOriginExtraHeaderEnvs?: readonly string[];
+      }
     >
   >,
   options: RegisterInstalledPluginsOptions = {},
@@ -125,9 +130,10 @@ export async function verifyPluginBindings(
   const storeRoot = options.storeRoot ?? pluginStoreRoot();
   const listed = await listPlugins({ storeRoot });
   const registered: RegisteredPlugin[] = [];
-  const tokenNames = Object.values(bindings).flatMap(
-    (binding) => binding.artifactOriginTokenEnvs ?? [],
-  );
+  const tokenNames = Object.values(bindings).flatMap((binding) => [
+    ...(binding.artifactOriginTokenEnvs ?? []),
+    ...(binding.artifactOriginExtraHeaderEnvs ?? []),
+  ]);
   const withTokenNames =
     tokenNames.length === 0
       ? options
@@ -309,10 +315,14 @@ function hostFetchDeniedEnvNames(
   for (const name of options.hostFetchTokenEnvNames ?? []) {
     if (name !== '') denied.add(name);
   }
-  const raw = process.env.OPM_HOST_FETCH_TOKEN_ENVS;
-  if (raw !== undefined && raw.trim() !== '') {
-    for (const name of raw.split(',').map((part) => part.trim())) {
-      if (name !== '') denied.add(name);
+  for (const raw of [
+    process.env.OPM_HOST_FETCH_TOKEN_ENVS,
+    process.env.OPM_HOST_FETCH_HEADER_ENVS,
+  ]) {
+    if (raw !== undefined && raw.trim() !== '') {
+      for (const name of raw.split(',').map((part) => part.trim())) {
+        if (name !== '') denied.add(name);
+      }
     }
   }
   return denied;

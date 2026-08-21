@@ -1077,7 +1077,11 @@ Delegated adapter plugins (user-level, never installed by default):
   OPM_HOST_FETCH_ORIGINS). Optional artifact_origin_token_envs lists
   env-var names (never values) parallel to those origins;
   OPM_HOST_FETCH_TOKEN_ENVS is the process-wide parallel list for
-  OPM_HOST_FETCH_ORIGINS. OPM_HOST_FETCH_BEARER is not a grant unless that
+  OPM_HOST_FETCH_ORIGINS. Optional artifact_origin_extra_header_names and
+  artifact_origin_extra_header_envs name one extra header per origin
+  (for example X-JFrog-Art-Api); OPM_HOST_FETCH_HEADER_NAMES and
+  OPM_HOST_FETCH_HEADER_ENVS are the process-wide parallel lists.
+  OPM_HOST_FETCH_BEARER is not a grant unless that
   name is listed. The binding never acquires, and project commands fail
   closed when the installed entry digests differently.
   The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store

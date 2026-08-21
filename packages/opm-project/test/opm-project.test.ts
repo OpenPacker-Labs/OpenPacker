@@ -296,9 +296,9 @@ describe('manifest TOML', () => {
     expect(() =>
       parseManifest(
         `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
-          'artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]\n',
+          'artifact_origin_unknown_grant = ["nope"]\n',
       ),
-    ).toThrowError(/Unknown plugin field "artifact_origin_extra_header_names"/);
+    ).toThrowError(/Unknown plugin field "artifact_origin_unknown_grant"/);
   });
 
   it('round-trips artifact_origin_token_envs including a suppressing empty name', () => {
@@ -365,6 +365,123 @@ describe('manifest TOML', () => {
       parseManifest(
         `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
           'artifact_origin_token_envs = ["ACME_TOKEN"]\n',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+  });
+
+  it('round-trips extra-header arrays including a suppressing empty name', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const text = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: {
+        'dev.example.acme-adapter': {
+          storeDigest: digest,
+          artifactOrigins: ['https://artifacts.internal.example'],
+          artifactOriginExtraHeaderNames: [''],
+          artifactOriginExtraHeaderEnvs: [''],
+        },
+      },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(text).toContain('artifact_origin_extra_header_names = [""]');
+    expect(text).toContain('artifact_origin_extra_header_envs = [""]');
+    const parsed = parseManifest(text);
+    expect(parsed.plugins).toEqual({
+      'dev.example.acme-adapter': {
+        storeDigest: digest,
+        artifactOrigins: ['https://artifacts.internal.example'],
+        artifactOriginExtraHeaderNames: [''],
+        artifactOriginExtraHeaderEnvs: [''],
+      },
+    });
+    expect(serializeManifest(parsed)).toContain(
+      'artifact_origin_extra_header_names = [""]',
+    );
+    expect(serializeManifest(parsed)).toContain(
+      'artifact_origin_extra_header_envs = [""]',
+    );
+
+    const omitted = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: {
+        'dev.example.acme-adapter': {
+          storeDigest: digest,
+          artifactOrigins: ['https://artifacts.internal.example'],
+        },
+      },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(omitted).not.toContain('artifact_origin_extra_header_names');
+    expect(omitted).not.toContain('artifact_origin_extra_header_envs');
+    expect(
+      parseManifest(omitted).plugins?.['dev.example.acme-adapter']
+        ?.artifactOriginExtraHeaderNames,
+    ).toBeUndefined();
+  });
+
+  it('fails closed on invalid extra-header names and envs', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const plugin = (origins: string, names: string, envs: string) =>
+      `[project]\nname = "x"\n\n[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+      `artifact_origins = ${origins}\n` +
+      `artifact_origin_extra_header_names = ${names}\n` +
+      `artifact_origin_extra_header_envs = ${envs}\n`;
+
+    expect(() =>
+      parseManifest(
+        plugin(
+          '["https://a.example"]',
+          '["X-JFrog-Art-Api", ""]',
+          '["JFROG_API_KEY"]',
+        ),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        plugin('["https://a.example"]', '["Cookie"]', '["JFROG_API_KEY"]'),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        plugin(
+          '["https://a.example"]',
+          '["Authorization"]',
+          '["JFROG_API_KEY"]',
+        ),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        plugin('["https://a.example"]', '["Host"]', '["JFROG_API_KEY"]'),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        plugin('["https://a.example"]', '["X JFrog"]', '["JFROG_API_KEY"]'),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        plugin(
+          '["https://a.example"]',
+          '["X-JFrog-Art-Api"]',
+          '["jfrog_api_key"]',
+        ),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+          'artifact_origin_extra_header_names = ["X-JFrog-Art-Api"]\n',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(
+        `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+          'artifact_origins = ["https://a.example"]\n' +
+          'artifact_origin_extra_header_envs = ["JFROG_API_KEY"]\n',
       ),
     ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
   });

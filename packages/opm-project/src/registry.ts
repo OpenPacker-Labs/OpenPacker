@@ -732,8 +732,9 @@ export async function resolveRegistryArtifactDeferred(
  * from a location on an origin in `{endpoint origin} ∪ pins` (env ∪ this
  * plugin's `artifact_origins`), over HTTPS without query or hash, bounded by
  * the published size, and verifies the sha256 digest before the bytes are
- * anyone's artifact. An operator bearer attaches only when the hop origin is
- * pinned and a per-origin env-var name is configured. Every gap fails closed.
+ * anyone's artifact. An operator bearer or extra header attaches only when the
+ * hop origin is pinned and a per-origin env-var name is configured. Every gap
+ * fails closed.
  */
 function hostFetchCallOptions(options: RegistryOptions): {
   fetch?: typeof fetch;
@@ -806,6 +807,11 @@ async function fetchDelegatedArtifactBytes(input: {
     process.env.OPM_HOST_FETCH_TOKEN_ENVS,
     envPins,
   );
+  const envExtraHeaders = parseParallelExtraHeaders(
+    process.env.OPM_HOST_FETCH_HEADER_NAMES,
+    process.env.OPM_HOST_FETCH_HEADER_ENVS,
+    envPins,
+  );
   const binding =
     input.providerId === undefined
       ? undefined
@@ -825,6 +831,14 @@ async function fetchDelegatedArtifactBytes(input: {
     projectPins,
     projectTokenNames: binding?.artifactOriginTokenEnvs,
   });
+  const extraHeaders = mergeExtraHeaders({
+    envPins,
+    envHeaderNames: envExtraHeaders?.names,
+    envHeaderEnvs: envExtraHeaders?.envs,
+    projectPins,
+    projectHeaderNames: binding?.artifactOriginExtraHeaderNames,
+    projectHeaderEnvs: binding?.artifactOriginExtraHeaderEnvs,
+  });
   let transport: BoundedFetchTransport;
   try {
     transport = new BoundedFetchTransport({
@@ -832,6 +846,7 @@ async function fetchDelegatedArtifactBytes(input: {
       destinationPolicy: 'classify-and-pin',
       pinnedOrigins: [...pins],
       pinnedTokenEnvNames: tokenEnvNames,
+      pinnedExtraHeaders: extraHeaders,
       maximumBytes: size,
       ...(input.fetch ? { fetch: input.fetch } : {}),
       ...(input.lookup ? { lookup: input.lookup } : {}),
@@ -942,6 +957,129 @@ function mergeTokenEnvNames(input: {
     if (name !== undefined && name !== '') names.set(origin, name);
   }
   return names;
+}
+
+/** RFC 7230 header-field token. */
+const RFC7230_TOKEN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u;
+
+const FORBIDDEN_EXTRA_HEADER_NAMES = new Set([
+  'authorization',
+  'cookie',
+  'cookie2',
+  'proxy-authorization',
+  'host',
+  'connection',
+  'transfer-encoding',
+  'content-length',
+  'te',
+  'upgrade',
+  'trailer',
+  'keep-alive',
+  'content-type',
+  'accept-encoding',
+]);
+
+function parseParallelExtraHeaders(
+  namesRaw: string | undefined,
+  envsRaw: string | undefined,
+  origins: readonly string[],
+): { names: string[]; envs: string[] } | undefined {
+  const namesPresent = namesRaw !== undefined && namesRaw.trim() !== '';
+  const envsPresent = envsRaw !== undefined && envsRaw.trim() !== '';
+  if (!namesPresent && !envsPresent) return undefined;
+  if (!namesPresent || !envsPresent)
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      'OPM_HOST_FETCH_HEADER_NAMES and OPM_HOST_FETCH_HEADER_ENVS must both be present',
+    );
+  const names = namesRaw.split(',').map((part) => part.trim());
+  const envs = envsRaw.split(',').map((part) => part.trim());
+  if (names.length !== origins.length)
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `OPM_HOST_FETCH_HEADER_NAMES has ${names.length} entries but OPM_HOST_FETCH_ORIGINS has ${origins.length}`,
+    );
+  if (envs.length !== origins.length)
+    throw new OpmError(
+      'INVALID_PROVIDER_ENDPOINT',
+      `OPM_HOST_FETCH_HEADER_ENVS has ${envs.length} entries but OPM_HOST_FETCH_ORIGINS has ${origins.length}`,
+    );
+  for (let i = 0; i < names.length; i += 1) {
+    const name = names[i]!;
+    const envName = envs[i]!;
+    if (name === '') {
+      if (envName !== '' && !TOKEN_ENV_NAME.test(envName))
+        throw new OpmError(
+          'INVALID_PROVIDER_ENDPOINT',
+          'OPM_HOST_FETCH_HEADER_ENVS entry is not a valid environment variable name',
+        );
+      continue;
+    }
+    if (
+      !RFC7230_TOKEN.test(name) ||
+      FORBIDDEN_EXTRA_HEADER_NAMES.has(name.toLowerCase())
+    )
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'OPM_HOST_FETCH_HEADER_NAMES entry is not a valid extra header name',
+      );
+    if (!TOKEN_ENV_NAME.test(envName))
+      throw new OpmError(
+        'INVALID_PROVIDER_ENDPOINT',
+        'OPM_HOST_FETCH_HEADER_ENVS entry is not a valid environment variable name',
+      );
+  }
+  return { names, envs };
+}
+
+function extraHeaderFor(
+  origin: string,
+  input: {
+    projectPins: readonly string[];
+    projectHeaderNames: readonly string[] | undefined;
+    projectHeaderEnvs: readonly string[] | undefined;
+    envPins: readonly string[];
+    envHeaderNames: readonly string[] | undefined;
+    envHeaderEnvs: readonly string[] | undefined;
+  },
+): { name: string; envName: string } | undefined {
+  if (
+    input.projectHeaderNames !== undefined &&
+    input.projectHeaderEnvs !== undefined
+  ) {
+    const index = input.projectPins.indexOf(origin);
+    if (index !== -1)
+      return {
+        name: input.projectHeaderNames[index] ?? '',
+        envName: input.projectHeaderEnvs[index] ?? '',
+      };
+  }
+  if (input.envHeaderNames !== undefined && input.envHeaderEnvs !== undefined) {
+    const index = input.envPins.indexOf(origin);
+    if (index !== -1)
+      return {
+        name: input.envHeaderNames[index] ?? '',
+        envName: input.envHeaderEnvs[index] ?? '',
+      };
+  }
+  return undefined;
+}
+
+function mergeExtraHeaders(input: {
+  envPins: readonly string[];
+  envHeaderNames: readonly string[] | undefined;
+  envHeaderEnvs: readonly string[] | undefined;
+  projectPins: readonly string[];
+  projectHeaderNames: readonly string[] | undefined;
+  projectHeaderEnvs: readonly string[] | undefined;
+}): Map<string, { name: string; envName: string }> {
+  const pins = [...new Set([...input.envPins, ...input.projectPins])];
+  const headers = new Map<string, { name: string; envName: string }>();
+  for (const origin of pins) {
+    const header = extraHeaderFor(origin, input);
+    if (header !== undefined && header.name !== '') headers.set(origin, header);
+  }
+  return headers;
 }
 
 function parseHostFetchPinnedOrigins(raw: string | undefined): string[] {

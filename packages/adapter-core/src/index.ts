@@ -675,6 +675,13 @@ export interface BoundedFetchOptions {
    * resolved from process.env at this hop — not at construction.
    */
   pinnedTokenEnvNames?: ReadonlyMap<string, string>;
+  /**
+   * Origin → { name, envName } for the optional extra header (D2-H).
+   * Consulted only in classify-and-pin, only when url.origin is in
+   * pinnedOrigins. Resolved from process.env at this hop. Name already
+   * denylisted at parse.
+   */
+  pinnedExtraHeaders?: ReadonlyMap<string, { name: string; envName: string }>;
   lookup?: HostLookup;
   maximumBytes?: number;
   timeoutMilliseconds?: number;
@@ -712,6 +719,9 @@ export class BoundedFetchTransport implements HttpTransport {
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
+  readonly #pinnedExtraHeaders:
+    | ReadonlyMap<string, { name: string; envName: string }>
+    | undefined;
   readonly #destinationPolicy: DestinationPolicy;
   readonly #lookup: HostLookup | undefined;
   readonly #pinProduction: boolean;
@@ -740,6 +750,10 @@ export class BoundedFetchTransport implements HttpTransport {
       options.pinnedTokenEnvNames === undefined
         ? undefined
         : new Map(options.pinnedTokenEnvNames);
+    this.#pinnedExtraHeaders =
+      options.pinnedExtraHeaders === undefined
+        ? undefined
+        : new Map(options.pinnedExtraHeaders);
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#pinProduction =
       this.#destinationPolicy === 'classify-and-pin' &&
@@ -832,6 +846,13 @@ export class BoundedFetchTransport implements HttpTransport {
           );
           if (bearer !== undefined)
             headers = { ...headers, Authorization: bearer };
+          const extra = extraHeaderForHop(
+            url,
+            this.#pinnedOrigins,
+            this.#pinnedExtraHeaders,
+          );
+          if (extra !== undefined)
+            headers = { ...headers, [extra.name]: extra.value };
         }
         const init: RequestInit & { dispatcher?: Agent } = {
           method,
@@ -1093,6 +1114,41 @@ function authorizationBearerFor(
       `Host-fetch bearer environment variable ${envName} is not a valid token`,
     );
   return `Bearer ${token}`;
+}
+
+const PRINTABLE_ASCII = /^[\x20-\x7E]+$/u;
+const EXTRA_HEADER_VALUE_MAX = 4096;
+
+/**
+ * Rebuild the operator extra header from the already-merged origin map.
+ * Missing entries mean no extra header. Values are read at this hop.
+ */
+function extraHeaderForHop(
+  url: URL,
+  pinnedOrigins: ReadonlySet<string>,
+  headers: ReadonlyMap<string, { name: string; envName: string }> | undefined,
+): { name: string; value: string } | undefined {
+  if (headers === undefined || !pinnedOrigins.has(url.origin)) return undefined;
+  const grant = headers.get(url.origin);
+  if (grant === undefined || grant.name === '' || grant.envName === '')
+    return undefined;
+  if (url.protocol !== 'https:')
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch extra-header environment variable ${grant.envName} cannot be sent over plaintext`,
+    );
+  const value = process.env[grant.envName]?.trim() ?? '';
+  if (value === '')
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch extra-header environment variable ${grant.envName} is unset or empty`,
+    );
+  if (value.length > EXTRA_HEADER_VALUE_MAX || !PRINTABLE_ASCII.test(value))
+    throw new ProviderError(
+      'UNRESOLVABLE',
+      `Host-fetch extra-header environment variable ${grant.envName} is not a valid header value`,
+    );
+  return { name: grant.name, value };
 }
 
 function isLoopbackHostname(hostname: string): boolean {
