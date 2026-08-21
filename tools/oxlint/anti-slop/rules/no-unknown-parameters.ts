@@ -11,6 +11,22 @@ type ParameterOwner =
   | ESTree.TSFunctionType
   | ESTree.TSMethodSignature;
 
+function isPublicOwner(node: ParameterOwner): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (current.type === 'ExportNamedDeclaration') return true;
+    if (current.type === 'ClassBody') return true;
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    )
+      return false;
+    current = current.parent;
+  }
+  return false;
+}
+
 function parameterAnnotation(
   parameter: Parameter,
 ): ESTree.TSTypeAnnotation | null | undefined {
@@ -56,6 +72,7 @@ export const noUnknownParametersRule = defineRule({
   },
   createOnce(context) {
     const checkParameters = (node: ParameterOwner) => {
+      if (!isPublicOwner(node)) return;
       for (const parameter of node.params) {
         const annotation = parameterAnnotation(parameter);
         if (annotation?.typeAnnotation.type !== 'TSUnknownKeyword') continue;
