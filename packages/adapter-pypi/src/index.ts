@@ -1204,8 +1204,13 @@ export class PypiCodec
         ),
       );
 
+    const liveFiles = files.filter((file) => !isYanked(file.yanked));
+    const yanked =
+      isYanked(info.yanked) || (files.length > 0 && liveFiles.length === 0);
+    const artifactFiles = liveFiles.length > 0 ? liveFiles : files;
+
     const artifacts: ArtifactDescriptor[] = [];
-    files.forEach((file, index) => {
+    artifactFiles.forEach((file, index) => {
       const artifact = fileArtifact(nodeId, file, index);
       if (artifact) artifacts.push(artifact);
       else if (file.url)
@@ -1218,9 +1223,6 @@ export class PypiCodec
           ),
         );
     });
-
-    const yanked =
-      isYanked(info.yanked) || files.some((file) => isYanked(file.yanked));
     const instance: PackageInstance = {
       nodeId,
       identity: pypiIdentity(exactPurl, provenance.endpoint),

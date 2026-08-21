@@ -30,6 +30,15 @@ const sdist = await readFile(
     import.meta.url,
   ),
 );
+const mixedYankedBytes = await readFile(
+  new URL(
+    '../../../fixtures/catalogs/pypi/project-mixed-yanked.json',
+    import.meta.url,
+  ),
+);
+const mixedYanked = JSON.parse(
+  mixedYankedBytes.toString(),
+) as PypiProjectDocument;
 
 describe('pypi codec laws', () => {
   const codec = new PypiCodec();
@@ -127,6 +136,54 @@ describe('pypi codec laws', () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it('omits yanked files when a live distribution exists', async () => {
+    const translated = await codec.translateMetadata(
+      { kind: 'project-version', project: mixedYanked, version: '1.0.0' },
+      {
+        providerId: 'fixture',
+        endpoint: 'https://fixtures.test',
+        retrievedAt: '2026-08-02T00:00:00Z',
+        evaluationTime: '2026-08-02T00:00:00Z',
+        metadataDigest: { algorithm: 'sha256', value: '4'.repeat(64) },
+      },
+    );
+    expect(translated.instance.lifecycle.status).toBe('published');
+    expect(translated.instance.lifecycle.eligible).toBe(true);
+    expect(
+      translated.instance.artifacts.map((artifact) => artifact.fileName),
+    ).toEqual(['demo_mixed-1.0.0.tar.gz']);
+    expect(translated.instance.nativeSemantics.data).toMatchObject({
+      files: [
+        {
+          filename: 'demo_mixed-1.0.0-py3-none-any.whl',
+          yanked: true,
+        },
+        {
+          filename: 'demo_mixed-1.0.0.tar.gz',
+          yanked: false,
+          sha256:
+            '437087440e1c80b5dbea070ab18f4746ad804e8d0740560c932a01ea37ceb0e8',
+        },
+      ],
+    });
+  });
+
+  it('marks a version yanked only when every file is yanked', async () => {
+    const translated = await codec.translateMetadata(
+      { kind: 'project-version', project: mixedYanked, version: '1.1.0' },
+      {
+        providerId: 'fixture',
+        endpoint: 'https://fixtures.test',
+        retrievedAt: '2026-08-02T00:00:00Z',
+        evaluationTime: '2026-08-02T00:00:00Z',
+        metadataDigest: { algorithm: 'sha256', value: '5'.repeat(64) },
+      },
+    );
+    expect(translated.instance.lifecycle.status).toBe('yanked');
+    expect(translated.instance.lifecycle.eligible).toBe(false);
+    expect(translated.instance.artifacts).toHaveLength(2);
   });
 
   it('captures uv.lock version 1 JSON without network', () => {

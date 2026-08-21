@@ -6,6 +6,12 @@ import { PypiJsonProvider } from './index.js';
 const projectBytes = await readFile(
   new URL('../../../fixtures/catalogs/pypi/project.json', import.meta.url),
 );
+const mixedYankedBytes = await readFile(
+  new URL(
+    '../../../fixtures/catalogs/pypi/project-mixed-yanked.json',
+    import.meta.url,
+  ),
+);
 const wheel = await readFile(
   new URL(
     '../../../fixtures/catalogs/pypi/demo_tool-1.0.0-py3-none-any.whl',
@@ -180,6 +186,67 @@ describe('PyPI Warehouse JSON provider e2e (offline)', () => {
       PROJECT_URL,
       WHEEL_URL,
     ]);
+    assertOfflineWarehouseOnly(transport);
+  });
+
+  it('does not pick a yanked wheel when a live artifact exists', async () => {
+    const yankedWheelUrl =
+      'https://fixtures.openpacker.invalid/pypi/demo_mixed-1.0.0-yanked-py3-none-any.whl';
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [
+          'https://fixtures.test/demo-mixed/json',
+          { status: 200, headers: {}, body: mixedYankedBytes },
+        ],
+        [SDIST_URL, { status: 200, headers: {}, body: sdist }],
+      ]),
+    );
+    const provider = new PypiJsonProvider(
+      transport,
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    const inspected = await provider.inspect('pkg:pypi/Demo_Mixed@1.0.0');
+    expect(inspected.package.lifecycle.status).toBe('published');
+    expect(inspected.package.lifecycle.eligible).toBe(true);
+    expect(
+      inspected.package.artifacts.map((artifact) => artifact.fileName),
+    ).toEqual(['demo_mixed-1.0.0.tar.gz']);
+    expect(inspected.package.artifacts[0]).toMatchObject({
+      digest: { algorithm: 'sha256', value: SDIST_SHA256 },
+      locations: [{ uri: SDIST_URL }],
+    });
+    const artifact = await provider.fetchArtifactRecord(
+      'pkg:pypi/demo-mixed@1.0.0',
+    );
+    expect(artifact.rawBody).toEqual(sdist);
+    const urls = transport.requests.map((request) => request.url);
+    expect(urls).toContain('https://fixtures.test/demo-mixed/json');
+    expect(urls).toContain(SDIST_URL);
+    expect(urls).not.toContain(yankedWheelUrl);
+    assertOfflineWarehouseOnly(transport);
+  });
+
+  it('marks the version yanked when every file is yanked', async () => {
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [
+          'https://fixtures.test/demo-mixed/json',
+          { status: 200, headers: {}, body: mixedYankedBytes },
+        ],
+      ]),
+    );
+    const provider = new PypiJsonProvider(
+      transport,
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    const yanked = await provider.inspect('pkg:pypi/demo-mixed@1.1.0');
+    expect(yanked.package.lifecycle.status).toBe('yanked');
+    expect(yanked.package.lifecycle.eligible).toBe(false);
+    expect(
+      yanked.package.artifacts.map((artifact) => artifact.fileName),
+    ).toEqual(['demo_mixed-1.1.0-py3-none-any.whl', 'demo_mixed-1.1.0.tar.gz']);
     assertOfflineWarehouseOnly(transport);
   });
 });
