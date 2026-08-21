@@ -7,9 +7,9 @@
 - **Trunk:** main
 - **Instruction:** [`swarm-instruction.md`](swarm-instruction.md)
   (self-contained one-shot swarm prompt; no phases)
-- **Decisions:** binding critique in the instruction §2. Refuse wasmtime WIT
-  host, opm workspaces, native-registry publish, OIDC/device-flow login,
-  host-fetch residual pins.
+- **Decisions:** [ADR 0042](../../adr/0042-upm-v1-gaps.md). Binding critique in
+  the instruction §2. Refuse wasmtime WIT host, opm workspaces, native-registry
+  publish, OIDC/device-flow login, host-fetch residual pins.
 
 ## Dispatch (one wave, exclusive ownership)
 
