@@ -635,12 +635,13 @@ function asBytes(raw: string | Uint8Array): Uint8Array {
   return typeof raw === 'string' ? new TextEncoder().encode(raw) : raw;
 }
 
-function parseStrictJson(text: string): unknown {
+function parseStrictJson(text: string): JsonValue {
   // The YAML parser already in this package detects duplicate mapping keys;
   // JSON.parse then retains the strict JSON grammar expected by lock formats.
   parseYaml(text, { schema: 'json', uniqueKeys: true });
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return JSON.parse(text) as unknown;
+  // SAFETY: The JSON-schema parser has accepted the complete JSON value at this boundary.
+  return JSON.parse(text) as JsonValue;
 }
 
 export function detectLockFormat(

@@ -48,7 +48,7 @@ export interface EmbeddedBindings {
 }
 
 type LoadableBindings = EmbeddedBindings & {
-  default?: () => Promise<unknown> | unknown;
+  default?: () => Promise<void> | void;
 };
 export type EmbeddedImporter = () => Promise<LoadableBindings>;
 

@@ -75,8 +75,12 @@ export interface ArtifactImplementationInfo {
   deterministic: boolean;
 }
 
-const abortError = (signal?: AbortSignal): unknown =>
-  signal?.reason ?? new DOMException('Operation aborted', 'AbortError');
+type AbortReason = DOMException | Error;
+
+const abortError = (signal?: AbortSignal): AbortReason =>
+  signal?.reason instanceof Error
+    ? signal.reason
+    : new DOMException('Operation aborted', 'AbortError');
 
 export function digestString(digest: Digest): string {
   return formatDigest(digest);
