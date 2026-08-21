@@ -1,9 +1,9 @@
 /**
- * Production bridge: WIT-shaped module surface implemented by TypeScript
- * guests until WASM components load.
+ * Production v1 bridge: WIT-shaped TypeScript module surface.
  *
- * This is the only path core uses — whether the guest is a TS object or a
- * future wasmtime-loaded component exporting openpacker:prex-adapter@0.1.0.
+ * OpenPacker v1 loads AdapterModule objects (and sandboxed native plugins via
+ * plugin-host). It does not load WebAssembly components. The WIT world
+ * openpacker:prex-adapter@0.1.0 remains the ABI shape this check enforces.
  */
 
 import { canonicalBytes } from '@openpacker/canonical';
@@ -68,8 +68,8 @@ const PROJECT_RESOURCES = [
 const RESERVED_TYPE = /^prex\.registry\.[a-z][a-z0-9-]*\/[1-9][0-9]*$/u;
 
 /**
- * Contract check used when a full wasmtime/jco host is unavailable: prove the
- * module satisfies the WIT-shaped surface the host will call.
+ * Contract check for the v1 TypeScript host: prove the module satisfies the
+ * WIT-shaped surface. A wasmtime/jco component loader is not part of v1.
  *
  * Component exports and Registry Definition resources MUST NOT disagree
  * (ADR 0032 / registry-definition.md).

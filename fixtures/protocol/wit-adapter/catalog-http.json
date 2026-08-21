@@ -1,0 +1,41 @@
+{
+  "registryDefinitionVersion": "1",
+  "registryId": "urn:openpacker:registry:wit-adapter-catalog",
+  "displayName": "WIT-shaped HTTP catalog (v1 TypeScript host)",
+  "purlTypes": ["generic"],
+  "protocol": {
+    "native": "fixture-v1",
+    "transport": ["https"]
+  },
+  "resources": [
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/search",
+      "@type": "prex.registry.search/1"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/",
+      "@type": "prex.registry.enumerate-versions/1"
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/",
+      "@type": "prex.registry.package-metadata/1",
+      "mediaTypes": ["application/json"]
+    },
+    {
+      "@id": "https://fixtures.openpacker.invalid/wit-adapter/artifacts/",
+      "@type": "prex.registry.artifact/1",
+      "mediaTypes": ["application/octet-stream"]
+    }
+  ],
+  "features": {
+    "offlineReplay": true,
+    "signedMetadata": false,
+    "installSideEffects": "none",
+    "reversibility": "none",
+    "requiresElevation": "never"
+  },
+  "limits": {
+    "maxEnumerate": 1000,
+    "maxSearchResults": 50
+  }
+}
