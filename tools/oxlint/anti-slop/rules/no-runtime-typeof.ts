@@ -23,6 +23,33 @@ function isInsideTypeGuard(node: ESTree.Node): boolean {
   return false;
 }
 
+function hasDeclaredType(node: ESTree.Expression): boolean {
+  if (node.type !== 'Identifier') return false;
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== 'Program') {
+    if (
+      current.type === 'VariableDeclarator' &&
+      current.id.type === 'Identifier' &&
+      current.id.name === node.name
+    )
+      return (
+        current.id.typeAnnotation?.typeAnnotation.type !== 'TSUnknownKeyword'
+      );
+    if (isRuntimeFunction(current)) {
+      const parameter = current.params.find(
+        (candidate) =>
+          candidate.type === 'Identifier' && candidate.name === node.name,
+      );
+      if (parameter?.type === 'Identifier')
+        return (
+          parameter.typeAnnotation?.typeAnnotation.type !== 'TSUnknownKeyword'
+        );
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
 export const noRuntimeTypeofRule = defineRule({
   meta: {
@@ -57,6 +84,7 @@ export const noRuntimeTypeofRule = defineRule({
           option.allowInTypeGuards === true;
         if (
           node.operator === 'typeof' &&
+          !hasDeclaredType(node.argument) &&
           (!allowInTypeGuards || !isInsideTypeGuard(node))
         ) {
           context.report({ node, messageId: 'runtimeTypeof' });
