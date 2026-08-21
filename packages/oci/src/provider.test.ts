@@ -119,6 +119,41 @@ describe('browsing and pinning', () => {
     ).resolves.toHaveLength(2);
   });
 
+  it('allowlists ghcr.io by default without pinning it', async () => {
+    const { fetchImplementation, requests } = registry();
+    const unpinned = new OciRegistryProvider({
+      fetch: fetchImplementation,
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+    });
+    await expect(
+      unpinned.enumerate('pkg:oci/jq?repository_url=ghcr.io/homebrew/core/jq'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(requests).toEqual([]);
+    const allowed = new OciRegistryProvider({ fetch: fetchImplementation });
+    await expect(
+      allowed.enumerate('pkg:oci/jq?repository_url=ghcr.io/homebrew/core/jq'),
+    ).resolves.toHaveLength(2);
+  });
+
+  it('pins an operator override and drops the other default registry', async () => {
+    const { fetchImplementation, requests } = registry();
+    const provider = new OciRegistryProvider({
+      fetch: fetchImplementation,
+      allowedRegistryOrigins: ['https://oci.internal.example'],
+      pinnedRegistryOrigins: ['https://oci.internal.example'],
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+    });
+    await expect(
+      provider.enumerate('pkg:oci/jq?repository_url=ghcr.io/homebrew/core/jq'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(requests).toEqual([]);
+    await expect(
+      provider.enumerate(
+        'pkg:oci/demo?repository_url=oci.internal.example/acme/demo',
+      ),
+    ).resolves.toHaveLength(2);
+  });
+
   it('lists tags as browsable references', async () => {
     const { fetchImplementation } = registry();
     const provider = new OciRegistryProvider({ fetch: fetchImplementation });

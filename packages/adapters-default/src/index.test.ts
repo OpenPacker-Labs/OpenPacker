@@ -103,6 +103,46 @@ describe('default adapters', () => {
     );
   });
 
+  it('allowlists both default OCI registries and drops the other on override', async () => {
+    const registry = createDefaultAdapterRegistry();
+    const tags = JSON.stringify({ tags: ['1.0.0'] });
+    const fetchOk = (async () =>
+      new Response(tags, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+    const defaultProvider = await registry.catalogFor('oci', {
+      fetch: fetchOk,
+    });
+    await expect(
+      defaultProvider.enumerate(
+        'pkg:oci/jq?repository_url=ghcr.io/homebrew/core/jq',
+      ),
+    ).resolves.toHaveLength(1);
+    await expect(
+      defaultProvider.enumerate('pkg:oci/library/alpine'),
+    ).resolves.toHaveLength(1);
+
+    const previous = process.env.OPM_REGISTRY_OCI;
+    process.env.OPM_REGISTRY_OCI = 'https://oci.internal.example';
+    try {
+      const override = await registry.catalogFor('oci', { fetch: fetchOk });
+      await expect(
+        override.enumerate(
+          'pkg:oci/jq?repository_url=ghcr.io/homebrew/core/jq',
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      await expect(
+        override.enumerate(
+          'pkg:oci/demo?repository_url=oci.internal.example/acme/demo',
+        ),
+      ).resolves.toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_OCI;
+      else process.env.OPM_REGISTRY_OCI = previous;
+    }
+  });
+
   it('drops the public npm CDN after an OPM_REGISTRY_NPM override', async () => {
     const previous = process.env.OPM_REGISTRY_NPM;
     process.env.OPM_REGISTRY_NPM = 'https://npm.internal.example';

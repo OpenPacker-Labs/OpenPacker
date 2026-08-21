@@ -1,5 +1,6 @@
 import {
   createFirstPartyTransport,
+  firstPartyOriginPolicy,
   parseHttpsOriginList,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -416,8 +417,18 @@ export function defaultAdapterModules(): AdapterModule[] {
       packer: ociPacker,
       catalog: (context) => {
         const endpoint = endpointFor('oci', context);
+        const artifactOrigins = ARTIFACT_ORIGINS.oci;
+        const policy = firstPartyOriginPolicy({
+          endpoint,
+          namedOrOverride:
+            Boolean(context.endpoint?.trim()) ||
+            registryEndpointIsOverride('oci'),
+          ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+          extraOrigins: extraOriginsFor('oci'),
+        });
         return new OciRegistryProvider({
-          allowedRegistryOrigins: [new URL(endpoint).origin],
+          allowedRegistryOrigins: policy.allowedOrigins,
+          pinnedRegistryOrigins: policy.pinnedOrigins,
           ...(context.now ? { now: context.now } : {}),
           ...(context.fetch ? { fetch: context.fetch } : {}),
         }) as never;

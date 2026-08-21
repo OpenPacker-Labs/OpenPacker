@@ -1058,6 +1058,71 @@ export function createFirstPartyTransport(input: {
   });
 }
 
+export interface PinnedFetchOptions {
+  allowedOrigins: readonly string[];
+  pinnedOrigins?: readonly string[];
+  fetch?: typeof fetch;
+  lookup?: HostLookup;
+}
+
+/**
+ * Same classify-and-pin policy as {@link BoundedFetchTransport}, returning a
+ * `fetch` that preserves non-2xx responses (OCI bearer challenges). Injected
+ * `fetch` skips the Agent and real DNS unless `lookup` is also injected.
+ */
+export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
+  const allowedOrigins = new Set(
+    options.allowedOrigins.map(normalizeAllowedOrigin),
+  );
+  if (allowedOrigins.size === 0)
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      'Provider transport requires at least one allowed origin',
+    );
+  const pinnedOrigins = new Set(
+    (options.pinnedOrigins ?? []).map(normalizePinnedOrigin),
+  );
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const pinProduction =
+    options.fetch === undefined && fetchImpl === nativeFetch;
+  const lookup =
+    options.lookup ?? (pinProduction ? defaultHostLookup : undefined);
+  return (async (input, init) => {
+    const href =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const url = parseProviderUrl(href);
+    assertAllowedProviderUrl(url, allowedOrigins);
+    let pin: { address: string; family: number } | undefined;
+    const resolved = await assertPinnedDestination(url, pinnedOrigins, lookup);
+    if (resolved !== undefined) pin = resolved;
+    const agent =
+      pinProduction && pin !== undefined
+        ? new Agent({
+            connect: {
+              lookup: (_hostname, _options, callback) => {
+                if (pin === undefined) {
+                  callback(new Error('No pinned address'), '', 4);
+                  return;
+                }
+                callback(null, pin.address, pin.family);
+              },
+            },
+          })
+        : undefined;
+    try {
+      const nextInit: RequestInit & { dispatcher?: Agent } = { ...init };
+      if (agent !== undefined) nextInit.dispatcher = agent;
+      return await fetchImpl(input as Parameters<typeof fetch>[0], nextInit);
+    } finally {
+      await agent?.close();
+    }
+  }) as typeof fetch;
+}
+
 export function isPrivateAddress(value: string): boolean {
   const address = value.toLowerCase();
   if (address.includes(':')) {
