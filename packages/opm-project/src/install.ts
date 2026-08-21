@@ -44,15 +44,18 @@ import {
   OPM_DIR,
   PROJECT_STATE,
   projectPaths,
+  openChild,
   readStableFile,
   readStableFileBytes,
+  readStableFileBytesAt,
   revalidateStableDirectory,
+  removeChild,
+  renameChild,
   removeStableFile,
   removeStableTree,
   resolveContained,
   storeKeyFromDigest,
   storePathForDigest,
-  stableHandlePath,
   writeStableFile,
   writeStableFileAt,
 } from './paths.js';
@@ -344,7 +347,7 @@ async function assertRealDirectory(
   if (!handle)
     throw invalidState(`${name} is missing, linked, or not a directory`);
   try {
-    return await realpath(stableHandlePath(handle));
+    return await realpath(path);
   } finally {
     await handle.close();
   }
@@ -632,23 +635,27 @@ export async function materializeLockPackage(input: {
   await ensureStableDirectory(paths.store);
   const storeHandle = await openStableDirectory(paths.store);
   try {
-    const stableStorePath = join(
-      stableHandlePath(storeHandle),
-      basename(storePath),
-    );
-    const stableArchivePath = `${stableStorePath}.artifact`;
+    const storeName = basename(storePath);
+    const archiveName = basename(archivePath);
     let cached = false;
     let bytes = suppliedBytes ?? capability?.bytes;
     const loadVerifiedBytes = async (): Promise<Uint8Array> => {
       let loaded = bytes;
       if (loaded === undefined && !force) {
         try {
-          loaded = await fetchArtifactBytes(stableArchivePath, true, {
-            expectedBytes: pkg.size,
-          });
+          loaded = await readStableFileBytesAt(
+            storeHandle,
+            archiveName,
+            pkg.size + 1,
+            archivePath,
+          );
           cached = true;
         } catch (error) {
-          if (!(error instanceof OpmError) || error.code !== 'NOT_FOUND')
+          const code = (error as NodeJS.ErrnoException).code;
+          if (
+            code !== 'ENOENT' &&
+            !(error instanceof OpmError && error.code === 'NOT_FOUND')
+          )
             throw error;
         }
       }
@@ -682,7 +689,7 @@ export async function materializeLockPackage(input: {
 
     const stagedName = `.${basename(storePath)}.materialize-${randomUUID()}`;
     const stagedPath = join(paths.store, stagedName);
-    const stableStagedPath = join(stableHandlePath(storeHandle), stagedName);
+
     let lifecycleScriptsExecuted = false;
     let sandboxOutcomes: SandboxOutcome[] = [];
     let treeDigest: string;
@@ -731,15 +738,16 @@ export async function materializeLockPackage(input: {
       // A failed or partially contained build can never mutate the current CAS
       // entry that readers and generations already reference.
       if (pkg.ecosystem === 'npm') {
-        const declared = await detectNpmLifecycleScripts(stableStagedPath);
+        const declared = await detectNpmLifecycleScripts(stagedPath);
         if (
           hasLifecycleScripts(declared) &&
           lifecycleScriptsAllowed(policy, pkg.purl)
         ) {
           if (sharedRoot !== undefined)
             await isolateProjectStoreFromSharedLinks(stagedPath);
-          const packageHandle = await open(
-            stableStagedPath,
+          const packageHandle = await openChild(
+            storeHandle,
+            stagedName,
             constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
           );
           try {
@@ -761,18 +769,17 @@ export async function materializeLockPackage(input: {
       await revalidateStableDirectory(paths.store, storeHandle);
 
       const backupName = `.${basename(storePath)}.replace-${randomUUID()}`;
-      const stableBackupPath = join(stableHandlePath(storeHandle), backupName);
       let backedUp = false;
       try {
-        await rename(stableStorePath, stableBackupPath);
+        await renameChild(storeHandle, storeName, backupName);
         backedUp = true;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
       try {
-        await rename(stableStagedPath, stableStorePath);
+        await renameChild(storeHandle, stagedName, storeName);
       } catch (error) {
-        if (backedUp) await rename(stableBackupPath, stableStorePath);
+        if (backedUp) await renameChild(storeHandle, backupName, storeName);
         throw error;
       }
       try {
@@ -783,19 +790,26 @@ export async function materializeLockPackage(input: {
             `Post-build tree for ${pkg.purl} changed during publication`,
           );
       } catch (error) {
-        await rm(stableStorePath, { recursive: true, force: true });
-        if (backedUp) await rename(stableBackupPath, stableStorePath);
+        await removeChild(storeHandle, storeName, {
+          recursive: true,
+          force: true,
+        });
+        if (backedUp) await renameChild(storeHandle, backupName, storeName);
         throw error;
       }
       if (backedUp)
-        await rm(stableBackupPath, { recursive: true, force: true });
+        await removeChild(storeHandle, backupName, {
+          recursive: true,
+          force: true,
+        });
     } catch (error) {
       await revalidateStableDirectory(paths.store, storeHandle);
       throw error;
     } finally {
-      await rm(stableStagedPath, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
+      await removeChild(storeHandle, stagedName, {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
     }
     await revalidateStableDirectory(paths.store, storeHandle);
     if (bytes !== undefined && (!cached || force))
@@ -810,7 +824,7 @@ export async function materializeLockPackage(input: {
     const bins: BinDeclaration[] =
       pkg.bins.length > 0
         ? [...pkg.bins]
-        : await discoverBins(stableStorePath, pkg.ecosystem);
+        : await discoverBins(storePath, pkg.ecosystem);
     await revalidateStableDirectory(paths.store, storeHandle);
     return {
       storePath,

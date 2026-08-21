@@ -16,9 +16,6 @@ import {
   lstat,
   open,
   readFile,
-  rename,
-  mkdir,
-  rm,
   type FileHandle,
 } from 'node:fs/promises';
 import {
@@ -32,6 +29,13 @@ import {
   resolve,
   sep,
 } from 'node:path';
+import {
+  mkdirChild,
+  openChild,
+  removeChild,
+  renameChild,
+  supportsStableHandles,
+} from './handle-path.js';
 
 /** Resolve a command without executing project- or PATH-controlled code. */
 export async function findExecutable(
@@ -114,13 +118,12 @@ export async function writeFileAtomic(
   const directory = resolve(dirname(path));
   const name = basename(path);
   const parent = await openStableDirectory(directory);
-  const parentPath = stableHandlePath(parent);
   const temporary = `.${name}.opm-${randomUUID()}.tmp`;
   try {
     await assertNamedDirectory(directory, parent);
-    const temporaryPath = join(parentPath, temporary);
-    const file = await open(
-      temporaryPath,
+    const file = await openChild(
+      parent,
+      temporary,
       constants.O_WRONLY |
         constants.O_CREAT |
         constants.O_EXCL |
@@ -134,10 +137,10 @@ export async function writeFileAtomic(
       await file.close();
     }
     await assertNamedDirectory(directory, parent);
-    await rename(temporaryPath, join(parentPath, name));
+    await renameChild(parent, temporary, name);
     await assertNamedDirectory(directory, parent);
   } catch (error) {
-    await rm(join(parentPath, temporary), { force: true }).catch(
+    await removeChild(parent, temporary, { force: true }).catch(
       () => undefined,
     );
     throw error;
@@ -147,7 +150,7 @@ export async function writeFileAtomic(
 }
 
 export async function openStableDirectory(path: string): Promise<FileHandle> {
-  if (process.platform !== 'linux' && process.platform !== 'darwin')
+  if (!supportsStableHandles())
     throw new ProjectIoError(
       'UNSAFE_PATH',
       path,
@@ -160,12 +163,12 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
   );
   try {
     for (const part of relative(root, path).split(sep).filter(Boolean)) {
-      const child = join(stableHandlePath(handle), part);
-      await mkdir(child).catch((error: NodeJS.ErrnoException) => {
+      await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'EEXIST') throw error;
       });
-      const next = await open(
-        child,
+      const next = await openChild(
+        handle,
+        part,
         constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
       );
       await handle.close();
@@ -194,11 +197,22 @@ export async function assertNamedDirectory(
     );
 }
 
-export function stableHandlePath(handle: FileHandle): string {
-  return process.platform === 'linux'
-    ? `/proc/self/fd/${handle.fd}`
-    : `/dev/fd/${handle.fd}`;
-}
+export {
+  assertHandleSegment,
+  handlePathForPlatform,
+  lstatChild,
+  mkdirChild,
+  mkdtempChild,
+  openChild,
+  readDirChild,
+  readDirChildWithTypes,
+  removeChild,
+  renameChild,
+  stableHandlePath,
+  supportsStableHandles,
+  windowsNtHandlePathForm,
+  StableHandleError,
+} from './handle-path.js';
 
 /** Restore a file's original line endings and trailing-newline habit. */
 export function matchFileStyle(file: TextFile, body: string): string {

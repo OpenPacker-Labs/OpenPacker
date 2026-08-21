@@ -12,15 +12,17 @@ import {
 import {
   assertSafeSegment,
   ensureStableDirectory,
+  openChild,
   openStableDirectory,
   projectPaths,
+  readDirChild,
+  readDirChildWithTypes,
   readStableFile,
   readStableFileAt,
   revalidateStableDirectory,
   removeStableFile,
   removeStableTree,
   resolveContained,
-  stableHandlePath,
   storePathForDigest,
   writeStableFile,
 } from './paths.js';
@@ -430,7 +432,7 @@ export async function listGenerations(root: string): Promise<Generation[]> {
     throw error;
   }
   try {
-    const names = await readdir(stableHandlePath(handle));
+    const names = await readDirChild(handle);
     const generations = await Promise.all(
       names
         .filter((name) => /^[0-9a-f]{64}\.json$/u.test(name))
@@ -657,9 +659,7 @@ export async function collectableStorePaths(input: {
   let storeHandle: FileHandle | undefined;
   try {
     storeHandle = await openStableDirectory(paths.store);
-    present = (
-      await readdir(stableHandlePath(storeHandle), { withFileTypes: true })
-    )
+    present = (await readDirChildWithTypes(storeHandle))
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(paths.store, entry.name));
   } catch (error) {
@@ -841,8 +841,9 @@ export async function activateGeneration(input: {
           'UNSAFE_PATH',
           `Generation store path is not derived from its digest: ${member.storePath}`,
         );
-      const handle = await open(
-        join(stableHandlePath(store), basename(expected)),
+      const handle = await openChild(
+        store,
+        basename(expected),
         constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
       ).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ELOOP')
@@ -909,7 +910,7 @@ export async function activateGeneration(input: {
         // generations activate exactly as they always did.
         const bins =
           member.bins === undefined
-            ? await discoverBins(stableHandlePath(handle), ecosystem)
+            ? await discoverBins(expected, ecosystem)
             : member.bins;
         for (const bin of bins) {
           const name = assertSafeSegment(bin.name, 'bin name');

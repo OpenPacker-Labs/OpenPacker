@@ -1,25 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  readdir,
-  rename,
-  rm,
-  rmdir,
-  type FileHandle,
-} from 'node:fs/promises';
-import {
-  basename,
-  dirname,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   collectStream,
   streamFromBytes,
@@ -27,6 +9,15 @@ import {
 } from '@openpacker/artifact-model';
 import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
+import {
+  mkdirChild,
+  mkdtempChild,
+  openChild,
+  openStableDirectory as openStableDirectoryShared,
+  removeChild,
+  renameChild,
+  supportsStableHandles,
+} from '@openpacker/project-io';
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
 
@@ -171,124 +162,118 @@ export async function materialize(input: {
   const limits = input.limits ?? DEFAULT_MATERIALIZATION_LIMITS;
   validateLimits(limits);
   input.signal?.throwIfAborted();
+  if (!supportsStableHandles())
+    throw unsafe(
+      'UNSAFE_STAGING',
+      'Stable materialization handles are unavailable on this platform',
+    );
   const parent = resolve(dirname(input.destination));
-  const parentHandle = await openStableDirectory(parent);
-  const target = join(
-    directoryHandlePath(parentHandle),
-    basename(input.destination),
-  );
-  const staging = await mkdtemp(
-    join(
-      directoryHandlePath(parentHandle),
-      `.${basename(input.destination)}.openpacker-`,
-    ),
-  );
-  const stagingHandle = await openDirectory(staging);
-  let published = false;
+  const destName = basename(input.destination);
+  const parentHandle = await openStableDirectoryShared(parent);
+  let stagingHandle: FileHandle | undefined;
   try {
-    if (await exists(target)) {
-      if (!input.managedDestination)
-        throw new MaterializationError(
-          'DESTINATION_EXISTS',
-          'Destination already exists; materialization never merges or overwrites prefixes',
-        );
-      const targetStat = await lstat(target);
-      if (!targetStat.isDirectory() || targetStat.isSymbolicLink())
-        throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
-      if ((await readdir(target)).length > 0)
-        throw new MaterializationError(
-          'DESTINATION_EXISTS',
-          'Managed destination must be empty before atomic materialization',
-        );
-      await rmdir(target);
-    }
-    const bytes = await verifiedDownload(
-      input.source,
-      input.descriptor,
-      limits.maximumCompressedBytes,
-      input.signal,
+    const target = join(parent, destName);
+    const stagingName = await mkdtempChild(
+      parentHandle,
+      `.${destName}.openpacker-`,
     );
-    const entries = await inspectArchive(
-      bytes,
-      input.format,
-      limits,
-      input.signal,
+    stagingHandle = await openChild(
+      parentHandle,
+      stagingName,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     );
-    const files: MaterializedFile[] = [];
-    for (const entry of entries.filter(({ type }) => type === 'directory')) {
-      input.signal?.throwIfAborted();
-      await ensureStageDirectory(stagingHandle, entry.path.split('/'));
-    }
-    for (const entry of entries.filter(({ type }) => type === 'file')) {
-      input.signal?.throwIfAborted();
-      await writeStageFile(
-        stagingHandle,
-        entry.path.split('/'),
-        entry.data,
-        entry.mode,
+    let published = false;
+    try {
+      if (await exists(target)) {
+        if (!input.managedDestination)
+          throw new MaterializationError(
+            'DESTINATION_EXISTS',
+            'Destination already exists; materialization never merges or overwrites prefixes',
+          );
+        const targetStat = await lstat(target);
+        if (!targetStat.isDirectory() || targetStat.isSymbolicLink())
+          throw unsafe('UNSAFE_MANAGED_DESTINATION', input.destination);
+        if ((await readdir(target)).length > 0)
+          throw new MaterializationError(
+            'DESTINATION_EXISTS',
+            'Managed destination must be empty before atomic materialization',
+          );
+        await rmdir(target);
+      }
+      const bytes = await verifiedDownload(
+        input.source,
+        input.descriptor,
+        limits.maximumCompressedBytes,
+        input.signal,
       );
-      files.push({
-        path: entry.path,
-        size: entry.data.byteLength,
-        digest: await sha256(entry.data),
-        mode: entry.mode,
-      });
+      const entries = await inspectArchive(
+        bytes,
+        input.format,
+        limits,
+        input.signal,
+      );
+      const files: MaterializedFile[] = [];
+      for (const entry of entries.filter(({ type }) => type === 'directory')) {
+        input.signal?.throwIfAborted();
+        await ensureStageDirectory(stagingHandle, entry.path.split('/'));
+      }
+      for (const entry of entries.filter(({ type }) => type === 'file')) {
+        input.signal?.throwIfAborted();
+        await writeStageFile(
+          stagingHandle,
+          entry.path.split('/'),
+          entry.data,
+          entry.mode,
+        );
+        files.push({
+          path: entry.path,
+          size: entry.data.byteLength,
+          digest: await sha256(entry.data),
+          mode: entry.mode,
+        });
+      }
+      input.signal?.throwIfAborted();
+      await renameChild(parentHandle, stagingName, destName);
+      published = true;
+      await assertNamedDirectory(target, stagingHandle);
+      files.sort((left, right) =>
+        compareCanonicalStrings(left.path, right.path),
+      );
+      return {
+        manifestVersion: '1',
+        artifactDigest: input.descriptor.digest,
+        artifactSize: input.descriptor.size,
+        destination: input.destination,
+        files,
+        expandedSize: files.reduce((sum, file) => sum + file.size, 0),
+        lifecycleScriptsExecuted: false,
+      };
+    } catch (error) {
+      await removeChild(parentHandle, published ? destName : stagingName, {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+      throw error;
+    } finally {
+      await stagingHandle?.close();
     }
-    input.signal?.throwIfAborted();
-    await assertNamedDirectory(staging, stagingHandle);
-    await rename(staging, target);
-    published = true;
-    await assertNamedDirectory(target, stagingHandle);
-    files.sort((left, right) => compareCanonicalStrings(left.path, right.path));
-    return {
-      manifestVersion: '1',
-      artifactDigest: input.descriptor.digest,
-      artifactSize: input.descriptor.size,
-      destination: input.destination,
-      files,
-      expandedSize: files.reduce((sum, file) => sum + file.size, 0),
-      lifecycleScriptsExecuted: false,
-    };
-  } catch (error) {
-    await rm(published ? target : staging, {
-      recursive: true,
-      force: true,
-    }).catch(() => undefined);
-    throw error;
   } finally {
-    await Promise.all([stagingHandle.close(), parentHandle.close()]);
+    await parentHandle.close();
   }
 }
 
-async function openStableDirectory(path: string): Promise<FileHandle> {
-  const absolute = resolve(path);
-  const root = parse(absolute).root;
-  let handle = await openDirectory(root);
-  try {
-    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      const child = join(directoryHandlePath(handle), part);
-      await mkdir(child).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EEXIST') throw error;
-      });
-      const next = await openDirectory(child);
-      await handle.close();
-      handle = next;
-    }
-    return handle;
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    throw error;
-  }
-}
-
-async function openDirectory(path: string): Promise<FileHandle> {
-  const handle = await open(
-    path,
+async function openDirectoryAt(
+  parent: FileHandle,
+  name: string,
+): Promise<FileHandle> {
+  const handle = await openChild(
+    parent,
+    name,
     constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
   );
   if (!(await handle.stat()).isDirectory()) {
     await handle.close();
-    throw unsafe('UNSAFE_STAGING', path);
+    throw unsafe('UNSAFE_STAGING', name);
   }
   return handle;
 }
@@ -301,13 +286,10 @@ async function ensureStageDirectory(
   const opened: FileHandle[] = [];
   try {
     for (const part of parts) {
-      const child = join(directoryHandlePath(current), part);
-      await mkdir(child, { mode: 0o755 }).catch(
-        (error: NodeJS.ErrnoException) => {
-          if (error.code !== 'EEXIST') throw error;
-        },
-      );
-      current = await openDirectory(child);
+      await mkdirChild(current, part).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      current = await openDirectoryAt(current, part);
       opened.push(current);
     }
   } finally {
@@ -327,11 +309,12 @@ async function writeStageFile(
   const opened: FileHandle[] = [];
   try {
     for (const part of parts.slice(0, -1)) {
-      parent = await openDirectory(join(directoryHandlePath(parent), part));
+      parent = await openDirectoryAt(parent, part);
       opened.push(parent);
     }
-    const file = await open(
-      join(directoryHandlePath(parent), name),
+    const file = await openChild(
+      parent,
+      name,
       constants.O_WRONLY |
         constants.O_CREAT |
         constants.O_EXCL |
@@ -357,15 +340,6 @@ async function assertNamedDirectory(path: string, handle: FileHandle) {
   ]);
   if (held.dev !== named.dev || held.ino !== named.ino)
     throw unsafe('UNSAFE_STAGING', path);
-}
-
-function directoryHandlePath(handle: FileHandle): string {
-  if (process.platform === 'linux') return `/proc/self/fd/${handle.fd}`;
-  if (process.platform === 'darwin') return `/dev/fd/${handle.fd}`;
-  throw unsafe(
-    'UNSAFE_STAGING',
-    'Stable materialization handles are unavailable on this platform',
-  );
 }
 
 async function verifiedDownload(
