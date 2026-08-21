@@ -184,15 +184,17 @@ npx openpacker import-lock \
   --output .demo-output/nuget-import.json
 ```
 
-### PyPI (uv.lock JSON projection)
+### PyPI (`uv.lock` native TOML)
 
 ```sh
 npx openpacker import-lock \
-  --input fixtures/locks/pypi/uv.lock.json \
+  --input fixtures/locks/pypi/uv.lock \
   --format uv-lock \
   --json \
   --output .demo-output/pypi-import.json
 ```
+
+The JSON projection `fixtures/locks/pypi/uv.lock.json` is still accepted.
 
 ### Go (go.sum)
 

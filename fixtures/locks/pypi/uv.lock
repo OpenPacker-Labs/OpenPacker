@@ -1,0 +1,23 @@
+version = 1
+requires-python = ">=3.9"
+
+[[package]]
+name = "demo-tool"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alpha" },
+    { name = "beta", extra = ["security"], marker = "python_version >= '3.10'" },
+]
+sdist = { url = "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0.tar.gz", hash = "sha256:437087440e1c80b5dbea070ab18f4746ad804e8d0740560c932a01ea37ceb0e8", size = 31 }
+wheels = [
+    { url = "https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0-py3-none-any.whl", hash = "sha256:d93c74da6add765cc6a03769e21752daf17bdd291376b82347e3c71a7e0f5318", size = 31 },
+]
+
+[[package]]
+name = "alpha"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/alpha-1.2.0-py3-none-any.whl", hash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", size = 20 },
+]

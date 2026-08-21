@@ -197,7 +197,7 @@ function defaultHandlers(
       {
         ecosystem: 'pypi',
         codec: pypi,
-        parse: (raw) => parseStrictJson(asText(raw)),
+        parse: (raw) => parseUvLock(asText(raw)),
       },
     ],
     [
@@ -558,6 +558,80 @@ export function parseRequirementsTxt(text: string): {
   return { version: 1, package: packages };
 }
 
+/**
+ * Native uv.lock (TOML, the file uv writes) or the JSON projection of the
+ * same document. Both become the in-memory shape the pypi codec already
+ * reads — one codec, one capture path.
+ *
+ * Detection belongs in `detectLockFormat`. This parser refuses a document
+ * that is not uv.lock version 1 with a package array rather than guessing
+ * a poetry or cargo table that happened to parse.
+ */
+export function parseUvLock(text: string): {
+  version: 1;
+  'requires-python'?: string;
+  package: Record<string, unknown>[];
+  [key: string]: unknown;
+} {
+  const trimmed = text.trim();
+  const document = jsonable(
+    trimmed.startsWith('{')
+      ? parseStrictJson(trimmed)
+      : parseToml(text, { maxDepth: 64 }),
+  );
+  if (
+    document === null ||
+    typeof document !== 'object' ||
+    Array.isArray(document)
+  )
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'uv.lock must be a TOML or JSON table',
+    );
+  const record = document as Record<string, unknown>;
+  if (record.version !== 1)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `Expected uv.lock version 1, received ${String(record.version)}`,
+    );
+  if (!Array.isArray(record.package))
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'uv.lock is missing package array',
+    );
+  return record as {
+    version: 1;
+    'requires-python'?: string;
+    package: Record<string, unknown>[];
+    [key: string]: unknown;
+  };
+}
+
+function jsonable(value: unknown): unknown {
+  if (typeof value === 'bigint') return Number(value);
+  if (Array.isArray(value)) return value.map(jsonable);
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value))
+      out[key] = jsonable(child);
+    return out;
+  }
+  return value;
+}
+
+function looksLikeUvLockToml(text: string): boolean {
+  if (!/\[\[package\]\]/.test(text)) return false;
+  // Poetry also uses [[package]]; its lock-version block is the discriminator.
+  if (/^lock-version\s*=/mu.test(text)) return false;
+  if (/^requires-python\s*=/mu.test(text)) return true;
+  // uv writes `version = 1` plus inline-table sources (`source = { registry = … }`).
+  // Cargo.lock uses `version = 3`/`4` and `source = "registry+…"`.
+  return (
+    /^version\s*=\s*1\b/mu.test(text) &&
+    (/^revision\s*=/mu.test(text) || /source\s*=\s*\{/.test(text))
+  );
+}
+
 function asText(raw: string | Uint8Array): string {
   return typeof raw === 'string' ? raw : new TextDecoder('utf-8').decode(raw);
 }
@@ -601,6 +675,7 @@ export function detectLockFormat(
       // fall through
     }
   }
+  if (looksLikeUvLockToml(text)) return 'uv-lock';
   if (/^version\s*=\s*\d+/m.test(text) && /\[\[package\]\]/.test(text))
     return 'cargo-lock';
   // go.sum lines: module version h1:... (ignore comments)

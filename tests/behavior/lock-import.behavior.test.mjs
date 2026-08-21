@@ -19,6 +19,25 @@ const { planLockCapture } = await import('@openpacker/lock-import');
 
 configureDefaultAdapters();
 
+test('Given a native uv.lock TOML file, when it is imported offline, then pypi pins are captured without a JSON conversion step', async () => {
+  const raw = await readFile(join(root, 'fixtures/locks/pypi/uv.lock'), 'utf8');
+  assert.doesNotMatch(raw.trimStart(), /^\{/u);
+
+  const plan = await planLockCapture(raw);
+
+  assert.equal(plan.format, 'uv-lock');
+  assert.equal(plan.ecosystem, 'pypi');
+  assert.ok(
+    plan.lockedExactPurls.some((purl) => purl.startsWith('pkg:pypi/')),
+    'expected pkg:pypi/ pins',
+  );
+  assert.ok(
+    plan.semanticLoss.some(
+      (loss) => loss.code === 'NATIVE_RESULT_CAPTURE_ONLY',
+    ),
+  );
+});
+
 test('Given an npm project lock, when it is imported offline, then every locked entry becomes an exact captured selection', async () => {
   // Given a repository with a native npm lockfile
   const raw = await readFile(

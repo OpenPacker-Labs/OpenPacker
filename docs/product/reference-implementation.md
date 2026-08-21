@@ -52,14 +52,14 @@ Service and embedded modes must emit identical digests for identical inputs
 
 ## Shipped ecosystems
 
-| Ecosystem  | Codec package                | Primary lock format for import           |
-| ---------- | ---------------------------- | ---------------------------------------- |
-| npm        | `@openpacker/adapter-npm`    | package-lock v3                          |
-| Cargo      | `@openpacker/adapter-cargo`  | Cargo.lock                               |
-| NuGet      | `@openpacker/adapter-nuget`  | project.assets.json / packages.lock.json |
-| PyPI       | `@openpacker/adapter-pypi`   | uv.lock (JSON projection)                |
-| Go modules | `@openpacker/adapter-golang` | go.sum                                   |
-| Maven      | `@openpacker/adapter-maven`  | gradle.lockfile                          |
+| Ecosystem  | Codec package                | Primary lock format for import                        |
+| ---------- | ---------------------------- | ----------------------------------------------------- |
+| npm        | `@openpacker/adapter-npm`    | package-lock v3                                       |
+| Cargo      | `@openpacker/adapter-cargo`  | Cargo.lock                                            |
+| NuGet      | `@openpacker/adapter-nuget`  | project.assets.json / packages.lock.json              |
+| PyPI       | `@openpacker/adapter-pypi`   | uv.lock (native TOML; JSON projection still accepted) |
+| Go modules | `@openpacker/adapter-golang` | go.sum                                                |
+| Maven      | `@openpacker/adapter-maven`  | gradle.lockfile                                       |
 
 Optional enrichment providers: deps.dev, Sonatype (not identity authorities).
 
@@ -69,15 +69,15 @@ encoding alone where it does not. A deployment registers an additional codec
 through `createReferenceOperations({ codecs })`, and `/v1/capabilities`
 advertises exactly the registry's types.
 
-Coverage caveats: the PyPI lock import consumes a JSON projection of `uv.lock`
-(the native TOML must be converted first). The Maven provider's `inspect` parses
-the version POM and optional checksum siblings on a stock Maven repository
-layout; `*.catalog.json` remains an optional overlay (404 is stock; presence is
-identity-checked even when a checksum sibling exists). The automated gates
-exercise npm, Cargo, NuGet, PyPI, Go, and Maven providers end-to-end against
-offline fixtures (PyPI Warehouse JSON, Go module-proxy list/info/mod/zip, Maven
-POM+checksums). go.sum `h1` digests remain module content-tree hashes, not
-OpenPacker sha256 of zip bytes.
+Coverage caveats: the PyPI lock import reads the native TOML `uv.lock` uv
+writes; the JSON projection remains accepted. The Maven provider's `inspect`
+parses the version POM and optional checksum siblings on a stock Maven
+repository layout; `*.catalog.json` remains an optional overlay (404 is stock;
+presence is identity-checked even when a checksum sibling exists). The automated
+gates exercise npm, Cargo, NuGet, PyPI, Go, and Maven providers end-to-end
+against offline fixtures (PyPI Warehouse JSON, Go module-proxy
+list/info/mod/zip, Maven POM+checksums). go.sum `h1` digests remain module
+content-tree hashes, not OpenPacker sha256 of zip bytes.
 
 ## Demonstration matrix
 
