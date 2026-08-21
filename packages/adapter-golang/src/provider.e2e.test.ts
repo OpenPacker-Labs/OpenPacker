@@ -30,6 +30,12 @@ const archive = await readFile(
 const missingModBytes = await readFile(
   new URL('../../../fixtures/catalogs/golang/not-found.mod', import.meta.url),
 );
+const retractedInfoBytes = await readFile(
+  new URL('../../../fixtures/catalogs/golang/v1.1.0.info', import.meta.url),
+);
+const retractedModBytes = await readFile(
+  new URL('../../../fixtures/catalogs/golang/v1.1.0.mod', import.meta.url),
+);
 
 const DEMO_ZSTD = 'github.com/openpacker/demo-zstd';
 const DEMO_ZSTD_PURL = 'pkg:golang/github.com/openpacker/demo-zstd';
@@ -234,6 +240,43 @@ describe('Go module proxy provider e2e (offline fixtures)', () => {
       ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE' });
     },
   );
+
+  it('maps a retracted version in module metadata to yanked lifecycle', async () => {
+    const urls = proxyUrls(DEMO_ZSTD);
+    const { provider } = providerFor(
+      new Map([
+        [
+          urls.info('v1.1.0'),
+          { status: 200, headers: {}, body: retractedInfoBytes },
+        ],
+        [
+          urls.mod('v1.1.0'),
+          { status: 200, headers: {}, body: retractedModBytes },
+        ],
+      ]),
+    );
+
+    const inspection = await provider.inspect(`${DEMO_ZSTD_PURL}@v1.1.0`);
+    expect(inspection.package.lifecycle).toMatchObject({
+      status: 'yanked',
+      eligible: false,
+    });
+    expect(
+      inspection.package.lifecycle.warnings.map((warning) => warning.code),
+    ).toContain('GOLANG_RETRACTED');
+    expect(inspection.package.requirements[0]?.expression).toMatchObject({
+      type: 'package',
+      purl: 'pkg:golang/github.com/openpacker/cfg-if',
+    });
+    expect(inspection.package.nativeSemantics.data).toMatchObject({
+      requires: [
+        expect.objectContaining({
+          path: 'github.com/openpacker/cfg-if',
+          version: 'v1.0.0',
+        }),
+      ],
+    });
+  });
 
   it('fails VERSION_NOT_FOUND when .info is missing', async () => {
     const urls = proxyUrls(DEMO_ZSTD);

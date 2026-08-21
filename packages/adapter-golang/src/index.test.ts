@@ -183,6 +183,71 @@ describe('Golang codec', () => {
     );
   });
 
+  it('parses retract directives from go.mod without inventing requires', () => {
+    const document = parseGoMod(`module github.com/openpacker/demo-zstd
+
+go 1.22
+
+require github.com/openpacker/cfg-if v1.0.0
+
+retract (
+	v1.0.0
+	[v1.1.0, v1.1.5]
+)
+`);
+    expect(document.requires).toEqual([
+      expect.objectContaining({
+        path: 'github.com/openpacker/cfg-if',
+        version: 'v1.0.0',
+      }),
+    ]);
+    expect(document.retracts).toEqual(['v1.0.0', '[v1.1.0, v1.1.5]']);
+  });
+
+  it('yanks inspect when a retract interval covers the version', async () => {
+    const encoder = new TextEncoder();
+    const modulePath = 'github.com/openpacker/demo-zstd';
+    const encoded = encodeGoModulePath(modulePath);
+    const provider = new GolangProxyProvider(
+      new FixtureHttpTransport(
+        new Map([
+          [
+            `https://fixtures.test/${encoded}/@v/v1.1.0.info`,
+            {
+              status: 200,
+              headers: {},
+              body: encoder.encode(
+                '{"Version":"v1.1.0","Time":"2026-02-01T12:00:00Z"}',
+              ),
+            },
+          ],
+          [
+            `https://fixtures.test/${encoded}/@v/v1.1.0.mod`,
+            {
+              status: 200,
+              headers: {},
+              body: encoder.encode(`module github.com/openpacker/demo-zstd
+
+go 1.22
+
+retract [v1.0.0, v1.1.5]
+`),
+            },
+          ],
+        ]),
+      ),
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    const inspection = await provider.inspect(
+      'pkg:golang/github.com/openpacker/demo-zstd@v1.1.0',
+    );
+    expect(inspection.package.lifecycle).toMatchObject({
+      status: 'yanked',
+      eligible: false,
+    });
+  });
+
   it('captures go.mod require blocks as a secondary lock input', () => {
     const document = parseGoMod(goModText);
     expect(document.requires).toHaveLength(2);
