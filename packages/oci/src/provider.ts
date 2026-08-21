@@ -1,9 +1,11 @@
 import {
   ProviderError,
+  createPinnedFetch,
   formatPurl,
   packageNodeId,
   parsePurl,
   type CatalogProvider,
+  type HostLookup,
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
@@ -44,6 +46,10 @@ import { packUstarAsync, type AsyncTarFile } from './tar.js';
  */
 
 const DEFAULT_REGISTRY = 'registry-1.docker.io';
+const DEFAULT_ALLOWED_REGISTRY_ORIGINS = [
+  `https://${DEFAULT_REGISTRY}`,
+  'https://ghcr.io',
+] as const;
 
 export const OCI_MATERIALIZATION_LIMITS = Object.freeze({
   maximumLayers: 256,
@@ -69,8 +75,17 @@ function exactRegistryOrigin(value: string): string {
 
 export interface OciRegistryProviderOptions {
   fetch?: typeof fetch;
-  /** Exact registry origins an untrusted PURL may select. Docker Hub only by default. */
+  lookup?: HostLookup;
+  /**
+   * Exact registry origins an untrusted PURL may select. Docker Hub and
+   * ghcr.io by default, allowlisted-not-pinned.
+   */
   allowedRegistryOrigins?: readonly string[];
+  /**
+   * Origins that may resolve to private addresses. Never inferred from
+   * allowedRegistryOrigins. Empty by default.
+   */
+  pinnedRegistryOrigins?: readonly string[];
   /** Authentication is usable only for this independently configured origin. */
   authentication?: {
     registryOrigin: string;
@@ -222,7 +237,7 @@ export class OciRegistryProvider implements CatalogProvider {
 
   constructor(private readonly options: OciRegistryProviderOptions = {}) {
     this.allowedRegistryOrigins = new Set(
-      (options.allowedRegistryOrigins ?? [`https://${DEFAULT_REGISTRY}`]).map(
+      (options.allowedRegistryOrigins ?? DEFAULT_ALLOWED_REGISTRY_ORIGINS).map(
         exactRegistryOrigin,
       ),
     );
@@ -241,9 +256,21 @@ export class OciRegistryProvider implements CatalogProvider {
         'INVALID_PROVIDER_ENDPOINT',
         'OCI authentication origin must also be an allowed registry origin',
       );
+    const fetchOrigins = [...this.allowedRegistryOrigins];
+    for (const origin of this.allowedRegistryOrigins)
+      fetchOrigins.push(
+        ...(BearerTokenAuthentication.WELL_KNOWN_TOKEN_ORIGINS[origin] ?? []),
+      );
+    this.#fetch = createPinnedFetch({
+      allowedOrigins: [...new Set(fetchOrigins)],
+      pinnedOrigins: options.pinnedRegistryOrigins ?? [],
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.lookup ? { lookup: options.lookup } : {}),
+    });
   }
 
   private readonly allowedRegistryOrigins: ReadonlySet<string>;
+  readonly #fetch: typeof fetch;
 
   #client(reference: OciRepositoryReference): OciRegistryClient {
     const registry = exactRegistryOrigin(`https://${reference.registry}`);
@@ -257,13 +284,11 @@ export class OciRegistryProvider implements CatalogProvider {
       configuredAuthentication &&
       exactRegistryOrigin(configuredAuthentication.registryOrigin) === registry
         ? configuredAuthentication.handler
-        : new BearerTokenAuthentication(
-            this.options.fetch ? { fetch: this.options.fetch } : {},
-          );
+        : new BearerTokenAuthentication({ fetch: this.#fetch });
     return new OciRegistryClient({
       registry,
       repository: reference.repository,
-      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+      fetch: this.#fetch,
       authentication,
     });
   }

@@ -5,6 +5,8 @@ import {
   compareParsedVersions,
   compareCodePoints,
   BoundedFetchTransport,
+  createFirstPartyTransport,
+  createPinnedFetch,
   evaluateRange,
   evaluateSemverRange,
   FixtureHttpTransport,
@@ -12,7 +14,9 @@ import {
   header,
   isEcosystem,
   isPrivateAddress,
+  firstPartyOriginPolicy,
   normalizePinnedOrigin,
+  parseHttpsOriginList,
   parsePurl,
   parseSemver,
   parseSemverRange,
@@ -562,6 +566,132 @@ describe('classify-and-pin destination policy', () => {
     });
     await transport.request({ url: `${origin}/start` });
     expect(lookedUp).toEqual(['registry.test', 'registry.test']);
+  });
+});
+
+describe('first-party origin policy', () => {
+  it('unions artifact CDNs without pinning them on the public default', () => {
+    expect(
+      firstPartyOriginPolicy({
+        endpoint: 'https://pypi.org/pypi',
+        namedOrOverride: false,
+        artifactOrigins: ['https://files.pythonhosted.org', 'https://pypi.org'],
+      }),
+    ).toEqual({
+      allowedOrigins: ['https://pypi.org', 'https://files.pythonhosted.org'],
+      pinnedOrigins: [],
+    });
+  });
+
+  it('drops artifact CDNs on an operator-named override and pins that origin', () => {
+    expect(
+      firstPartyOriginPolicy({
+        endpoint: 'https://pypi.internal.example',
+        namedOrOverride: true,
+        artifactOrigins: ['https://files.pythonhosted.org', 'https://pypi.org'],
+        extraOrigins: ['https://files.pythonhosted.org'],
+      }),
+    ).toEqual({
+      allowedOrigins: [
+        'https://pypi.internal.example',
+        'https://files.pythonhosted.org',
+      ],
+      pinnedOrigins: ['https://pypi.internal.example'],
+    });
+  });
+
+  it('fails closed on duplicate extra origins and HTTP extras', () => {
+    expect(() =>
+      parseHttpsOriginList(
+        'https://files.pythonhosted.org,https://files.pythonhosted.org',
+        'OPM_REGISTRY_PYPI_ORIGINS',
+      ),
+    ).toThrow(/OPM_REGISTRY_PYPI_ORIGINS lists duplicate origin/u);
+    expect(() =>
+      parseHttpsOriginList(
+        'http://cdn.internal.example',
+        'OPM_REGISTRY_NPM_ORIGINS',
+      ),
+    ).toThrow(/HTTPS origin/u);
+  });
+
+  it('builds a classify-and-pin transport from the policy', async () => {
+    const calls: string[] = [];
+    const transport = createFirstPartyTransport({
+      endpoint: 'https://registry.npmjs.org',
+      namedOrOverride: false,
+      artifactOrigins: ['https://registry.npmjs.org'],
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await expect(
+      transport.request({ url: 'https://registry.npmjs.org/lodash' }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('createPinnedFetch', () => {
+  const origin = 'https://registry-1.docker.io';
+
+  it('refuses an unpinned private rebinding before calling fetch', async () => {
+    const calls: string[] = [];
+    const fetch = createPinnedFetch({
+      allowedOrigins: [origin, 'https://ghcr.io'],
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await expect(fetch(`${origin}/v2/`)).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER_ENDPOINT',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('allows a pinned origin that resolves private', async () => {
+    const fetch = createPinnedFetch({
+      allowedOrigins: [origin],
+      pinnedOrigins: [origin],
+      lookup: async () => [{ address: '10.0.0.1', family: 4 }],
+      fetch: (async () => new Response('ok')) as typeof fetch,
+    });
+    const response = await fetch(`${origin}/v2/`);
+    expect(await response.text()).toBe('ok');
+  });
+
+  it('preserves a 401 challenge instead of mapping it to an error', async () => {
+    const fetch = createPinnedFetch({
+      allowedOrigins: [origin],
+      fetch: (async () =>
+        new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate': 'Bearer realm="https://auth.docker.io/token"',
+          },
+        })) as typeof fetch,
+    });
+    const response = await fetch(`${origin}/v2/`);
+    expect(response.status).toBe(401);
+  });
+
+  it('refuses an origin outside the allowlist', async () => {
+    const calls: string[] = [];
+    const fetch = createPinnedFetch({
+      allowedOrigins: [origin],
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await expect(fetch('https://ghcr.io/v2/')).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER_ENDPOINT',
+    });
+    expect(calls).toEqual([]);
   });
 });
 

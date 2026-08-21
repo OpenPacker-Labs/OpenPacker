@@ -200,6 +200,26 @@ Point any of them at a private mirror with `OPM_REGISTRY_<ECOSYSTEM>`:
 OPM_REGISTRY_NPM=https://npm.internal.example opm add pkg:npm/internal-tool@1.0.0
 ```
 
+Naming the registry is what authorizes it. An override (or a
+`[registries.<id>].url` in `opm.toml`) allowlists **that origin only** and pins
+it so a private or split-horizon address is reachable. Hardcoded public artifact
+hosts — for example PyPI's `files.pythonhosted.org` — are **not** kept. If the
+mirror still publishes locations on a public CDN, name it explicitly:
+
+```sh
+OPM_REGISTRY_PYPI=https://pypi.internal.example
+OPM_REGISTRY_PYPI_ORIGINS=https://files.pythonhosted.org
+```
+
+`OPM_REGISTRY_<ECOSYSTEM>_ORIGINS` is an extra **allowlist**, not a pin:
+duplicates fail closed, entries must be HTTPS origin-form, and a hostname that
+rebinds to RFC1918 is refused unless that origin was the override itself.
+
+Split-horizon of a public default hostname (`registry.npmjs.org` → `10.x`) fails
+closed. Point `OPM_REGISTRY_*` at the **internal name**; that origin is the pin.
+First-party production traffic uses classify-and-pin on the same `fetch`.
+`RegistryClient` loopback HTTP fixtures stay origin-allowlist.
+
 ### Browsing
 
 These need no project — looking up what a registry has is useful before you have
@@ -227,7 +247,9 @@ trust the next layer:
    ecosystem. Registries legitimately serve metadata and artifacts from
    different hosts, so those hosts are listed rather than taken from the
    metadata response — a registry that starts handing back a new download host
-   is refused, not followed.
+   is refused, not followed. Default public CDNs are allowlisted, not pinned:
+   rebinding them to a private address fails closed. An `OPM_REGISTRY_*`
+   override drops those CDNs (see above).
 
 The artifact is fetched **once**: the bytes travel with the descriptor. Fetching
 again to re-check would cost a second transfer and compare the new bytes against
@@ -355,8 +377,10 @@ plugin never reaches the store. Plugins materialize into a user-level
 content-addressed store (`OPM_PLUGIN_HOME`, else
 `$XDG_DATA_HOME/openpacker/plugins`, else `~/.local/share/openpacker/plugins`),
 recorded in `plugins.json` there. The plugin registry is selected with
-`OPM_REGISTRY_OPM_PLUGIN`; there is no default and no plugin discovery. Offline
-install works only from an already-pinned, digest-verified cache entry.
+`OPM_REGISTRY_OPM_PLUGIN`; there is no default and no plugin discovery. That
+origin is operator-named, so the host pins it (classify-and-pin) rather than
+treating it as a public CDN. Offline install works only from an already-pinned,
+digest-verified cache entry.
 
 Installed plugins register as adapters at `opm` startup, so the purl types they
 serve work in `opm search` / `versions` / `resolve` like any other registry. End

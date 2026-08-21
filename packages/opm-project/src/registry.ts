@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
+  createFirstPartyTransport,
+  firstPartyOriginPolicy,
   normalizePinnedOrigin,
+  parseHttpsOriginList,
   parsePurl,
   ProviderError,
   redactUrl,
@@ -110,14 +113,70 @@ function safeRegistryEndpoint(endpoint: string, ecosystem: string): string {
   return endpoint;
 }
 
+function registryEndpointIsOverride(ecosystem: string): boolean {
+  const value = process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}`]?.trim();
+  return value !== undefined && value !== '';
+}
+
+function parseRegistryExtraOrigins(ecosystem: string): string[] {
+  const envName = `OPM_REGISTRY_${ecosystem.toUpperCase()}_ORIGINS`;
+  try {
+    return parseHttpsOriginList(process.env[envName], envName);
+  } catch (error) {
+    if (
+      error instanceof ProviderError &&
+      error.code === 'INVALID_PROVIDER_ENDPOINT'
+    )
+      throw new OpmError('INVALID_PROVIDER_ENDPOINT', error.message);
+    throw error;
+  }
+}
+
+function firstPartyPolicy(
+  ecosystem: string,
+  options: RegistryOptions = {},
+): { allowedOrigins: string[]; pinnedOrigins: string[] } {
+  const endpoint =
+    options.endpoint !== undefined
+      ? safeRegistryEndpoint(options.endpoint, ecosystem)
+      : registryEndpoint(ecosystem);
+  const artifactOrigins = ARTIFACT_ORIGINS[ecosystem];
+  return firstPartyOriginPolicy({
+    endpoint,
+    namedOrOverride:
+      options.endpoint !== undefined || registryEndpointIsOverride(ecosystem),
+    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    extraOrigins: parseRegistryExtraOrigins(ecosystem),
+  });
+}
+
 export function allowedOriginsFor(ecosystem: string): string[] {
-  const endpoint = registryEndpoint(ecosystem);
-  return [
-    ...new Set([
-      new URL(endpoint).origin,
-      ...(ARTIFACT_ORIGINS[ecosystem] ?? []).map((uri) => new URL(uri).origin),
-    ]),
-  ];
+  return firstPartyPolicy(ecosystem).allowedOrigins;
+}
+
+/**
+ * Production first-party registry transport. Classify-and-pin; public CDNs
+ * are allowlisted-not-pinned; an operator-named endpoint or `OPM_REGISTRY_*`
+ * override is pinned and does not inherit hardcoded `ARTIFACT_ORIGINS`.
+ */
+export function firstPartyTransport(
+  ecosystem: string,
+  options: RegistryOptions = {},
+): BoundedFetchTransport {
+  const endpoint =
+    options.endpoint !== undefined
+      ? safeRegistryEndpoint(options.endpoint, ecosystem)
+      : registryEndpoint(ecosystem);
+  const artifactOrigins = ARTIFACT_ORIGINS[ecosystem];
+  return createFirstPartyTransport({
+    endpoint,
+    namedOrOverride:
+      options.endpoint !== undefined || registryEndpointIsOverride(ecosystem),
+    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    extraOrigins: parseRegistryExtraOrigins(ecosystem),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.lookup ? { lookup: options.lookup } : {}),
+  });
 }
 
 /** One DNS answer for host-fetch classification and pin. */
@@ -275,14 +334,7 @@ export async function providerForWithDiscovery(
   if (endpoint !== undefined) safeRegistryEndpoint(endpoint, ecosystem);
   const transport =
     options.transport ??
-    (endpoint
-      ? new BoundedFetchTransport({
-          allowedOrigins:
-            options.endpoint === undefined
-              ? allowedOriginsFor(ecosystem)
-              : [new URL(endpoint).origin],
-        })
-      : undefined);
+    (endpoint ? firstPartyTransport(ecosystem, options) : undefined);
   try {
     return await registry.catalogFor(
       ecosystem,
@@ -561,11 +613,12 @@ function assertArtifactUriAllowed(
   options: RegistryOptions,
 ): void {
   const uriOrigin = new URL(uri).origin;
-  const allowed = options.endpoint
-    ? [new URL(safeRegistryEndpoint(options.endpoint, ecosystem)).origin]
-    : DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
-      ? [uriOrigin]
-      : allowedOriginsFor(ecosystem);
+  const allowed =
+    options.endpoint !== undefined
+      ? firstPartyPolicy(ecosystem, options).allowedOrigins
+      : DEFAULT_REGISTRY_ENDPOINTS[ecosystem] === undefined
+        ? [uriOrigin]
+        : allowedOriginsFor(ecosystem);
   const ociNamed = ecosystem === 'oci' && uriOrigin.startsWith('https://');
   if (!allowed.includes(uriOrigin) && !ociNamed)
     throw new OpmError(

@@ -977,6 +977,152 @@ export function redactUrl(url: URL): string {
   return `${url.origin}${url.pathname}`;
 }
 
+/**
+ * Comma-separated HTTPS origin-form list. Empty slots are skipped; duplicates
+ * fail closed. Used for `OPM_REGISTRY_<ECO>_ORIGINS` extras (allowlisted, not
+ * pinned) and any similar operator list.
+ */
+export function parseHttpsOriginList(
+  raw: string | undefined,
+  label = 'Origin list',
+): string[] {
+  const trimmed = raw?.trim() ?? '';
+  if (trimmed === '') return [];
+  const origins: string[] = [];
+  const seen = new Set<string>();
+  for (const part of trimmed.split(',')) {
+    const value = part.trim();
+    if (value === '') continue;
+    const origin = normalizePinnedOrigin(value);
+    if (seen.has(origin))
+      throw new ProviderError(
+        'INVALID_PROVIDER_ENDPOINT',
+        `${label} lists duplicate origin ${origin}`,
+      );
+    seen.add(origin);
+    origins.push(origin);
+  }
+  return origins;
+}
+
+function uniqueOrigins(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+/**
+ * D6 / D6-N origin policy for first-party registries.
+ *
+ * Default public endpoints union hardcoded artifact CDNs and do **not** pin
+ * them. An operator-named endpoint or `OPM_REGISTRY_*` override allowlists
+ * that origin only (plus explicit extras) and pins it. Extras are never pins.
+ */
+export function firstPartyOriginPolicy(input: {
+  endpoint: string;
+  namedOrOverride: boolean;
+  artifactOrigins?: readonly string[];
+  extraOrigins?: readonly string[];
+}): { allowedOrigins: string[]; pinnedOrigins: string[] } {
+  const endpointOrigin = new URL(input.endpoint).origin;
+  const extra = input.extraOrigins ?? [];
+  const allowed = input.namedOrOverride
+    ? uniqueOrigins([endpointOrigin, ...extra])
+    : uniqueOrigins([
+        endpointOrigin,
+        ...(input.artifactOrigins ?? []).map((uri) => new URL(uri).origin),
+        ...extra,
+      ]);
+  const pinned = input.namedOrOverride ? [endpointOrigin] : [];
+  return { allowedOrigins: allowed, pinnedOrigins: pinned };
+}
+
+/** Classify-and-pin transport using {@link firstPartyOriginPolicy}. */
+export function createFirstPartyTransport(input: {
+  endpoint: string;
+  namedOrOverride: boolean;
+  artifactOrigins?: readonly string[];
+  extraOrigins?: readonly string[];
+  fetch?: typeof fetch;
+  lookup?: HostLookup;
+  maximumBytes?: number;
+}): BoundedFetchTransport {
+  const policy = firstPartyOriginPolicy(input);
+  return new BoundedFetchTransport({
+    allowedOrigins: policy.allowedOrigins,
+    pinnedOrigins: policy.pinnedOrigins,
+    destinationPolicy: 'classify-and-pin',
+    ...(input.fetch ? { fetch: input.fetch } : {}),
+    ...(input.lookup ? { lookup: input.lookup } : {}),
+    ...(input.maximumBytes === undefined
+      ? {}
+      : { maximumBytes: input.maximumBytes }),
+  });
+}
+
+export interface PinnedFetchOptions {
+  allowedOrigins: readonly string[];
+  pinnedOrigins?: readonly string[];
+  fetch?: typeof fetch;
+  lookup?: HostLookup;
+}
+
+/**
+ * Same classify-and-pin policy as {@link BoundedFetchTransport}, returning a
+ * `fetch` that preserves non-2xx responses (OCI bearer challenges). Injected
+ * `fetch` skips the Agent and real DNS unless `lookup` is also injected.
+ */
+export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
+  const allowedOrigins = new Set(
+    options.allowedOrigins.map(normalizeAllowedOrigin),
+  );
+  if (allowedOrigins.size === 0)
+    throw new ProviderError(
+      'INVALID_PROVIDER_ENDPOINT',
+      'Provider transport requires at least one allowed origin',
+    );
+  const pinnedOrigins = new Set(
+    (options.pinnedOrigins ?? []).map(normalizePinnedOrigin),
+  );
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const pinProduction =
+    options.fetch === undefined && fetchImpl === nativeFetch;
+  const lookup =
+    options.lookup ?? (pinProduction ? defaultHostLookup : undefined);
+  return (async (input, init) => {
+    const href =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const url = parseProviderUrl(href);
+    assertAllowedProviderUrl(url, allowedOrigins);
+    let pin: { address: string; family: number } | undefined;
+    const resolved = await assertPinnedDestination(url, pinnedOrigins, lookup);
+    if (resolved !== undefined) pin = resolved;
+    const agent =
+      pinProduction && pin !== undefined
+        ? new Agent({
+            connect: {
+              lookup: (_hostname, _options, callback) => {
+                if (pin === undefined) {
+                  callback(new Error('No pinned address'), '', 4);
+                  return;
+                }
+                callback(null, pin.address, pin.family);
+              },
+            },
+          })
+        : undefined;
+    try {
+      const nextInit: RequestInit & { dispatcher?: Agent } = { ...init };
+      if (agent !== undefined) nextInit.dispatcher = agent;
+      return await fetchImpl(input as Parameters<typeof fetch>[0], nextInit);
+    } finally {
+      await agent?.close();
+    }
+  }) as typeof fetch;
+}
+
 export function isPrivateAddress(value: string): boolean {
   const address = value.toLowerCase();
   if (address.includes(':')) {

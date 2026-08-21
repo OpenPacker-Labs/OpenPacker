@@ -899,4 +899,40 @@ describe('adapter module', () => {
     const module = pluginRegistryModule({ endpoint: ENDPOINT });
     expect(module.purlTypes).toEqual([PLUGIN_PURL_TYPE]);
   });
+
+  it('pins the operator-named plugin registry so a private lookup is allowed', async () => {
+    let lookedUp = 0;
+    const calls: string[] = [];
+    const module = pluginRegistryModule({
+      endpoint: ENDPOINT,
+      lookup: async () => {
+        lookedUp += 1;
+        return [{ address: '10.0.0.1', family: 4 }];
+      },
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response(
+          JSON.stringify({
+            registryDefinitionVersion: '1',
+            registryId: ENDPOINT,
+            purlTypes: [PLUGIN_PURL_TYPE],
+            resources: [
+              {
+                '@id': '#metadata',
+                '@type': 'prex.registry.package-metadata/1',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }) as typeof fetch,
+    });
+    const definition = await module.registryDefinition();
+    expect(definition.registryId).toBe(ENDPOINT);
+    expect(lookedUp).toBeGreaterThan(0);
+    expect(calls.length).toBeGreaterThan(0);
+  });
 });
