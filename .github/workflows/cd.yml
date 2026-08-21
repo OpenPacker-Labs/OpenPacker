@@ -119,10 +119,11 @@ jobs:
       - name: Download the CI build artifacts for the gated run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ needs.gate.outputs.run-id }}
         run: |
           set -euo pipefail
           mkdir -p promotion
-          gh run download "${{ needs.gate.outputs.run-id }}" --dir promotion --pattern 'openpacker-build-*'
+          gh run download "$RUN_ID" --dir promotion --pattern 'openpacker-build-*'
           find promotion -name '*.tgz' | sort
       - name: Cross-check every matrix leg produced the same tarball set
         run: |
@@ -150,6 +151,9 @@ jobs:
           cp promotion/openpacker-build-ubuntu-latest-node24/*.tgz release/
           (cd release && sha256sum *.tgz > SHA256SUMS)
           if gh release view "v$VERSION" >/dev/null 2>&1; then
+            # Never clobber the assets of a release already promoted to
+            # production; re-staging is for prereleases only.
+            test "$(gh release view "v$VERSION" --json isPrerelease --jq .isPrerelease)" = 'true'
             gh release upload "v$VERSION" release/* --clobber
           else
             gh release create "v$VERSION" \
@@ -174,8 +178,9 @@ jobs:
       - name: Promote the staging prerelease to a full release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.gate.outputs.version }}
         run: |
           set -euo pipefail
-          gh release edit "v${{ needs.gate.outputs.version }}" \
+          gh release edit "v$VERSION" \
             --prerelease=false --latest \
-            --title "v${{ needs.gate.outputs.version }}"
+            --title "v$VERSION"
