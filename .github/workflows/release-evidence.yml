@@ -1,6 +1,7 @@
 name: Release evidence
 
-# Runner minutes are forbidden; manual dispatch only (see ci.yml note).
+# Evidence generation — manual dispatch only (see ci.yml note); the promotion
+# pipeline in cd.yml consumes ci-build.yml artifacts, not this workflow.
 on:
   workflow_dispatch:
 

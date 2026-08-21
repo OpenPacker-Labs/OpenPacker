@@ -1,0 +1,186 @@
+name: CD promotion
+
+# Sparse by design: release tags or explicit dispatch only. The GitHub plan
+# gates environment protection rules, so the harsh gates are encoded here:
+# dispatch must be armed with the exact phrase "promote", the commit must be
+# on main, the version must match @openpacker/cli at that commit, and the CI
+# build run for that exact sha must be green with all six matrix artifacts.
+# Production additionally runs on tag push ONLY — dispatch can stage but can
+# never promote — so a full release requires a `v*` tag, which only repo
+# writers can push. The staging/production GitHub Environments record each
+# stage in the deployment audit trail. The pipeline consumes the artifacts CI
+# build produced for the exact commit being promoted; it never rebuilds from
+# a different source.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      sha:
+        description:
+          Full commit SHA on main to promote (must have green CI build
+          artifacts)
+        required: true
+        type: string
+      version:
+        description:
+          Release version without the v prefix (must match @openpacker/cli
+          package.json)
+        required: true
+        type: string
+      confirm:
+        description: Type "promote" to arm the pipeline
+        required: true
+        type: string
+
+concurrency:
+  group: cd-promotion
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  SOURCE_DATE_EPOCH: '1785628800'
+
+jobs:
+  gate:
+    name: Harsh gate — provenance and arming checks
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      run-id: ${{ steps.ci.outputs.run-id }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Resolve target sha and version
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = 'workflow_dispatch' ]; then
+            SHA="$INPUT_SHA"
+            VERSION="$INPUT_VERSION"
+          else
+            SHA="${GITHUB_SHA}"
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Dispatch must be armed with the exact phrase
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "$CONFIRM" = 'promote'
+      - name: Commit must be an ancestor of main
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git merge-base --is-ancestor "$SHA" origin/main
+      - name: Version must match @openpacker/cli at the target commit
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          EXPECTED="$(git show "$SHA:apps/openpacker-cli/package.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).version))")"
+          test "$EXPECTED" = "$VERSION"
+      - name: CI build for this commit must be green with all six artifact legs
+        id: ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh run list --workflow ci-build.yml --commit "$SHA" --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')"
+          test -n "$RUN_ID"
+          COUNT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '[.artifacts[] | select(.name | startswith("openpacker-build-"))] | length')"
+          test "$COUNT" -eq 6
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+  staging:
+    name: Promote to staging (prerelease + evidence)
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Download the CI build artifacts for the gated run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ needs.gate.outputs.run-id }}
+        run: |
+          set -euo pipefail
+          mkdir -p promotion
+          gh run download "$RUN_ID" --dir promotion --pattern 'openpacker-build-*'
+          find promotion -name '*.tgz' | sort
+      - name: Cross-check every matrix leg produced the same tarball set
+        run: |
+          set -euo pipefail
+          REFERENCE="$(find promotion -name '*.tgz' -exec basename {} \; | sort -u)"
+          test -n "$REFERENCE"
+          for leg in promotion/openpacker-build-*/; do
+            test "$(find "$leg" -name '*.tgz' -exec basename {} \; | sort -u)" = "$REFERENCE"
+            find "$leg" -name '*.tgz' -size 0 | grep -q . && exit 1 || true
+          done
+      - name: Publish staging prerelease with evidence
+        # Idempotent: a dispatch staging run creates the v<version> tag via the
+        # API (no push event fires), so a later `git push origin v<version>`
+        # for the same sha is a no-op and production will not trigger. To
+        # promote after dispatch staging, delete and re-push the tag:
+        #   git push origin :refs/tags/v<version> && git push origin v<version>
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          RUN_ID: ${{ needs.gate.outputs.run-id }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp promotion/openpacker-build-ubuntu-latest-node24/*.tgz release/
+          (cd release && sha256sum *.tgz > SHA256SUMS)
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            # Never clobber the assets of a release already promoted to
+            # production; re-staging is for prereleases only.
+            test "$(gh release view "v$VERSION" --json isPrerelease --jq .isPrerelease)" = 'true'
+            gh release upload "v$VERSION" release/* --clobber
+          else
+            gh release create "v$VERSION" \
+              --target "$SHA" \
+              --prerelease \
+              --title "v$VERSION (staging)" \
+              --notes "Staging candidate from CI build run $RUN_ID. Production promotes on tag push only; see cd.yml for the delete-and-repush step after dispatch staging." \
+              release/*
+          fi
+      - uses: actions/attest-build-provenance@v4.1.0
+        with:
+          subject-path: release/
+
+  production:
+    name: Promote to production (full release)
+    needs: [gate, staging]
+    # Tag push only: dispatch can stage but can never promote to production.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Promote the staging prerelease to a full release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release edit "v$VERSION" \
+            --prerelease=false --latest \
+            --title "v$VERSION"

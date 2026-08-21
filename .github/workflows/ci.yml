@@ -1,10 +1,10 @@
 name: CI
 
-# GitHub Actions runner minutes are forbidden for this repository. Quality
-# gates are enforced locally: .githooks/pre-commit (agent:check --staged),
+# The full offline gauntlet — manual dispatch only. The automatic lane is the
+# minimal build matrix in ci-build.yml; promotion is cd.yml. Quality gates are
+# still enforced locally: .githooks/pre-commit (agent:check --staged),
 # .githooks/pre-push (agent:check --base=origin/main), and `npm run verify`
-# before merge. This workflow is manual-dispatch only and disabled in repo
-# settings; do not restore automatic triggers.
+# before merge. Do not add automatic triggers to this workflow.
 on:
   workflow_dispatch:
 
