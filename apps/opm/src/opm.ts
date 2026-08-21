@@ -98,6 +98,7 @@ const COMMANDS = new Set([
   'manifest',
   'pack',
   'plugin',
+  'auth',
   'system',
   'generations',
   'rollback',
@@ -134,6 +135,8 @@ export async function runOpm(
         `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
       );
     }
+    const { applyAuthConfigForProcess } = await import('./commands/auth.js');
+    await applyAuthConfigForProcess();
     const args = parseArgs(argv);
     if (
       args.command === 'help' ||
@@ -522,6 +525,10 @@ export async function runOpm(
       case 'plugin': {
         // await keeps subcommand errors inside runOpm's handler.
         return await runPluginCommand(args, io);
+      }
+      case 'auth': {
+        const { runAuthCommand } = await import('./commands/auth.js');
+        return await runAuthCommand(args, io);
       }
       case 'generations': {
         const root = await requireOpmRoot(cwd);
@@ -1089,6 +1096,15 @@ Delegated adapter plugins (user-level, never installed by default):
   Installed plugins register as adapters at startup; a plugin that fails
   verification is reported on stderr and skipped (its ecosystem stays
   unsupported rather than answering untrusted).
+
+Auth (env names only):
+  opm auth set --origin <https-origin> --token-env <NAME>
+  opm auth list
+  opm auth unset --origin <https-origin>
+  Remembers which environment variable holds a bearer for a pinned HTTPS origin.
+  The file stores names only — never token values. Mint tokens outside opm
+  (cloud CLI, gh, vault). No login command, device flow, or --token flag.
+  Config: OPM_AUTH_CONFIG or $XDG_CONFIG_HOME/openpacker/auth.json (mode 0600).
 
 Registries (catalog, from adapter discovery): ${registryEcosystems().join(', ') || '(none configured)'}
 Host/profile install uses the same verbs when Registry Definition advertises install.
