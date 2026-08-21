@@ -10,7 +10,9 @@ docs/plans/
   dispatch-log.md           # append-only dispatch outcomes
   <initiative-slug>/
     sdlc-state.md           # phase, decisions, issues → branch/PR/stack layer
-    …                       # optional notes, sketches, links
+    …                       # optional notes, sketches, instruction prompts, links
+
+Current active instruction: [upm-v1-gaps swarm prompt](upm-v1-gaps/swarm-instruction.md).
 ```
 
 ## Rules
