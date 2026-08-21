@@ -893,9 +893,12 @@ function isLoopback(value: string): boolean {
 function isObject(value: unknown): value is Record<string, JsonValue> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-function redact(value: unknown): unknown {
+function redact(value: unknown): JsonValue {
   if (Array.isArray(value)) return value.map(redact);
-  if (!isObject(value)) return value;
+  if (!isObject(value)) {
+    // SAFETY: The redaction input is the validated JSON response body.
+    return value as JsonValue;
+  }
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
       key,

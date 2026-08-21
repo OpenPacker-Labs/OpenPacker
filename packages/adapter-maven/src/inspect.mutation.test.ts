@@ -14,6 +14,8 @@ const PURL = 'pkg:maven/org.example/demo-tool@1.0.0';
 const JAR_SHA256 =
   'dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d';
 
+type Inspection = Awaited<ReturnType<MavenRepositoryProvider['inspect']>>;
+
 const pom = await readFile(
   new URL(
     '../../../fixtures/catalogs/maven/demo-tool-1.0.0.pom',
@@ -89,7 +91,7 @@ describe('Maven inspect mutation coverage', () => {
     const mutants: {
       name: string;
       fixtures: ConstructorParameters<typeof FixtureHttpTransport>[0];
-      expect: (run: () => Promise<unknown>) => Promise<void>;
+      expect: (run: () => Promise<Inspection>) => Promise<void>;
     }[] = [
       {
         name: 'drop-sha256-sibling',

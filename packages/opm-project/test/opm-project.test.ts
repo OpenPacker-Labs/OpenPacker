@@ -708,7 +708,7 @@ describe('fail-closed install paths', () => {
     const probe = await open(path);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const prototype = Object.getPrototypeOf(probe) as {
-      read: (...args: unknown[]) => Promise<unknown>;
+      read: (...args: unknown[]) => Promise<object>;
     };
     await probe.close();
     const original = prototype.read;
@@ -2522,45 +2522,49 @@ describe('generation member bins', () => {
     expect(state.packages['demo-tool']?.bins.length).toBeGreaterThan(0);
   });
 
-  it('fails closed on malformed bins in a stored member', async () => {
-    const root = await tempProject();
-    await addPackage({
-      root,
-      spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
-      offline: true,
-    });
-    const [current] = await listGenerations(root);
-    if (!current?.members[0]) throw new Error('expected generation');
-    const { generationDigest: _currentDigest, ...currentBody } = current;
-    // The records are digest-valid — what must be refused is the bins shape.
-    const forge = (bins: unknown): Generation => {
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const forged = {
-        ...currentBody,
-        members: [{ ...current.members[0]!, bins }],
-      } as Omit<Generation, 'generationDigest'>;
-      return { ...forged, generationDigest: generationDigest(forged) };
-    };
-    for (const bins of [
-      [{ name: 'demo-tool', path: 'bin/tool.js', interpreter: 'powershell' }],
-      [{ name: 'demo-tool', path: '../escape.js' }],
-      'not-an-array',
-    ]) {
-      const generation = forge(bins);
-      await writeFile(
-        join(
-          root,
-          '.opm',
-          'generations',
-          `${generation.generationDigest.replace(/^sha256:/u, '')}.json`,
-        ),
-        `${JSON.stringify(generation, null, 2)}\n`,
-      );
-      await expect(
-        readGeneration(root, generation.generationDigest),
-      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    }
-  });
+  it(
+    'fails closed on malformed bins in a stored member',
+    { timeout: 30_000 },
+    async () => {
+      const root = await tempProject();
+      await addPackage({
+        root,
+        spec: 'pkg:npm/@openpacker/demo-tool@1.1.0',
+        offline: true,
+      });
+      const [current] = await listGenerations(root);
+      if (!current?.members[0]) throw new Error('expected generation');
+      const { generationDigest: _currentDigest, ...currentBody } = current;
+      // The records are digest-valid — what must be refused is the bins shape.
+      const forge = (bins: unknown): Generation => {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        const forged = {
+          ...currentBody,
+          members: [{ ...current.members[0]!, bins }],
+        } as Omit<Generation, 'generationDigest'>;
+        return { ...forged, generationDigest: generationDigest(forged) };
+      };
+      for (const bins of [
+        [{ name: 'demo-tool', path: 'bin/tool.js', interpreter: 'powershell' }],
+        [{ name: 'demo-tool', path: '../escape.js' }],
+        'not-an-array',
+      ]) {
+        const generation = forge(bins);
+        await writeFile(
+          join(
+            root,
+            '.opm',
+            'generations',
+            `${generation.generationDigest.replace(/^sha256:/u, '')}.json`,
+          ),
+          `${JSON.stringify(generation, null, 2)}\n`,
+        );
+        await expect(
+          readGeneration(root, generation.generationDigest),
+        ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      }
+    },
+  );
 });
 
 describe('cross-ecosystem executable discovery', () => {

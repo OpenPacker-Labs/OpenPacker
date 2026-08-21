@@ -335,17 +335,21 @@ function throwNt(status: number, name: string): never {
   );
 }
 
+interface KoffiHandle {}
+
+type KoffiValue = number | string | Uint8Array | KoffiHandle | null | undefined;
+
 type KoffiLib = {
-  func: (sig: string) => (...args: never[]) => unknown;
+  func: (sig: string) => (...args: never[]) => KoffiValue;
 };
 
 type Koffi = {
   load: (name: string) => KoffiLib;
-  struct: (name: string, def: Record<string, string>) => unknown;
-  sizeof: (type: unknown) => number;
-  pointer: (name: string, type: unknown) => unknown;
-  opaque: () => unknown;
-  encode: (buf: Buffer, type: unknown, value: unknown) => void;
+  struct: (name: string, def: Record<string, string>) => KoffiHandle;
+  sizeof: (type: KoffiHandle) => number;
+  pointer: (name: string, type: KoffiHandle) => KoffiHandle;
+  opaque: () => KoffiHandle;
+  encode: (buf: Buffer, type: KoffiHandle, value: KoffiValue) => void;
 };
 
 let cachedNt: ReturnType<typeof loadNtApi> | undefined;
@@ -409,7 +413,7 @@ function loadNtApi() {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     getOsFHandle: crt.func('void * __cdecl _get_osfhandle(int fd)') as (
       fd: number,
-    ) => unknown,
+    ) => KoffiHandle,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     openOsFHandle: crt.func(
       'int __cdecl _open_osfhandle(void *osfhandle, int flags)',

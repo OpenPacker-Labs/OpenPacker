@@ -14,8 +14,8 @@ import { createRegistry } from './index.js';
 export async function runRegistry(
   argv = process.argv.slice(2),
   io: {
-    stdout: { write(text: string): unknown };
-    stderr: { write(text: string): unknown };
+    stdout: { write(text: string): boolean };
+    stderr: { write(text: string): boolean };
   } = process,
 ): Promise<number> {
   const options = new Map<string, string>();

@@ -31,6 +31,8 @@ import {
 
 export type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
+type PluginResult = object | string | number | boolean | null;
+
 export interface DelegatedPluginLimits {
   /** Wall-clock budget for one plugin operation. */
   timeoutMs: number;
@@ -154,7 +156,7 @@ export class DelegatedPluginExecutor {
    * AUTHORITY_NOT_DECLARED, and anything malformed, oversized, swapped, or
    * schema-invalid is INVALID_RESPONSE.
    */
-  async invoke(input: DelegatedPluginInvocation): Promise<unknown> {
+  async invoke(input: DelegatedPluginInvocation): Promise<PluginResult> {
     const { operation } = input;
     const manifest = this.#manifest;
     const offline = input.context.offline === true;

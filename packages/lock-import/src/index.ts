@@ -64,9 +64,11 @@ export interface LockImportOptions {
 
 export interface LockFormatHandler {
   ecosystem: Ecosystem;
-  parse(raw: string | Uint8Array): unknown;
+  parse(raw: string | Uint8Array): LockParsedValue;
   codec: EcosystemCodec;
 }
+
+type LockParsedValue = JsonValue | object;
 
 export interface CapturePlan {
   format: Exclude<LockFormat, 'auto'>;
@@ -602,16 +604,26 @@ export function parseUvLock(text: string): {
   };
 }
 
-function jsonable(value: unknown): unknown {
+type JsonableValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonableValue[]
+  | { [key: string]: JsonableValue }
+  | undefined;
+
+function jsonable(value: unknown): JsonableValue {
   if (typeof value === 'bigint') return Number(value);
   if (Array.isArray(value)) return value.map(jsonable);
   if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
+    const out: Record<string, JsonableValue> = {};
     for (const [key, child] of Object.entries(value))
       out[key] = jsonable(child);
     return out;
   }
-  return value;
+  // SAFETY: Lock parser values are JSON-compatible apart from bigint, handled above.
+  return value as JsonableValue;
 }
 
 function looksLikeUvLockToml(text: string): boolean {
@@ -1204,9 +1216,9 @@ function httpsArtifactLocation(resolved: string | undefined) {
   }
 }
 
-function stripUndefined(value: unknown): unknown {
+function stripUndefined(value: unknown): JsonValue {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return JSON.parse(JSON.stringify(value)) as unknown;
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
 function parseLooseDigest(value: string): Digest | undefined {

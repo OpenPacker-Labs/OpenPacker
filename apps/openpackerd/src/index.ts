@@ -769,7 +769,7 @@ function operationContext(
   headers: Record<string, string | string[] | undefined>,
   body: JsonValue,
   store: OpenPackerStateStore,
-  raw: { once(event: 'aborted', listener: () => void): unknown },
+  raw: { once(event: 'aborted', listener: () => void): object },
   maximumTimeout: number,
 ) {
   const controller = new AbortController();
