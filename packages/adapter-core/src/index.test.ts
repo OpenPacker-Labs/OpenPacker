@@ -334,6 +334,30 @@ it('allows only credential-free loopback HTTP provider traffic', async () => {
     }),
   ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   expect(calls).toEqual([]);
+
+  // Default origin-allowlist still serves RegistryClient loopback fixtures.
+  const okCalls: { url: string; init?: RequestInit }[] = [];
+  const loopback = new BoundedFetchTransport({
+    allowedOrigins: ['http://127.0.0.1:7337'],
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      okCalls.push({
+        url: String(input),
+        ...(init === undefined ? {} : { init }),
+      });
+      return new Response('ok');
+    }) as typeof fetch,
+  });
+  const response = await loopback.request({
+    url: 'http://127.0.0.1:7337/data',
+  });
+  expect(new TextDecoder().decode(response.body)).toBe('ok');
+  expect(okCalls).toEqual([
+    expect.objectContaining({ url: 'http://127.0.0.1:7337/data' }),
+  ]);
+  expect(okCalls[0]!.init?.credentials).not.toBe('include');
+  expect(
+    (okCalls[0]!.init as { dispatcher?: unknown } | undefined)?.dispatcher,
+  ).toBeUndefined();
 });
 
 it('preserves HEAD across a 303 serviceability redirect', async () => {
@@ -1022,6 +1046,133 @@ describe('classify-and-pin per-hop extra header', () => {
     });
     await transport.request({ url: `${originA}/data` });
     expect(calls).toEqual([{ extra: undefined }]);
+  });
+});
+
+describe('classify-and-pin ambient credentials', () => {
+  const origin = 'https://registry.test';
+  const TOKEN = 'PIN_AMBIENT_TOKEN';
+  const HEADER_ENV = 'PIN_AMBIENT_HEADER';
+  const publicLookup: HostLookup = async () => [
+    { address: '1.1.1.1', family: 4 },
+  ];
+
+  afterEach(() => {
+    delete process.env[TOKEN];
+    delete process.env[HEADER_ENV];
+  });
+
+  function requestHeader(
+    init: RequestInit | undefined,
+    headerName: string,
+  ): string | undefined {
+    if (init?.headers === undefined) return undefined;
+    const headers = init.headers;
+    const lower = headerName.toLowerCase();
+    if (headers instanceof Headers) return headers.get(headerName) ?? undefined;
+    if (Array.isArray(headers)) {
+      const hit = headers.find(([name]) => name.toLowerCase() === lower);
+      return hit?.[1];
+    }
+    for (const [name, value] of Object.entries(
+      headers as Record<string, string>,
+    )) {
+      if (name.toLowerCase() === lower) return value;
+    }
+    return undefined;
+  }
+
+  function ambientCall(init: RequestInit | undefined): {
+    credentials: RequestCredentials | undefined;
+    cookie: string | undefined;
+    cookie2: string | undefined;
+    authorization: string | undefined;
+  } {
+    return {
+      credentials: init?.credentials,
+      cookie: requestHeader(init, 'cookie'),
+      cookie2: requestHeader(init, 'cookie2'),
+      authorization: requestHeader(init, 'authorization'),
+    };
+  }
+
+  it('does not send credentials include or Cookie on a default GET', async () => {
+    const calls: ReturnType<typeof ambientCall>[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push(ambientCall(init));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${origin}/data` });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.credentials).not.toBe('include');
+    expect(calls[0]!.cookie).toBeUndefined();
+    expect(calls[0]!.cookie2).toBeUndefined();
+    expect(calls[0]!.authorization).toBeUndefined();
+  });
+
+  it('does not attach Cookie when a hop bearer is present', async () => {
+    process.env[TOKEN] = 'tok68valueA';
+    const calls: ReturnType<typeof ambientCall>[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [origin],
+      pinnedTokenEnvNames: new Map([[origin, TOKEN]]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push(ambientCall(init));
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${origin}/data` });
+    expect(calls).toEqual([
+      {
+        credentials: undefined,
+        cookie: undefined,
+        cookie2: undefined,
+        authorization: 'Bearer tok68valueA',
+      },
+    ]);
+    expect(calls[0]!.credentials).not.toBe('include');
+  });
+
+  it('does not attach Cookie when an extra operator header is present', async () => {
+    process.env[HEADER_ENV] = 'jfrog-key';
+    const calls: (ReturnType<typeof ambientCall> & {
+      extra: string | undefined;
+    })[] = [];
+    const transport = new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      pinnedOrigins: [origin],
+      pinnedExtraHeaders: new Map([
+        [origin, { name: 'X-JFrog-Art-Api', envName: HEADER_ENV }],
+      ]),
+      lookup: publicLookup,
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          ...ambientCall(init),
+          extra: requestHeader(init, 'X-JFrog-Art-Api'),
+        });
+        return new Response('ok');
+      }) as typeof fetch,
+    });
+    await transport.request({ url: `${origin}/data` });
+    expect(calls).toEqual([
+      {
+        credentials: undefined,
+        cookie: undefined,
+        cookie2: undefined,
+        authorization: undefined,
+        extra: 'jfrog-key',
+      },
+    ]);
+    expect(calls[0]!.credentials).not.toBe('include');
   });
 });
 
