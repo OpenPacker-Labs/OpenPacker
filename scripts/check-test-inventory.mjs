@@ -195,10 +195,14 @@ export async function checkTestInventory(root) {
       oracles: [
         'packages/canonical/test/snapshot.test.ts',
         'packages/lock-import/src/snapshot.test.ts',
+        'packages/adapter-core/src/host-fetch.snapshot.test.ts',
+        'packages/opm-project/test/host-fetch.snapshot.test.ts',
       ],
       vitest: [
         'packages/canonical/test/snapshot.test.ts',
         'packages/lock-import/src/snapshot.test.ts',
+        'packages/adapter-core/src/host-fetch.snapshot.test.ts',
+        'packages/opm-project/test/host-fetch.snapshot.test.ts',
       ],
     },
     {
@@ -218,15 +222,27 @@ export async function checkTestInventory(root) {
       type: 'chaos',
       script: 'coverage',
       command: commands.coverage,
-      oracles: ['examples/epoch-consumer/test/pact.chaos.test.ts'],
-      vitest: ['examples/epoch-consumer/test/pact.chaos.test.ts'],
+      oracles: [
+        'examples/epoch-consumer/test/pact.chaos.test.ts',
+        'packages/adapter-core/src/host-fetch.chaos.test.ts',
+      ],
+      vitest: [
+        'examples/epoch-consumer/test/pact.chaos.test.ts',
+        'packages/adapter-core/src/host-fetch.chaos.test.ts',
+      ],
     },
     {
       type: 'mutation',
       script: 'coverage',
       command: commands.coverage,
-      oracles: ['examples/epoch-consumer/test/pact.mutation.test.ts'],
-      vitest: ['examples/epoch-consumer/test/pact.mutation.test.ts'],
+      oracles: [
+        'examples/epoch-consumer/test/pact.mutation.test.ts',
+        'packages/opm-project/test/host-fetch.mutation.test.ts',
+      ],
+      vitest: [
+        'examples/epoch-consumer/test/pact.mutation.test.ts',
+        'packages/opm-project/test/host-fetch.mutation.test.ts',
+      ],
     },
     {
       type: 'mutation',
