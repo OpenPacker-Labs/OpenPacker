@@ -122,7 +122,8 @@ export async function materialiseTree(
   } catch (error) {
     if (
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       throw unsafe(destination);
     throw error;
@@ -441,7 +442,8 @@ async function openDirectory(
   } catch (error) {
     if (
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
+      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       throw unsafe(path);
     throw error;
