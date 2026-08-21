@@ -6,7 +6,7 @@ stack does not redesign it.
 
 ## Phase
 
-dispatch
+closeout — seven layers implemented; submit and squash-merge next.
 
 ## Gaps
 

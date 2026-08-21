@@ -11,7 +11,13 @@ import {
 import { NpmCodec } from '@openpacker/adapter-npm';
 import { CargoCodec } from '@openpacker/adapter-cargo';
 import { NugetCodec } from '@openpacker/adapter-nuget';
-import { parseVers } from '@openpacker/adapter-core';
+import {
+  firstPartyOriginPolicy,
+  normalizePinnedOrigin,
+  parseHttpsOriginList,
+  parseVers,
+  redactUrl,
+} from '@openpacker/adapter-core';
 import {
   createChunkIndex,
   reconstruct,
@@ -105,6 +111,49 @@ for (let index = 0; index < 2_000; index += 1) {
     'canonical JSON accepted duplicate keys',
   );
   count('canonical-json', 2);
+}
+
+const hostLabels = ['a.example', 'cdn.example', 'registry.internal'];
+for (let index = 0; index < 400; index += 1) {
+  const host = pick(hostLabels);
+  const valid = `https://${host}`;
+  assert.equal(normalizePinnedOrigin(valid), valid);
+  assert.equal(normalizePinnedOrigin(`${valid}/`), valid);
+  const poisoned = pick([
+    `http://${host}`,
+    `https://user:secret@${host}`,
+    `https://${host}/path`,
+    `https://${host}/?q=${index}`,
+    `https://${host}/#${index}`,
+    'not-a-url',
+  ]);
+  assert.throws(
+    () => normalizePinnedOrigin(poisoned),
+    (error) => {
+      assert.equal(error.code, 'INVALID_PROVIDER_ENDPOINT');
+      assert.doesNotMatch(error.message, /user:secret/u);
+      return true;
+    },
+    'malformed host-fetch pin accepted',
+  );
+  const extras = parseHttpsOriginList(
+    `${valid}, https://files.pythonhosted.org`,
+    'fuzz extras',
+  );
+  assert.deepEqual(extras, [valid, 'https://files.pythonhosted.org']);
+  const policy = firstPartyOriginPolicy({
+    endpoint: `https://${host}/pypi`,
+    namedOrOverride: true,
+    artifactOrigins: ['https://files.pythonhosted.org'],
+    extraOrigins: extras,
+  });
+  assert.ok(!policy.allowedOrigins.includes('https://pypi.org'));
+  assert.deepEqual(policy.pinnedOrigins, [valid]);
+  assert.equal(
+    redactUrl(new URL(`https://user:secret@${host}/artifacts/x?token=1#h`)),
+    `https://${host}/artifacts/x`,
+  );
+  count('host-fetch-pins', 4);
 }
 
 for (const { codec, purl, range } of codecs) {
