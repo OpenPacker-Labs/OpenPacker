@@ -1730,49 +1730,6 @@ export class MavenRepositoryProvider implements CatalogProvider {
     this.#records.set(key, record);
     return record;
   }
-
-  private async fetchJsonRecord<T>(
-    key: string,
-    url: string,
-    signal?: AbortSignal,
-  ): Promise<ProviderRecord<T>> {
-    const existing = this.#records.get(key) as ProviderRecord<T> | undefined;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: 8 * 1024 * 1024,
-      headers: {
-        accept: 'application/json',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
-      },
-    });
-    if (response.status === 304) {
-      if (!existing)
-        throw new ProviderError(
-          'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
-          304,
-        );
-      return existing;
-    }
-    if (response.status < 200 || response.status >= 300)
-      throw providerErrorForStatus(response.status);
-    const body = json<T>(response);
-    const record: ProviderRecord<T> = {
-      key,
-      endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
-      body,
-      rawBody: response.body,
-      retrievedAt: this.clock.now(),
-    };
-    this.#records.set(key, record);
-    return record;
-  }
 }
 
 export { MavenProjectFormat } from './project.js';
