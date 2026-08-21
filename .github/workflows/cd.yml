@@ -76,17 +76,24 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Dispatch must be armed with the exact phrase
         if: github.event_name == 'workflow_dispatch'
-        run: test "${{ inputs.confirm }}" = 'promote'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "$CONFIRM" = 'promote'
       - name: Commit must be an ancestor of main
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           set -euo pipefail
           git fetch origin main
-          git merge-base --is-ancestor "${{ steps.resolve.outputs.sha }}" origin/main
+          git merge-base --is-ancestor "$SHA" origin/main
       - name: Version must match @openpacker/cli at the target commit
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          EXPECTED="$(git show "${{ steps.resolve.outputs.sha }}:apps/openpacker-cli/package.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).version))")"
-          test "$EXPECTED" = "${{ steps.resolve.outputs.version }}"
+          EXPECTED="$(git show "$SHA:apps/openpacker-cli/package.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).version))")"
+          test "$EXPECTED" = "$VERSION"
       - name: CI build for this commit must be green with all six artifact legs
         id: ci
         env:
@@ -127,19 +134,31 @@ jobs:
             find "$leg" -name '*.tgz' -size 0 | grep -q . && exit 1 || true
           done
       - name: Publish staging prerelease with evidence
+        # Idempotent: a dispatch staging run creates the v<version> tag via the
+        # API (no push event fires), so a later `git push origin v<version>`
+        # for the same sha is a no-op and production will not trigger. To
+        # promote after dispatch staging, delete and re-push the tag:
+        #   git push origin :refs/tags/v<version> && git push origin v<version>
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          RUN_ID: ${{ needs.gate.outputs.run-id }}
         run: |
           set -euo pipefail
           mkdir -p release
           cp promotion/openpacker-build-ubuntu-latest-node24/*.tgz release/
           (cd release && sha256sum *.tgz > SHA256SUMS)
-          gh release create "v${{ needs.gate.outputs.version }}" \
-            --target "${{ needs.gate.outputs.sha }}" \
-            --prerelease \
-            --title "v${{ needs.gate.outputs.version }} (staging)" \
-            --notes "Staging candidate. CI build run ${{ needs.gate.outputs.run-id }} artifacts; promote to production via the production environment gate." \
-            release/*
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" release/* --clobber
+          else
+            gh release create "v$VERSION" \
+              --target "$SHA" \
+              --prerelease \
+              --title "v$VERSION (staging)" \
+              --notes "Staging candidate from CI build run $RUN_ID. Production promotes on tag push only; see cd.yml for the delete-and-repush step after dispatch staging." \
+              release/*
+          fi
       - uses: actions/attest-build-provenance@v4.1.0
         with:
           subject-path: release/

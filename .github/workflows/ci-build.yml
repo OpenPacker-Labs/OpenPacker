@@ -55,7 +55,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Smoke the CLI
-        run: node apps/openpacker-cli/dist/index.js --version
+        run: node apps/openpacker-cli/dist/index.js --help
       - name: Smoke opm project mutation (no-follow handle-relative I/O)
         shell: bash
         working-directory: ${{ runner.temp }}
@@ -79,4 +79,5 @@ jobs:
           name: openpacker-build-${{ matrix.os }}-node${{ matrix.node }}
           path: dist-artifacts/
           retention-days: 7
+          overwrite: true
           if-no-files-found: error
