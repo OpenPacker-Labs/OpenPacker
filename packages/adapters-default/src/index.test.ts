@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { assertWitShapedModule, hasResource } from '@openpacker/adapter-host';
 import {
@@ -100,6 +101,52 @@ describe('default adapters', () => {
     expect(new Set(requests)).toEqual(
       new Set(['https://registry.example/v2/acme/demo/tags/list']),
     );
+  });
+
+  it('drops the public npm CDN after an OPM_REGISTRY_NPM override', async () => {
+    const previous = process.env.OPM_REGISTRY_NPM;
+    process.env.OPM_REGISTRY_NPM = 'https://npm.internal.example';
+    try {
+      const requests: string[] = [];
+      const tarball = new Uint8Array([1, 2, 3, 4]);
+      const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`;
+      const packument = {
+        name: 'demo',
+        versions: {
+          '1.0.0': {
+            name: 'demo',
+            version: '1.0.0',
+            dist: {
+              tarball: 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz',
+              integrity,
+            },
+          },
+        },
+      };
+      const registry = createDefaultAdapterRegistry();
+      const provider = await registry.catalogFor('npm', {
+        fetch: (async (input: URL | string) => {
+          const href = String(input);
+          requests.push(href);
+          if (href === 'https://npm.internal.example/demo')
+            return new Response(JSON.stringify(packument), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          return new Response(tarball, { status: 200 });
+        }) as typeof fetch,
+      });
+      await expect(
+        provider.fetchArtifactRecord('pkg:npm/demo@1.0.0'),
+      ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      expect(requests).toContain('https://npm.internal.example/demo');
+      expect(requests.some((url) => url.includes('registry.npmjs.org'))).toBe(
+        false,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_NPM;
+      else process.env.OPM_REGISTRY_NPM = previous;
+    }
   });
 
   it('advertises only resources each module can honor', async () => {

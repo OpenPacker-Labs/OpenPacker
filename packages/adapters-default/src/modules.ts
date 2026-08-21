@@ -1,5 +1,6 @@
 import {
-  BoundedFetchTransport,
+  createFirstPartyTransport,
+  parseHttpsOriginList,
   type HttpTransport,
 } from '@openpacker/adapter-core';
 import { AptSystemProvider } from '@openpacker/adapter-apt';
@@ -100,19 +101,34 @@ function registryIdFor(
   return endpoint === DEFAULT_ENDPOINTS[ecosystem] ? defaultId : endpoint;
 }
 
+function registryEndpointIsOverride(ecosystem: string): boolean {
+  const value = process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}`]?.trim();
+  return value !== undefined && value !== '';
+}
+
+function extraOriginsFor(ecosystem: string): string[] {
+  return parseHttpsOriginList(
+    process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}_ORIGINS`],
+    `OPM_REGISTRY_${ecosystem.toUpperCase()}_ORIGINS`,
+  );
+}
+
 function transportFor(
   ecosystem: string,
   context: AdapterContext,
 ): HttpTransport {
   if (context.transport) return context.transport as HttpTransport;
   const endpoint = endpointFor(ecosystem, context);
-  const origins = [
-    ...new Set([
-      new URL(endpoint).origin,
-      ...(ARTIFACT_ORIGINS[ecosystem] ?? []).map((uri) => new URL(uri).origin),
-    ]),
-  ];
-  return new BoundedFetchTransport({ allowedOrigins: origins });
+  const artifactOrigins = ARTIFACT_ORIGINS[ecosystem];
+  return createFirstPartyTransport({
+    endpoint,
+    namedOrOverride:
+      Boolean(context.endpoint?.trim()) ||
+      registryEndpointIsOverride(ecosystem),
+    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    extraOrigins: extraOriginsFor(ecosystem),
+    ...(context.fetch ? { fetch: context.fetch } : {}),
+  });
 }
 
 function clock(context: AdapterContext) {
