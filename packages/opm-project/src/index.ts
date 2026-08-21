@@ -113,10 +113,9 @@ export {
   requireOpmRoot,
   resolveManifestToLock,
   syncProject,
-  uninstallProject,
-  whyPackage,
-  writeManifestFile,
 } from './project.js';
+export { updateProject } from './update.js';
+export { uninstallProject, whyPackage, writeManifestFile } from './project.js';
 
 export {
   GENERATIONS_DIR,

@@ -1,0 +1,16 @@
+{
+  "packages": {
+    "alpha": {
+      "purl": "pkg:npm/alpha@1.2.0",
+      "version": "1.2.0",
+      "reason": "direct",
+      "digest": "sha256:0166c22d436cab8d564f055a5deca73eda79bc943ca62042e9f4b93c08735513"
+    },
+    "beta": {
+      "purl": "pkg:npm/beta@1.0.0",
+      "version": "1.0.0",
+      "reason": "direct",
+      "digest": "sha256:0166c22d436cab8d564f055a5deca73eda79bc943ca62042e9f4b93c08735513"
+    }
+  }
+}
