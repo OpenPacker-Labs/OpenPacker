@@ -222,6 +222,9 @@ function fetchStub(routes: Readonly<Record<string, Uint8Array>>): typeof fetch {
 }
 
 const tarRoute = { [`${ENDPOINT}/artifacts/demo-1.0.0.tar`]: TOOL_TAR };
+const ARTIFACT_URL = `${ENDPOINT}/artifacts/demo-1.0.0.tar`;
+const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_USERPROFILE = process.env.USERPROFILE;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -236,6 +239,10 @@ afterEach(() => {
   delete process.env.JFROG_API_KEY;
   delete process.env.JFROG_A_KEY;
   delete process.env.JFROG_B_KEY;
+  if (ORIGINAL_HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = ORIGINAL_HOME;
+  if (ORIGINAL_USERPROFILE === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = ORIGINAL_USERPROFILE;
 });
 
 describe('delegated host-fetch acquisition', () => {
@@ -322,19 +329,27 @@ describe('delegated host-fetch acquisition', () => {
   });
 
   it('fails closed on a plaintext location', async () => {
-    registerAcme(
-      acmeProvider({
-        hostFetch: true,
-        body: {
-          locations: [{ uri: 'http://acme.fixture.test/artifacts/demo.tar' }],
-        },
-      }),
-    );
-    await expect(
-      resolveRegistryArtifact('acme', EXACT, {
-        fetch: fetchStub(tarRoute),
-      }),
-    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    for (const uri of [
+      'http://acme.fixture.test/artifacts/demo.tar',
+      'http://127.0.0.1/artifacts/demo.tar',
+    ]) {
+      registerAcme(
+        acmeProvider({
+          hostFetch: true,
+          body: { locations: [{ uri }] },
+        }),
+      );
+      let fetched = false;
+      await expect(
+        resolveRegistryArtifact('acme', EXACT, {
+          fetch: (async () => {
+            fetched = true;
+            return new Response(TOOL_TAR);
+          }) as unknown as typeof fetch,
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(fetched).toBe(false);
+    }
   });
 
   it('fails closed on a credentialed location', async () => {
@@ -348,11 +363,21 @@ describe('delegated host-fetch acquisition', () => {
         },
       }),
     );
-    await expect(
-      resolveRegistryArtifact('acme', EXACT, {
-        fetch: fetchStub(tarRoute),
-      }),
-    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    let fetched = false;
+    try {
+      await resolveRegistryArtifact('acme', EXACT, {
+        fetch: (async () => {
+          fetched = true;
+          return new Response(TOOL_TAR);
+        }) as unknown as typeof fetch,
+      });
+      throw new Error('expected UNSAFE_PATH');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'UNSAFE_PATH' });
+      expect((error as Error).message).not.toMatch(/user:secret/u);
+      expect((error as Error).message).not.toMatch(/secret/u);
+    }
+    expect(fetched).toBe(false);
   });
 
   it('fails closed on a private or local host-fetch address', async () => {
@@ -781,6 +806,80 @@ describe('delegated host-fetch acquisition', () => {
         });
       }) as typeof fetch,
     };
+  }
+
+  function headerBlob(init?: RequestInit): string {
+    if (init?.headers === undefined) return '';
+    const headers = init.headers;
+    if (headers instanceof Headers)
+      return [...headers.entries()]
+        .map(([name, value]) => `${name}:${value}`)
+        .join('\n');
+    if (Array.isArray(headers))
+      return headers.map(([name, value]) => `${name}:${value}`).join('\n');
+    return Object.entries(headers as Record<string, string>)
+      .map(([name, value]) => `${name}:${value}`)
+      .join('\n');
+  }
+
+  function recordingHonestyFetch(): {
+    calls: {
+      url: string;
+      authorization: string | undefined;
+      cookie: string | undefined;
+      credentials: RequestCredentials | undefined;
+      headers: string;
+    }[];
+    fetch: typeof fetch;
+  } {
+    const calls: {
+      url: string;
+      authorization: string | undefined;
+      cookie: string | undefined;
+      credentials: RequestCredentials | undefined;
+      headers: string;
+    }[] = [];
+    return {
+      calls,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({
+          url,
+          authorization: requestAuthorization(init),
+          cookie: requestHeader(init, 'cookie'),
+          credentials: init?.credentials,
+          headers: headerBlob(init),
+        });
+        const body = tarRoute[url];
+        if (body === undefined) return new Response('missing', { status: 404 });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/octet-stream' },
+        });
+      }) as typeof fetch,
+    };
+  }
+
+  async function withTempHome(
+    files: Readonly<Record<string, string>>,
+    run: (home: string) => Promise<void>,
+  ): Promise<void> {
+    const home = await mkdtemp(join(tmpdir(), 'opm-host-home-'));
+    const previousHome = process.env.HOME;
+    const previousProfile = process.env.USERPROFILE;
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    try {
+      for (const [name, contents] of Object.entries(files))
+        await writeFile(join(home, name), contents, { mode: 0o600 });
+      await run(home);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      await rm(home, { recursive: true, force: true });
+    }
   }
 
   it('suppresses a token when the project names an empty token env', async () => {
@@ -1344,6 +1443,90 @@ describe('delegated host-fetch acquisition', () => {
     });
     await resolveRegistryArtifact('acme', EXACT, { fetch });
     expect(calls[0]?.extra).toBe('jfrog-key');
+  });
+
+  it('does not inherit Authorization from ~/.netrc', async () => {
+    await withTempHome(
+      {
+        '.netrc': 'machine acme.fixture.test login user password s3cretnetrc\n',
+      },
+      async (home) => {
+        await chmod(join(home, '.netrc'), 0o000);
+        registerAcme(acmeProvider({ hostFetch: true }));
+        const { calls, fetch } = recordingHonestyFetch();
+        const artifact = await resolveRegistryArtifact('acme', EXACT, {
+          fetch,
+        });
+        expect(artifact.bytes).toEqual(TOOL_TAR);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]!.url).toBe(ARTIFACT_URL);
+        expect(calls[0]!.authorization).toBeUndefined();
+        expect(calls[0]!.cookie).toBeUndefined();
+        expect(calls[0]!.credentials).not.toBe('include');
+        expect(JSON.stringify(calls)).not.toMatch(/s3cretnetrc/u);
+        expect(calls[0]!.headers).not.toMatch(/s3cretnetrc/u);
+      },
+    );
+  });
+
+  it('does not inherit Authorization from ~/.npmrc', async () => {
+    await withTempHome(
+      {
+        '.npmrc': '//acme.fixture.test/:_authToken=s3cretnpmrc\n',
+      },
+      async (home) => {
+        await chmod(join(home, '.npmrc'), 0o000);
+        registerAcme(acmeProvider({ hostFetch: true }));
+        const { calls, fetch } = recordingHonestyFetch();
+        const artifact = await resolveRegistryArtifact('acme', EXACT, {
+          fetch,
+        });
+        expect(artifact.bytes).toEqual(TOOL_TAR);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]!.url).toBe(ARTIFACT_URL);
+        expect(calls[0]!.authorization).toBeUndefined();
+        expect(calls[0]!.cookie).toBeUndefined();
+        expect(calls[0]!.credentials).not.toBe('include');
+        expect(JSON.stringify(calls)).not.toMatch(/s3cretnpmrc/u);
+        expect(calls[0]!.headers).not.toMatch(/s3cretnpmrc/u);
+      },
+    );
+  });
+
+  it('does not send credentials include or Cookie on host-fetch', async () => {
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const { calls, fetch } = recordingHonestyFetch();
+    const artifact = await resolveRegistryArtifact('acme', EXACT, { fetch });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(ARTIFACT_URL);
+    expect(calls[0]!.credentials).not.toBe('include');
+    expect(calls[0]!.cookie).toBeUndefined();
+    expect(calls[0]!.authorization).toBeUndefined();
+    expect(calls[0]!.headers).not.toMatch(/cookie/iu);
+  });
+
+  it('does not fetch IMDS as a credential oracle', async () => {
+    registerAcme(acmeProvider({ hostFetch: true }));
+    const lookedUp: string[] = [];
+    const { calls, fetch } = recordingHonestyFetch();
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch,
+      lookup: async (hostname) => {
+        lookedUp.push(hostname);
+        return [{ address: '1.1.1.1', family: 4 }];
+      },
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(calls.map((call) => call.url)).toEqual([ARTIFACT_URL]);
+    expect(lookedUp).toEqual(['acme.fixture.test']);
+    const blob = `${calls.map((call) => call.url).join('\n')}\n${lookedUp.join('\n')}`;
+    expect(blob).not.toMatch(/169\.254\.169\.254/u);
+    expect(blob).not.toMatch(/metadata\.google\.internal/u);
+    expect(blob).not.toMatch(/fd00:ec2::254/u);
+    expect(calls[0]!.credentials).not.toBe('include');
+    expect(calls[0]!.cookie).toBeUndefined();
+    expect(calls[0]!.authorization).toBeUndefined();
   });
 
   it('keeps rawBody behavior when the provider does not ask for host-fetch', async () => {
