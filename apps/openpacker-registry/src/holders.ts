@@ -119,7 +119,7 @@ export async function redirectDigest(
   redirect: PackageRedirect,
 ): Promise<Digest> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return canonicalDigest(redirect as unknown as JsonValue);
+  return canonicalDigest(JSON.parse(JSON.stringify(redirect)) as JsonValue);
 }
 
 /** The bytes a redirect must be signed over — the same construction as everything else here. */

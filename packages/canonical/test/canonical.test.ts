@@ -160,7 +160,7 @@ describe('realisation digest projections', () => {
     for (const outputName of ['out', 'dev']) {
       const outputId = await canonicalProjectionDigest(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        { outputName, recipeDigest } as unknown as JsonValue,
+        JSON.parse(JSON.stringify({ outputName, recipeDigest })) as JsonValue,
         projectionFor('recipe-output-v1'),
       );
       expect(outputId.value).toBe(pinned.recipeOutputIds[outputName]?.value);
@@ -197,7 +197,7 @@ describe('realisation digest projections', () => {
     };
     const before = await canonicalProjectionDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      manifest as unknown as JsonValue,
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
       projection,
     );
     const tampered = structuredClone(manifest);
@@ -206,7 +206,7 @@ describe('realisation digest projections', () => {
     file.digest.value = 'f'.repeat(64);
     const after = await canonicalProjectionDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      tampered as unknown as JsonValue,
+      JSON.parse(JSON.stringify(tampered)) as JsonValue,
       projection,
     );
     expect(after.value).not.toBe(before.value);
@@ -378,7 +378,7 @@ describe('nix worked example', () => {
       ['out', 'dev'].map(async (outputName) => {
         const id = await canonicalProjectionDigest(
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          { outputName, recipeDigest } as unknown as JsonValue,
+          JSON.parse(JSON.stringify({ outputName, recipeDigest })) as JsonValue,
           projectionFor('recipe-output-v1'),
         );
         expect(id.value).toBe(pinned.recipeOutputIds[outputName]?.value);
@@ -428,7 +428,7 @@ describe('nix worked example', () => {
 
     const universeDigest = await canonicalProjectionDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      universe as unknown as JsonValue,
+      JSON.parse(JSON.stringify(universe)) as JsonValue,
       projectionFor('universe-v1'),
     );
     expect(universeDigest.value).toBe(pinned.universe.value);

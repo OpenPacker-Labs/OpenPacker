@@ -434,8 +434,9 @@ export class OpenPackerClient {
           body === undefined
             ? undefined
             : // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              Uint8Array.from(canonicalBytes(body as unknown as JsonValue))
-                .buffer;
+              Uint8Array.from(
+                canonicalBytes(JSON.parse(JSON.stringify(body)) as JsonValue),
+              ).buffer;
         const response = await this.#fetch(url, {
           method,
           headers,

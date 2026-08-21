@@ -409,11 +409,13 @@ export class NixCodec implements EcosystemCodec {
       nativeSemantics: {
         version: 'nix-store-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        data: {
-          storePath: record.path,
-          ...(!(record.deriver === undefined) && { deriver: record.deriver }),
-          ...(!(record.narHash === undefined) && { narHash: record.narHash }),
-        } as unknown as JsonValue,
+        data: JSON.parse(
+          JSON.stringify({
+            storePath: record.path,
+            ...(!(record.deriver === undefined) && { deriver: record.deriver }),
+            ...(!(record.narHash === undefined) && { narHash: record.narHash }),
+          }),
+        ) as JsonValue,
       },
       semanticLoss: losses,
     } as PackageInstance;

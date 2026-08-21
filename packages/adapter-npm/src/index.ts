@@ -609,7 +609,7 @@ export class NpmRegistryProvider implements CatalogProvider {
       );
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      metadata as unknown as JsonValue,
+      JSON.parse(JSON.stringify(metadata)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(metadata, {
       providerId: this.providerId,

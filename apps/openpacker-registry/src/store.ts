@@ -379,7 +379,7 @@ export class RegistryStore {
         input.sourceId ?? null,
         input.manifestDigest,
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalBytes(input.manifest as unknown as JsonValue),
+        canonicalBytes(JSON.parse(JSON.stringify(input.manifest)) as JsonValue),
         new TextEncoder().encode(JSON.stringify(input.signatures)),
         // Projected from the manifest, not stored beside it: manifests are
         // immutable, so these cannot come to disagree with what they summarise.
@@ -1111,7 +1111,7 @@ export class RegistryStore {
         redirect.nextHolder ?? null,
         redirectDigest,
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalBytes(signatures as unknown as JsonValue),
+        canonicalBytes(JSON.parse(JSON.stringify(signatures)) as JsonValue),
       );
   }
 

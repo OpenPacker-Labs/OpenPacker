@@ -49,7 +49,9 @@ function manifest(
 
 async function publishBody(value: PackageManifest, _namespace: string) {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
   return {
     manifest: value,
@@ -82,7 +84,9 @@ async function statusBody(
     issuedAt: '2026-08-10T00:00:00.000Z',
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  const updateDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(update)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
   return {
     update,

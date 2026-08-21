@@ -82,7 +82,9 @@ export function buildRequestBytes(
     params,
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const bytes = canonicalBytes(request as unknown as JsonValue);
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(request)) as JsonValue,
+  );
   if (bytes.byteLength > MAX_REQUEST_BYTES)
     throw new ProviderError(
       'INVALID_REQUEST',

@@ -217,7 +217,9 @@ async function execute(
         managedDestination: true,
       });
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const data = { ...response.data, installation } as unknown as JsonValue;
+      const data = JSON.parse(
+        JSON.stringify({ ...response.data, installation }),
+      ) as JsonValue;
       return {
         data,
         rawBytes: canonicalBytes(data),
@@ -427,7 +429,9 @@ async function exportLock(input: JsonValue): Promise<JsonValue> {
   const receiptDigest =
     solve.signedReceipt?.receiptDigest ??
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    (await canonicalDigest(solve.unsignedReceipt as unknown as JsonValue));
+    (await canonicalDigest(
+      JSON.parse(JSON.stringify(solve.unsignedReceipt)) as JsonValue,
+    ));
   const artifacts = solve.selected.flatMap((item) => item.artifacts);
   const externalRefs = uniqueExternalRefs([
     ...solve.unsignedReceipt.externalRefs,
@@ -464,14 +468,14 @@ async function exportLock(input: JsonValue): Promise<JsonValue> {
   const validation = validateContract(
     LOCKFILE_SCHEMA,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    lock as unknown as JsonValue,
+    JSON.parse(JSON.stringify(lock)) as JsonValue,
   );
   if (!validation.valid)
     throw new InputError(
       `export lock produced an invalid lockfile: ${validation.errors.map((error) => `${error.instancePath || '/'} ${error.message ?? 'invalid value'}`).join('; ')}`,
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return lock as unknown as JsonValue;
+  return JSON.parse(JSON.stringify(lock)) as JsonValue;
 }
 
 function exportSbom(input: JsonValue): JsonValue {

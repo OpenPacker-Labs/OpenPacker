@@ -107,7 +107,7 @@ async function emptyUniverse(): Promise<ResolutionUniverse> {
     ...body,
     canonicalDigest: await canonicalProjectionDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      body as unknown as JsonValue,
+      JSON.parse(JSON.stringify(body)) as JsonValue,
       projection,
     ),
   };

@@ -38,7 +38,10 @@ export async function canonicalRequestDigest(
   );
   if (!projection) throw new Error('Missing request-v1 digest projection');
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return canonicalProjectionDigest(request as unknown as JsonValue, projection);
+  return canonicalProjectionDigest(
+    JSON.parse(JSON.stringify(request)) as JsonValue,
+    projection,
+  );
 }
 
 export async function validateReceiptBindings(
@@ -47,11 +50,11 @@ export async function validateReceiptBindings(
   const request = await canonicalRequestDigest(receipt.normalizedRequest);
   const target = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    receipt.normalizedRequest.target as unknown as JsonValue,
+    JSON.parse(JSON.stringify(receipt.normalizedRequest.target)) as JsonValue,
   );
   const policy = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    receipt.normalizedRequest.policy as unknown as JsonValue,
+    JSON.parse(JSON.stringify(receipt.normalizedRequest.policy)) as JsonValue,
   );
   if (!equal(receipt.requestDigest, request))
     throw new Error(
@@ -90,7 +93,9 @@ export async function signReceipt(
   if (new Set(signers.map((signer) => signer.keyId)).size !== signers.length)
     throw new Error('Receipt signer key IDs must be unique');
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const receiptDigest = await canonicalDigest(receipt as unknown as JsonValue);
+  const receiptDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(receipt)) as JsonValue,
+  );
   const message = new TextEncoder().encode(formatDigest(receiptDigest));
   const signatures = await Promise.all(
     signers.map(async (signer) => ({
@@ -114,7 +119,9 @@ export async function verifySignedReceipt(
 ): Promise<void> {
   await validateReceiptBindings(signed.receipt);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(signed.receipt as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(signed.receipt)) as JsonValue,
+  );
   if (!equal(digest, signed.receiptDigest))
     throw new Error('Receipt digest mismatch');
   const message = new TextEncoder().encode(formatDigest(digest));
@@ -177,5 +184,5 @@ export function rejectReceiptReplay(
 
 export function canonicalReceiptBytes(receipt: ResolutionReceipt): Uint8Array {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return canonicalBytes(receipt as unknown as JsonValue);
+  return canonicalBytes(JSON.parse(JSON.stringify(receipt)) as JsonValue);
 }

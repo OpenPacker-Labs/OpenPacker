@@ -189,7 +189,9 @@ export class RegistryClient {
         `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const digest = await canonicalDigest(body.list as unknown as JsonValue);
+    const digest = await canonicalDigest(
+      JSON.parse(JSON.stringify(body.list)) as JsonValue,
+    );
     if (
       body.listDigest.algorithm !== digest.algorithm ||
       body.listDigest.value !== digest.value
@@ -437,7 +439,7 @@ export class RegistryClient {
   async verifyEntry(entry: RegistryEntry): Promise<EntryVerification> {
     const digest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      entry.manifest as unknown as JsonValue,
+      JSON.parse(JSON.stringify(entry.manifest)) as JsonValue,
     );
     const stated = entry.registryMetadata.manifestDigest;
     const digestMatches =

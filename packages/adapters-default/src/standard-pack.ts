@@ -240,10 +240,14 @@ export const standardEmitters = {
         artifact(
           `${safe(module)}-${safe(version)}.info`,
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          canonicalBytes({
-            Version: version,
-            Time: '1970-01-01T00:00:00Z',
-          } as unknown as JsonValue),
+          canonicalBytes(
+            JSON.parse(
+              JSON.stringify({
+                Version: version,
+                Time: '1970-01-01T00:00:00Z',
+              }),
+            ) as JsonValue,
+          ),
           'application/json',
           'version-info',
           input,
@@ -457,55 +461,68 @@ function emitOci(input: NormalizedPackInput): StandardEmitterArtifact {
   const layer = packTar(input.files);
   const layerDigest = digest(layer);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const config = canonicalBytes({
-    architecture,
-    os,
-    config: {
-      Entrypoint: input.manifest.oci.config.entrypoint,
-      Cmd: input.manifest.oci.config.arguments,
-      Env: Object.entries(input.manifest.oci.config.environment).map(
-        ([key, value]) => `${key}=${value}`,
-      ),
-      Labels: input.manifest.oci.config.labels,
-      WorkingDir: input.manifest.oci.config.workingDirectory ?? '',
-      User: input.manifest.oci.config.user ?? '',
-    },
-    rootfs: { type: 'layers', diff_ids: [layerDigest] },
-  } as unknown as JsonValue);
+  const config = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        architecture,
+        os,
+        config: {
+          Entrypoint: input.manifest.oci.config.entrypoint,
+          Cmd: input.manifest.oci.config.arguments,
+          Env: Object.entries(input.manifest.oci.config.environment).map(
+            ([key, value]) => `${key}=${value}`,
+          ),
+          Labels: input.manifest.oci.config.labels,
+          WorkingDir: input.manifest.oci.config.workingDirectory ?? '',
+          User: input.manifest.oci.config.user ?? '',
+        },
+        rootfs: { type: 'layers', diff_ids: [layerDigest] },
+      }),
+    ) as JsonValue,
+  );
   const configDigest = digest(config);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const manifest = canonicalBytes({
-    schemaVersion: 2,
-    mediaType: 'application/vnd.oci.image.manifest.v1+json',
-    config: {
-      mediaType: 'application/vnd.oci.image.config.v1+json',
-      digest: configDigest,
-      size: config.byteLength,
-    },
-    layers: [
-      {
-        mediaType: 'application/vnd.oci.image.layer.v1.tar',
-        digest: layerDigest,
-        size: layer.byteLength,
-      },
-    ],
-  } as unknown as JsonValue);
+  const manifest = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        config: {
+          mediaType: 'application/vnd.oci.image.config.v1+json',
+          digest: configDigest,
+          size: config.byteLength,
+        },
+        layers: [
+          {
+            mediaType: 'application/vnd.oci.image.layer.v1.tar',
+            digest: layerDigest,
+            size: layer.byteLength,
+          },
+        ],
+      }),
+    ) as JsonValue,
+  );
   const manifestDigest = digest(manifest);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const index = canonicalBytes({
-    schemaVersion: 2,
-    mediaType: 'application/vnd.oci.image.index.v1+json',
-    manifests: [
-      {
-        mediaType: 'application/vnd.oci.image.manifest.v1+json',
-        digest: manifestDigest,
-        size: manifest.byteLength,
-        annotations: {
-          'org.opencontainers.image.ref.name': input.manifest.target.version,
-        },
-      },
-    ],
-  } as unknown as JsonValue);
+  const index = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.index.v1+json',
+        manifests: [
+          {
+            mediaType: 'application/vnd.oci.image.manifest.v1+json',
+            digest: manifestDigest,
+            size: manifest.byteLength,
+            annotations: {
+              'org.opencontainers.image.ref.name':
+                input.manifest.target.version,
+            },
+          },
+        ],
+      }),
+    ) as JsonValue,
+  );
   const bytes = packTar([
     { path: 'oci-layout', contents: text('{"imageLayoutVersion":"1.0.0"}\n') },
     { path: 'index.json', contents: index },

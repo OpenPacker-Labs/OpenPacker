@@ -135,7 +135,7 @@ export async function createCloudEvent<T extends EventType>(
   if (!Number.isFinite(Date.parse(time)))
     throw new TypeError('Clock must return an RFC 3339 timestamp');
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const data = input.data as unknown as JsonValue;
+  const data = JSON.parse(JSON.stringify(input.data)) as JsonValue;
   const datadigest = formatDigest(await canonicalDigest(data));
   const extensions = {
     ...(input.extensions ?? {}),
@@ -176,7 +176,7 @@ export async function createCloudEvent<T extends EventType>(
 
 export function canonicalEventBytes(event: OpenPackerCloudEvent): Uint8Array {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return canonicalBytes(event as unknown as JsonValue);
+  return canonicalBytes(JSON.parse(JSON.stringify(event)) as JsonValue);
 }
 
 export async function verifyCloudEvent(
@@ -186,7 +186,7 @@ export async function verifyCloudEvent(
   const contract = validateContract(
     EVENT_CONTRACT,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    event as unknown as JsonValue,
+    JSON.parse(JSON.stringify(event)) as JsonValue,
     eventValidator,
   );
   if (!contract.valid)
@@ -200,7 +200,7 @@ export async function verifyCloudEvent(
     );
   const digest = formatDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    await canonicalDigest(event.data as unknown as JsonValue),
+    await canonicalDigest(JSON.parse(JSON.stringify(event.data)) as JsonValue),
   );
   if (event.datadigest !== digest)
     throw new TypeError('Event data digest mismatch');

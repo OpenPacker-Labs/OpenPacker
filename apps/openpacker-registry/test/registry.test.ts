@@ -60,7 +60,9 @@ function manifest(
 
 async function signed(value: PackageManifest, keyId = 'publisher-1') {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk(keyId, keys.leaf!);
   return {
     manifest: value,
@@ -99,7 +101,9 @@ async function signedStatus(
     issuedAt: options.issuedAt ?? '2026-08-10T00:00:00.000Z',
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  const updateDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(update)) as JsonValue,
+  );
   const keyId = options.keyId ?? 'publisher-1';
   const signer = await Ed25519Signer.fromJwk(keyId, options.key ?? keys.leaf!);
   return {
@@ -249,7 +253,9 @@ describe('publish', () => {
     const unsigned = {
       manifest: manifest(),
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      manifestDigest: await canonicalDigest(manifest() as unknown as JsonValue),
+      manifestDigest: await canonicalDigest(
+        JSON.parse(JSON.stringify(manifest())) as JsonValue,
+      ),
     };
     const closed = await app.inject({
       method: 'POST',
@@ -1640,7 +1646,9 @@ async function signedWith(
   value: PackageManifest,
 ) {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk(keyId, jwk);
   return {
     manifest: value,

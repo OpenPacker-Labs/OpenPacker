@@ -485,7 +485,7 @@ export class NugetCodec
           source: sourceRef('nuget', provenance.endpoint),
           authority: 'native',
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          raw: dependency as unknown as JsonValue,
+          raw: JSON.parse(JSON.stringify(dependency)) as JsonValue,
           nativeSemantics: {
             version: 'nuget-v1',
             data: { targetFramework: group.targetFramework ?? 'any' },
@@ -570,25 +570,27 @@ export class NugetCodec
       nativeSemantics: {
         version: 'nuget-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        data: {
-          dependencyGroups: metadata.dependencyGroups ?? [],
-          packageTypes: metadata.packageTypes ?? [],
-          vulnerabilities: metadata.vulnerabilities ?? [],
-          ...(!(metadata.deprecation === undefined) && {
-            deprecation: metadata.deprecation as unknown as JsonValue,
+        data: JSON.parse(
+          JSON.stringify({
+            dependencyGroups: metadata.dependencyGroups ?? [],
+            packageTypes: metadata.packageTypes ?? [],
+            vulnerabilities: metadata.vulnerabilities ?? [],
+            ...(!(metadata.deprecation === undefined) && {
+              deprecation: metadata.deprecation as unknown as JsonValue,
+            }),
+            ...(!(metadata.repository === undefined) && {
+              repository: metadata.repository,
+            }),
+            ...(!(metadata.packageHash === undefined) && {
+              packageHash: metadata.packageHash,
+            }),
+            ...(!(metadata.packageHashAlgorithm === undefined) && {
+              packageHashAlgorithm: metadata.packageHashAlgorithm,
+            }),
+            listed,
+            installScriptsExecuted: false,
           }),
-          ...(!(metadata.repository === undefined) && {
-            repository: metadata.repository,
-          }),
-          ...(!(metadata.packageHash === undefined) && {
-            packageHash: metadata.packageHash,
-          }),
-          ...(!(metadata.packageHashAlgorithm === undefined) && {
-            packageHashAlgorithm: metadata.packageHashAlgorithm,
-          }),
-          listed,
-          installScriptsExecuted: false,
-        } as unknown as JsonValue,
+        ),
       },
       semanticLoss: losses,
     };
@@ -883,7 +885,7 @@ export class NugetV3Provider implements CatalogProvider {
       );
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      leaf.catalogEntry as unknown as JsonValue,
+      JSON.parse(JSON.stringify(leaf.catalogEntry)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(leaf.catalogEntry, {
       providerId: this.providerId,

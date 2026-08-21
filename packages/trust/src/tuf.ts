@@ -169,7 +169,9 @@ async function threshold<T extends TufSigned>(
       'Invalid TUF signature threshold',
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const payload = canonicalBytes(metadata.signed as unknown as JsonValue);
+  const payload = canonicalBytes(
+    JSON.parse(JSON.stringify(metadata.signed)) as JsonValue,
+  );
   const valid = new Set<string>();
   for (const signature of metadata.signatures) {
     if (valid.has(signature.keyid) || !role.keyids.includes(signature.keyid))

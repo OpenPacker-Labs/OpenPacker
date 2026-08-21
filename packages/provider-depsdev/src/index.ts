@@ -86,7 +86,9 @@ export class DepsDevProvider implements EnrichmentProvider {
     });
     const body = json<DepsDevVersion>(response);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const rawDigest = await canonicalDigest(body as unknown as JsonValue);
+    const rawDigest = await canonicalDigest(
+      JSON.parse(JSON.stringify(body)) as JsonValue,
+    );
     const record: ProviderRecord<DepsDevVersion> = {
       key: exactPurl,
       endpoint: response.url,
@@ -97,7 +99,7 @@ export class DepsDevProvider implements EnrichmentProvider {
       rawBody:
         response.body.byteLength === 0
           ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
-            canonicalBytes(body as unknown as JsonValue)
+            canonicalBytes(JSON.parse(JSON.stringify(body)) as JsonValue)
           : response.body,
       retrievedAt: this.clock.now(),
     };
@@ -127,7 +129,7 @@ export class DepsDevProvider implements EnrichmentProvider {
       dependencies = json<DepsDevDependencies>(dependencyResponse);
       dependenciesDigest = await canonicalDigest(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        dependencies as unknown as JsonValue,
+        JSON.parse(JSON.stringify(dependencies)) as JsonValue,
       );
     } catch (error) {
       if (

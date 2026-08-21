@@ -51,7 +51,7 @@ describe('PREX protocol vectors', () => {
                 await readFile(path.join(fixtureRoot, vector.file), 'utf8'),
               ) as JsonValue)
             : // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              (vector.inline as unknown as JsonValue);
+              (JSON.parse(JSON.stringify(vector.inline)) as JsonValue);
           if (vector.pointer) value = atPointer(value, vector.pointer);
           value = structuredClone(value);
           for (const mutation of vector.mutations ?? [])

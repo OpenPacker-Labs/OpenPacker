@@ -626,7 +626,7 @@ export class GolangCodec
           source: sourceRef('golang', provenance.endpoint),
           authority: 'native',
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          raw: dependency as unknown as JsonValue,
+          raw: JSON.parse(JSON.stringify(dependency)) as JsonValue,
           nativeSemantics: {
             version: 'golang-v1',
             // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -723,18 +723,20 @@ export class GolangCodec
       nativeSemantics: {
         version: 'golang-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        data: {
-          path: metadata.path,
-          version,
-          ...(!(metadata.time === undefined) && { time: metadata.time }),
-          ...(!(metadata.go === undefined) && { go: metadata.go }),
-          requires: metadata.requires ?? [],
-          buildConstraints: metadata.buildConstraints ?? [],
-          ...(!(targetPredicate === undefined) && { targetPredicate }),
-          ...(!(metadata.h1 === undefined) && { h1: metadata.h1 }),
-          ...(!(metadata.size === undefined) && { size: metadata.size }),
-          moduleCodeExecuted: false,
-        } as unknown as JsonValue,
+        data: JSON.parse(
+          JSON.stringify({
+            path: metadata.path,
+            version,
+            ...(!(metadata.time === undefined) && { time: metadata.time }),
+            ...(!(metadata.go === undefined) && { go: metadata.go }),
+            requires: metadata.requires ?? [],
+            buildConstraints: metadata.buildConstraints ?? [],
+            ...(!(targetPredicate === undefined) && { targetPredicate }),
+            ...(!(metadata.h1 === undefined) && { h1: metadata.h1 }),
+            ...(!(metadata.size === undefined) && { size: metadata.size }),
+            moduleCodeExecuted: false,
+          }),
+        ) as JsonValue,
       },
       semanticLoss: losses,
     };
@@ -992,7 +994,7 @@ export class GolangProxyProvider implements CatalogProvider {
     const record = await this.versionRecord(canonical, signal);
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      record.body as unknown as JsonValue,
+      JSON.parse(JSON.stringify(record.body)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(record.body, {
       providerId: this.providerId,

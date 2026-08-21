@@ -107,7 +107,7 @@ const universe: ResolutionUniverse = {
   ...universeBody,
   canonicalDigest: await canonicalProjectionDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    universeBody as unknown as JsonValue,
+    JSON.parse(JSON.stringify(universeBody)) as JsonValue,
     DIGEST_PROJECTIONS.projections.find(({ id }) => id === 'universe-v1')!,
   ),
 };

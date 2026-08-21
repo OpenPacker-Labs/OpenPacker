@@ -259,7 +259,9 @@ export function createOpenPackerDaemon(
       const receiptDigest =
         result.signedReceipt?.receiptDigest ??
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        (await canonicalDigest(result.unsignedReceipt as unknown as JsonValue));
+        (await canonicalDigest(
+          JSON.parse(JSON.stringify(result.unsignedReceipt)) as JsonValue,
+        ));
       await emitEvent(
         store,
         clock,
@@ -948,7 +950,9 @@ function sendProblem(
     .code(value.status)
     .header('content-type', 'application/problem+json; charset=utf-8');
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return reply.send(Buffer.from(canonicalBytes(value as unknown as JsonValue)));
+  return reply.send(
+    Buffer.from(canonicalBytes(JSON.parse(JSON.stringify(value)) as JsonValue)),
+  );
 }
 
 function problem(

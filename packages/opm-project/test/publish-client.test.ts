@@ -59,7 +59,7 @@ async function packedDir(bytes = new TextEncoder().encode('packed-bytes')) {
   await writeFile(
     join(root, PACK_RECEIPT),
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    canonicalBytes(receipt as unknown as JsonValue),
+    canonicalBytes(JSON.parse(JSON.stringify(receipt)) as JsonValue),
   );
   return { root, bytes, digest, receipt };
 }

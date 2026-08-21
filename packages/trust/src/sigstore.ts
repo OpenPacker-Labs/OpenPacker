@@ -50,7 +50,7 @@ function logPayload(
 ): JsonValue {
   const { checkpointSignature: _, ...payload } = entry;
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return payload as unknown as JsonValue;
+  return JSON.parse(JSON.stringify(payload)) as JsonValue;
 }
 
 function hex(value: string): Uint8Array<ArrayBuffer> {

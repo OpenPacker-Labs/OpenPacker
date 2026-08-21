@@ -2230,15 +2230,17 @@ export async function packageNodeId(input: {
     throw new Error('package-node-v1 projection is missing from the registry');
   const digest = await canonicalProjectionDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    {
-      identity: {
-        exactPurl: input.exactPurl,
-        qualifiers: { ...(input.qualifiers ?? {}) },
-      },
-      ...(!(input.nativeSemanticsVersion === undefined) && {
-        nativeSemantics: { version: input.nativeSemanticsVersion },
+    JSON.parse(
+      JSON.stringify({
+        identity: {
+          exactPurl: input.exactPurl,
+          qualifiers: { ...(input.qualifiers ?? {}) },
+        },
+        ...(!(input.nativeSemanticsVersion === undefined) && {
+          nativeSemantics: { version: input.nativeSemanticsVersion },
+        }),
       }),
-    } as unknown as JsonValue,
+    ) as JsonValue,
     projection,
   );
   return formatDigest(digest);

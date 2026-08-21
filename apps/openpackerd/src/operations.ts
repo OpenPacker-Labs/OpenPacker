@@ -371,17 +371,22 @@ export function createReferenceOperations(
       const proofDigest = await projectedDigest(
         'proof-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        output.proof as unknown as JsonValue,
+        JSON.parse(JSON.stringify(output.proof)) as JsonValue,
       );
       const explanationDigest = await projectedDigest(
         'explanation-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        explanation as unknown as JsonValue,
+        JSON.parse(JSON.stringify(explanation)) as JsonValue,
       );
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const artifactSetDigest = await projectedDigest('artifact-set-v1', {
-        items: output.selected.flatMap((item) => item.artifacts),
-      } as unknown as JsonValue);
+      const artifactSetDigest = await projectedDigest(
+        'artifact-set-v1',
+        JSON.parse(
+          JSON.stringify({
+            items: output.selected.flatMap((item) => item.artifacts),
+          }),
+        ) as JsonValue,
+      );
       const receipt: ResolutionReceipt = {
         receiptVersion: '1',
         protocolVersion: '1.0-draft',
@@ -391,11 +396,15 @@ export function createReferenceOperations(
         sourceSnapshots: options.universe.sourceSnapshots,
         targetDigest: await canonicalDigest(
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          output.normalizedRequest.target as unknown as JsonValue,
+          JSON.parse(
+            JSON.stringify(output.normalizedRequest.target),
+          ) as JsonValue,
         ),
         policyDigest: await canonicalDigest(
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          output.normalizedRequest.policy as unknown as JsonValue,
+          JSON.parse(
+            JSON.stringify(output.normalizedRequest.policy),
+          ) as JsonValue,
         ),
         lifecycleRoot: options.universe.lifecycleRoot,
         // Amendments that shaped this result are bound into the receipt, so a
@@ -799,7 +808,7 @@ function normalizeItem(
       item.value,
       canonical,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      parsePurl(canonical) as unknown as JsonValue,
+      JSON.parse(JSON.stringify(parsePurl(canonical))) as JsonValue,
       parsed.type,
       codec
         ? []
@@ -833,7 +842,7 @@ function normalizeItem(
         item.value,
         parsed.vers!,
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        parsed as unknown as JsonValue,
+        JSON.parse(JSON.stringify(parsed)) as JsonValue,
         parsed.scheme,
       ),
       scheme: parsed.scheme,
@@ -855,11 +864,11 @@ function normalizeItem(
     return normalized(
       item.type,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      item.value as unknown as JsonValue,
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      item.value as unknown as JsonValue,
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      item.value as unknown as JsonValue,
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
     );
   const codec = codecFor(item.ecosystem, codecs);
   if (item.type === 'native-coordinate') {
@@ -882,7 +891,7 @@ function normalizeItem(
       item.value,
       purl,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      coordinate as unknown as JsonValue,
+      JSON.parse(JSON.stringify(coordinate)) as JsonValue,
       item.ecosystem,
     );
   }
@@ -893,7 +902,7 @@ function normalizeItem(
       item.value,
       parsed.normalized,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      parsed as unknown as JsonValue,
+      JSON.parse(JSON.stringify(parsed)) as JsonValue,
       item.ecosystem,
     );
   }
@@ -903,7 +912,7 @@ function normalizeItem(
     item.value,
     parsed.vers ?? parsed.normalized,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    parsed as unknown as JsonValue,
+    JSON.parse(JSON.stringify(parsed)) as JsonValue,
     item.ecosystem,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     parsed.semanticLoss as NormalizeResponse['results'][number]['semanticLoss'],

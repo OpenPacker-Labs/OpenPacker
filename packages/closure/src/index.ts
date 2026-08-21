@@ -138,7 +138,7 @@ function projectionFor(id: string) {
 export async function treeDigest(manifest: TreeManifest): Promise<Digest> {
   return canonicalProjectionDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    manifest as unknown as JsonValue,
+    JSON.parse(JSON.stringify(manifest)) as JsonValue,
     projectionFor('tree-manifest-v1'),
   );
 }
@@ -435,7 +435,7 @@ export function reachableMembers(
 export async function closureDigest(closure: RuntimeClosure): Promise<Digest> {
   return canonicalProjectionDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    closure as unknown as JsonValue,
+    JSON.parse(JSON.stringify(closure)) as JsonValue,
     projectionFor('closure-v1'),
   );
 }

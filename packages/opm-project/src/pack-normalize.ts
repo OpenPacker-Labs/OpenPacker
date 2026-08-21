@@ -76,7 +76,9 @@ export async function normalizeProjectPack(input: {
     entries: treeEntries,
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const treeDigest = await canonicalDigest(tree as unknown as JsonValue);
+  const treeDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(tree)) as JsonValue,
+  );
   const layerBytes = packTar(files);
   const layerDigest = await sha256(layerBytes);
   const config: NormalizedOciConfig = {
@@ -138,13 +140,17 @@ export async function normalizeProjectPack(input: {
     ],
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const bytes = canonicalBytes(manifest as unknown as JsonValue);
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(manifest)) as JsonValue,
+  );
   return {
     manifest,
     files,
     bytes,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    digest: await canonicalDigest(manifest as unknown as JsonValue),
+    digest: await canonicalDigest(
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
+    ),
     layerBytes,
   };
 }

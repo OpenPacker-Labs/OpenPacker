@@ -213,7 +213,9 @@ export class OciImageLayout {
   ): Promise<OciDescriptor> {
     validateManifest(manifest);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const bytes = canonicalBytes(manifest as unknown as JsonValue);
+    const bytes = canonicalBytes(
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
+    );
     const descriptor = await this.putBlob(
       bytes,
       OCI_MEDIA_TYPES.manifest,
@@ -375,7 +377,9 @@ export class OciImageLayout {
     await writeFile(
       temporary,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalBytes({ ...index, manifests } as unknown as JsonValue),
+      canonicalBytes(
+        JSON.parse(JSON.stringify({ ...index, manifests })) as JsonValue,
+      ),
       { flag: 'wx', mode: 0o600 },
     );
     await rename(temporary, join(this.root, 'index.json'));

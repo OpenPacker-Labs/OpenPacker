@@ -96,7 +96,7 @@ export async function revocationListDigest(
   list: RevocationList,
 ): Promise<Digest> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return canonicalDigest(list as unknown as JsonValue);
+  return canonicalDigest(JSON.parse(JSON.stringify(list)) as JsonValue);
 }
 
 /**
@@ -111,7 +111,9 @@ export async function verifyRotation(
 ): Promise<boolean> {
   const { signature, ...unsigned } = rotation;
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(unsigned as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(unsigned)) as JsonValue,
+  );
   const verifier = await Ed25519Verifier.fromJwk(
     rotation.previousKeyId,
     previousPublicKey,
@@ -127,7 +129,9 @@ export async function rotationMessage(
   rotation: Omit<KeyRotation, 'signature'>,
 ): Promise<Uint8Array> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(rotation as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(rotation)) as JsonValue,
+  );
   return new TextEncoder().encode(formatDigest(digest));
 }
 

@@ -93,7 +93,9 @@ async function entryFor(
   options: { sign?: boolean; digestOverride?: string } = {},
 ) {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signatures = [];
   if (options.sign) {
     const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
@@ -753,7 +755,9 @@ async function signedRevocationList(
     revoked,
   };
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const listDigest = await canonicalDigest(list as unknown as JsonValue);
+  const listDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(list)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk('test-registry', keys.root!);
   return {
     list,

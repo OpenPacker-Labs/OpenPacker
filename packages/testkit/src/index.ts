@@ -208,9 +208,9 @@ export async function checkArtifactSource(
     check(
       'descriptor',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalize(stat.descriptor as unknown as JsonValue) ===
+      canonicalize(JSON.parse(JSON.stringify(stat.descriptor)) as JsonValue) ===
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalize(descriptor as unknown as JsonValue),
+        canonicalize(JSON.parse(JSON.stringify(descriptor)) as JsonValue),
       'stat must preserve the descriptor',
     ),
     check(
@@ -242,7 +242,9 @@ export async function checkArtifactSink(
     descriptor,
   );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const manifestBytes = canonicalBytes(descriptor as unknown as JsonValue);
+  const manifestBytes = canonicalBytes(
+    JSON.parse(JSON.stringify(descriptor)) as JsonValue,
+  );
   const manifest = await extension.implementation.putManifest(
     manifestBytes,
     descriptor,
@@ -253,17 +255,17 @@ export async function checkArtifactSink(
     check(
       'descriptor',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalize(stored as unknown as JsonValue) ===
+      canonicalize(JSON.parse(JSON.stringify(stored)) as JsonValue) ===
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalize(descriptor as unknown as JsonValue),
+        canonicalize(JSON.parse(JSON.stringify(descriptor)) as JsonValue),
       'putBlob must preserve the expected immutable descriptor',
     ),
     check(
       'manifest-descriptor',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalize(manifest as unknown as JsonValue) ===
+      canonicalize(JSON.parse(JSON.stringify(manifest)) as JsonValue) ===
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalize(descriptor as unknown as JsonValue),
+        canonicalize(JSON.parse(JSON.stringify(descriptor)) as JsonValue),
       'putManifest must preserve its immutable descriptor',
     ),
   );
@@ -426,9 +428,9 @@ export async function checkPolicyRule(
     check(
       'deterministic-result',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalize(first as unknown as JsonValue) ===
+      canonicalize(JSON.parse(JSON.stringify(first)) as JsonValue) ===
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalize(second as unknown as JsonValue),
+        canonicalize(JSON.parse(JSON.stringify(second)) as JsonValue),
       'Policy rule changed for identical input',
     ),
     check(
@@ -467,9 +469,9 @@ export async function checkEvidenceVerifier(
     check(
       'deterministic-result',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalize(first as unknown as JsonValue) ===
+      canonicalize(JSON.parse(JSON.stringify(first)) as JsonValue) ===
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        canonicalize(second as unknown as JsonValue),
+        canonicalize(JSON.parse(JSON.stringify(second)) as JsonValue),
       'Evidence verifier changed for identical input',
     ),
     check(

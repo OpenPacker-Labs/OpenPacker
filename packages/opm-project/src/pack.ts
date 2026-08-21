@@ -147,7 +147,9 @@ export async function packProject(input: {
       : undefined,
   );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const bytes = canonicalBytes(receipt as unknown as JsonValue);
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(receipt)) as JsonValue,
+  );
   const receiptPath = join(outputDirectory, PACK_RECEIPT);
   await writeFileAtomic(receiptPath, bytes);
   const receiptArtifact: PackArtifact = {

@@ -118,28 +118,36 @@ function cannedAnswer(operation: string, query: string): string {
   switch (operation) {
     case 'registry-definition':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse(DEFINITION as unknown as JsonValue);
+      return okResponse(JSON.parse(JSON.stringify(DEFINITION)) as JsonValue);
     case 'identify':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse([
-        { ...IDENTITY, aliases: [query] },
-      ] as unknown as JsonValue);
+      return okResponse(
+        JSON.parse(
+          JSON.stringify([{ ...IDENTITY, aliases: [query] }]),
+        ) as JsonValue,
+      );
     case 'enumerate':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse(['pkg:acme/demo@1.0.0'] as unknown as JsonValue);
+      return okResponse(
+        JSON.parse(JSON.stringify(['pkg:acme/demo@1.0.0'])) as JsonValue,
+      );
     case 'inspect':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse({
-        package: PACKAGE_INSTANCE,
-        record: WIRE_RECORD,
-        warnings: [],
-      } as unknown as JsonValue);
+      return okResponse(
+        JSON.parse(
+          JSON.stringify({
+            package: PACKAGE_INSTANCE,
+            record: WIRE_RECORD,
+            warnings: [],
+          }),
+        ) as JsonValue,
+      );
     case 'fetch-artifact-record':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse(WIRE_RECORD as unknown as JsonValue);
+      return okResponse(JSON.parse(JSON.stringify(WIRE_RECORD)) as JsonValue);
     case 'snapshot':
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return okResponse(SNAPSHOT as unknown as JsonValue);
+      return okResponse(JSON.parse(JSON.stringify(SNAPSHOT)) as JsonValue);
     default:
       return JSON.stringify({
         delegatedAdapterResponseVersion: '1',
@@ -501,7 +509,9 @@ describe('registerInstalledPlugins', () => {
         operation === 'identify'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({ not: 'an array' } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(JSON.stringify({ not: 'an array' })) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -516,7 +526,11 @@ describe('registerInstalledPlugins', () => {
         operation === 'registry-definition'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({ purlTypes: ['acme'] } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({ purlTypes: ['acme'] }),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -638,13 +652,17 @@ describe('registerInstalledPlugins', () => {
         operation === 'identify'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse([
-                {
-                  ...IDENTITY,
-                  canonicalPurl: 'pkg:other/demo',
-                  purlType: 'other',
-                },
-              ] as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify([
+                    {
+                      ...IDENTITY,
+                      canonicalPurl: 'pkg:other/demo',
+                      purlType: 'other',
+                    },
+                  ]),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -661,16 +679,20 @@ describe('registerInstalledPlugins', () => {
         operation === 'inspect'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({
-                package: {
-                  ...PACKAGE_INSTANCE,
-                  identity: {
-                    ...PACKAGE_INSTANCE.identity,
-                    exactPurl: 'pkg:acme/demo@2.0.0',
-                  },
-                },
-                record: WIRE_RECORD,
-              } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({
+                    package: {
+                      ...PACKAGE_INSTANCE,
+                      identity: {
+                        ...PACKAGE_INSTANCE.identity,
+                        exactPurl: 'pkg:acme/demo@2.0.0',
+                      },
+                    },
+                    record: WIRE_RECORD,
+                  }),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -689,16 +711,20 @@ describe('registerInstalledPlugins', () => {
         operation === 'inspect'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({
-                package: {
-                  ...PACKAGE_INSTANCE,
-                  identity: {
-                    ...PACKAGE_INSTANCE.identity,
-                    exactPurl: 'pkg:other/demo@1.0.0',
-                  },
-                },
-                record: WIRE_RECORD,
-              } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({
+                    package: {
+                      ...PACKAGE_INSTANCE,
+                      identity: {
+                        ...PACKAGE_INSTANCE.identity,
+                        exactPurl: 'pkg:other/demo@1.0.0',
+                      },
+                    },
+                    record: WIRE_RECORD,
+                  }),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -715,10 +741,14 @@ describe('registerInstalledPlugins', () => {
         operation === 'fetch-artifact-record'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({
-                ...WIRE_RECORD,
-                retrievedAt: '2026-01-01',
-              } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({
+                    ...WIRE_RECORD,
+                    retrievedAt: '2026-01-01',
+                  }),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });
@@ -1026,11 +1056,13 @@ describe('inspect executables', () => {
       fixtureManifest(),
       'inspect',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      {
-        package: PACKAGE_INSTANCE,
-        record: WIRE_RECORD,
-        ...(!(executables === undefined) && { executables }),
-      } as unknown as JsonValue,
+      JSON.parse(
+        JSON.stringify({
+          package: PACKAGE_INSTANCE,
+          record: WIRE_RECORD,
+          ...(!(executables === undefined) && { executables }),
+        }),
+      ) as JsonValue,
       { exactPurl: 'pkg:acme/demo@1.0.0' },
     );
 
@@ -1119,11 +1151,15 @@ describe('inspect executables', () => {
         operation === 'inspect'
           ? sandboxOutcome(
               // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              okResponse({
-                package: PACKAGE_INSTANCE,
-                record: WIRE_RECORD,
-                executables,
-              } as unknown as JsonValue),
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({
+                    package: PACKAGE_INSTANCE,
+                    record: WIRE_RECORD,
+                    executables,
+                  }),
+                ) as JsonValue,
+              ),
             )
           : canned,
     });

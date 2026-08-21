@@ -135,7 +135,7 @@ describe('catalog snapshots', () => {
     const { bundleDigest: _ignored, ...payload } = bundle;
     bundle.bundleDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      payload as unknown as JsonValue,
+      JSON.parse(JSON.stringify(payload)) as JsonValue,
     );
     await expect(verifyCatalogSnapshot(bundle)).rejects.toThrow(
       /Snapshot root digest mismatch/u,

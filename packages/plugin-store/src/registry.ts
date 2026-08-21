@@ -347,7 +347,7 @@ export class PluginRegistryProvider implements CatalogProvider {
         endpoint: this.#endpoint,
         body: entry,
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        rawBody: canonicalBytes(entry as unknown as JsonValue),
+        rawBody: canonicalBytes(JSON.parse(JSON.stringify(entry)) as JsonValue),
         retrievedAt: new Date().toISOString(),
       },
       warnings: [],

@@ -31,7 +31,9 @@ describe('generic consumer-owned external references', () => {
       ),
     ) as SignedReceipt;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const receiptBytes = canonicalBytes(signed.receipt as unknown as JsonValue);
+    const receiptBytes = canonicalBytes(
+      JSON.parse(JSON.stringify(signed.receipt)) as JsonValue,
+    );
     const event = await createCloudEvent({
       type: 'org.openpacker.receipt.created',
       source: 'urn:openpacker:external-ref-test',
@@ -52,9 +54,9 @@ describe('generic consumer-owned external references', () => {
     expect(roundTrip.externalRefs).toEqual(fixture.externalRefs);
     expect(roundTrip.openPackerDigest).toBe(fixture.openPackerDigest);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    expect(canonicalBytes(signed.receipt as unknown as JsonValue)).toEqual(
-      receiptBytes,
-    );
+    expect(
+      canonicalBytes(JSON.parse(JSON.stringify(signed.receipt)) as JsonValue),
+    ).toEqual(receiptBytes);
     expect(canonicalEventBytes(event)).toEqual(eventBytes);
     expect(signed.receipt.externalRefs).toEqual([]);
     expect(event.externalrefs).toEqual([]);

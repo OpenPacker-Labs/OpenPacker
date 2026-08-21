@@ -898,24 +898,26 @@ export class MavenCodec
         source: sourceRef('maven', provenance.endpoint),
         authority: 'native',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        raw: dependency as unknown as JsonValue,
+        raw: JSON.parse(JSON.stringify(dependency)) as JsonValue,
         nativeSemantics: {
           version: 'maven-v1',
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          data: {
-            groupId: dependency.groupId,
-            artifactId: dependency.artifactId,
-            version: dependency.version ?? '*',
-            scope: dependency.scope ?? 'compile',
-            optional: dependency.optional === true,
-            ...(!(depPackaging === undefined) && { type: depPackaging }),
-            ...(!(depClassifier === undefined) && {
-              classifier: depClassifier,
+          data: JSON.parse(
+            JSON.stringify({
+              groupId: dependency.groupId,
+              artifactId: dependency.artifactId,
+              version: dependency.version ?? '*',
+              scope: dependency.scope ?? 'compile',
+              optional: dependency.optional === true,
+              ...(!(depPackaging === undefined) && { type: depPackaging }),
+              ...(!(depClassifier === undefined) && {
+                classifier: depClassifier,
+              }),
+              ...(!(dependency.exclusions === undefined) && {
+                exclusions: dependency.exclusions,
+              }),
             }),
-            ...(!(dependency.exclusions === undefined) && {
-              exclusions: dependency.exclusions,
-            }),
-          } as unknown as JsonValue,
+          ) as JsonValue,
         },
         semanticLoss: [
           ...range.semanticLoss,
@@ -993,22 +995,24 @@ export class MavenCodec
       nativeSemantics: {
         version: 'maven-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        data: {
-          groupId: metadata.groupId,
-          artifactId: metadata.artifactId,
-          packaging: packaging ?? 'jar',
-          ...(!(classifier === undefined) && { classifier }),
-          dependencies: metadata.dependencies ?? [],
-          ...(!(metadata.name === undefined) && { name: metadata.name }),
-          ...(!(metadata.description === undefined) && {
-            description: metadata.description,
+        data: JSON.parse(
+          JSON.stringify({
+            groupId: metadata.groupId,
+            artifactId: metadata.artifactId,
+            packaging: packaging ?? 'jar',
+            ...(!(classifier === undefined) && { classifier }),
+            dependencies: metadata.dependencies ?? [],
+            ...(!(metadata.name === undefined) && { name: metadata.name }),
+            ...(!(metadata.description === undefined) && {
+              description: metadata.description,
+            }),
+            ...(!(metadata.licenses === undefined) && {
+              licenses: metadata.licenses,
+            }),
+            ...(!(metadata.scm === undefined) && { scm: metadata.scm }),
+            installScriptsExecuted: false,
           }),
-          ...(!(metadata.licenses === undefined) && {
-            licenses: metadata.licenses,
-          }),
-          ...(!(metadata.scm === undefined) && { scm: metadata.scm }),
-          installScriptsExecuted: false,
-        } as unknown as JsonValue,
+        ) as JsonValue,
       },
       semanticLoss: losses,
     };
@@ -1291,7 +1295,9 @@ export class MavenRepositoryProvider implements CatalogProvider {
       ...(!(packageSize === undefined) && { packageSize }),
     };
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const metadataDigest = await canonicalDigest(entry as unknown as JsonValue);
+    const metadataDigest = await canonicalDigest(
+      JSON.parse(JSON.stringify(entry)) as JsonValue,
+    );
     const translated = await this.codec.translateMetadata(entry, {
       providerId: this.providerId,
       endpoint: record.endpoint,

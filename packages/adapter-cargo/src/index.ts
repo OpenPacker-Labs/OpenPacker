@@ -248,7 +248,7 @@ export class CargoCodec
           source: sourceRef('cargo', provenance.endpoint),
           authority: 'native',
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          raw: dependency as unknown as JsonValue,
+          raw: JSON.parse(JSON.stringify(dependency)) as JsonValue,
           nativeSemantics: {
             version: 'cargo-v1',
             // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -528,7 +528,7 @@ export class CargoSparseProvider implements CatalogProvider {
       );
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      metadata as unknown as JsonValue,
+      JSON.parse(JSON.stringify(metadata)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(metadata, {
       providerId: this.providerId,

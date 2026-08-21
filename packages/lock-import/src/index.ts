@@ -940,17 +940,22 @@ export async function completeLockImport(
   const proofDigest = await projectedDigest(
     'proof-v1',
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    output.proof as unknown as JsonValue,
+    JSON.parse(JSON.stringify(output.proof)) as JsonValue,
   );
   const explanationDigest = await projectedDigest(
     'explanation-v1',
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    explanation as unknown as JsonValue,
+    JSON.parse(JSON.stringify(explanation)) as JsonValue,
   );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const artifactSetDigest = await projectedDigest('artifact-set-v1', {
-    items: output.selected.flatMap((item) => item.artifacts),
-  } as unknown as JsonValue);
+  const artifactSetDigest = await projectedDigest(
+    'artifact-set-v1',
+    JSON.parse(
+      JSON.stringify({
+        items: output.selected.flatMap((item) => item.artifacts),
+      }),
+    ) as JsonValue,
+  );
   const protocolVersion =
     meta.protocolVersion === '1.0-draft' || meta.protocolVersion === undefined
       ? ('1.0-draft' as const)
@@ -964,11 +969,11 @@ export async function completeLockImport(
     sourceSnapshots: solveInput.universe.sourceSnapshots,
     targetDigest: await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      output.normalizedRequest.target as unknown as JsonValue,
+      JSON.parse(JSON.stringify(output.normalizedRequest.target)) as JsonValue,
     ),
     policyDigest: await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      output.normalizedRequest.policy as unknown as JsonValue,
+      JSON.parse(JSON.stringify(output.normalizedRequest.policy)) as JsonValue,
     ),
     lifecycleRoot: solveInput.universe.lifecycleRoot,
     semanticsProfile: output.normalizedRequest.semantics.profile,
@@ -1021,7 +1026,7 @@ export async function buildLockfileFromSolve(
 ): Promise<OpenPackerLockfile> {
   const receiptDigest = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    solve.unsignedReceipt as unknown as JsonValue,
+    JSON.parse(JSON.stringify(solve.unsignedReceipt)) as JsonValue,
   );
   const artifacts = solve.selected.flatMap((item) => item.artifacts);
   return {
@@ -1255,7 +1260,9 @@ async function buildMinimalUniverse(
   );
   const recordsDigest = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    sorted.map((item) => item.metadataDigest) as unknown as JsonValue,
+    JSON.parse(
+      JSON.stringify(sorted.map((item) => item.metadataDigest)),
+    ) as JsonValue,
   );
   const snapshot = {
     snapshotId: formatDigest(sourceDigest),
@@ -1281,7 +1288,7 @@ async function buildMinimalUniverse(
     canonicalDigest: await projectedDigest(
       'universe-v1',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      body as unknown as JsonValue,
+      JSON.parse(JSON.stringify(body)) as JsonValue,
     ),
   };
 }
@@ -1331,7 +1338,7 @@ async function mergePackagesIntoUniverse(
     canonicalDigest: await projectedDigest(
       'universe-v1',
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      merged as unknown as JsonValue,
+      JSON.parse(JSON.stringify(merged)) as JsonValue,
     ),
   };
 }

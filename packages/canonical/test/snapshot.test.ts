@@ -33,17 +33,19 @@ describe('canonical rendering snapshots', () => {
     );
     if (!projection) throw new Error('missing package-node-v1 projection');
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const node = {
-      nodeId: 'sha256:ignored-by-projection',
-      identity: {
-        ecosystem: 'npm',
-        name: 'demo',
-        version: '1.0.0',
-        exactPurl: 'pkg:npm/demo@1.0.0',
-      },
-      nativeSemantics: { version: '1.0.0' },
-      extraFieldExcludedByProjection: 'must not appear',
-    } as unknown as JsonValue;
+    const node = JSON.parse(
+      JSON.stringify({
+        nodeId: 'sha256:ignored-by-projection',
+        identity: {
+          ecosystem: 'npm',
+          name: 'demo',
+          version: '1.0.0',
+          exactPurl: 'pkg:npm/demo@1.0.0',
+        },
+        nativeSemantics: { version: '1.0.0' },
+        extraFieldExcludedByProjection: 'must not appear',
+      }),
+    ) as JsonValue;
     const projected = projectCanonicalValue(node, projection);
     await expect(canonicalize(projected)).toMatchFileSnapshot(
       '__snapshots__/package-node-projection.snap',

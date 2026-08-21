@@ -53,7 +53,9 @@ async function publishBody(
 ) {
   const value = manifest(name, version);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk(keyId, keys.leaf!);
   return {
     manifest: value,
@@ -416,7 +418,9 @@ describe('rename and transfer', () => {
     return {
       redirect,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      redirectDigest: await canonicalDigest(redirect as unknown as JsonValue),
+      redirectDigest: await canonicalDigest(
+        JSON.parse(JSON.stringify(redirect)) as JsonValue,
+      ),
       signatures: [
         {
           algorithm: 'ed25519' as const,

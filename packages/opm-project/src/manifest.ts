@@ -96,7 +96,7 @@ export async function buildPackageManifest(input: {
         }),
         definitionDigest: await canonicalDigest(
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          definition as unknown as JsonValue,
+          JSON.parse(JSON.stringify(definition)) as JsonValue,
         ),
       };
       registries.push(ref);
@@ -178,12 +178,16 @@ export async function buildPackageManifest(input: {
   };
 
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const bytes = canonicalBytes(manifest as unknown as JsonValue);
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(manifest)) as JsonValue,
+  );
   return {
     manifest,
     bytes,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    digest: await canonicalDigest(manifest as unknown as JsonValue),
+    digest: await canonicalDigest(
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
+    ),
   };
 }
 

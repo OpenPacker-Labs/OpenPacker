@@ -113,13 +113,15 @@ export class SqliteStateStore implements OpenPackerStateStore {
       'receiptDigest' in receipt
         ? receipt.receiptDigest
         : // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          await canonicalDigest(receipt as unknown as JsonValue);
+          await canonicalDigest(
+            JSON.parse(JSON.stringify(receipt)) as JsonValue,
+          );
     return this.#put(
       'receipt',
       digest.algorithm,
       digest.value,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      canonicalBytes(receipt as unknown as JsonValue),
+      canonicalBytes(JSON.parse(JSON.stringify(receipt)) as JsonValue),
     );
   }
 
@@ -144,7 +146,9 @@ export class SqliteStateStore implements OpenPackerStateStore {
 
   appendEvent(event: OpenPackerCloudEvent): number {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const bytes = canonicalBytes(event as unknown as JsonValue);
+    const bytes = canonicalBytes(
+      JSON.parse(JSON.stringify(event)) as JsonValue,
+    );
     this.#database
       .prepare(
         'INSERT OR IGNORE INTO event_outbox(event_id, bytes) VALUES (?, ?)',
@@ -268,7 +272,9 @@ export async function sourceSnapshotDigest(
     ...payload
   } = source;
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return await canonicalDigest(payload as unknown as JsonValue);
+  return await canonicalDigest(
+    JSON.parse(JSON.stringify(payload)) as JsonValue,
+  );
 }
 
 export async function verifySourceSnapshot(

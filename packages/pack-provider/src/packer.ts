@@ -107,7 +107,7 @@ export class ManifestPackagePacker implements PackagePacker {
     this.providerId = manifest.id;
     this.providerManifestDigest = `sha256:${createHash('sha256')
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      .update(canonicalBytes(manifest as unknown as JsonValue))
+      .update(canonicalBytes(JSON.parse(JSON.stringify(manifest)) as JsonValue))
       .digest('hex')}`;
     this.purlType = purlType;
     if (!isAbsolute(dependencies.executablePath))
