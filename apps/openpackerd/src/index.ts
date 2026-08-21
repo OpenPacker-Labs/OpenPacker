@@ -743,9 +743,12 @@ function post<Input extends JsonValue, Output extends JsonValue>(
           operation(body as Input, prepared.context),
           prepared.context.signal,
         );
+        // HTTP JSON transport omits optional undefined properties; validate and
+        // hash that exact representation rather than an in-memory object.
+        const transportResult = JSON.parse(JSON.stringify(result)) as JsonValue;
         const responseContract = validateContract(
           responseSchema,
-          result,
+          transportResult,
           validator,
         );
         if (!responseContract.valid)
@@ -754,7 +757,7 @@ function post<Input extends JsonValue, Output extends JsonValue>(
             `Operation produced a response that violates its PREX contract: ${responseContract.errors[0]?.instancePath || '/'} ${responseContract.errors[0]?.message ?? 'invalid value'}`,
             500,
           );
-        const bytes = canonicalBytes(result);
+        const bytes = canonicalBytes(transportResult);
         if (key && fingerprint)
           store.putIdempotent('POST', path, key, fingerprint, bytes);
         return sendBytes(reply, bytes);
