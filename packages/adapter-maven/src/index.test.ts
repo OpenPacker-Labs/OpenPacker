@@ -543,7 +543,8 @@ describe('Maven stock-repository inspect', () => {
     ).toBe(true);
     expect(requestedUrls(transport)).toContain(DEMO_POM_URL);
     expect(requestedUrls(transport)).toContain(DEMO_SHA256_URL);
-    expect(requestedUrls(transport)).not.toContain(DEMO_CATALOG_URL);
+    // Overlay is probed; 404/missing fixture is not an inspect failure.
+    expect(requestedUrls(transport)).toContain(DEMO_CATALOG_URL);
 
     const artifact = await provider.fetchArtifactRecord(
       'pkg:maven/org.example/demo-tool@1.0.0',
@@ -580,6 +581,27 @@ describe('Maven stock-repository inspect', () => {
     await expect(
       provider.inspect('pkg:maven/org.example/demo-tool@1.0.0'),
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+  });
+
+  it('rejects a mismatching catalog overlay even when a sha256 sibling is present', async () => {
+    const { transport, provider } = mavenProvider(
+      new Map([
+        [DEMO_POM_URL, ok(stockPomText)],
+        [DEMO_SHA256_URL, ok(`${JAR_SHA256}  demo-tool-1.0.0.jar\n`)],
+        [
+          DEMO_CATALOG_URL,
+          ok(
+            catalogBytes
+              .toString('utf8')
+              .replace('"groupId": "org.example"', '"groupId": "org.other"'),
+          ),
+        ],
+      ]),
+    );
+    await expect(
+      provider.inspect('pkg:maven/org.example/demo-tool@1.0.0'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+    expect(requestedUrls(transport)).toContain(DEMO_CATALOG_URL);
   });
 
   it('uses catalog overlay sha256 when the sidecar is present', async () => {

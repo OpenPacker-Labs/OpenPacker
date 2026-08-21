@@ -1247,29 +1247,24 @@ export class MavenRepositoryProvider implements CatalogProvider {
       classifier,
       signal,
     );
-    // Stock Maven layout has no OpenPacker sidecar. Probe catalog.json only
-    // when checksum siblings did not already supply sha256, so inspect of a
-    // Central-shaped repo never requires (and, with a sibling digest, never
-    // requests) catalog.json. When the sidecar is present it remains an overlay.
-    let overlay: MavenCatalogEntry | undefined;
-    if (checksum.sha256 === undefined) {
-      overlay = await this.fetchCatalogOverlay(
-        this.catalogEntryUrl(
-          parsed.namespace,
-          parsed.name,
-          parsed.version,
-          artifactPackaging,
-          classifier,
-        ),
-        signal,
-      );
-      if (overlay !== undefined)
-        this.assertCatalogIdentity(overlay, canonical, {
-          namespace: parsed.namespace,
-          name: parsed.name,
-          version: parsed.version,
-        });
-    }
+    // Sidecar is optional overlay: 404 is a stock repo, presence is identity-
+    // checked even when a checksum sibling already supplied sha256.
+    const overlay = await this.fetchCatalogOverlay(
+      this.catalogEntryUrl(
+        parsed.namespace,
+        parsed.name,
+        parsed.version,
+        artifactPackaging,
+        classifier,
+      ),
+      signal,
+    );
+    if (overlay !== undefined)
+      this.assertCatalogIdentity(overlay, canonical, {
+        namespace: parsed.namespace,
+        name: parsed.name,
+        version: parsed.version,
+      });
 
     const openpackerSha256 = overlay?.openpackerSha256 ?? checksum.sha256;
     if (checksum.sha1 !== undefined && openpackerSha256 === undefined)

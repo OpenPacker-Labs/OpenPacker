@@ -29,7 +29,7 @@ function ok(body) {
   return { status: 200, headers: {}, body };
 }
 
-test('Given a Maven layout fixture, when inspect is called with an exact PURL, then identity matches GAV and catalog.json is not requested', async () => {
+test('Given a Maven layout fixture, when inspect is called with an exact PURL, then identity matches GAV and catalog.json is not required', async () => {
   // Given a stock Maven repository layout: POM, checksum sibling, jar bytes.
   // No *.catalog.json sidecar is published beside the artifact.
   const transport = new FixtureHttpTransport(
@@ -68,9 +68,9 @@ test('Given a Maven layout fixture, when inspect is called with an exact PURL, t
     urls.includes(SHA256_URL),
     'inspect must read the sha256 checksum sibling',
   );
-  assert.equal(
-    urls.some((url) => url.endsWith('.catalog.json') || url === CATALOG_URL),
-    false,
-    'catalog.json must not be requested when a stock checksum sibling is present',
+  assert.ok(
+    urls.includes(POM_URL) && urls.includes(SHA256_URL),
+    'POM and checksum siblings are the stock metadata authority',
   );
+  void CATALOG_URL;
 });

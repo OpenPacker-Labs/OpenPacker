@@ -146,6 +146,27 @@ describe('Maven inspect mutation coverage', () => {
         },
       },
       {
+        name: 'mismatching-catalog-with-sha256-sibling',
+        fixtures: new Map([
+          [POM_URL, ok(pom)],
+          [SHA256_URL, ok(sha256Sibling)],
+          [
+            CATALOG_URL,
+            ok(
+              catalog.replace(
+                '"groupId": "org.example"',
+                '"groupId": "org.other"',
+              ),
+            ),
+          ],
+        ]),
+        expect: async (run) => {
+          await expect(run()).rejects.toMatchObject({
+            code: 'INVALID_PROVIDER_METADATA',
+          });
+        },
+      },
+      {
         name: 'swap-groupId',
         fixtures: new Map([
           [
