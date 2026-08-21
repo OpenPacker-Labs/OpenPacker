@@ -4,8 +4,14 @@ import { FixtureHttpTransport } from '@openpacker/adapter-core';
 import {
   MavenCodec,
   MavenRepositoryProvider,
+  interpolateMavenExpression,
+  isMavenSnapshotVersion,
   parseGradleLockfile,
   parseMavenMetadataXml,
+  parseMavenPom,
+  pomHasImportBom,
+  resolvedPomCoordinates,
+  resolvedPomDependencies,
   type MavenCatalogEntry,
 } from './index.js';
 
@@ -36,6 +42,30 @@ const archive = await readFile(
 const gradleLockText = await readFile(
   new URL('../../../fixtures/catalogs/maven/gradle.lockfile', import.meta.url),
   'utf8',
+);
+const stockPomText = await readFile(
+  new URL(
+    '../../../fixtures/catalogs/maven/demo-tool-1.0.0.pom',
+    import.meta.url,
+  ),
+  'utf8',
+);
+const childPomText = await readFile(
+  new URL(
+    '../../../fixtures/catalogs/maven/child-tool-1.0.0.pom',
+    import.meta.url,
+  ),
+  'utf8',
+);
+const orphanPomText = await readFile(
+  new URL('../../../fixtures/catalogs/maven/orphan-tool.pom', import.meta.url),
+  'utf8',
+);
+const sha256Sibling = await readFile(
+  new URL(
+    '../../../fixtures/catalogs/maven/demo-tool-1.0.0.jar.sha256',
+    import.meta.url,
+  ),
 );
 
 describe('Maven codec', () => {
@@ -300,4 +330,98 @@ it('discovers Maven Central-style fixture metadata offline', async () => {
   expect(snapshot.etag).toBe('"maven-1"');
   expect(snapshot.revision).toMatch(/^sha256:/);
   expect(snapshot.providerType).toBe('maven-repository');
+});
+
+describe('Maven POM parser', () => {
+  it('reads stock POM GAV, properties, exclusions, optional, and profiles', () => {
+    const pom = parseMavenPom(stockPomText);
+    expect(resolvedPomCoordinates(pom)).toMatchObject({
+      groupId: 'org.example',
+      artifactId: 'demo-tool',
+      version: '1.0.0',
+      packaging: 'jar',
+      complete: true,
+    });
+    const { included, skippedUnresolved } = resolvedPomDependencies(pom);
+    expect(
+      included.map(
+        (dependency) => `${dependency.groupId}:${dependency.artifactId}`,
+      ),
+    ).toEqual([
+      'org.apache.commons:commons-lang3',
+      'com.google.guava:guava',
+      'org.junit.jupiter:junit-jupiter',
+      'org.example:demo-tool',
+    ]);
+    expect(included[0]).toMatchObject({
+      version: '[3.12.0,4.0.0)',
+    });
+    expect(included[1]?.exclusions).toEqual([
+      { groupId: 'com.google.code.findbugs', artifactId: 'jsr305' },
+    ]);
+    expect(included[2]).toMatchObject({
+      version: '5.10.2',
+      scope: 'test',
+    });
+    expect(included[3]).toMatchObject({
+      classifier: 'sources',
+      optional: true,
+      scope: 'provided',
+    });
+    expect(skippedUnresolved).toEqual([
+      expect.objectContaining({
+        artifactId: 'missing-prop-lib',
+        version: '${not.defined.in.this.pom}',
+      }),
+    ]);
+    expect(pom.profileDependencies).toEqual([
+      expect.objectContaining({ artifactId: 'profile-only', version: '9.9.9' }),
+    ]);
+  });
+
+  it('records parent and import BOM without resolving them', () => {
+    const pom = parseMavenPom(childPomText);
+    expect(pom.parent).toEqual({
+      groupId: 'org.example',
+      artifactId: 'parent-bom',
+      version: '2.0.0',
+    });
+    expect(pomHasImportBom(pom)).toBe(true);
+    const { included, skippedUnresolved } = resolvedPomDependencies(pom);
+    expect(included).toEqual([
+      expect.objectContaining({
+        groupId: 'org.slf4j',
+        artifactId: 'slf4j-api',
+        version: '2.0.9',
+      }),
+    ]);
+    expect(skippedUnresolved).toEqual([
+      expect.objectContaining({ artifactId: 'managed-from-parent' }),
+    ]);
+  });
+
+  it('does not complete a child GAV from parent coordinates', () => {
+    const pom = parseMavenPom(orphanPomText);
+    expect(resolvedPomCoordinates(pom)).toMatchObject({
+      artifactId: 'orphan-tool',
+      complete: false,
+    });
+    expect(resolvedPomCoordinates(pom).groupId).toBeUndefined();
+    expect(resolvedPomCoordinates(pom).version).toBeUndefined();
+  });
+
+  it('refuses a missing project document and interpolates defined properties', () => {
+    expect(() => parseMavenPom('<not-a-pom/>')).toThrow(/project document/u);
+    expect(
+      interpolateMavenExpression('${commons.version}', {
+        'commons.version': '[3.12.0,4.0.0)',
+      }),
+    ).toEqual({ value: '[3.12.0,4.0.0)', unresolved: false });
+    expect(interpolateMavenExpression('${missing}', { other: '1' })).toEqual({
+      value: '${missing}',
+      unresolved: true,
+    });
+    expect(isMavenSnapshotVersion('1.0.0-SNAPSHOT')).toBe(true);
+    expect(isMavenSnapshotVersion('1.0.0')).toBe(false);
+  });
 });

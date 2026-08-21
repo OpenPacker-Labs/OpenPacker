@@ -40,17 +40,22 @@ import {
   type TranslatedMetadata,
   type TranslationProvenance,
 } from '@openpacker/adapter-core';
+import { type MavenDependency } from './pom.js';
 
-export interface MavenDependency {
-  groupId: string;
-  artifactId: string;
-  version?: string;
-  type?: string;
-  classifier?: string;
-  scope?: string;
-  optional?: boolean;
-  exclusions?: readonly { groupId: string; artifactId: string }[];
-}
+export {
+  interpolateMavenExpression,
+  isMavenSnapshotVersion,
+  parseMavenPom,
+  pomHasImportBom,
+  resolvedPomCoordinates,
+  resolvedPomDependencies,
+} from './pom.js';
+export type {
+  MavenDependency,
+  MavenPomDocument,
+  MavenPomParent,
+  ResolvedPomCoordinates,
+} from './pom.js';
 
 export interface MavenCatalogEntry {
   groupId: string;
@@ -1032,8 +1037,8 @@ export class MavenCodec
  *
  * Speaks Maven Central-style layout over an injected {@link HttpTransport},
  * so tests supply fixtures via {@link import('@openpacker/adapter-core').FixtureHttpTransport}
- * without network access. Catalog version documents are JSON fixtures that
- * mirror a normalized POM/catalog entry.
+ * without network access. Inspect reads the version POM and optional checksum
+ * siblings; `*.catalog.json` is an overlay when present, not required.
  */
 export class MavenRepositoryProvider implements CatalogProvider {
   readonly providerId = 'maven-repository';
