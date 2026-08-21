@@ -29,7 +29,10 @@ import {
   bindVerifiedArtifactBytes,
   sealVerifiedArtifactBinding,
 } from '../src/install.js';
-import { resolveRegistryArtifactDeferred } from '../src/registry.js';
+import {
+  firstPartyTransport,
+  resolveRegistryArtifactDeferred,
+} from '../src/registry.js';
 
 /**
  * Registry resolution, driven through a fixture transport.
@@ -218,7 +221,129 @@ describe('registry configuration', () => {
       else process.env.OPM_REGISTRY_NPM_ORIGINS = previous;
     }
   });
+});
 
+describe('first-party classify-and-pin', () => {
+  function recordingFetch(): {
+    calls: string[];
+    fetch: typeof fetch;
+  } {
+    const calls: string[] = [];
+    return {
+      calls,
+      fetch: (async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response('ok');
+      }) as typeof fetch,
+    };
+  }
+
+  const privateLookup = async () => [{ address: '10.0.0.1', family: 4 }];
+  const publicLookup = async () => [{ address: '1.1.1.1', family: 4 }];
+
+  it('refuses split-horizon rebinding of a public default hostname', async () => {
+    const { calls, fetch } = recordingFetch();
+    const transport = firstPartyTransport('npm', {
+      fetch,
+      lookup: privateLookup,
+    });
+    await expect(
+      transport.request({ url: 'https://registry.npmjs.org/lodash' }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(calls).toEqual([]);
+  });
+
+  it('pins an OPM_REGISTRY_* override so a private address is allowed', async () => {
+    const previous = process.env.OPM_REGISTRY_NPM;
+    process.env.OPM_REGISTRY_NPM = 'https://internal.example';
+    try {
+      const { calls, fetch } = recordingFetch();
+      const transport = firstPartyTransport('npm', {
+        fetch,
+        lookup: privateLookup,
+      });
+      const response = await transport.request({
+        url: 'https://internal.example/lodash',
+      });
+      expect(new TextDecoder().decode(response.body)).toBe('ok');
+      expect(calls).toEqual(['https://internal.example/lodash']);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_NPM;
+      else process.env.OPM_REGISTRY_NPM = previous;
+    }
+  });
+
+  it('does not pin extra ORIGINS: rebinding the CDN fails closed', async () => {
+    const previous = process.env.OPM_REGISTRY_PYPI;
+    const previousExtras = process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    process.env.OPM_REGISTRY_PYPI = 'https://pypi.internal.example';
+    process.env.OPM_REGISTRY_PYPI_ORIGINS = 'https://files.pythonhosted.org';
+    try {
+      const { calls, fetch } = recordingFetch();
+      const transport = firstPartyTransport('pypi', {
+        fetch,
+        lookup: privateLookup,
+      });
+      await expect(
+        transport.request({
+          url: 'https://files.pythonhosted.org/packages/demo.whl',
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      expect(calls).toEqual([]);
+      const pinned = await transport.request({
+        url: 'https://pypi.internal.example/pypi/demo/json',
+      });
+      expect(new TextDecoder().decode(pinned.body)).toBe('ok');
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_PYPI;
+      else process.env.OPM_REGISTRY_PYPI = previous;
+      if (previousExtras === undefined)
+        delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+      else process.env.OPM_REGISTRY_PYPI_ORIGINS = previousExtras;
+    }
+  });
+
+  it('does not allowlist npmjs.org for a named options.endpoint', async () => {
+    const { calls, fetch } = recordingFetch();
+    const transport = firstPartyTransport('npm', {
+      endpoint: 'https://npm.internal.example',
+      fetch,
+      lookup: publicLookup,
+    });
+    await expect(
+      transport.request({ url: 'https://registry.npmjs.org/lodash' }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    expect(calls).toEqual([]);
+    const response = await transport.request({
+      url: 'https://npm.internal.example/lodash',
+    });
+    expect(new TextDecoder().decode(response.body)).toBe('ok');
+  });
+
+  it('passes fetch and lookup through providerFor when transport is unset', async () => {
+    const { calls, fetch } = recordingFetch();
+    const provider = await providerFor('npm', {
+      fetch,
+      lookup: privateLookup,
+    });
+    await expect(provider.inspect('pkg:npm/demo@1.0.0')).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER_ENDPOINT',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('skips DNS when fetch is injected without lookup', async () => {
+    const { calls, fetch } = recordingFetch();
+    const transport = firstPartyTransport('npm', { fetch });
+    const response = await transport.request({
+      url: 'https://registry.npmjs.org/lodash',
+    });
+    expect(new TextDecoder().decode(response.body)).toBe('ok');
+    expect(calls).toEqual(['https://registry.npmjs.org/lodash']);
+  });
+});
+
+describe('registry endpoint validation', () => {
   it('rejects plaintext private registry overrides', () => {
     const previous = process.env.OPM_REGISTRY_NPM;
     process.env.OPM_REGISTRY_NPM = 'http://npm.internal.example';

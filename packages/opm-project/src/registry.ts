@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
+  createFirstPartyTransport,
   firstPartyOriginPolicy,
   normalizePinnedOrigin,
   parseHttpsOriginList,
@@ -151,6 +152,31 @@ function firstPartyPolicy(
 
 export function allowedOriginsFor(ecosystem: string): string[] {
   return firstPartyPolicy(ecosystem).allowedOrigins;
+}
+
+/**
+ * Production first-party registry transport. Classify-and-pin; public CDNs
+ * are allowlisted-not-pinned; an operator-named endpoint or `OPM_REGISTRY_*`
+ * override is pinned and does not inherit hardcoded `ARTIFACT_ORIGINS`.
+ */
+export function firstPartyTransport(
+  ecosystem: string,
+  options: RegistryOptions = {},
+): BoundedFetchTransport {
+  const endpoint =
+    options.endpoint !== undefined
+      ? safeRegistryEndpoint(options.endpoint, ecosystem)
+      : registryEndpoint(ecosystem);
+  const artifactOrigins = ARTIFACT_ORIGINS[ecosystem];
+  return createFirstPartyTransport({
+    endpoint,
+    namedOrOverride:
+      options.endpoint !== undefined || registryEndpointIsOverride(ecosystem),
+    ...(artifactOrigins === undefined ? {} : { artifactOrigins }),
+    extraOrigins: parseRegistryExtraOrigins(ecosystem),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.lookup ? { lookup: options.lookup } : {}),
+  });
 }
 
 /** One DNS answer for host-fetch classification and pin. */
@@ -308,14 +334,7 @@ export async function providerForWithDiscovery(
   if (endpoint !== undefined) safeRegistryEndpoint(endpoint, ecosystem);
   const transport =
     options.transport ??
-    (endpoint
-      ? new BoundedFetchTransport({
-          allowedOrigins:
-            options.endpoint === undefined
-              ? allowedOriginsFor(ecosystem)
-              : [new URL(endpoint).origin],
-        })
-      : undefined);
+    (endpoint ? firstPartyTransport(ecosystem, options) : undefined);
   try {
     return await registry.catalogFor(
       ecosystem,
