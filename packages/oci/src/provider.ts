@@ -11,6 +11,7 @@ import {
   type ProviderRecord,
 } from '@openpacker/adapter-core';
 import type {
+  JsonValue,
   PackageIdentity,
   PackageInstance,
   SourceSnapshot,
@@ -432,8 +433,8 @@ export class OciRegistryProvider implements CatalogProvider {
       ),
       nativeSemantics: {
         version: 'oci-v1',
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        data: manifest as unknown as Record<string, unknown>,
+        // SAFETY: The OCI manifest has been validated by the registry client.
+        data: JSON.parse(JSON.stringify(manifest)) as JsonValue,
       },
       semanticLoss: [],
     } as PackageInstance;
@@ -653,13 +654,10 @@ export class OciRegistryProvider implements CatalogProvider {
   }
 
   async snapshot(evaluationTime: string): Promise<SourceSnapshot> {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return {
-      snapshotVersion: '1' as const,
-      providerId: this.providerId,
-      evaluationTime,
-      sources: [],
-    } as unknown as SourceSnapshot;
+    throw new ProviderError(
+      'PROVIDER_CAPABILITY_MISSING',
+      `OCI registries do not produce catalog snapshots (asked at ${evaluationTime}).`,
+    );
   }
 }
 

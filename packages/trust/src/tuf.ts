@@ -216,10 +216,9 @@ function fresh(metadata: TufSigned, now: string): void {
 function parse<T extends TufSigned>(bytes: Uint8Array): SignedMetadata<T> {
   let value: SignedMetadata<T>;
   try {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    value = parseCanonicalJson(
+    value = parseCanonicalJson<SignedMetadata<T>>(
       new TextDecoder().decode(bytes),
-    ) as unknown as SignedMetadata<T>;
+    );
   } catch {
     throw new TufVerificationError('mix-match', 'Malformed TUF metadata');
   }

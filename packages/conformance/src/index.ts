@@ -26,7 +26,6 @@ export function createPrexValidator(): Ajv2020 {
     strictTypes: false,
     allowUnionTypes: true,
   });
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   // SAFETY: ajv-formats exports the documented Ajv plugin at this module boundary.
   (addFormatsModule.default as unknown as (instance: Ajv2020) => Ajv2020)(ajv);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.

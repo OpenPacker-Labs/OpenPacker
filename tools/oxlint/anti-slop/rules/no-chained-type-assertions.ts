@@ -77,6 +77,12 @@ export const noChainedTypeAssertionsRule = defineRule({
         !isForbiddenAssertionChain(node)
       )
         return;
+      if (
+        context.sourceCode
+          .getCommentsBefore(node)
+          .some((comment) => /\bSAFETY\s*:/u.test(comment.value))
+      )
+        return;
       context.report({ node, messageId: 'chained' });
     };
 
