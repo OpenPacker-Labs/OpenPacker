@@ -163,7 +163,7 @@ export async function createCloudEvent<T extends EventType>(
     datadigest,
     correlationid: input.correlationId,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    data: input.data as EventData,
+    data: data as EventData,
     externalrefs: input.externalRefs ?? [],
   } as unknown as OpenPackerEventByType<T>;
   if (input.causationId !== undefined) event.causationid = input.causationId;

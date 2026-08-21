@@ -36,6 +36,33 @@ describe('OpenPacker CloudEvents', () => {
     expect(await decodeCloudEvent(canonicalEventBytes(first))).toEqual(first);
   });
 
+  it('uses the JSON transport form for optional undefined data fields', async () => {
+    const event = await createCloudEvent({
+      type: 'org.openpacker.artifact.packed',
+      source: 'urn:openpacker:test',
+      subject: 'sha256:subject',
+      correlationId: 'demo',
+      clock,
+      data: {
+        schemaVersion: '1',
+        descriptor: {
+          descriptorId: 'demo',
+          digest: digest('d'),
+          size: 0,
+          mediaType: 'application/octet-stream',
+          artifactType: 'demo',
+          fileName: undefined,
+          nativeRole: 'native-package',
+          locations: [],
+          referrers: [],
+          externalRefs: [],
+        },
+      },
+    });
+    expect(() => canonicalEventBytes(event)).not.toThrow();
+    expect(event.data.descriptor).not.toHaveProperty('fileName');
+  });
+
   it('requires occurrence identity for observations and deduplicates replay', async () => {
     await expect(
       createCloudEvent({
