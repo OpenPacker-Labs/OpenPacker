@@ -89,8 +89,14 @@ instead of rewriting canonical PREX identity.
 
 Construct `BoundedFetchTransport` with the exact HTTP(S) origins the provider
 may contact. Every initial and redirected URL must remain in that allowlist;
-credentials are stripped between allowed origins. Private or localhost origins
-are therefore available to explicit test/live configurations, never by default.
+credentials are stripped between allowed origins. Production first-party
+registry traffic uses `destinationPolicy: 'classify-and-pin'`: public default
+origins are allowlisted-not-pinned, and `pinnedOrigins` are never inferred from
+`allowedOrigins`. An operator-named endpoint (`OPM_REGISTRY_*` or
+`[registries.<id>].url`) is pinned; extra `OPM_REGISTRY_<ECO>_ORIGINS` entries
+are allowlisted only. Private or localhost origins in default `origin-allowlist`
+mode are therefore available to explicit test/live configurations and
+`RegistryClient` loopback fixtures, never by default.
 
 ## Artifact and event rules
 
