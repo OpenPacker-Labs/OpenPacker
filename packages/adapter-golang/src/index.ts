@@ -80,6 +80,8 @@ export interface GolangModDocument {
   module?: string;
   go?: string;
   requires: GolangRequire[];
+  /** Version specs from `retract` directives (exact versions or `[low, high]`). */
+  retracts: string[];
 }
 
 export type GolangLockInput =
@@ -312,16 +314,50 @@ export function parseGoSum(input: string): GolangSumDocument {
   return { entries };
 }
 
+function retractSpecCoversVersion(
+  spec: string,
+  version: string,
+  compare: (left: string, right: string) => number,
+): boolean {
+  const target = normalizeGoVersionText(version);
+  const interval = /^\[(\S+),\s*(\S+)\]$/.exec(spec);
+  if (interval) {
+    try {
+      const low = normalizeGoVersionText(interval[1]!);
+      const high = normalizeGoVersionText(interval[2]!);
+      return compare(target, low) >= 0 && compare(target, high) <= 0;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    return normalizeGoVersionText(spec) === target;
+  } catch {
+    return false;
+  }
+}
+
 export function parseGoMod(input: string): GolangModDocument {
   const requires: GolangRequire[] = [];
+  const retracts: string[] = [];
   let module: string | undefined;
   let go: string | undefined;
   let inRequireBlock = false;
+  let inRetractBlock = false;
 
   for (const [index, rawLine] of input.split(/\r?\n/).entries()) {
     const withoutComment = rawLine.replace(/\s*\/\/.*$/, '');
     const line = withoutComment.trim();
     if (line.length === 0) continue;
+
+    if (inRetractBlock) {
+      if (line === ')') {
+        inRetractBlock = false;
+        continue;
+      }
+      retracts.push(line);
+      continue;
+    }
 
     if (!inRequireBlock) {
       const moduleMatch = /^module\s+(\S+)\s*$/.exec(line);
@@ -351,7 +387,16 @@ export function parseGoMod(input: string): GolangModDocument {
         inRequireBlock = true;
         continue;
       }
-      // Ignore other directives (replace, exclude, retract, toolchain, etc.)
+      const singleRetract = /^retract\s+(.+)$/.exec(line);
+      if (singleRetract && !line.endsWith('(')) {
+        retracts.push(singleRetract[1]!.trim());
+        continue;
+      }
+      if (/^retract\s*\(\s*$/.test(line)) {
+        inRetractBlock = true;
+        continue;
+      }
+      // Ignore other directives (replace, exclude, toolchain, etc.)
       continue;
     }
 
@@ -377,11 +422,17 @@ export function parseGoMod(input: string): GolangModDocument {
       'INVALID_LOCKFILE',
       'Unterminated require block in go.mod',
     );
+  if (inRetractBlock)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'Unterminated retract block in go.mod',
+    );
 
   return {
     ...(module === undefined ? {} : { module }),
     ...(go === undefined ? {} : { go }),
     requires,
+    retracts,
   };
 }
 
@@ -1221,6 +1272,7 @@ export class GolangProxyProvider implements CatalogProvider {
     let requires: GolangRequire[] = [];
     let go: string | undefined;
     let modText: string | undefined;
+    let retracted = false;
     const warnings: ProviderWarning[] = [];
     const modResponse = await this.transport.request({
       url: modUrl,
@@ -1240,6 +1292,11 @@ export class GolangProxyProvider implements CatalogProvider {
       }
       requires = mod.requires;
       go = mod.go;
+      retracted = mod.retracts.some((spec) =>
+        retractSpecCoversVersion(spec, version, (left, right) =>
+          this.codec.compareNativeVersions(left, right),
+        ),
+      );
     } else if (modResponse.status === 404 || modResponse.status === 410) {
       warnings.push({
         code: 'GOLANG_MOD_NOT_AVAILABLE',
@@ -1262,6 +1319,7 @@ export class GolangProxyProvider implements CatalogProvider {
       ...(info.Time === undefined ? {} : { time: info.Time }),
       ...(go === undefined ? {} : { go }),
       requires,
+      ...(retracted ? { retracted: true } : {}),
     };
 
     const rawBody = new TextEncoder().encode(
