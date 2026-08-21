@@ -28,6 +28,7 @@ import {
   writeBinShims,
   type AdapterModule,
   type LockPackage,
+  type RegistryOptions,
 } from '../src/index.js';
 
 /**
@@ -447,6 +448,16 @@ describe('delegated host-fetch acquisition', () => {
         lookup: async () => [{ address: '10.0.0.1', family: 4 }],
       }),
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+    try {
+      await resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub(tarRoute),
+      });
+      throw new Error('expected INVALID_PROVIDER_ENDPOINT');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
+      expect((error as Error).message).not.toMatch(/user:secret/u);
+      expect((error as Error).message).not.toMatch(/secret/u);
+    }
   });
 
   it('fails closed on a location outside the endpoint origin', async () => {
@@ -458,13 +469,230 @@ describe('delegated host-fetch acquisition', () => {
         },
       }),
     );
+    let fetched = false;
     await expect(
       resolveRegistryArtifact('acme', EXACT, {
-        fetch: fetchStub({
-          'https://evil.fixture.test/artifacts/demo.tar': TOOL_TAR,
-        }),
+        fetch: (async (input: URL | Request | string) => {
+          fetched = true;
+          return fetchStub({
+            'https://evil.fixture.test/artifacts/demo.tar': TOOL_TAR,
+          })(input);
+        }) as typeof fetch,
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(fetched).toBe(false);
+  });
+
+  const BINDING_DIGEST = `sha256:${'a'.repeat(64)}`;
+  function acmeBinding(
+    origins: readonly string[],
+    id = 'dev.test.acme',
+  ): RegistryOptions['pluginBindings'] {
+    return {
+      [id]: { storeDigest: BINDING_DIGEST, artifactOrigins: origins },
+    };
+  }
+
+  it('fetches an off-origin location only when the project pinned it', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [{ uri: 'https://evil.example/artifacts/demo.tar' }],
+        },
+      }),
+    );
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: fetchStub({
+        'https://evil.example/artifacts/demo.tar': TOOL_TAR,
+      }),
+      pluginBindings: acmeBinding(['https://evil.example']),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+  });
+
+  it('fetches a private IP literal when the project pinned that origin', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        endpoint: 'https://127.0.0.1',
+        body: {
+          locations: [{ uri: 'https://127.0.0.1/artifacts/demo.tar' }],
+        },
+      }),
+    );
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: fetchStub({ 'https://127.0.0.1/artifacts/demo.tar': TOOL_TAR }),
+      pluginBindings: acmeBinding(['https://127.0.0.1']),
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+  });
+
+  it('unions env pins with the matching plugin artifact_origins', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS = 'https://env.example';
+    const bindings = acmeBinding(['https://toml.example']);
+    for (const origin of ['https://env.example', 'https://toml.example']) {
+      registerAcme(
+        acmeProvider({
+          hostFetch: true,
+          body: {
+            locations: [{ uri: `${origin}/artifacts/demo.tar` }],
+          },
+        }),
+      );
+      const artifact = await resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub({ [`${origin}/artifacts/demo.tar`]: TOOL_TAR }),
+        pluginBindings: bindings,
+      });
+      expect(artifact.bytes).toEqual(TOOL_TAR);
+    }
+  });
+
+  it('does not apply another plugin binding to this providerId', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [{ uri: 'https://evil.example/artifacts/demo.tar' }],
+        },
+      }),
+    );
+    let fetched = false;
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: (async () => {
+          fetched = true;
+          return new Response(TOOL_TAR);
+        }) as unknown as typeof fetch,
+        pluginBindings: acmeBinding(['https://evil.example'], 'dev.test.other'),
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(fetched).toBe(false);
+  });
+
+  it('uses the first location URI and does not walk extra origins', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [
+            { uri: `${ENDPOINT}/artifacts/demo-1.0.0.tar` },
+            { uri: 'https://evil.example/artifacts/demo.tar' },
+          ],
+        },
+      }),
+    );
+    let requested: string[] = [];
+    const artifact = await resolveRegistryArtifact('acme', EXACT, {
+      fetch: ((input: URL | Request | string) => {
+        requested.push(String(input));
+        return fetchStub(tarRoute)(input);
+      }) as typeof fetch,
+    });
+    expect(artifact.bytes).toEqual(TOOL_TAR);
+    expect(requested).toEqual([`${ENDPOINT}/artifacts/demo-1.0.0.tar`]);
+
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [
+            { uri: 'https://evil.example/artifacts/demo.tar' },
+            { uri: `${ENDPOINT}/artifacts/demo-1.0.0.tar` },
+          ],
+        },
+      }),
+    );
+    requested = [];
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: ((input: URL | Request | string) => {
+          requested.push(String(input));
+          return fetchStub(tarRoute)(input);
+        }) as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(requested).toEqual([]);
+  });
+
+  it('ignores plugin body fields that try to expand pins or attach headers', async () => {
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [{ uri: 'https://evil.example/artifacts/demo.tar' }],
+          headers: { Authorization: 'Bearer stolen' },
+          pins: ['https://evil.example'],
+          allowedOrigins: ['https://evil.example'],
+        } as DescriptorOverrides,
+      }),
+    );
+    let fetched = false;
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: (async () => {
+          fetched = true;
+          return new Response(TOOL_TAR);
+        }) as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(fetched).toBe(false);
+  });
+
+  it('refuses a location URI with query or hash before any GET', async () => {
+    for (const uri of [
+      `${ENDPOINT}/artifacts/demo.tar?token=secret`,
+      `${ENDPOINT}/artifacts/demo.tar#frag`,
+    ]) {
+      registerAcme(
+        acmeProvider({
+          hostFetch: true,
+          body: { locations: [{ uri }] },
+        }),
+      );
+      let fetched = false;
+      await expect(
+        resolveRegistryArtifact('acme', EXACT, {
+          fetch: (async () => {
+            fetched = true;
+            return new Response(TOOL_TAR);
+          }) as unknown as typeof fetch,
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(fetched).toBe(false);
+    }
+    registerAcme(
+      acmeProvider({
+        hostFetch: true,
+        body: {
+          locations: [{ uri: `${ENDPOINT}/artifacts/demo.tar?token=secret` }],
+        },
+      }),
+    );
+    try {
+      await resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub(tarRoute),
+      });
+      throw new Error('expected UNSAFE_PATH');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'UNSAFE_PATH' });
+      expect((error as Error).message).not.toMatch(/token=secret/u);
+      expect((error as Error).message).not.toMatch(/\?/u);
+      expect((error as Error).message).toContain(
+        `${ENDPOINT}/artifacts/demo.tar`,
+      );
+    }
+  });
+
+  it('refuses duplicate OPM_HOST_FETCH_ORIGINS entries', async () => {
+    process.env.OPM_HOST_FETCH_ORIGINS =
+      'https://acme.fixture.test,https://acme.fixture.test';
+    registerAcme(acmeProvider({ hostFetch: true }));
+    await expect(
+      resolveRegistryArtifact('acme', EXACT, {
+        fetch: fetchStub(tarRoute),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
   });
 
   it('keeps rawBody behavior when the provider does not ask for host-fetch', async () => {

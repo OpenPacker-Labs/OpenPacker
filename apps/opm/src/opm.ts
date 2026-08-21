@@ -1072,7 +1072,9 @@ Delegated adapter plugins (user-level, never installed by default):
   opm plugin remove <name>            remove a plugin and its store entry
   opmx --plugin <name> <tool>         ephemeral-run a plugin-served purl type
   [plugins.<id>] store_digest = "sha256:…" in opm.toml pins an installed
-  plugin for this project; the binding never acquires, and project commands
+  plugin for this project; optional artifact_origins lists extra HTTPS
+  origins the host may fetch this plugin's artifacts from (union with
+  OPM_HOST_FETCH_ORIGINS). The binding never acquires, and project commands
   fail closed when the installed entry digests differently.
   The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
   lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.

@@ -217,6 +217,89 @@ describe('manifest TOML', () => {
       parseManifest('[pluginsx.acme]\nstore_digest = "x"\n'),
     ).toThrowError(/Unsupported TOML section/);
   });
+
+  it('round-trips plugin artifact_origins and omits the key when empty', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const text = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: {
+        'dev.example.acme-adapter': {
+          storeDigest: digest,
+          artifactOrigins: ['https://artifacts.internal.example'],
+        },
+      },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(text).toContain(
+      'artifact_origins = ["https://artifacts.internal.example"]',
+    );
+    expect(parseManifest(text).plugins).toEqual({
+      'dev.example.acme-adapter': {
+        storeDigest: digest,
+        artifactOrigins: ['https://artifacts.internal.example'],
+      },
+    });
+
+    const withoutOrigins = serializeManifest({
+      project: { name: 'demo', ecosystems: ['acme'] },
+      packages: {},
+      plugins: { 'dev.example.acme-adapter': { storeDigest: digest } },
+      options: { offline: false, layout: 'opm' },
+    });
+    expect(withoutOrigins).not.toContain('artifact_origins');
+
+    const empty = parseManifest(
+      `[plugins.dev.example.acme]\nstore_digest = "${digest}"\nartifact_origins = []\n`,
+    );
+    expect(empty.plugins?.['dev.example.acme']).toEqual({
+      storeDigest: digest,
+    });
+  });
+
+  it('fails closed on invalid plugin artifact_origins', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const plugin = (origins: string) =>
+      `[project]\nname = "x"\n\n[plugins.dev.example.acme]\nstore_digest = "${digest}"\nartifact_origins = ${origins}\n`;
+
+    expect(() =>
+      parseManifest(plugin('["https://cdn.example", "https://cdn.example/"]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(plugin('["https://cdn.example", "https://cdn.example"]')),
+    ).toThrowError(/duplicate origin/i);
+
+    expect(() => parseManifest(plugin('["http://127.0.0.1"]'))).toThrow(
+      expect.objectContaining({ code: 'INVALID_MANIFEST' }),
+    );
+    expect(() =>
+      parseManifest(plugin('["https://artifacts.internal.example/foo"]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(plugin('["https://artifacts.internal.example/?q=1"]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+    expect(() =>
+      parseManifest(plugin('["https://artifacts.internal.example/#frag"]')),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+
+    const secret = 'https://user:secret@artifacts.internal.example';
+    expect(() => parseManifest(plugin(`["${secret}"]`))).toThrow(
+      expect.objectContaining({ code: 'INVALID_MANIFEST' }),
+    );
+    try {
+      parseManifest(plugin(`["${secret}"]`));
+    } catch (error) {
+      expect((error as Error).message).not.toMatch(/user:secret/u);
+      expect((error as Error).message).not.toMatch(/secret/u);
+    }
+
+    expect(() =>
+      parseManifest(
+        `[plugins.dev.example.acme]\nstore_digest = "${digest}"\n` +
+          'artifact_origin_token_envs = ["ACME_TOKEN"]\n',
+      ),
+    ).toThrowError(/Unknown plugin field "artifact_origin_token_envs"/);
+  });
 });
 
 describe('parsePackageSpec', () => {

@@ -170,6 +170,30 @@ describe('registry configuration', () => {
     ).toThrow(/must be HTTPS/u);
   });
 
+  it('copies project plugin bindings into registry options', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const plugins = {
+      'dev.test.acme': {
+        storeDigest: digest,
+        artifactOrigins: ['https://cdn.example'],
+      },
+    };
+    expect(
+      registryOptionsForEcosystem('npm', { plugins }).pluginBindings,
+    ).toEqual(plugins);
+    expect(
+      registryOptionsForEcosystem(
+        'npm',
+        { plugins },
+        {
+          pluginBindings: {
+            'dev.test.other': { storeDigest: digest },
+          },
+        },
+      ).pluginBindings,
+    ).toEqual({ 'dev.test.other': { storeDigest: digest } });
+  });
+
   it('refuses an ecosystem it has no registry for', async () => {
     expect(() => registryEndpoint('cocoapods')).toThrow(/No registry/u);
     // Discovery path: unregistered purl types fail closed at the adapter host.
