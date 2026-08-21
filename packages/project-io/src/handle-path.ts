@@ -119,19 +119,15 @@ export async function mkdirChild(
 ): Promise<void> {
   assertHandleSegment(name);
   if (process.platform === 'win32') {
-    try {
-      await windowsOpenChild(
-        parent,
-        name,
-        constants.O_RDONLY |
-          constants.O_DIRECTORY |
-          constants.O_CREAT |
-          constants.O_EXCL,
-      ).then(async (handle) => handle.close());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw error;
-      throw error;
-    }
+    const handle = await windowsOpenChild(
+      parent,
+      name,
+      constants.O_RDONLY |
+        constants.O_DIRECTORY |
+        constants.O_CREAT |
+        constants.O_EXCL,
+    );
+    await handle.close();
     return;
   }
   await mkdir(posixChild(parent, name));
@@ -434,7 +430,10 @@ const SYNCHRONIZE = 0x00100000;
 const GENERIC_READ = 0x80000000;
 const GENERIC_WRITE = 0x40000000;
 const FILE_LIST_DIRECTORY = 0x00000001;
+const FILE_ADD_FILE = 0x00000002;
+const FILE_ADD_SUBDIRECTORY = 0x00000004;
 const FILE_TRAVERSE = 0x00000020;
+const FILE_DELETE_CHILD = 0x00000040;
 const FILE_READ_ATTRIBUTES = 0x00000080;
 const FileRenameInformation = 10;
 const FileDispositionInformation = 13;
@@ -448,6 +447,7 @@ function windowsOpenChild(
   name: string,
   flags: number,
   _mode?: number,
+  extraAccess = 0,
 ): Promise<FileHandle> {
   const api = nt();
   const root = api.getOsFHandle(parent.fd);
@@ -474,11 +474,22 @@ function windowsOpenChild(
   const directory = (flags & constants.O_DIRECTORY) !== 0;
   const create = (flags & constants.O_CREAT) !== 0;
   const exclusive = (flags & constants.O_EXCL) !== 0;
-  let access = SYNCHRONIZE | FILE_READ_ATTRIBUTES;
+  let access = SYNCHRONIZE | FILE_READ_ATTRIBUTES | extraAccess;
   if ((flags & constants.O_WRONLY) !== 0 || (flags & constants.O_RDWR) !== 0)
     access |= GENERIC_WRITE;
   if ((flags & constants.O_WRONLY) === 0) access |= GENERIC_READ;
-  if (directory) access |= FILE_LIST_DIRECTORY | FILE_TRAVERSE;
+  // Directory handles double as mutation parents (mkdir / mkdtemp / create /
+  // rename / remove children), and the NT object manager checks the
+  // child-management rights on the RootDirectory handle. Requesting them on a
+  // genuinely write-denied directory fails closed with EACCES rather than
+  // degrading containment; pure reads of normally ACL'd trees are unaffected.
+  if (directory)
+    access |=
+      FILE_LIST_DIRECTORY |
+      FILE_TRAVERSE |
+      FILE_ADD_FILE |
+      FILE_ADD_SUBDIRECTORY |
+      FILE_DELETE_CHILD;
   const disposition = create
     ? exclusive
       ? FILE_CREATE
@@ -522,10 +533,13 @@ async function windowsRenameChild(
   to: string,
 ): Promise<void> {
   const api = nt();
+  // FileRenameInformation requires DELETE access on the handle being renamed.
   const source = await windowsOpenChild(
     parent,
     from,
     constants.O_RDONLY | constants.O_NOFOLLOW,
+    undefined,
+    DELETE,
   );
   try {
     const osHandle = api.getOsFHandle(source.fd);
@@ -586,10 +600,13 @@ async function windowsRemoveChild(
         }
       }
     }
+    // FileDispositionInformation requires DELETE access on the handle.
     const handle = await windowsOpenChild(
       parent,
       name,
       constants.O_RDONLY | constants.O_NOFOLLOW,
+      undefined,
+      DELETE,
     );
     try {
       const api = nt();
