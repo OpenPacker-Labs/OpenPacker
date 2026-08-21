@@ -33,14 +33,23 @@ import {
   type NativeCoordinate,
   type ParsedRange,
   type ParsedVersion,
+  type HttpResponse,
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
+  type ProviderWarning,
   type RangeAst,
   type TranslatedMetadata,
   type TranslationProvenance,
 } from '@openpacker/adapter-core';
-import { type MavenDependency } from './pom.js';
+import {
+  isMavenSnapshotVersion,
+  parseMavenPom,
+  pomHasImportBom,
+  resolvedPomCoordinates,
+  resolvedPomDependencies,
+  type MavenDependency,
+} from './pom.js';
 
 export {
   interpolateMavenExpression,
@@ -524,6 +533,25 @@ function mavenGroupPath(groupId: string): string {
     .split('.')
     .map((part) => mavenComponent(part, 'groupId'))
     .join('/');
+}
+
+export function parseMavenChecksum(
+  body: string,
+  expectedHexLength: number,
+): string | undefined {
+  const token = body.trim().split(/\s+/u)[0] ?? '';
+  if (token.length !== expectedHexLength) return undefined;
+  if (!/^[0-9a-fA-F]+$/u.test(token)) return undefined;
+  return token.toLowerCase();
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof ProviderError &&
+    (error.code === 'PACKAGE_NOT_FOUND' ||
+      error.upstreamStatus === 404 ||
+      error.upstreamStatus === 410)
+  );
 }
 
 export function parseMavenMetadataXml(xml: string): MavenMetadataDocument {
@@ -1113,30 +1141,160 @@ export class MavenRepositoryProvider implements CatalogProvider {
         'VERSION_NOT_FOUND',
         'inspect requires an exact Maven PURL with groupId',
       );
-    const packaging = parsed.qualifiers.type ?? 'jar';
+    if (isMavenSnapshotVersion(parsed.version))
+      throw new ProviderError(
+        'VERSION_NOT_FOUND',
+        `Refusing to inspect Maven SNAPSHOT ${canonical}; unique timestamps are not resolved`,
+      );
+    const requestedPackaging = parsed.qualifiers.type;
     const classifier = parsed.qualifiers.classifier;
-    const catalogUrl = this.catalogEntryUrl(
+    const pomUrl = this.repositoryFileUrl(
       parsed.namespace,
       parsed.name,
       parsed.version,
-      packaging,
-      classifier,
+      'pom',
     );
-    const record = await this.fetchJsonRecord<MavenCatalogEntry>(
-      `${canonical}:catalog`,
-      catalogUrl,
+    const record = await this.fetchPomRecord(
+      `${canonical}:pom`,
+      pomUrl,
+      canonical,
       signal,
     );
-    const entry = record.body;
+    const pom = parseMavenPom(record.body);
+    const coordinates = resolvedPomCoordinates(pom);
     if (
-      entry.groupId !== parsed.namespace ||
-      entry.artifactId !== parsed.name ||
-      this.codec.compareNativeVersions(entry.version, parsed.version) !== 0
+      !coordinates.complete ||
+      coordinates.groupId === undefined ||
+      coordinates.artifactId === undefined ||
+      coordinates.version === undefined
     )
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `Catalog entry identity does not match ${canonical}`,
+        `POM groupId, artifactId, and version cannot be completed from this POM file alone for ${canonical}`,
       );
+    if (
+      coordinates.groupId !== parsed.namespace ||
+      coordinates.artifactId !== parsed.name ||
+      this.codec.compareNativeVersions(coordinates.version, parsed.version) !==
+        0
+    )
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `POM identity does not match ${canonical}`,
+      );
+
+    const { included, skippedUnresolved } = resolvedPomDependencies(pom);
+    const losses: SemanticLoss[] = [];
+    const warnings: ProviderWarning[] = [];
+    const noteLoss = (
+      code: string,
+      sourcePath: string,
+      originalMeaning: string,
+      representedMeaning?: string,
+    ) => {
+      losses.push(
+        semanticLoss(
+          'maven',
+          code,
+          sourcePath,
+          originalMeaning,
+          representedMeaning,
+        ),
+      );
+      warnings.push({ code, message: originalMeaning, path: sourcePath });
+    };
+    if (pom.parent !== undefined)
+      noteLoss(
+        'MAVEN_PARENT_NOT_INLINED',
+        '/parent',
+        'Parent POM is not fetched or inlined; only this POM file is the inspect authority',
+        'Dependencies written in this POM only',
+      );
+    if (pomHasImportBom(pom))
+      noteLoss(
+        'MAVEN_BOM_NOT_INLINED',
+        '/dependencyManagement',
+        'Imported BOM POM is not fetched or inlined',
+        'BOM-managed versions remain unresolved unless written in this POM',
+      );
+    if (pom.profileDependencies.length > 0)
+      noteLoss(
+        'MAVEN_PROFILES_NATIVE_ONLY',
+        '/profiles',
+        'Maven profile-only dependencies are ignored during inspect',
+        'Active-profile resolution is native-only',
+      );
+    if (skippedUnresolved.length > 0)
+      noteLoss(
+        'MAVEN_DEPENDENCY_VERSION_UNRESOLVED',
+        '/dependencies',
+        'Dependencies with missing or unresolved versions were omitted rather than rewritten as *',
+      );
+
+    const artifactPackaging = requestedPackaging ?? coordinates.packaging;
+    const artifactUrl = this.repositoryFileUrl(
+      coordinates.groupId,
+      coordinates.artifactId,
+      coordinates.version,
+      artifactPackaging,
+      classifier,
+    );
+    const checksum = await this.readArtifactChecksums(
+      coordinates.groupId,
+      coordinates.artifactId,
+      coordinates.version,
+      artifactPackaging,
+      classifier,
+      signal,
+    );
+    // Stock Maven layout has no OpenPacker sidecar. Probe catalog.json only
+    // when checksum siblings did not already supply sha256, so inspect of a
+    // Central-shaped repo never requires (and, with a sibling digest, never
+    // requests) catalog.json. When the sidecar is present it remains an overlay.
+    let overlay: MavenCatalogEntry | undefined;
+    if (checksum.sha256 === undefined) {
+      overlay = await this.fetchCatalogOverlay(
+        this.catalogEntryUrl(
+          parsed.namespace,
+          parsed.name,
+          parsed.version,
+          artifactPackaging,
+          classifier,
+        ),
+        signal,
+      );
+      if (overlay !== undefined)
+        this.assertCatalogIdentity(overlay, canonical, {
+          namespace: parsed.namespace,
+          name: parsed.name,
+          version: parsed.version,
+        });
+    }
+
+    const openpackerSha256 = overlay?.openpackerSha256 ?? checksum.sha256;
+    if (checksum.sha1 !== undefined && openpackerSha256 === undefined)
+      noteLoss(
+        'MAVEN_SHA1_NOT_SHA256',
+        '/checksums/sha1',
+        'Maven advertised SHA-1 for the artifact; SHA-256 was not invented from it',
+      );
+    const packageSize = overlay?.packageSize;
+    const packageUri = overlay?.packageUrl ?? artifactUrl;
+    const entry: MavenCatalogEntry = {
+      groupId: coordinates.groupId,
+      artifactId: coordinates.artifactId,
+      version: coordinates.version,
+      packaging: coordinates.packaging,
+      dependencies: included,
+      packageUrl: packageUri,
+      ...(classifier === undefined ? {} : { classifier }),
+      ...(pom.name === undefined ? {} : { name: pom.name }),
+      ...(pom.description === undefined
+        ? {}
+        : { description: pom.description }),
+      ...(openpackerSha256 === undefined ? {} : { openpackerSha256 }),
+      ...(packageSize === undefined ? {} : { packageSize }),
+    };
     const metadataDigest = await canonicalDigest(entry as unknown as JsonValue);
     const translated = await this.codec.translateMetadata(entry, {
       providerId: this.providerId,
@@ -1149,26 +1307,36 @@ export class MavenRepositoryProvider implements CatalogProvider {
         type: 'provider-metadata',
         locator: `urn:openpacker:maven:${entry.groupId}:${entry.artifactId}:${entry.version}`,
         digest: metadataDigest,
-        mediaType: 'application/json',
+        mediaType: 'application/xml',
       },
     });
-    const packageUri =
-      entry.packageUrl ??
-      `${this.repositoryUrl.replace(/\/$/, '')}/${mavenRepositoryPath(
-        entry.groupId,
-        entry.artifactId,
-        entry.version,
-        entry.packaging ?? packaging,
-        entry.classifier ?? classifier,
-      )}`;
+    if (openpackerSha256 !== undefined)
+      translated.instance.semanticLoss =
+        translated.instance.semanticLoss.filter(
+          (loss) => loss.code !== 'MAVEN_SHA256_NOT_SUPPLIED',
+        );
+    translated.instance.semanticLoss = [
+      ...translated.instance.semanticLoss,
+      ...losses,
+    ];
+    const nativeData = {
+      ...(translated.instance.nativeSemantics.data as Record<string, unknown>),
+      packageUrl: packageUri,
+      ...(openpackerSha256 === undefined ? {} : { openpackerSha256 }),
+      ...(checksum.sha1 === undefined || openpackerSha256 !== undefined
+        ? {}
+        : { sha1: checksum.sha1 }),
+    };
+    translated.instance.nativeSemantics = {
+      ...translated.instance.nativeSemantics,
+      data: nativeData as JsonValue,
+    };
     this.#artifactSources.set(canonical, {
       uri: packageUri,
-      ...(entry.packageSize === undefined
+      ...(packageSize === undefined ? {} : { expectedSize: packageSize }),
+      ...(openpackerSha256 === undefined
         ? {}
-        : { expectedSize: entry.packageSize }),
-      ...(entry.openpackerSha256 === undefined
-        ? {}
-        : { expectedSha256: entry.openpackerSha256 }),
+        : { expectedSha256: openpackerSha256 }),
     });
     if (translated.instance.artifacts[0]) {
       translated.instance.artifacts[0].locations = [
@@ -1180,7 +1348,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
         },
       ];
     }
-    return { package: translated.instance, record, warnings: [] };
+    return { package: translated.instance, record, warnings };
   }
 
   async fetchArtifactRecord(
@@ -1329,9 +1497,176 @@ export class MavenRepositoryProvider implements CatalogProvider {
     packaging: string,
     classifier?: string,
   ): string {
+    return this.repositoryFileUrl(
+      groupId,
+      artifactId,
+      version,
+      `${packaging}.catalog.json`,
+      classifier,
+    );
+  }
+
+  private repositoryFileUrl(
+    groupId: string,
+    artifactId: string,
+    version: string,
+    packaging: string,
+    classifier?: string,
+  ): string {
     const base = this.repositoryUrl.replace(/\/$/, '');
-    // OpenPacker catalog entries are JSON sidecars beside the Maven path.
-    return `${base}/${mavenRepositoryPath(groupId, artifactId, version, `${packaging}.catalog.json`, classifier)}`;
+    return `${base}/${mavenRepositoryPath(
+      groupId,
+      artifactId,
+      version,
+      packaging,
+      classifier,
+    )}`;
+  }
+
+  private async fetchPomRecord(
+    key: string,
+    url: string,
+    canonical: string,
+    signal?: AbortSignal,
+  ): Promise<ProviderRecord<string>> {
+    const response = await this.requestRequired(
+      url,
+      signal,
+      'application/xml,text/xml,*/*',
+    );
+    if (response === undefined)
+      throw new ProviderError(
+        'VERSION_NOT_FOUND',
+        `Maven POM was not found for ${canonical}`,
+        404,
+      );
+    const record: ProviderRecord<string> = {
+      key,
+      endpoint: response.url,
+      ...(header(response, 'etag') === undefined
+        ? {}
+        : { etag: header(response, 'etag') }),
+      body: text(response),
+      rawBody: response.body,
+      retrievedAt: this.clock.now(),
+    };
+    this.#records.set(key, record);
+    return record;
+  }
+
+  private async readArtifactChecksums(
+    groupId: string,
+    artifactId: string,
+    version: string,
+    packaging: string,
+    classifier: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ sha256?: string; sha1?: string }> {
+    const sha256Url = this.repositoryFileUrl(
+      groupId,
+      artifactId,
+      version,
+      `${packaging}.sha256`,
+      classifier,
+    );
+    const sha256Body = await this.fetchOptionalText(sha256Url, signal);
+    if (sha256Body !== undefined) {
+      const sha256 = parseMavenChecksum(sha256Body, 64);
+      if (sha256 === undefined)
+        throw new ProviderError(
+          'INVALID_PROVIDER_METADATA',
+          'Maven SHA-256 sidecar is not a 64-character hex digest',
+        );
+      return { sha256 };
+    }
+    const sha1Url = this.repositoryFileUrl(
+      groupId,
+      artifactId,
+      version,
+      `${packaging}.sha1`,
+      classifier,
+    );
+    const sha1Body = await this.fetchOptionalText(sha1Url, signal);
+    if (sha1Body === undefined) return {};
+    const sha1 = parseMavenChecksum(sha1Body, 40);
+    if (sha1 === undefined)
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        'Maven SHA-1 sidecar is not a 40-character hex digest',
+      );
+    return { sha1 };
+  }
+
+  private async fetchCatalogOverlay(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<MavenCatalogEntry | undefined> {
+    const response = await this.fetchOptionalResponse(
+      url,
+      signal,
+      'application/json',
+    );
+    if (response === undefined) return undefined;
+    return json<MavenCatalogEntry>(response);
+  }
+
+  private assertCatalogIdentity(
+    entry: MavenCatalogEntry,
+    canonical: string,
+    parsed: { namespace: string; name: string; version: string },
+  ): void {
+    if (
+      entry.groupId !== parsed.namespace ||
+      entry.artifactId !== parsed.name ||
+      this.codec.compareNativeVersions(entry.version, parsed.version) !== 0
+    )
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `Catalog entry identity does not match ${canonical}`,
+      );
+  }
+
+  private async fetchOptionalText(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const response = await this.fetchOptionalResponse(
+      url,
+      signal,
+      'text/plain',
+    );
+    return response === undefined ? undefined : text(response);
+  }
+
+  private async fetchOptionalResponse(
+    url: string,
+    signal?: AbortSignal,
+    accept = '*/*',
+  ): Promise<HttpResponse | undefined> {
+    const response = await this.requestRequired(url, signal, accept);
+    return response;
+  }
+
+  private async requestRequired(
+    url: string,
+    signal: AbortSignal | undefined,
+    accept: string,
+  ): Promise<HttpResponse | undefined> {
+    try {
+      const response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: 8 * 1024 * 1024,
+        headers: { accept },
+      });
+      if (response.status === 404 || response.status === 410) return undefined;
+      if (response.status < 200 || response.status >= 300)
+        throw providerErrorForStatus(response.status);
+      return response;
+    } catch (error) {
+      if (isNotFoundError(error)) return undefined;
+      throw error;
+    }
   }
 
   private async metadataRecord(

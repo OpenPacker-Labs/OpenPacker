@@ -1,0 +1,117 @@
+{
+  "identity": {
+    "exactPurl": "pkg:maven/org.example/demo-tool@1.0.0",
+    "namespace": "org.example",
+    "name": "demo-tool"
+  },
+  "requirements": [
+    {
+      "purl": "pkg:maven/org.junit.jupiter/junit-jupiter",
+      "kind": "development",
+      "optional": false,
+      "native": {
+        "groupId": "org.junit.jupiter",
+        "artifactId": "junit-jupiter",
+        "version": "5.10.2",
+        "scope": "test",
+        "optional": false
+      }
+    },
+    {
+      "purl": "pkg:maven/com.google.guava/guava",
+      "kind": "runtime",
+      "optional": false,
+      "native": {
+        "groupId": "com.google.guava",
+        "artifactId": "guava",
+        "version": "32.1.3-jre",
+        "scope": "compile",
+        "optional": false,
+        "exclusions": [
+          {
+            "groupId": "com.google.code.findbugs",
+            "artifactId": "jsr305"
+          }
+        ]
+      }
+    },
+    {
+      "purl": "pkg:maven/org.apache.commons/commons-lang3",
+      "vers": "vers:maven/>=3.12.0|<4.0.0",
+      "kind": "runtime",
+      "optional": false,
+      "native": {
+        "groupId": "org.apache.commons",
+        "artifactId": "commons-lang3",
+        "version": "[3.12.0,4.0.0)",
+        "scope": "compile",
+        "optional": false
+      }
+    },
+    {
+      "purl": "pkg:maven/org.example/demo-tool?classifier=sources",
+      "kind": "runtime",
+      "optional": true,
+      "native": {
+        "groupId": "org.example",
+        "artifactId": "demo-tool",
+        "version": "1.0.0",
+        "scope": "provided",
+        "optional": true,
+        "type": "jar",
+        "classifier": "sources"
+      }
+    }
+  ],
+  "native": {
+    "groupId": "org.example",
+    "artifactId": "demo-tool",
+    "packaging": "jar",
+    "dependencies": [
+      {
+        "groupId": "org.apache.commons",
+        "artifactId": "commons-lang3",
+        "version": "[3.12.0,4.0.0)"
+      },
+      {
+        "groupId": "com.google.guava",
+        "artifactId": "guava",
+        "version": "32.1.3-jre",
+        "exclusions": [
+          {
+            "groupId": "com.google.code.findbugs",
+            "artifactId": "jsr305"
+          }
+        ]
+      },
+      {
+        "groupId": "org.junit.jupiter",
+        "artifactId": "junit-jupiter",
+        "version": "5.10.2",
+        "scope": "test"
+      },
+      {
+        "groupId": "org.example",
+        "artifactId": "demo-tool",
+        "version": "1.0.0",
+        "type": "jar",
+        "classifier": "sources",
+        "scope": "provided",
+        "optional": true
+      }
+    ],
+    "name": "Demo Tool",
+    "description": "OpenPacker offline Maven stock-repository inspect fixture",
+    "installScriptsExecuted": false,
+    "packageUrl": "https://fixtures.openpacker.invalid/maven/org/example/demo-tool/1.0.0/demo-tool-1.0.0.jar",
+    "openpackerSha256": "dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d"
+  },
+  "loss": [
+    "MAVEN_DEPENDENCY_VERSION_UNRESOLVED",
+    "MAVEN_PROFILES_NATIVE_ONLY"
+  ],
+  "warnings": [
+    "MAVEN_DEPENDENCY_VERSION_UNRESOLVED",
+    "MAVEN_PROFILES_NATIVE_ONLY"
+  ]
+}

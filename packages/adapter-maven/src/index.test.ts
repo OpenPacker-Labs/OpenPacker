@@ -7,6 +7,7 @@ import {
   interpolateMavenExpression,
   isMavenSnapshotVersion,
   parseGradleLockfile,
+  parseMavenChecksum,
   parseMavenMetadataXml,
   parseMavenPom,
   pomHasImportBom,
@@ -14,6 +15,45 @@ import {
   resolvedPomDependencies,
   type MavenCatalogEntry,
 } from './index.js';
+
+const BASE = 'https://fixtures.openpacker.invalid/maven';
+const DEMO_POM_URL = `${BASE}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.pom`;
+const DEMO_JAR_URL = `${BASE}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.jar`;
+const DEMO_SHA256_URL = `${DEMO_JAR_URL}.sha256`;
+const DEMO_SHA1_URL = `${DEMO_JAR_URL}.sha1`;
+const DEMO_CATALOG_URL = `${DEMO_JAR_URL}.catalog.json`;
+const JAR_SHA256 =
+  'dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d';
+
+function utf8(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function ok(body: Uint8Array | string, etag?: string) {
+  return {
+    status: 200,
+    headers: etag === undefined ? {} : { etag },
+    body: typeof body === 'string' ? utf8(body) : body,
+  };
+}
+
+function mavenProvider(
+  fixtures: ConstructorParameters<typeof FixtureHttpTransport>[0],
+) {
+  const transport = new FixtureHttpTransport(fixtures);
+  return {
+    transport,
+    provider: new MavenRepositoryProvider(
+      transport,
+      { now: () => '2026-08-02T00:00:00Z' },
+      BASE,
+    ),
+  };
+}
+
+function requestedUrls(transport: FixtureHttpTransport): string[] {
+  return transport.requests.map((request) => request.url);
+}
 
 const metadataBytes = await readFile(
   new URL(
@@ -260,6 +300,14 @@ it('discovers Maven Central-style fixture metadata offline', async () => {
           ],
         ],
         [
+          `${base}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.pom`,
+          {
+            status: 200,
+            headers: { etag: '"maven-1"' },
+            body: utf8(stockPomText),
+          },
+        ],
+        [
           `${base}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.jar.catalog.json`,
           {
             status: 200,
@@ -305,10 +353,14 @@ it('discovers Maven Central-style fixture metadata offline', async () => {
     installScriptsExecuted: false,
     packaging: 'jar',
   });
-  expect(inspection.package.requirements[0]?.expression).toMatchObject({
-    type: 'package',
-    purl: 'pkg:maven/org.apache.commons/commons-lang3',
-  });
+  expect(
+    inspection.package.requirements.some(
+      (requirement) =>
+        requirement.expression.type === 'package' &&
+        requirement.expression.purl ===
+          'pkg:maven/org.apache.commons/commons-lang3',
+    ),
+  ).toBe(true);
 
   const artifact = await provider.fetchArtifactRecord(
     'pkg:maven/org.example/demo-tool@1.0.0',
@@ -423,5 +475,225 @@ describe('Maven POM parser', () => {
     });
     expect(isMavenSnapshotVersion('1.0.0-SNAPSHOT')).toBe(true);
     expect(isMavenSnapshotVersion('1.0.0')).toBe(false);
+    expect(parseMavenChecksum(`${JAR_SHA256}  demo-tool-1.0.0.jar\n`, 64)).toBe(
+      JAR_SHA256,
+    );
+  });
+});
+
+describe('Maven stock-repository inspect', () => {
+  it('inspects from POM and sha256 sibling without catalog.json', async () => {
+    const { transport, provider } = mavenProvider(
+      new Map([
+        [DEMO_POM_URL, ok(stockPomText)],
+        [DEMO_SHA256_URL, ok(sha256Sibling)],
+        [DEMO_JAR_URL, ok(archive)],
+      ]),
+    );
+
+    const inspection = await provider.inspect(
+      'pkg:maven/org.example/demo-tool@1.0.0',
+    );
+    expect(inspection.package.identity).toMatchObject({
+      purlType: 'maven',
+      namespace: 'org.example',
+      name: 'demo-tool',
+      exactPurl: 'pkg:maven/org.example/demo-tool@1.0.0',
+    });
+    expect(inspection.package.nativeSemantics.data).toMatchObject({
+      packaging: 'jar',
+      openpackerSha256: JAR_SHA256,
+      packageUrl: DEMO_JAR_URL,
+    });
+    const purls = inspection.package.requirements.map((requirement) =>
+      requirement.expression.type === 'package'
+        ? requirement.expression.purl
+        : undefined,
+    );
+    expect(purls).toContain('pkg:maven/org.apache.commons/commons-lang3');
+    expect(purls).toContain('pkg:maven/com.google.guava/guava');
+    expect(purls).toContain('pkg:maven/org.junit.jupiter/junit-jupiter');
+    expect(purls).toContain(
+      'pkg:maven/org.example/demo-tool?classifier=sources',
+    );
+    expect(purls.some((purl) => purl?.includes('missing-prop-lib'))).toBe(
+      false,
+    );
+    expect(purls.some((purl) => purl?.includes('profile-only'))).toBe(false);
+    expect(
+      inspection.package.requirements.some(
+        (requirement) =>
+          requirement.expression.type === 'package' &&
+          requirement.expression.vers === undefined &&
+          JSON.stringify(requirement.raw).includes('${'),
+      ),
+    ).toBe(false);
+    expect(inspection.package.semanticLoss.map((loss) => loss.code)).toEqual(
+      expect.arrayContaining([
+        'MAVEN_PROFILES_NATIVE_ONLY',
+        'MAVEN_DEPENDENCY_VERSION_UNRESOLVED',
+      ]),
+    );
+    expect(
+      inspection.package.requirements.some((requirement) =>
+        requirement.semanticLoss.some(
+          (loss) => loss.code === 'MAVEN_EXCLUSIONS_NATIVE_ONLY',
+        ),
+      ),
+    ).toBe(true);
+    expect(requestedUrls(transport)).toContain(DEMO_POM_URL);
+    expect(requestedUrls(transport)).toContain(DEMO_SHA256_URL);
+    expect(requestedUrls(transport)).not.toContain(DEMO_CATALOG_URL);
+
+    const artifact = await provider.fetchArtifactRecord(
+      'pkg:maven/org.example/demo-tool@1.0.0',
+    );
+    expect(artifact.body).toMatchObject({
+      digest: { value: JAR_SHA256 },
+      size: 28,
+    });
+  });
+
+  it('does not require catalog.json when the POM is missing', async () => {
+    const { transport, provider } = mavenProvider(new Map());
+    await expect(
+      provider.inspect('pkg:maven/org.example/demo-tool@1.0.0'),
+    ).rejects.toMatchObject({ code: 'VERSION_NOT_FOUND' });
+    expect(requestedUrls(transport)).toEqual([DEMO_POM_URL]);
+    expect(requestedUrls(transport)).not.toContain(DEMO_CATALOG_URL);
+  });
+
+  it('rejects a catalog overlay whose GAV does not match the POM', async () => {
+    const { provider } = mavenProvider(
+      new Map([
+        [DEMO_POM_URL, ok(stockPomText)],
+        [
+          DEMO_CATALOG_URL,
+          ok(
+            catalogBytes
+              .toString('utf8')
+              .replace('"groupId": "org.example"', '"groupId": "org.other"'),
+          ),
+        ],
+      ]),
+    );
+    await expect(
+      provider.inspect('pkg:maven/org.example/demo-tool@1.0.0'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+  });
+
+  it('uses catalog overlay sha256 when the sidecar is present', async () => {
+    const { transport, provider } = mavenProvider(
+      new Map([
+        [DEMO_POM_URL, ok(stockPomText)],
+        [DEMO_CATALOG_URL, ok(catalogBytes)],
+        [DEMO_JAR_URL, ok(archive)],
+      ]),
+    );
+    const inspection = await provider.inspect(
+      'pkg:maven/org.example/demo-tool@1.0.0',
+    );
+    expect(inspection.package.artifacts[0]).toMatchObject({
+      digest: { value: JAR_SHA256 },
+      size: 28,
+      locations: [{ uri: DEMO_JAR_URL }],
+    });
+    expect(requestedUrls(transport)).toContain(DEMO_CATALOG_URL);
+  });
+
+  it('records parent and BOM loss without fetching those coordinates', async () => {
+    const childPomUrl = `${BASE}/org/example/child-tool/1.0.0/child-tool-1.0.0.pom`;
+    const parentPomUrl = `${BASE}/org/example/parent-bom/2.0.0/parent-bom-2.0.0.pom`;
+    const bomPomUrl = `${BASE}/org/springframework/boot/spring-boot-dependencies/3.2.0/spring-boot-dependencies-3.2.0.pom`;
+    const { transport, provider } = mavenProvider(
+      new Map([[childPomUrl, ok(childPomText)]]),
+    );
+    const inspection = await provider.inspect(
+      'pkg:maven/org.example/child-tool@1.0.0',
+    );
+    expect(inspection.package.identity.exactPurl).toBe(
+      'pkg:maven/org.example/child-tool@1.0.0',
+    );
+    expect(inspection.package.semanticLoss.map((loss) => loss.code)).toEqual(
+      expect.arrayContaining([
+        'MAVEN_PARENT_NOT_INLINED',
+        'MAVEN_BOM_NOT_INLINED',
+        'MAVEN_DEPENDENCY_VERSION_UNRESOLVED',
+      ]),
+    );
+    const purls = inspection.package.requirements.map((requirement) =>
+      requirement.expression.type === 'package'
+        ? requirement.expression.purl
+        : undefined,
+    );
+    expect(purls).toEqual(['pkg:maven/org.slf4j/slf4j-api']);
+    expect(requestedUrls(transport)).toEqual(
+      expect.arrayContaining([childPomUrl]),
+    );
+    expect(requestedUrls(transport)).not.toContain(parentPomUrl);
+    expect(requestedUrls(transport)).not.toContain(bomPomUrl);
+  });
+
+  it('fail-closes when the POM GAV cannot be completed without a parent', async () => {
+    const { transport, provider } = mavenProvider(
+      new Map([
+        [
+          `${BASE}/org/example/orphan-tool/1.0.0/orphan-tool-1.0.0.pom`,
+          ok(orphanPomText),
+        ],
+      ]),
+    );
+    await expect(
+      provider.inspect('pkg:maven/org.example/orphan-tool@1.0.0'),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
+    expect(
+      requestedUrls(transport).some((url) => url.includes('parent-bom')),
+    ).toBe(false);
+  });
+
+  it('refuses SNAPSHOT inspect without a unique snapshot resolver', async () => {
+    const { transport, provider } = mavenProvider(new Map());
+    await expect(
+      provider.inspect('pkg:maven/org.example/demo-tool@1.0.0-SNAPSHOT'),
+    ).rejects.toMatchObject({ code: 'VERSION_NOT_FOUND' });
+    expect(requestedUrls(transport)).toEqual([]);
+  });
+
+  it('snapshots canonical stock inspect shape', async () => {
+    const { provider } = mavenProvider(
+      new Map([
+        [DEMO_POM_URL, ok(stockPomText)],
+        [DEMO_SHA256_URL, ok(sha256Sibling)],
+      ]),
+    );
+    const inspection = await provider.inspect(
+      'pkg:maven/org.example/demo-tool@1.0.0',
+    );
+    const snapshot = {
+      identity: {
+        exactPurl: inspection.package.identity.exactPurl,
+        namespace: inspection.package.identity.namespace,
+        name: inspection.package.identity.name,
+      },
+      requirements: inspection.package.requirements.map((requirement) => ({
+        purl:
+          requirement.expression.type === 'package'
+            ? requirement.expression.purl
+            : undefined,
+        vers:
+          requirement.expression.type === 'package'
+            ? requirement.expression.vers
+            : undefined,
+        kind: requirement.kind,
+        optional: requirement.optional,
+        native: requirement.nativeSemantics?.data,
+      })),
+      native: inspection.package.nativeSemantics.data,
+      loss: inspection.package.semanticLoss.map((loss) => loss.code).sort(),
+      warnings: inspection.warnings.map((warning) => warning.code).sort(),
+    };
+    await expect(`${JSON.stringify(snapshot, null, 2)}\n`).toMatchFileSnapshot(
+      '__snapshots__/stock-inspect.snap',
+    );
   });
 });
