@@ -8,6 +8,7 @@ coverage
 package-lock.json
 Cargo.lock
 fixtures/artifacts
+kimi-export-session_*.md
 
 # Repo-local agent skills (mirrors must stay byte-identical; format deliberately)
 .agents/skills/**
