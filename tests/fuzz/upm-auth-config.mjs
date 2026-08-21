@@ -84,13 +84,19 @@ for (const raw of [
   '{"version":1,"origins":[]}',
   '{"version":1,"origins":null}',
   '{"version":1,"origins":{"https://npm.internal.example":"NPM_TOKEN"}}',
-  '{"version":1,"origins":{"https://npm.internal.example":{}}}',
   '{"version":1,"origins":{"https://npm.internal.example":{"tokenEnv":"npm-token"}}}',
   '{"version":1,"origins":{"https://npm.internal.example":{"tokenEnv":"NPM_TOKEN"}},"extra":true}',
 ]) {
   mustFail(raw, 'malformed-vector');
   malformed += 1;
 }
+
+// A pin-only origin (no tokenEnv) is valid: it requires pinned artifacts
+// without sending a token. See fd6e28e and auth-config.test.ts.
+const pinOnly = parseAuthConfig(
+  '{"version":1,"origins":{"https://npm.internal.example":{}}}',
+);
+assert.deepEqual(pinOnly.origins['https://npm.internal.example'], {});
 
 for (const tokenEnv of [
   'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
