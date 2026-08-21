@@ -246,3 +246,15 @@ export {
   type SourceKind,
   type TrustTier,
 } from './supply-chain.js';
+
+export {
+  defaultAuthConfigPath,
+  readAuthConfig,
+  upsertAuthOrigin,
+  removeAuthOrigin,
+  tokenEnvNameForOrigin,
+  parseAuthConfig,
+  applyAuthConfigToEnvNames,
+  hostFetchTokenEnvNamesFromAuth,
+  type AuthConfig,
+} from './auth-config.js';
