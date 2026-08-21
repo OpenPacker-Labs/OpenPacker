@@ -135,13 +135,87 @@ describe('registry configuration', () => {
     process.env.OPM_REGISTRY_NPM = 'https://npm.internal.example';
     try {
       expect(registryEndpoint('npm')).toBe('https://npm.internal.example');
-      // Naming a registry is what authorizing it means.
+      // Naming a registry is what authorizing it means — and D6-N drops the
+      // hardcoded public CDN rather than unioning it with the override.
       expect(allowedOriginsFor('npm')).toContain(
         'https://npm.internal.example',
+      );
+      expect(allowedOriginsFor('npm')).not.toContain(
+        'https://registry.npmjs.org',
       );
     } finally {
       if (previous === undefined) delete process.env.OPM_REGISTRY_NPM;
       else process.env.OPM_REGISTRY_NPM = previous;
+    }
+  });
+
+  it('keeps the default pypi CDN on the allowlist', () => {
+    expect(allowedOriginsFor('pypi')).toContain(
+      'https://files.pythonhosted.org',
+    );
+    expect(allowedOriginsFor('pypi')).toContain('https://pypi.org');
+  });
+
+  it('drops hardcoded public CDNs when OPM_REGISTRY_PYPI overrides', () => {
+    const previous = process.env.OPM_REGISTRY_PYPI;
+    const previousExtras = process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    process.env.OPM_REGISTRY_PYPI = 'https://pypi.internal.example';
+    delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    try {
+      const allowed = allowedOriginsFor('pypi');
+      expect(allowed).toContain('https://pypi.internal.example');
+      expect(allowed).not.toContain('https://files.pythonhosted.org');
+      expect(allowed).not.toContain('https://pypi.org');
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_PYPI;
+      else process.env.OPM_REGISTRY_PYPI = previous;
+      if (previousExtras === undefined)
+        delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+      else process.env.OPM_REGISTRY_PYPI_ORIGINS = previousExtras;
+    }
+  });
+
+  it('re-allowlists an explicit CDN via OPM_REGISTRY_PYPI_ORIGINS', () => {
+    const previous = process.env.OPM_REGISTRY_PYPI;
+    const previousExtras = process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    process.env.OPM_REGISTRY_PYPI = 'https://pypi.internal.example';
+    process.env.OPM_REGISTRY_PYPI_ORIGINS = 'https://files.pythonhosted.org';
+    try {
+      const allowed = allowedOriginsFor('pypi');
+      expect(allowed).toContain('https://pypi.internal.example');
+      expect(allowed).toContain('https://files.pythonhosted.org');
+      expect(allowed).not.toContain('https://pypi.org');
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_PYPI;
+      else process.env.OPM_REGISTRY_PYPI = previous;
+      if (previousExtras === undefined)
+        delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+      else process.env.OPM_REGISTRY_PYPI_ORIGINS = previousExtras;
+    }
+  });
+
+  it('fails closed on duplicate extra origins', () => {
+    const previous = process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    process.env.OPM_REGISTRY_PYPI_ORIGINS =
+      'https://files.pythonhosted.org,https://files.pythonhosted.org';
+    try {
+      expect(() => allowedOriginsFor('pypi')).toThrow(
+        /OPM_REGISTRY_PYPI_ORIGINS lists duplicate origin/u,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+      else process.env.OPM_REGISTRY_PYPI_ORIGINS = previous;
+    }
+  });
+
+  it('fails closed on HTTP extra origins', () => {
+    const previous = process.env.OPM_REGISTRY_NPM_ORIGINS;
+    process.env.OPM_REGISTRY_NPM_ORIGINS = 'http://cdn.internal.example';
+    try {
+      expect(() => allowedOriginsFor('npm')).toThrow(/HTTPS origin/u);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_REGISTRY_NPM_ORIGINS;
+      else process.env.OPM_REGISTRY_NPM_ORIGINS = previous;
     }
   });
 

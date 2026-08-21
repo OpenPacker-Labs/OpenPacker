@@ -87,10 +87,11 @@ function pypiTransport(): FixtureHttpTransport {
     ],
   ]);
 
-  // Artifact origins must be on the pypi allowlist (files.pythonhosted.org)
-  // for resolveRegistryArtifact's origin check. demo-tool's shared fixture
-  // still uses fixtures.openpacker.invalid in project.json (adapter tests);
-  // map both prefixes so either document shape works offline.
+  // The fixture registry is an operator override (`OPM_REGISTRY_PYPI`);
+  // D6-N drops hardcoded CDNs unless they are named again via
+  // `OPM_REGISTRY_PYPI_ORIGINS`. demo-tool's shared fixture still uses
+  // fixtures.openpacker.invalid in project.json (adapter tests); map both
+  // prefixes so either document shape works offline.
   for (const name of [
     'demo_tool-1.0.0-py3-none-any.whl',
     'demo_tool-1.0.0.tar.gz',
@@ -119,12 +120,17 @@ function pypiTransport(): FixtureHttpTransport {
 }
 
 const previousRegistry = process.env.OPM_REGISTRY_PYPI;
+const previousOrigins = process.env.OPM_REGISTRY_PYPI_ORIGINS;
 
 function withPypiFixtures<T>(run: () => Promise<T>): Promise<T> {
   process.env.OPM_REGISTRY_PYPI = 'https://fixtures.test';
+  process.env.OPM_REGISTRY_PYPI_ORIGINS = 'https://files.pythonhosted.org';
   return run().finally(() => {
     if (previousRegistry === undefined) delete process.env.OPM_REGISTRY_PYPI;
     else process.env.OPM_REGISTRY_PYPI = previousRegistry;
+    if (previousOrigins === undefined)
+      delete process.env.OPM_REGISTRY_PYPI_ORIGINS;
+    else process.env.OPM_REGISTRY_PYPI_ORIGINS = previousOrigins;
   });
 }
 
