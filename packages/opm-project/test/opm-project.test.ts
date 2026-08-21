@@ -1235,7 +1235,7 @@ describe('fail-closed install paths', () => {
       materializeLockPackage({
         root,
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        pkg: cyclic as unknown as typeof pkg,
+        pkg: cyclic as typeof pkg,
         offline: true,
       }),
     ).rejects.toMatchObject({ code: 'INVALID_LOCK' });

@@ -88,7 +88,7 @@ describe('default adapters', () => {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
     });
     await expect(
       provider.enumerate(

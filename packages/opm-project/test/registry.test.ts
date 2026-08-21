@@ -676,7 +676,7 @@ describe('OCI image materialisation', () => {
       if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
         return new Response(layerBytes, { status: 200 });
       return new Response('missing', { status: 404 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
   }
 
   it('classifies an OCI layout media type as plain tar, not gzip', () => {

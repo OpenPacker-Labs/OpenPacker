@@ -376,7 +376,7 @@ describe('OCM mapping', () => {
       resources: [{ name: 'demo', artifact }],
     });
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const invalid = structuredClone(descriptor) as unknown as {
+    const invalid = structuredClone(descriptor) as {
       component: {
         provider: { name: string };
         resources: Array<{

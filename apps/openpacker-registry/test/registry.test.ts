@@ -282,7 +282,7 @@ describe('publish', () => {
     // way to refuse.
     const broken = await signed(manifest());
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    (broken as unknown as { manifest: unknown }).manifest = {
+    (broken as { manifest: unknown }).manifest = {
       ...manifest(),
       distributions: 'oops',
     };

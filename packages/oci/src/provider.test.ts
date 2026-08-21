@@ -41,7 +41,7 @@ function registry(
       status: 200,
       headers: { 'content-type': contentType },
     });
-  }) as unknown as typeof fetch;
+  }) as typeof fetch;
   return { requests, fetchImplementation };
 }
 
@@ -97,7 +97,7 @@ describe('browsing and pinning', () => {
     const fetchImplementation = (async (url: URL | string) => {
       contacted.push(String(url));
       return new Response('{}', { status: 200 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
     const reference =
       'pkg:oci/demo?repository_url=evil.example/acme/demo&tag=latest';
     await expect(
@@ -253,7 +253,7 @@ describe('materialise image layout', () => {
       if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
         return new Response(layerBytes, { status: 200 });
       return new Response('missing', { status: 404 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
   }
 
   it('pulls config and layers into a digest-verified OCI layout tar', async () => {

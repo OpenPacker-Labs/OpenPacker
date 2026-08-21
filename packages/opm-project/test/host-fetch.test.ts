@@ -114,7 +114,7 @@ const INSTANCE: PackageInstance = {
   metadataDigest: { algorithm: 'sha256', value: TOOL_DIGEST },
   nativeSemantics: { version: 'acme-1', data: {} },
   semanticLoss: [],
-} as unknown as PackageInstance;
+} as PackageInstance;
 
 interface DescriptorOverrides {
   digest?: { algorithm: string; value: string };
@@ -276,7 +276,7 @@ describe('delegated host-fetch acquisition', () => {
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
-        }) as unknown as typeof fetch,
+        }) as typeof fetch,
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
     expect(fetched).toBe(false);
@@ -376,7 +376,7 @@ describe('delegated host-fetch acquisition', () => {
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
-          }) as unknown as typeof fetch,
+          }) as typeof fetch,
         }),
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
       expect(fetched).toBe(false);
@@ -401,7 +401,7 @@ describe('delegated host-fetch acquisition', () => {
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
-        }) as unknown as typeof fetch,
+        }) as typeof fetch,
       });
       throw new Error('expected UNSAFE_PATH');
     } catch (error) {
@@ -438,7 +438,7 @@ describe('delegated host-fetch acquisition', () => {
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
-          }) as unknown as typeof fetch,
+          }) as typeof fetch,
         }),
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
       expect(fetched).toBe(false);
@@ -460,7 +460,7 @@ describe('delegated host-fetch acquisition', () => {
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
-          }) as unknown as typeof fetch,
+          }) as typeof fetch,
           lookup: async () => [
             { address, family: address.includes(':') ? 6 : 4 },
           ],
@@ -479,7 +479,7 @@ describe('delegated host-fetch acquisition', () => {
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
-        }) as unknown as typeof fetch,
+        }) as typeof fetch,
         lookup: async () => [],
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
@@ -657,7 +657,7 @@ describe('delegated host-fetch acquisition', () => {
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
-        }) as unknown as typeof fetch,
+        }) as typeof fetch,
         pluginBindings: acmeBinding(['https://evil.example'], 'dev.test.other'),
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
@@ -731,7 +731,7 @@ describe('delegated host-fetch acquisition', () => {
         fetch: (async () => {
           fetched = true;
           return new Response(TOOL_TAR);
-        }) as unknown as typeof fetch,
+        }) as typeof fetch,
       }),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
     expect(fetched).toBe(false);
@@ -755,7 +755,7 @@ describe('delegated host-fetch acquisition', () => {
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
-          }) as unknown as typeof fetch,
+          }) as typeof fetch,
         }),
       ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
       expect(fetched).toBe(false);
@@ -1443,7 +1443,7 @@ describe('delegated host-fetch acquisition', () => {
           fetch: (async () => {
             fetched = true;
             return new Response(TOOL_TAR);
-          }) as unknown as typeof fetch,
+          }) as typeof fetch,
         }),
       ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_ENDPOINT' });
       expect(fetched).toBe(false);
@@ -1580,7 +1580,7 @@ describe('delegated host-fetch acquisition', () => {
       fetch: (() => {
         fetched = true;
         return fetchStub(tarRoute)('');
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
     });
     const record = await provider.fetchArtifactRecord(EXACT);
     expect(artifact.bytes).toEqual(record.rawBody);

@@ -283,7 +283,7 @@ async function readPackReceipt(directory: string): Promise<PackReceipt> {
   const raw = await readStableFile(join(directory, PACK_RECEIPT));
   try {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return parseCanonicalJson(raw) as unknown as PackReceipt;
+    return parseCanonicalJson(raw) as PackReceipt;
   } catch (error) {
     throw new OpmError(
       'INVALID_SPEC',

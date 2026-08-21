@@ -185,7 +185,7 @@ export function createOpenPackerDaemon(
     (body, context) =>
       options.operations.normalize(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as NormalizeRequest,
+        body as NormalizeRequest,
         context,
       ),
   );
@@ -199,7 +199,7 @@ export function createOpenPackerDaemon(
     `${OPERATIONS_SCHEMA}IdentifyResponse`,
     (body, context) =>
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      options.operations.identify(body as unknown as IdentifyRequest, context),
+      options.operations.identify(body as IdentifyRequest, context),
   );
   post(
     app,
@@ -212,7 +212,7 @@ export function createOpenPackerDaemon(
     (body, context) =>
       options.operations.enumerate(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as EnumerateRequest,
+        body as EnumerateRequest,
         context,
       ),
   );
@@ -226,7 +226,7 @@ export function createOpenPackerDaemon(
     `${OPERATIONS_SCHEMA}InspectResponse`,
     (body, context) =>
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      options.operations.inspect(body as unknown as InspectRequest, context),
+      options.operations.inspect(body as InspectRequest, context),
   );
   post(
     app,
@@ -239,7 +239,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.solve(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as SolveRequest,
+        body as SolveRequest,
         context,
       );
       await store.putReceipt(result.signedReceipt ?? result.unsignedReceipt);
@@ -284,7 +284,7 @@ export function createOpenPackerDaemon(
     (body, context) =>
       options.operations.materialize(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as MaterializeRequest,
+        body as MaterializeRequest,
         context,
       ),
   );
@@ -298,7 +298,7 @@ export function createOpenPackerDaemon(
     `${OPERATIONS_SCHEMA}VerifyResponse`,
     async (body, context) => {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const input = body as unknown as VerifyRequest;
+      const input = body as VerifyRequest;
       const result = await options.operations.verify(input, context);
       if (result.decision === 'allow' && isArtifactSubject(input.subject))
         await emitEvent(
@@ -322,7 +322,7 @@ export function createOpenPackerDaemon(
     `${OPERATIONS_SCHEMA}ExplainResponse`,
     (body, context) =>
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      options.operations.explain(body as unknown as ExplainRequest, context),
+      options.operations.explain(body as ExplainRequest, context),
   );
 
   app.get<{ Params: { algorithm: string; digest: string } }>(
@@ -402,7 +402,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.catalogImport(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as import('@openpacker/contracts').CatalogImportRequest,
+        body as import('@openpacker/contracts').CatalogImportRequest,
         context,
       );
       await emitEvent(
@@ -427,7 +427,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.catalogSnapshot(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as import('@openpacker/contracts').CatalogSnapshotRequest,
+        body as import('@openpacker/contracts').CatalogSnapshotRequest,
         context,
       );
       if (Array.isArray(result.snapshots))
@@ -454,7 +454,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.lockImport(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as import('@openpacker/contracts').LockImportRequest,
+        body as import('@openpacker/contracts').LockImportRequest,
         context,
       );
       await store.putReceipt(
@@ -489,7 +489,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.lifecycleApply(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as import('@openpacker/contracts').LifecycleApplyRequest,
+        body as import('@openpacker/contracts').LifecycleApplyRequest,
         context,
       );
       await emitEvent(
@@ -515,7 +515,7 @@ export function createOpenPackerDaemon(
     async (body, context) => {
       const result = await options.operations.pack(
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        body as unknown as import('@openpacker/contracts').PackRequest,
+        body as import('@openpacker/contracts').PackRequest,
         context,
       );
       await emitEvent(

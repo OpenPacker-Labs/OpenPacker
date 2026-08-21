@@ -243,7 +243,7 @@ function latin1(bytes: Uint8Array): string {
   for (let index = 0; index < bytes.length; index += CHUNK)
     out += String.fromCharCode(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      ...(bytes.subarray(index, index + CHUNK) as unknown as number[]),
+      ...Array.from(bytes.subarray(index, index + CHUNK)),
     );
   return out;
 }

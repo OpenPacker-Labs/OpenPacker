@@ -260,7 +260,7 @@ describe('materialiseTree', () => {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parent = {
         fd: -1,
-      } as unknown as import('node:fs/promises').FileHandle;
+      } as import('node:fs/promises').FileHandle;
       expect(() => stableHandlePath(parent)).toThrow(StableHandleError);
       await expect(openChild(parent, 'x', 0)).rejects.toThrow();
       await expect(mkdirChild(parent, 'x')).rejects.toThrow();

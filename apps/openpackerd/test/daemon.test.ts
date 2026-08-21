@@ -776,7 +776,7 @@ describe('openpackerd', () => {
         'pack',
         'publish',
       ].map((name) => [name, unavailable]),
-    ) as unknown as import('../src/operations.js').PrexOperations;
+    ) as import('../src/operations.js').PrexOperations;
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',
@@ -801,7 +801,7 @@ describe('openpackerd', () => {
                 throw new Error('operation must not run');
               },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',
@@ -833,7 +833,7 @@ describe('openpackerd', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
 
     const invalidRequest = await app.inject({
@@ -884,7 +884,7 @@ describe('openpackerd', () => {
                   throw new Error('operation must not run');
                 },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({
       operations,
       maximumTimeoutMilliseconds: 5,
@@ -1010,9 +1010,9 @@ describe('openpackerd', () => {
     const codec = {
       purlType: 'deb',
       canonicalizePurl: (purl: string) => purl,
-    } as unknown as Parameters<
-      typeof createReferenceOperations
-    >[0]['codecs'] extends ReadonlyMap<string, infer Codec> | undefined
+    } as Parameters<typeof createReferenceOperations>[0]['codecs'] extends
+      | ReadonlyMap<string, infer Codec>
+      | undefined
       ? Codec
       : never;
     const operations = createReferenceOperations({
@@ -1220,7 +1220,7 @@ describe('openpackerd HTTP surface hardening', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     return createOpenPackerDaemon({ operations });
   }
 
@@ -1311,7 +1311,7 @@ describe('openpackerd HTTP surface hardening', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',

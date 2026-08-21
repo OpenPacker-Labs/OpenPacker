@@ -341,7 +341,7 @@ async function importLockInput(
       if (typeof parsed.lockfile === 'string') {
         const result: Record<string, JsonValue> = {
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          ...(parsed as unknown as Record<string, JsonValue>),
+          ...(parsed as Record<string, JsonValue>),
         };
         const format = option(args, 'format');
         if (format) result.format = format;
@@ -402,10 +402,10 @@ function receiptVerifyInput(
   const signed =
     isObject(input) && 'receipt' in input
       ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        (input as unknown as SignedReceipt)
+        (input as SignedReceipt)
       : isObject(input) && isObject(input.signedReceipt)
         ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          (input.signedReceipt as unknown as SignedReceipt)
+          (input.signedReceipt as SignedReceipt)
         : undefined;
   if (!signed)
     throw new InputError('receipt verify requires a SignedReceipt input');
@@ -418,7 +418,7 @@ function receiptVerifyInput(
 
 async function exportLock(input: JsonValue): Promise<JsonValue> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const solve = input as unknown as SolveResponse;
+  const solve = input as SolveResponse;
   if (
     !solve.normalizedRequest ||
     !solve.solution ||
@@ -480,7 +480,7 @@ async function exportLock(input: JsonValue): Promise<JsonValue> {
 
 function exportSbom(input: JsonValue): JsonValue {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const solve = input as unknown as SolveResponse;
+  const solve = input as SolveResponse;
   if (!solve.selected || !solve.solution)
     throw new InputError('export sbom requires a SolveResponse');
   const componentRefs = new Map(

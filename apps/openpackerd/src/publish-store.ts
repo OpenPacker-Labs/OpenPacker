@@ -284,7 +284,7 @@ export class FilesystemPublishStore {
     try {
       const raw = await readFile(path, 'utf8');
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return parseCanonicalJson(raw) as unknown as StoredPublishRecord;
+      return parseCanonicalJson(raw) as StoredPublishRecord;
     } catch (error) {
       if (isNotFound(error)) return undefined;
       throw error;
@@ -518,7 +518,7 @@ function tryRegistryPublish(
     if (!isObject(parsed) || !isObject(parsed.manifest)) return undefined;
     if (!isObject(parsed.manifestDigest)) return undefined;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return parsed as unknown as RegistryPublishRequest;
+    return parsed as RegistryPublishRequest;
   } catch {
     return undefined;
   }

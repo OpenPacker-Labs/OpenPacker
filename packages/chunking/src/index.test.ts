@@ -85,7 +85,7 @@ describe('content-defined chunking', () => {
       expect.objectContaining({ code: 'MERKLE_ROOT_MISMATCH' }),
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const algorithm = structuredClone(index) as unknown as {
+    const algorithm = structuredClone(index) as {
       chunking: { algorithm: string };
     };
     algorithm.chunking.algorithm = 'unknown';

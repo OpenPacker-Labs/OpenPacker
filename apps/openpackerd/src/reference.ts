@@ -35,7 +35,7 @@ export async function createStandaloneReferenceOperations(
     ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (parseCanonicalJson(
         await readFile(universePath, 'utf8'),
-      ) as unknown as ResolutionUniverse)
+      ) as ResolutionUniverse)
     : await emptyUniverse();
   const resolver = createEmbeddedResolver(bindings);
   resolver.validateUniverse(universe);

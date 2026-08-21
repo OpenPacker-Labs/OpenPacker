@@ -10,7 +10,7 @@
  * boundary drop a record nobody asks for again.
  */
 
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { canonicalBytes } from '@openpacker/canonical';
@@ -261,7 +261,7 @@ export class RegistryStore {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(status_events)')
-      .all() as unknown as { name: string; pk: number }[];
+      .all() as { name: string; pk: number }[];
     if (
       columns.some(({ name }) => name === 'issued_at') &&
       columns.filter(({ pk }) => pk > 0).length === 3
@@ -270,7 +270,7 @@ export class RegistryStore {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare('SELECT * FROM status_events')
-      .all() as unknown as {
+      .all() as {
       event_id: string;
       name: string;
       version: string;
@@ -463,9 +463,11 @@ export class RegistryStore {
 
   versions(name: string): readonly StoredEntry[] {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const rows = this.#database
-      .prepare('SELECT * FROM entries WHERE name = ? ORDER BY sequence')
-      .all(name) as unknown as Row[];
+    const rows = decodeSqlRows<Row>(
+      this.#database
+        .prepare('SELECT * FROM entries WHERE name = ? ORDER BY sequence')
+        .all(name),
+    );
     return rows.map(toEntry);
   }
 
@@ -504,13 +506,15 @@ export class RegistryStore {
       }
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const rows = this.#database
-      .prepare(
-        `SELECT * FROM entries
+    const rows = decodeSqlRows<Row>(
+      this.#database
+        .prepare(
+          `SELECT * FROM entries
          ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
          ORDER BY sequence LIMIT ?`,
-      )
-      .all(...parameters, query.limit + 1) as unknown as Row[];
+        )
+        .all(...parameters, query.limit + 1),
+    );
 
     const entries = rows.slice(0, query.limit).map(toEntry);
     const filtered =
@@ -646,7 +650,7 @@ export class RegistryStore {
           `SELECT namespace, method, holder_id, holder_verified, verified_at
            FROM namespace_keys WHERE key_id = ?`,
         )
-        .all(rotation.previousKeyId) as unknown as {
+        .all(rotation.previousKeyId) as {
         namespace: string;
         method: string;
         holder_id: string;
@@ -823,7 +827,7 @@ export class RegistryStore {
       (
         this.#database
           .prepare('SELECT * FROM revocations ORDER BY key_id')
-          .all() as unknown as {
+          .all() as {
           key_id: string;
           revoked_at: string;
           effective: string;
@@ -913,7 +917,7 @@ export class RegistryStore {
       (
         this.#database
           .prepare('SELECT * FROM key_rotations ORDER BY rotated_at')
-          .all() as unknown as {
+          .all() as {
           next_key_id: string;
           previous_key_id: string;
           next_public_key: string;
@@ -935,7 +939,7 @@ export class RegistryStore {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(key_rotations)')
-      .all() as unknown as { name: string }[];
+      .all() as { name: string }[];
     if (!columns.some(({ name }) => name === 'chain_depth'))
       this.#database.exec(
         'ALTER TABLE key_rotations ADD COLUMN chain_depth INTEGER NOT NULL DEFAULT 0',
@@ -1130,9 +1134,9 @@ export class RegistryStore {
   /** Every redirect, for chain resolution. */
   redirects(): ReadonlyMap<string, PackageRedirect> {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const rows = this.#database
-      .prepare('SELECT * FROM redirects')
-      .all() as unknown as RedirectRow[];
+    const rows = decodeSqlRows<RedirectRow>(
+      this.#database.prepare('SELECT * FROM redirects').all(),
+    );
     return new Map(
       rows.map((row) => [row.from_name, toRedirect(row).redirect]),
     );
@@ -1168,7 +1172,7 @@ export class RegistryStore {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(namespace_keys)')
-      .all() as unknown as { name: string }[];
+      .all() as { name: string }[];
     if (!columns.some(({ name }) => name === 'holder_verified'))
       this.#database.exec(
         'ALTER TABLE namespace_keys ADD COLUMN holder_verified INTEGER NOT NULL DEFAULT 0',
@@ -1232,6 +1236,12 @@ interface RedirectRow {
   next_holder: string | null;
   redirect_digest: string;
   signatures: Uint8Array;
+}
+
+function decodeSqlRows<T>(
+  rows: readonly Record<string, SQLOutputValue>[],
+): T[] {
+  return rows.map((row) => row as T);
 }
 
 function toRedirect(row: RedirectRow): {
@@ -1300,9 +1310,7 @@ function toEntry(row: Row): StoredEntry {
     ...(!(row.source_id === null) && { sourceId: row.source_id }),
     manifestDigest: row.manifest_digest,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    manifest: JSON.parse(
-      decoder.decode(row.manifest),
-    ) as unknown as PackageManifest,
+    manifest: JSON.parse(decoder.decode(row.manifest)) as PackageManifest,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     signatures: JSON.parse(decoder.decode(row.signatures)) as unknown[],
   };

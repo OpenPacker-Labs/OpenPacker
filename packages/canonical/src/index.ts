@@ -213,8 +213,9 @@ class JsonParser {
   }
 }
 
-export function parseCanonicalJson(text: string): JsonValue {
-  return new JsonParser(text).parse();
+export function parseCanonicalJson<T = JsonValue>(text: string): T {
+  // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
+  return new JsonParser(text).parse() as T;
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Digest> {

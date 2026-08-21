@@ -673,7 +673,9 @@ export async function evaluatePolicy(
 
   const policyDigest = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    policy as unknown as import('@openpacker/contracts').JsonValue,
+    JSON.parse(
+      JSON.stringify(policy),
+    ) as import('@openpacker/contracts').JsonValue,
   );
   const decision = checks.some(
     (check) => check.status === 'invalid' || check.status === 'policy-denied',

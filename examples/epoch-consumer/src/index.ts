@@ -125,7 +125,7 @@ const SIGNED_RECEIPT_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SignedReceipt';
 
 export async function consumeResolution(input: {
-  client: OpenPackerClient;
+  client: Pick<OpenPackerClient, 'solve' | 'verify' | 'receipt'>;
   request: SolveRequest;
   port: EpochConsumerPort;
   receiptVerifiers: ReadonlyMap<string, Verifier>;

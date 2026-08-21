@@ -125,7 +125,7 @@ export function parsePluginResponse(
         .join('; ')}`,
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const response = parsed.value as unknown as DelegatedAdapterResponse;
+  const response = parsed.value as DelegatedAdapterResponse;
   if (response.ok && response.result === undefined)
     invalid('successful response carries no result');
   if (!response.ok && response.error === undefined)
@@ -290,7 +290,7 @@ function validateSchema<T>(
         .join('; ')}`,
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return value as unknown as T;
+  return value as T;
 }
 
 /**

@@ -576,7 +576,7 @@ export class NugetCodec
             packageTypes: metadata.packageTypes ?? [],
             vulnerabilities: metadata.vulnerabilities ?? [],
             ...(!(metadata.deprecation === undefined) && {
-              deprecation: metadata.deprecation as unknown as JsonValue,
+              deprecation: metadata.deprecation as JsonValue,
             }),
             ...(!(metadata.repository === undefined) && {
               repository: metadata.repository,

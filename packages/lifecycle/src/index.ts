@@ -216,7 +216,9 @@ export async function reduceLifecycle(
   state = { ...state, derivationEventIds: derivation };
   const root = await canonicalDigest(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    history as unknown as import('@openpacker/contracts').JsonValue,
+    JSON.parse(
+      JSON.stringify(history),
+    ) as import('@openpacker/contracts').JsonValue,
   );
   return { state, history, root };
 }

@@ -181,7 +181,7 @@ export class RegistryClient {
         `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const body = value as unknown as SignedRevocationList;
+    const body = value as SignedRevocationList;
     const definition = await this.definition(signal);
     if (body.list.registryId !== definition.registryId)
       throw new ProviderError(
@@ -244,13 +244,13 @@ export class RegistryClient {
   /** The registry's service index, fetched once and reused. */
   async definition(signal?: AbortSignal): Promise<RegistryDefinitionLike> {
     if (this.#definition) return this.#definition;
-    const body = await this.#json(
+    const body = await this.#json<RegistryDefinitionLike>(
       `${this.#baseUrl}${WELL_KNOWN}`,
       RESPONSE_BYTES.definition,
       signal,
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const definition = body as unknown as RegistryDefinitionLike;
+    const definition = body;
     if (definition.registryDefinitionVersion !== '1')
       throw new ProviderError(
         'UNSUPPORTED_PROVIDER',
@@ -320,7 +320,7 @@ export class RegistryClient {
       options.signal,
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const page = response.value as unknown as PackagePage;
+    const page = response.value as PackagePage;
     if (!Array.isArray(page.packages) || !page.metadata)
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
@@ -507,12 +507,13 @@ export class RegistryClient {
     };
   }
 
-  async #json(
+  async #json<T = JsonValue>(
     url: string,
     maximumBytes: number,
     signal?: AbortSignal,
-  ): Promise<JsonValue> {
-    return (await this.#jsonDocument(url, maximumBytes, signal)).value;
+  ): Promise<T> {
+    // SAFETY: The caller supplies the schema-derived response type for this endpoint.
+    return (await this.#jsonDocument(url, maximumBytes, signal)).value as T;
   }
 
   async #jsonDocument(
@@ -609,7 +610,7 @@ function paginationLimits(
         );
       return [name, value];
     }),
-  ) as unknown as PaginationLimits;
+  ) as PaginationLimits;
 }
 
 function paginationLimit(detail: string): ProviderError {

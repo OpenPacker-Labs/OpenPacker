@@ -278,14 +278,11 @@ function evalMarkerAtom(
       atom.trim(),
     );
   if (!match) return 'unknown';
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const [, variable, op, , literal] = match as unknown as [
-    string,
-    string,
-    string,
-    string,
-    string,
-  ];
+  const variable = match[1];
+  const op = match[2];
+  const literal = match[4];
+  if (variable === undefined || op === undefined || literal === undefined)
+    return 'unknown';
 
   if (variable === 'extra') {
     if (op === '==') return env.extras.has(literal);
@@ -766,8 +763,7 @@ export async function solveGraph(input: {
   return {
     selected,
     dependencyEdges,
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    solutionDigest: solved.solution.solutionDigest as unknown as string,
+    solutionDigest: solved.solution.solutionDigest.value,
     proofValid: checked.valid,
   };
 }

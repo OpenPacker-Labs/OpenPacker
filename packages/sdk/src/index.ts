@@ -345,7 +345,7 @@ export class OpenPackerClient {
         .filter((line): line is string => line !== undefined)
         .map((line) => ({
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          event: parseCanonicalJson(line) as unknown as OpenPackerCloudEvent,
+          event: parseCanonicalJson(line) as OpenPackerCloudEvent,
           rawBytes: new TextEncoder().encode(line),
         }));
       const rawCursor = response.headers.get('x-openpacker-next-cursor');

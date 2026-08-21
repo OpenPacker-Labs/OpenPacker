@@ -220,9 +220,9 @@ export class InMemoryCatalogStore {
     return bytes === undefined
       ? undefined
       : // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        (parseCanonicalJson(
+        parseCanonicalJson<CatalogSnapshotBundle>(
           new TextDecoder().decode(bytes),
-        ) as unknown as CatalogSnapshotBundle);
+        );
   }
 
   export(digest: string): Uint8Array {
@@ -237,9 +237,9 @@ export class InMemoryCatalogStore {
 
   async import(bytes: Uint8Array): Promise<CatalogSnapshotBundle> {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const bundle = parseCanonicalJson(
+    const bundle = parseCanonicalJson<CatalogSnapshotBundle>(
       new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-    ) as unknown as CatalogSnapshotBundle;
+    );
     await this.put(bundle);
     return bundle;
   }

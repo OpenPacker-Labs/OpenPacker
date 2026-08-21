@@ -169,14 +169,14 @@ describe('read-time normalisation', () => {
         ...value,
         packageManifestVersion: '2',
         summary: value.description ?? '',
-      }) as unknown as PackageManifest,
+      }) as PackageManifest,
   };
   const toV1: ManifestMigration = {
     from: 2,
     to: 1,
     migrate: (value) =>
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      ({ ...value, packageManifestVersion: '1' }) as unknown as PackageManifest,
+      ({ ...value, packageManifestVersion: '1' }) as PackageManifest,
   };
 
   it('serves what is stored when the client accepts it', () => {
@@ -218,7 +218,7 @@ describe('read-time normalisation', () => {
       manifest('com.example.tool'),
       [3],
       [stepA, stepB, long],
-    ) as unknown as { via: string };
+    ) as { via: string };
     expect(result.via).toBe('direct');
   });
 

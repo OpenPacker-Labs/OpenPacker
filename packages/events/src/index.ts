@@ -165,11 +165,9 @@ export async function createCloudEvent<T extends EventType>(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     data: input.data as EventData,
     externalrefs: input.externalRefs ?? [],
-    ...(!(input.causationId === undefined) && {
-      causationid: input.causationId,
-    }),
-    ...(!(Object.keys(extensions).length === 0) && { extensions }),
   } as unknown as OpenPackerEventByType<T>;
+  if (input.causationId !== undefined) event.causationid = input.causationId;
+  if (Object.keys(extensions).length !== 0) event.extensions = extensions;
   await verifyCloudEvent(event);
   return event;
 }
@@ -236,7 +234,7 @@ export async function decodeCloudEvent(
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const event = parseCanonicalJson(
     new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-  ) as unknown as OpenPackerCloudEvent;
+  ) as OpenPackerCloudEvent;
   await verifyCloudEvent(event, bytes);
   return event;
 }

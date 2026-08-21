@@ -568,7 +568,7 @@ async function inspectPluginArtifact(
           .join('; '),
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const manifest = parsed.value as unknown as DelegatedAdapterManifest;
+  const manifest = parsed.value as DelegatedAdapterManifest;
   if (executables.length !== 1 || executables[0]!.path !== manifest.executable)
     throw invalid(
       `must contain exactly one executable, named "${manifest.executable}" ` +
@@ -744,22 +744,25 @@ function validatePluginIndex(value: unknown, indexPath: string): PluginIndex {
     parsePluginName(name);
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
       throw invalid(`plugins.${name} must be an object`);
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const pin = raw as Record<string, unknown>;
-    for (const field of [
-      'id',
-      'name',
-      'exactPurl',
-      'storeDigest',
-      'treeDigest',
-      'manifestPath',
-      'installedAt',
-      'format',
-    ] as const)
-      if (typeof pin[field] !== 'string' || pin[field] === '')
+    const stringValue = (field: string): string => {
+      const value = raw[field];
+      if (typeof value !== 'string' || value === '')
         throw invalid(`plugins.${name}.${field} must be a non-empty string`);
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const typed = pin as unknown as PluginPin;
+      return value;
+    };
+    const format = stringValue('format');
+    if (format !== 'tar' && format !== 'tar+gzip' && format !== 'zip')
+      throw invalid(`plugins.${name}.format is not an archive format`);
+    const typed: PluginPin = {
+      id: stringValue('id'),
+      name: stringValue('name'),
+      exactPurl: stringValue('exactPurl'),
+      storeDigest: stringValue('storeDigest'),
+      treeDigest: stringValue('treeDigest'),
+      manifestPath: stringValue('manifestPath'),
+      installedAt: stringValue('installedAt'),
+      format,
+    };
     if (typed.name !== name)
       throw invalid(`plugins.${name}.name is contradictory`);
     if (!typed.exactPurl.startsWith(`pkg:${PLUGIN_PURL_TYPE}/`))
@@ -774,8 +777,6 @@ function validatePluginIndex(value: unknown, indexPath: string): PluginIndex {
       );
     if (!Number.isFinite(Date.parse(typed.installedAt)))
       throw invalid(`plugins.${name}.installedAt must be a timestamp`);
-    if (!['tar', 'tar+gzip', 'zip'].includes(typed.format))
-      throw invalid(`plugins.${name}.format is not an archive format`);
     assertSafeSegment(storeKeyFromDigest(typed.storeDigest), 'store key');
     plugins[name] = typed;
   }

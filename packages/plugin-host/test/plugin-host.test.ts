@@ -1199,7 +1199,7 @@ describe('artifact-bytes capability marker', () => {
       invoke: async () => {
         throw new Error('must not be invoked');
       },
-    } as unknown as DelegatedPluginExecutor;
+    } as DelegatedPluginExecutor;
     const catalog = delegatedAdapterModule(manifest, executor).catalog!({});
     expect(catalog.capabilities.operations).not.toContain('artifact');
     expect(catalog.capabilities.extensions).toEqual({});

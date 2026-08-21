@@ -139,7 +139,7 @@ export class PrexRegistryProvider implements CatalogProvider {
         name: distribution.identifier,
       },
       nativeVersion: distribution.version,
-    } as unknown as PackageInstance;
+    } as PackageInstance;
     assertPackageIdentityMatchesRequest(exactPurl, instance.identity);
     return {
       package: instance,

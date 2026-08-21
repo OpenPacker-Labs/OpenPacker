@@ -63,7 +63,7 @@ describe('neutral Epoch consumer boundary', () => {
             }
           : { events: [], nextCursor: cursor };
       },
-    } as unknown as OpenPackerClient;
+    } as OpenPackerClient;
     const port = new InMemoryEpochConsumerPort();
     await consumeEvents(client, new EpochEventConsumer(port), undefined, 1);
     await consumeEvents(client, new EpochEventConsumer(port), undefined, 1);

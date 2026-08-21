@@ -327,19 +327,39 @@ export class PluginRegistryProvider implements CatalogProvider {
     const entry = await this.#client.entry(name, version, signal);
     await this.#client.verifyEntry(entry);
     const distribution = distributionFor(entry, exactPurl);
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const instance = {
-      identity: {
-        purlType: PLUGIN_PURL_TYPE,
-        canonicalPurl: `pkg:${PLUGIN_PURL_TYPE}/${encodeName(distribution.identifier)}`,
-        exactPurl: distribution.exactPurl ?? exactPurl,
-        name: distribution.identifier,
-      },
+    const identity: PackageIdentity = {
+      purlType: PLUGIN_PURL_TYPE,
+      canonicalPurl: `pkg:${PLUGIN_PURL_TYPE}/${encodeName(distribution.identifier)}`,
+      exactPurl: distribution.exactPurl ?? exactPurl,
+      name: distribution.identifier,
+      qualifiers: {},
+      nativeCoordinates: [],
+      aliases: [],
+      sourceRefs: [],
+      publisherRefs: [],
+      externalRefs: [],
+    };
+    const instance: PackageInstance = {
+      nodeId: identity.canonicalPurl,
+      identity,
       nativeVersion: distribution.version,
+      normalizedVersion: distribution.version,
+      versionSortKey: distribution.version,
+      requirements: [],
+      capabilities: [],
+      conflicts: [],
+      cardinalityConstraints: [],
+      artifacts: [],
       lifecycle: lifecycleOf(entry),
       semanticLoss: [],
       sourceSnapshots: [],
-    } as unknown as PackageInstance;
+      metadataDigest:
+        entry.registryMetadata.manifestDigest ??
+        digestBytes(
+          canonicalBytes(JSON.parse(JSON.stringify(entry)) as JsonValue),
+        ),
+      nativeSemantics: { version: 'opm-plugin-v1', data: {} },
+    };
     return {
       package: instance,
       record: {
@@ -446,4 +466,11 @@ export class PluginRegistryProvider implements CatalogProvider {
       `A plugin registry does not produce catalog snapshots (asked at ${evaluationTime}).`,
     );
   }
+}
+
+function digestBytes(bytes: Uint8Array): Digest {
+  return {
+    algorithm: 'sha256',
+    value: createHash('sha256').update(bytes).digest('hex'),
+  };
 }

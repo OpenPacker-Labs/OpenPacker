@@ -367,7 +367,7 @@ export function createReferenceOperations(
           `Independent proof check failed: ${check.diagnostics.join('; ')}`,
         );
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const explanation = output.explanation as unknown as ExplanationGraph;
+      const explanation = output.explanation as ExplanationGraph;
       const proofDigest = await projectedDigest(
         'proof-v1',
         // SAFETY: The surrounding boundary establishes the asserted domain contract.

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { SolveRequest } from '@openpacker/contracts';
-import { createOpenPackerClient } from '@openpacker/sdk';
+import { createOpenPackerClient, type OpenPackerClient } from '@openpacker/sdk';
 import { Ed25519Verifier } from '@openpacker/trust';
 import { describe, expect, it } from 'vitest';
 import {
@@ -53,12 +53,11 @@ describe('real openpackerd Epoch boundary', () => {
         `urn:epoch:blob:${receipt.openPackerDigest}`,
       );
 
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const replayClient = {
         solve: () => client.solve(request),
         verify: client.verify.bind(client),
         receipt: client.receipt.bind(client),
-      } as unknown as typeof client;
+      } satisfies Pick<OpenPackerClient, 'solve' | 'verify' | 'receipt'>;
       await expect(
         consumeResolution({
           client: replayClient,

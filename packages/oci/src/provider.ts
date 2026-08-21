@@ -318,7 +318,7 @@ export class OciRegistryProvider implements CatalogProvider {
         sourceRefs: [],
         publisherRefs: [],
         externalRefs: [],
-      } as unknown as PackageIdentity,
+      } as PackageIdentity,
     ];
   }
 
@@ -436,7 +436,7 @@ export class OciRegistryProvider implements CatalogProvider {
         data: manifest as unknown as Record<string, unknown>,
       },
       semanticLoss: [],
-    } as unknown as PackageInstance;
+    } as PackageInstance;
 
     return {
       package: instance,
@@ -655,7 +655,7 @@ export class OciRegistryProvider implements CatalogProvider {
   async snapshot(evaluationTime: string): Promise<SourceSnapshot> {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return {
-      snapshotVersion: '1',
+      snapshotVersion: '1' as const,
       providerId: this.providerId,
       evaluationTime,
       sources: [],
