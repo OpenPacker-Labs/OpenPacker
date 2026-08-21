@@ -16,8 +16,8 @@
 | Swarm           | Branch                               | Status                        |
 | --------------- | ------------------------------------ | ----------------------------- |
 | M Maven inspect | `sdlc/upm-v1-gaps-01-maven-inspect`  | spawning                      |
-| P PyPI oracles  | `sdlc/upm-v1-gaps-02-pypi-oracles`   | handback; reviewer dispatched |
-| G Go oracles    | `sdlc/upm-v1-gaps-03-golang-oracles` | spawning                      |
+| P PyPI oracles  | `sdlc/upm-v1-gaps-02-pypi-oracles`   | squash-merged #138 `2e8e6b7`  |
+| G Go oracles    | `sdlc/upm-v1-gaps-03-golang-oracles` | handback; reviewer dispatched |
 | U Update        | `sdlc/upm-v1-gaps-04-update`         | spawning                      |
 | C Shared CAS    | `sdlc/upm-v1-gaps-05-shared-cas`     | spawning                      |
 | R Publish/yank  | `sdlc/upm-v1-gaps-06-publish-yank`   | spawning                      |
