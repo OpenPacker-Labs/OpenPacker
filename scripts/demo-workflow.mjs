@@ -172,8 +172,9 @@ async function refreshUniverseDigest(universe) {
     ({ id }) => id === 'universe-v1',
   );
   assert.ok(projection);
+  const transportUniverse = JSON.parse(JSON.stringify(universe));
   universe.canonicalDigest = await canonicalProjectionDigest(
-    universe,
+    transportUniverse,
     projection,
   );
 }
@@ -1506,7 +1507,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     ])
       await layout.attachReferrer(
         subject.manifest,
-        canonicalBytes(value),
+        canonicalBytes(JSON.parse(JSON.stringify(value))),
         artifactType,
         mediaType,
       );
