@@ -132,6 +132,7 @@ describe('Go module proxy provider e2e (offline fixtures)', () => {
     expect(transport.requests.map((request) => request.url)).toEqual([
       urls.info('v1.0.0'),
       urls.mod('v1.0.0'),
+      urls.list,
     ]);
   });
 
@@ -195,6 +196,8 @@ describe('Go module proxy provider e2e (offline fixtures)', () => {
       urls.list,
       urls.info('v1.0.0'),
       urls.mod('v1.0.0'),
+      urls.list,
+      urls.mod('v1.1.0'),
     ]);
     expect(requested.every((url) => url.includes(urls.encoded))).toBe(true);
     expect(requested.some((url) => url.includes('OpenPacker'))).toBe(false);
@@ -275,6 +278,34 @@ describe('Go module proxy provider e2e (offline fixtures)', () => {
           version: 'v1.0.0',
         }),
       ],
+    });
+  });
+
+  it('yanks an older version retracted only in a later module .mod', async () => {
+    const urls = proxyUrls(DEMO_ZSTD);
+    const laterRetract = new TextEncoder().encode(`module ${DEMO_ZSTD}
+
+go 1.22
+
+retract v1.0.0
+`);
+    const { provider } = providerFor(
+      new Map([
+        [urls.list, { status: 200, headers: {}, body: listBytes }],
+        [urls.info('v1.0.0'), { status: 200, headers: {}, body: infoBytes }],
+        [urls.mod('v1.0.0'), { status: 200, headers: {}, body: modBytes }],
+        [urls.mod('v1.1.0'), { status: 200, headers: {}, body: laterRetract }],
+      ]),
+    );
+
+    const inspection = await provider.inspect(`${DEMO_ZSTD_PURL}@v1.0.0`);
+    expect(inspection.package.lifecycle).toMatchObject({
+      status: 'yanked',
+      eligible: false,
+    });
+    expect(inspection.package.requirements[0]?.expression).toMatchObject({
+      type: 'package',
+      purl: 'pkg:golang/github.com/openpacker/cfg-if',
     });
   });
 

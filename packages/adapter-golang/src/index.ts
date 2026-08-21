@@ -337,6 +337,15 @@ function retractSpecCoversVersion(
   }
 }
 
+function isSkippableGoProxyMiss(error: unknown): boolean {
+  return (
+    error instanceof ProviderError &&
+    (error.code === 'PACKAGE_NOT_FOUND' ||
+      error.upstreamStatus === 404 ||
+      error.upstreamStatus === 410)
+  );
+}
+
 export function parseGoMod(input: string): GolangModDocument {
   const requires: GolangRequire[] = [];
   const retracts: string[] = [];
@@ -1229,6 +1238,67 @@ export class GolangProxyProvider implements CatalogProvider {
     return record;
   }
 
+  /**
+   * Go publishes `retract` on later module versions. Inspect of an older
+   * version must consult the newest listed `.mod`, not only its own.
+   */
+  private async retractedByLaterModule(
+    exactPurl: string,
+    version: string,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    let listed: readonly string[];
+    try {
+      listed = (await this.listRecord(exactPurl, signal)).body;
+    } catch (error) {
+      if (isSkippableGoProxyMiss(error)) return false;
+      throw error;
+    }
+    let newest: string | undefined;
+    for (const candidate of listed) {
+      if (
+        newest === undefined ||
+        this.codec.compareNativeVersions(candidate, newest) > 0
+      )
+        newest = candidate;
+    }
+    if (newest === undefined || newest === version) return false;
+    const parsed = parsePurl(this.codec.canonicalizePurl(exactPurl));
+    const path = modulePathFromParts(parsed.namespace, parsed.name);
+    let response;
+    try {
+      response = await this.transport.request({
+        url: this.moduleUrl(path, `@v/${newest}.mod`),
+        signal,
+        maximumBytes: 2 * 1024 * 1024,
+        headers: { accept: 'text/plain' },
+      });
+    } catch (error) {
+      if (isSkippableGoProxyMiss(error)) return false;
+      throw error;
+    }
+    if (response.status === 404 || response.status === 410) return false;
+    if (response.status < 200 || response.status >= 300)
+      throw new ProviderError(
+        'UPSTREAM_UNAVAILABLE',
+        `Go module proxy latest .mod returned ${response.status}`,
+        response.status,
+      );
+    let mod;
+    try {
+      mod = parseGoMod(text(response));
+    } catch (error) {
+      if (error instanceof ProviderError && error.code === 'INVALID_LOCKFILE')
+        throw new ProviderError('INVALID_PROVIDER_METADATA', error.message);
+      throw error;
+    }
+    return mod.retracts.some((spec) =>
+      retractSpecCoversVersion(spec, version, (left, right) =>
+        this.codec.compareNativeVersions(left, right),
+      ),
+    );
+  }
+
   private async versionRecord(
     exactPurl: string,
     signal?: AbortSignal,
@@ -1309,6 +1379,9 @@ export class GolangProxyProvider implements CatalogProvider {
         `Go module proxy .mod returned ${modResponse.status}`,
         modResponse.status,
       );
+    }
+    if (!retracted) {
+      retracted = await this.retractedByLaterModule(canonical, version, signal);
     }
     this.#modWarnings.set(canonical, warnings);
 
