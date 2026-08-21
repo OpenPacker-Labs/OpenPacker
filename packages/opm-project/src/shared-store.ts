@@ -8,6 +8,7 @@ import {
   readdir,
   rename,
   rm,
+  unlink,
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -78,6 +79,57 @@ export async function materializeThroughSharedStore(input: {
     throw error;
   }
   return { path: projectStorePath, shared: true };
+}
+
+/**
+ * Break hardlinks in a project store tree so later writes (lifecycle scripts)
+ * cannot mutate the shared CAS inodes they were linked from.
+ */
+export async function isolateProjectStoreFromSharedLinks(
+  projectStorePath: string,
+): Promise<void> {
+  await isolateEntries(projectStorePath);
+}
+
+async function isolateEntries(root: string): Promise<void> {
+  const handle = await openStableDirectory(root);
+  try {
+    const entries = await readdir(stableHandlePath(handle), {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      assertSafeSegment(entry.name, 'store entry');
+      const path = join(root, entry.name);
+      if (entry.isSymbolicLink())
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Project store entry is a symbolic link: ${path}`,
+        );
+      if (entry.isDirectory()) {
+        await isolateEntries(path);
+        continue;
+      }
+      if (!entry.isFile())
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Project store entry is not a regular file: ${path}`,
+        );
+      const info = await lstat(path);
+      if (info.nlink <= 1) continue;
+      const tmp = `${path}.copy-${randomUUID()}`;
+      try {
+        await copyFile(path, tmp);
+        await chmod(tmp, info.mode & 0o777);
+        await unlink(path);
+        await rename(tmp, path);
+      } catch (error) {
+        await rm(tmp, { force: true }).catch(() => undefined);
+        throw error;
+      }
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 async function publishSharedEntry(input: {

@@ -25,6 +25,7 @@ import type {
 } from './types.js';
 import { recordGeneration, stableStoreTreeDigest } from './generations.js';
 import {
+  isolateProjectStoreFromSharedLinks,
   materializeThroughSharedStore,
   sharedStoreRoot,
 } from './shared-store.js';
@@ -735,6 +736,8 @@ export async function materializeLockPackage(input: {
           hasLifecycleScripts(declared) &&
           lifecycleScriptsAllowed(policy, pkg.purl)
         ) {
+          if (sharedRoot !== undefined)
+            await isolateProjectStoreFromSharedLinks(stagedPath);
           const packageHandle = await open(
             stableStagedPath,
             constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,

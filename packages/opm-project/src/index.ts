@@ -147,6 +147,7 @@ export {
 export {
   sharedStoreRoot,
   materializeThroughSharedStore,
+  isolateProjectStoreFromSharedLinks,
 } from './shared-store.js';
 
 export {

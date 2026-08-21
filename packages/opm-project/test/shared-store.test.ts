@@ -20,6 +20,7 @@ import {
 } from '../src/install.js';
 import { projectPaths, sharedStoreHome } from '../src/paths.js';
 import {
+  isolateProjectStoreFromSharedLinks,
   materializeThroughSharedStore,
   sharedStoreRoot,
 } from '../src/shared-store.js';
@@ -173,6 +174,45 @@ describe('materializeThroughSharedStore', () => {
     expect(
       await readFile(join(secondPath, 'package/index.js'), 'utf8'),
     ).toContain('export const n = 1');
+  });
+
+  it('breaks hardlinks so later writes do not mutate the shared tree', async () => {
+    const sharedHome = await tempDir('opm-shared-isolate-');
+    const projectRoot = await tempDir('opm-proj-isolate-');
+    const otherRoot = await tempDir('opm-proj-isolate-other-');
+    const bytes = fixtureArchive();
+    const digest = archiveDigest(bytes);
+    const projectStorePath = join(projectRoot, storeKeyFromDigest(digest));
+    const otherPath = join(otherRoot, storeKeyFromDigest(digest));
+
+    await materializeThroughSharedStore({
+      digest,
+      projectStorePath,
+      bytes,
+      format: 'tar+gzip',
+      env: { OPM_STORE_HOME: sharedHome },
+    });
+    await materializeThroughSharedStore({
+      digest,
+      projectStorePath: otherPath,
+      bytes,
+      format: 'tar+gzip',
+      env: { OPM_STORE_HOME: sharedHome },
+    });
+
+    await isolateProjectStoreFromSharedLinks(projectStorePath);
+    const mutated = join(projectStorePath, 'package/index.js');
+    await writeFile(mutated, 'mutated-by-lifecycle\n');
+    expect(
+      await readFile(
+        join(sharedHome, storeKeyFromDigest(digest), 'package/index.js'),
+        'utf8',
+      ),
+    ).toContain('export const n = 1');
+    expect(
+      await readFile(join(otherPath, 'package/index.js'), 'utf8'),
+    ).toContain('export const n = 1');
+    expect(await readFile(mutated, 'utf8')).toBe('mutated-by-lifecycle\n');
   });
 
   it('copies on EXDEV from an injectable link function', async () => {
