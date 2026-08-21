@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { tryGetAdapterRegistry } from '@openpacker/adapter-host';
 import {
@@ -18,6 +19,7 @@ import {
   OperationError,
   type PrexOperations,
 } from './operations.js';
+import { createFilesystemPublishStore } from './publish-store.js';
 
 /** Ensure the process adapter registry is populated for the reference daemon. */
 export function ensureReferenceAdapters(): void {
@@ -26,6 +28,7 @@ export function ensureReferenceAdapters(): void {
 
 export async function createStandaloneReferenceOperations(
   universePath?: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
 ): Promise<PrexOperations> {
   ensureReferenceAdapters();
   const universe = universePath
@@ -42,6 +45,14 @@ export async function createStandaloneReferenceOperations(
       501,
     );
   };
+  const env = options.env ?? process.env;
+  const publishRoot = env.OPENPACKER_PUBLISH_STORE?.trim();
+  const publishStore =
+    publishRoot === undefined || publishRoot === ''
+      ? undefined
+      : createFilesystemPublishStore({
+          root: absolutePublishStore(publishRoot),
+        });
   return createReferenceOperations({
     universe,
     resolver,
@@ -58,11 +69,23 @@ export async function createStandaloneReferenceOperations(
       version: '0.1.0',
     }),
     extensions: {
-      lifecycleApply: unavailable,
+      lifecycleApply: publishStore
+        ? (input, context) => publishStore.lifecycleApply(input, context)
+        : unavailable,
       pack: unavailable,
-      publish: unavailable,
+      publish: publishStore
+        ? (input, context) => publishStore.publish(input, context)
+        : unavailable,
     },
   });
+}
+
+function absolutePublishStore(root: string): string {
+  if (!isAbsolute(root))
+    throw new RangeError(
+      'OPENPACKER_PUBLISH_STORE must be an absolute directory so OPENPACKER_HOST cannot accidentally publish',
+    );
+  return root;
 }
 
 async function emptyUniverse(): Promise<ResolutionUniverse> {
