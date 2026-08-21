@@ -7,9 +7,8 @@ origins, and credentials.
 
 ## Phase
 
-dispatch — brainstorm and design closed. Layer 01 independently verified
-(stale-dist false fail; rebuild + host-fetch 27/27). Reviewer subagent hung in a
-read loop; parent re-ran the checklist. Layer 02 next.
+dispatch — layers 01–02 independently verified. Layer 03 (`artifact_origins`) in
+flight.
 
 ## Backend
 
@@ -37,7 +36,7 @@ User-resolved open questions: no require-pin profile; first-party pin-mode now
 | Layer | Branch                                       | Scope                                                              | PR               |
 | ----- | -------------------------------------------- | ------------------------------------------------------------------ | ---------------- |
 | 01    | sdlc/host-fetch-deferred-01-pin-mode         | Extract classify-and-pin into BoundedFetchTransport (undici Agent) | verified locally |
-| 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           |                  |
+| 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           | verified locally |
 | 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   |                  |
 | 04    | sdlc/host-fetch-deferred-04-bearer           | Per-origin bearer + sandbox deny + `--allow-env` refusal           |                  |
 | 05    | sdlc/host-fetch-deferred-05-extra-header     | Extra operator header grant                                        |                  |
