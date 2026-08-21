@@ -7,6 +7,7 @@ import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   addPackage,
   buildPackageManifest,
+  importNativeProject,
   initProject,
   nativeName,
   packDelegatedProject,
@@ -14,7 +15,9 @@ import {
   projectionLevel,
   removePackage,
   parseManifest,
+  readManifestFile,
   serializeManifest,
+  syncProject,
   sourceForEcosystem,
   withPackedArtifact,
   type OpmManifest,
@@ -52,6 +55,57 @@ async function tempProject(files: Record<string, string> = {}) {
     await writeFile(join(dir, name), contents);
   return dir;
 }
+
+describe('opm import --native', () => {
+  it('writes opm.toml from native requirements and does not re-read them on sync', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-import-native-'));
+    temps.push(dir);
+    await writeFile(
+      join(dir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'native-app',
+          version: '0.0.0',
+          dependencies: { 'left-pad': '1.3.0' },
+          devDependencies: { mocha: '^10.0.0' },
+        },
+        undefined,
+        2,
+      )}\n`,
+    );
+
+    const result = await importNativeProject({ root: dir });
+    expect(result.imported.map((item) => item.alias).sort()).toEqual([
+      'left-pad',
+      'mocha',
+    ]);
+    expect(
+      result.imported.some(
+        (item) => item.purl === 'pkg:npm/left-pad' && item.range === '1.3.0',
+      ),
+    ).toBe(true);
+
+    const manifest = await readManifestFile(join(dir, 'opm.toml'));
+    expect(manifest.packages['left-pad']?.purl).toBe('pkg:npm/left-pad');
+    expect(manifest.packages['left-pad']?.version).toBe('1.3.0');
+    expect(manifest.packages.mocha?.scope).toBe('development');
+
+    manifest.packages = {};
+    await writeFile(join(dir, 'opm.toml'), serializeManifest(manifest));
+
+    await syncProject({ root: dir, offline: true });
+    const after = await readManifestFile(join(dir, 'opm.toml'));
+    expect(after.packages['left-pad']).toBeUndefined();
+    expect(after.packages.mocha).toBeUndefined();
+  });
+
+  it('refuses to overwrite an existing opm.toml without --force', async () => {
+    const root = await tempProject();
+    await expect(importNativeProject({ root })).rejects.toMatchObject({
+      code: 'INVALID_MANIFEST',
+    });
+  });
+});
 
 describe('native projection through opm commands', () => {
   it('puts an added package into package.json, not only opm.toml', async () => {

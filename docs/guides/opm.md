@@ -111,6 +111,7 @@ still fail closed with `UNSAFE_PATH`.
 ```sh
 mkdir my-app && cd my-app
 opm init --name my-app
+# or: opm import --native   # from package.json / Cargo.toml / …
 
 # Add a package from a local catalog / file source (offline-friendly)
 opm add pkg:npm/@openpacker/demo-tool@1.1.0 \
@@ -290,6 +291,7 @@ their verifier evidence can be independently replayed.
 | Command                                  | What it does                                                                                                                                                      |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                       |
+| `opm import --native`                    | One-shot: read native project files into `opm.toml`. Native files are not authority after import.                                                                 |
 | `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                           |
 | `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                               |
 | `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                         |

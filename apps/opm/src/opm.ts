@@ -21,6 +21,7 @@ import {
   environmentScript,
   environmentVariables,
   findOpmRoot,
+  importNativeProject,
   initProject,
   installProject,
   listGenerations,
@@ -84,6 +85,7 @@ const OPM_VERSION = '0.1.0';
 
 const COMMANDS = new Set([
   'init',
+  'import',
   'add',
   'remove',
   'install',
@@ -168,6 +170,28 @@ export async function runOpm(
             : `opm project already exists at ${result.manifestPath}\n`,
         );
         io.stdout.write(`Next: opm add <pkg> --ecosystem npm && opm install\n`);
+        return EXIT_CODES.success;
+      }
+      case 'import': {
+        if (!args.options.has('native'))
+          throw usage('opm import requires --native');
+        const root = option(args, 'path') ?? cwd;
+        const result = await importNativeProject({
+          root,
+          force: args.options.has('force'),
+        });
+        io.stdout.write(
+          `Imported ${result.imported.length} requirement(s) from native project files into ${result.manifestPath}\n`,
+        );
+        for (const item of result.imported) {
+          const range = item.range !== undefined ? `@${item.range}` : '';
+          io.stdout.write(
+            `  ${item.alias}\t${item.purl}${range}\t${item.ecosystem}\n`,
+          );
+        }
+        io.stdout.write(
+          'opm.toml is authoritative; later sync does not re-read native manifests.\n',
+        );
         return EXIT_CODES.success;
       }
       case 'add': {
@@ -802,7 +826,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-build' ||
     key === 'allow-network' ||
     key === 'allow-elevation' ||
-    key === 'latest'
+    key === 'latest' ||
+    key === 'native'
   );
 }
 
@@ -1068,6 +1093,7 @@ function help(): string {
 
 Usage:
   opm init [--name <name>] [--path <dir>]
+  opm import --native [--path <dir>] [--force]
   opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
   opm remove <alias>
   opm install [--offline|--online]
@@ -1151,6 +1177,10 @@ Specs:
   pkg:npm/@scope/name@1.2.3
   lodash@4.17.21 --ecosystem npm
   demo-tool --ecosystem npm --source ./vendor/demo-tool.tgz
+
+opm import --native reads adapter readRequirements (package.json,
+Cargo.toml, pyproject.toml, ...) into opm.toml once. Native files stay
+non-authoritative: later sync does not re-import them.
 
 An add with no --source and no catalog entry resolves against the ecosystem's
 registry and verifies the download against the digest the registry published.

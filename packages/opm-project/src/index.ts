@@ -123,6 +123,10 @@ export {
   resolveManifestToLock,
   syncProject,
 } from './project.js';
+export {
+  importNativeProject,
+  type NativeImportResult,
+} from './import-native.js';
 export { updateProject } from './update.js';
 export { uninstallProject, whyPackage, writeManifestFile } from './project.js';
 

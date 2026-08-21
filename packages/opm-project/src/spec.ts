@@ -132,6 +132,12 @@ function simpleAlias(name: string): string {
   );
 }
 
+/** Local opm alias for a native package name (`@scope/pkg` → `pkg`). */
+export function aliasFromNativeName(name: string): string {
+  const last = name.includes('/') ? name.split('/').pop()! : name;
+  return simpleAlias(last.replace(/^@/, ''));
+}
+
 export function ecosystemFromPurl(purl: string): string {
   const match = purl.match(/^pkg:([A-Za-z0-9.-]+)\//);
   if (!match?.[1]) {
