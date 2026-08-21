@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   link,
   mkdir,
-  open,
   readFile,
   rename,
   rm,
@@ -13,7 +12,6 @@ import { join } from 'node:path';
 import {
   collectStream,
   descriptorForBytes,
-  streamFromBytes,
   verifyBytes,
 } from '@openpacker/artifact-model';
 import {

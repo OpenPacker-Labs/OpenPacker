@@ -8,6 +8,7 @@ export default defineConfig({
     '.codex/**',
     '.serena/**',
     'tools/oxlint/anti-slop/**',
+    'packages/contracts/src/generated.ts',
   ],
   jsPlugins: [
     {

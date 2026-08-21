@@ -57,7 +57,6 @@ import {
   Ed25519Verifier,
   cycloneDxEvidenceStatus,
   extractCycloneDxEvidence,
-  verifyCanonical,
   verifyOfflineSigstoreBundle,
   verifySlsaProvenance,
   verifyTufTarget,
@@ -83,7 +82,6 @@ const meta = {
 const json = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
 const writeJson = (path, value) =>
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-const digestString = (digest) => `${digest.algorithm}:${digest.value}`;
 
 function tar(entries) {
   const blocks = [];
@@ -161,6 +159,7 @@ function completeExpression(input) {
   if (input.type === 'conditional')
     return {
       ...input,
+      // eslint-disable-next-line unicorn/no-thenable -- PREX uses `then` as a schema field.
       then: completeExpression(input.then),
       else:
         input.else === undefined ? undefined : completeExpression(input.else),

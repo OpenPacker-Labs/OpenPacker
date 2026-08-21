@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, open, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -30,12 +30,7 @@ import {
   sharedStoreRoot,
 } from './shared-store.js';
 import { OpmError } from './types.js';
-import {
-  discoverBins,
-  discoverNpmBins,
-  removeBinShims,
-  writeBinShims,
-} from './bins.js';
+import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import {
   assertSafeSegment,
   assertStoreKey,
