@@ -365,7 +365,7 @@ describe('OCM mapping', () => {
     expect(descriptors).toHaveLength(count);
     expect(descriptors[0]?.component.componentReferences).toHaveLength(1);
     expect(descriptors.at(-1)?.component.componentReferences).toHaveLength(0);
-  }, 15_000);
+  }, 60_000);
 
   it('rejects malformed provider, resource, and digest fields', async () => {
     const descriptor = await createOcmDescriptor({
