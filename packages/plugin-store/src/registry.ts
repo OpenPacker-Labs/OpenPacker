@@ -21,6 +21,7 @@ import {
   BoundedFetchTransport,
   ProviderError,
   type CatalogProvider,
+  type HostLookup,
   type HttpTransport,
   type ProviderCapabilities,
   type ProviderInspection,
@@ -84,6 +85,7 @@ export interface PluginRegistryModuleOptions {
   endpoint?: string;
   transport?: HttpTransport;
   fetch?: typeof fetch;
+  lookup?: HostLookup;
 }
 
 /**
@@ -96,15 +98,31 @@ export interface PluginRegistryModuleOptions {
 export function pluginRegistryModule(
   defaults: PluginRegistryModuleOptions = {},
 ): AdapterModule {
+  const transportFor = (
+    endpoint: string,
+    context?: AdapterContext,
+  ): HttpTransport => {
+    const existing =
+      (context?.transport as HttpTransport | undefined) ?? defaults.transport;
+    if (existing !== undefined) return existing;
+    const origin = new URL(endpoint).origin;
+    const fetch = context?.fetch ?? defaults.fetch;
+    return new BoundedFetchTransport({
+      allowedOrigins: [origin],
+      pinnedOrigins: [origin],
+      destinationPolicy: 'classify-and-pin',
+      maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
+      ...(fetch === undefined ? {} : { fetch }),
+      ...(defaults.lookup === undefined ? {} : { lookup: defaults.lookup }),
+    });
+  };
   const clientFor = (context?: AdapterContext): RegistryClient => {
     const endpoint =
       context?.endpoint ?? defaults.endpoint ?? requirePluginRegistryEndpoint();
-    const transport =
-      (context?.transport as HttpTransport | undefined) ?? defaults.transport;
     const fetch = context?.fetch ?? defaults.fetch;
     return new RegistryClient({
       baseUrl: endpoint,
-      ...(transport === undefined ? {} : { transport }),
+      transport: transportFor(endpoint, context),
       ...(fetch === undefined ? {} : { fetch }),
     });
   };
@@ -113,12 +131,17 @@ export function pluginRegistryModule(
     purlTypes: [PLUGIN_PURL_TYPE],
     registryDefinition: async (context) =>
       registryDefinitionOf(await clientFor(context).definition()),
-    catalog: (context) =>
-      new PluginRegistryProvider(
+    catalog: (context) => {
+      const endpoint =
+        context?.endpoint ??
+        defaults.endpoint ??
+        requirePluginRegistryEndpoint();
+      return new PluginRegistryProvider(
         clientFor(context),
-        context?.endpoint ?? defaults.endpoint,
-        (context?.transport as HttpTransport | undefined) ?? defaults.transport,
-      ),
+        endpoint,
+        transportFor(endpoint, context),
+      );
+    },
   };
 }
 
@@ -234,6 +257,8 @@ export class PluginRegistryProvider implements CatalogProvider {
       transport ??
       new BoundedFetchTransport({
         allowedOrigins: [new URL(this.#endpoint).origin],
+        pinnedOrigins: [new URL(this.#endpoint).origin],
+        destinationPolicy: 'classify-and-pin',
         maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
       });
   }
