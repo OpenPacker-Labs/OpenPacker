@@ -49,6 +49,7 @@ import {
   switchGeneration,
   syncProject,
   uninstallProject,
+  updateProject,
   whyPackage,
   type AdapterRegistry,
   type Generation,
@@ -265,12 +266,10 @@ export async function runOpm(
         );
         return EXIT_CODES.success;
       }
-      case 'sync':
-      case 'update': {
+      case 'sync': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
         await registerBoundPlugins(root, adapterRegistry);
-        // update = sync for v1 (re-resolve from manifest)
         const result = await syncProject({
           root,
           ...(offline === undefined ? {} : { offline }),
@@ -278,6 +277,24 @@ export async function runOpm(
         const count = Object.keys(result.lock.packages).length;
         io.stdout.write(
           `Synced ${count} package(s); lock and .opm/ store updated\n`,
+        );
+        writeNativeProjection(result.native, io);
+        return EXIT_CODES.success;
+      }
+      case 'update': {
+        const root = await requireOpmRoot(cwd);
+        const offline = offlineOverride(args);
+        await registerBoundPlugins(root, adapterRegistry);
+        const result = await updateProject({
+          root,
+          ...(args.positionals.length > 0 ? { aliases: args.positionals } : {}),
+          latest: args.options.has('latest'),
+          ...(offline === undefined ? {} : { offline }),
+        });
+        io.stdout.write(
+          result.updated.length === 0
+            ? 'Already up to date\n'
+            : `Updated ${result.updated.length} package(s): ${result.updated.join(', ')}\n`,
         );
         writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
@@ -774,7 +791,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'delegate' ||
     key === 'allow-build' ||
     key === 'allow-network' ||
-    key === 'allow-elevation'
+    key === 'allow-elevation' ||
+    key === 'latest'
   );
 }
 
@@ -1045,7 +1063,7 @@ Usage:
   opm install [--offline|--online]
   opm uninstall [alias]
   opm sync [--offline|--online]
-  opm update [--offline|--online]
+  opm update [alias...] [--latest] [--offline|--online]
   opm list
   opm why <alias>
 
