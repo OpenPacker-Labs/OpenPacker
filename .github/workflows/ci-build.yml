@@ -1,0 +1,82 @@
+name: CI build
+
+# The only automatic lane, kept minimal on purpose: build matrix + smoke +
+# artifacts. The full offline gauntlet stays manual-dispatch in ci.yml, and
+# promotion is separate and sparse in cd.yml. Minutes are budgeted:
+# concurrency cancels superseded runs, npm/cargo caches are warm after the
+# first run, and artifacts expire after 7 days.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OPENPACKER_OFFLINE: '1'
+  SOURCE_DATE_EPOCH: '1785628800'
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.13.0, 24]
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            target/wasm32-unknown-unknown
+          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Smoke the CLI
+        run: node apps/openpacker-cli/dist/index.js --version
+      - name: Smoke opm project mutation (no-follow handle-relative I/O)
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        env:
+          OPM: ${{ github.workspace }}/apps/opm/dist/opm.js
+        run: |
+          set -euo pipefail
+          mkdir smoke-init && (cd smoke-init && node "$OPM" init --name smoke-init && test -f opm.toml)
+          mkdir smoke-import && cd smoke-import
+          printf '{"name":"smoke-import","version":"0.0.0","dependencies":{"left-pad":"1.3.0"}}\n' > package.json
+          node "$OPM" import --native
+          grep -q 'left-pad' opm.toml
+      - name: Pack publishable packages
+        run: >
+          npm pack --workspace @openpacker/contracts --workspace @openpacker/sdk
+          --workspace @openpacker/embedded --workspace @openpacker/cli
+          --pack-destination dist-artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: openpacker-build-${{ matrix.os }}-node${{ matrix.node }}
+          path: dist-artifacts/
+          retention-days: 7
+          if-no-files-found: error
