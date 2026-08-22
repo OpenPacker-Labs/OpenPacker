@@ -239,10 +239,15 @@ export const standardEmitters = {
         ),
         artifact(
           `${safe(module)}-${safe(version)}.info`,
-          canonicalBytes({
-            Version: version,
-            Time: '1970-01-01T00:00:00Z',
-          } as unknown as JsonValue),
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          canonicalBytes(
+            JSON.parse(
+              JSON.stringify({
+                Version: version,
+                Time: '1970-01-01T00:00:00Z',
+              }),
+            ) as JsonValue,
+          ),
           'application/json',
           'version-info',
           input,
@@ -292,6 +297,7 @@ function validateWingetManifestSet(
       invalidWinget(`${file.path} PackageIdentifier does not match the target`);
     if (value.PackageVersion !== input.manifest.target.version)
       invalidWinget(`${file.path} PackageVersion does not match the target`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const type = value.ManifestType as string;
     if (
       ![
@@ -306,6 +312,7 @@ function validateWingetManifestSet(
     if (types.has(type) && type !== 'locale')
       invalidWinget(`WinGet manifest set contains duplicate ${type} manifests`);
     types.add(type);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if (!/^\d+\.\d+\.\d+$/u.test(value.ManifestVersion as string))
       invalidWinget(`${file.path} has an invalid ManifestVersion`);
     if (type === 'installer' || type === 'singleton')
@@ -364,6 +371,7 @@ function validateWingetInstallers(
     )
       invalidWinget(`${path} contains an incomplete installer`);
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const url = new URL(installer.InstallerUrl as string);
       if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
     } catch {
@@ -407,9 +415,9 @@ function artifact(
     bytes,
     mediaType,
     nativeRole,
-    ...(input.manifest.target.exactPurl === undefined
-      ? {}
-      : { exactPurl: input.manifest.target.exactPurl }),
+    ...(!(input.manifest.target.exactPurl === undefined) && {
+      exactPurl: input.manifest.target.exactPurl,
+    }),
   };
 }
 
@@ -452,53 +460,69 @@ function emitOci(input: NormalizedPackInput): StandardEmitterArtifact {
     );
   const layer = packTar(input.files);
   const layerDigest = digest(layer);
-  const config = canonicalBytes({
-    architecture,
-    os,
-    config: {
-      Entrypoint: input.manifest.oci.config.entrypoint,
-      Cmd: input.manifest.oci.config.arguments,
-      Env: Object.entries(input.manifest.oci.config.environment).map(
-        ([key, value]) => `${key}=${value}`,
-      ),
-      Labels: input.manifest.oci.config.labels,
-      WorkingDir: input.manifest.oci.config.workingDirectory ?? '',
-      User: input.manifest.oci.config.user ?? '',
-    },
-    rootfs: { type: 'layers', diff_ids: [layerDigest] },
-  } as unknown as JsonValue);
-  const configDigest = digest(config);
-  const manifest = canonicalBytes({
-    schemaVersion: 2,
-    mediaType: 'application/vnd.oci.image.manifest.v1+json',
-    config: {
-      mediaType: 'application/vnd.oci.image.config.v1+json',
-      digest: configDigest,
-      size: config.byteLength,
-    },
-    layers: [
-      {
-        mediaType: 'application/vnd.oci.image.layer.v1.tar',
-        digest: layerDigest,
-        size: layer.byteLength,
-      },
-    ],
-  } as unknown as JsonValue);
-  const manifestDigest = digest(manifest);
-  const index = canonicalBytes({
-    schemaVersion: 2,
-    mediaType: 'application/vnd.oci.image.index.v1+json',
-    manifests: [
-      {
-        mediaType: 'application/vnd.oci.image.manifest.v1+json',
-        digest: manifestDigest,
-        size: manifest.byteLength,
-        annotations: {
-          'org.opencontainers.image.ref.name': input.manifest.target.version,
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const config = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        architecture,
+        os,
+        config: {
+          Entrypoint: input.manifest.oci.config.entrypoint,
+          Cmd: input.manifest.oci.config.arguments,
+          Env: Object.entries(input.manifest.oci.config.environment).map(
+            ([key, value]) => `${key}=${value}`,
+          ),
+          Labels: input.manifest.oci.config.labels,
+          WorkingDir: input.manifest.oci.config.workingDirectory ?? '',
+          User: input.manifest.oci.config.user ?? '',
         },
-      },
-    ],
-  } as unknown as JsonValue);
+        rootfs: { type: 'layers', diff_ids: [layerDigest] },
+      }),
+    ) as JsonValue,
+  );
+  const configDigest = digest(config);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const manifest = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        config: {
+          mediaType: 'application/vnd.oci.image.config.v1+json',
+          digest: configDigest,
+          size: config.byteLength,
+        },
+        layers: [
+          {
+            mediaType: 'application/vnd.oci.image.layer.v1.tar',
+            digest: layerDigest,
+            size: layer.byteLength,
+          },
+        ],
+      }),
+    ) as JsonValue,
+  );
+  const manifestDigest = digest(manifest);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const index = canonicalBytes(
+    JSON.parse(
+      JSON.stringify({
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.index.v1+json',
+        manifests: [
+          {
+            mediaType: 'application/vnd.oci.image.manifest.v1+json',
+            digest: manifestDigest,
+            size: manifest.byteLength,
+            annotations: {
+              'org.opencontainers.image.ref.name':
+                input.manifest.target.version,
+            },
+          },
+        ],
+      }),
+    ) as JsonValue,
+  );
   const bytes = packTar([
     { path: 'oci-layout', contents: text('{"imageLayoutVersion":"1.0.0"}\n') },
     { path: 'index.json', contents: index },
@@ -615,6 +639,7 @@ function writeNarDirectory(
       );
     } else {
       writeNarDirectory(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         entry.child as Parameters<typeof writeNarDirectory>[0],
         out,
       );

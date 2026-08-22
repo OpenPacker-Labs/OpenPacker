@@ -46,6 +46,7 @@ export function lockPackageBinding(pkg: LockPackage): string {
     )
       projected[key] = clonePlainData(descriptor.value, key, new WeakSet());
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalize(projected as never);
 }
 
@@ -60,16 +61,25 @@ export function freezeBoundLockPackage(pkg: LockPackage): string {
 }
 
 export function immutablePlainData<T>(value: T, label: string): T {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const cloned = clonePlainData(value, label, new WeakSet()) as T;
   deepFreeze(cloned);
   return cloned;
 }
 
+type PlainData =
+  | null
+  | boolean
+  | number
+  | string
+  | PlainData[]
+  | { [key: string]: PlainData };
+
 function clonePlainData(
   value: unknown,
   path: string,
   seen: WeakSet<object>,
-): unknown {
+): PlainData {
   if (value === null || typeof value === 'string' || typeof value === 'boolean')
     return value;
   if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
@@ -87,7 +97,7 @@ function clonePlainData(
       'INVALID_LOCK',
       `Lock package ${path} is not plain data`,
     );
-  const cloned: Record<string, unknown> = {};
+  const cloned: Record<string, PlainData> = {};
   for (const [key, descriptor] of Object.entries(
     Object.getOwnPropertyDescriptors(value),
   )) {

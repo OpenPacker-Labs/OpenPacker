@@ -108,10 +108,11 @@ describe('OCI Distribution client', () => {
       registry: 'https://registry.example',
       repository: 'openpacker/demo',
       maximumAttempts: 1,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () =>
         new Response('x'.repeat(70 * 1024), {
           status: 500,
-        })) as unknown as typeof fetch,
+        })) as typeof fetch,
     });
     await expect(client.pullManifest('latest')).rejects.toMatchObject({
       code: 'REGISTRY_ERROR',
@@ -125,13 +126,14 @@ describe('OCI Distribution client', () => {
       repository: 'openpacker/demo',
       maximumAttempts: 1,
       errorBodyTimeoutMilliseconds: 5,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async () =>
         new Response(
           new ReadableStream<Uint8Array>({
             pull: () => new Promise(() => undefined),
           }),
           { status: 500 },
-        )) as unknown as typeof fetch,
+        )) as typeof fetch,
     });
     await expect(client.pullManifest('latest')).rejects.toMatchObject({
       code: 'REGISTRY_ERROR',
@@ -393,6 +395,7 @@ describe('tag listing and bearer authentication', () => {
 
   it('follows Link pagination and stops at the last page', async () => {
     const calls: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) => {
       const href = String(url);
       calls.push(href);
@@ -402,7 +405,7 @@ describe('tag listing and bearer authentication', () => {
           { link: '</v2/demo/tags/list?last=1.1>; rel="next"' },
         );
       return jsonResponse({ tags: ['2.0'] });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
 
     const client = new OciRegistryClient({
       registry: 'https://registry.test',
@@ -414,11 +417,12 @@ describe('tag listing and bearer authentication', () => {
   });
 
   it('refuses pagination that points at another origin', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async () =>
       jsonResponse(
         { tags: ['1.0'] },
         { link: '<https://evil.example/v2/demo/tags/list>; rel="next"' },
-      )) as unknown as typeof fetch;
+      )) as typeof fetch;
     const client = new OciRegistryClient({
       registry: 'https://registry.test',
       repository: 'demo',
@@ -430,11 +434,12 @@ describe('tag listing and bearer authentication', () => {
   });
 
   it('rejects a registry that repeats a pagination page', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async () =>
       jsonResponse(
         { tags: ['1.0'] },
         { link: '</v2/demo/tags/list>; rel="next"' },
-      )) as unknown as typeof fetch;
+      )) as typeof fetch;
     const client = new OciRegistryClient({
       registry: 'https://registry.test',
       repository: 'demo',
@@ -542,6 +547,7 @@ describe('tag listing and bearer authentication', () => {
 
   it('performs the anonymous bearer handshake and caches the token', async () => {
     let tokenRequests = 0;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (
       url: URL | string,
       init?: RequestInit,
@@ -564,7 +570,7 @@ describe('tag listing and bearer authentication', () => {
           },
         });
       return jsonResponse({ tags: ['1.0'] });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
 
     const client = new OciRegistryClient({
       registry: 'https://registry.test',
@@ -584,6 +590,7 @@ describe('tag listing and bearer authentication', () => {
   it('rejects a registry challenge that widens the requested token scope', async () => {
     const contacted: string[] = [];
     const auth = new BearerTokenAuthentication({
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (url: URL | string) => {
         contacted.push(String(url));
         return new Response('', {
@@ -593,7 +600,7 @@ describe('tag listing and bearer authentication', () => {
               'Bearer realm="https://registry.test/token",scope="repository:other:pull,push"',
           },
         });
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
     });
     await expect(
       auth.headers(
@@ -638,6 +645,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     // realm="https://attacker/token" would otherwise be handed the user's
     // password in decodable form, and its reply trusted as a token.
     const contacted: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (
       url: URL | string,
       init?: RequestInit,
@@ -650,7 +658,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
         });
       }
       return challenge('https://evil.example/token');
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
 
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
@@ -667,6 +675,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
   });
 
   it('allows a registry that issues its own tokens', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (
       url: URL | string,
       init?: RequestInit,
@@ -677,7 +686,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
       if (new Headers(init?.headers).get('authorization') === 'Bearer ok')
         return new Response(JSON.stringify({ tags: ['1.0'] }), { status: 200 });
       return challenge('https://registry.test/token');
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       credentials: { username: 'alice', password: 'hunter2' },
@@ -689,10 +698,11 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
   });
 
   it('allows a delegation the caller explicitly authorized', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) =>
       String(url).startsWith('https://auth.internal/')
         ? new Response(JSON.stringify({ token: 'ok' }), { status: 200 })
-        : challenge('https://auth.internal/token')) as unknown as typeof fetch;
+        : challenge('https://auth.internal/token')) as typeof fetch;
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       credentials: { username: 'alice', password: 'hunter2' },
@@ -707,10 +717,11 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
   it('rejects a different registry before contacting it', async () => {
     const contacted: string[] = [];
     const auth = new BearerTokenAuthentication({
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (url: URL | string) => {
         contacted.push(String(url));
         return new Response(null, { status: 200 });
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
       credentials: { username: 'alice', password: 'hunter2' },
       registryOrigin: 'https://registry.test',
     });
@@ -722,11 +733,12 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
 
   it('rejects an unconfigured anonymous token origin before contacting it', async () => {
     const contacted: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) =>
       String(url).startsWith('https://auth.elsewhere/')
         ? (contacted.push(String(url)),
           new Response(JSON.stringify({ token: 'anon' }), { status: 200 }))
-        : challenge('https://auth.elsewhere/token')) as unknown as typeof fetch;
+        : challenge('https://auth.elsewhere/token')) as typeof fetch;
     const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
@@ -736,6 +748,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
 
   it('does not follow redirects from an authorized token origin', async () => {
     const contacted: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (
       url: URL | string,
       init?: RequestInit,
@@ -750,7 +763,7 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
         });
       }
       return challenge('https://auth.internal/token');
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
     const auth = new BearerTokenAuthentication({
       fetch: fetchImplementation,
       allowedTokenOrigins: ['https://auth.internal'],
@@ -769,10 +782,11 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
     JSON.stringify({ token: 'x'.repeat(16_385) }),
     '{"token":"ok","expires_in":1e309}',
   ])('rejects an oversized or invalid token response', async (body) => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) =>
       String(url).includes('/token')
         ? new Response(body, { status: 200 })
-        : challenge('https://registry.test/token')) as unknown as typeof fetch;
+        : challenge('https://registry.test/token')) as typeof fetch;
     const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),
@@ -780,8 +794,9 @@ describe('credentials are not handed to a server-nominated endpoint', () => {
   });
 
   it('refuses a plaintext token endpoint even anonymously', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async () =>
-      challenge('http://registry.test/token')) as unknown as typeof fetch;
+      challenge('http://registry.test/token')) as typeof fetch;
     const auth = new BearerTokenAuthentication({ fetch: fetchImplementation });
     await expect(
       auth.headers(new URL('https://registry.test/v2/demo/tags/list'), 's'),

@@ -22,6 +22,7 @@ describe('Epoch production dependency boundary', () => {
         if (forbidden.test(text) || forbiddenRust.test(text))
           violations.push(file.slice(root.length + 1));
         if (file.endsWith('package.json')) {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const manifest = JSON.parse(text) as Record<
             string,
             Record<string, string> | undefined

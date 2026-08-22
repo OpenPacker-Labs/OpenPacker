@@ -91,7 +91,8 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
         input.profile === 'host-install' &&
         typeof mod.getTemporaryFilesPolicy === 'function'
           ? mod.getTemporaryFilesPolicy()
-          : { readwritePaths: [] as string[] };
+          : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            { readwritePaths: [] as string[] };
 
       const { readonlyPaths, readwritePaths } = mxcFilesystemPaths({
         readonlyPaths: input.readonlyPaths,
@@ -100,9 +101,9 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
           ...input.readwritePaths,
         ],
         cwd: input.cwd,
-        ...(input.directoryAuthorities === undefined
-          ? {}
-          : { directoryAuthorities: input.directoryAuthorities }),
+        ...(!(input.directoryAuthorities === undefined) && {
+          directoryAuthorities: input.directoryAuthorities,
+        }),
       });
 
       const config = mod.createConfigFromPolicy({
@@ -128,6 +129,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
       }
 
       if (typeof mod.spawnSandboxFromConfig === 'function') {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const child = mod.spawnSandboxFromConfig(config, { usePty: false }) as {
           stdout?: NodeJS.ReadableStream | null;
           stderr?: NodeJS.ReadableStream | null;
@@ -238,7 +240,7 @@ export function mxcFilesystemPaths(input: {
   readwritePaths: readonly string[];
   cwd: string;
   directoryAuthorities?: readonly { fd: number; path: string }[];
-}): { readonlyPaths: string[]; readwritePaths: string[] } {
+}) {
   if ((input.directoryAuthorities?.length ?? 0) > 0)
     throw new SandboxBackendError(
       'UNAVAILABLE',

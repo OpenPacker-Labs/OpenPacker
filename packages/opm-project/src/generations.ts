@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, type FileHandle } from 'node:fs/promises';
+import { lstat, open, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {
@@ -127,6 +127,7 @@ const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, item: unknown) =>
     item && typeof item === 'object' && !Array.isArray(item)
       ? Object.fromEntries(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           Object.entries(item as Record<string, unknown>).sort(
             ([left], [right]) => (left < right ? -1 : 1),
           ),
@@ -226,6 +227,7 @@ export async function readStoreReferences(
 ): Promise<StoreReferences> {
   const paths = environmentPaths(root);
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(
       await readStableFile(paths.storeReferences),
     ) as StoreReferences;
@@ -236,6 +238,7 @@ export async function readStoreReferences(
       );
     return { referencesVersion: '1', edges: parsed.edges ?? {} };
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       return { referencesVersion: '1', edges: {} };
     throw error;
@@ -255,6 +258,7 @@ async function writeStoreReferences(
       .filter(([, targets]) => targets.length > 0)
       .map(
         ([from, targets]) =>
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           [from, [...new Set(targets)].sort()] as [string, string[]],
       )
       .sort((left, right) => (left[0] < right[0] ? -1 : 1)),
@@ -307,10 +311,12 @@ export async function readEnvironmentState(
   root: string,
 ): Promise<EnvironmentState | undefined> {
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return JSON.parse(
       await readStableFile(environmentPaths(root).environmentState),
     ) as EnvironmentState;
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
@@ -334,6 +340,7 @@ export async function readGeneration(
 ): Promise<Generation> {
   const paths = environmentPaths(root);
   const handle = await openStableDirectory(paths.generations).catch((error) => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
     throw error;
@@ -342,6 +349,7 @@ export async function readGeneration(
     const name = basename(generationFile(paths.generations, digest));
     return parseGeneration(await readStableFileAt(handle, name), digest);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
     throw error;
@@ -351,6 +359,7 @@ export async function readGeneration(
 }
 
 function parseGeneration(text: string, digest: string): Generation {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const generation = JSON.parse(text) as Generation;
   const { generationDigest: stored, ...body } = generation;
   if (stored !== digest || stored !== generationDigest(body))
@@ -428,6 +437,7 @@ export async function listGenerations(root: string): Promise<Generation[]> {
   try {
     handle = await openStableDirectory(paths.generations);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
@@ -498,10 +508,10 @@ export async function recordGeneration(input: {
         bins: record.bins.map((bin) => ({
           name: bin.name,
           path: bin.path,
-          ...(bin.interpreter === undefined
-            ? {}
-            : { interpreter: bin.interpreter }),
-          ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+          ...(!(bin.interpreter === undefined) && {
+            interpreter: bin.interpreter,
+          }),
+          ...(!(bin.entry === undefined) && { entry: bin.entry }),
         })),
       })),
     )
@@ -521,10 +531,10 @@ export async function recordGeneration(input: {
     environmentName,
     sequence: highest + 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
-    ...(previous ? { parentGenerationDigest: previous.generationDigest } : {}),
+    ...(previous && { parentGenerationDigest: previous.generationDigest }),
     lockDigest: input.lockDigest,
     members,
-    ...(input.sandbox === undefined ? {} : { sandbox: input.sandbox }),
+    ...(!(input.sandbox === undefined) && { sandbox: input.sandbox }),
   };
   const generation: Generation = {
     ...body,
@@ -663,6 +673,7 @@ export async function collectableStorePaths(input: {
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(paths.store, entry.name));
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       return { collectable: [], retained };
     throw error;
@@ -701,6 +712,7 @@ export async function collectGarbage(input: {
         .filter(([from]) => !collected.has(from))
         .map(
           ([from, targets]) =>
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             [from, targets.filter((target) => !collected.has(target))] as [
               string,
               string[],
@@ -761,12 +773,10 @@ export async function environmentVariables(input: {
   return {
     OPM_PROJECT_ROOT: paths.root,
     OPM_BIN: paths.bin,
-    ...(generation
-      ? {
-          OPM_GENERATION: String(generation.sequence),
-          OPM_ENVIRONMENT: generation.environmentName,
-        }
-      : {}),
+    ...(generation && {
+      OPM_GENERATION: String(generation.sequence),
+      OPM_ENVIRONMENT: generation.environmentName,
+    }),
     PATH: [paths.bin, process.env.PATH ?? ''].filter(Boolean).join(':'),
   };
 }

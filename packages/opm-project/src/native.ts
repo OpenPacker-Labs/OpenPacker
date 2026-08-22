@@ -71,6 +71,7 @@ export async function readNativeState(
   root: string,
 ): Promise<NativeProjectionState> {
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(
       await readFile(join(root, OPM_DIR, NATIVE_STATE), 'utf8'),
     ) as NativeProjectionState;
@@ -92,7 +93,7 @@ export async function writeNativeState(
   );
 }
 
-const LEVEL_RANK: Readonly<Record<NativeProjectionLevel, number>> = {
+const LEVEL_RANK = {
   off: 0,
   manifest: 1,
   lock: 2,
@@ -116,7 +117,7 @@ export async function projectNativeFormats(input: {
   manifest: OpmManifest;
   lock: OpmLockfile;
   level?: NativeProjectionLevel;
-}): Promise<NativeProjectionReport> {
+}) {
   const level = input.level ?? projectionLevel(input.manifest);
   const projections: NativeProjectionReport['projections'][number][] = [];
   const unprojected: { ecosystem: string; reason: string }[] = [];
@@ -220,7 +221,7 @@ export async function projectNativeFormats(input: {
       ecosystem,
       manifestPath: detected.manifestPath,
       written,
-      ...(skipped.length > 0 ? { skipped } : {}),
+      ...(skipped.length > 0 && { skipped }),
       semanticLoss,
     });
   }
@@ -266,9 +267,9 @@ export async function packNativeProject(input: {
       `No ${input.ecosystem} project file in ${input.root}.`,
     );
   return format.pack(detected, {
-    ...(input.outputDirectory === undefined
-      ? {}
-      : { outputDirectory: input.outputDirectory }),
+    ...(!(input.outputDirectory === undefined) && {
+      outputDirectory: input.outputDirectory,
+    }),
   });
 }
 
@@ -306,21 +307,21 @@ export async function packDelegatedProject(input: {
     },
     {
       strategy: 'delegate',
-      ...(input.outputDirectory === undefined
-        ? {}
-        : { outputDirectory: input.outputDirectory }),
-      ...(input.authorizedEnvironment === undefined
-        ? {}
-        : { authorizedEnvironment: input.authorizedEnvironment }),
-      ...(input.allowBuild === undefined
-        ? {}
-        : { allowBuild: input.allowBuild }),
-      ...(input.allowNetwork === undefined
-        ? {}
-        : { allowNetwork: input.allowNetwork }),
-      ...(input.offline === undefined ? {} : { offline: input.offline }),
-      ...(input.dryRun === undefined ? {} : { dryRun: input.dryRun }),
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      ...(!(input.outputDirectory === undefined) && {
+        outputDirectory: input.outputDirectory,
+      }),
+      ...(!(input.authorizedEnvironment === undefined) && {
+        authorizedEnvironment: input.authorizedEnvironment,
+      }),
+      ...(!(input.allowBuild === undefined) && {
+        allowBuild: input.allowBuild,
+      }),
+      ...(!(input.allowNetwork === undefined) && {
+        allowNetwork: input.allowNetwork,
+      }),
+      ...(!(input.offline === undefined) && { offline: input.offline }),
+      ...(!(input.dryRun === undefined) && { dryRun: input.dryRun }),
+      ...(!(input.signal === undefined) && { signal: input.signal }),
     },
   );
 }
@@ -386,9 +387,9 @@ function requirementsFor(
     out.push({
       purl: base,
       name: nativeName(base),
-      ...(rangeFor(requirement.version, locked) === undefined
-        ? {}
-        : { range: rangeFor(requirement.version, locked)! }),
+      ...(!(rangeFor(requirement.version, locked) === undefined) && {
+        range: rangeFor(requirement.version, locked)!,
+      }),
       scope: requirement.scope ?? 'runtime',
     });
   }
@@ -442,15 +443,15 @@ function lockEntriesFor(
       source: pkg.source,
       digest: pkg.digest,
       size: pkg.size,
-      ...(pkg.nativeIntegrity === undefined
-        ? {}
-        : { nativeIntegrity: pkg.nativeIntegrity }),
+      ...(!(pkg.nativeIntegrity === undefined) && {
+        nativeIntegrity: pkg.nativeIntegrity,
+      }),
       // Where the extracted tree already is. A layout projection copies from
       // here rather than re-downloading, so what lands in node_modules is the
       // same digest-verified bytes the store holds.
-      ...(root === undefined
-        ? {}
-        : { storePath: storePathForDigest(root, pkg.digest) }),
+      ...(!(root === undefined) && {
+        storePath: storePathForDigest(root, pkg.digest),
+      }),
       transitive: pkg.reason === 'transitive' || !direct.has(base),
     });
   }

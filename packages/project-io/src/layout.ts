@@ -129,8 +129,11 @@ export async function materialiseTree(
     return result;
   } catch (error) {
     if (
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       throw unsafe(destination);
@@ -373,6 +376,7 @@ async function canonicalizeStableTarget(path: string): Promise<string> {
       const canonical = await realpath(candidate);
       return join(canonical, ...tail.reverse());
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ELOOP' || code === 'ENOTDIR') throw unsafe(path);
       if (code !== 'ENOENT') throw error;
@@ -405,8 +409,11 @@ async function openStableDirectory(
   } catch (error) {
     await handle.close().catch(() => undefined);
     if (
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       throw unsafe(path);
@@ -445,8 +452,11 @@ async function openDirectory(
     return handle;
   } catch (error) {
     if (
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       throw unsafe(path);

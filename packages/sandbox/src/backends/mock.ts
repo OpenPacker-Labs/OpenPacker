@@ -42,14 +42,14 @@ export function createMockBackend(options?: {
         maximumStderrBytes: input.maximumStderrBytes,
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
-        ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+        ...(!(input.stdin === undefined) && { stdin: input.stdin }),
         inheritedFds: [
           ...directoryFds,
           ...(input.executableAuthority === undefined
             ? []
             : [input.executableAuthority.fd]),
         ],
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(!(input.signal === undefined) && { signal: input.signal }),
       });
     },
   };
@@ -148,12 +148,7 @@ export class BoundedOutput {
     return this.exceeded === undefined;
   }
 
-  result(exitCode: number): {
-    exitCode: number;
-    stdout: string;
-    stderr: string;
-    outputLimitExceeded?: OutputLimitKind;
-  } {
+  result(exitCode: number) {
     return {
       exitCode: this.exceeded ? 125 : exitCode,
       stdout: Buffer.concat(this.#stdout).toString('utf8'),
@@ -162,7 +157,7 @@ export class BoundedOutput {
         (this.exceeded
           ? `\nopenpacker sandbox: ${this.exceeded} output limit exceeded\n`
           : ''),
-      ...(this.exceeded ? { outputLimitExceeded: this.exceeded } : {}),
+      ...(this.exceeded && { outputLimitExceeded: this.exceeded }),
     };
   }
 }

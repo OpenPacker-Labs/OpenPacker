@@ -167,7 +167,7 @@ export interface PolicyFacts {
 }
 
 /** Numeric rank for trust tiers (higher is stronger). */
-export const TRUST_TIER_RANK: Readonly<Record<TrustTier, number>> = {
+export const TRUST_TIER_RANK = {
   'trusted-publisher': 40,
   provenance: 30,
   'registry-attested': 20,
@@ -672,7 +672,10 @@ export async function evaluatePolicy(
   }
 
   const policyDigest = await canonicalDigest(
-    policy as unknown as import('@openpacker/contracts').JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(
+      JSON.stringify(policy),
+    ) as import('@openpacker/contracts').JsonValue,
   );
   const decision = checks.some(
     (check) => check.status === 'invalid' || check.status === 'policy-denied',
@@ -766,12 +769,12 @@ export function policyDocumentFromPolicyInput(
     document.trustPolicyExclude = [...input.trustPolicyExclude];
   if (input.blockExoticSources) {
     document.blockExoticSources = {
-      ...(input.blockExoticSources.direct === undefined
-        ? {}
-        : { direct: input.blockExoticSources.direct }),
-      ...(input.blockExoticSources.transitive === undefined
-        ? {}
-        : { transitive: input.blockExoticSources.transitive }),
+      ...(!(input.blockExoticSources.direct === undefined) && {
+        direct: input.blockExoticSources.direct,
+      }),
+      ...(!(input.blockExoticSources.transitive === undefined) && {
+        transitive: input.blockExoticSources.transitive,
+      }),
     };
   }
   if (input.allowLifecycleScripts !== undefined)

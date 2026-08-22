@@ -26,7 +26,7 @@ export interface AuthConfig {
 }
 
 const TOKEN_ENV_NAME = /^[A-Z_][A-Z0-9_]*$/u;
-const TOKEN_SHAPED =
+const TOKEN_LIKELY_SECRET =
   /^(?:Bearer\s+|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|eyJ)/iu;
 const SECRET_KEYS = new Set([
   'token',
@@ -79,6 +79,7 @@ export function parseAuthConfig(raw: string): AuthConfig {
   assertNoSecrets(value, 'auth');
   if (value === null || typeof value !== 'object' || Array.isArray(value))
     throw new OpmError('INVALID_SPEC', 'Auth config must be a JSON object');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = value as Record<string, unknown>;
   const extra = Object.keys(record).filter(
     (key) => key !== 'version' && key !== 'origins',
@@ -101,6 +102,7 @@ export function parseAuthConfig(raw: string): AuthConfig {
     throw new OpmError('INVALID_SPEC', 'Auth config origins must be an object');
   const origins: Record<string, { tokenEnv?: string }> = {};
   for (const [key, entry] of Object.entries(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     record.origins as Record<string, unknown>,
   )) {
     const origin = pinnedOrigin(key);
@@ -114,6 +116,7 @@ export function parseAuthConfig(raw: string): AuthConfig {
         'INVALID_SPEC',
         `Auth config origin ${origin} must be an object`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fields = entry as Record<string, unknown>;
     const extraFields = Object.keys(fields).filter(
       (name) => name !== 'tokenEnv',
@@ -159,6 +162,7 @@ export async function readAuthConfig(
   try {
     info = await stat(path);
   } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       return { version: 1, origins: {} };
     throw error;
@@ -231,11 +235,7 @@ export function applyAuthConfigToEnvNames(input: {
   config: AuthConfig;
   origins?: readonly string[];
   tokenEnvs?: readonly string[];
-}): {
-  origins: string[];
-  tokenEnvs: string[];
-  changed: boolean;
-} {
+}) {
   const existingOrigins = (input.origins ?? []).map(pinnedOrigin);
   const seen = new Set<string>();
   for (const origin of existingOrigins) {
@@ -287,7 +287,7 @@ function pinnedOrigin(value: string): string {
 
 function looksLikeSecret(value: string): boolean {
   const trimmed = value.trim();
-  if (TOKEN_SHAPED.test(trimmed)) return true;
+  if (TOKEN_LIKELY_SECRET.test(trimmed)) return true;
   return trimmed.length >= 32 && !TOKEN_ENV_NAME.test(trimmed);
 }
 

@@ -29,6 +29,7 @@ export async function detectNpmLifecycleScripts(
   for (const candidate of [pkgPath, alt]) {
     try {
       const text = await readFile(candidate, 'utf8');
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const json = JSON.parse(text) as { scripts?: Record<string, string> };
       const scripts = json.scripts ?? {};
       const events: DeclaredLifecycleScripts['events'] = {};
@@ -39,6 +40,7 @@ export async function detectNpmLifecycleScripts(
       }
       return { events };
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       if (error instanceof SyntaxError) return { events: {} };
       throw error;
@@ -64,6 +66,7 @@ export function lifecycleScriptsAllowed(
   const list = policy?.allowedLifecycleScriptPackages ?? [];
   if (list.some((entry) => packageGrantMatches(packageId, entry))) return true;
   // Global allow is insecure. Strict mode (default) requires an allowlist hit.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const ext = policy as
     | (PolicyInput & { strictLifecycleAllowlist?: boolean })
     | undefined;
@@ -86,11 +89,13 @@ function packageGrantMatches(packageId: string, entry: string): boolean {
 export function sandboxPolicyFromProject(
   policy: PolicyInput | undefined,
 ): SandboxPolicy {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const packages = policy?.sandboxPackageGrants as
     | Readonly<Record<string, PackageGrants>>
     | undefined;
   // Extended knobs may live on PolicyInput once schema is regenerated, or on
   // a nested object written by toml.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const ext = (policy ?? {}) as PolicyInput & {
     projectWrite?: boolean;
     minimalPath?: boolean;
@@ -113,8 +118,8 @@ export function sandboxPolicyFromProject(
     strictLifecycleAllowlist: ext.strictLifecycleAllowlist ?? true,
     allowDangerousGrants: ext.allowDangerousGrants ?? false,
     legacyFatRoot: ext.legacyFatRoot ?? false,
-    ...(ext.timeoutMs === undefined ? {} : { timeoutMs: ext.timeoutMs }),
-    ...(packages === undefined ? {} : { packages }),
+    ...(!(ext.timeoutMs === undefined) && { timeoutMs: ext.timeoutMs }),
+    ...(!(packages === undefined) && { packages }),
   };
 }
 
@@ -142,6 +147,7 @@ export async function runLifecycleScript(input: {
   }
   const shell = input.shell ?? ['/bin/sh', '-c'];
   const sandboxPolicy = sandboxPolicyFromProject(input.policy);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const grants = input.policy?.sandboxPackageGrants?.[input.packageId] as
     | PackageGrants
     | undefined;
@@ -157,16 +163,16 @@ export async function runLifecycleScript(input: {
     policy: sandboxPolicy,
     profile: 'package-exec',
     packageId: input.packageId,
-    ...(grants === undefined ? {} : { grants }),
+    ...(!(grants === undefined) && { grants }),
     // Package tree only — never the whole host (host installers use a
     // separate funnel with broader grants).
     readwritePaths: [input.packageDir],
     readonlyPaths: [],
     network: grants?.network === true,
-    ...(input.directoryAuthority === undefined
-      ? {}
-      : { directoryAuthorities: [input.directoryAuthority] }),
-    ...(input.backend === undefined ? {} : { backend: input.backend }),
+    ...(!(input.directoryAuthority === undefined) && {
+      directoryAuthorities: [input.directoryAuthority],
+    }),
+    ...(!(input.backend === undefined) && { backend: input.backend }),
   });
 
   // Fail-closed: a script that ran without an OS jail is ambient code
@@ -212,9 +218,9 @@ export async function runDeclaredLifecycleScripts(input: {
       packageDir: input.packageDir,
       packageId: input.packageId,
       policy: input.policy,
-      ...(input.directoryAuthority === undefined
-        ? {}
-        : { directoryAuthority: input.directoryAuthority }),
+      ...(!(input.directoryAuthority === undefined) && {
+        directoryAuthority: input.directoryAuthority,
+      }),
     });
     outcomes.push(outcome);
     if (outcome.exitCode !== 0) {

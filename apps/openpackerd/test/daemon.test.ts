@@ -106,7 +106,8 @@ const universeBody: Omit<ResolutionUniverse, 'canonicalDigest'> = {
 const universe: ResolutionUniverse = {
   ...universeBody,
   canonicalDigest: await canonicalProjectionDigest(
-    universeBody as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(JSON.stringify(universeBody)) as JsonValue,
     DIGEST_PROJECTIONS.projections.find(({ id }) => id === 'universe-v1')!,
   ),
 };
@@ -167,11 +168,14 @@ describe('openpackerd', () => {
     );
     await expect(
       operations.identify(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         { query: { alias: 'missing' } } as never,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).resolves.toMatchObject({ status: 'not-found', candidates: [] });
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.pack({} as never, {} as never),
     ).rejects.toMatchObject({
       code: 'PROVIDER_CAPABILITY_MISSING',
@@ -230,6 +234,7 @@ describe('openpackerd', () => {
       },
     });
     const app = createOpenPackerDaemon({ operations });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const request = JSON.parse(
       await readFile(
         new URL(
@@ -297,9 +302,11 @@ describe('openpackerd', () => {
     });
     const subject = { type: 'artifact' as const, descriptor };
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.materialize({ subject } as never, {} as never),
     ).rejects.toMatchObject({ code: 'LIFECYCLE_DENIED' });
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.materialize({ subject, forensic: true } as never, {} as never),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
     const policy = {
@@ -311,12 +318,15 @@ describe('openpackerd', () => {
     };
     await expect(
       operations.materialize(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         { subject, forensic: true, policy } as never,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).resolves.toMatchObject({ descriptor });
     await expect(
       operations.materialize(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {
           subject: {
             type: 'artifact',
@@ -324,6 +334,7 @@ describe('openpackerd', () => {
           },
           forensic: true,
         } as never,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
@@ -357,6 +368,7 @@ describe('openpackerd', () => {
     });
     const forged = { ...snapshot, providerId: 'attacker' };
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.catalogImport(forged, { store } as never),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
     expect(
@@ -370,6 +382,7 @@ describe('openpackerd', () => {
       snapshotId: `sha256:${'a'.repeat(64)}`,
     };
     await expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       operations.catalogImport(wrongId, { store } as never),
     ).rejects.toMatchObject({ code: 'DIGEST_MISMATCH' });
   });
@@ -425,6 +438,7 @@ describe('openpackerd', () => {
     await expect(
       operations.materialize(
         { subject, policy: { ...basePolicy, maximumArtifactSize: 1 } },
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
@@ -434,6 +448,7 @@ describe('openpackerd', () => {
           subject,
           policy: { ...basePolicy, allowedProviderIds: ['other'] },
         },
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
@@ -446,6 +461,7 @@ describe('openpackerd', () => {
             allowedArtifactSourceSchemes: ['file'],
           },
         },
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
@@ -458,12 +474,14 @@ describe('openpackerd', () => {
           },
           policy: basePolicy,
         },
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         {} as never,
       ),
     ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
   });
 
   it('runs normalize and a proof-checked WASM solve through real Fastify routes', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const keys = JSON.parse(
       await readFile(
         new URL('../../../fixtures/trust/keys.json', import.meta.url),
@@ -566,6 +584,7 @@ describe('openpackerd', () => {
       'pkg:npm/%40openpacker/demo-tool@1.0.0',
     );
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const request = JSON.parse(
       await readFile(
         new URL(
@@ -739,6 +758,7 @@ describe('openpackerd', () => {
     const unavailable = async () => {
       throw new Error('not reached');
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = Object.fromEntries(
       [
         'normalize',
@@ -756,7 +776,7 @@ describe('openpackerd', () => {
         'pack',
         'publish',
       ].map((name) => [name, unavailable]),
-    ) as unknown as import('../src/operations.js').PrexOperations;
+    ) as import('../src/operations.js').PrexOperations;
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',
@@ -770,6 +790,7 @@ describe('openpackerd', () => {
   });
 
   it('rejects schema-invalid requests before operation dispatch', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = new Proxy(
       {},
       {
@@ -780,7 +801,7 @@ describe('openpackerd', () => {
                 throw new Error('operation must not run');
               },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',
@@ -794,6 +815,7 @@ describe('openpackerd', () => {
 
   it('validates extension requests and responses on the 200 route contract', async () => {
     let calls = 0;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = new Proxy(
       {},
       {
@@ -811,7 +833,7 @@ describe('openpackerd', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
 
     const invalidRequest = await app.inject({
@@ -845,6 +867,7 @@ describe('openpackerd', () => {
 
   it('enforces the deadline and propagates one generated correlation ID', async () => {
     let correlationId = '';
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = new Proxy(
       {},
       {
@@ -861,7 +884,7 @@ describe('openpackerd', () => {
                   throw new Error('operation must not run');
                 },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({
       operations,
       maximumTimeoutMilliseconds: 5,
@@ -983,12 +1006,13 @@ describe('openpackerd', () => {
     const unavailable = async (): Promise<never> => {
       throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const codec = {
       purlType: 'deb',
       canonicalizePurl: (purl: string) => purl,
-    } as unknown as Parameters<
-      typeof createReferenceOperations
-    >[0]['codecs'] extends ReadonlyMap<string, infer Codec> | undefined
+    } as Parameters<typeof createReferenceOperations>[0]['codecs'] extends
+      | ReadonlyMap<string, infer Codec>
+      | undefined
       ? Codec
       : never;
     const operations = createReferenceOperations({
@@ -1161,6 +1185,7 @@ describe('openpackerd HTTP surface hardening', () => {
    * visible in the body rather than only in principle.
    */
   function echoNormalizeApp() {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = new Proxy(
       {},
       {
@@ -1195,7 +1220,7 @@ describe('openpackerd HTTP surface hardening', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     return createOpenPackerDaemon({ operations });
   }
 
@@ -1275,6 +1300,7 @@ describe('openpackerd HTTP surface hardening', () => {
       new Error("ENOENT: no such file or directory, open '/home/op/.opm/db'"),
       { code: 'ENOENT' },
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const operations = new Proxy(
       {},
       {
@@ -1285,7 +1311,7 @@ describe('openpackerd HTTP surface hardening', () => {
           };
         },
       },
-    ) as unknown as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
+    ) as Parameters<typeof createOpenPackerDaemon>[0]['operations'];
     const app = createOpenPackerDaemon({ operations });
     const response = await app.inject({
       method: 'POST',

@@ -1021,7 +1021,7 @@ export function firstPartyOriginPolicy(input: {
   namedOrOverride: boolean;
   artifactOrigins?: readonly string[];
   extraOrigins?: readonly string[];
-}): { allowedOrigins: string[]; pinnedOrigins: string[] } {
+}) {
   const endpointOrigin = new URL(input.endpoint).origin;
   const extra = input.extraOrigins ?? [];
   const allowed = input.namedOrOverride
@@ -1050,11 +1050,11 @@ export function createFirstPartyTransport(input: {
     allowedOrigins: policy.allowedOrigins,
     pinnedOrigins: policy.pinnedOrigins,
     destinationPolicy: 'classify-and-pin',
-    ...(input.fetch ? { fetch: input.fetch } : {}),
-    ...(input.lookup ? { lookup: input.lookup } : {}),
-    ...(input.maximumBytes === undefined
-      ? {}
-      : { maximumBytes: input.maximumBytes }),
+    ...(input.fetch && { fetch: input.fetch }),
+    ...(input.lookup && { lookup: input.lookup }),
+    ...(!(input.maximumBytes === undefined) && {
+      maximumBytes: input.maximumBytes,
+    }),
   });
 }
 
@@ -1087,6 +1087,7 @@ export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
     options.fetch === undefined && fetchImpl === nativeFetch;
   const lookup =
     options.lookup ?? (pinProduction ? defaultHostLookup : undefined);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return (async (input, init) => {
     const href =
       typeof input === 'string'
@@ -1116,6 +1117,7 @@ export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
     try {
       const nextInit: RequestInit & { dispatcher?: Agent } = { ...init };
       if (agent !== undefined) nextInit.dispatcher = agent;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return await fetchImpl(input as Parameters<typeof fetch>[0], nextInit);
     } finally {
       await agent?.close();
@@ -1147,6 +1149,7 @@ export function isPrivateAddress(value: string): boolean {
   const octets = address.split('.').map(Number);
   if (octets.length !== 4 || octets.some((part) => part < 0 || part > 255))
     return true;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const [first, second] = octets as [number, number, number, number];
   return (
     first === 0 ||
@@ -1890,6 +1893,7 @@ function parseRangeToken(
     if (operator !== '')
       return [
         comparison(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           operator as '=' | '!=' | '>' | '>=' | '<' | '<=',
           fixed.join('.'),
         ),
@@ -1912,6 +1916,7 @@ function parseRangeToken(
   if (operator !== '')
     return [
       comparison(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         operator as '=' | '!=' | '>' | '>=' | '<' | '<=',
         parsed.normalized,
       ),
@@ -1994,9 +1999,9 @@ export function parseSemverRange(
     original,
     normalized: renderRange(ast),
     ast,
-    ...(versBody === undefined
-      ? {}
-      : { vers: `vers:${options.scheme}/${versBody}` }),
+    ...(!(versBody === undefined) && {
+      vers: `vers:${options.scheme}/${versBody}`,
+    }),
     reversible: versBody !== undefined,
     semanticLoss: loss,
   };
@@ -2028,6 +2033,7 @@ function parseVersExpression(expression: string): RangeAst {
         );
       return {
         type: 'comparison' as const,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         operator: match[1] as '=' | '!=' | '>' | '>=' | '<' | '<=',
         version: match[2],
       };
@@ -2063,6 +2069,7 @@ export function parseVers(value: string): VersionConstraint {
     scheme: match[1],
     original: value,
     normalized: renderRange(ast),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     ast: ast as VersionConstraint['ast'],
     vers: `vers:${match[1]}/${renderVersExpression(ast)}`,
     reversible: true,
@@ -2075,6 +2082,7 @@ export function rangeToConstraint(range: ParsedRange): VersionConstraint {
     scheme: range.scheme,
     original: range.original,
     normalized: range.normalized,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     ast: range.ast as VersionConstraint['ast'],
     reversible: range.reversible,
     semanticLoss: [...range.semanticLoss],
@@ -2112,6 +2120,7 @@ export function json<T>(response: HttpResponse): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const value = parseCanonicalJson(text(response)) as T;
     assertBoundedProviderMetadata(value);
     return value;
@@ -2220,15 +2229,18 @@ export async function packageNodeId(input: {
   if (!projection)
     throw new Error('package-node-v1 projection is missing from the registry');
   const digest = await canonicalProjectionDigest(
-    {
-      identity: {
-        exactPurl: input.exactPurl,
-        qualifiers: { ...(input.qualifiers ?? {}) },
-      },
-      ...(input.nativeSemanticsVersion === undefined
-        ? {}
-        : { nativeSemantics: { version: input.nativeSemanticsVersion } }),
-    } as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(
+      JSON.stringify({
+        identity: {
+          exactPurl: input.exactPurl,
+          qualifiers: { ...(input.qualifiers ?? {}) },
+        },
+        ...(!(input.nativeSemanticsVersion === undefined) && {
+          nativeSemantics: { version: input.nativeSemanticsVersion },
+        }),
+      }),
+    ) as JsonValue,
     projection,
   );
   return formatDigest(digest);

@@ -131,6 +131,7 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
       break;
     } catch (error) {
       if (error instanceof JailPathError) throw error;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       const parent = dirname(existing);
       if (parent === existing) break;

@@ -13,6 +13,7 @@ const root = new URL('../../../', import.meta.url);
 
 describe('generic consumer-owned external references', () => {
   it('round-trips unknown references without changing canonical PREX bytes', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fixture = JSON.parse(
       await readFile(
         new URL('fixtures/epoch/external-refs.json', root),
@@ -22,13 +23,17 @@ describe('generic consumer-owned external references', () => {
       openPackerDigest: string;
       externalRefs: ExternalRef[];
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const signed = JSON.parse(
       await readFile(
         new URL('fixtures/epoch/signed-receipt.json', root),
         'utf8',
       ),
     ) as SignedReceipt;
-    const receiptBytes = canonicalBytes(signed.receipt as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const receiptBytes = canonicalBytes(
+      JSON.parse(JSON.stringify(signed.receipt)) as JsonValue,
+    );
     const event = await createCloudEvent({
       type: 'org.openpacker.receipt.created',
       source: 'urn:openpacker:external-ref-test',
@@ -43,13 +48,15 @@ describe('generic consumer-owned external references', () => {
       fixture.openPackerDigest,
       fixture.externalRefs,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const roundTrip = JSON.parse(JSON.stringify(envelope)) as typeof envelope;
 
     expect(roundTrip.externalRefs).toEqual(fixture.externalRefs);
     expect(roundTrip.openPackerDigest).toBe(fixture.openPackerDigest);
-    expect(canonicalBytes(signed.receipt as unknown as JsonValue)).toEqual(
-      receiptBytes,
-    );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    expect(
+      canonicalBytes(JSON.parse(JSON.stringify(signed.receipt)) as JsonValue),
+    ).toEqual(receiptBytes);
     expect(canonicalEventBytes(event)).toEqual(eventBytes);
     expect(signed.receipt.externalRefs).toEqual([]);
     expect(event.externalrefs).toEqual([]);

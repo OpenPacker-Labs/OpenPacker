@@ -28,6 +28,7 @@ function registry(
 ) {
   const requests: string[] = [];
   const bytes = new TextEncoder().encode(JSON.stringify(body));
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const fetchImplementation = (async (url: URL | string) => {
     const href = String(url);
     requests.push(href);
@@ -40,7 +41,7 @@ function registry(
       status: 200,
       headers: { 'content-type': contentType },
     });
-  }) as unknown as typeof fetch;
+  }) as typeof fetch;
   return { requests, fetchImplementation };
 }
 
@@ -92,10 +93,11 @@ describe('addressing', () => {
 describe('browsing and pinning', () => {
   it('rejects an unconfigured registry before fetch', async () => {
     const contacted: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const fetchImplementation = (async (url: URL | string) => {
       contacted.push(String(url));
       return new Response('{}', { status: 200 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
     const reference =
       'pkg:oci/demo?repository_url=evil.example/acme/demo&tag=latest';
     await expect(
@@ -235,6 +237,7 @@ describe('materialise image layout', () => {
     onBlob = () => undefined,
   ): typeof fetch {
     const candidateBytes = new TextEncoder().encode(JSON.stringify(candidate));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (async (url: URL | string) => {
       const href = String(url);
       if (href.includes('/manifests/'))
@@ -250,7 +253,7 @@ describe('materialise image layout', () => {
       if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
         return new Response(layerBytes, { status: 200 });
       return new Response('missing', { status: 404 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
   }
 
   it('pulls config and layers into a digest-verified OCI layout tar', async () => {
@@ -258,6 +261,7 @@ describe('materialise image layout', () => {
     const record = await provider.fetchArtifactRecord(
       'pkg:oci/library/demo?tag=1.0',
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = record.body as {
       digest: { algorithm: string; value: string };
       mediaType: string;

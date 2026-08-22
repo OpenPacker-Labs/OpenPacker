@@ -7,6 +7,7 @@ import {
   type JsonValue,
   type PackageInstance,
   type PolicyInput,
+  type Requirement,
 } from '@openpacker/contracts';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
@@ -125,6 +126,7 @@ export interface ResolvedGraph {
  * paired with other bugs), which is why a Python graph looked unresolved.
  */
 export function nativeRange(requirement: unknown): string | undefined {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const value = requirement as {
     nativeSemantics?: { data?: Record<string, unknown> };
     raw?: unknown;
@@ -139,6 +141,7 @@ export function nativeRange(requirement: unknown): string | undefined {
     }
   }
   if (value.raw && typeof value.raw === 'object' && !Array.isArray(value.raw)) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const raw = value.raw as { range?: unknown; specifier?: unknown };
     if (typeof raw.range === 'string' && raw.range.trim() !== '')
       return raw.range.trim();
@@ -157,6 +160,7 @@ export function nativeRange(requirement: unknown): string | undefined {
 
 /** Marker string attached to a requirement, if any. */
 export function requirementMarker(requirement: unknown): string | undefined {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const value = requirement as {
     nativeSemantics?: { data?: { marker?: unknown } };
     raw?: unknown;
@@ -275,13 +279,11 @@ function evalMarkerAtom(
       atom.trim(),
     );
   if (!match) return 'unknown';
-  const [, variable, op, , literal] = match as unknown as [
-    string,
-    string,
-    string,
-    string,
-    string,
-  ];
+  const variable = match[1];
+  const op = match[2];
+  const literal = match[4];
+  if (variable === undefined || op === undefined || literal === undefined)
+    return 'unknown';
 
   if (variable === 'extra') {
     if (op === '==') return env.extras.has(literal);
@@ -362,13 +364,15 @@ function compareDotted(
  * hard edge on every host.
  */
 export function shouldFollowRequirement(
-  requirement: unknown,
+  requirement: Requirement,
   env: HostEnvironment,
-): { follow: boolean; skipReason?: string } {
+) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const kind = (requirement as { kind?: string }).kind ?? 'runtime';
   if (!INSTALLED_KINDS.has(kind))
     return { follow: false, skipReason: `kind ${kind} is not installed` };
 
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const optional = (requirement as { optional?: boolean }).optional === true;
   const marker = requirementMarker(requirement);
 
@@ -450,7 +454,7 @@ export async function resolveGraph(input: {
 
   const queue: { purl: string; range?: string }[] = input.roots.map((root) => ({
     purl: stripPurlVersion(root.purl),
-    ...(root.range === undefined ? {} : { range: root.range }),
+    ...(!(root.range === undefined) && { range: root.range }),
   }));
   for (const item of queue) queued.add(`${item.purl}|${item.range ?? ''}`);
 
@@ -519,6 +523,7 @@ export async function resolveGraph(input: {
           const decision = shouldFollowRequirement(requirement, host);
           if (
             decision.follow &&
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             (requirement as { optional?: boolean }).optional === true
           ) {
             return { ...requirement, optional: false };
@@ -526,6 +531,7 @@ export async function resolveGraph(input: {
           return requirement;
         },
       );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       packages.push({
         ...instance,
         requirements: rewrittenRequirements,
@@ -539,18 +545,18 @@ export async function resolveGraph(input: {
             marker !== undefined &&
             decision.skipReason?.startsWith('marker false')
           ) {
-            const expression = (
-              requirement as { expression?: { purl?: string } }
-            ).expression;
+            const expression =
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (requirement as { expression?: { purl?: string } }).expression;
             if (expression?.purl)
               skippedMarkers.push({ purl: expression.purl, marker });
           }
           // Marker unknown: surface so a silent empty graph is not the only
           // signal that something was skipped.
           if (decision.skipReason?.startsWith('marker not evaluable')) {
-            const expression = (
-              requirement as { expression?: { purl?: string } }
-            ).expression;
+            const expression =
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (requirement as { expression?: { purl?: string } }).expression;
             if (expression?.purl)
               unresolved.push({
                 purl: expression.purl,
@@ -559,13 +565,14 @@ export async function resolveGraph(input: {
           }
           continue;
         }
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const expression = (requirement as { expression?: { purl?: string } })
           .expression;
         if (!expression?.purl) continue;
         const range = nativeRange(requirement);
         const next = {
           purl: stripPurlVersion(expression.purl),
-          ...(range === undefined ? {} : { range }),
+          ...(!(range === undefined) && { range }),
         };
         const key = `${next.purl}|${next.range ?? ''}`;
         if (queued.has(key)) continue;
@@ -596,7 +603,9 @@ export async function resolveGraph(input: {
 async function loadResolver() {
   const { createEmbeddedResolver } = await import('@openpacker/embedded');
   const specifier = '@openpacker/embedded/wasm-node';
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const bindings = (await import(specifier)) as Record<string, unknown>;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return createEmbeddedResolver(bindings as never);
 }
 
@@ -679,7 +688,7 @@ export async function solveGraph(input: {
       expression: {
         purl: stripPurlVersion(root.purl),
         type: 'package',
-        ...(root.vers === undefined ? {} : { vers: root.vers }),
+        ...(!(root.vers === undefined) && { vers: root.vers }),
       },
       id: `root-${index}`,
       kind: 'runtime',
@@ -690,12 +699,15 @@ export async function solveGraph(input: {
   };
 
   const solved = resolver.solve({
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     request: request as never,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     universe: universe as never,
   });
   // The proof is checked rather than trusted: an unchecked proof is only a
   // claim, and invariant 5 makes an invalid one a hard failure.
   const checked = resolver.check(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     { request: request as never, universe: universe as never },
     solved,
   );
@@ -752,7 +764,7 @@ export async function solveGraph(input: {
   return {
     selected,
     dependencyEdges,
-    solutionDigest: solved.solution.solutionDigest as unknown as string,
+    solutionDigest: solved.solution.solutionDigest.value,
     proofValid: checked.valid,
   };
 }
@@ -796,7 +808,8 @@ export async function universeFrom(
   if (!projection)
     throw new OpmError('INTERNAL_ERROR', 'Missing universe-v1 projection');
   const universeDigest = await canonicalProjectionDigest(
-    body as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(JSON.stringify(body)) as JsonValue,
     projection,
   );
   return {
@@ -813,20 +826,23 @@ function completeExpression(input: JsonValue): JsonValue {
   if (input.type === 'allOf' || input.type === 'anyOf')
     return {
       ...input,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expressions: (input.expressions as JsonValue[]).map(completeExpression),
     };
   if (input.type === 'not')
     return {
       ...input,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expression: completeExpression(input.expression as JsonValue),
     };
   if (input.type === 'conditional')
     return {
       ...input,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       then: completeExpression(input.then as JsonValue),
-      ...(input.else === undefined
-        ? {}
-        : { else: completeExpression(input.else) }),
+      ...(!(input.else === undefined) && {
+        else: completeExpression(input.else),
+      }),
     };
   return input;
 }

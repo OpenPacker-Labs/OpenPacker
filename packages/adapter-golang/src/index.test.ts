@@ -17,6 +17,7 @@ const metadataBytes = await readFile(
     import.meta.url,
   ),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const metadata = JSON.parse(
   metadataBytes.toString(),
 ) as GolangModuleVersionMetadata;

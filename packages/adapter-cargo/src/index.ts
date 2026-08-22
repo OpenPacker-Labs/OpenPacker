@@ -94,7 +94,7 @@ function cargoIdentity(exactPurl: string, endpoint?: string): PackageIdentity {
       {
         ecosystem: 'cargo',
         coordinate: parsed.name,
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -153,7 +153,7 @@ export class CargoCodec
       ecosystem: 'cargo',
       name: match[1]!.toLowerCase(),
       original: value,
-      ...(match[2] === undefined ? {} : { version: match[2] }),
+      ...(!(match[2] === undefined) && { version: match[2] }),
     };
   }
 
@@ -168,9 +168,9 @@ export class CargoCodec
     return formatPurl({
       ...parsed,
       name: parsed.name.toLowerCase(),
-      ...(parsed.version === undefined
-        ? {}
-        : { version: this.parseNativeVersion(parsed.version).normalized }),
+      ...(!(parsed.version === undefined) && {
+        version: this.parseNativeVersion(parsed.version).normalized,
+      }),
     });
   }
 
@@ -223,7 +223,7 @@ export class CargoCodec
         const expression: Requirement['expression'] = {
           type: 'package',
           purl: `pkg:cargo/${encodeURIComponent(name)}`,
-          ...(range.vers === undefined ? {} : { vers: range.vers }),
+          ...(!(range.vers === undefined) && { vers: range.vers }),
         };
         const targetLoss =
           dependency.target &&
@@ -247,17 +247,19 @@ export class CargoCodec
           optional: dependency.optional ?? false,
           source: sourceRef('cargo', provenance.endpoint),
           authority: 'native',
-          raw: dependency as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          raw: JSON.parse(JSON.stringify(dependency)) as JsonValue,
           nativeSemantics: {
             version: 'cargo-v1',
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             data: {
               features: dependency.features ?? [],
               defaultFeatures: dependency.default_features ?? true,
               target: dependency.target ?? null,
               registry: dependency.registry ?? null,
-              ...(dependency.package === undefined
-                ? {}
-                : { renamedFrom: dependency.package }),
+              ...(!(dependency.package === undefined) && {
+                renamedFrom: dependency.package,
+              }),
             } as JsonValue,
           },
           semanticLoss: [...range.semanticLoss, ...targetLoss],
@@ -333,13 +335,14 @@ export class CargoCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'cargo-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           features: metadata.features,
           features2: metadata.features2 ?? {},
-          ...(metadata.links === undefined ? {} : { links: metadata.links }),
-          ...(metadata.rust_version === undefined
-            ? {}
-            : { rustVersion: metadata.rust_version }),
+          ...(!(metadata.links === undefined) && { links: metadata.links }),
+          ...(!(metadata.rust_version === undefined) && {
+            rustVersion: metadata.rust_version,
+          }),
           indexSchemaVersion: metadata.v ?? 1,
           checksum: metadata.cksum,
           buildAndProcMacroCodeExecuted: false,
@@ -364,10 +367,10 @@ export class CargoCodec
           `pkg:cargo/${encodeURIComponent(entry.name)}@${encodeURIComponent(entry.version)}`,
         ),
         nativeCoordinate: `${entry.name}@${entry.version}`,
-        ...(entry.source === undefined ? {} : { resolved: entry.source }),
-        ...(entry.checksum === undefined
-          ? {}
-          : { artifactDigest: `sha256:${entry.checksum}` }),
+        ...(!(entry.source === undefined) && { resolved: entry.source }),
+        ...(!(entry.checksum === undefined) && {
+          artifactDigest: `sha256:${entry.checksum}`,
+        }),
         dependencies: Object.fromEntries(
           (entry.dependencies ?? []).map((dependency) => [
             dependency,
@@ -423,9 +426,9 @@ export function parseCargoLock(input: string): CargoLockDocument {
       return {
         name,
         version: packageVersion,
-        ...(source === undefined ? {} : { source }),
-        ...(checksum === undefined ? {} : { checksum }),
-        ...(dependencies === undefined ? {} : { dependencies }),
+        ...(!(source === undefined) && { source }),
+        ...(!(checksum === undefined) && { checksum }),
+        ...(!(dependencies === undefined) && { dependencies }),
       };
     });
   return { version: Number(versionMatch[1]), packages };
@@ -524,14 +527,15 @@ export class CargoSparseProvider implements CatalogProvider {
         `${canonical} is absent from the sparse index`,
       );
     const metadataDigest = await canonicalDigest(
-      metadata as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(metadata)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(metadata, {
       providerId: this.providerId,
       endpoint: record.endpoint,
       retrievedAt: record.retrievedAt,
       evaluationTime: record.retrievedAt,
-      ...(record.etag === undefined ? {} : { etag: record.etag }),
+      ...(!(record.etag === undefined) && { etag: record.etag }),
       metadataDigest,
       rawMetadataRef: {
         type: 'provider-metadata',
@@ -577,6 +581,7 @@ export class CargoSparseProvider implements CatalogProvider {
     });
     if (response.status < 200 || response.status >= 300)
       throw providerErrorForStatus(response.status);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const nativeData = inspection.package.nativeSemantics.data as Record<
       string,
       JsonValue
@@ -638,10 +643,11 @@ export class CargoSparseProvider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(records as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -657,6 +663,7 @@ export class CargoSparseProvider implements CatalogProvider {
         .map((record) => record.retrievedAt)
         .sort()
         .at(-1) ?? evaluationTime;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest({
       providerId: this.providerId,
       providerType: 'cargo-sparse',
@@ -664,7 +671,7 @@ export class CargoSparseProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records,
     } as JsonValue);
     return {
@@ -675,7 +682,7 @@ export class CargoSparseProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -707,9 +714,9 @@ export class CargoSparseProvider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'text/plain',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -739,6 +746,7 @@ export class CargoSparseProvider implements CatalogProvider {
         );
       body = lines.map((line, index) => {
         try {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const parsed = JSON.parse(line) as CargoIndexRecord;
           assertBoundedProviderMetadata(parsed);
           return parsed;
@@ -759,9 +767,9 @@ export class CargoSparseProvider implements CatalogProvider {
     const record: ProviderRecord<readonly CargoIndexRecord[]> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),

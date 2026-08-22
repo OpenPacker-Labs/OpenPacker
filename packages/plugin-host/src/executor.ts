@@ -31,6 +31,8 @@ import {
 
 export type SandboxRun = (input: RunInSandboxInput) => Promise<SandboxOutcome>;
 
+type PluginResult = object | string | number | boolean | null;
+
 export interface DelegatedPluginLimits {
   /** Wall-clock budget for one plugin operation. */
   timeoutMs: number;
@@ -51,12 +53,7 @@ export const DEFAULT_PLUGIN_LIMITS: DelegatedPluginLimits = {
 const SANDBOX_CHANNEL_CEILING = 1_048_576;
 const SANDBOX_COMBINED_CEILING = 2_097_152;
 
-function clampedLimits(limits: DelegatedPluginLimits): {
-  stdout: number;
-  stderr: number;
-  combined: number;
-  response: number;
-} {
+function clampedLimits(limits: DelegatedPluginLimits) {
   const stdout = Math.min(limits.responseBytes, SANDBOX_CHANNEL_CEILING);
   const stderr = Math.min(limits.stderrBytes, SANDBOX_CHANNEL_CEILING);
   return {
@@ -159,7 +156,7 @@ export class DelegatedPluginExecutor {
    * AUTHORITY_NOT_DECLARED, and anything malformed, oversized, swapped, or
    * schema-invalid is INVALID_RESPONSE.
    */
-  async invoke(input: DelegatedPluginInvocation): Promise<unknown> {
+  async invoke(input: DelegatedPluginInvocation): Promise<PluginResult> {
     const { operation } = input;
     const manifest = this.#manifest;
     const offline = input.context.offline === true;
@@ -282,15 +279,13 @@ export class DelegatedPluginExecutor {
       readonlyPaths: [this.#storePath],
       network,
       profile: 'package-exec',
-      ...(authority.fd < 0
-        ? {}
-        : {
-            executableAuthority: {
-              fd: authority.fd,
-              path: authority.identity.path,
-            },
-          }),
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(authority.fd < 0) && {
+        executableAuthority: {
+          fd: authority.fd,
+          path: authority.identity.path,
+        },
+      }),
+      ...(!(signal === undefined) && { signal }),
     });
     await assertExecutableIdentity(
       authority.identity,

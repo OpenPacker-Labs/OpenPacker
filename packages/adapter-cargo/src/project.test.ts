@@ -133,11 +133,9 @@ describe('CargoProjectFormat — Cargo.lock', () => {
     digest: `sha256:${'0'.repeat(64)}`,
     size: 10,
     transitive: false,
-    ...(hex
-      ? {
-          nativeIntegrity: { algorithm: 'sha256', value: hex, encoding: 'hex' },
-        }
-      : {}),
+    ...(hex && {
+      nativeIntegrity: { algorithm: 'sha256', value: hex, encoding: 'hex' },
+    }),
   });
 
   it('writes checksums Cargo can verify', async () => {

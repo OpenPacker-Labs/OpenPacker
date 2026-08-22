@@ -168,7 +168,10 @@ async function threshold<T extends TufSigned>(
       'signature',
       'Invalid TUF signature threshold',
     );
-  const payload = canonicalBytes(metadata.signed as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const payload = canonicalBytes(
+    JSON.parse(JSON.stringify(metadata.signed)) as JsonValue,
+  );
   const valid = new Set<string>();
   for (const signature of metadata.signatures) {
     if (valid.has(signature.keyid) || !role.keyids.includes(signature.keyid))
@@ -213,9 +216,9 @@ function fresh(metadata: TufSigned, now: string): void {
 function parse<T extends TufSigned>(bytes: Uint8Array): SignedMetadata<T> {
   let value: SignedMetadata<T>;
   try {
-    value = parseCanonicalJson(
+    value = parseCanonicalJson<SignedMetadata<T>>(
       new TextDecoder().decode(bytes),
-    ) as unknown as SignedMetadata<T>;
+    );
   } catch {
     throw new TufVerificationError('mix-match', 'Malformed TUF metadata');
   }

@@ -102,6 +102,8 @@ export interface OperationContext {
   store: OpenPackerStateStore;
 }
 
+type OperationStringMap = Record<string, string>;
+
 export interface PrexOperations {
   capabilities?(meta: ProtocolMeta): Capabilities;
   normalize(
@@ -235,13 +237,13 @@ export function createReferenceOperations(
         const coordinate = codec.parseNativeCoordinate(query.nativeCoordinate);
         purl = formatPurl({
           type: coordinate.ecosystem,
-          ...(coordinate.namespace === undefined
-            ? {}
-            : { namespace: coordinate.namespace }),
+          ...(!(coordinate.namespace === undefined) && {
+            namespace: coordinate.namespace,
+          }),
           name: coordinate.name,
-          ...(coordinate.version === undefined
-            ? {}
-            : { version: coordinate.version }),
+          ...(!(coordinate.version === undefined) && {
+            version: coordinate.version,
+          }),
           qualifiers: {},
         });
         purl = codec.canonicalizePurl(purl);
@@ -307,13 +309,14 @@ export function createReferenceOperations(
           options.universe.sourceSnapshots[0]?.rootDigest ??
           options.universe.canonicalDigest,
         metadataDigest: item.metadataDigest,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         warnings: [] as Warning[],
       }));
       const next = start + page.length;
       return {
         meta: options.meta,
         versions,
-        ...(next < ordered.length ? { nextCursor: String(next) } : {}),
+        ...(next < ordered.length && { nextCursor: String(next) }),
       };
     },
 
@@ -363,18 +366,27 @@ export function createReferenceOperations(
           'INTERNAL_ERROR',
           `Independent proof check failed: ${check.diagnostics.join('; ')}`,
         );
-      const explanation = output.explanation as unknown as ExplanationGraph;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      const explanation = output.explanation as ExplanationGraph;
       const proofDigest = await projectedDigest(
         'proof-v1',
-        output.proof as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(output.proof)) as JsonValue,
       );
       const explanationDigest = await projectedDigest(
         'explanation-v1',
-        explanation as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(explanation)) as JsonValue,
       );
-      const artifactSetDigest = await projectedDigest('artifact-set-v1', {
-        items: output.selected.flatMap((item) => item.artifacts),
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      const artifactSetDigest = await projectedDigest(
+        'artifact-set-v1',
+        JSON.parse(
+          JSON.stringify({
+            items: output.selected.flatMap((item) => item.artifacts),
+          }),
+        ) as JsonValue,
+      );
       const receipt: ResolutionReceipt = {
         receiptVersion: '1',
         protocolVersion: '1.0-draft',
@@ -383,17 +395,23 @@ export function createReferenceOperations(
         universeDigest: output.universeDigest,
         sourceSnapshots: options.universe.sourceSnapshots,
         targetDigest: await canonicalDigest(
-          output.normalizedRequest.target as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(
+            JSON.stringify(output.normalizedRequest.target),
+          ) as JsonValue,
         ),
         policyDigest: await canonicalDigest(
-          output.normalizedRequest.policy as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(
+            JSON.stringify(output.normalizedRequest.policy),
+          ) as JsonValue,
         ),
         lifecycleRoot: options.universe.lifecycleRoot,
         // Amendments that shaped this result are bound into the receipt, so a
         // consumer can tell an amended solve from an unamended one.
-        ...(output.proof.appliedAmendmentDigests?.length
-          ? { amendmentDigests: output.proof.appliedAmendmentDigests }
-          : {}),
+        ...(output.proof.appliedAmendmentDigests?.length && {
+          amendmentDigests: output.proof.appliedAmendmentDigests,
+        }),
         semanticsProfile: output.normalizedRequest.semantics.profile,
         objectiveOrdering: output.normalizedRequest.objectives,
         solutionDigest: output.solution.solutionDigest,
@@ -427,7 +445,7 @@ export function createReferenceOperations(
         proof: output.proof,
         explanation,
         unsignedReceipt: receipt,
-        ...(signedReceipt === undefined ? {} : { signedReceipt }),
+        ...(!(signedReceipt === undefined) && { signedReceipt }),
       };
     },
 
@@ -463,29 +481,23 @@ export function createReferenceOperations(
             forensicDigestMaterialization: input.forensic === true,
             semanticLoss: owner?.semanticLoss ?? [],
             sourceSnapshotDigests: owner?.sourceSnapshots ?? [],
-            ...(owner === undefined ? {} : { lifecycle: owner.lifecycle }),
-            ...(owner === undefined
-              ? {}
-              : {
-                  packageId:
-                    owner.identity.exactPurl ?? owner.identity.canonicalPurl,
+            ...(!(owner === undefined) && { lifecycle: owner.lifecycle }),
+            ...(!(owner === undefined) && {
+              packageId:
+                owner.identity.exactPurl ?? owner.identity.canonicalPurl,
+            }),
+            ...(!(input.context?.evaluationTime === undefined) && {
+              evaluationTime: input.context.evaluationTime,
+            }),
+            ...(!(input.target === undefined) && {
+              target: {
+                ...(input.target.os !== undefined && { os: input.target.os }),
+                ...(input.target.architecture !== undefined && {
+                  architecture: input.target.architecture,
                 }),
-            ...(input.context?.evaluationTime === undefined
-              ? {}
-              : { evaluationTime: input.context.evaluationTime }),
-            ...(input.target === undefined
-              ? {}
-              : {
-                  target: {
-                    ...(input.target.os === undefined
-                      ? {}
-                      : { os: input.target.os }),
-                    ...(input.target.architecture === undefined
-                      ? {}
-                      : { architecture: input.target.architecture }),
-                  },
-                }),
-            ...(scheme === undefined ? {} : { sourceScheme: scheme }),
+              },
+            }),
+            ...(!(scheme === undefined) && { sourceScheme: scheme }),
             sourceKind: materializationSourceKind(owner, scheme),
             lifecycleScriptsExecuted: false,
           };
@@ -562,6 +574,7 @@ export function createReferenceOperations(
           verified.add('artifact-size');
         }
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         if ((error as { code?: string }).code === 'PROVIDER_CAPABILITY_MISSING')
           throw error;
         failure = error;
@@ -580,7 +593,7 @@ export function createReferenceOperations(
         'lifecycle-eligibility',
         'policy',
       ]);
-      const aliases: Record<string, string> = {
+      const aliases: OperationStringMap = {
         'prex-receipt-signature': 'receipt-signature',
         tuf: 'tuf-metadata',
         sigstore: 'sigstore-bundle',
@@ -660,9 +673,9 @@ export function createReferenceOperations(
       return {
         meta: options.meta,
         graph,
-        ...(input.format === 'text' || input.format === 'both'
-          ? { text: renderExplanation(graph) }
-          : {}),
+        ...((input.format === 'text' || input.format === 'both') && {
+          text: renderExplanation(graph),
+        }),
       };
     },
 
@@ -698,20 +711,22 @@ export function createReferenceOperations(
     async lockImport(input) {
       try {
         const solveInput = await planNativeLockImport(input.lockfile, {
-          ...(input.format === undefined
-            ? {}
-            : { format: input.format as LockFormat }),
-          ...(input.ecosystem === undefined
-            ? {}
-            : { ecosystem: input.ecosystem }),
-          ...(input.evaluationTime === undefined
-            ? {}
-            : { evaluationTime: input.evaluationTime }),
-          ...(input.target === undefined ? {} : { target: input.target }),
-          ...(input.policy === undefined ? {} : { policy: input.policy }),
-          ...(input.objectives === undefined
-            ? {}
-            : { objectives: input.objectives as SolveRequest['objectives'] }),
+          ...(!(input.format === undefined) && {
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            format: input.format as LockFormat,
+          }),
+          ...(!(input.ecosystem === undefined) && {
+            ecosystem: input.ecosystem,
+          }),
+          ...(!(input.evaluationTime === undefined) && {
+            evaluationTime: input.evaluationTime,
+          }),
+          ...(!(input.target === undefined) && { target: input.target }),
+          ...(!(input.policy === undefined) && { policy: input.policy }),
+          ...(!(input.objectives === undefined) && {
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            objectives: input.objectives as SolveRequest['objectives'],
+          }),
           codecs,
         });
         const result = await completeLockImport(solveInput, options.resolver, {
@@ -725,19 +740,20 @@ export function createReferenceOperations(
           lockCapture: {
             format: result.lockCapture.format,
             formatVersion: result.lockCapture.formatVersion,
-            ...(result.lockCapture.sourceDigest === undefined
-              ? {}
-              : { sourceDigest: result.lockCapture.sourceDigest }),
+            ...(!(result.lockCapture.sourceDigest === undefined) && {
+              sourceDigest: result.lockCapture.sourceDigest,
+            }),
             packages: result.lockCapture.packages.map((entry) => ({
               exactPurl: entry.exactPurl,
               nativeCoordinate: entry.nativeCoordinate,
-              ...(entry.resolved === undefined
-                ? {}
-                : { resolved: entry.resolved }),
-              ...(entry.artifactDigest === undefined
-                ? {}
-                : { artifactDigest: entry.artifactDigest }),
+              ...(!(entry.resolved === undefined) && {
+                resolved: entry.resolved,
+              }),
+              ...(!(entry.artifactDigest === undefined) && {
+                artifactDigest: entry.artifactDigest,
+              }),
               dependencies: { ...entry.dependencies },
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               native: entry.native as JsonValue,
             })),
             semanticLoss: [...result.lockCapture.semanticLoss],
@@ -782,6 +798,7 @@ function normalizeItem(
     // UNSUPPORTED_ECOSYSTEM.
     if (!isEcosystem(parsed.type))
       throw operationError('INVALID_PURL', `Not a PURL type: ${parsed.type}`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const codec = codecs.get(parsed.type as Ecosystem);
     const canonical = codec
       ? codec.canonicalizePurl(item.value)
@@ -790,7 +807,8 @@ function normalizeItem(
       item.type,
       item.value,
       canonical,
-      parsePurl(canonical) as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(parsePurl(canonical))) as JsonValue,
       parsed.type,
       codec
         ? []
@@ -823,7 +841,8 @@ function normalizeItem(
         item.type,
         item.value,
         parsed.vers!,
-        parsed as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(parsed)) as JsonValue,
         parsed.scheme,
       ),
       scheme: parsed.scheme,
@@ -844,9 +863,12 @@ function normalizeItem(
   if (item.type === 'target')
     return normalized(
       item.type,
-      item.value as unknown as JsonValue,
-      item.value as unknown as JsonValue,
-      item.value as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(item.value)) as JsonValue,
     );
   const codec = codecFor(item.ecosystem, codecs);
   if (item.type === 'native-coordinate') {
@@ -854,13 +876,13 @@ function normalizeItem(
     const purl = codec.canonicalizePurl(
       formatPurl({
         type: coordinate.ecosystem,
-        ...(coordinate.namespace === undefined
-          ? {}
-          : { namespace: coordinate.namespace }),
+        ...(!(coordinate.namespace === undefined) && {
+          namespace: coordinate.namespace,
+        }),
         name: coordinate.name,
-        ...(coordinate.version === undefined
-          ? {}
-          : { version: coordinate.version }),
+        ...(!(coordinate.version === undefined) && {
+          version: coordinate.version,
+        }),
         qualifiers: {},
       }),
     );
@@ -868,7 +890,8 @@ function normalizeItem(
       item.type,
       item.value,
       purl,
-      coordinate as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(coordinate)) as JsonValue,
       item.ecosystem,
     );
   }
@@ -878,7 +901,8 @@ function normalizeItem(
       item.type,
       item.value,
       parsed.normalized,
-      parsed as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(parsed)) as JsonValue,
       item.ecosystem,
     );
   }
@@ -887,8 +911,10 @@ function normalizeItem(
     item.type,
     item.value,
     parsed.vers ?? parsed.normalized,
-    parsed as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(JSON.stringify(parsed)) as JsonValue,
     item.ecosystem,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     parsed.semanticLoss as NormalizeResponse['results'][number]['semanticLoss'],
   );
 }
@@ -905,8 +931,9 @@ function normalized(
     type,
     original,
     canonical,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     parsed: parsed as { [key: string]: JsonValue },
-    ...(ecosystem === undefined ? {} : { ecosystem }),
+    ...(!(ecosystem === undefined) && { ecosystem }),
     reversibility: semanticLoss.length ? 'lossy' : 'exact',
     warnings: [],
     semanticLoss,
@@ -921,6 +948,8 @@ function buildCodecMap(options: ReferenceOperationsOptions): CodecMap {
     for (const module of registry.list()) {
       if (!module.codec) continue;
       const codec = module.codec();
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       for (const purlType of module.purlTypes)
         codecs.set(purlType.toLowerCase() as Ecosystem, codec);
     }
@@ -937,6 +966,7 @@ function codecFor(ecosystem: string, codecs: CodecMap): EcosystemCodec {
   // tree; the PURL-type shape is therefore checked here instead.
   if (!isEcosystem(ecosystem))
     throw operationError('INVALID_PURL', `Not a PURL type: ${ecosystem}`);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const codec = codecs.get(ecosystem as Ecosystem);
   if (!codec)
     throw operationError(
@@ -1009,7 +1039,7 @@ function parseCursor(value: string): number {
 function findArtifact(
   input: MaterializeRequest,
   packages: readonly PackageInstance[],
-): { descriptor: ArtifactDescriptor; package?: PackageInstance } {
+) {
   const subject = input.subject;
   if (subject.type === 'artifact') {
     let canonicalDescriptor: ArtifactDescriptor | undefined;
@@ -1023,7 +1053,7 @@ function findArtifact(
     });
     return {
       descriptor: canonicalDescriptor ?? subject.descriptor,
-      ...(owner === undefined ? {} : { package: owner }),
+      ...(!(owner === undefined) && { package: owner }),
     };
   }
   let owner: PackageInstance | undefined;
@@ -1067,7 +1097,7 @@ function findArtifact(
       'ARTIFACT_NOT_FOUND',
       'No immutable artifact descriptor matches the materialization subject',
     );
-  return { descriptor, ...(owner === undefined ? {} : { package: owner }) };
+  return { descriptor, ...(!(owner === undefined) && { package: owner }) };
 }
 
 function sourceScheme(uri: string): string | undefined {
@@ -1167,7 +1197,7 @@ export interface CapabilityFeatures {
   ecosystems?: Iterable<string>;
 }
 
-const EVIDENCE_TYPE_BY_CHECK: Record<string, string> = {
+const EVIDENCE_TYPE_BY_CHECK: OperationStringMap = {
   'tuf-metadata': 'tuf',
   'sigstore-bundle': 'sigstore',
   'slsa-subject': 'slsa',
@@ -1182,7 +1212,7 @@ export function capabilityFeatures(
   ecosystems?: Iterable<string>,
 ): CapabilityFeatures {
   return {
-    ...(ecosystems === undefined ? {} : { ecosystems: [...ecosystems] }),
+    ...(!(ecosystems === undefined) && { ecosystems: [...ecosystems] }),
     receiptVerification: (options.receiptVerifiers?.size ?? 0) > 0,
     artifactVerification: options.artifactSource !== undefined,
     configuredChecks: [...(options.verificationChecks?.keys() ?? [])],

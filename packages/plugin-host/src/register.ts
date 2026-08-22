@@ -194,7 +194,7 @@ async function registerOne(
   );
   registry.register(
     delegatedAdapterModule(manifest, executor, {
-      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(!(options.now === undefined) && { now: options.now }),
     }),
   );
   return {
@@ -223,6 +223,7 @@ export async function registerInstalledPlugins(
   // A store that was never created means no plugins; registration must not
   // create it — this runs at CLI startup, before any plugin command.
   const rootInfo = await lstat(storeRoot).catch((error: unknown) => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   });
@@ -344,11 +345,7 @@ function assertAllowEnvironmentSafe(
 function resolveEnvironment(
   manifest: DelegatedAdapterManifest,
   options: RegisterInstalledPluginsOptions,
-): {
-  environment: Readonly<Record<string, string>>;
-  grantedEnvironment: readonly string[];
-  allowNetwork: boolean;
-} {
+) {
   assertAllowEnvironmentSafe(options);
   const allowlist = new Set(options.allowEnvironment ?? []);
   const environment: Record<string, string> = {};
@@ -373,19 +370,19 @@ function dependencies(
   options: RegisterInstalledPluginsOptions,
 ): DelegatedPluginExecutorDependencies {
   return {
-    ...(options.sandboxRun === undefined
-      ? {}
-      : { sandboxRun: options.sandboxRun }),
-    ...(options.inspectExecutable === undefined
-      ? {}
-      : { inspectExecutable: options.inspectExecutable }),
-    ...(options.openExecutableAuthority === undefined
-      ? {}
-      : { openExecutableAuthority: options.openExecutableAuthority }),
-    ...(options.limits === undefined ? {} : { limits: options.limits }),
-    ...(options.sandboxPrefer === undefined
-      ? {}
-      : { sandboxPrefer: options.sandboxPrefer }),
+    ...(!(options.sandboxRun === undefined) && {
+      sandboxRun: options.sandboxRun,
+    }),
+    ...(!(options.inspectExecutable === undefined) && {
+      inspectExecutable: options.inspectExecutable,
+    }),
+    ...(!(options.openExecutableAuthority === undefined) && {
+      openExecutableAuthority: options.openExecutableAuthority,
+    }),
+    ...(!(options.limits === undefined) && { limits: options.limits }),
+    ...(!(options.sandboxPrefer === undefined) && {
+      sandboxPrefer: options.sandboxPrefer,
+    }),
   };
 }
 

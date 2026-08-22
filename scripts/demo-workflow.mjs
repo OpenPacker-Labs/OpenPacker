@@ -57,7 +57,6 @@ import {
   Ed25519Verifier,
   cycloneDxEvidenceStatus,
   extractCycloneDxEvidence,
-  verifyCanonical,
   verifyOfflineSigstoreBundle,
   verifySlsaProvenance,
   verifyTufTarget,
@@ -83,7 +82,6 @@ const meta = {
 const json = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
 const writeJson = (path, value) =>
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-const digestString = (digest) => `${digest.algorithm}:${digest.value}`;
 
 function tar(entries) {
   const blocks = [];
@@ -161,10 +159,10 @@ function completeExpression(input) {
   if (input.type === 'conditional')
     return {
       ...input,
+      // eslint-disable-next-line unicorn/no-thenable -- PREX uses `then` as a schema field.
       then: completeExpression(input.then),
-      ...(input.else === undefined
-        ? {}
-        : { else: completeExpression(input.else) }),
+      else:
+        input.else === undefined ? undefined : completeExpression(input.else),
     };
   return input;
 }
@@ -174,8 +172,9 @@ async function refreshUniverseDigest(universe) {
     ({ id }) => id === 'universe-v1',
   );
   assert.ok(projection);
+  const transportUniverse = JSON.parse(JSON.stringify(universe));
   universe.canonicalDigest = await canonicalProjectionDigest(
-    universe,
+    transportUniverse,
     projection,
   );
 }
@@ -207,11 +206,11 @@ async function instance({
     canonicalPurl,
     exactPurl,
     purlType: parsed.type,
-    ...(parsed.namespace === undefined ? {} : { namespace: parsed.namespace }),
+    namespace: parsed.namespace,
     name: parsed.name,
     version: parsed.version,
     qualifiers: parsed.qualifiers,
-    ...(parsed.subpath === undefined ? {} : { subpath: parsed.subpath }),
+    subpath: parsed.subpath,
     nativeCoordinates: [{ ecosystem: purlType, coordinate: name, version }],
     aliases: [],
     sourceRefs: [source],
@@ -940,7 +939,7 @@ async function emit(store, type, subject, data, time, occurrenceId) {
     data,
     correlationId: 'openpacker-demo',
     clock: { now: () => time },
-    ...(occurrenceId ? { occurrenceId } : {}),
+    occurrenceId,
   });
   await verifyCloudEvent(event, canonicalBytes(event));
   store.appendEvent(event);
@@ -1433,9 +1432,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
         type: 'library',
         name: item.identity.name,
         version: item.normalizedVersion,
-        ...(item.identity.exactPurl === undefined
-          ? {}
-          : { purl: item.identity.exactPurl }),
+        purl: item.identity.exactPurl,
         licenses: [{ expression: 'MIT' }],
         hashes: item.artifacts.map((artifact) => ({
           alg: 'SHA-256',
@@ -1510,7 +1507,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     ])
       await layout.attachReferrer(
         subject.manifest,
-        canonicalBytes(value),
+        canonicalBytes(JSON.parse(JSON.stringify(value))),
         artifactType,
         mediaType,
       );

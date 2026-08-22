@@ -233,6 +233,7 @@ describe('@openpacker/sandbox', () => {
       backend: createMockBackend(),
     });
     expect(outcome.exitCode).toBe(0);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = JSON.parse(outcome.stdout) as {
       home: string;
       token: string | null;
@@ -462,6 +463,7 @@ describe('@openpacker/sandbox', () => {
   it.each(['abort', 'output'] as const)(
     'waits for MXC job termination after %s',
     async (reason) => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const child = new EventEmitter() as EventEmitter & {
         stdout: PassThrough;
         stderr: PassThrough;

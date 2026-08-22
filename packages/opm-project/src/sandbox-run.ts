@@ -49,14 +49,14 @@ export async function runSandboxedPackageProcess(input: {
   const outcome = await runInSandbox({
     argv: input.argv,
     cwd: input.cwd,
-    ...(input.env === undefined ? {} : { env: input.env }),
+    ...(!(input.env === undefined) && { env: input.env }),
     policy,
     profile: 'package-exec',
-    ...(input.packageId === undefined ? {} : { packageId: input.packageId }),
+    ...(!(input.packageId === undefined) && { packageId: input.packageId }),
     readwritePaths,
     readonlyPaths,
-    ...(input.network === undefined ? {} : { network: input.network }),
-    ...(input.backend === undefined ? {} : { backend: input.backend }),
+    ...(!(input.network === undefined) && { network: input.network }),
+    ...(!(input.backend === undefined) && { backend: input.backend }),
   });
 
   const mode = policy.mode ?? 'fail-closed';

@@ -12,12 +12,14 @@ import {
 
 export async function runDemo(): Promise<void> {
   const root = new URL('../../../', import.meta.url);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const request = JSON.parse(
     await readFile(
       new URL('fixtures/protocol/solve/request.json', root),
       'utf8',
     ),
   ) as SolveRequest;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const keys = JSON.parse(
     await readFile(new URL('fixtures/trust/keys.json', root), 'utf8'),
   ) as { root: JsonWebKey };

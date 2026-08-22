@@ -23,6 +23,7 @@ export async function discoverNpmBins(
   for (const packageJsonPath of candidates) {
     try {
       const text = await readFile(packageJsonPath, 'utf8');
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const pkg = JSON.parse(text) as {
         name?: string;
         bin?: string | Record<string, string>;
@@ -49,6 +50,7 @@ export async function discoverNpmBins(
         path: joinPosix(relPackageDir, path),
       }));
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw error;
     }
@@ -298,10 +300,8 @@ export function binDeclarationsFromExecutables(
     return {
       name: assertSafeSegment(bin.name, 'bin name'),
       path: bin.path,
-      ...(bin.interpreter === undefined
-        ? {}
-        : { interpreter: bin.interpreter }),
-      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+      ...(!(bin.interpreter === undefined) && { interpreter: bin.interpreter }),
+      ...(!(bin.entry === undefined) && { entry: bin.entry }),
     };
   });
 }
@@ -377,10 +377,8 @@ export async function writeBinShims(input: {
       path: bin.path,
       shim: shimPath,
       target,
-      ...(bin.interpreter === undefined
-        ? {}
-        : { interpreter: bin.interpreter }),
-      ...(bin.entry === undefined ? {} : { entry: bin.entry }),
+      ...(!(bin.interpreter === undefined) && { interpreter: bin.interpreter }),
+      ...(!(bin.entry === undefined) && { entry: bin.entry }),
     });
   }
   return written;

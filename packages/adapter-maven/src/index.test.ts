@@ -208,6 +208,7 @@ describe('Maven codec', () => {
   });
 
   it('preserves classifier dependencies with semantic loss, never flattens', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const catalog = JSON.parse(catalogBytes.toString()) as MavenCatalogEntry;
     const translated = await codec.translateMetadata(catalog, {
       providerId: 'fixture',

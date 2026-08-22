@@ -52,7 +52,7 @@ const CHOCO_LOSS: readonly SemanticLoss[] = [
   },
 ];
 
-function chocolateyId(exactPurl: string): { id: string; version?: string } {
+function chocolateyId(exactPurl: string) {
   const parsed = parsePurl(exactPurl);
   if (parsed.type !== 'chocolatey')
     throw new ProviderError(
@@ -67,7 +67,7 @@ function chocolateyId(exactPurl: string): { id: string; version?: string } {
     );
   return {
     id,
-    ...(parsed.version === undefined ? {} : { version: parsed.version }),
+    ...(!(parsed.version === undefined) && { version: parsed.version }),
   };
 }
 
@@ -89,7 +89,7 @@ export class ChocolateyProvider implements InstallerProvider {
       options?: { signal?: AbortSignal },
     ) => Promise<{ stdout: string; stderr: string }> = (file, args, options) =>
       run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.signal && { signal: options.signal }),
         maxBuffer: 8 * 1024 * 1024,
       }),
     private readonly currentPlatform: () => string = platform,
@@ -170,10 +170,10 @@ export class ChocolateyProvider implements InstallerProvider {
     try {
       const result = await runHostInstaller({
         argv: executionPlan.command,
-        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ...(!(options.sandbox === undefined) && { sandbox: options.sandbox }),
+        ...(!(options.offline === undefined) && { offline: options.offline }),
         ecosystem: 'chocolatey',
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(!(options.signal === undefined) && { signal: options.signal }),
       });
       return {
         ...executionPlan,
@@ -188,6 +188,7 @@ export class ChocolateyProvider implements InstallerProvider {
     } catch (error) {
       if (error instanceof HostInstallerSandboxError)
         throw new ProviderError('POLICY_DENIED', error.message);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const failure = error as {
         code?: number;
         stdout?: string;

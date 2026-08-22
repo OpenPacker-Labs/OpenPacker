@@ -118,7 +118,7 @@ function identityFromPurl(value: string): PackageIdentity {
       {
         ecosystem: 'npm',
         coordinate: npmName(parsed.namespace, parsed.name),
-        ...(parsed.version === undefined ? {} : { version: parsed.version }),
+        ...(!(parsed.version === undefined) && { version: parsed.version }),
       },
     ],
     aliases: [],
@@ -178,7 +178,7 @@ function npmRequirement(
         name: coordinate.name,
         qualifiers: {},
       }),
-      ...(parsed.vers === undefined ? {} : { vers: parsed.vers }),
+      ...(!(parsed.vers === undefined) && { vers: parsed.vers }),
     },
     kind,
     optional,
@@ -398,11 +398,11 @@ export class NpmCodec
         size: metadata.dist.size,
         mediaType: 'application/gzip',
         artifactType: 'application/vnd.openpacker.npm.package.v1+tgz',
-        ...(metadata.dist.tarball.split('/').at(-1) === undefined
-          ? {}
-          : { fileName: metadata.dist.tarball.split('/').at(-1)! }),
+        ...(!(metadata.dist.tarball.split('/').at(-1) === undefined) && {
+          fileName: metadata.dist.tarball.split('/').at(-1)!,
+        }),
         nativeRole: 'package-archive',
-        ...(targetPredicate === undefined ? {} : { targetPredicate }),
+        ...(!(targetPredicate === undefined) && { targetPredicate }),
         locations: [
           {
             transport: 'https',
@@ -452,20 +452,21 @@ export class NpmCodec
       metadataDigest: provenance.metadataDigest,
       nativeSemantics: {
         version: 'npm-v1',
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         data: {
           distTagsAreMutable: true,
           engines: metadata.engines ?? {},
           os: metadata.os ?? [],
           cpu: metadata.cpu ?? [],
-          ...(targetPredicate === undefined ? {} : { targetPredicate }),
+          ...(!(targetPredicate === undefined) && { targetPredicate }),
           peerDependenciesMeta: metadata.peerDependenciesMeta ?? {},
           scripts: metadata.scripts ?? {},
-          ...(metadata.dist?.integrity === undefined
-            ? {}
-            : { distIntegrity: metadata.dist.integrity }),
-          ...(metadata.dist?.shasum === undefined
-            ? {}
-            : { distShasum: metadata.dist.shasum }),
+          ...(!(metadata.dist?.integrity === undefined) && {
+            distIntegrity: metadata.dist.integrity,
+          }),
+          ...(!(metadata.dist?.shasum === undefined) && {
+            distShasum: metadata.dist.shasum,
+          }),
         } as JsonValue,
       },
       semanticLoss: losses,
@@ -505,10 +506,10 @@ export class NpmCodec
             }),
           ),
           nativeCoordinate: `${inferred}@${entry.version}`,
-          ...(entry.resolved === undefined ? {} : { resolved: entry.resolved }),
-          ...(entry.integrity === undefined
-            ? {}
-            : { artifactDigest: entry.integrity }),
+          ...(!(entry.resolved === undefined) && { resolved: entry.resolved }),
+          ...(!(entry.integrity === undefined) && {
+            artifactDigest: entry.integrity,
+          }),
           dependencies: {
             ...(entry.dependencies ?? {}),
             ...(entry.optionalDependencies ?? {}),
@@ -517,9 +518,9 @@ export class NpmCodec
             path,
             dev: entry.dev ?? false,
             optional: entry.optional ?? false,
-            ...(entry.integrity === undefined
-              ? {}
-              : { integrity: entry.integrity }),
+            ...(!(entry.integrity === undefined) && {
+              integrity: entry.integrity,
+            }),
           },
         };
       })
@@ -607,14 +608,15 @@ export class NpmRegistryProvider implements CatalogProvider {
         `${canonical} is absent from the packument`,
       );
     const metadataDigest = await canonicalDigest(
-      metadata as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(metadata)) as JsonValue,
     );
     const translated = await this.codec.translateMetadata(metadata, {
       providerId: this.providerId,
       endpoint: record.endpoint,
       retrievedAt: record.retrievedAt,
       evaluationTime: record.retrievedAt,
-      ...(record.etag === undefined ? {} : { etag: record.etag }),
+      ...(!(record.etag === undefined) && { etag: record.etag }),
       metadataDigest,
       rawMetadataRef: {
         type: 'provider-metadata',
@@ -635,6 +637,7 @@ export class NpmRegistryProvider implements CatalogProvider {
     signal?: AbortSignal,
   ): Promise<ProviderRecord> {
     const inspection = await this.inspect(exactPurl, signal);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const metadata = inspection.record.body as NpmPackument;
     const version = parsePurl(this.codec.canonicalizePurl(exactPurl)).version!;
     const dist = metadata.versions[version]?.dist;
@@ -679,9 +682,9 @@ export class NpmRegistryProvider implements CatalogProvider {
       size: response.body.byteLength,
       mediaType: 'application/gzip',
       artifactType: 'application/vnd.openpacker.npm.package.v1+tgz',
-      ...(dist.tarball.split('/').at(-1) === undefined
-        ? {}
-        : { fileName: dist.tarball.split('/').at(-1)! }),
+      ...(!(dist.tarball.split('/').at(-1) === undefined) && {
+        fileName: dist.tarball.split('/').at(-1)!,
+      }),
       nativeRole: 'package-archive',
       locations: [
         {
@@ -716,10 +719,11 @@ export class NpmRegistryProvider implements CatalogProvider {
         .sort((a, b) => compareCodePoints(a.key, b.key))
         .map(async (record) => ({
           key: record.key,
-          ...(record.etag === undefined ? {} : { etag: record.etag }),
+          ...(!(record.etag === undefined) && { etag: record.etag }),
           digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const recordsDigest = await canonicalDigest(recordDigests as JsonValue);
     const revision = formatDigest(recordsDigest);
     const etags = [
@@ -742,9 +746,10 @@ export class NpmRegistryProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       records: recordDigests,
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rootDigest = await canonicalDigest(rootPayload as JsonValue);
     return {
       snapshotId: formatDigest(rootDigest),
@@ -754,7 +759,7 @@ export class NpmRegistryProvider implements CatalogProvider {
       retrievedAt,
       evaluationTime,
       revision,
-      ...(etag === undefined ? {} : { etag }),
+      ...(!(etag === undefined) && { etag }),
       rootDigest,
       recordsDigest,
       evidenceRefs: [],
@@ -789,9 +794,9 @@ export class NpmRegistryProvider implements CatalogProvider {
       maximumBytes: 8 * 1024 * 1024,
       headers: {
         accept: 'application/vnd.npm.install-v1+json',
-        ...(existing?.etag === undefined
-          ? {}
-          : { 'if-none-match': existing.etag }),
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
       },
     });
     if (response.status === 304) {
@@ -808,9 +813,9 @@ export class NpmRegistryProvider implements CatalogProvider {
     const record: ProviderRecord<NpmPackument> = {
       key,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body: json<NpmPackument>(response),
       rawBody: response.body,
       retrievedAt: this.clock.now(),

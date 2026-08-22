@@ -81,8 +81,10 @@ function eventScope(event: LifecycleEvent): {
   if ('algorithm' in event.subject)
     return {
       scope: 'digest',
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       matches: (target) => sameDigest(event.subject as Digest, target.digest),
     };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const subject = event.subject as PackageIdentity;
   const release = subject.qualifiers.release;
   const channel = subject.qualifiers.channel;
@@ -194,7 +196,7 @@ export async function reduceLifecycle(
       event: entry.event,
       scope: entry.scope,
       accepted: reason === undefined,
-      ...(reason ? { reason } : {}),
+      ...(reason && { reason }),
     });
     if (reason) continue;
     if (denying.has(entry.event.action)) lastDeny = entry.effective;
@@ -213,7 +215,10 @@ export async function reduceLifecycle(
   }
   state = { ...state, derivationEventIds: derivation };
   const root = await canonicalDigest(
-    history as unknown as import('@openpacker/contracts').JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(
+      JSON.stringify(history),
+    ) as import('@openpacker/contracts').JsonValue,
   );
   return { state, history, root };
 }

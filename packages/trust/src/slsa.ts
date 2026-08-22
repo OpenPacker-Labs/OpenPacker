@@ -43,7 +43,7 @@ export function verifySlsaProvenance(
   const materials = statement.predicate.buildDefinition.resolvedDependencies
     .map((material) => ({
       uri: new URL(material.uri).toString(),
-      ...(material.digest?.sha256 ? { sha256: material.digest.sha256 } : {}),
+      ...(material.digest?.sha256 && { sha256: material.digest.sha256 }),
     }))
     .sort((left, right) => compareCanonicalStrings(left.uri, right.uri));
   return { builderId, buildType, materials };

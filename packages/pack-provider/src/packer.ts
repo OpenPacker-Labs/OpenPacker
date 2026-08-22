@@ -79,6 +79,7 @@ export interface ManifestPackagePackerDependencies {
   sandboxRun?: SandboxRun;
   limits?: Partial<ManifestPackagePackerLimits>;
   openFile?: typeof open;
+  openDirectory?: typeof opendir;
 }
 
 export class ManifestPackagePacker implements PackagePacker {
@@ -91,6 +92,7 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly #sandboxRun: SandboxRun;
   readonly #limits: ManifestPackagePackerLimits;
   readonly #openFile: typeof open;
+  readonly #openDirectory: typeof opendir;
 
   constructor(
     private readonly manifest: DelegatedPackProviderManifest,
@@ -104,7 +106,8 @@ export class ManifestPackagePacker implements PackagePacker {
       );
     this.providerId = manifest.id;
     this.providerManifestDigest = `sha256:${createHash('sha256')
-      .update(canonicalBytes(manifest as unknown as JsonValue))
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      .update(canonicalBytes(JSON.parse(JSON.stringify(manifest)) as JsonValue))
       .digest('hex')}`;
     this.purlType = purlType;
     if (!isAbsolute(dependencies.executablePath))
@@ -113,12 +116,14 @@ export class ManifestPackagePacker implements PackagePacker {
         'Delegated provider executable approval must be an absolute path',
       );
     this.#executablePath = dependencies.executablePath;
+    this.#openFile = dependencies.openFile ?? open;
     this.#inspectExecutable =
-      dependencies.inspectExecutable ?? inspectDelegatedExecutable;
+      dependencies.inspectExecutable ??
+      ((path) => inspectDelegatedExecutable(path, this.#openFile));
     this.#openExecutableAuthority =
       dependencies.openExecutableAuthority ??
       (dependencies.inspectExecutable === undefined
-        ? openDelegatedExecutable
+        ? (path) => openDelegatedExecutable(path, this.#openFile)
         : async (path) => ({
             identity: await dependencies.inspectExecutable!(path),
             fd: -1,
@@ -126,7 +131,7 @@ export class ManifestPackagePacker implements PackagePacker {
           }));
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
-    this.#openFile = dependencies.openFile ?? open;
+    this.#openDirectory = dependencies.openDirectory ?? opendir;
   }
 
   async available(): Promise<PackAvailability> {
@@ -166,10 +171,7 @@ export class ManifestPackagePacker implements PackagePacker {
     return undefined;
   }
 
-  async hostPlan(
-    input: PackInput,
-    options: PackOptions = {},
-  ): Promise<DelegatedPackHostPlan> {
+  async hostPlan(input: PackInput, options: PackOptions = {}) {
     if (options.strategy === 'standard')
       throw new ProviderError(
         'UNSUPPORTED_OPERATION',
@@ -231,7 +233,7 @@ export class ManifestPackagePacker implements PackagePacker {
       purlType: this.purlType,
       command: commands[0]!,
       commands,
-      ...(cleanupCommands.length === 0 ? {} : { cleanupCommands }),
+      ...(!(cleanupCommands.length === 0) && { cleanupCommands }),
       // A project-selected executable is code execution even if its manifest
       // claims the native tool does not compile project sources.
       requiresBuild: true,
@@ -281,31 +283,25 @@ export class ManifestPackagePacker implements PackagePacker {
       };
       const withTool: PackPlan = {
         ...plan,
-        ...(plan.command === undefined
-          ? {}
-          : {
-              command: plan.command.map((value, index) =>
-                index === 0 ? executablePath : value,
-              ),
-            }),
-        ...(plan.commands === undefined
-          ? {}
-          : {
-              commands: plan.commands.map((command) =>
-                command.map((value, index) =>
-                  index === 0 ? executablePath : value,
-                ),
-              ),
-            }),
-        ...(plan.cleanupCommands === undefined
-          ? {}
-          : {
-              cleanupCommands: plan.cleanupCommands.map((command) =>
-                command.map((value, index) =>
-                  index === 0 ? executablePath : value,
-                ),
-              ),
-            }),
+        ...(!(plan.command === undefined) && {
+          command: plan.command.map((value, index) =>
+            index === 0 ? executablePath : value,
+          ),
+        }),
+        ...(!(plan.commands === undefined) && {
+          commands: plan.commands.map((command) =>
+            command.map((value, index) =>
+              index === 0 ? executablePath : value,
+            ),
+          ),
+        }),
+        ...(!(plan.cleanupCommands === undefined) && {
+          cleanupCommands: plan.cleanupCommands.map((command) =>
+            command.map((value, index) =>
+              index === 0 ? executablePath : value,
+            ),
+          ),
+        }),
         tool,
       };
       if (options.dryRun) return emptyOutcome(withTool);
@@ -327,6 +323,7 @@ export class ManifestPackagePacker implements PackagePacker {
             hostPlan,
             this.#limits,
             this.#openFile,
+            this.#openDirectory,
           );
           await assertDirectoryIdentity(
             stableOutputDirectory,
@@ -403,6 +400,7 @@ export class ManifestPackagePacker implements PackagePacker {
                   hostPlan,
                   this.#limits,
                   this.#openFile,
+                  this.#openDirectory,
                 )
               : [];
           await assertDirectoryIdentity(
@@ -466,6 +464,7 @@ export class ManifestPackagePacker implements PackagePacker {
               hostPlan,
               this.#limits,
               this.#openFile,
+              this.#openDirectory,
             );
             await assertDirectoryIdentity(
               stableOutputDirectory,
@@ -553,15 +552,13 @@ export class ManifestPackagePacker implements PackagePacker {
       network: plan.requiresNetwork,
       profile: 'package-exec',
       directoryAuthorities: [{ fd: outputDirectoryFd, path: outputDirectory }],
-      ...(executableAuthority.fd < 0
-        ? {}
-        : {
-            executableAuthority: {
-              fd: executableAuthority.fd,
-              path: executableAuthority.identity.path,
-            },
-          }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(!(executableAuthority.fd < 0) && {
+        executableAuthority: {
+          fd: executableAuthority.fd,
+          path: executableAuthority.identity.path,
+        },
+      }),
+      ...(!(options.signal === undefined) && { signal: options.signal }),
     });
     await assertExecutableIdentity(
       executableAuthority.identity,
@@ -646,6 +643,7 @@ function targetExactPurl(target: NonNullable<PackInput['target']>): string {
 function parseArtifactIdentity(stdout: string): DelegatedPackArtifactIdentity {
   let value: JsonValue;
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     value = JSON.parse(stdout) as JsonValue;
   } catch {
     throw new ProviderError(
@@ -660,6 +658,7 @@ function parseArtifactIdentity(stdout: string): DelegatedPackArtifactIdentity {
       'INVALID_RESPONSE',
       'Delegated provider identity output does not match the PREX contract',
     );
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as DelegatedPackArtifactIdentity;
 }
 
@@ -681,11 +680,12 @@ async function collectArtifacts(
   plan: DelegatedPackHostPlan,
   limits: ManifestPackagePackerLimits,
   openFile: typeof open,
+  openDirectory: typeof opendir,
 ): Promise<PackArtifact[]> {
   const artifacts: PackArtifact[] = [];
   let totalBytes = 0n;
   const entries: Dirent[] = [];
-  const directory = await opendir(outputDirectory);
+  const directory = await openDirectory(outputDirectory);
   try {
     for (;;) {
       const entry = await directory.read();

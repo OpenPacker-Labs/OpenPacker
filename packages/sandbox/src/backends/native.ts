@@ -190,7 +190,7 @@ export function createBwrapBackend(): SandboxBackend {
           legacyFatRoot: input.legacyFatRoot === true,
           environment: input.env,
           directoryAuthorities,
-          ...(executableAuthority === undefined ? {} : { executableAuthority }),
+          ...(!(executableAuthority === undefined) && { executableAuthority }),
         });
         return await spawnCapture({
           argv,
@@ -200,12 +200,12 @@ export function createBwrapBackend(): SandboxBackend {
           maximumStderrBytes: input.maximumStderrBytes,
           maximumOutputBytes: input.maximumOutputBytes,
           treeContainment: 'pid-namespace',
-          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+          ...(!(input.stdin === undefined) && { stdin: input.stdin }),
           inheritedFds: [
             ...(input.directoryAuthorities?.map(({ fd }) => fd) ?? []),
             ...(executableHandle === undefined ? [] : [executableHandle.fd]),
           ],
-          ...(input.signal === undefined ? {} : { signal: input.signal }),
+          ...(!(input.signal === undefined) && { signal: input.signal }),
         });
       } finally {
         await executableHandle?.close().catch(() => undefined);

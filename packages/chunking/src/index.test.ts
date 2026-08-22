@@ -84,10 +84,12 @@ describe('content-defined chunking', () => {
     expect(() => validateChunkIndex(merkle)).toThrowError(
       expect.objectContaining({ code: 'MERKLE_ROOT_MISMATCH' }),
     );
-    const algorithm = structuredClone(index) as unknown as {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const algorithm = structuredClone(index) as {
       chunking: { algorithm: string };
     };
     algorithm.chunking.algorithm = 'unknown';
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(() => validateChunkIndex(algorithm as never)).toThrowError(
       expect.objectContaining({ code: 'INVALID_ALGORITHM' }),
     );

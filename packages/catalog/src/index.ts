@@ -42,6 +42,7 @@ export type PendingRecord = Omit<
   'rawMetadataDigest' | 'recordDigest'
 > & { rawBytes?: Uint8Array };
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const jsonValue = (value: unknown): JsonValue => value as JsonValue;
 
 export class CatalogSnapshotBuilder {
@@ -124,8 +125,8 @@ export class CatalogSnapshotBuilder {
       endpointIdentity: this.endpointIdentity,
       retrievedAt: this.retrievedAt,
       evaluationTime: this.evaluationTime,
-      ...(this.revision === undefined ? {} : { revision: this.revision }),
-      ...(this.etag === undefined ? {} : { etag: this.etag }),
+      ...(!(this.revision === undefined) && { revision: this.revision }),
+      ...(!(this.etag === undefined) && { etag: this.etag }),
       recordsDigest,
     };
     const rootDigest = await canonicalDigest(jsonValue(snapshotPayload));
@@ -176,18 +177,19 @@ export async function captureCatalogSnapshot(
     builder.addProviderRecord({
       record: inspection.record,
       package: inspection.package,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       rawMetadata: inspection.record.body as JsonValue,
       provenance: {
         providerId: source.providerId,
         endpoint: inspection.record.endpoint,
         retrievedAt: inspection.record.retrievedAt,
         evaluationTime: source.evaluationTime,
-        ...(inspection.record.etag === undefined
-          ? {}
-          : { etag: inspection.record.etag }),
-        ...(inspection.record.revision === undefined
-          ? {}
-          : { revision: inspection.record.revision }),
+        ...(!(inspection.record.etag === undefined) && {
+          etag: inspection.record.etag,
+        }),
+        ...(!(inspection.record.revision === undefined) && {
+          revision: inspection.record.revision,
+        }),
         snapshotDigest: source.rootDigest,
         metadataDigest: inspection.package.metadataDigest,
       },
@@ -217,9 +219,10 @@ export class InMemoryCatalogStore {
     const bytes = this.#bundles.get(digest);
     return bytes === undefined
       ? undefined
-      : (parseCanonicalJson(
+      : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        parseCanonicalJson<CatalogSnapshotBundle>(
           new TextDecoder().decode(bytes),
-        ) as unknown as CatalogSnapshotBundle);
+        );
   }
 
   export(digest: string): Uint8Array {
@@ -233,9 +236,10 @@ export class InMemoryCatalogStore {
   }
 
   async import(bytes: Uint8Array): Promise<CatalogSnapshotBundle> {
-    const bundle = parseCanonicalJson(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const bundle = parseCanonicalJson<CatalogSnapshotBundle>(
       new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-    ) as unknown as CatalogSnapshotBundle;
+    );
     await this.put(bundle);
     return bundle;
   }

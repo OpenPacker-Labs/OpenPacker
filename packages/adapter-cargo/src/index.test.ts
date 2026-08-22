@@ -16,6 +16,7 @@ const records = indexBytes
   .toString()
   .trim()
   .split(/\r?\n/)
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   .map((line) => JSON.parse(line) as CargoIndexRecord);
 const cargoLockText = await readFile(
   new URL('../../../fixtures/catalogs/cargo/Cargo.lock', import.meta.url),

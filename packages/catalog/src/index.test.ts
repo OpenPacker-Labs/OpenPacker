@@ -107,6 +107,7 @@ describe('catalog snapshots', () => {
       semanticLoss: [],
     });
     const bundle = await builder.build();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (bundle.records[0]!.rawMetadata as { name: string }).name = 'tampered';
     await expect(verifyCatalogSnapshot(bundle)).rejects.toThrow(
       /Record digest mismatch/,
@@ -133,7 +134,8 @@ describe('catalog snapshots', () => {
     bundle.snapshot.snapshotId = formatDigest(bundle.snapshot.rootDigest);
     const { bundleDigest: _ignored, ...payload } = bundle;
     bundle.bundleDigest = await canonicalDigest(
-      payload as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(payload)) as JsonValue,
     );
     await expect(verifyCatalogSnapshot(bundle)).rejects.toThrow(
       /Snapshot root digest mismatch/u,

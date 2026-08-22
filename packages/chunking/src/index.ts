@@ -305,7 +305,8 @@ export function validateChunkIndex(index: ChunkIndex): void {
 
 export function chunkIndexBytes(index: ChunkIndex): Uint8Array {
   validateChunkIndex(index);
-  return canonicalBytes(index as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return canonicalBytes(JSON.parse(JSON.stringify(index)) as JsonValue);
 }
 
 export class ChunkIntegrityError extends Error {

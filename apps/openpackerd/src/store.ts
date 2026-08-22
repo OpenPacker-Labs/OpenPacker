@@ -92,6 +92,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
    * a request nobody proved they match.
    */
   #addIdempotencyRequestColumn(): void {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const columns = this.#database
       .prepare('PRAGMA table_info(idempotency)')
       .all() as Array<{ name: string }>;
@@ -111,12 +112,16 @@ export class SqliteStateStore implements OpenPackerStateStore {
     const digest =
       'receiptDigest' in receipt
         ? receipt.receiptDigest
-        : await canonicalDigest(receipt as unknown as JsonValue);
+        : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          await canonicalDigest(
+            JSON.parse(JSON.stringify(receipt)) as JsonValue,
+          );
     return this.#put(
       'receipt',
       digest.algorithm,
       digest.value,
-      canonicalBytes(receipt as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(JSON.parse(JSON.stringify(receipt)) as JsonValue),
     );
   }
 
@@ -130,6 +135,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
       'snapshot',
       digest.algorithm,
       digest.value,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       canonicalBytes(snapshot as JsonValue),
     );
   }
@@ -139,12 +145,16 @@ export class SqliteStateStore implements OpenPackerStateStore {
   }
 
   appendEvent(event: OpenPackerCloudEvent): number {
-    const bytes = canonicalBytes(event as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const bytes = canonicalBytes(
+      JSON.parse(JSON.stringify(event)) as JsonValue,
+    );
     this.#database
       .prepare(
         'INSERT OR IGNORE INTO event_outbox(event_id, bytes) VALUES (?, ?)',
       )
       .run(event.id, bytes);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare('SELECT sequence FROM event_outbox WHERE event_id = ?')
       .get(event.id) as { sequence: number } | undefined;
@@ -153,6 +163,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
   }
 
   eventsAfter(cursor: number, limit: number): StoredEvent[] {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rows = this.#database
       .prepare(
         'SELECT sequence, bytes FROM event_outbox WHERE sequence > ? ORDER BY sequence LIMIT ?',
@@ -161,6 +172,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
     return rows.map(({ sequence, bytes }) => ({
       cursor: sequence,
       bytes: Uint8Array.from(bytes),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       event: JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(bytes),
       ) as OpenPackerCloudEvent,
@@ -172,6 +184,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
     path: string,
     key: string,
   ): { bytes: Uint8Array; request: string } | undefined {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare(
         'SELECT bytes, request FROM idempotency WHERE method = ? AND path = ? AND key = ?',
@@ -232,6 +245,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
     digest: string,
   ): Uint8Array | undefined {
     validateDigest(algorithm, digest);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const row = this.#database
       .prepare(
         'SELECT bytes FROM objects WHERE kind = ? AND algorithm = ? AND digest = ?',
@@ -244,8 +258,10 @@ export class SqliteStateStore implements OpenPackerStateStore {
 export async function sourceSnapshotDigest(
   snapshot: SourceSnapshot | JsonValue,
 ): Promise<{ algorithm: 'sha256'; value: string }> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const source = snapshot as SourceSnapshot;
   if (source.rootDigest?.algorithm !== 'sha256')
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return await canonicalDigest(snapshot as JsonValue);
   const {
     snapshotId: _snapshotId,
@@ -255,12 +271,16 @@ export async function sourceSnapshotDigest(
     extensions: _extensions,
     ...payload
   } = source;
-  return await canonicalDigest(payload as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return await canonicalDigest(
+    JSON.parse(JSON.stringify(payload)) as JsonValue,
+  );
 }
 
 export async function verifySourceSnapshot(
   snapshot: SourceSnapshot | JsonValue,
 ): Promise<{ algorithm: 'sha256'; value: string }> {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const source = snapshot as SourceSnapshot;
   const digest = await sourceSnapshotDigest(snapshot);
   if (

@@ -81,6 +81,7 @@ describe('NpmProjectFormat', () => {
       await fixture.format.writeManifest(fixture.detected, [
         requirement('vitest', '^1.0.0', 'development'),
       ]);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parsed = JSON.parse(await fixture.read()) as Record<
         string,
         Record<string, string>
@@ -175,7 +176,7 @@ describe('NpmProjectFormat — package-lock.json', () => {
     digest: `sha256:${'0'.repeat(64)}`,
     size: 10,
     transitive: false,
-    ...(integrity ? { nativeIntegrity: integrity } : {}),
+    ...(integrity && { nativeIntegrity: integrity }),
   });
   const sri = { algorithm: 'sha512', value: 'AAAA', encoding: 'sri' };
 
@@ -186,6 +187,7 @@ describe('NpmProjectFormat — package-lock.json', () => {
         entry('chalk', '4.1.2', sri),
       ]);
       expect(result.written).toHaveLength(1);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const lock = JSON.parse(
         await readFile(join(fixture.dir, 'package-lock.json'), 'utf8'),
       ) as {

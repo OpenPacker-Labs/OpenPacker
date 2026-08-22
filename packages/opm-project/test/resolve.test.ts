@@ -317,7 +317,7 @@ describe('supply-chain policy over the transitive closure', () => {
       },
     },
     options: { offline: false, layout: 'opm' },
-    ...(policy === undefined ? {} : { policy }),
+    ...(!(policy === undefined) && { policy }),
   });
 
   const permissive: PolicyInput = {

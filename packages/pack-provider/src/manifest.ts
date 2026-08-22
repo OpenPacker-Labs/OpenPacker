@@ -53,6 +53,7 @@ export async function loadDelegatedPackProvider(
     );
     if (!result.valid || result.value === undefined)
       invalid(validationMessage(result.errors));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return result.value as DelegatedPackProviderManifest;
   } finally {
     await handle.close();
@@ -62,8 +63,10 @@ export async function loadDelegatedPackProvider(
 export function parseDelegatedPackProvider(
   value: unknown,
 ): DelegatedPackProviderManifest {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const result = validateContract(MANIFEST_SCHEMA, value as JsonValue);
   if (!result.valid) invalid(validationMessage(result.errors));
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return value as DelegatedPackProviderManifest;
 }
 

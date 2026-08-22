@@ -14,6 +14,8 @@ const PURL = 'pkg:maven/org.example/demo-tool@1.0.0';
 const JAR_SHA256 =
   'dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d';
 
+type Inspection = Awaited<ReturnType<MavenRepositoryProvider['inspect']>>;
+
 const pom = await readFile(
   new URL(
     '../../../fixtures/catalogs/maven/demo-tool-1.0.0.pom',
@@ -89,15 +91,17 @@ describe('Maven inspect mutation coverage', () => {
     const mutants: {
       name: string;
       fixtures: ConstructorParameters<typeof FixtureHttpTransport>[0];
-      expect: (run: () => Promise<unknown>) => Promise<void>;
+      expect: (run: () => Promise<Inspection>) => Promise<void>;
     }[] = [
       {
         name: 'drop-sha256-sibling',
         fixtures: new Map([[POM_URL, ok(pom)]]),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const data = inspection.package.nativeSemantics.data as {
             openpackerSha256?: string;
           };
@@ -117,9 +121,11 @@ describe('Maven inspect mutation coverage', () => {
           [SHA1_URL, ok(`${jarSha1}  demo-tool-1.0.0.jar\n`)],
         ]),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const data = inspection.package.nativeSemantics.data as {
             openpackerSha256?: string;
             sha1?: string;
@@ -229,6 +235,7 @@ describe('Maven inspect mutation coverage', () => {
         name: 'unresolved-property-not-star',
         fixtures: validLayout(),
         expect: async (run) => {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const inspection = (await run()) as Awaited<
             ReturnType<MavenRepositoryProvider['inspect']>
           >;

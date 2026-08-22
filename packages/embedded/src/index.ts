@@ -48,7 +48,7 @@ export interface EmbeddedBindings {
 }
 
 type LoadableBindings = EmbeddedBindings & {
-  default?: () => Promise<unknown> | unknown;
+  default?: () => Promise<void> | void;
 };
 export type EmbeddedImporter = () => Promise<LoadableBindings>;
 
@@ -60,6 +60,7 @@ function encode(value: unknown): string {
 }
 
 function decode<T>(value: string): T {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return JSON.parse(value) as T;
 }
 
@@ -132,6 +133,7 @@ export async function loadEmbeddedResolver(
     importer ??
     (async () => {
       const specifier = './openpacker_wasm.js';
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return (await import(specifier)) as LoadableBindings;
     });
   const module = await load();

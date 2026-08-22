@@ -90,3 +90,31 @@ git config --local rerere.enabled true
 git config --local remote.pushDefault origin
 gh extension install github/gh-stack   # if missing
 ```
+
+## GitHub connector and Git stack hygiene
+
+Use the GitHub connector for GitHub API work. Do not use `gh` for
+authentication, PR creation, PR inspection, reviews, checks, merging, or stack
+publication when the connector is available. The local `git` client is still the
+source of truth for commits, rebases, diffs, hooks, and pushing refs.
+
+Before publishing a stack:
+
+1. Inspect `git status`, the complete diff, and the current branch ancestry.
+   Preserve unrelated user changes and stage explicit paths only.
+2. Fetch the latest `origin/main`, then rebase the lowest feature branch onto
+   it. Rebase each child branch onto its immediate parent, preserving one
+   logical change per incremental commit.
+3. Verify each branch has the intended unique commits with
+   `git log <base>..<branch>` and verify the exact remote head after pushing. Do
+   not infer GitHub PR existence or freshness from local remote-tracking refs;
+   query the GitHub connector.
+4. Create or update one draft PR per branch through the connector, specifying
+   exactly one base/head pair. Inspect checks and reviews bottom-up, then
+   squash-merge bottom-up only after the required local gates and independent
+   review are green.
+
+Never force-push a rebased stack unless the user explicitly authorizes that
+exact operation. If a branch was rewritten and cannot be updated normally, stop
+with the precise non-fast-forward blocker. Invalid CLI credentials are not
+evidence that GitHub is unavailable when the connector can authenticate.

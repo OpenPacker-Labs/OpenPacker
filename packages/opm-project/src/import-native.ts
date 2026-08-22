@@ -83,7 +83,7 @@ export async function importNativeProject(input: {
         alias,
         purl: entry.purl,
         ecosystem: format.purlType,
-        ...(entry.version === undefined ? {} : { range: entry.version }),
+        ...(!(entry.version === undefined) && { range: entry.version }),
       });
     }
   }

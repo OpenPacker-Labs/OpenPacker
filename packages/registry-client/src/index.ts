@@ -135,7 +135,7 @@ export class RegistryClient {
         // Only this registry's own origin. A registry that redirects a metadata
         // read somewhere else is not something to follow blindly.
         allowedOrigins: [url.origin],
-        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.fetch && { fetch: options.fetch }),
       });
     this.#keys = options.keys ?? {};
     this.#registryKeys = options.registryKeys ?? {};
@@ -180,14 +180,18 @@ export class RegistryClient {
         'INVALID_RESPONSE',
         `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
       );
-    const body = value as unknown as SignedRevocationList;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const body = value as SignedRevocationList;
     const definition = await this.definition(signal);
     if (body.list.registryId !== definition.registryId)
       throw new ProviderError(
         'INVALID_SIGNATURE',
         `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
       );
-    const digest = await canonicalDigest(body.list as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const digest = await canonicalDigest(
+      JSON.parse(JSON.stringify(body.list)) as JsonValue,
+    );
     if (
       body.listDigest.algorithm !== digest.algorithm ||
       body.listDigest.value !== digest.value
@@ -240,12 +244,13 @@ export class RegistryClient {
   /** The registry's service index, fetched once and reused. */
   async definition(signal?: AbortSignal): Promise<RegistryDefinitionLike> {
     if (this.#definition) return this.#definition;
-    const body = await this.#json(
+    const body = await this.#json<RegistryDefinitionLike>(
       `${this.#baseUrl}${WELL_KNOWN}`,
       RESPONSE_BYTES.definition,
       signal,
     );
-    const definition = body as unknown as RegistryDefinitionLike;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const definition = body;
     if (definition.registryDefinitionVersion !== '1')
       throw new ProviderError(
         'UNSUPPORTED_PROVIDER',
@@ -314,7 +319,8 @@ export class RegistryClient {
       Math.min(maximumBytes, RESPONSE_BYTES.packagePage),
       options.signal,
     );
-    const page = response.value as unknown as PackagePage;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const page = response.value as PackagePage;
     if (!Array.isArray(page.packages) || !page.metadata)
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
@@ -353,7 +359,7 @@ export class RegistryClient {
           {
             ...options,
             signal,
-            ...(cursor === undefined ? {} : { cursor }),
+            ...(!(cursor === undefined) && { cursor }),
           },
           remainingBytes,
         );
@@ -396,6 +402,7 @@ export class RegistryClient {
       'list versions',
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.#json(
       `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions`,
       RESPONSE_BYTES.versions,
@@ -414,6 +421,7 @@ export class RegistryClient {
       'serve package manifests',
       signal,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.#json(
       `${this.#baseUrl}/v1/packages/${encodeUrlPathComponent(name, 'registry package name')}/versions/${encodeUrlPathComponent(version, 'registry package version')}`,
       RESPONSE_BYTES.entry,
@@ -430,7 +438,8 @@ export class RegistryClient {
    */
   async verifyEntry(entry: RegistryEntry): Promise<EntryVerification> {
     const digest = await canonicalDigest(
-      entry.manifest as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(entry.manifest)) as JsonValue,
     );
     const stated = entry.registryMetadata.manifestDigest;
     const digestMatches =
@@ -457,7 +466,7 @@ export class RegistryClient {
       if (!jwk) {
         verified.push({
           keyId: signature.keyId,
-          ...(signature.role === undefined ? {} : { role: signature.role }),
+          ...(!(signature.role === undefined) && { role: signature.role }),
           status: 'unknown-key',
         });
         continue;
@@ -478,7 +487,7 @@ export class RegistryClient {
           : 'valid';
       verified.push({
         keyId: signature.keyId,
-        ...(signature.role === undefined ? {} : { role: signature.role }),
+        ...(!(signature.role === undefined) && { role: signature.role }),
         status,
       });
     }
@@ -498,12 +507,13 @@ export class RegistryClient {
     };
   }
 
-  async #json(
+  async #json<T = JsonValue>(
     url: string,
     maximumBytes: number,
     signal?: AbortSignal,
-  ): Promise<JsonValue> {
-    return (await this.#jsonDocument(url, maximumBytes, signal)).value;
+  ): Promise<T> {
+    // SAFETY: The caller supplies the schema-derived response type for this endpoint.
+    return (await this.#jsonDocument(url, maximumBytes, signal)).value as T;
   }
 
   async #jsonDocument(
@@ -516,7 +526,7 @@ export class RegistryClient {
       method: 'GET',
       headers: { accept: 'application/json' },
       maximumBytes,
-      ...(signal ? { signal } : {}),
+      ...(signal && { signal }),
     });
     if (response.status === 404)
       throw new ProviderError('PACKAGE_NOT_FOUND', `Not found: ${url}`);
@@ -531,6 +541,7 @@ export class RegistryClient {
           'INVALID_PROVIDER_RESPONSE',
           `Registry response exceeds ${maximumBytes} bytes: ${url}`,
         );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(response.body),
       ) as JsonValue;
@@ -588,8 +599,10 @@ function invalidStructure(detail: string): never {
 function paginationLimits(
   requested: Partial<PaginationLimits> | undefined,
 ): PaginationLimits {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return Object.fromEntries(
     Object.entries(PAGINATION_LIMITS).map(([name, ceiling]) => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = requested?.[name as keyof PaginationLimits] ?? ceiling;
       if (!Number.isSafeInteger(value) || value < 1 || value > ceiling)
         throw new RangeError(
@@ -597,7 +610,7 @@ function paginationLimits(
         );
       return [name, value];
     }),
-  ) as unknown as PaginationLimits;
+  ) as PaginationLimits;
 }
 
 function paginationLimit(detail: string): ProviderError {

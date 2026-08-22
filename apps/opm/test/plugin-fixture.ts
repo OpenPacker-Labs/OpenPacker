@@ -53,6 +53,7 @@ function tar(
 }
 
 export function fixturePluginTransport(): FixtureHttpTransport {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const manifest = canonicalBytes({
     delegatedAdapterVersion: '1',
     id: 'dev.example.acme-adapter',

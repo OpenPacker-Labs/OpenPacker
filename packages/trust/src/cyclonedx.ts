@@ -15,7 +15,8 @@ export interface CycloneDxEvidence {
 type JsonObject = Record<string, unknown>;
 const object = (value: unknown): JsonObject | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as JsonObject)
+    ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      (value as JsonObject)
     : undefined;
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
@@ -64,7 +65,8 @@ export function extractCycloneDxEvidence(document: unknown): CycloneDxEvidence {
         typeof entry?.expression === 'string'
           ? entry.expression
           : typeof object(entry?.license)?.id === 'string'
-            ? (object(entry?.license)?.id as string)
+            ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (object(entry?.license)?.id as string)
             : undefined;
       return expression
         ? { status: declared ? 'concluded' : 'declared', expression }

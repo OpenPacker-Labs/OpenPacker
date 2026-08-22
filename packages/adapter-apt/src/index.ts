@@ -76,14 +76,14 @@ export function hostInstallerInput(
   return {
     argv,
     ecosystem: 'deb',
-    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-    ...(options.offline === undefined ? {} : { offline: options.offline }),
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(!(options.sandbox === undefined) && { sandbox: options.sandbox }),
+    ...(!(options.offline === undefined) && { offline: options.offline }),
+    ...(!(options.signal === undefined) && { signal: options.signal }),
   };
 }
 
 /** `pkg:deb/debian/curl@7.88.1` → the name apt knows. */
-function aptName(exactPurl: string): { name: string; version?: string } {
+function aptName(exactPurl: string) {
   const parsed = parsePurl(exactPurl);
   if (parsed.type !== 'deb')
     throw new ProviderError(
@@ -110,7 +110,7 @@ function aptName(exactPurl: string): { name: string; version?: string } {
     );
   return {
     name: parsed.name,
-    ...(parsed.version === undefined ? {} : { version: parsed.version }),
+    ...(!(parsed.version === undefined) && { version: parsed.version }),
   };
 }
 
@@ -132,7 +132,7 @@ export class AptSystemProvider implements InstallerProvider {
       options?: { signal?: AbortSignal },
     ) => Promise<{ stdout: string; stderr: string }> = (file, args, options) =>
       run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.signal && { signal: options.signal }),
         maxBuffer: 8 * 1024 * 1024,
       }),
     private readonly currentPlatform: () => string = platform,
@@ -169,8 +169,8 @@ export class AptSystemProvider implements InstallerProvider {
     const candidate = /Candidate:\s*(\S+)/u.exec(stdout)?.[1];
     const installed = /Installed:\s*(\S+)/u.exec(stdout)?.[1];
     return {
-      ...(candidate && candidate !== '(none)' ? { candidate } : {}),
-      ...(installed && installed !== '(none)' ? { installed } : {}),
+      ...(candidate && candidate !== '(none)' && { candidate }),
+      ...(installed && installed !== '(none)' && { installed }),
     };
   }
 
@@ -262,12 +262,13 @@ export class AptSystemProvider implements InstallerProvider {
         sandboxEnforced: result.sandboxEnforced,
         sandboxBackend: result.sandboxBackend,
         semanticLoss: [...plan.semanticLoss, ...result.extraLosses],
-        ...(installed ? { installedVersion: installed } : {}),
+        ...(installed && { installedVersion: installed }),
       };
     } catch (error) {
       if (error instanceof HostInstallerSandboxError)
         throw new ProviderError('POLICY_DENIED', error.message);
       if (error instanceof ProviderError) throw error;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const failure = error as {
         code?: number;
         stdout?: string;
@@ -289,7 +290,7 @@ export class AptSystemProvider implements InstallerProvider {
       type: 'deb',
       name: aptName(`pkg:deb/${name}`).name,
       qualifiers: {},
-      ...(version === undefined ? {} : { version }),
+      ...(!(version === undefined) && { version }),
     });
   }
 }

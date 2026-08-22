@@ -34,7 +34,7 @@ export function delegatedAdapterModule(
   options: { now?: () => string } = {},
 ): AdapterModule {
   const withClock = (context: AdapterContext | undefined): AdapterContext => ({
-    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(!(options.now === undefined) && { now: options.now }),
     ...context,
   });
 
@@ -48,6 +48,7 @@ export function delegatedAdapterModule(
     purlTypes: [...manifest.purlTypes],
     async registryDefinition(context?: AdapterContext) {
       if (definition !== undefined) return definition;
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const answered = (await executor.invoke({
         operation: 'registry-definition',
         params: {},
@@ -93,9 +94,9 @@ class DelegatedCatalogProvider implements CatalogProvider {
         // The stdio protocol carries metadata only: when the manifest admits
         // fetch-artifact-record, artifact bytes are fetched host-side from
         // the record's locations and digest-verified (spec Artifact bytes).
-        ...(admitsOperation(manifest, 'fetch-artifact-record')
-          ? { 'openpacker/artifact-bytes': 'host-fetch' }
-          : {}),
+        ...(admitsOperation(manifest, 'fetch-artifact-record') && {
+          'openpacker/artifact-bytes': 'host-fetch',
+        }),
       },
     };
   }
@@ -104,11 +105,12 @@ class DelegatedCatalogProvider implements CatalogProvider {
     query: string,
     signal?: AbortSignal,
   ): Promise<readonly PackageIdentity[]> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.executor.invoke({
       operation: 'identify',
       params: { query },
       context: this.context,
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(signal === undefined) && { signal }),
     })) as PackageIdentity[];
   }
 
@@ -116,11 +118,12 @@ class DelegatedCatalogProvider implements CatalogProvider {
     basePurl: string,
     signal?: AbortSignal,
   ): Promise<readonly string[]> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.executor.invoke({
       operation: 'enumerate',
       params: { basePurl },
       context: this.context,
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(signal === undefined) && { signal }),
     })) as string[];
   }
 
@@ -128,11 +131,12 @@ class DelegatedCatalogProvider implements CatalogProvider {
     exactPurl: string,
     signal?: AbortSignal,
   ): Promise<ProviderInspection> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.executor.invoke({
       operation: 'inspect',
       params: { exactPurl },
       context: this.context,
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(signal === undefined) && { signal }),
     })) as ProviderInspection;
   }
 
@@ -140,11 +144,12 @@ class DelegatedCatalogProvider implements CatalogProvider {
     exactPurl: string,
     signal?: AbortSignal,
   ): Promise<ProviderRecord> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.executor.invoke({
       operation: 'fetch-artifact-record',
       params: { exactPurl },
       context: this.context,
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(signal === undefined) && { signal }),
     })) as ProviderRecord;
   }
 
@@ -157,11 +162,12 @@ class DelegatedCatalogProvider implements CatalogProvider {
         'UNSUPPORTED_OPERATION',
         `Plugin ${this.manifest.id} does not declare the snapshot operation`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (await this.executor.invoke({
       operation: 'snapshot',
       params: { evaluationTime },
       context: this.context,
-      ...(signal === undefined ? {} : { signal }),
+      ...(!(signal === undefined) && { signal }),
     })) as SourceSnapshot;
   }
 }

@@ -52,6 +52,7 @@ describe('neutral Epoch consumer boundary', () => {
       },
     });
     const cursors: number[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const client = {
       async eventPage(cursor: number) {
         cursors.push(cursor);
@@ -62,7 +63,7 @@ describe('neutral Epoch consumer boundary', () => {
             }
           : { events: [], nextCursor: cursor };
       },
-    } as unknown as OpenPackerClient;
+    } as OpenPackerClient;
     const port = new InMemoryEpochConsumerPort();
     await consumeEvents(client, new EpochEventConsumer(port), undefined, 1);
     await consumeEvents(client, new EpochEventConsumer(port), undefined, 1);

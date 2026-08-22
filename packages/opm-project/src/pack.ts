@@ -91,34 +91,32 @@ export async function packProject(input: {
         root: input.root,
         package: packageManifest,
         target,
-        ...(input.nativeMetadata === undefined
-          ? {}
-          : { nativeMetadata: input.nativeMetadata }),
+        ...(!(input.nativeMetadata === undefined) && {
+          nativeMetadata: input.nativeMetadata,
+        }),
         excludePaths: [outputDirectory],
-        ...(includePaths === undefined ? {} : { includePaths }),
+        ...(!(includePaths === undefined) && { includePaths }),
       });
   const options: PackOptions = {
     strategy: input.strategy,
     outputDirectory,
-    ...(input.authorizedEnvironment?.[packer.providerId] === undefined
-      ? {}
-      : {
-          authorizedEnvironment: input.authorizedEnvironment[packer.providerId],
-        }),
-    ...(input.allowBuild === undefined ? {} : { allowBuild: input.allowBuild }),
-    ...(input.allowNetwork === undefined
-      ? {}
-      : { allowNetwork: input.allowNetwork }),
-    ...(input.offline === undefined ? {} : { offline: input.offline }),
-    ...(input.dryRun === undefined ? {} : { dryRun: input.dryRun }),
-    ...(input.signal === undefined ? {} : { signal: input.signal }),
+    ...(!(input.authorizedEnvironment?.[packer.providerId] === undefined) && {
+      authorizedEnvironment: input.authorizedEnvironment[packer.providerId],
+    }),
+    ...(!(input.allowBuild === undefined) && { allowBuild: input.allowBuild }),
+    ...(!(input.allowNetwork === undefined) && {
+      allowNetwork: input.allowNetwork,
+    }),
+    ...(!(input.offline === undefined) && { offline: input.offline }),
+    ...(!(input.dryRun === undefined) && { dryRun: input.dryRun }),
+    ...(!(input.signal === undefined) && { signal: input.signal }),
   };
   const outcome = await packer.pack(
     {
       project,
       manifest: packageManifest,
       target,
-      ...(normalized === undefined ? {} : { normalized }),
+      ...(!(normalized === undefined) && { normalized }),
     },
     options,
   );
@@ -148,7 +146,10 @@ export async function packProject(input: {
         }
       : undefined,
   );
-  const bytes = canonicalBytes(receipt as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(receipt)) as JsonValue,
+  );
   const receiptPath = join(outputDirectory, PACK_RECEIPT);
   await writeFileAtomic(receiptPath, bytes);
   const receiptArtifact: PackArtifact = {
@@ -178,22 +179,20 @@ function receiptFor(
     strategy: outcome.strategy,
     target,
     normalizedManifestDigest,
-    ...(provider === undefined ? {} : { provider }),
-    ...(outcome.tool === undefined ? {} : { tool: outcome.tool }),
+    ...(!(provider === undefined) && { provider }),
+    ...(!(outcome.tool === undefined) && { tool: outcome.tool }),
     commands: (
       outcome.commands ??
       (outcome.command === undefined ? [] : [outcome.command])
     ).map((command) => [...command]),
-    ...(outcome.sandboxEnforced === undefined
-      ? {}
-      : {
-          sandbox: {
-            ...(outcome.sandboxBackend === undefined
-              ? {}
-              : { backend: outcome.sandboxBackend }),
-            enforced: outcome.sandboxEnforced,
-          },
+    ...(!(outcome.sandboxEnforced === undefined) && {
+      sandbox: {
+        ...(outcome.sandboxBackend !== undefined && {
+          backend: outcome.sandboxBackend,
         }),
+        enforced: outcome.sandboxEnforced,
+      },
+    }),
     artifacts: outcome.artifacts.map((artifact) => {
       if (descriptorIds.has(artifact.digest))
         throw new OpmError(
@@ -207,9 +206,9 @@ function receiptFor(
         size: artifact.size,
         mediaType: artifact.mediaType,
         artifactType: artifact.mediaType,
-        ...(artifact.outputName === undefined
-          ? {}
-          : { fileName: basename(artifact.outputName) }),
+        ...(!(artifact.outputName === undefined) && {
+          fileName: basename(artifact.outputName),
+        }),
         nativeRole: artifact.nativeRole,
         locations: [],
         referrers: [],
@@ -229,7 +228,7 @@ function toDistributionRequirement(input: {
   return {
     identifier: input.name,
     purl: input.purl,
-    ...(input.range === undefined ? {} : { range: input.range }),
+    ...(!(input.range === undefined) && { range: input.range }),
     scope: input.scope,
   };
 }

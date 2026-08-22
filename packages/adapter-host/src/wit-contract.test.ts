@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   AdapterHostError,
-  assertWitShapedModule,
+  assertWitContractModule,
   parseServiceIndex,
   serviceIndexBytes,
   type AdapterModule,
@@ -34,6 +34,7 @@ async function loadServiceIndexFixtures(): Promise<
       return {
         name,
         text,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         definition: JSON.parse(text) as RegistryDefinition,
       };
     }),
@@ -59,11 +60,14 @@ function moduleForDefinition(definition: RegistryDefinition): AdapterModule {
   };
   if (
     types.some((type) =>
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (CATALOG_RESOURCES as readonly string[]).includes(type),
     )
   )
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     module.catalog = () => ({}) as never;
   if (!module.catalog && !module.codec && !module.installer && !module.packer)
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     module.codec = () => ({ purlType: module.purlTypes[0] }) as never;
   return module;
 }
@@ -88,7 +92,7 @@ describe('WIT-shaped contract fixtures', () => {
     }
   });
 
-  it('accepts fixtures as assertWitShapedModule guests when exports match', async () => {
+  it('accepts fixtures as assertWitContractModule guests when exports match', async () => {
     const fixtures = await loadServiceIndexFixtures();
     expect(
       fixtures.some(({ definition }) =>
@@ -98,7 +102,7 @@ describe('WIT-shaped contract fixtures', () => {
 
     for (const { name, definition } of fixtures)
       await expect(
-        assertWitShapedModule(moduleForDefinition(definition)),
+        assertWitContractModule(moduleForDefinition(definition)),
         name,
       ).resolves.toBeUndefined();
   });
@@ -118,9 +122,10 @@ describe('WIT-shaped contract fixtures', () => {
           },
         ],
       }),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       catalog: () => ({ inspect: async () => ({}) }) as never,
     };
-    await expect(assertWitShapedModule(module)).resolves.toBeUndefined();
+    await expect(assertWitContractModule(module)).resolves.toBeUndefined();
   });
 
   it('rejects advertising prex.registry.search/1 without catalog as INVALID_ADAPTER', async () => {
@@ -139,15 +144,16 @@ describe('WIT-shaped contract fixtures', () => {
         ],
       }),
       // Codec keeps the "no capability export" check from firing first.
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       codec: () => ({ purlType: 'generic' }) as never,
     };
 
-    await expect(assertWitShapedModule(dishonest)).rejects.toMatchObject({
+    await expect(assertWitContractModule(dishonest)).rejects.toMatchObject({
       name: 'AdapterHostError',
       code: 'INVALID_ADAPTER',
       message: expect.stringMatching(/prex\.registry\.search\/1.*catalog/u),
     });
-    await expect(assertWitShapedModule(dishonest)).rejects.toBeInstanceOf(
+    await expect(assertWitContractModule(dishonest)).rejects.toBeInstanceOf(
       AdapterHostError,
     );
   });

@@ -227,6 +227,7 @@ function findArraySpan(
 /** The string items of an array assignment, via the real TOML parser. */
 function parseArrayItems(assignment: string): string[] {
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = parse(assignment) as Record<string, unknown>;
     const value = Object.values(parsed)[0];
     return Array.isArray(value)

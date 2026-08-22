@@ -86,7 +86,9 @@ artifact_origin_extra_header_envs = ["JFROG_API_KEY"]
         parseManifest(mutant.toml);
         survivors.push(mutant.name);
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as { code?: string }).code).toBe('INVALID_MANIFEST');
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         expect((error as Error).message).not.toMatch(/user:secret/u);
       }
     }

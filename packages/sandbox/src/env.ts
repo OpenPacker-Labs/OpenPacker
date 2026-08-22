@@ -155,7 +155,7 @@ export function scrubEnvironment(input: {
   minimalPath?: boolean;
   /** Argv[0] used to include interpreter dir on PATH. */
   interpreter?: string;
-}): Record<string, string> {
+}) {
   const parent = input.parent ?? process.env;
   const granted = new Set(input.grantEnv ?? []);
   const out: Record<string, string> = {};

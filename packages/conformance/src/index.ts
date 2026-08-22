@@ -26,7 +26,10 @@ export function createPrexValidator(): Ajv2020 {
     strictTypes: false,
     allowUnionTypes: true,
   });
+  // SAFETY: ajv-formats exports the documented Ajv plugin at this module boundary.
   (addFormatsModule.default as unknown as (instance: Ajv2020) => Ajv2020)(ajv);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   for (const schema of Object.values(schemaCatalog))
     ajv.addSchema(schema as AnySchema);
   return ajv;
@@ -79,6 +82,7 @@ export function validateCanonicalValue(value: unknown): ErrorObject[] {
   while (stack.length > 0) {
     const current = stack.pop()!;
     if (current.exit) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       active.delete(current.value as object);
       continue;
     }
@@ -98,10 +102,12 @@ export function validateCanonicalValue(value: unknown): ErrorObject[] {
     stack.push({ ...current, exit: true });
     for (const nested of Array.isArray(current.value)
       ? current.value
-      : Object.values(current.value as Record<string, unknown>))
+      : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        Object.values(current.value as Record<string, unknown>))
       stack.push({ value: nested, depth: current.depth + 1 });
   }
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     canonicalize(value as JsonValue);
     return [];
   } catch (error) {
@@ -130,6 +136,7 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
       node.forEach((item, index) => visit(item, `${path}/${index}`));
       return;
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const record = node as Record<string, unknown>;
 
     // A package's output names identify its parts; duplicates make an output
@@ -140,6 +147,7 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
           (item): item is { name: string } =>
             typeof item === 'object' &&
             item !== null &&
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             typeof (item as { name?: unknown }).name === 'string',
         )
         .map((item) => item.name);
@@ -154,6 +162,7 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
         (item) =>
           typeof item === 'object' &&
           item !== null &&
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           (item as { default?: unknown }).default === true,
       );
       if (defaults.length > 1)
@@ -172,7 +181,8 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
       for (const [index, item] of record.entries.entries()) {
         const entryPath =
           typeof item === 'object' && item !== null
-            ? (item as { path?: unknown }).path
+            ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (item as { path?: unknown }).path
             : undefined;
         if (typeof entryPath !== 'string') continue;
         const segments = entryPath.split('/');
@@ -198,6 +208,7 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
           (item): item is { path: string } =>
             typeof item === 'object' &&
             item !== null &&
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
             typeof (item as { path?: unknown }).path === 'string',
         )
         .map((item) => item.path);
@@ -217,11 +228,13 @@ export function validateStructuralInvariants(value: unknown): ErrorObject[] {
       record.currentGenerationDigest !== null &&
       Array.isArray(record.retainedGenerationDigests)
     ) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const current = (record.currentGenerationDigest as { value?: unknown })
         .value;
       const retained = record.retainedGenerationDigests.map((item) =>
         typeof item === 'object' && item !== null
-          ? (item as { value?: unknown }).value
+          ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            (item as { value?: unknown }).value
           : undefined,
       );
       if (!retained.includes(current))

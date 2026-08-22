@@ -35,10 +35,7 @@ const SDIST_URL =
   'https://fixtures.openpacker.invalid/pypi/demo_tool-1.0.0.tar.gz';
 const PROJECT_URL = 'https://fixtures.test/demo-tool/json';
 
-function warehouseProvider(): {
-  provider: PypiJsonProvider;
-  transport: FixtureHttpTransport;
-} {
+function warehouseProvider() {
   const transport = new FixtureHttpTransport(
     new Map([
       [

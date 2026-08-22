@@ -203,9 +203,9 @@ export async function addPackage(input: {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const parsed = parsePackageSpec(input.spec, {
-    ...(input.ecosystem !== undefined ? { ecosystem: input.ecosystem } : {}),
-    ...(input.source !== undefined ? { source: input.source } : {}),
-    ...(input.alias !== undefined ? { alias: input.alias } : {}),
+    ...(input.ecosystem !== undefined && { ecosystem: input.ecosystem }),
+    ...(input.source !== undefined && { source: input.source }),
+    ...(input.alias !== undefined && { alias: input.alias }),
   });
 
   // Fail closed if ecosystem not allowed when project restricts
@@ -236,11 +236,11 @@ export async function addPackage(input: {
           : `pkg:${ecosystem}/${parsed.alias}`;
     const sandbox = hostSandboxFromPolicy(manifest.policy);
     const planOptions = {
-      ...(input.offline !== undefined ? { offline: input.offline } : {}),
-      ...(input.dryRun !== undefined ? { dryRun: input.dryRun } : {}),
-      ...(input.allowElevation !== undefined
-        ? { allowElevation: input.allowElevation }
-        : {}),
+      ...(input.offline !== undefined && { offline: input.offline }),
+      ...(input.dryRun !== undefined && { dryRun: input.dryRun }),
+      ...(input.allowElevation !== undefined && {
+        allowElevation: input.allowElevation,
+      }),
       sandbox,
     };
     const plan = await planSystemInstall(exact, planOptions);
@@ -248,10 +248,10 @@ export async function addPackage(input: {
       input.dryRun === true
         ? undefined
         : await installSystemPackage(exact, {
-            ...(input.offline !== undefined ? { offline: input.offline } : {}),
-            ...(input.allowElevation !== undefined
-              ? { allowElevation: input.allowElevation }
-              : {}),
+            ...(input.offline !== undefined && { offline: input.offline }),
+            ...(input.allowElevation !== undefined && {
+              allowElevation: input.allowElevation,
+            }),
             sandbox,
           });
     const alias = assertSafeSegment(parsed.alias, 'package alias');
@@ -266,7 +266,7 @@ export async function addPackage(input: {
       alias,
       hostInstall: {
         plan,
-        ...(outcome === undefined ? {} : { outcome }),
+        ...(!(outcome === undefined) && { outcome }),
       },
     };
   }
@@ -288,9 +288,9 @@ export async function addPackage(input: {
     root: input.root,
     manifest,
     offline,
-    ...(input.catalogPaths !== undefined
-      ? { catalogPaths: input.catalogPaths }
-      : {}),
+    ...(input.catalogPaths !== undefined && {
+      catalogPaths: input.catalogPaths,
+    }),
   });
   await writeLockfile(paths.lock, lock);
 
@@ -301,7 +301,7 @@ export async function addPackage(input: {
     root: input.root,
     lock,
     offline,
-    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
   });
 
   // Last, and only after the store is real: a native manifest that names a
@@ -389,9 +389,9 @@ export async function syncProject(input: {
     root: input.root,
     manifest,
     offline,
-    ...(input.catalogPaths !== undefined
-      ? { catalogPaths: input.catalogPaths }
-      : {}),
+    ...(input.catalogPaths !== undefined && {
+      catalogPaths: input.catalogPaths,
+    }),
   });
   await writeLockfile(paths.lock, lock);
 
@@ -410,7 +410,7 @@ export async function syncProject(input: {
     root: input.root,
     lock,
     offline,
-    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,
@@ -440,7 +440,7 @@ export async function installProject(input: {
     return {
       lock: synced.lock,
       state: synced.state,
-      ...(synced.native === undefined ? {} : { native: synced.native }),
+      ...(!(synced.native === undefined) && { native: synced.native }),
     };
   }
   assertLockMatchesManifest(input.root, manifest, lock);
@@ -455,7 +455,7 @@ export async function installProject(input: {
       root: input.root,
       lock,
       offline: true,
-      ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+      ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
     });
     const native = await projectNativeFormats({
       root: input.root,
@@ -481,7 +481,7 @@ export async function installProject(input: {
     root: input.root,
     lock: verifiedLock,
     offline,
-    ...(manifest.policy === undefined ? {} : { policy: manifest.policy }),
+    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
   });
   const native = await projectNativeFormats({
     root: input.root,
@@ -684,9 +684,9 @@ export async function resolveManifestToLock(input: {
       offline: input.offline,
       catalog,
       manifest: input.manifest,
-      ...(input.registryOptions === undefined
-        ? {}
-        : { registryOptions: input.registryOptions }),
+      ...(!(input.registryOptions === undefined) && {
+        registryOptions: input.registryOptions,
+      }),
     });
     lock.packages[alias] = locked;
   }
@@ -703,9 +703,9 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
-      ...(input.registryOptions === undefined
-        ? {}
-        : { registryOptions: input.registryOptions }),
+      ...(!(input.registryOptions === undefined) && {
+        registryOptions: input.registryOptions,
+      }),
     });
     for (const [alias, pkg] of Object.entries(transitive.packages))
       if (!lock.packages[alias]) lock.packages[alias] = pkg;
@@ -782,9 +782,9 @@ async function resolveTransitive(input: {
     const graph = await resolveGraph({
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
-        ...(nativeRangeFor(pkg, input.manifest) === undefined
-          ? {}
-          : { range: nativeRangeFor(pkg, input.manifest)! }),
+        ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
+          range: nativeRangeFor(pkg, input.manifest)!,
+        }),
       })),
       optionsFor,
     });
@@ -882,9 +882,9 @@ async function resolveTransitive(input: {
         bins: binDeclarationsFromExecutables(artifact.bins),
         reason: 'transitive',
         ecosystem: instance.identity.purlType,
-        ...(transitiveIntegrity === undefined
-          ? {}
-          : { nativeIntegrity: transitiveIntegrity }),
+        ...(!(transitiveIntegrity === undefined) && {
+          nativeIntegrity: transitiveIntegrity,
+        }),
         ...lockPackageSupplyChainFields(facts),
       };
       bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
@@ -1032,9 +1032,9 @@ async function resolveRequirement(input: {
     const sourceIntegrity = nativeIntegrityOf(ecosystem, bytes);
     const result: LockPackage = {
       ...locked,
-      ...(sourceIntegrity === undefined
-        ? {}
-        : { nativeIntegrity: sourceIntegrity }),
+      ...(!(sourceIntegrity === undefined) && {
+        nativeIntegrity: sourceIntegrity,
+      }),
       ...lockPackageSupplyChainFields(facts),
     };
     bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
@@ -1154,9 +1154,9 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
-      ...(catalogIntegrity === undefined
-        ? {}
-        : { nativeIntegrity: catalogIntegrity }),
+      ...(!(catalogIntegrity === undefined) && {
+        nativeIntegrity: catalogIntegrity,
+      }),
       ...lockPackageSupplyChainFields(facts),
     };
     bindVerifiedArtifactBytes(result, bytes, 'direct', facts);
@@ -1291,7 +1291,7 @@ async function resolveRequirement(input: {
       bins,
       reason: 'direct',
       ecosystem,
-      ...(nativeIntegrity === undefined ? {} : { nativeIntegrity }),
+      ...(!(nativeIntegrity === undefined) && { nativeIntegrity }),
       ...supplyFields,
     };
     bindVerifiedArtifactBytes(result, bytes, 'registry', verifiedFacts);

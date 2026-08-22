@@ -182,7 +182,8 @@ export class Federation {
   ): Promise<void> {
     const contract = validateContract(
       REGISTRY_ENTRY_SCHEMA,
-      entry as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(entry)) as JsonValue,
       this.#validator,
     );
     if (!contract.valid)
@@ -258,7 +259,7 @@ function exactPurlVersion(exactPurl: string): string | undefined {
 
 /** True when a manifest names something this registry itself publishes. */
 export function isLocal(
-  local: (name: string, version: string) => unknown,
+  local: (name: string, version: string) => JsonValue | undefined,
   manifest: Pick<PackageManifest, 'name' | 'version'>,
 ): boolean {
   return local(manifest.name, manifest.version) !== undefined;

@@ -65,7 +65,7 @@ const WINGET_LOSS: readonly SemanticLoss[] = [
  * winget identifiers are dotted publisher/package pairs. Anchoring on that
  * grammar is what keeps an identifier from ever resembling an option.
  */
-function wingetId(exactPurl: string): { id: string; version?: string } {
+function wingetId(exactPurl: string) {
   const parsed = parsePurl(exactPurl);
   if (parsed.type !== 'winget')
     throw new ProviderError(
@@ -90,7 +90,7 @@ function wingetId(exactPurl: string): { id: string; version?: string } {
     );
   return {
     id,
-    ...(parsed.version === undefined ? {} : { version: parsed.version }),
+    ...(!(parsed.version === undefined) && { version: parsed.version }),
   };
 }
 
@@ -112,7 +112,7 @@ export class WingetSystemProvider implements InstallerProvider {
       options?: { signal?: AbortSignal },
     ) => Promise<{ stdout: string; stderr: string }> = (file, args, options) =>
       run(file, [...args], {
-        ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.signal && { signal: options.signal }),
         maxBuffer: 8 * 1024 * 1024,
       }),
     private readonly currentPlatform: () => string = platform,
@@ -225,10 +225,10 @@ export class WingetSystemProvider implements InstallerProvider {
     try {
       const result = await runHostInstaller({
         argv: executionPlan.command,
-        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-        ...(options.offline === undefined ? {} : { offline: options.offline }),
+        ...(!(options.sandbox === undefined) && { sandbox: options.sandbox }),
+        ...(!(options.offline === undefined) && { offline: options.offline }),
         ecosystem: 'winget',
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(!(options.signal === undefined) && { signal: options.signal }),
       });
       return {
         ...executionPlan,
@@ -243,6 +243,7 @@ export class WingetSystemProvider implements InstallerProvider {
     } catch (error) {
       if (error instanceof HostInstallerSandboxError)
         throw new ProviderError('POLICY_DENIED', error.message);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const failure = error as {
         code?: number;
         stdout?: string;
@@ -271,7 +272,7 @@ export class WingetSystemProvider implements InstallerProvider {
       namespace: publisher,
       name: rest.join('.'),
       qualifiers: {},
-      ...(version === undefined ? {} : { version }),
+      ...(!(version === undefined) && { version }),
     });
   }
 }

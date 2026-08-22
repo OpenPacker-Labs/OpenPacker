@@ -14,6 +14,7 @@ import { runSandboxedPackageProcess } from '../src/sandbox-run.js';
 import type { PolicyInput } from '@openpacker/contracts';
 import { createMockBackend, type SandboxOutcome } from '@openpacker/sandbox';
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const allowPolicy: PolicyInput = {
   allowYanked: false,
   allowQuarantined: false,
@@ -240,6 +241,7 @@ describe('lifecycle jail execution', () => {
   });
 
   it('does not infer enforced=true from scripts running — only from outcomes', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const ambient = {
       exitCode: 0,
       stdout: '',

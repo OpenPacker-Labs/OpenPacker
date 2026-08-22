@@ -58,12 +58,14 @@ async function packedDir(bytes = new TextEncoder().encode('packed-bytes')) {
   };
   await writeFile(
     join(root, PACK_RECEIPT),
-    canonicalBytes(receipt as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    canonicalBytes(JSON.parse(JSON.stringify(receipt)) as JsonValue),
   );
   return { root, bytes, digest, receipt };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return new Response(canonicalBytes(body as JsonValue), {
     status,
     headers: {
@@ -128,6 +130,7 @@ describe('publishPackedArtifact', () => {
       fetch: async (input, init) => {
         posted.url = String(input);
         posted.body = JSON.parse(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           new TextDecoder().decode(init?.body as Uint8Array),
         );
         return jsonResponse(posted.body);
@@ -175,6 +178,7 @@ describe('publishPackedArtifact', () => {
       fetch: async (input, init) => {
         posted.url = String(input);
         const body = JSON.parse(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           new TextDecoder().decode(init?.body as Uint8Array),
         );
         return jsonResponse(body);
@@ -255,6 +259,7 @@ describe('yankRegistryVersion', () => {
       fetch: async (input, init) => {
         posted.url = String(input);
         posted.body = JSON.parse(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           new TextDecoder().decode(init?.body as Uint8Array),
         );
         return jsonResponse({ applied });

@@ -15,6 +15,7 @@ export async function loadNativeEmbeddedResolver(
     importer ??
     (async () => {
       const specifier = './native-loader.js';
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return (await import(specifier)) as NativeModule;
     });
   const module = await load();

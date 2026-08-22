@@ -92,7 +92,7 @@ function parsePurlSpec(
   return result;
 }
 
-function splitNameVersion(spec: string): { name: string; version?: string } {
+function splitNameVersion(spec: string) {
   // scoped npm: @scope/name@version
   if (spec.startsWith('@')) {
     const slash = spec.indexOf('/');

@@ -2063,7 +2063,7 @@ export const DIGEST_PROJECTIONS = {
   ],
 } as const;
 
-export const schemaCatalog: Record<string, JsonValue> = {
+export const schemaCatalog = {
   'https://openpacker.dev/spec/prex/v1/schemas/common.schema.json': {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://openpacker.dev/spec/prex/v1/schemas/common.schema.json',
@@ -10923,4 +10923,4 @@ export const schemaCatalog: Record<string, JsonValue> = {
       },
     },
   },
-};
+} satisfies Record<string, JsonValue>;

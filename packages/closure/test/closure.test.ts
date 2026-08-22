@@ -415,6 +415,7 @@ describe('digests agree with the spec projections', () => {
     expect((await treeDigest(manifest)).value).toBe(
       (
         await canonicalProjectionDigest(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           manifest as never,
           projectionFor('tree-manifest-v1'),
         )
@@ -437,6 +438,7 @@ describe('digests agree with the spec projections', () => {
     expect((await closureDigest(closure)).value).toBe(
       (
         await canonicalProjectionDigest(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           closure as never,
           projectionFor('closure-v1'),
         )

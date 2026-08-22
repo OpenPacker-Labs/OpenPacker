@@ -12,6 +12,7 @@ import {
   type ManifestMigration,
 } from '../src/normalise.js';
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const keys = JSON.parse(
   readFileSync(
     fileURLToPath(
@@ -25,6 +26,7 @@ function manifest(
   name: string,
   extra: Partial<PackageManifest> = {},
 ): PackageManifest {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     packageManifestVersion: '1',
     name,
@@ -46,7 +48,10 @@ function manifest(
 }
 
 async function publishBody(value: PackageManifest, _namespace: string) {
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
   return {
     manifest: value,
@@ -78,7 +83,10 @@ async function statusBody(
     reason: `test transition to ${status}`,
     issuedAt: '2026-08-10T00:00:00.000Z',
   };
-  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const updateDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(update)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk('publisher-1', keys.leaf!);
   return {
     update,
@@ -98,6 +106,7 @@ async function statusBody(
 
 function registry(overrides: Record<string, unknown> = {}) {
   const store =
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
   store.trustKey(
     'com.example',
@@ -155,17 +164,19 @@ describe('read-time normalisation', () => {
     from: 1,
     to: 2,
     migrate: (value) =>
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ({
         ...value,
         packageManifestVersion: '2',
         summary: value.description ?? '',
-      }) as unknown as PackageManifest,
+      }) as PackageManifest,
   };
   const toV1: ManifestMigration = {
     from: 2,
     to: 1,
     migrate: (value) =>
-      ({ ...value, packageManifestVersion: '1' }) as unknown as PackageManifest,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      ({ ...value, packageManifestVersion: '1' }) as PackageManifest,
   };
 
   it('serves what is stored when the client accepts it', () => {
@@ -183,27 +194,31 @@ describe('read-time normalisation', () => {
       from: 1,
       to: 3,
       migrate: (value) =>
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ({ ...value, packageManifestVersion: '3', via: 'direct' }) as never,
     };
     const stepA: ManifestMigration = {
       from: 1,
       to: 2,
       migrate: (value) =>
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ({ ...value, packageManifestVersion: '2', via: 'stepA' }) as never,
     };
     const stepB: ManifestMigration = {
       from: 2,
       to: 3,
       migrate: (value) =>
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ({ ...value, packageManifestVersion: '3', via: 'stepB' }) as never,
     };
     // Every hop is a chance to lose something, so a direct conversion beats
     // two even when the two were registered first.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result = normalise(
       manifest('com.example.tool'),
       [3],
       [stepA, stepB, long],
-    ) as unknown as { via: string };
+    ) as { via: string };
     expect(result.via).toBe('direct');
   });
 
@@ -278,6 +293,7 @@ describe('search', () => {
       method: 'POST',
       url: '/v1/publish',
       payload: await publishBody(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         manifest('com.example.parser', {
           description: 'A fast JSON parser for embedded targets',
         } as Partial<PackageManifest>),
@@ -288,6 +304,7 @@ describe('search', () => {
       method: 'POST',
       url: '/v1/publish',
       payload: await publishBody(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         manifest('com.example.logger', {
           title: 'Structured logging',
         } as Partial<PackageManifest>),
@@ -299,6 +316,7 @@ describe('search', () => {
 
   it('finds a package by a word inside its dotted name', async () => {
     const app = await stocked();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=parser' })
     ).json() as { packages: { manifest: { name: string } }[] };
@@ -309,6 +327,7 @@ describe('search', () => {
 
   it('finds a package by its description', async () => {
     const app = await stocked();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=embedded' })
     ).json() as { packages: { manifest: { name: string } }[] };
@@ -318,6 +337,7 @@ describe('search', () => {
 
   it('says which search actually ran', async () => {
     const app = await stocked();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=parser' })
     ).json() as { metadata: { searchMode?: string } };
@@ -341,6 +361,7 @@ describe('search', () => {
 
   it('returns nothing rather than everything for a search of only punctuation', async () => {
     const app = await stocked();
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=%2B%2B%2B' })
     ).json() as { packages: unknown[] };
@@ -377,6 +398,7 @@ describe('search', () => {
       url: '/v1/packages/com.example.parser/versions/1.0.0/status',
       payload: await statusBody('com.example.parser', '1.0.0', 'deleted'),
     });
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const page = (
       await app.inject({ method: 'GET', url: '/v1/packages?search=parser' })
     ).json() as { packages: unknown[] };

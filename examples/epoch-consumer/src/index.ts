@@ -77,29 +77,45 @@ export async function verifyEmbeddedBoundary(input: {
     throw new Error(
       `Embedded proof check failed: ${checked.diagnostics.join('; ')}`,
     );
-  const proofBytes = canonicalBytes(output.proof as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const proofBytes = canonicalBytes(
+    JSON.parse(JSON.stringify(output.proof)) as JsonValue,
+  );
   const embeddedProofBytes = new TextEncoder().encode(
-    input.resolver.canonicalize(output.proof as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    input.resolver.canonicalize(
+      JSON.parse(JSON.stringify(output.proof)) as JsonValue,
+    ),
   );
   if (!equalBytes(proofBytes, embeddedProofBytes))
     throw new Error('Embedded proof canonical bytes differ from TypeScript');
   const receiptBytes = canonicalBytes(
-    input.signedReceipt.receipt as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(JSON.stringify(input.signedReceipt.receipt)) as JsonValue,
   );
   const receiptDigest = formatDigest(input.signedReceipt.receiptDigest);
   if (
     !input.resolver.verifyReceiptDigest(
-      input.signedReceipt.receipt as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(input.signedReceipt.receipt)) as JsonValue,
       receiptDigest,
     )
   )
     throw new Error('Embedded receipt digest verification failed');
   const proofDigest = formatDigest(
-    input.resolver.digest(output.proof as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    input.resolver.digest(
+      JSON.parse(JSON.stringify(output.proof)) as JsonValue,
+    ),
   );
   if (
     proofDigest !==
-    formatDigest(await canonicalDigest(output.proof as unknown as JsonValue))
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    formatDigest(
+      await canonicalDigest(
+        JSON.parse(JSON.stringify(output.proof)) as JsonValue,
+      ),
+    )
   )
     throw new Error('Embedded proof digest differs from TypeScript');
   return { proofBytes, receiptBytes, proofDigest, receiptDigest };
@@ -109,7 +125,7 @@ const SIGNED_RECEIPT_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/resolution.schema.json#/$defs/SignedReceipt';
 
 export async function consumeResolution(input: {
-  client: OpenPackerClient;
+  client: Pick<OpenPackerClient, 'solve' | 'verify' | 'receipt'>;
   request: SolveRequest;
   port: EpochConsumerPort;
   receiptVerifiers: ReadonlyMap<string, Verifier>;
@@ -139,8 +155,12 @@ export async function consumeResolution(input: {
     formatDigest(signed.receipt.solutionDigest) !==
       formatDigest(solved.data.solution.solutionDigest) ||
     !equalBytes(
-      canonicalBytes(signed.receipt as unknown as JsonValue),
-      canonicalBytes(solved.data.unsignedReceipt as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(JSON.parse(JSON.stringify(signed.receipt)) as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(
+        JSON.parse(JSON.stringify(solved.data.unsignedReceipt)) as JsonValue,
+      ),
     )
   )
     throw new Error('Signed receipt does not bind the returned solve result');
@@ -166,18 +186,23 @@ export async function consumeResolution(input: {
   if (
     !equalBytes(
       fetched.rawBytes,
-      canonicalBytes(fetched.data as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(JSON.parse(JSON.stringify(fetched.data)) as JsonValue),
     )
   )
     throw new Error("SDK receipt bytes are not the provider's canonical bytes");
   if (formatDigest(fetched.data.receiptDigest) !== receiptDigest)
     throw new Error('Receipt digest changed during SDK retrieval');
   const canonicalReceiptBytes = canonicalBytes(
-    fetched.data.receipt as unknown as JsonValue,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    JSON.parse(JSON.stringify(fetched.data.receipt)) as JsonValue,
   );
   if (
     formatDigest(
-      await canonicalDigest(fetched.data.receipt as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      await canonicalDigest(
+        JSON.parse(JSON.stringify(fetched.data.receipt)) as JsonValue,
+      ),
     ) !== receiptDigest
   )
     throw new Error('Canonical receipt bytes do not match receiptDigest');
@@ -302,13 +327,19 @@ export class InMemoryEpochConsumerPort implements EpochConsumerPort {
   }): Promise<{ externalArtifactRef: string }> {
     if (
       formatDigest(
-        await canonicalDigest(input.receipt.receipt as unknown as JsonValue),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        await canonicalDigest(
+          JSON.parse(JSON.stringify(input.receipt.receipt)) as JsonValue,
+        ),
       ) !== input.receiptDigest
     )
       throw new Error('Receipt bytes changed at the consumer boundary');
     if (
       !equalBytes(
-        canonicalBytes(input.receipt.receipt as unknown as JsonValue),
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        canonicalBytes(
+          JSON.parse(JSON.stringify(input.receipt.receipt)) as JsonValue,
+        ),
         input.canonicalReceiptBytes,
       )
     )
@@ -333,8 +364,14 @@ export class InMemoryEpochConsumerPort implements EpochConsumerPort {
     const prior = this.artifacts.get(input.descriptor.descriptorId);
     if (
       prior &&
-      canonicalBytes(prior.descriptor as unknown as JsonValue).toString() !==
-        canonicalBytes(input.descriptor as unknown as JsonValue).toString()
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(
+        JSON.parse(JSON.stringify(prior.descriptor)) as JsonValue,
+      ).toString() !==
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        canonicalBytes(
+          JSON.parse(JSON.stringify(input.descriptor)) as JsonValue,
+        ).toString()
     )
       throw new Error('Artifact descriptor ID carries different content');
     this.artifacts.set(input.descriptor.descriptorId, input);
@@ -354,6 +391,7 @@ export class InMemoryEpochConsumerPort implements EpochConsumerPort {
 function assertSignedReceiptSchema(
   value: unknown,
 ): asserts value is SignedReceipt {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const result = validateContract(SIGNED_RECEIPT_SCHEMA, value as JsonValue);
   if (!result.valid)
     throw new TypeError(

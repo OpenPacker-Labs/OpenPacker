@@ -100,7 +100,7 @@ async function checkOne(
       url: location,
       method: 'HEAD',
       headers: { accept: '*/*' },
-      ...(input.signal ? { signal: input.signal } : {}),
+      ...(input.signal && { signal: input.signal }),
     });
   } catch (error) {
     // A refused connection or a DNS failure from here is still only evidence
@@ -170,12 +170,10 @@ async function checkOne(
     state: 'verified',
     checkedAt,
     method: declared === undefined ? 'status' : 'head',
-    ...(input.digest === undefined
-      ? {
-          detail:
-            'Reachable. The manifest states no digest, so the bytes were not identified',
-        }
-      : {}),
+    ...(input.digest === undefined && {
+      detail:
+        'Reachable. The manifest states no digest, so the bytes were not identified',
+    }),
   };
 }
 

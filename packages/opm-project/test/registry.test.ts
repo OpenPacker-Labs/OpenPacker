@@ -224,13 +224,11 @@ describe('registry configuration', () => {
 });
 
 describe('first-party classify-and-pin', () => {
-  function recordingFetch(): {
-    calls: string[];
-    fetch: typeof fetch;
-  } {
+  function recordingFetch() {
     const calls: string[] = [];
     return {
       calls,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       fetch: (async (input: RequestInfo | URL) => {
         calls.push(String(input));
         return new Response('ok');
@@ -662,6 +660,7 @@ describe('OCI image materialisation', () => {
   const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
 
   function ociFetch(requests: string[] = []): typeof fetch {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return (async (url: URL | string) => {
       const href = String(url);
       requests.push(href);
@@ -677,7 +676,7 @@ describe('OCI image materialisation', () => {
       if (href.includes(`/blobs/${encodeURIComponent(layerDigest)}`))
         return new Response(layerBytes, { status: 200 });
       return new Response('missing', { status: 404 });
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
   }
 
   it('classifies an OCI layout media type as plain tar, not gzip', () => {
@@ -745,6 +744,7 @@ describe('OCI image materialisation', () => {
       bytes: artifact.bytes,
     });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const layout = JSON.parse(
       await readFile(join(storePath, 'oci-layout'), 'utf8'),
     ) as { imageLayoutVersion: string };
@@ -887,6 +887,7 @@ describe('ephemeral tool cache (first-party)', () => {
       },
     };
     const requests: string[] = [];
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
       const url = String(input);
       requests.push(url);

@@ -148,6 +148,7 @@ describe('parseAuthConfig', () => {
       parseAuthConfig('{"version":1,"orig');
     } catch (error) {
       expect(error).toBeInstanceOf(OpmError);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as OpmError).code).toBe('INVALID_SPEC');
     }
   });
@@ -191,6 +192,7 @@ describe('parseAuthConfig', () => {
       parseAuthConfig(raw);
     } catch (error) {
       expect(error).toBeInstanceOf(OpmError);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       expect((error as OpmError).message).not.toMatch(/super-secret/);
     }
   });

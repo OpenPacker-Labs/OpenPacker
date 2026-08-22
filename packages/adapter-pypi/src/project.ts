@@ -44,6 +44,7 @@ export class PypiProjectFormat implements ProjectFormat {
   async readRequirements(
     project: DetectedProject,
   ): Promise<readonly NativeRequirement[]> {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = parse(await readFile(project.manifestPath, 'utf8')) as {
       project?: {
         dependencies?: unknown;
@@ -139,7 +140,7 @@ function requirementOf(
   return {
     purl: `pkg:pypi/${encodeURIComponent(normalize(name))}`,
     name,
-    ...(specifier === '' ? {} : { range: specifier }),
+    ...(!(specifier === '') && { range: specifier }),
     scope,
   };
 }

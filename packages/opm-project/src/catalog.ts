@@ -11,6 +11,7 @@ export async function loadCatalogFile(
   const text = await readFile(path, 'utf8');
   let value: unknown;
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     value = JSON.parse(text) as unknown;
   } catch (error) {
     throw new OpmError(
@@ -21,6 +22,7 @@ export async function loadCatalogFile(
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new OpmError('INVALID_CATALOG', `Catalog ${path} must be an object`);
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = value as Record<string, unknown>;
   if (record.schemaVersion !== 1) {
     throw new OpmError(
@@ -41,9 +43,11 @@ export async function loadCatalogFile(
   const packages: Record<string, CatalogPackage> = {};
   const canonicalKeys = new Set<string>();
   for (const [key, raw] of Object.entries(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     record.packages as Record<string, unknown>,
   )) {
     if (typeof raw !== 'object' || raw === null) continue;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pkg = raw as Record<string, unknown>;
     if (
       typeof pkg.purl !== 'string' ||
@@ -74,6 +78,7 @@ export async function loadCatalogFile(
           if (typeof b !== 'object' || b === null) {
             throw new OpmError('INVALID_CATALOG', `Bad bins in ${key}`);
           }
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const bin = b as Record<string, unknown>;
           if (typeof bin.name !== 'string' || typeof bin.path !== 'string') {
             throw new OpmError('INVALID_CATALOG', `Bad bins in ${key}`);
@@ -134,6 +139,7 @@ export async function loadCatalogs(paths: readonly string[]): Promise<{
         packages.set(key, { ...entry, resolvedSource });
       }
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw error;
     }

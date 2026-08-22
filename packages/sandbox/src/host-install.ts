@@ -140,12 +140,7 @@ export interface HostInstallerRunResult {
   willEnforce: boolean;
 }
 
-export function planSandboxSummary(sandbox?: HostInstallerSandboxOptions): {
-  mode: 'fail-closed' | 'degrade-warn' | 'off';
-  prefer: 'auto' | 'mxc' | 'native';
-  willEnforce: boolean;
-  allowAmbient: boolean;
-} {
+export function planSandboxSummary(sandbox?: HostInstallerSandboxOptions) {
   const policy = sandboxPolicyFromInstallOptions(sandbox);
   return {
     mode: policy.mode ?? 'fail-closed',
@@ -184,7 +179,7 @@ export async function runHostInstaller(
     readwritePaths: ['/'],
     readonlyPaths: [],
     network: !input.offline,
-    ...(input.signal === undefined ? {} : { signal: input.signal }),
+    ...(!(input.signal === undefined) && { signal: input.signal }),
   });
 
   // host-install never sets enforced true; backend availability is the check.

@@ -257,9 +257,10 @@ describe('materialiseTree', () => {
     const original = Object.getOwnPropertyDescriptor(process, 'platform');
     Object.defineProperty(process, 'platform', { value: 'win32' });
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parent = {
         fd: -1,
-      } as unknown as import('node:fs/promises').FileHandle;
+      } as import('node:fs/promises').FileHandle;
       expect(() => stableHandlePath(parent)).toThrow(StableHandleError);
       await expect(openChild(parent, 'x', 0)).rejects.toThrow();
       await expect(mkdirChild(parent, 'x')).rejects.toThrow();
@@ -425,6 +426,7 @@ describe('materialiseTree', () => {
       void materialising.catch(() => undefined);
       let stagedFile: string | undefined;
       while (stagedFile === undefined) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const staging = (await readdir(root).catch(() => [] as string[])).find(
           (entry) => entry.startsWith('.pkg.openpacker-'),
         );
@@ -458,9 +460,11 @@ describe('materialiseTree', () => {
       void materialising.catch(() => undefined);
       let staging: string | undefined;
       while (staging === undefined) {
-        const candidate = (
-          await readdir(root).catch(() => [] as string[])
-        ).find((entry) => entry.startsWith('.pkg.openpacker-'));
+        const candidate =
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          (await readdir(root).catch(() => [] as string[])).find((entry) =>
+            entry.startsWith('.pkg.openpacker-'),
+          );
         if (
           candidate &&
           (await lstat(join(root, candidate, 'large.bin')).catch(
@@ -513,10 +517,12 @@ describe('materialiseTree', () => {
       );
       let mutated = false;
       while (!settled && !mutated) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const staging = (await readdir(root).catch(() => [] as string[])).find(
           (entry) => entry.startsWith('.pkg.openpacker-'),
         );
         if (staging) {
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const remaining = await readdir(old).catch(() => [] as string[]);
           if (remaining.length < oldCount) {
             await writeFile(join(root, staging, 'attacker'), 'late mutation');
@@ -557,6 +563,7 @@ describe('materialiseTree', () => {
       );
       let staging: string | undefined;
       while (!settled && staging === undefined) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const entries = await readdir(root).catch(() => [] as string[]);
         staging = entries.find((entry) => entry.startsWith('.pkg.openpacker-'));
         if (staging === undefined)

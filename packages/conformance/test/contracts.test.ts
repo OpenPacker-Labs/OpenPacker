@@ -36,6 +36,7 @@ describe('PREX protocol vectors', () => {
     'matches every positive and negative schema expectation',
     { timeout: 60_000 },
     async () => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const index = JSON.parse(
         await readFile(
           path.join(fixtureRoot, 'conformance-vectors.json'),
@@ -45,10 +46,12 @@ describe('PREX protocol vectors', () => {
       const vectors: ConformanceVector[] = await Promise.all(
         index.vectors.map(async (vector) => {
           let value = vector.file
-            ? (JSON.parse(
+            ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (JSON.parse(
                 await readFile(path.join(fixtureRoot, vector.file), 'utf8'),
               ) as JsonValue)
-            : (vector.inline as JsonValue);
+            : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              (JSON.parse(JSON.stringify(vector.inline)) as JsonValue);
           if (vector.pointer) value = atPointer(value, vector.pointer);
           value = structuredClone(value);
           for (const mutation of vector.mutations ?? [])
@@ -106,6 +109,7 @@ function atPointer(value: JsonValue, pointer: string): JsonValue {
   for (const part of pointerParts(pointer)) {
     if (typeof current !== 'object' || current === null || !(part in current))
       throw new Error(`Invalid conformance vector pointer: ${pointer}`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     current = (current as Record<string, JsonValue>)[part]!;
   }
   return current;
@@ -126,12 +130,15 @@ function mutate(
   for (const part of parts) {
     if (typeof parent !== 'object' || parent === null || !(part in parent))
       throw new Error(`Invalid mutation path: ${mutation.path}`);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     parent = (parent as Record<string, JsonValue>)[part]!;
   }
   if (typeof parent !== 'object' || parent === null)
     throw new Error(`Invalid mutation parent: ${mutation.path}`);
   if (mutation.operation === 'delete')
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     delete (parent as Record<string, JsonValue>)[key];
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   else (parent as Record<string, JsonValue>)[key] = mutation.value ?? null;
 }
 

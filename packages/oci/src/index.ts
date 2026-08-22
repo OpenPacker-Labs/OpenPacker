@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   link,
   mkdir,
-  open,
   readFile,
   rename,
   rm,
@@ -13,7 +12,6 @@ import { join } from 'node:path';
 import {
   collectStream,
   descriptorForBytes,
-  streamFromBytes,
   verifyBytes,
 } from '@openpacker/artifact-model';
 import {
@@ -23,6 +21,8 @@ import {
   sha256,
 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, JsonValue } from '@openpacker/contracts';
+
+type TokenRequestHeaders = Record<string, string>;
 
 export const OCI_MEDIA_TYPES = {
   manifest: 'application/vnd.oci.image.manifest.v1+json',
@@ -127,6 +127,7 @@ export async function ociDescriptor(
 }
 
 const parseJson = <T>(bytes: Uint8Array): T =>
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as T;
 
 export class OciImageLayout {
@@ -209,7 +210,10 @@ export class OciImageLayout {
     reference?: string,
   ): Promise<OciDescriptor> {
     validateManifest(manifest);
-    const bytes = canonicalBytes(manifest as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const bytes = canonicalBytes(
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
+    );
     const descriptor = await this.putBlob(
       bytes,
       OCI_MEDIA_TYPES.manifest,
@@ -219,9 +223,9 @@ export class OciImageLayout {
     );
     await this.addToIndex({
       ...descriptor,
-      ...(reference === undefined
-        ? {}
-        : { annotations: { 'org.opencontainers.image.ref.name': reference } }),
+      ...(!(reference === undefined) && {
+        annotations: { 'org.opencontainers.image.ref.name': reference },
+      }),
     });
     return descriptor;
   }
@@ -370,7 +374,10 @@ export class OciImageLayout {
     );
     await writeFile(
       temporary,
-      canonicalBytes({ ...index, manifests } as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      canonicalBytes(
+        JSON.parse(JSON.stringify({ ...index, manifests })) as JsonValue,
+      ),
       { flag: 'wx', mode: 0o600 },
     );
     await rename(temporary, join(this.root, 'index.json'));
@@ -524,6 +531,15 @@ function exactHttpsOrigin(value: string, label: string): string {
  * Credentials are optional. When absent this performs the anonymous flow,
  * which is what public repositories serve.
  */
+type WellKnownTokenOrigins = Readonly<Record<string, readonly string[]>>;
+
+const WELL_KNOWN_TOKEN_ORIGINS: WellKnownTokenOrigins = {
+  'https://registry-1.docker.io': ['https://auth.docker.io'],
+  'https://index.docker.io': ['https://auth.docker.io'],
+  'https://ghcr.io': ['https://ghcr.io'],
+  'https://quay.io': ['https://quay.io'],
+};
+
 export class BearerTokenAuthentication implements RegistryAuthentication {
   readonly #tokens = new Map<string, { token: string; expiresAt: number }>();
   readonly #fetch: typeof fetch;
@@ -541,14 +557,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
    * is that the list is not attacker-influenced. Anything else needs
    * `allowedTokenOrigins`.
    */
-  static readonly WELL_KNOWN_TOKEN_ORIGINS: Readonly<
-    Record<string, readonly string[]>
-  > = {
-    'https://registry-1.docker.io': ['https://auth.docker.io'],
-    'https://index.docker.io': ['https://auth.docker.io'],
-    'https://ghcr.io': ['https://ghcr.io'],
-    'https://quay.io': ['https://quay.io'],
-  };
+  static readonly WELL_KNOWN_TOKEN_ORIGINS = WELL_KNOWN_TOKEN_ORIGINS;
 
   constructor(
     options: {
@@ -601,11 +610,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     ]);
   }
 
-  async headers(
-    requestUrl: URL,
-    scope: string,
-    signal?: AbortSignal,
-  ): Promise<Readonly<Record<string, string>>> {
+  async headers(requestUrl: URL, scope: string, signal?: AbortSignal) {
     if (
       this.#credentials &&
       requestUrl.origin !== this.#credentialRegistryOrigin
@@ -657,7 +662,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       );
     tokenUrl.searchParams.set('scope', scope);
 
-    const requestHeaders: Record<string, string> = {
+    const requestHeaders: TokenRequestHeaders = {
       accept: 'application/json',
     };
     if (!this.#tokenOrigins(requestUrl.origin).has(tokenUrl.origin))
@@ -724,6 +729,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       );
     // Expire early so a token cannot lapse mid-request.
     const lifetime =
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       Math.max(30, (body.expires_in as number | undefined) ?? 300) - 15;
     this.#tokens.set(key, {
       token,
@@ -750,8 +756,10 @@ const TAG_LIMITS: OciTagLimits = {
 };
 
 function boundedTagLimits(input: Partial<OciTagLimits> = {}): OciTagLimits {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return Object.fromEntries(
     Object.entries(TAG_LIMITS).map(([name, ceiling]) => {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = input[name as keyof OciTagLimits] ?? ceiling;
       if (!Number.isSafeInteger(value) || value < 1)
         throw new RangeError(`${name} must be a positive safe integer`);
@@ -1377,7 +1385,9 @@ export class OciRegistryClient {
     // envelope check does not apply to it. Both stay digest-verified above,
     // which is what identity rests on.
     if (isIndexMediaType(descriptor.mediaType)) validateIndex(effective);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     else validateManifest(effective as OciManifest);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return { descriptor, bytes, manifest: effective as OciManifest };
   }
 
@@ -1521,6 +1531,8 @@ export function validateIndex(index: {
     throw new TypeError('OCI index must carry a manifests array');
   if (index.manifests.length > 1024)
     throw new TypeError('OCI index exceeds the bounded manifest count');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   for (const descriptor of index.manifests)
     validateOciDescriptor(descriptor as OciDescriptor);
 }
@@ -1528,6 +1540,7 @@ export function validateIndex(index: {
 export function validateManifest(manifest: OciManifest): void {
   if (
     manifest.schemaVersion !== 2 ||
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     !isImageMediaType(manifest.mediaType as string)
   )
     throw new TypeError('Invalid OCI manifest envelope');

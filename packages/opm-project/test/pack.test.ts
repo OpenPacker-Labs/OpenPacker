@@ -61,6 +61,7 @@ describe('pack project', () => {
       'distribution',
       'receipt',
     ]);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const receipt = JSON.parse(
       await readFile(join(outputDirectory, PACK_RECEIPT), 'utf8'),
     ) as PackReceipt;

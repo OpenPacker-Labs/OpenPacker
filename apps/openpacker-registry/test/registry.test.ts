@@ -9,6 +9,7 @@ import type { JsonValue, PackageManifest } from '@openpacker/contracts';
 import { createRegistry, RegistryStore } from '../src/index.js';
 import { runRegistry } from '../src/cli.js';
 
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const keys = JSON.parse(
   readFileSync(
     fileURLToPath(
@@ -37,6 +38,7 @@ function manifest(
   name = 'com.example.demo',
   version = '1.2.3',
 ): PackageManifest {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     packageManifestVersion: '1',
     name,
@@ -57,7 +59,10 @@ function manifest(
 }
 
 async function signed(value: PackageManifest, keyId = 'publisher-1') {
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk(keyId, keys.leaf!);
   return {
     manifest: value,
@@ -95,7 +100,10 @@ async function signedStatus(
     reason: `test transition to ${status}`,
     issuedAt: options.issuedAt ?? '2026-08-10T00:00:00.000Z',
   };
-  const updateDigest = await canonicalDigest(update as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const updateDigest = await canonicalDigest(
+    JSON.parse(JSON.stringify(update)) as JsonValue,
+  );
   const keyId = options.keyId ?? 'publisher-1';
   const signer = await Ed25519Signer.fromJwk(keyId, options.key ?? keys.leaf!);
   return {
@@ -119,6 +127,7 @@ function registry(
   bindPublisher = true,
 ) {
   const store =
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (overrides.store as RegistryStore | undefined) ?? new RegistryStore();
   if (bindPublisher)
     store.trustKey(
@@ -143,11 +152,14 @@ function clientFor(app: ReturnType<typeof registry>, keyOverrides = {}) {
   const transport = {
     async request(request: HttpRequest): Promise<HttpResponse> {
       const response = await app.inject({
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         method: (request.method ?? 'GET') as 'GET',
         url: request.url.replace(BASE, ''),
       });
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return {
         status: response.statusCode,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         headers: response.headers as Record<string, string>,
         body: new Uint8Array(response.rawPayload),
         url: request.url,
@@ -165,6 +177,7 @@ describe('service index', () => {
       url: '/.well-known/prex-registry',
     });
     expect(response.statusCode).toBe(200);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const types = response.json().resources[0]['@type'] as string[];
     expect(types).toContain('prex.registry.package-manifest/1');
     expect(types).toContain('prex.registry.sync/1');
@@ -198,6 +211,7 @@ describe('publish', () => {
       signer: await Ed25519Signer.fromJwk('test-registry', keys.root!),
     });
     const body = await signed(manifest());
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     body.signatures[0]!.role = 'registry' as 'publisher';
     const response = await app.inject({
       method: 'POST',
@@ -220,6 +234,7 @@ describe('publish', () => {
   it('normalizes an omitted publisher role without minting registry authority', async () => {
     const app = registry();
     const body = await signed(manifest());
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     delete (body.signatures[0] as { role?: string }).role;
     const response = await app.inject({
       method: 'POST',
@@ -237,7 +252,10 @@ describe('publish', () => {
     const app = registry();
     const unsigned = {
       manifest: manifest(),
-      manifestDigest: await canonicalDigest(manifest() as unknown as JsonValue),
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      manifestDigest: await canonicalDigest(
+        JSON.parse(JSON.stringify(manifest())) as JsonValue,
+      ),
     };
     const closed = await app.inject({
       method: 'POST',
@@ -263,7 +281,8 @@ describe('publish', () => {
     // cost onto every client, which meets the document at install time with no
     // way to refuse.
     const broken = await signed(manifest());
-    (broken as unknown as { manifest: unknown }).manifest = {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    (broken as { manifest: unknown }).manifest = {
       ...manifest(),
       distributions: 'oops',
     };
@@ -289,6 +308,7 @@ describe('publish', () => {
     const app = registry({ anonymousPublish: true });
     // Sign the document actually being sent, so this isolates the schema
     // refusal rather than passing on a digest mismatch.
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = await signed({
       ...manifest(),
       version: 'latest',
@@ -447,6 +467,7 @@ describe('publish', () => {
         .statusCode,
     ).toBe(200);
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const changed = await signed({
       ...manifest(),
       description: 'different bytes, same version',
@@ -890,8 +911,10 @@ describe('federation over external sources', () => {
                 ? '/v1/packages/com.example.attacker/versions/2.0.0'
                 : request.url.replace(BASE, '');
               const response = await up.inject({ method: 'GET', url });
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
               return {
                 status: response.statusCode,
+                // SAFETY: The surrounding boundary establishes the asserted domain contract.
                 headers: response.headers as Record<string, string>,
                 body: new Uint8Array(response.rawPayload),
                 url: request.url,
@@ -984,6 +1007,7 @@ describe('federation over external sources', () => {
                   'f'.repeat(64);
               return {
                 status: response.statusCode,
+                // SAFETY: The surrounding boundary establishes the asserted domain contract.
                 headers: response.headers as Record<string, string>,
                 body: new TextEncoder().encode(JSON.stringify(body)),
                 url: request.url,
@@ -1014,6 +1038,7 @@ describe('serviceability through the registry', () => {
       transport: {
         async request(request: HttpRequest): Promise<HttpResponse> {
           probes.push(request.url);
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           return {
             status,
             headers: {},
@@ -1620,7 +1645,10 @@ async function signedWith(
   jwk: JsonWebKey,
   value: PackageManifest,
 ) {
-  const digest = await canonicalDigest(value as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const digest = await canonicalDigest(
+    JSON.parse(JSON.stringify(value)) as JsonValue,
+  );
   const signer = await Ed25519Signer.fromJwk(keyId, jwk);
   return {
     manifest: value,

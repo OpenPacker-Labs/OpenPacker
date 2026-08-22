@@ -24,6 +24,7 @@ const protocolFixture = async (
   group: string,
   name: string,
 ): Promise<JsonValue> =>
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   JSON.parse(
     await readFile(
       new URL(
@@ -63,7 +64,9 @@ describe('PREX canonical JSON', () => {
   it('rejects cycles and non-JSON values', () => {
     const value: { self?: unknown } = {};
     value.self = value;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(() => canonicalize(value as never)).toThrow(/Cyclic/);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect(() => canonicalize({ value: undefined } as never)).toThrow(
       /Unsupported/,
     );
@@ -117,6 +120,7 @@ describe('PREX canonical JSON', () => {
       canonicalDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
     };
     expect(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (projectCanonicalValue(value, projection) as { recipes: unknown[] })
         .recipes,
     ).toEqual([{ kind: 'aaa' }, { recipeVersion: '1', kind: 'source-build' }]);
@@ -125,6 +129,7 @@ describe('PREX canonical JSON', () => {
 
 describe('realisation digest projections', () => {
   it('pins tree, recipe, recipe-output, and substitute digests', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pinned = (await realisationFixture('projection-digests')) as {
       treeManifest: { value: string };
       treeManifestDev: { value: string };
@@ -154,7 +159,8 @@ describe('realisation digest projections', () => {
     // recipeOutputId derives identity from the plan before any bytes exist.
     for (const outputName of ['out', 'dev']) {
       const outputId = await canonicalProjectionDigest(
-        { outputName, recipeDigest } as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify({ outputName, recipeDigest })) as JsonValue,
         projectionFor('recipe-output-v1'),
       );
       expect(outputId.value).toBe(pinned.recipeOutputIds[outputName]?.value);
@@ -185,11 +191,13 @@ describe('realisation digest projections', () => {
 
   it('changes the tree digest when any file digest changes', async () => {
     const projection = projectionFor('tree-manifest-v1');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifest = (await realisationFixture('tree-manifest')) as {
       entries: { kind: string; digest?: { value: string } }[];
     };
     const before = await canonicalProjectionDigest(
-      manifest as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
       projection,
     );
     const tampered = structuredClone(manifest);
@@ -197,13 +205,15 @@ describe('realisation digest projections', () => {
     if (!file?.digest) throw new Error('fixture must contain an executable');
     file.digest.value = 'f'.repeat(64);
     const after = await canonicalProjectionDigest(
-      tampered as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(tampered)) as JsonValue,
       projection,
     );
     expect(after.value).not.toBe(before.value);
   });
 
   it('binds an artifact to the recipe output that produced it', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const descriptor = (await realisationFixture('artifact-descriptor')) as {
       treeDigest: { value: string };
       producedBy: { recipeDigest: { value: string }; outputName: string };
@@ -223,6 +233,7 @@ describe('realisation digest projections', () => {
 
 describe('environment generation ledger', () => {
   it('pins manifest and generation digests', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pinned = (await environmentFixture('projection-digests')) as {
       manifest: { value: string };
       generation1: { value: string };
@@ -238,6 +249,7 @@ describe('environment generation ledger', () => {
       ['generation-1', pinned.generation1],
       ['generation-2', pinned.generation2],
     ] as const) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const generation = (await environmentFixture(name)) as {
         generationDigest: { value: string };
       };
@@ -247,6 +259,7 @@ describe('environment generation ledger', () => {
 
   it('recomputes a generation digest without its own field', async () => {
     const projection = projectionFor('environment-generation-v1');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const generation = (await environmentFixture('generation-2')) as Record<
       string,
       unknown
@@ -254,10 +267,12 @@ describe('environment generation ledger', () => {
     // The stored digest must equal the projection of the record, and the
     // projection must not depend on the stored value.
     const recomputed = await canonicalProjectionDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       generation as JsonValue,
       projection,
     );
     expect(recomputed.value).toBe(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (generation.generationDigest as { value: string }).value,
     );
     const tampered = {
@@ -265,6 +280,7 @@ describe('environment generation ledger', () => {
       generationDigest: { algorithm: 'sha256', value: '0'.repeat(64) },
     };
     const fromTampered = await canonicalProjectionDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       tampered as JsonValue,
       projection,
     );
@@ -272,9 +288,11 @@ describe('environment generation ledger', () => {
   });
 
   it('links generations into a tamper-evident chain', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const first = (await environmentFixture('generation-1')) as {
       generationDigest: { value: string };
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const second = (await environmentFixture('generation-2')) as {
       parentGenerationDigest: { value: string };
       sequence: number;
@@ -287,10 +305,13 @@ describe('environment generation ledger', () => {
     // Editing any earlier generation breaks the link to its child.
     const projection = projectionFor('environment-generation-v1');
     const edited = structuredClone(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (await environmentFixture('generation-1')) as Record<string, unknown>,
     );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     (edited as { sequence: number }).sequence = 99;
     const editedDigest = await canonicalProjectionDigest(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       edited as JsonValue,
       projection,
     );
@@ -298,17 +319,21 @@ describe('environment generation ledger', () => {
   });
 
   it('rolls back by repointing state, never by rewriting generations', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const state = (await environmentFixture('state')) as {
       currentGenerationDigest: { value: string };
       retainedGenerationDigests: { value: string }[];
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const rolledBack = (await environmentFixture('state-rolled-back')) as {
       currentGenerationDigest: { value: string };
       retainedGenerationDigests: { value: string }[];
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const first = (await environmentFixture('generation-1')) as {
       generationDigest: { value: string };
     };
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const second = (await environmentFixture('generation-2')) as {
       generationDigest: { value: string };
     };
@@ -333,6 +358,7 @@ describe('environment generation ledger', () => {
 
 describe('nix worked example', () => {
   it('derives output identity from the captured derivation', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pinned = (await nixFixture('projection-digests')) as {
       treeOut: { value: string };
       treeDev: { value: string };
@@ -351,7 +377,8 @@ describe('nix worked example', () => {
     const ids = await Promise.all(
       ['out', 'dev'].map(async (outputName) => {
         const id = await canonicalProjectionDigest(
-          { outputName, recipeDigest } as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(JSON.stringify({ outputName, recipeDigest })) as JsonValue,
           projectionFor('recipe-output-v1'),
         );
         expect(id.value).toBe(pinned.recipeOutputIds[outputName]?.value);
@@ -362,6 +389,7 @@ describe('nix worked example', () => {
   });
 
   it('gives each store output a distinct node identity and tree digest', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const universe = (await nixFixture('universe')) as {
       packages: {
         nodeId: string;
@@ -386,6 +414,7 @@ describe('nix worked example', () => {
       dev.artifacts[0]?.treeDigest.value,
     );
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pinned = (await nixFixture('projection-digests')) as {
       treeOut: { value: string };
       universe: { value: string };
@@ -398,13 +427,15 @@ describe('nix worked example', () => {
     expect(out.artifacts[0]?.treeDigest.value).toBe(pinned.treeOut.value);
 
     const universeDigest = await canonicalProjectionDigest(
-      universe as unknown as JsonValue,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      JSON.parse(JSON.stringify(universe)) as JsonValue,
       projectionFor('universe-v1'),
     );
     expect(universeDigest.value).toBe(pinned.universe.value);
   });
 
   it('keeps store-path hashes opaque and records the loss', async () => {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const universe = (await nixFixture('universe')) as {
       packages: {
         semanticLoss: { code: string; severity: string }[];

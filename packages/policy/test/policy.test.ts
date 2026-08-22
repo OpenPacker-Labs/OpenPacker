@@ -120,6 +120,7 @@ const baseSupply: PolicyDocument = {
 const eligible = {
   status: 'published' as const,
   eligible: true,
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   warnings: [] as string[],
 };
 

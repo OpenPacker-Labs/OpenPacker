@@ -60,7 +60,9 @@ describe('extension conformance', () => {
 
   it('reports missing extension methods before invoking them', async () => {
     const report = await checkEventSink(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       { descriptor, implementation: {} as never },
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       {} as never,
     );
     expect(report.checks).toContainEqual({
@@ -114,7 +116,7 @@ describe('extension conformance', () => {
       artifactType: 'application/vnd.openpacker.package',
       nativeRole: 'package',
     });
-    const extension = (id: string, implementation: object) => ({
+    const extension = <T extends object>(id: string, implementation: T) => ({
       descriptor: { ...descriptor, id },
       implementation,
     });

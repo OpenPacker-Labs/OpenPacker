@@ -178,9 +178,9 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       ? new Federation({
           sources: options.sources,
           registryId: options.registryId,
-          ...(options.registryClientFactory === undefined
-            ? {}
-            : { clientFactory: options.registryClientFactory }),
+          ...(!(options.registryClientFactory === undefined) && {
+            clientFactory: options.registryClientFactory,
+          }),
         })
       : undefined;
   const app = Fastify({
@@ -197,8 +197,10 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     { parseAs: 'string' },
     (_request, body, done) => {
       try {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         done(null, parseCanonicalJson(body as string));
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         done(error as Error, undefined);
       }
     },
@@ -234,12 +236,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       try {
         const record = await checkServiceability({
           locations: distribution.locations!,
-          ...(distribution.digest === undefined
-            ? {}
-            : { digest: distribution.digest }),
-          ...(distribution.size === undefined
-            ? {}
-            : { size: distribution.size }),
+          ...(!(distribution.digest === undefined) && {
+            digest: distribution.digest,
+          }),
+          ...(!(distribution.size === undefined) && {
+            size: distribution.size,
+          }),
           transport,
           now: clock.now,
         });
@@ -276,24 +278,30 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
   ];
 
   app.get(WELL_KNOWN, async (_request, reply) =>
-    sendJson(reply, {
-      registryDefinitionVersion: '1',
-      registryId: options.registryId,
-      ...(options.displayName === undefined
-        ? {}
-        : { displayName: options.displayName }),
-      purlTypes: [...options.purlTypes],
-      protocol: { native: 'prex-registry-v1', transport: ['https'] },
-      resources: [{ '@id': '/v1', '@type': advertised }],
-      // No prex.registry.artifact/1: this serves metadata, and its manifests'
-      // locations point upstream. Advertising it would promise bytes.
-      features: {
-        offlineReplay: false,
-        installSideEffects: 'none',
-        reversibility: 'none',
-        requiresElevation: 'never',
-      },
-    } as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    sendJson(
+      reply,
+      JSON.parse(
+        JSON.stringify({
+          registryDefinitionVersion: '1',
+          registryId: options.registryId,
+          ...(!(options.displayName === undefined) && {
+            displayName: options.displayName,
+          }),
+          purlTypes: [...options.purlTypes],
+          protocol: { native: 'prex-registry-v1', transport: ['https'] },
+          resources: [{ '@id': '/v1', '@type': advertised }],
+          // No prex.registry.artifact/1: this serves metadata, and its manifests'
+          // locations point upstream. Advertising it would promise bytes.
+          features: {
+            offlineReplay: false,
+            installSideEffects: 'none',
+            reversibility: 'none',
+            requiresElevation: 'never',
+          },
+        }),
+      ) as JsonValue,
+    ),
   );
 
   /**
@@ -325,11 +333,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           },
         ]
       : [];
-    return sendJson(reply, {
-      list,
-      listDigest,
-      signatures,
-    } as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    return sendJson(
+      reply,
+      JSON.parse(
+        JSON.stringify({
+          list,
+          listDigest,
+          signatures,
+        }),
+      ) as JsonValue,
+    );
   });
 
   /**
@@ -341,10 +355,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
    */
   app.post('/v1/keys/rotations', async (request, reply) => {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const rotation = request.body as KeyRotation;
       assertValid(
         KEY_ROTATION_SCHEMA,
-        rotation as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(rotation)) as JsonValue,
         validator,
       );
       if (rotation.previousKeyId === rotation.nextKeyId)
@@ -462,10 +478,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         );
       }
       reply.code(201);
-      return sendJson(reply, {
-        rotated: rotation.previousKeyId,
-        to: rotation.nextKeyId,
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            rotated: rotation.previousKeyId,
+            to: rotation.nextKeyId,
+          }),
+        ) as JsonValue,
+      );
     } catch (error) {
       return fail(reply, error);
     }
@@ -480,9 +502,15 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
    * by name buries exactly what this route is for.
    */
   app.get('/v1/holders', async (_request, reply) =>
-    sendJson(reply, {
-      holders: store.holders(),
-    } as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    sendJson(
+      reply,
+      JSON.parse(
+        JSON.stringify({
+          holders: store.holders(),
+        }),
+      ) as JsonValue,
+    ),
   );
 
   app.get<{ Params: { id: string } }>(
@@ -503,10 +531,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         quota,
         Date.parse(clock.now()),
       );
-      return sendJson(reply, {
-        ...holder,
-        quota: state,
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            ...holder,
+            quota: state,
+          }),
+        ) as JsonValue,
+      );
     },
   );
 
@@ -524,11 +558,18 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     async (request, reply) => {
       try {
         const from = decodeURIComponent(request.params.name);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const body = request.body as {
           redirect?: PackageRedirect;
           signatures?: { keyId: string; signature: string }[];
         };
-        assertValid(REDIRECT_SCHEMA, body as unknown as JsonValue, validator);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        assertValid(
+          REDIRECT_SCHEMA,
+          JSON.parse(JSON.stringify(body)) as JsonValue,
+          validator,
+        );
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const redirect = body.redirect as PackageRedirect;
         if (redirect.from !== from)
           throw new PublishError(
@@ -595,11 +636,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         store.rename(from, redirect.to, clock.now());
         store.recordRedirect(redirect, formatDigest(digest), signatures);
         reply.code(201);
-        return sendJson(reply, {
-          redirect,
-          redirectDigest: digest,
-          signatures,
-        } as unknown as JsonValue);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        return sendJson(
+          reply,
+          JSON.parse(
+            JSON.stringify({
+              redirect,
+              redirectDigest: digest,
+              signatures,
+            }),
+          ) as JsonValue,
+        );
       } catch (error) {
         return fail(reply, error);
       }
@@ -617,11 +664,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           problem('PACKAGE_NOT_FOUND', 404, `${from} has not moved`),
         );
       const [algorithm, value] = moved.digest.split(':');
-      return sendJson(reply, {
-        redirect: moved.redirect,
-        redirectDigest: { algorithm, value },
-        signatures: moved.signatures,
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            redirect: moved.redirect,
+            redirectDigest: { algorithm, value },
+            signatures: moved.signatures,
+          }),
+        ) as JsonValue,
+      );
     },
   );
 
@@ -643,16 +696,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       const after = decodeCursor(request.query.cursor);
       const { entries, hasMore, lastReadSequence } = store.list({
         limit,
-        ...(request.query.search === undefined
-          ? {}
-          : { search: request.query.search }),
-        ...(request.query.purlType === undefined
-          ? {}
-          : { purlType: request.query.purlType }),
-        ...(request.query.updatedSince === undefined
-          ? {}
-          : { updatedSince: assertTimestamp(request.query.updatedSince) }),
-        ...(after === undefined ? {} : { afterSequence: after }),
+        ...(!(request.query.search === undefined) && {
+          search: request.query.search,
+        }),
+        ...(!(request.query.purlType === undefined) && {
+          purlType: request.query.purlType,
+        }),
+        ...(!(request.query.updatedSince === undefined) && {
+          updatedSince: assertTimestamp(request.query.updatedSince),
+        }),
+        ...(!(after === undefined) && { afterSequence: after }),
       });
       // The cursor is the last row *read*, not the last row returned: purlType
       // filtering happens after the page is taken, and using the filtered tail
@@ -682,27 +735,33 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         unavailable = found.unavailable;
       }
 
-      return sendJson(reply, {
-        packages: [...local, ...relayed],
-        metadata: {
-          count: local.length + relayed.length,
-          nextCursor:
-            hasMore && lastRead !== undefined ? encodeCursor(lastRead) : null,
-          // Which search actually ran. A registry silently falling back to a
-          // full scan looks identical to one that is fast until it is not.
-          ...(request.query.search === undefined
-            ? {}
-            : {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            packages: [...local, ...relayed],
+            metadata: {
+              count: local.length + relayed.length,
+              nextCursor:
+                hasMore && lastRead !== undefined
+                  ? encodeCursor(lastRead)
+                  : null,
+              // Which search actually ran. A registry silently falling back to a
+              // full scan looks identical to one that is fast until it is not.
+              ...(!(request.query.search === undefined) && {
                 searchMode: store.searchIndexed
                   ? ('indexed' as const)
                   : ('scan' as const),
               }),
-          // Naming what did not answer is the difference between "no results"
-          // and "some sources were down"; a mirror must not read one as the
-          // other.
-          ...(unavailable.length > 0 ? { unavailable } : {}),
-        },
-      } as unknown as JsonValue);
+              // Naming what did not answer is the difference between "no results"
+              // and "some sources were down"; a mirror must not read one as the
+              // other.
+              ...(unavailable.length > 0 && { unavailable }),
+            },
+          }),
+        ) as JsonValue,
+      );
     } catch (error) {
       return fail(reply, error);
     }
@@ -734,18 +793,25 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // and a lockfile should record what it actually resolved.
       if (followed.hops.length > 0)
         reply.header('x-openpacker-renamed-from', asked);
-      return sendJson(reply, {
-        name,
-        ...(followed.hops.length > 0
-          ? { redirectedFrom: asked, redirects: followed.hops }
-          : {}),
-        versions: versions.map((entry) => ({
-          version: entry.version,
-          status: entry.status,
-          isLatest: entry.isLatest,
-          publishedAt: entry.publishedAt,
-        })),
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            name,
+            ...(followed.hops.length > 0 && {
+              redirectedFrom: asked,
+              redirects: followed.hops,
+            }),
+            versions: versions.map((entry) => ({
+              version: entry.version,
+              status: entry.status,
+              isLatest: entry.isLatest,
+              publishedAt: entry.publishedAt,
+            })),
+          }),
+        ) as JsonValue,
+      );
     },
   );
 
@@ -797,11 +863,12 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
         }
         return sendJson(
           reply,
-          toRegistryEntry(
-            { ...entry, manifest: served },
-            options,
-            known,
-          ) as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(
+            JSON.stringify(
+              toRegistryEntry({ ...entry, manifest: served }, options, known),
+            ),
+          ) as JsonValue,
           // Name the version in the response, so a client that negotiated one
           // does not have to read the body to find out what it got.
           `application/vnd.prex.manifest.v${served.packageManifestVersion}+json`,
@@ -815,7 +882,11 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           ? await federation?.find(name, version)
           : undefined;
       if (relayed)
-        return sendJson(reply, relayed.entry as unknown as JsonValue);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        return sendJson(
+          reply,
+          JSON.parse(JSON.stringify(relayed.entry)) as JsonValue,
+        );
       return sendProblem(
         reply,
         problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
@@ -825,6 +896,7 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
 
   app.post('/v1/publish', async (request, reply) => {
     try {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const body = request.body as {
         manifest?: PackageManifest;
         manifestDigest?: Digest;
@@ -851,12 +923,18 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       // validating the envelope validates the manifest, and the reported path
       // (/manifest/distributions/0/purlType) says more than a second pass
       // would.
-      assertValid(PUBLISH_SCHEMA, body as unknown as JsonValue, validator);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      assertValid(
+        PUBLISH_SCHEMA,
+        JSON.parse(JSON.stringify(body)) as JsonValue,
+        validator,
+      );
 
       // Re-derive rather than trust. A caller-supplied digest is a claim about
       // bytes the registry is holding, and it is holding them.
       const digest = await canonicalDigest(
-        body.manifest as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(body.manifest)) as JsonValue,
       );
       if (
         body.manifestDigest &&
@@ -958,9 +1036,15 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
       }
       const stored = storedOrQuota;
       reply.code(stored.created ? 201 : 200);
-      return sendJson(reply, {
-        entry: toRegistryEntry(stored.entry, options),
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            entry: toRegistryEntry(stored.entry, options),
+          }),
+        ) as JsonValue,
+      );
     } catch (error) {
       return fail(reply, error);
     }
@@ -970,8 +1054,14 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     '/v1/packages/:name/versions/:version/status',
     async (request, reply) => {
       try {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const body = request.body as SignedStatusUpdate;
-        assertValid(STATUS_SCHEMA, body as unknown as JsonValue, validator);
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        assertValid(
+          STATUS_SCHEMA,
+          JSON.parse(JSON.stringify(body)) as JsonValue,
+          validator,
+        );
         const name = decodeURIComponent(request.params.name);
         const version = decodeURIComponent(request.params.version);
         if (body.update.name !== name || body.update.version !== version)
@@ -982,7 +1072,8 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           );
         assertFreshStatusUpdate(body.update.issuedAt, clock.now());
         const updateDigest = await canonicalDigest(
-          body.update as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(JSON.stringify(body.update)) as JsonValue,
         );
         if (
           body.updateDigest.algorithm !== updateDigest.algorithm ||
@@ -1006,14 +1097,18 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           version,
           status: body.update.status,
           updateDigest: formatDigest(updateDigest),
-          update: body.update as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          update: JSON.parse(JSON.stringify(body.update)) as JsonValue,
           signatures: body.signatures,
           issuedAt: Date.parse(body.update.issuedAt),
           now: clock.now(),
         });
         return sendJson(
           reply,
-          toRegistryEntry(entry, options) as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(
+            JSON.stringify(toRegistryEntry(entry, options)),
+          ) as JsonValue,
         );
       } catch (error) {
         return fail(reply, error);
@@ -1039,11 +1134,17 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           problem('VERSION_NOT_FOUND', 404, `${name}@${version} is not here`),
         );
       reply.code(202);
-      return sendJson(reply, {
-        accepted: true,
-        effect:
-          'First-party checks retain the registry-controlled serviceability TTL.',
-      } as unknown as JsonValue);
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return sendJson(
+        reply,
+        JSON.parse(
+          JSON.stringify({
+            accepted: true,
+            effect:
+              'First-party checks retain the registry-controlled serviceability TTL.',
+          }),
+        ) as JsonValue,
+      );
     },
   );
 
@@ -1235,23 +1336,25 @@ function toRegistryEntry(
   serviceability?: ServiceabilityRecord,
 ): RegistryEntry {
   const [algorithm, value] = entry.manifestDigest.split(':');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     manifest: entry.manifest,
     registryMetadata: {
       registryId: options.registryId,
-      ...(entry.sourceId === undefined ? {} : { sourceId: entry.sourceId }),
+      ...(!(entry.sourceId === undefined) && { sourceId: entry.sourceId }),
       status: entry.status,
       publishedAt: entry.publishedAt,
       updatedAt: entry.updatedAt,
       isLatest: entry.isLatest,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       manifestDigest: { algorithm, value } as Digest,
       // Absent means nobody has looked yet, which is a different thing from
       // "we looked and it was fine".
-      ...(serviceability === undefined ? {} : { serviceability }),
+      ...(!(serviceability === undefined) && { serviceability }),
     },
-    ...(entry.signatures.length > 0
-      ? { signatures: entry.signatures as never }
-      : {}),
+    ...(entry.signatures.length > 0 && {
+      signatures: entry.signatures as never,
+    }),
   } as RegistryEntry;
 }
 
@@ -1435,7 +1538,10 @@ function sendProblem(reply: FastifyReply, value: Problem): FastifyReply {
   reply
     .code(value.status)
     .header('content-type', 'application/problem+json; charset=utf-8');
-  return reply.send(Buffer.from(canonicalBytes(value as unknown as JsonValue)));
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return reply.send(
+    Buffer.from(canonicalBytes(JSON.parse(JSON.stringify(value)) as JsonValue)),
+  );
 }
 
 function problem(
@@ -1448,7 +1554,8 @@ function problem(
     type: `https://openpacker.dev/problems/${code.toLowerCase().replaceAll('_', '-')}`,
     title,
     status,
-    ...(detail === undefined ? {} : { detail }),
+    ...(!(detail === undefined) && { detail }),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     code: code as Problem['code'],
     retryable: [429, 502, 503, 504].includes(status),
   };

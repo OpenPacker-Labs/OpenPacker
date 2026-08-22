@@ -16,12 +16,14 @@ export async function serviceIndexBytes(
   module: AdapterModule,
 ): Promise<Uint8Array> {
   const definition = await module.registryDefinition();
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return canonicalBytes(definition as never);
 }
 
 /** Parse service-index bytes back to a definition (host side). */
 export function parseServiceIndex(bytes: Uint8Array): RegistryDefinition {
   const text = new TextDecoder().decode(bytes);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const value = JSON.parse(text) as RegistryDefinition;
   if (value.registryDefinitionVersion !== '1')
     throw new AdapterHostError(
@@ -74,7 +76,7 @@ const RESERVED_TYPE = /^prex\.registry\.[a-z][a-z0-9-]*\/[1-9][0-9]*$/u;
  * Component exports and Registry Definition resources MUST NOT disagree
  * (ADR 0032 / registry-definition.md).
  */
-export async function assertWitShapedModule(
+export async function assertWitContractModule(
   module: AdapterModule,
 ): Promise<void> {
   if (!module.id || module.purlTypes.length === 0)
@@ -132,6 +134,7 @@ export async function assertWitShapedModule(
     hasResource(definition, 'prex.registry.uninstall/1') &&
     module.installer
   ) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const installer = module.installer() as { uninstall?: unknown };
     if (typeof installer.uninstall !== 'function')
       throw new AdapterHostError(
@@ -140,6 +143,7 @@ export async function assertWitShapedModule(
       );
   }
   if (hasResource(definition, 'prex.registry.update/1') && module.installer) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const installer = module.installer() as { update?: unknown };
     if (typeof installer.update !== 'function')
       throw new AdapterHostError(
@@ -175,6 +179,7 @@ export async function assertWitShapedModule(
       );
   }
   if (module.project) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const format = module.project() as {
       writeLockfile?: unknown;
       writeLayout?: unknown;

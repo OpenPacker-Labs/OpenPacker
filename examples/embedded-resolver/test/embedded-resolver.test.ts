@@ -40,6 +40,7 @@ describe('embedded resolver example', () => {
       verify_receipt_digest: () => true,
     } satisfies EmbeddedBindings;
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result = runEmbeddedResolver(bindings, {
       universe: {},
       request: {},

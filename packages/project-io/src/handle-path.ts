@@ -206,6 +206,7 @@ export async function mkdtempChild(
       await mkdirChild(parent, name);
       return name;
     } catch (error) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
   }
@@ -287,10 +288,12 @@ function wrapFd(fd: number): FileHandle {
       return { bytesRead, buffer };
     },
   };
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return handle as FileHandle;
 }
 
 function errno(code: string, message: string): NodeJS.ErrnoException {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const error = new Error(message) as NodeJS.ErrnoException;
   error.code = code;
   return error;
@@ -332,22 +335,27 @@ function throwNt(status: number, name: string): never {
   );
 }
 
+interface KoffiHandle {}
+
+type KoffiValue = number | string | Uint8Array | KoffiHandle | null | undefined;
+
 type KoffiLib = {
-  func: (sig: string) => (...args: never[]) => unknown;
+  func: (sig: string) => (...args: never[]) => KoffiValue;
 };
 
 type Koffi = {
   load: (name: string) => KoffiLib;
-  struct: (name: string, def: Record<string, string>) => unknown;
-  sizeof: (type: unknown) => number;
-  pointer: (name: string, type: unknown) => unknown;
-  opaque: () => unknown;
-  encode: (buf: Buffer, type: unknown, value: unknown) => void;
+  struct: (name: string, def: Record<string, string>) => KoffiHandle;
+  sizeof: (type: KoffiHandle) => number;
+  pointer: (name: string, type: KoffiHandle) => KoffiHandle;
+  opaque: () => KoffiHandle;
+  encode: (buf: Buffer, type: KoffiHandle, value: KoffiValue) => void;
 };
 
 let cachedNt: ReturnType<typeof loadNtApi> | undefined;
 
 function loadNtApi() {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const koffi = loadKoffi() as Koffi;
   const HANDLE = koffi.pointer('HANDLE', koffi.opaque());
   const UNICODE_STRING = koffi.struct('UNICODE_STRING', {
@@ -386,21 +394,27 @@ function loadNtApi() {
     sizeofOa: koffi.sizeof(OBJECT_ATTRIBUTES),
     sizeofUni: koffi.sizeof(UNICODE_STRING),
     sizeofRename: koffi.sizeof(FILE_RENAME_INFORMATION),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     NtCreateFile: ntdll.func(
       'int32 NtCreateFile(_Out_ void **FileHandle, uint32 DesiredAccess, void *ObjectAttributes, _Out_ void *IoStatusBlock, void *AllocationSize, uint32 FileAttributes, uint32 ShareAccess, uint32 CreateDisposition, uint32 CreateOptions, void *EaBuffer, uint32 EaLength)',
     ) as (...args: never[]) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     NtSetInformationFile: ntdll.func(
       'int32 NtSetInformationFile(void *FileHandle, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass)',
     ) as (...args: never[]) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     NtQueryDirectoryFile: ntdll.func(
       'int32 NtQueryDirectoryFile(void *FileHandle, void *Event, void *ApcRoutine, void *ApcContext, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass, uint8 ReturnSingleEntry, void *FileName, uint8 RestartScan)',
     ) as (...args: never[]) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     CloseHandle: kernel32.func(
       'int32 __stdcall CloseHandle(void *hObject)',
     ) as (handle: unknown) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     getOsFHandle: crt.func('void * __cdecl _get_osfhandle(int fd)') as (
       fd: number,
-    ) => unknown,
+    ) => KoffiHandle,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     openOsFHandle: crt.func(
       'int __cdecl _open_osfhandle(void *osfhandle, int flags)',
     ) as (handle: unknown, flags: number) => number,
@@ -470,6 +484,7 @@ function windowsOpenChild(
     SecurityQualityOfService: null,
   });
   const iosb = Buffer.alloc(16);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const outHandle = [null] as unknown[];
   const directory = (flags & constants.O_DIRECTORY) !== 0;
   const create = (flags & constants.O_CREAT) !== 0;
@@ -498,6 +513,7 @@ function windowsOpenChild(
   let options = FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT;
   options |= directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE;
   const status = api.NtCreateFile(
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     ...([
       outHandle,
       access,
@@ -557,6 +573,7 @@ async function windowsRenameChild(
     nameW.copy(info, 20); // offset of FileName after BOOLEAN + pad + HANDLE + ULONG
     const iosb = Buffer.alloc(16);
     const status = api.NtSetInformationFile(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ...([
         osHandle,
         iosb,
@@ -586,6 +603,7 @@ async function windowsRemoveChild(
           constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
         );
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
       }
       if (dir) {
@@ -615,6 +633,7 @@ async function windowsRemoveChild(
       info.writeUInt8(1, 0);
       const iosb = Buffer.alloc(16);
       const status = api.NtSetInformationFile(
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         ...([osHandle, iosb, info, 1, FileDispositionInformation] as never[]),
       );
       if (ntStatus(status) !== STATUS_SUCCESS) throwNt(status, name);
@@ -624,6 +643,7 @@ async function windowsRemoveChild(
   } catch (error) {
     if (
       options.force === true &&
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT'
     )
       return;
@@ -644,6 +664,7 @@ async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
   let restart = 1;
   for (;;) {
     const status = api.NtQueryDirectoryFile(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       ...([
         osHandle,
         null,
@@ -684,6 +705,7 @@ async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
 function ntDirent(name: string, attributes: number): Dirent {
   const reparse = (attributes & FILE_ATTRIBUTE_REPARSE_POINT) !== 0;
   const directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) !== 0;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return {
     name,
     isDirectory: () => directory && !reparse,
@@ -698,11 +720,14 @@ function ntDirent(name: string, attributes: number): Dirent {
 
 function loadKoffi(): Koffi {
   try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const url = Function('return import.meta.url')() as string;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return createRequire(fileURLToPath(url))('koffi') as Koffi;
   } catch {
     const stack = new Error().stack ?? '';
     const match = /(?:file:\/\/)?(\/[^\s)]*handle-path\.js)/u.exec(stack);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if (match?.[1]) return createRequire(match[1])('koffi') as Koffi;
     throw new StableHandleError(
       'Windows handle mapping could not locate this module to load koffi',

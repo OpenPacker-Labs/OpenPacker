@@ -283,6 +283,7 @@ timeout_ms = 120000
     const manifest = parseManifest(text);
     expect(manifest.policy?.sandboxMode).toBe('fail-closed');
     expect(manifest.policy?.sandboxPrefer).toBe('native');
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const ext = manifest.policy as typeof manifest.policy & {
       projectWrite?: boolean;
       timeoutMs?: number;
@@ -290,7 +291,9 @@ timeout_ms = 120000
     expect(ext.projectWrite).toBe(true);
     expect(ext.timeoutMs).toBe(120000);
     const again = parseManifest(serializeManifest(manifest));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect((again.policy as typeof ext).projectWrite).toBe(true);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     expect((again.policy as typeof ext).timeoutMs).toBe(120000);
   });
 
@@ -538,10 +541,12 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
       expectedRegistryId: 'urn:openpacker:registry:npmjs-org',
     });
     const facts = {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       evidence: [] as { type: string; status: 'valid' }[],
       lifecycle: {
         status: 'published' as const,
         eligible: true,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         warnings: [] as string[],
       },
       packageId: 'pkg:npm/demo@1.0.0',
@@ -566,10 +571,12 @@ describe('adversarial supply-chain scenarios (shipped evaluatePolicy)', () => {
       minimumReleaseAgeStrict: true,
     });
     const facts = {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       evidence: [] as [],
       lifecycle: {
         status: 'published' as const,
         eligible: true,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         warnings: [] as string[],
       },
       packageId: 'pkg:npm/demo@1.0.0',

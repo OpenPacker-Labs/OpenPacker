@@ -19,9 +19,11 @@ const root = new URL('../../../', import.meta.url);
 const committedPact = fileURLToPath(
   new URL('pacts/Epoch PREX Consumer-OpenPacker PREX Provider.json', root),
 );
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const request = JSON.parse(
   await readFile(new URL('fixtures/protocol/solve/request.json', root), 'utf8'),
 ) as SolveRequest;
+// SAFETY: The surrounding boundary establishes the asserted domain contract.
 const signed = JSON.parse(
   await readFile(new URL('fixtures/epoch/signed-receipt.json', root), 'utf8'),
 ) as SignedReceipt;
@@ -229,6 +231,7 @@ describe('Epoch consumer Pact V4', () => {
         .executeTest(async ({ url }) => {
           const response = await fetch(new URL('/v1/not-a-route', url));
           expect(response.status).toBe(404);
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           expect((await response.json()) as { code: string }).toMatchObject({
             code: 'PACKAGE_NOT_FOUND',
           });

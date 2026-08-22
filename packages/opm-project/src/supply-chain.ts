@@ -119,6 +119,7 @@ export function captureFactsFromInspection(
   if (options.priorTrustLevel !== undefined)
     facts.priorTrustLevel = options.priorTrustLevel;
 
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const body = inspection.record.body as Record<string, unknown> | undefined;
   const version =
     inspection.package.nativeVersion ??
@@ -135,6 +136,7 @@ export function captureFactsFromInspection(
       time !== null &&
       !Array.isArray(time)
     ) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const stamp = (time as Record<string, unknown>)[version];
       if (typeof stamp === 'string' && stamp.length > 0)
         facts.publishedAt = stamp;
@@ -149,8 +151,10 @@ export function captureFactsFromInspection(
       versions !== null &&
       !Array.isArray(versions)
     ) {
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const entry = (versions as Record<string, unknown>)[version];
       if (entry && typeof entry === 'object' && !Array.isArray(entry))
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         versionMeta = entry as Record<string, unknown>;
     }
     // single-version documents (some registries return the version object)
@@ -159,6 +163,7 @@ export function captureFactsFromInspection(
     if (versionMeta) {
       const scripts = versionMeta.scripts;
       if (scripts && typeof scripts === 'object' && scripts !== null) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const names = Object.keys(scripts as object);
         facts.lifecycleScriptsDeclared = names.some((name) =>
           /^(pre|post)?install$|^prepare$|^prepublish/.test(name),
@@ -168,6 +173,7 @@ export function captureFactsFromInspection(
       }
       const dist = versionMeta.dist;
       if (dist && typeof dist === 'object' && dist !== null) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const tarball = (dist as Record<string, unknown>).tarball;
         if (typeof tarball === 'string') {
           Object.assign(facts, sourceFactsFromUri(tarball));
@@ -234,15 +240,13 @@ export function captureFactsFromSourceUri(
     evaluationTime: options.evaluationTime,
     dependencyDepth: options.dependencyDepth ?? 0,
     lifecycleScriptsExecuted: options.lifecycleScriptsExecuted ?? false,
-    ...(options.lifecycle === undefined
-      ? {}
-      : { lifecycle: options.lifecycle }),
-    ...(options.semanticLoss === undefined
-      ? {}
-      : { semanticLoss: [...options.semanticLoss] }),
-    ...(options.sourceSnapshotDigests === undefined
-      ? {}
-      : { sourceSnapshotDigests: [...options.sourceSnapshotDigests] }),
+    ...(!(options.lifecycle === undefined) && { lifecycle: options.lifecycle }),
+    ...(!(options.semanticLoss === undefined) && {
+      semanticLoss: [...options.semanticLoss],
+    }),
+    ...(!(options.sourceSnapshotDigests === undefined) && {
+      sourceSnapshotDigests: [...options.sourceSnapshotDigests],
+    }),
     trustLevel: 'unknown',
     ...sourceFactsFromUri(sourceUri),
   };
@@ -272,7 +276,7 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
   )
     return {
       sourceKind: 'git',
-      ...(scheme === undefined ? {} : { sourceScheme: scheme }),
+      ...(!(scheme === undefined) && { sourceScheme: scheme }),
     };
   if (
     lower.startsWith('file:') ||
@@ -284,7 +288,7 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
   if (lower.startsWith('oci:') || lower.includes('/v2/'))
     return {
       sourceKind: 'oci',
-      ...(scheme === undefined ? {} : { sourceScheme: scheme }),
+      ...(!(scheme === undefined) && { sourceScheme: scheme }),
     };
   try {
     const url = new URL(uri);
@@ -314,10 +318,10 @@ export function policyFactsFromLockPackage(
     evaluationTime,
     dependencyDepth: pkg.reason === 'transitive' ? 1 : 0,
     lifecycleScriptsExecuted: false,
-    ...(options.sourceVerified === true ? source : {}),
-    ...(options.registryArtifactVerified === true
-      ? { sourceKind: 'registry' as const }
-      : {}),
+    ...(options.sourceVerified === true && source),
+    ...(options.registryArtifactVerified === true && {
+      sourceKind: 'registry' as const,
+    }),
   };
 }
 
@@ -418,15 +422,15 @@ export async function captureFactsFromCatalog(
   const inspection = await provider.inspect(exactPurl, options.signal);
   const facts = captureFactsFromInspection(inspection, {
     evaluationTime: options.evaluationTime,
-    ...(options.dependencyDepth === undefined
-      ? {}
-      : { dependencyDepth: options.dependencyDepth }),
-    ...(options.registryId === undefined
-      ? {}
-      : { registryId: options.registryId }),
-    ...(options.priorTrustLevel === undefined
-      ? {}
-      : { priorTrustLevel: options.priorTrustLevel }),
+    ...(!(options.dependencyDepth === undefined) && {
+      dependencyDepth: options.dependencyDepth,
+    }),
+    ...(!(options.registryId === undefined) && {
+      registryId: options.registryId,
+    }),
+    ...(!(options.priorTrustLevel === undefined) && {
+      priorTrustLevel: options.priorTrustLevel,
+    }),
     lifecycleScriptsExecuted: false,
   });
   return { inspection, facts };
@@ -440,16 +444,12 @@ export function lockPackageSupplyChainFields(
   'trustLevel' | 'publishedAt' | 'registryId' | 'sourceKind' | 'lifecycle'
 > {
   return {
-    ...(facts.trustLevel !== undefined && isTrustTier(facts.trustLevel)
-      ? { trustLevel: facts.trustLevel }
-      : {}),
-    ...(facts.publishedAt !== undefined
-      ? { publishedAt: facts.publishedAt }
-      : {}),
-    ...(facts.registryId !== undefined ? { registryId: facts.registryId } : {}),
-    ...(facts.sourceKind !== undefined && isSourceKind(facts.sourceKind)
-      ? { sourceKind: facts.sourceKind }
-      : {}),
-    ...(facts.lifecycle === undefined ? {} : { lifecycle: facts.lifecycle }),
+    ...(facts.trustLevel !== undefined &&
+      isTrustTier(facts.trustLevel) && { trustLevel: facts.trustLevel }),
+    ...(facts.publishedAt !== undefined && { publishedAt: facts.publishedAt }),
+    ...(facts.registryId !== undefined && { registryId: facts.registryId }),
+    ...(facts.sourceKind !== undefined &&
+      isSourceKind(facts.sourceKind) && { sourceKind: facts.sourceKind }),
+    ...(!(facts.lifecycle === undefined) && { lifecycle: facts.lifecycle }),
   };
 }

@@ -131,11 +131,13 @@ describe('standard pack emitters', () => {
     const artifact = (await standardEmitters.oci.emit(normalized('oci')))[0]!;
     const entries = await inspectArchive(artifact.bytes, 'tar');
     const blobs = new Map(entries.map((entry) => [entry.path, entry.data]));
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const index = JSON.parse(
       new TextDecoder().decode(blobs.get('index.json')!),
     ) as { manifests: Array<{ digest: string; size: number }> };
     const manifestDescriptor = index.manifests[0]!;
     const manifest = digestBlob(blobs, manifestDescriptor);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const parsed = JSON.parse(new TextDecoder().decode(manifest)) as {
       config: { digest: string; size: number };
       layers: Array<{ digest: string; size: number }>;
@@ -242,10 +244,7 @@ function digestBlob(
   return bytes;
 }
 
-function readNarString(
-  bytes: Uint8Array,
-  offset: number,
-): { value: string; next: number } {
+function readNarString(bytes: Uint8Array, offset: number) {
   const size = Number(
     new DataView(bytes.buffer, bytes.byteOffset + offset, 8).getBigUint64(
       0,

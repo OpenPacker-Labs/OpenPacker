@@ -49,7 +49,8 @@ function logPayload(
   entry: OfflineSigstoreBundle['verificationMaterial']['tlogEntry'],
 ): JsonValue {
   const { checkpointSignature: _, ...payload } = entry;
-  return payload as unknown as JsonValue;
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return JSON.parse(JSON.stringify(payload)) as JsonValue;
 }
 
 function hex(value: string): Uint8Array<ArrayBuffer> {

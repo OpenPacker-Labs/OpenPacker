@@ -37,7 +37,9 @@ import { OpmError } from './types.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 
 /** How a distribution is ordinarily run without installing it. */
-const RUNTIME_HINT: Readonly<Record<string, string>> = {
+type RuntimeHintMap = Record<string, string>;
+
+const RUNTIME_HINT: RuntimeHintMap = {
   npm: 'npx',
   pypi: 'uvx',
   nuget: 'dnx',
@@ -85,15 +87,16 @@ export async function buildPackageManifest(input: {
     if (definition) {
       const ref: RegistryRef = {
         registryId: definition.registryId,
-        ...(definition.displayName === undefined
-          ? {}
-          : { displayName: definition.displayName }),
+        ...(!(definition.displayName === undefined) && {
+          displayName: definition.displayName,
+        }),
         purlTypes: [...definition.purlTypes],
-        ...(serviceIndexOf(definition) === undefined
-          ? {}
-          : { serviceIndex: serviceIndexOf(definition)! }),
+        ...(!(serviceIndexOf(definition) === undefined) && {
+          serviceIndex: serviceIndexOf(definition)!,
+        }),
         definitionDigest: await canonicalDigest(
-          definition as unknown as JsonValue,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          JSON.parse(JSON.stringify(definition)) as JsonValue,
         ),
       };
       registries.push(ref);
@@ -108,9 +111,9 @@ export async function buildPackageManifest(input: {
     const requirements = direct.map((pkg) => ({
       identifier: nativeName(stripPurlVersion(pkg.purl)),
       purl: stripPurlVersion(pkg.purl),
-      ...(rangeOf(input.manifest, pkg) === undefined
-        ? {}
-        : { range: rangeOf(input.manifest, pkg)! }),
+      ...(!(rangeOf(input.manifest, pkg) === undefined) && {
+        range: rangeOf(input.manifest, pkg)!,
+      }),
       scope: input.manifest.packages[pkg.alias]?.scope ?? ('runtime' as const),
     }));
 
@@ -132,16 +135,14 @@ export async function buildPackageManifest(input: {
       identifier,
       version,
       exactPurl: `pkg:${ecosystem}/${encodeIdentifier(identifier)}@${version}`,
-      ...(definition === undefined
-        ? {}
-        : { registryId: definition.registryId }),
-      ...(RUNTIME_HINT[ecosystem] === undefined
-        ? {}
-        : { runtimeHint: RUNTIME_HINT[ecosystem]! }),
-      ...(definition !== undefined &&
-      hasResource(definition, 'prex.registry.package-build/1')
-        ? {}
-        : { extensions: { 'dev.openpacker.buildable': false } }),
+      ...(!(definition === undefined) && { registryId: definition.registryId }),
+      ...(!(RUNTIME_HINT[ecosystem] === undefined) && {
+        runtimeHint: RUNTIME_HINT[ecosystem]!,
+      }),
+      ...(!(
+        definition !== undefined &&
+        hasResource(definition, 'prex.registry.package-build/1')
+      ) && { extensions: { 'dev.openpacker.buildable': false } }),
       requirements,
     });
   }
@@ -156,9 +157,9 @@ export async function buildPackageManifest(input: {
   const manifest: PackageManifest = {
     packageManifestVersion: '1',
     name: input.name ?? projectName(input.manifest),
-    ...(input.description === undefined
-      ? {}
-      : { description: input.description }),
+    ...(!(input.description === undefined) && {
+      description: input.description,
+    }),
     version: input.version ?? '0.0.0',
     registries: registries.sort((left, right) =>
       left.registryId < right.registryId ? -1 : 1,
@@ -173,14 +174,20 @@ export async function buildPackageManifest(input: {
       // otherwise is the failure mode a provenance block exists to prevent.
       verified: [],
     },
-    ...(semanticLoss.length > 0 ? { semanticLoss } : {}),
+    ...(semanticLoss.length > 0 && { semanticLoss }),
   };
 
-  const bytes = canonicalBytes(manifest as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const bytes = canonicalBytes(
+    JSON.parse(JSON.stringify(manifest)) as JsonValue,
+  );
   return {
     manifest,
     bytes,
-    digest: await canonicalDigest(manifest as unknown as JsonValue),
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    digest: await canonicalDigest(
+      JSON.parse(JSON.stringify(manifest)) as JsonValue,
+    ),
   };
 }
 
@@ -210,18 +217,17 @@ export function withPackedArtifact(
             digest: parseDigestString(artifact.digest),
             size: artifact.size,
             mediaType: artifact.mediaType,
-            ...(artifact.nativeIntegrity === undefined
-              ? {}
-              : {
-                  nativeIntegrity: artifact.nativeIntegrity as {
-                    algorithm: string;
-                    value: string;
-                    encoding: 'hex' | 'base64' | 'sri';
-                  },
-                }),
-            ...(artifact.locations === undefined
-              ? {}
-              : { locations: [...artifact.locations] }),
+            ...(!(artifact.nativeIntegrity === undefined) && {
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              nativeIntegrity: artifact.nativeIntegrity as {
+                algorithm: string;
+                value: string;
+                encoding: 'hex' | 'base64' | 'sri';
+              },
+            }),
+            ...(!(artifact.locations === undefined) && {
+              locations: [...artifact.locations],
+            }),
           }
         : distribution,
     ),

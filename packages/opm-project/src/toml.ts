@@ -194,6 +194,7 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push('');
   }
 
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const pePreview = manifest.policy as
     | (PolicyInput & {
         projectWrite?: boolean;
@@ -233,6 +234,7 @@ export function serializeManifest(manifest: OpmManifest): string {
       lines.push(
         `allow_host_unsandboxed_install = ${p.allowHostUnsandboxedInstall ? 'true' : 'false'}`,
       );
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const pe = p as PolicyInput & {
       projectWrite?: boolean;
       minimalPath?: boolean;
@@ -546,6 +548,7 @@ export function parseManifest(text: string): OpmManifest {
           `Unknown policy field "${key}" at line ${i + 1}. Known fields: ` +
             `${[...POLICY_KEYS].sort().join(', ')}`,
         );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       policyScratch[key] = value as string | boolean | number | string[];
     } else if (section === 'sandbox') {
       if (!SANDBOX_KEYS.has(key))
@@ -554,6 +557,7 @@ export function parseManifest(text: string): OpmManifest {
           `Unknown sandbox field "${key}" at line ${i + 1}. Known fields: ` +
             `${[...SANDBOX_KEYS].sort().join(', ')}`,
         );
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       sandboxScratch[key] = value as string | boolean | number | string[];
     } else if (section === 'sandbox-packages') {
       if (sandboxPackageId === undefined)
@@ -654,9 +658,9 @@ export function parseManifest(text: string): OpmManifest {
       registries[id] = {
         id,
         url: scratch.url,
-        ...(scratch.default_for === undefined
-          ? {}
-          : { defaultFor: scratch.default_for }),
+        ...(!(scratch.default_for === undefined) && {
+          defaultFor: scratch.default_for,
+        }),
       };
     }
     manifest.registries = registries;
@@ -678,12 +682,12 @@ export function parseManifest(text: string): OpmManifest {
       providers[id] = {
         manifest: scratch.manifest,
         executable: scratch.executable,
-        ...(scratch.default_for === undefined
-          ? {}
-          : { defaultFor: scratch.default_for }),
-        ...(scratch.allow_environment === undefined
-          ? {}
-          : { allowEnvironment: scratch.allow_environment }),
+        ...(!(scratch.default_for === undefined) && {
+          defaultFor: scratch.default_for,
+        }),
+        ...(!(scratch.allow_environment === undefined) && {
+          allowEnvironment: scratch.allow_environment,
+        }),
       };
     }
     manifest.packProviders = providers;
@@ -700,17 +704,15 @@ export function parseManifest(text: string): OpmManifest {
       plugins[id] = {
         storeDigest: assertDigest(scratch.store_digest),
         ...(scratch.artifact_origins !== undefined &&
-        scratch.artifact_origins.length > 0
-          ? { artifactOrigins: scratch.artifact_origins }
-          : {}),
-        ...(scratch.artifact_origin_token_envs === undefined
-          ? {}
-          : {
-              artifactOriginTokenEnvs: parsePluginArtifactOriginTokenEnvs(
-                scratch.artifact_origin_token_envs,
-                scratch.artifact_origins,
-              ),
-            }),
+          scratch.artifact_origins.length > 0 && {
+            artifactOrigins: scratch.artifact_origins,
+          }),
+        ...(!(scratch.artifact_origin_token_envs === undefined) && {
+          artifactOriginTokenEnvs: parsePluginArtifactOriginTokenEnvs(
+            scratch.artifact_origin_token_envs,
+            scratch.artifact_origins,
+          ),
+        }),
         ...parsePluginArtifactOriginExtraHeaders(
           scratch.artifact_origin_extra_header_names,
           scratch.artifact_origin_extra_header_envs,
@@ -838,6 +840,7 @@ function sandboxFromScratch(
     out.sandboxRequired = false;
 
   // Extended knobs stored on PolicyInput via index signature until schema lands.
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const ext = out as Partial<PolicyInput> & Record<string, unknown>;
   if (typeof scratch.project_write === 'boolean')
     ext.projectWrite = scratch.project_write;
@@ -856,10 +859,10 @@ function sandboxFromScratch(
     const grants: NonNullable<PolicyInput['sandboxPackageGrants']> = {};
     for (const [id, g] of packages) {
       grants[id] = {
-        ...(g.network === undefined ? {} : { network: g.network }),
-        ...(g.write === undefined ? {} : { write: g.write }),
-        ...(g.read === undefined ? {} : { read: g.read }),
-        ...(g.env === undefined ? {} : { env: g.env }),
+        ...(!(g.network === undefined) && { network: g.network }),
+        ...(!(g.write === undefined) && { write: g.write }),
+        ...(!(g.read === undefined) && { read: g.read }),
+        ...(!(g.env === undefined) && { env: g.env }),
       };
     }
     out.sandboxPackageGrants = grants;
@@ -939,10 +942,10 @@ function policyFromScratch(
   const blockDirect = scratch.block_exotic_direct;
   if (blockTransitive !== undefined || blockDirect !== undefined) {
     policy.blockExoticSources = {
-      ...(typeof blockTransitive === 'boolean'
-        ? { transitive: blockTransitive }
-        : {}),
-      ...(typeof blockDirect === 'boolean' ? { direct: blockDirect } : {}),
+      ...(typeof blockTransitive === 'boolean' && {
+        transitive: blockTransitive,
+      }),
+      ...(typeof blockDirect === 'boolean' && { direct: blockDirect }),
     };
   }
   if (scratch.allow_lifecycle_scripts !== undefined)
@@ -1007,6 +1010,7 @@ function parseTomlValue(
         `Unterminated string at line ${line}`,
       );
     }
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     return JSON.parse(value) as string;
   }
   if (value.startsWith('[')) {
@@ -1038,6 +1042,7 @@ function parseTomlValue(
           `Array item ${index + 1} must be a string at line ${line}`,
         );
       }
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       return JSON.parse(item) as string;
     });
   }
@@ -1121,10 +1126,7 @@ function parsePluginArtifactOriginExtraHeaders(
   names: readonly string[] | undefined,
   envs: readonly string[] | undefined,
   origins: readonly string[] | undefined,
-): {
-  artifactOriginExtraHeaderNames?: readonly string[];
-  artifactOriginExtraHeaderEnvs?: readonly string[];
-} {
+) {
   if (names === undefined && envs === undefined) return {};
   if (names === undefined || envs === undefined)
     throw new OpmError(

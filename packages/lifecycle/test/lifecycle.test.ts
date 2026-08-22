@@ -42,6 +42,7 @@ const rules = [
   {
     authority: 'registry' as const,
     scopes: ['exact-version' as const],
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     actions: [
       'published',
       'yanked',

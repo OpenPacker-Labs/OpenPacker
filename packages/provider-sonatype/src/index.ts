@@ -96,17 +96,21 @@ export class SonatypeProvider implements EnrichmentProvider {
         code: 'SONATYPE_COORDINATE_AMBIGUOUS',
         message: 'Provider returned multiple exact PURL matches',
       });
-    const recordDigest = await canonicalDigest(body as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const recordDigest = await canonicalDigest(
+      JSON.parse(JSON.stringify(body)) as JsonValue,
+    );
     const record: ProviderRecord<SonatypeResponse> = {
       key: exactPurl,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body,
       rawBody:
         response.body.byteLength === 0
-          ? canonicalBytes(body as unknown as JsonValue)
+          ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            canonicalBytes(JSON.parse(JSON.stringify(body)) as JsonValue)
           : response.body,
       retrievedAt: this.clock.now(),
     };

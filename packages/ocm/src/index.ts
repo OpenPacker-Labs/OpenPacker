@@ -252,6 +252,7 @@ export async function mapSolutionToOcm(input: {
     selectedPurls.add(exactPurl);
     selected.set(nodeId, item);
   }
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const selectedEdges = [] as ResolutionSolution['dependencyEdges'];
   for (const edge of input.solution.dependencyEdges) {
     if (edge.fromNodeId === 'root') {
@@ -292,9 +293,9 @@ export async function mapSolutionToOcm(input: {
         componentReferences: [],
         sources: node.identity.sourceRefs,
         solutionDigest: input.solution.solutionDigest,
-        ...(input.receiptDigest === undefined
-          ? {}
-          : { receiptDigest: input.receiptDigest }),
+        ...(!(input.receiptDigest === undefined) && {
+          receiptDigest: input.receiptDigest,
+        }),
       }),
     );
   }
@@ -366,39 +367,44 @@ export async function ocmComponentReferenceDigest(
   descriptor: OcmComponentDescriptor,
 ): Promise<OcmDigest> {
   validateOcmDescriptor(descriptor);
-  const digest = await canonicalDigest({
-    name: descriptor.component.name,
-    version: descriptor.component.version,
-    provider: descriptor.component.provider,
-    sources: descriptor.component.sources.map(
-      ({ name, version, type, labels }) => ({
-        name,
-        version,
-        type,
-        labels,
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const digest = await canonicalDigest(
+    JSON.parse(
+      JSON.stringify({
+        name: descriptor.component.name,
+        version: descriptor.component.version,
+        provider: descriptor.component.provider,
+        sources: descriptor.component.sources.map(
+          ({ name, version, type, labels }) => ({
+            name,
+            version,
+            type,
+            labels,
+          }),
+        ),
+        resources: descriptor.component.resources.map(
+          ({ name, version, type, relation, digest, labels }) => ({
+            name,
+            version,
+            type,
+            relation,
+            digest,
+            labels,
+          }),
+        ),
+        componentReferences: descriptor.component.componentReferences.map(
+          ({ name, componentName, version, digest, labels }) => ({
+            name,
+            componentName,
+            version,
+            digest,
+            labels,
+          }),
+        ),
+        labels: descriptor.component.labels,
       }),
-    ),
-    resources: descriptor.component.resources.map(
-      ({ name, version, type, relation, digest, labels }) => ({
-        name,
-        version,
-        type,
-        relation,
-        digest,
-        labels,
-      }),
-    ),
-    componentReferences: descriptor.component.componentReferences.map(
-      ({ name, componentName, version, digest, labels }) => ({
-        name,
-        componentName,
-        version,
-        digest,
-        labels,
-      }),
-    ),
-    labels: descriptor.component.labels,
-  } as unknown as JsonValue);
+    ) as JsonValue,
+  );
   return {
     hashAlgorithm: 'SHA-256',
     normalisationAlgorithm: 'jsonNormalisation/v1',
@@ -536,14 +542,16 @@ export function ocmDescriptorBytes(
   descriptor: OcmComponentDescriptor,
 ): Uint8Array {
   validateOcmDescriptor(descriptor);
-  return canonicalBytes(descriptor as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return canonicalBytes(JSON.parse(JSON.stringify(descriptor)) as JsonValue);
 }
 
 export async function ocmDescriptorDigest(
   descriptor: OcmComponentDescriptor,
 ): Promise<Digest> {
   validateOcmDescriptor(descriptor);
-  return canonicalDigest(descriptor as unknown as JsonValue);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  return canonicalDigest(JSON.parse(JSON.stringify(descriptor)) as JsonValue);
 }
 
 export class OcmValidationError extends Error {

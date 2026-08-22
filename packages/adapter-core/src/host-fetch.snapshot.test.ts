@@ -59,6 +59,7 @@ describe('host-fetch characterization snapshots', () => {
       try {
         return `${label} -> ${normalizePinnedOrigin(value)}`;
       } catch (error) {
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const message = (error as Error).message;
         if (/user:secret/u.test(message)) throw error;
         return `${label} -> ${message}`;

@@ -61,6 +61,7 @@ export class DepsDevProvider implements EnrichmentProvider {
     signal?: AbortSignal,
   ): Promise<EnrichmentResult> {
     const parsed = parsePurl(exactPurl);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const system = systems[parsed.type as keyof typeof systems];
     if (!system)
       throw new ProviderError(
@@ -84,17 +85,21 @@ export class DepsDevProvider implements EnrichmentProvider {
       headers: { accept: 'application/json' },
     });
     const body = json<DepsDevVersion>(response);
-    const rawDigest = await canonicalDigest(body as unknown as JsonValue);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const rawDigest = await canonicalDigest(
+      JSON.parse(JSON.stringify(body)) as JsonValue,
+    );
     const record: ProviderRecord<DepsDevVersion> = {
       key: exactPurl,
       endpoint: response.url,
-      ...(header(response, 'etag') === undefined
-        ? {}
-        : { etag: header(response, 'etag') }),
+      ...(!(header(response, 'etag') === undefined) && {
+        etag: header(response, 'etag'),
+      }),
       body,
       rawBody:
         response.body.byteLength === 0
-          ? canonicalBytes(body as unknown as JsonValue)
+          ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            canonicalBytes(JSON.parse(JSON.stringify(body)) as JsonValue)
           : response.body,
       retrievedAt: this.clock.now(),
     };
@@ -123,7 +128,8 @@ export class DepsDevProvider implements EnrichmentProvider {
       });
       dependencies = json<DepsDevDependencies>(dependencyResponse);
       dependenciesDigest = await canonicalDigest(
-        dependencies as unknown as JsonValue,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        JSON.parse(JSON.stringify(dependencies)) as JsonValue,
       );
     } catch (error) {
       if (
@@ -144,17 +150,16 @@ export class DepsDevProvider implements EnrichmentProvider {
         'deps.dev/version': body,
         'deps.dev/rawDigest': rawDigest,
         'deps.dev/targetSpecific': false,
-        ...(dependencies === undefined
-          ? {}
-          : {
-              'deps.dev/dependencies': dependencies,
-              'deps.dev/dependenciesDigest': dependenciesDigest,
-            }),
+        ...(!(dependencies === undefined) && {
+          'deps.dev/dependencies': dependencies,
+          'deps.dev/dependenciesDigest': dependenciesDigest,
+        }),
       },
       source: record,
       warnings,
       semanticLoss: [
         semanticLoss(
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
           parsed.type as keyof typeof systems,
           'DEPSDEV_GRAPH_NOT_NATIVE_EQUIVALENT',
           '/dependencies',

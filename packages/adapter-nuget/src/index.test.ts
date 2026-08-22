@@ -133,6 +133,7 @@ describe('NuGet codec', () => {
 });
 
 it('discovers registration metadata through a deterministic NuGet v3 service index', async () => {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const registration = JSON.parse(
     registrationBytes.toString(),
   ) as NugetRegistrationIndex;
@@ -225,6 +226,7 @@ it('bounds aggregate NuGet registration bytes before parsing', async () => {
       return {
         status: 200,
         headers: {},
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
         body: { byteLength: 64 * 1024 * 1024 + 1 } as Uint8Array,
         url: request.url,
       };

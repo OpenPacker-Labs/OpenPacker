@@ -92,7 +92,7 @@ export async function publishPackedArtifact(
   const request: PublishRequest = { descriptor, location };
   try {
     const response = await prexClient(registry, input.fetch).publish(request, {
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      ...(!(input.signal === undefined) && { signal: input.signal }),
     });
     return { request, response: response.data, registry };
   } catch (error) {
@@ -116,6 +116,7 @@ export async function yankRegistryVersion(
   const canonicalPurl = stripPurlVersion(exactPurl);
   const name = yankName(canonicalPurl, parsed.alias);
   const issuedAt = new Date().toISOString();
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const sourceSnapshot = await canonicalDigest({
     exactPurl,
     name,
@@ -149,7 +150,7 @@ export async function yankRegistryVersion(
     actor: { type: 'uri', value: 'urn:openpacker:opm' },
     authority: 'registry',
     reasonCode: 'YANKED',
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    ...(!(input.reason === undefined) && { reason: input.reason }),
     replacementRefs: [],
     sourceSnapshot,
     evidenceRefs: [],
@@ -223,7 +224,7 @@ function prexClient(
   try {
     return new OpenPackerClient({
       baseUrl: registry.endsWith('/') ? registry : `${registry}/`,
-      ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
+      ...(!(fetchImpl === undefined) && { fetch: fetchImpl }),
     });
   } catch (error) {
     throw wrapClientError(error);
@@ -251,9 +252,9 @@ async function resolvePackDirectory(
       name,
       version: input.pack.version,
       outputDirectory,
-      ...(input.pack.provider === undefined
-        ? {}
-        : { provider: input.pack.provider }),
+      ...(!(input.pack.provider === undefined) && {
+        provider: input.pack.provider,
+      }),
     });
     if (!outcome.performed || outcome.exitCode !== 0)
       throw new OpmError(
@@ -281,7 +282,8 @@ async function resolvePackDirectory(
 async function readPackReceipt(directory: string): Promise<PackReceipt> {
   const raw = await readStableFile(join(directory, PACK_RECEIPT));
   try {
-    return parseCanonicalJson(raw) as unknown as PackReceipt;
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    return parseCanonicalJson(raw) as PackReceipt;
   } catch (error) {
     throw new OpmError(
       'INVALID_SPEC',

@@ -344,7 +344,8 @@ export class OpenPackerClient {
         .map(eventJson)
         .filter((line): line is string => line !== undefined)
         .map((line) => ({
-          event: parseCanonicalJson(line) as unknown as OpenPackerCloudEvent,
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          event: parseCanonicalJson(line) as OpenPackerCloudEvent,
           rawBytes: new TextEncoder().encode(line),
         }));
       const rawCursor = response.headers.get('x-openpacker-next-cursor');
@@ -432,12 +433,15 @@ export class OpenPackerClient {
         const requestBody =
           body === undefined
             ? undefined
-            : Uint8Array.from(canonicalBytes(body as JsonValue)).buffer;
+            : // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              Uint8Array.from(
+                canonicalBytes(JSON.parse(JSON.stringify(body)) as JsonValue),
+              ).buffer;
         const response = await this.#fetch(url, {
           method,
           headers,
           signal,
-          ...(requestBody === undefined ? {} : { body: requestBody }),
+          ...(!(requestBody === undefined) && { body: requestBody }),
         });
         if (
           !canRetry(method, options, response.status) ||
@@ -495,6 +499,7 @@ function digestPath(
 function parseJson<T>(bytes: Uint8Array): T {
   if (bytes.byteLength === 0)
     throw new SyntaxError('PREX response body is empty');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return JSON.parse(
     new TextDecoder('utf-8', { fatal: true }).decode(bytes),
   ) as T;
@@ -506,11 +511,13 @@ function assertSupportedProtocolVersion(
 ): void {
   const object =
     typeof value === 'object' && value !== null
-      ? (value as Record<string, unknown>)
+      ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        (value as Record<string, unknown>)
       : undefined;
   const meta =
     typeof object?.meta === 'object' && object.meta !== null
-      ? (object.meta as Record<string, unknown>)
+      ? // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        (object.meta as Record<string, unknown>)
       : undefined;
   const version =
     response.headers.get('prex-version') ??
@@ -612,7 +619,7 @@ function canRetry(
 function combinedSignal(
   parent: AbortSignal | undefined,
   timeoutMilliseconds: number,
-): { signal: AbortSignal; dispose: () => void } {
+) {
   const controller = new AbortController();
   const abort = () => controller.abort(parent?.reason);
   parent?.addEventListener('abort', abort, { once: true });

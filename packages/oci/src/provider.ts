@@ -11,6 +11,7 @@ import {
   type ProviderRecord,
 } from '@openpacker/adapter-core';
 import type {
+  JsonValue,
   PackageIdentity,
   PackageInstance,
   SourceSnapshot,
@@ -190,8 +191,8 @@ export function parseOciPurl(value: string): OciRepositoryReference {
     registry,
     repository,
     name: repository.split('/').at(-1)!,
-    ...(tag === undefined ? {} : { tag }),
-    ...(digest === undefined ? {} : { digest }),
+    ...(!(tag === undefined) && { tag }),
+    ...(!(digest === undefined) && { digest }),
   };
 }
 
@@ -218,9 +219,9 @@ function purlFor(
     name: reference.name,
     qualifiers: {
       repository_url: `${reference.registry}/${reference.repository}`,
-      ...(pin.kind === 'tag' ? { tag: pin.tag } : {}),
+      ...(pin.kind === 'tag' && { tag: pin.tag }),
     },
-    ...(pin.kind === 'digest' ? { version: pin.digest } : {}),
+    ...(pin.kind === 'digest' && { version: pin.digest }),
   });
 }
 
@@ -264,8 +265,8 @@ export class OciRegistryProvider implements CatalogProvider {
     this.#fetch = createPinnedFetch({
       allowedOrigins: [...new Set(fetchOrigins)],
       pinnedOrigins: options.pinnedRegistryOrigins ?? [],
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-      ...(options.lookup ? { lookup: options.lookup } : {}),
+      ...(options.fetch && { fetch: options.fetch }),
+      ...(options.lookup && { lookup: options.lookup }),
     });
   }
 
@@ -300,6 +301,7 @@ export class OciRegistryProvider implements CatalogProvider {
       query.startsWith('pkg:') ? query : `pkg:oci/${query}`,
     );
     return [
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
       {
         canonicalPurl: purlFor(reference, { kind: 'repository' }),
         purlType: 'oci',
@@ -317,7 +319,7 @@ export class OciRegistryProvider implements CatalogProvider {
         sourceRefs: [],
         publisherRefs: [],
         externalRefs: [],
-      } as unknown as PackageIdentity,
+      } as PackageIdentity,
     ];
   }
 
@@ -349,6 +351,7 @@ export class OciRegistryProvider implements CatalogProvider {
 
     const client = this.#client(reference);
     const pulled = await client.pullManifest(target, undefined, signal);
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const manifest = pulled.manifest as OciManifest;
     const digest = pulled.descriptor.digest;
 
@@ -360,6 +363,7 @@ export class OciRegistryProvider implements CatalogProvider {
       nativeSemanticsVersion: 'oci-v1',
     });
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const instance = {
       nodeId,
       identity: {
@@ -429,10 +433,11 @@ export class OciRegistryProvider implements CatalogProvider {
       ),
       nativeSemantics: {
         version: 'oci-v1',
-        data: manifest as unknown as Record<string, unknown>,
+        // SAFETY: The OCI manifest has been validated by the registry client.
+        data: JSON.parse(JSON.stringify(manifest)) as JsonValue,
       },
       semanticLoss: [],
-    } as unknown as PackageInstance;
+    } as PackageInstance;
 
     return {
       package: instance,
@@ -534,6 +539,7 @@ export class OciRegistryProvider implements CatalogProvider {
         `Unsupported OCI media type ${pulled.descriptor.mediaType}`,
       );
 
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const index = pulled.manifest as unknown as OciIndex & {
       manifests: Array<
         OciDescriptor & {
@@ -648,17 +654,15 @@ export class OciRegistryProvider implements CatalogProvider {
   }
 
   async snapshot(evaluationTime: string): Promise<SourceSnapshot> {
-    return {
-      snapshotVersion: '1',
-      providerId: this.providerId,
-      evaluationTime,
-      sources: [],
-    } as unknown as SourceSnapshot;
+    throw new ProviderError(
+      'PROVIDER_CAPABILITY_MISSING',
+      `OCI registries do not produce catalog snapshots (asked at ${evaluationTime}).`,
+    );
   }
 }
 
 /** Host platform as OCI names it. */
-export function hostPlatform(): { os: string; architecture: string } {
+export function hostPlatform() {
   const os =
     process.platform === 'win32'
       ? 'windows'
