@@ -1,7 +1,8 @@
 name: CI build
 
-# The only automatic lane, kept minimal on purpose: build matrix + smoke +
-# artifacts. The full offline gauntlet stays manual-dispatch in ci.yml, and
+# The automatic PR/push lane, kept minimal on purpose: build matrix + smoke +
+# artifacts. Scheduled security checks are separate in security.yml and
+# codeql.yml. The full offline gauntlet stays manual-dispatch in ci.yml, and
 # promotion is separate and sparse in cd.yml. Minutes are budgeted:
 # concurrency cancels superseded runs, npm/cargo caches are warm after the
 # first run, and artifacts expire after 7 days.

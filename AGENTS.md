@@ -59,19 +59,20 @@ ADRs + `spec/prex/v1` when draft/Linear are not in use.
 `core.hooksPath` → `.githooks` via `scripts/install-hooks.mjs`. Opt out:
 `OPENPACKER_SKIP_HOOKS=1`.
 
-**CI/CD is budgeted, not forbidden.** The only automatic lane is
+**CI/CD is budgeted, not forbidden.** The automatic PR/push lane is
 `.github/workflows/ci-build.yml` — a build matrix (3 OS × 2 Node) with smoke
 tests and 7-day build artifacts, gated by concurrency cancellation and warm
-caches. Everything heavier stays manual-dispatch: `ci.yml` (full offline
+caches. Scheduled/manual security lanes are isolated in `security.yml` and
+`codeql.yml`. Everything heavier stays manual-dispatch: `ci.yml` (full offline
 gauntlet), `live-compat.yml`, `release-evidence.yml`, and `cd.yml` (release tags
 or armed dispatch; staging → production with workflow-encoded harsh gates —
 arming phrase, main-ancestor + version + green-CI checks, and production on tag
 push only — since the GitHub plan gates environment protection rules). Never add
-automatic triggers to the heavy workflows, and never start workflow runs without
-an explicit request. Merge gating stays local and fail-closed: the git hooks
-above on every commit/push, `npm run agent:check` for impact-scoped loops, and a
-green `npm run verify` plus an independent review before merge — a green CI
-build lane does not substitute for that.
+automatic triggers to the heavy workflows, and never start manual workflow runs
+without an explicit request. Merge gating stays local and fail-closed: the git
+hooks above on every commit/push, `npm run agent:check` for impact-scoped loops,
+and a green `npm run verify` plus an independent review before merge — a green
+CI build lane does not substitute for that.
 
 Live registry tests are opt-in and never substitute for offline failure.
 

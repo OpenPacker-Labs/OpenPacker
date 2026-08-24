@@ -1,8 +1,9 @@
 name: CI
 
-# The full offline gauntlet — manual dispatch only. The automatic lane is the
-# minimal build matrix in ci-build.yml; promotion is cd.yml. Quality gates are
-# still enforced locally: .githooks/pre-commit (agent:check --staged),
+# The full offline gauntlet — manual dispatch only. The automatic PR/push lane
+# is the minimal build matrix in ci-build.yml; scheduled security checks are in
+# security.yml and codeql.yml; promotion is cd.yml. Quality gates are still
+# enforced locally: .githooks/pre-commit (agent:check --staged),
 # .githooks/pre-push (agent:check --base=origin/main), and `npm run verify`
 # before merge. Do not add automatic triggers to this workflow.
 on:
