@@ -1,0 +1,42 @@
+name: Security and dependency checks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    name: Dependency audit and license policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: cargo fetch --locked
+      - run: node scripts/check-licenses.mjs
+      - run: cargo install --locked cargo-audit --version 0.22.2
+      - run: cargo audit
+
+  offline-security:
+    name: Offline security regression gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint:anti-slop
+      - run: npm run check:test-inventory
+      - run: npm run test:security
+      - run: node --test scripts/codex-security.test.mjs
