@@ -1151,7 +1151,6 @@ describe('fail-closed install paths', () => {
   });
 
   it('invalidates verified facts after custom serialization and identity mutation', async () => {
-    const root = await tempProject();
     const bytes = new Uint8Array(await readFile(fixtureTgz));
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     const pkg = {

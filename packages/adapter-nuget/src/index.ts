@@ -478,6 +478,7 @@ export class NugetCodec
                     path: 'variables.tfm',
                     value: group.targetFramework,
                   },
+                  // oxlint-disable-next-line unicorn/no-thenable -- PREX conditional AST field.
                   then: packageExpression,
                 },
           kind: 'runtime',
@@ -629,7 +630,7 @@ export class NugetCodec
           ...(!(entry.contentHash === undefined) && {
             artifactDigest: entry.contentHash,
           }),
-          dependencies: { ...(entry.dependencies ?? {}) },
+          dependencies: { ...entry.dependencies },
           native: { framework, type: entry.type, requested: entry.requested },
         })),
       )
@@ -658,7 +659,7 @@ export class NugetCodec
             ...(!(assets.libraries?.[coordinate]?.sha512 === undefined) && {
               artifactDigest: assets.libraries[coordinate]!.sha512,
             }),
-            dependencies: { ...(entry.dependencies ?? {}) },
+            dependencies: { ...entry.dependencies },
             native: {
               target,
               type: entry.type,

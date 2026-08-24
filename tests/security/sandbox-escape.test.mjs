@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {
   accessSync,
   constants,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   writeFileSync,

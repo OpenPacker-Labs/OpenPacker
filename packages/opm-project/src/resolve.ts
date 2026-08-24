@@ -442,7 +442,7 @@ export async function resolveGraph(input: {
   optionsFor?: (ecosystem: string) => RegistryOptions;
   host?: HostEnvironment;
 }): Promise<ResolvedGraph> {
-  const bounds = { ...DEFAULT_BOUNDS, ...(input.bounds ?? {}) };
+  const bounds = { ...DEFAULT_BOUNDS, ...input.bounds };
   const options = input.options ?? {};
   const host = input.host ?? defaultHostEnvironment();
   const packages: PackageInstance[] = [];
@@ -839,6 +839,7 @@ function completeExpression(input: JsonValue): JsonValue {
     return {
       ...input,
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      // oxlint-disable-next-line unicorn/no-thenable -- PREX conditional AST field.
       then: completeExpression(input.then as JsonValue),
       ...(!(input.else === undefined) && {
         else: completeExpression(input.else),

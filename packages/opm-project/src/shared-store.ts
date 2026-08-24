@@ -5,7 +5,6 @@ import {
   link,
   lstat,
   mkdir,
-  readdir,
   rename,
   rm,
   unlink,

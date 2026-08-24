@@ -12,11 +12,7 @@ import {
   lstat,
   mkdir,
   open,
-  readdir,
   realpath,
-  rename,
-  rm,
-  stat,
   type FileHandle,
 } from 'node:fs/promises';
 import {

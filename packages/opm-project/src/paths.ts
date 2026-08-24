@@ -1,14 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import {
-  mkdir,
-  lstat,
-  open,
-  realpath,
-  rename,
-  rm,
-  type FileHandle,
-} from 'node:fs/promises';
+import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import {
   basename,
   dirname,

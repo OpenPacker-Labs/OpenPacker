@@ -20,7 +20,6 @@ import {
   projectPolicyDocument,
   providerFor,
   serializeLockfile,
-  OpmError,
   type OpmLockfile,
 } from '../src/index.js';
 

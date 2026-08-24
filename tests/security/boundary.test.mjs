@@ -28,7 +28,7 @@ test('production OpenPacker code has no Epoch or ATProto imports', () => {
       }
     });
   const forbidden =
-    /(?:from\s+|import\s*\(|require\s*\()\s*["'](?:@epoch\/|epoch(?:[\/@"'])|@atproto\/|atproto(?:[\/@"']))/u;
+    /(?:from\s+|import\s*\(|require\s*\()\s*["'](?:@epoch\/|epoch(?:[/@"'])|@atproto\/|atproto(?:[/@"']))/u;
   const violations = roots
     .flatMap(walk)
     .filter((path) => /\.(?:[cm]?[jt]s|rs|lua)$/u.test(path))

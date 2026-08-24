@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-irregular-whitespace -- fixture documents a zero-width Accept header. */
 /**
  * Serving a document in the version the client asked for.
  *

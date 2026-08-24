@@ -174,7 +174,7 @@ export function pomHasImportBom(pom: MavenPomDocument): boolean {
 }
 
 export function isMavenSnapshotVersion(version: string): boolean {
-  return /(?:^|[.\-])SNAPSHOT$/iu.test(version.trim());
+  return /(?:^|[.-])SNAPSHOT$/iu.test(version.trim());
 }
 
 function isImportBom(dependency: MavenDependency): boolean {

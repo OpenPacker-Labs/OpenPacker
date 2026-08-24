@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, type FileHandle } from 'node:fs/promises';
+import { lstat, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { quote } from 'shell-quote';
 import {

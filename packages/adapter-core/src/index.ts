@@ -812,7 +812,7 @@ export class BoundedFetchTransport implements HttpTransport {
       let url = parseProviderUrl(request.url);
       assertAllowedProviderUrl(url, this.#allowedOrigins);
       let method = request.method ?? 'GET';
-      let headers = { ...(request.headers ?? {}) };
+      let headers = { ...request.headers };
       if (
         url.protocol === 'http:' &&
         Object.keys(headers).some((name) =>
@@ -1567,7 +1567,7 @@ export function encodeUrlPathComponent(
     value.length === 0 ||
     value === '.' ||
     value === '..' ||
-    /[\\/?#\u0000-\u001F\u007F]/u.test(value) ||
+    /[\\/?#\p{Cc}]/u.test(value) ||
     value
       .replaceAll('\\', '/')
       .split('/')
@@ -2234,7 +2234,7 @@ export async function packageNodeId(input: {
       JSON.stringify({
         identity: {
           exactPurl: input.exactPurl,
-          qualifiers: { ...(input.qualifiers ?? {}) },
+          qualifiers: { ...input.qualifiers },
         },
         ...(!(input.nativeSemanticsVersion === undefined) && {
           nativeSemantics: { version: input.nativeSemanticsVersion },

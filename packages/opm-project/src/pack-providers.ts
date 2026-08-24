@@ -103,7 +103,7 @@ export async function configurePackProviders(input: {
   for (const item of loaded) {
     authorizedEnvironment[item.provider.id] = item.authorized;
     for (const packer of manifestPackagePackers(item.provider, {
-      ...(input.dependencies ?? {}),
+      ...input.dependencies,
       executablePath: item.source.executable,
     }))
       registry.registerPackProvider(packer, {

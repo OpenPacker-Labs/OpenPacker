@@ -6,9 +6,7 @@ import {
   DEFAULT_SANDBOX_POLICY,
   type PackageGrants,
   type SandboxBackendId,
-  type SandboxMode,
   type SandboxPolicy,
-  type SandboxPrefer,
   type SandboxProfile,
   SANDBOX_LOSS,
 } from './types.js';

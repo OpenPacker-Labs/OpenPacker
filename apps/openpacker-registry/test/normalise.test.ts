@@ -369,7 +369,6 @@ describe('search', () => {
   });
 
   it('keeps the index in step when a name changes underneath it', async () => {
-    const app = await stocked();
     const store = new RegistryStore();
     // Go through the store directly: a rename is the one operation that changes
     // indexed text after the fact, and an index that is not maintained would

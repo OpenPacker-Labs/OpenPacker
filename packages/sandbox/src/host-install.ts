@@ -153,7 +153,6 @@ export function planSandboxSummary(sandbox?: HostInstallerSandboxOptions) {
 export async function runHostInstaller(
   input: HostInstallerRunInput,
 ): Promise<HostInstallerRunResult> {
-  const summary = planSandboxSummary(input.sandbox);
   const policy = sandboxPolicyFromInstallOptions(input.sandbox);
   const [file, ...args] = input.argv;
   if (!file) {
