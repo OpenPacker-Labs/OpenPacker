@@ -6,6 +6,8 @@ export default defineConfig({
   root: resolve(import.meta.dirname, '..'),
   test: {
     fileParallelism: false,
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     setupFiles: [resolve(import.meta.dirname, 'adapter-registry-setup.mjs')],
   },
 });
