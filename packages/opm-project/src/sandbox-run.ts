@@ -39,10 +39,7 @@ export async function runSandboxedPackageProcess(input: {
     ...(projectRoot && !projectWrite ? [projectRoot] : []),
     ...storePaths,
   ];
-  const readwritePaths = [
-    ...(projectRoot && projectWrite ? [projectRoot] : []),
-    // When cwd is outside project (rare), allow temp work only via jail home.
-  ];
+  const readwritePaths = projectRoot && projectWrite ? [projectRoot] : [];
 
   // If cwd is the project and project is RO, cwd is still chdir'd RO by backend.
   // If tools need a scratch dir, they use $TMPDIR (jail home).

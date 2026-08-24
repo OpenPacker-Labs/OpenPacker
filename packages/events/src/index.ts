@@ -138,7 +138,7 @@ export async function createCloudEvent<T extends EventType>(
   const data = JSON.parse(JSON.stringify(input.data)) as JsonValue;
   const datadigest = formatDigest(await canonicalDigest(data));
   const extensions = {
-    ...(input.extensions ?? {}),
+    ...input.extensions,
     ...(!(input.occurrenceId === undefined) && {
       [EVENT_OCCURRENCE_ID_EXTENSION]: input.occurrenceId,
     }),

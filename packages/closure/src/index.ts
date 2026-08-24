@@ -37,7 +37,7 @@ export interface TreeManifest {
  */
 export type MaterializedFileLike = MaterializedFile;
 
-const CONTROL = /[\u0000-\u001f\u007f]/u;
+const CONTROL = /\p{Cc}/u;
 
 /**
  * Windows device names, which are reserved at every directory level and stay

@@ -2,11 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import {
-  collectStream,
-  streamFromBytes,
-  type ArtifactSource,
-} from '@openpacker/artifact-model';
+import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
 import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
 import {

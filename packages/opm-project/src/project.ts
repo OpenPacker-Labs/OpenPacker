@@ -1,5 +1,5 @@
 import { access, mkdir } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
   LockPackage,
   OpmLockfile,
@@ -127,15 +127,12 @@ export async function initProject(input: {
   force?: boolean;
 }): Promise<{ manifestPath: string; created: boolean }> {
   const paths = projectPaths(input.root);
-  let created = false;
   try {
     await access(paths.manifest);
     if (!input.force) {
       return { manifestPath: paths.manifest, created: false };
     }
-  } catch {
-    created = true;
-  }
+  } catch {}
 
   const name = input.name ?? defaultName(input.root);
   const manifest = defaultManifest(name);
@@ -1071,7 +1068,7 @@ async function resolveRequirement(input: {
     }
   }
 
-  for (const key of [...new Set(keys)]) {
+  for (const key of new Set(keys)) {
     const entry = input.catalog.get(key);
     if (!entry) continue;
     if (

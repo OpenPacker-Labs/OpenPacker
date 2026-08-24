@@ -551,7 +551,7 @@ function parseSpecifierToken(token: string): ParsedSpecifier {
   let versionText = match[2]!.trim();
   if (versionText.startsWith('(') && versionText.endsWith(')'))
     versionText = versionText.slice(1, -1).trim();
-  const wildcard = /\.\*$/.test(versionText);
+  const wildcard = versionText.endsWith('.*');
   if (wildcard) {
     if (operator !== '==' && operator !== '!=')
       throw new ProviderError(

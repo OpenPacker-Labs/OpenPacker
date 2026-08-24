@@ -15,7 +15,6 @@ import {
   assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
-  evaluateRange,
   evaluateSemverRange,
   formatPurl,
   header,
@@ -511,8 +510,8 @@ export class NpmCodec
             artifactDigest: entry.integrity,
           }),
           dependencies: {
-            ...(entry.dependencies ?? {}),
-            ...(entry.optionalDependencies ?? {}),
+            ...entry.dependencies,
+            ...entry.optionalDependencies,
           },
           native: {
             path,

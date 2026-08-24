@@ -958,7 +958,7 @@ export class GolangProxyProvider implements CatalogProvider {
     const parsed = parsePurl(this.codec.canonicalizePurl(purl));
     const base = formatPurl({ ...parsed, version: undefined });
     this.#listRecords.delete(base);
-    for (const key of [...this.#infoRecords.keys()]) {
+    for (const key of this.#infoRecords.keys()) {
       if (key === base || key.startsWith(`${base}@`)) {
         this.#infoRecords.delete(key);
         this.#modWarnings.delete(key);

@@ -20,7 +20,6 @@ const BASE = 'https://fixtures.openpacker.invalid/maven';
 const DEMO_POM_URL = `${BASE}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.pom`;
 const DEMO_JAR_URL = `${BASE}/org/example/demo-tool/1.0.0/demo-tool-1.0.0.jar`;
 const DEMO_SHA256_URL = `${DEMO_JAR_URL}.sha256`;
-const DEMO_SHA1_URL = `${DEMO_JAR_URL}.sha1`;
 const DEMO_CATALOG_URL = `${DEMO_JAR_URL}.catalog.json`;
 const JAR_SHA256 =
   'dc6627d2e2704fc93499bc6a144ff589bcf140c54ec4585d0407357a956beb8d';

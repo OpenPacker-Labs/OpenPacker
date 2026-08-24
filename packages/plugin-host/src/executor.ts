@@ -5,7 +5,6 @@ import type {
   DelegatedAdapterManifest,
   DelegatedAdapterOperation,
   DelegatedAdapterRequest,
-  JsonValue,
 } from '@openpacker/contracts';
 import {
   assertExecutableIdentity,

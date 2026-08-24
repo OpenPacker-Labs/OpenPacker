@@ -91,7 +91,7 @@ export async function normalizeProjectPack(input: {
       ...(!(input.target.exactPurl === undefined) && {
         'dev.openpacker.package.purl': input.target.exactPurl,
       }),
-      ...(input.config?.labels ?? {}),
+      ...input.config?.labels,
     },
     exposedPorts: input.config?.exposedPorts ?? [],
     volumes: input.config?.volumes ?? [],
@@ -130,7 +130,7 @@ export async function normalizeProjectPack(input: {
     lifecycle: [...(input.lifecycle ?? [])],
     nativeMetadata: {
       'dev.openpacker.capture': 'project-tree-v1',
-      ...(input.nativeMetadata ?? {}),
+      ...input.nativeMetadata,
     },
     semanticLoss: [
       ...(input.semanticLoss ?? []),

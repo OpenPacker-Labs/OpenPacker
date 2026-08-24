@@ -14,7 +14,6 @@
  */
 
 import type {
-  DetectedProject,
   NativeLockEntry,
   NativeRequirement,
   PackedArtifact,

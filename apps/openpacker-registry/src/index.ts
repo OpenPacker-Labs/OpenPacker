@@ -37,11 +37,8 @@ import {
   type StoredEntry,
 } from './store.js';
 import {
-  keyHistory,
   mayPublish,
   revocationListDigest,
-  rotationMessage,
-  signatureStatus,
   verifyRotation,
   type KeyRotation,
   type RevocationList,

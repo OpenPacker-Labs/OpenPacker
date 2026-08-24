@@ -1,4 +1,3 @@
-import { canonicalDigest } from '@openpacker/canonical';
 import type {
   JsonValue,
   PackageInstance,
@@ -18,7 +17,6 @@ import {
   type NativeCoordinate,
   type ParsedRange,
   type ParsedVersion,
-  type TranslatedMetadata,
   type TranslationProvenance,
 } from '@openpacker/adapter-core';
 

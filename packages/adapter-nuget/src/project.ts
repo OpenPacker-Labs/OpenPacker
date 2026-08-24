@@ -24,7 +24,6 @@ import type {
   PackedArtifact,
   ProjectFormat,
   ProjectionResult,
-  RequirementScope,
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';

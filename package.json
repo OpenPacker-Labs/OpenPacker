@@ -19,7 +19,7 @@
     "build": "turbo run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint:anti-slop": "oxlint .",
+    "lint:anti-slop": "oxlint . --deny-warnings",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && node scripts/run-gate.mjs unit",
     "test:conformance": "node scripts/run-gate.mjs conformance",

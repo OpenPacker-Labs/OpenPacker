@@ -133,6 +133,7 @@ function targetExpression(
       path: match[1] === 'arch' ? 'architecture' : 'os',
       value: match[2]!,
     },
+    // oxlint-disable-next-line unicorn/no-thenable -- PREX conditional AST field.
     then: expression,
   };
 }
