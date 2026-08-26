@@ -1,15 +1,19 @@
 # OpenPacker
 
+[![Build](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml)
+[![Pages](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml)
+
 **Open Package Manager (`opm` / `opmx`)** plus a **PREX control plane** for
 multi-ecosystem package identity, locks, proofs, and digests.
 
-|                                  |                                                |
-| -------------------------------- | ---------------------------------------------- |
-| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**   |
-| **Example project**              | [examples/opm-project/](examples/opm-project/) |
-| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)       |
-| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                 |
-| **License**                      | [MIT](LICENSE)                                 |
+|                                  |                                                                    |
+| -------------------------------- | ------------------------------------------------------------------ |
+| **Project site / releases**      | [OpenPacker Pages](https://tyler-r-kendrick.github.io/OpenPacker/) |
+| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                       |
+| **Example project**              | [examples/opm-project/](examples/opm-project/)                     |
+| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                           |
+| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                     |
+| **License**                      | [MIT](LICENSE)                                                     |
 
 ---
 
@@ -18,10 +22,12 @@ multi-ecosystem package identity, locks, proofs, and digests.
 This is the product surface for **add / remove / sync / install / uninstall**
 and **running** installed package binaries.
 
-> **Scope:** `opm add pkg:npm/lodash@4.17.21` resolves against the real
-> registry, verifies the bytes, and locks the proof-checked closure. `--offline`
-> refuses the network. Explicit `source =` / catalog entries win when present.
-> See [docs/guides/opm.md](docs/guides/opm.md#resolution-sources) for the full
+> **Scope:** after the project explicitly enables the npm adapter in `opm.toml`
+> (`project.ecosystems = ["npm"]`), `opm add pkg:npm/lodash@4.17.21` resolves
+> against the real registry, verifies the bytes, and locks the proof-checked
+> closure. `--offline` refuses the network. Explicit `source =` / catalog
+> entries win when present. See
+> [docs/guides/opm.md](docs/guides/opm.md#resolution-sources) for the full
 > order.
 
 ```sh

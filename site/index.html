@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenPacker — open package manager + PREX control plane</title>
+    <meta
+      name="description"
+      content="OpenPacker: the opm/opmx open package manager and the PREX reference implementation for multi-ecosystem package identity, locks, proofs, and digests."
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>OpenPacker</h1>
+      <p class="lede">
+        <strong
+          >Open Package Manager (<code>opm</code> / <code>opmx</code>)</strong
+        >
+        plus a <strong>PREX control plane</strong> for multi-ecosystem package
+        identity, locks, proofs, and digests. One project file, one lock, one
+        verified store — across npm, Cargo, NuGet, PyPI, Go, and Maven.
+      </p>
+
+      <h2>What it does</h2>
+      <ul>
+        <li>
+          <code>opm init</code> / <code>opm import --native</code> /
+          <code>opm add</code> / <code>opm install</code> /
+          <code>opm sync</code> — project lifecycle with no-follow,
+          handle-relative writes and environment generations you can roll back.
+        </li>
+        <li>
+          Every artifact is verified against the digest its registry published;
+          tampered stores rebuild from verified archives or fail closed.
+        </li>
+        <li>
+          PREX: content-addressed identity, digest-pinned protocol goldens,
+          receipts, and offline-first conformance gates.
+        </li>
+      </ul>
+
+      <h2>Latest release</h2>
+      {{LATEST_SECTION}}
+
+      <h2>Install</h2>
+      {{INSTALL_SECTION}}
+
+      <h2>More</h2>
+      <ul>
+        <li>
+          <a href="releases/">Release notes for every production release</a>
+        </li>
+        <li>
+          <a href="https://github.com/Tyler-R-Kendrick/OpenPacker"
+            >Source on GitHub</a
+          >
+          — start with <code>docs/guides/opm.md</code>
+        </li>
+      </ul>
+
+      <footer>
+        Built from the production releases of
+        <a href="https://github.com/Tyler-R-Kendrick/OpenPacker"
+          >Tyler-R-Kendrick/OpenPacker</a
+        >. MIT licensed.
+      </footer>
+    </main>
+  </body>
+</html>
