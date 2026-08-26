@@ -24,6 +24,25 @@ absolute directory. Default registry URL is `OPM_PREX_REGISTRY` or `--registry`.
 OpenPacker v1 loads WIT-shaped TypeScript adapters and sandboxed native plugins;
 it does not load Wasm components.
 
+## Configure an ecosystem before using it
+
+`opm` does not infer or silently enable registry adapters. A project must list
+an ecosystem in `project.ecosystems` before `add`, `install`, `sync`, `search`,
+or resolution can use it. This is the project-level extension configuration; if
+the ecosystem is absent, the operation fails closed.
+
+For npm, configure the adapter explicitly:
+
+```toml
+[project]
+name = "my-app"
+ecosystems = ["npm"]
+```
+
+Third-party ecosystems are separate delegated plugins. Install one explicitly
+with `opm plugin add <name>`, then bind its digest in `opm.toml` under
+`[plugins.<id>]`; plugins are never installed or discovered automatically.
+
 ---
 
 ## Install
@@ -197,8 +216,9 @@ starts reaching the network because a registry publishes the same name.
 
 ## Registries
 
-`opm add pkg:npm/lodash@4.17.21` resolves against the real registry and verifies
-the download before anything reaches the store.
+After `npm` is listed in `project.ecosystems`, `opm add pkg:npm/lodash@4.17.21`
+resolves against the real registry and verifies the download before anything
+reaches the store. A project without that adapter configuration fails closed.
 
 | Ecosystem | Default registry                      |
 | --------- | ------------------------------------- |
