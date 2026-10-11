@@ -197,6 +197,10 @@ Limits, stated so nobody finds them by surprise:
 - The Windows paths have been verified against the quoting rules in unit tests
   that run on every host. They have not been run on Windows.
 - `cmd.exe` limits a command line to 8191 characters.
+- Ancestor `.bin` directories are trusted as npm trusts them: an executable in a
+  `node_modules/.bin` that someone else can write, in a directory above the
+  project (a shared `/tmp`, say), is on `PATH` for `run` and found by `exec`.
+  `opm` does not check who owns those directories.
 
 Not changed: `opmx`, the sandbox funnel for everything else, the default
 projection level, and the exit-code table.

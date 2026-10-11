@@ -118,6 +118,23 @@ describe('opm exec: running a bin', () => {
   );
 });
 
+describe('opm exec: a program that cannot start', () => {
+  it.skipIf(process.platform === 'win32')(
+    'exits 8 and names the command, not the environment',
+    async () => {
+      const root = await makeProject({});
+      await writeFile(
+        join(root, 'node_modules', '.bin', 'broken'),
+        '#!/no/such/interpreter\n',
+        { mode: 0o755 },
+      );
+      const cap = capture();
+      expect(await runOpm(['exec', 'broken'], cap.io, root)).toBe(8);
+      expect(cap.err).toContain('Cannot start "broken"');
+    },
+  );
+});
+
 describe('opm exec: what it refuses', () => {
   it('never searches PATH, so a program that is not in .bin is not found', async () => {
     const root = await makeProject({});
