@@ -26,6 +26,7 @@ import {
 } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
+  O_DIRECTORY,
   lstatChild,
   mkdirChild,
   openChild,
@@ -439,7 +440,7 @@ async function openDirectory(
   try {
     const handle = await open(
       path,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
     );
     if (!(await handle.stat()).isDirectory()) {
       await handle.close();
@@ -467,7 +468,7 @@ async function openDirectoryAt(
   const handle = await openChild(
     parent,
     name,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   if (!(await handle.stat()).isDirectory()) {
     await handle.close();
