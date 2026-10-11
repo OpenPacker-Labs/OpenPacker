@@ -8,17 +8,7 @@
  */
 
 import { constants } from 'node:fs';
-import {
-  close as closeCb,
-  fchmod as fchmodCb,
-  fstat as fstatCb,
-  fsync as fsyncCb,
-  read as readCb,
-  write as writeCb,
-  type BigIntStats,
-  type Dirent,
-  type Stats,
-} from 'node:fs';
+import { type BigIntStats, type Dirent } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -30,16 +20,10 @@ import {
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { type ChildBackend } from './handle-libc.js';
+import { StableHandleError, wrapFd } from './handle-support.js';
 
-export class StableHandleError extends Error {
-  readonly code = 'UNSAFE_PATH';
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'StableHandleError';
-  }
-}
+export { StableHandleError };
 
 const SUPPORTED = new Set<NodeJS.Platform>(['linux', 'darwin', 'win32']);
 
@@ -98,6 +82,31 @@ function posixChild(parent: FileHandle, name: string): string {
   return join(stableHandlePath(parent), assertHandleSegment(name));
 }
 
+let testBackend: ChildBackend | undefined;
+
+/**
+ * Run every POSIX child operation through `backend` until the returned
+ * function is called. Tests use it to drive the libc implementation against
+ * glibc and to compare it with /proc/self/fd. It is not re-exported from the
+ * package entry, no environment variable reaches it, and win32 ignores it.
+ */
+export function useChildBackendForTesting(backend: ChildBackend): () => void {
+  const previous = testBackend;
+  testBackend = backend;
+  return () => {
+    testBackend = previous;
+  };
+}
+
+/**
+ * The libc backend for this call, or undefined to use /proc/self/fd. The
+ * platform is read at call time, as the Windows branch always has been.
+ */
+function libcBackend(): ChildBackend | undefined {
+  if (process.platform === 'win32') return undefined;
+  return testBackend;
+}
+
 export async function openChild(
   parent: FileHandle,
   name: string,
@@ -107,6 +116,8 @@ export async function openChild(
   assertHandleSegment(name);
   if (process.platform === 'win32')
     return windowsOpenChild(parent, name, flags, mode);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.openChild(parent, name, flags, mode);
   return mode === undefined
     ? open(posixChild(parent, name), flags)
     : open(posixChild(parent, name), flags, mode);
@@ -129,6 +140,8 @@ export async function mkdirChild(
     await handle.close();
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.mkdirChild(parent, name);
   await mkdir(posixChild(parent, name));
 }
 
@@ -143,6 +156,8 @@ export async function renameChild(
     await windowsRenameChild(parent, from, to);
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.renameChild(parent, from, to);
   await rename(posixChild(parent, from), posixChild(parent, to));
 }
 
@@ -156,6 +171,8 @@ export async function removeChild(
     await windowsRemoveChild(parent, name, options);
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.removeChild(parent, name, options);
   await rm(posixChild(parent, name), {
     force: options.force ?? false,
     recursive: options.recursive ?? false,
@@ -165,7 +182,7 @@ export async function removeChild(
 export async function lstatChild(
   parent: FileHandle,
   name: string,
-): Promise<Stats | BigIntStats> {
+): Promise<BigIntStats> {
   assertHandleSegment(name);
   if (process.platform === 'win32') {
     const handle = await windowsOpenChild(
@@ -179,11 +196,15 @@ export async function lstatChild(
       await handle.close();
     }
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.lstatChild(parent, name);
   return lstat(posixChild(parent, name), { bigint: true });
 }
 
 export async function readDirChild(parent: FileHandle): Promise<string[]> {
   if (process.platform === 'win32') return windowsReadDir(parent);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.readDirChild(parent);
   return readdir(stableHandlePath(parent));
 }
 
@@ -191,6 +212,8 @@ export async function readDirChildWithTypes(
   parent: FileHandle,
 ): Promise<Dirent[]> {
   if (process.platform === 'win32') return windowsReadDirWithTypes(parent);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.readDirChildWithTypes(parent);
   return readdir(stableHandlePath(parent), { withFileTypes: true });
 }
 
@@ -210,85 +233,6 @@ export async function mkdtempChild(
     }
   }
   throw new StableHandleError(`Could not create unique directory under handle`);
-}
-
-const closeFd = promisify(closeCb);
-const fsyncFd = promisify(fsyncCb);
-const fchmodFd = promisify(fchmodCb);
-
-function wrapFd(fd: number): FileHandle {
-  const handle = {
-    get fd() {
-      return fd;
-    },
-    async close() {
-      await closeFd(fd);
-    },
-    async stat(options?: { bigint?: boolean }) {
-      return await new Promise<Stats | BigIntStats>((resolve, reject) => {
-        if (options?.bigint === true) {
-          fstatCb(fd, { bigint: true }, (error, stats) =>
-            error ? reject(error) : resolve(stats),
-          );
-          return;
-        }
-        fstatCb(fd, (error, stats) => (error ? reject(error) : resolve(stats)));
-      });
-    },
-    async sync() {
-      await fsyncFd(fd);
-    },
-    async chmod(mode: number) {
-      await fchmodFd(fd, mode);
-    },
-    async writeFile(contents: string | Uint8Array) {
-      const bytes =
-        typeof contents === 'string' ? Buffer.from(contents) : contents;
-      let offset = 0;
-      while (offset < bytes.byteLength) {
-        const written = await new Promise<number>((resolve, reject) => {
-          writeCb(
-            fd,
-            bytes,
-            offset,
-            bytes.byteLength - offset,
-            offset,
-            (error, n) => (error ? reject(error) : resolve(n)),
-          );
-        });
-        if (written === 0) break;
-        offset += written;
-      }
-    },
-    async write(
-      buffer: Uint8Array,
-      offset = 0,
-      length = buffer.byteLength - offset,
-      position: number | null = null,
-    ) {
-      const bytesWritten = await new Promise<number>((resolve, reject) => {
-        writeCb(fd, buffer, offset, length, position, (error, n) =>
-          error ? reject(error) : resolve(n),
-        );
-      });
-      return { bytesWritten, buffer };
-    },
-    async read(
-      buffer: Uint8Array,
-      offset: number,
-      length: number,
-      position: number | null,
-    ) {
-      const bytesRead = await new Promise<number>((resolve, reject) => {
-        readCb(fd, buffer, offset, length, position, (error, n) =>
-          error ? reject(error) : resolve(n),
-        );
-      });
-      return { bytesRead, buffer };
-    },
-  };
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return handle as FileHandle;
 }
 
 function errno(code: string, message: string): NodeJS.ErrnoException {
