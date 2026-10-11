@@ -21,7 +21,11 @@ import {
 } from '@openpacker/adapter-core';
 import { gzipSync } from 'node:zlib';
 import { packTarGzip } from '@openpacker/project-io';
-import { installFrozen, type FrozenInstallInput } from '../src/index.js';
+import {
+  collectSharedStore,
+  installFrozen,
+  type FrozenInstallInput,
+} from '../src/index.js';
 import { uniqueBytes } from './disk-usage.js';
 
 const temps: string[] = [];
@@ -344,6 +348,41 @@ describe('installFrozen', () => {
     expect(
       (await lstat(join(w.dir, 'node_modules/a/index.js'))).nlink,
     ).toBeGreaterThan(1);
+  });
+
+  it('keeps what a project links from being collected, and refetches what was', async () => {
+    const w = await setup();
+    w.place('node_modules/a', { name: 'a', version: '1.0.0' });
+    w.root('dependencies', 'a', '1.0.0');
+    await w.write();
+    const store = await tempDir('frozen-store-');
+    const env = { OPM_STORE_HOME: join(store, 'shared') };
+
+    await w.install({ env });
+    // The project still links the entry, so collecting it leaves it alone.
+    const held = await collectSharedStore({ env, minimumAgeMs: 0 });
+    expect(held).toMatchObject({ referenced: 1, removed: [] });
+
+    // Once nothing links it, it goes; the index still names it, which must
+    // cost a download and not a failure.
+    await rm(join(w.dir, 'node_modules'), { recursive: true });
+    const freed = await collectSharedStore({ env, minimumAgeMs: 0 });
+    expect(freed.removed).toHaveLength(1);
+    await expect(w.install({ env, offline: true })).rejects.toMatchObject({
+      code: 'OFFLINE',
+    });
+    const again = await w.install({ env });
+    expect(again).toMatchObject({ fetched: 1, fromStore: 0 });
+    expect(w.run("console.log(require('a').version)")).toBe('1.0.0');
+  });
+
+  it('installs a lock with nothing in it', async () => {
+    const w = await setup();
+    await w.write();
+    await mkdir(join(w.dir, 'node_modules/old'), { recursive: true });
+    const result = await w.install();
+    expect(result).toMatchObject({ installed: 0, fetched: 0, fromStore: 0 });
+    expect(await exists(join(w.dir, 'node_modules/old'))).toBe(false);
   });
 
   it('costs a second project almost nothing', async () => {
