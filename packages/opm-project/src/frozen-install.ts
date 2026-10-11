@@ -32,7 +32,6 @@ import {
   echoedValue,
   type DetectedProject,
   type FrozenLock,
-  type FrozenLockPackage,
   type FrozenLockSkip,
   type FrozenOmit,
   type NativeLockEntry,
