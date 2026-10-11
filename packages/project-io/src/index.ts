@@ -359,6 +359,7 @@ export {
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
+  type CollectOptions,
   type MaterialiseOptions,
   type MaterialiseResult,
 } from './layout.js';

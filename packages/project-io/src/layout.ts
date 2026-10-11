@@ -65,6 +65,21 @@ export interface MaterialiseOptions {
   link?: boolean;
 }
 
+/** Files of one directory read at the same time while collecting a tree. */
+const COLLECT_CONCURRENCY = 16;
+
+export interface CollectOptions {
+  /**
+   * Accept a file whose only change while it was read is its change time.
+   *
+   * A store file is hard-linked into every project that uses it, and a project
+   * linking or unlinking it at that moment changes its ctime without touching a
+   * byte. Inode, size and modification time still have to hold still. Do not
+   * set this for a working tree that nothing else should be touching.
+   */
+  linkTolerant?: boolean;
+}
+
 export interface MaterialiseResult {
   /** Files linked or copied. */
   files: number;
