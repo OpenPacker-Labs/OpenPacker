@@ -47,6 +47,7 @@ Accepted decisions:
 43. [One copy of a package per machine, and a node_modules Node can resolve](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
 44. [A closure is what the host installs](0044-a-closure-is-what-the-host-installs.md)
 45. [macOS child I/O uses libc `*at()` calls](0045-macos-child-io-uses-libc-at-calls.md)
+46. [A lockfile is installed, not re-resolved](0046-a-lockfile-is-installed-not-re-resolved.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

@@ -62,6 +62,7 @@ node ../../apps/opm/dist/opmx.js demo-tool --version
 | `opm add <spec>`        | Add package to manifest, lock, and install |
 | `opm remove <alias>`    | Remove from manifest, lock, and install    |
 | `opm install`           | Materialize everything in `opm.lock.json`  |
+| `opm ci`                | Install exactly `package-lock.json`        |
 | `opm uninstall [alias]` | Remove install links/bins                  |
 | `opm sync`              | Resolve manifest → lock → install          |
 | `opm list` / `opm why`  | Inspect the project graph                  |
