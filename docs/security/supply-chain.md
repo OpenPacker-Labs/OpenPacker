@@ -133,10 +133,18 @@ policies requiring those facts fail closed.
 ## Adapter obligations
 
 When a Registry Definition advertises `package-metadata`, inspect SHOULD
-populate publish time when the native protocol has it. When provenance or
-trusted-publisher evidence exists, trust tier SHOULD be set from verified facts
-only. Exotic coordinates (git, direct URL) MUST set `sourceKind` accordingly so
-policy can block them.
+populate publish time when the native protocol has it. Where the protocol only
+has it in an expensive document (npm: the full packument is 54 MB against 8.7 MB
+abbreviated for the 44 packages of one framework's dev tooling), a provider MAY
+offer `publishTime(exactPurl, {settledBefore})` and answer with the cheapest
+evidence that settles the question: an exact `publishedAt`, or
+`publishedNoLaterThan` (an upper bound, such as npm's document `modified`
+stamp). The policy accepts the bound one-sidedly: it can clear
+`minimumReleaseAgeMinutes` and can never fail it, and an exact `publishedAt`
+always outranks it. A bound is never stored as a publish time. When provenance
+or trusted-publisher evidence exists, trust tier SHOULD be set from verified
+facts only. Exotic coordinates (git, direct URL) MUST set `sourceKind`
+accordingly so policy can block them.
 
 Host installers that only advertise `install` still participate: their plans
 emit irreversible / non-byte-verified loss, and policy can deny based on that
