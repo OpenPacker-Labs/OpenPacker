@@ -17,7 +17,7 @@ Agent coordination uses the repo-local **sdlc** skill (mirrored in
 
 ## Development
 
-Use Node `^20.20.0 || >=22.13.0`, npm workspaces with the committed lockfile,
+Use Node `^22.19.0 || >=24`, npm workspaces with the committed lockfile,
 stable Rust 2024, and the checked-in tool configuration. Install with `npm ci`.
 The mandatory checks and demo are offline after prerequisites are installed.
 
