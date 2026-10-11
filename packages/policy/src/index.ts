@@ -139,6 +139,14 @@ export interface PolicyFacts {
   packageId?: string;
   /** Registry-reported publish time (ISO-8601). */
   publishedAt?: string;
+  /**
+   * An upper bound on the publish time (ISO-8601): the version was published no
+   * later than this, which is all some registries can say cheaply (npm's
+   * `modified`). It can show that a release is old enough, never that it is
+   * too new, so it only ever lets a minimum release age pass; a version it
+   * cannot clear is judged on `publishedAt` or reported as not provided.
+   */
+  publishedNoLaterThan?: string;
   /** Evaluation / decision time (ISO-8601). Defaults to now only if both age checks are off. */
   evaluationTime?: string;
   /** Captured trust tier for this candidate. */
@@ -504,6 +512,21 @@ export async function evaluatePolicy(
         status: 'valid',
         message:
           'local path has no publish clock; minimum release age does not apply',
+      });
+    } else if (
+      !facts.publishedAt &&
+      facts.evaluationTime &&
+      facts.publishedNoLaterThan &&
+      Date.parse(facts.evaluationTime) -
+        Date.parse(facts.publishedNoLaterThan) >=
+        policy.minimumReleaseAgeMinutes * 60_000
+    ) {
+      // No exact time, but the upper bound already clears the minimum: the
+      // true age is at least the bound's age.
+      checks.push({
+        code: 'supply-chain.release-age',
+        status: 'valid',
+        message: `Published no later than ${facts.publishedNoLaterThan}, at least ${policy.minimumReleaseAgeMinutes}m before evaluation`,
       });
     } else if (!facts.publishedAt || !facts.evaluationTime) {
       checks.push({
