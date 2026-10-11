@@ -177,6 +177,8 @@ export {
 
 export {
   DEFAULT_REGISTRY_ENDPOINTS,
+  MemoizingTransport,
+  ProviderPool,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
   listRegistryVersions,
@@ -227,14 +229,23 @@ export {
 
 export { codecFor } from './codecs.js';
 export {
+  detectLibc,
+  detectNativeTarget,
+  evaluateTargetPredicate,
+  type NativeTarget,
+} from './host-target.js';
+export {
+  CLOSURE_OBJECTIVES,
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
+  loadResolver,
   nativeRange,
   requirementMarker,
   resolveGraph,
   shouldFollowRequirement,
   solveGraph,
   universeFrom,
+  type FollowDecision,
   type HostEnvironment,
   type ResolutionBounds,
   type ResolvedGraph,
@@ -263,14 +274,17 @@ export { providerForWithDiscovery, registryEcosystems } from './registry.js';
 
 export {
   assertSupplyChainAllowed,
+  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromInspection,
   captureFactsFromSourceUri,
   defaultSupplyChainPolicyInput,
+  insideReleaseAge,
   lockPackageSupplyChainFields,
   priorTrustFromLock,
   projectPolicyDocument,
   type PolicyDocument,
+  type PublishTimeEvidence,
   type PolicyFacts,
   type PolicyResult,
   type SourceKind,

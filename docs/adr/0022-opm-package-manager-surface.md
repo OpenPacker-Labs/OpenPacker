@@ -48,3 +48,16 @@ package-manager façade; it does not claim full npm/Cargo/pip supersession.
   `@openpacker/opm`.
 - v1 ecosystems prioritize npm/cargo/pypi install paths with fail-closed offline
   catalogs; other ecosystems follow the same lock/store model.
+
+## Amendment 2026-10-11: unexpected failures show their cause
+
+An error with no string `code` is one opm did not expect and name. `opm` and
+`opmx` print it with its `cause` chain (three links at most, one redacted line
+each) instead of the bare message, because Node's `fetch` reports every network
+fault as `fetch failed` and keeps the reason on `cause`. When a cause is a
+connection fault, a proxy variable is set and `NODE_USE_ENV_PROXY` is not, one
+`hint:` line says that Node's built-in `fetch` ignores proxy variables unless
+`NODE_USE_ENV_PROXY=1`. Exit codes, and the one-line output of every failure
+that carries a code, are unchanged. The redaction is `redactUrl` from
+`@openpacker/adapter-core` plus a withholding rule for credential-shaped values;
+the hint names a variable and never prints its value.

@@ -669,11 +669,12 @@ describe('opm plugin', () => {
     temps.push(home);
     const restore = withPluginEnv(home);
     try {
-      // The CLI acquires through the configured registry; stub global fetch
-      // with the fixture registry, which knows only the plugin "acme".
+      // The CLI acquires through the configured registry. Production pins and
+      // dials real addresses, so the fixture registry, which knows only the
+      // plugin "acme", is handed in as the fetch the CLI uses.
       const { fixturePluginTransport } = await import('./plugin-fixture.js');
       const transport = fixturePluginTransport();
-      vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const fixtureFetch: typeof fetch = async (input) => {
         try {
           const response = await transport.request({
             url: String(input),
@@ -687,18 +688,18 @@ describe('opm plugin', () => {
         } catch {
           return new Response('not found', { status: 404 });
         }
-      });
+      };
       process.env.OPM_REGISTRY_OPM_PLUGIN = 'https://plugins.fixture.test';
-      try {
-        const cap = capture();
-        // Unknown plugin: the registry answers 404, the provider throws
-        // ProviderError PACKAGE_NOT_FOUND — not-found (4), not internal (9).
-        expect(await runOpm(['plugin', 'add', 'ghost'], cap.io, home)).toBe(4);
-        expect(cap.err).toMatch(/not found/iu);
-        expect(cap.err).not.toMatch(/internal error/u);
-      } finally {
-        vi.unstubAllGlobals();
-      }
+      const cap = capture();
+      // Unknown plugin: the registry answers 404, the provider throws
+      // ProviderError PACKAGE_NOT_FOUND — not-found (4), not internal (9).
+      expect(
+        await runOpm(['plugin', 'add', 'ghost'], cap.io, home, {
+          fetch: fixtureFetch,
+        }),
+      ).toBe(4);
+      expect(cap.err).toMatch(/not found/iu);
+      expect(cap.err).not.toMatch(/internal error/u);
     } finally {
       restore();
     }

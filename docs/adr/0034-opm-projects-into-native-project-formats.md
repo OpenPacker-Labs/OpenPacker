@@ -65,9 +65,11 @@ The ADR 0022 sentence about not replacing native layouts is amended, not
 deleted: the `layout` level exists, but it is opt-in, and it states in its loss
 that the result is _equivalent to_ rather than _produced by_ the native tool.
 Native layout projection and `.opm` project-state mutation use the same
-no-follow, handle-relative open on Linux, macOS, and Windows. POSIX maps an open
-directory through `/proc/self/fd` or `/dev/fd`. Windows opens children with
-`NtCreateFile` relative to the parent OS handle (`RootDirectory`,
+no-follow, handle-relative open on Linux, macOS, and Windows. Linux maps an open
+directory through `/proc/self/fd`. macOS, where `/dev/fd/N/child` does not
+resolve, calls libc `openat`/`mkdirat`/`renameat`/`unlinkat`/`fstatat` through
+koffi ([ADR 0045](0045-macos-child-io-uses-libc-at-calls.md)). Windows opens
+children with `NtCreateFile` relative to the parent OS handle (`RootDirectory`,
 `OBJ_DONT_REPARSE` / `FILE_OPEN_REPARSE_POINT`) — openat semantics, never a
 lexical pathname fallback or a `GetFinalPathNameByHandle` re-walk. Path escapes,
 symlink swaps, and linked metadata still fail closed with `UNSAFE_PATH`. A

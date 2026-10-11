@@ -12,6 +12,7 @@
     "@openpacker/embedded#build": {
       "dependsOn": ["^build"],
       "cache": false,
+      "passThroughEnv": ["CI", "OPENPACKER_REQUIRE_WASM"],
       "outputs": ["dist/**"]
     },
     "typecheck": {
