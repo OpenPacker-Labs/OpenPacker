@@ -52,6 +52,21 @@ export interface MaterialiseOptions {
   link?: boolean;
 }
 
+/** Files of one directory read at the same time while collecting a tree. */
+const COLLECT_CONCURRENCY = 16;
+
+export interface CollectOptions {
+  /**
+   * Accept a file whose only change while it was read is its change time.
+   *
+   * A store file is hard-linked into every project that uses it, and a project
+   * linking or unlinking it at that moment changes its ctime without touching a
+   * byte. Inode, size and modification time still have to hold still. Do not
+   * set this for a working tree that nothing else should be touching.
+   */
+  linkTolerant?: boolean;
+}
+
 export interface MaterialiseResult {
   /** Files linked or copied. */
   files: number;
@@ -668,18 +683,97 @@ export async function collectFilesFromHandle(
   rootHandle: FileHandle,
   prefix = '',
   displayRoot = '<directory handle>',
+  options: CollectOptions = {},
 ): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
+  const linkTolerant = options.linkTolerant === true;
   const out: {
     path: string;
     contents: Uint8Array;
     executable: boolean;
   }[] = [];
   const snapshots = new Map<string, TreeEntrySnapshot>();
-  let totalBytes = 0;
+  // Bytes read or being read; a tree past the limit is refused before the
+  // read that would cross it, however many files are in flight.
+  let reservedBytes = 0;
+  const readFileAt = async (
+    directory: FileHandle,
+    name: string,
+    path: string,
+  ): Promise<{
+    contents: Uint8Array;
+    executable: boolean;
+    before: BigIntStats;
+  }> => {
+    const file = await openChild(
+      directory,
+      name,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    );
+    try {
+      const before = await file.stat({ bigint: true });
+      if (!before.isFile() || before.size > 512n * 1024n * 1024n)
+        throw unsafe(path);
+      const size = Number(before.size);
+      if (reservedBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
+      reservedBytes += size;
+      const contents = new Uint8Array(size);
+      let offset = 0;
+      while (offset < size) {
+        const { bytesRead } = await file.read(
+          contents,
+          offset,
+          size - offset,
+          offset,
+        );
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      const [after, named] = await Promise.all([
+        file.stat({ bigint: true }),
+        lstatChild(directory, name),
+      ]);
+      if (
+        offset !== size ||
+        !sameMetadata(before, after, linkTolerant) ||
+        after.dev !== named.dev ||
+        after.ino !== named.ino
+      )
+        throw unsafe(path);
+      return { contents, executable: (before.mode & 0o111n) !== 0n, before };
+    } finally {
+      await file.close();
+    }
+  };
   const walkOne = async (directory: FileHandle, at: string): Promise<void> => {
     const beforeDirectory = await directory.stat({ bigint: true });
-    for (const entry of await readDirChildWithTypes(directory)) {
-      const path = at === '' ? entry.name : `${at}/${entry.name}`;
+    const entries = await readDirChildWithTypes(directory);
+    const pathOf = (name: string) => (at === '' ? name : `${at}/${name}`);
+    for (const entry of entries)
+      if (!entry.isDirectory() && !entry.isFile())
+        throw unsafe(pathOf(entry.name));
+    // The files of one directory are read a few at a time: a package is
+    // mostly many small files, and one at a time is all waiting on the disk.
+    // The results are used in directory order, so the output is the same.
+    const wanted = entries.filter((entry) => entry.isFile());
+    const read = new Map<string, Awaited<ReturnType<typeof readFileAt>>>();
+    let next = 0;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(COLLECT_CONCURRENCY, wanted.length) },
+        async () => {
+          for (;;) {
+            const entry = wanted[next++];
+            if (entry === undefined) return;
+            read.set(
+              entry.name,
+              await readFileAt(directory, entry.name, pathOf(entry.name)),
+            );
+          }
+        },
+      ),
+    );
+    for (const entry of entries) {
+      const path = pathOf(entry.name);
       if (entry.isDirectory()) {
         const child = await openDirectoryAt(directory, entry.name);
         try {
@@ -689,51 +783,13 @@ export async function collectFilesFromHandle(
         }
         continue;
       }
-      if (!entry.isFile()) throw unsafe(path);
-      const file = await openChild(
-        directory,
-        entry.name,
-        constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
-      );
-      try {
-        const before = await file.stat({ bigint: true });
-        if (!before.isFile() || before.size > 512n * 1024n * 1024n)
-          throw unsafe(path);
-        const size = Number(before.size);
-        if (totalBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
-        const contents = new Uint8Array(size);
-        let offset = 0;
-        while (offset < size) {
-          const { bytesRead } = await file.read(
-            contents,
-            offset,
-            size - offset,
-            offset,
-          );
-          if (bytesRead === 0) break;
-          offset += bytesRead;
-        }
-        const [after, named] = await Promise.all([
-          file.stat({ bigint: true }),
-          lstatChild(directory, entry.name),
-        ]);
-        if (
-          offset !== size ||
-          !sameMetadata(before, after) ||
-          after.dev !== named.dev ||
-          after.ino !== named.ino
-        )
-          throw unsafe(path);
-        totalBytes += size;
-        snapshots.set(path, snapshot('file', before));
-        out.push({
-          path: prefix === '' ? path : `${prefix}/${path}`,
-          contents,
-          executable: (before.mode & 0o111n) !== 0n,
-        });
-      } finally {
-        await file.close();
-      }
+      const { contents, executable, before } = read.get(entry.name)!;
+      snapshots.set(path, snapshot('file', before, linkTolerant));
+      out.push({
+        path: prefix === '' ? path : `${prefix}/${path}`,
+        contents,
+        executable,
+      });
     }
     const afterDirectory = await directory.stat({ bigint: true });
     if (!sameMetadata(beforeDirectory, afterDirectory))
