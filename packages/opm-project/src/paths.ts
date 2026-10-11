@@ -12,6 +12,7 @@ import {
   sep,
 } from 'node:path';
 import {
+  O_DIRECTORY,
   handlePathForPlatform,
   lstatChild,
   mkdirChild,
@@ -236,7 +237,7 @@ export async function openStableDirectory(
   const root = parse(absolute).root;
   let handle = await open(
     root,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   try {
     for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
@@ -247,7 +248,7 @@ export async function openStableDirectory(
       const next = await openChild(
         handle,
         part,
-        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
       );
       if (!(await next.stat()).isDirectory()) {
         await next.close();
@@ -274,6 +275,7 @@ export async function openStableDirectory(
 }
 
 export {
+  O_DIRECTORY,
   openChild,
   mkdirChild,
   renameChild,

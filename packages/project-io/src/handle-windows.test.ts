@@ -7,6 +7,7 @@ import { join, parse } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  O_DIRECTORY,
   StableHandleError,
   lstatChild,
   mkdirChild,
@@ -58,7 +59,7 @@ describe.skipIf(process.platform !== 'win32')(
         const windows = await openChild(
           volume,
           'Windows',
-          constants.O_RDONLY | constants.O_DIRECTORY,
+          constants.O_RDONLY | O_DIRECTORY,
         );
         trace('openChild returned a handle');
         await windows.close();

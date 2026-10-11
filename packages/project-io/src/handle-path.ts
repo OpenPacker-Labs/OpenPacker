@@ -32,6 +32,17 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+/**
+ * `O_DIRECTORY` where the platform has one, and a private bit where it does not.
+ *
+ * Windows has no `O_DIRECTORY`: `fs.constants.O_DIRECTORY` is undefined there, so
+ * `O_RDONLY | constants.O_DIRECTORY` silently asks for any object, and an NT open
+ * cannot tell that a directory was wanted. `mkdirChild` then created a file, and
+ * the open of a directory failed with EISDIR. Callers name the directory bit
+ * through this constant. The private bit is one libuv ignores.
+ */
+export const O_DIRECTORY: number = constants.O_DIRECTORY ?? 0x0020_0000;
+
 export class StableHandleError extends Error {
   readonly code = 'UNSAFE_PATH';
 
@@ -121,10 +132,7 @@ export async function mkdirChild(
     const handle = await windowsOpenChild(
       parent,
       name,
-      constants.O_RDONLY |
-        constants.O_DIRECTORY |
-        constants.O_CREAT |
-        constants.O_EXCL,
+      constants.O_RDONLY | O_DIRECTORY | constants.O_CREAT | constants.O_EXCL,
     );
     await handle.close();
     return;
@@ -482,7 +490,7 @@ function windowsOpenChild(
   const iosb = Buffer.alloc(16);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const outHandle = [null] as unknown[];
-  const directory = (flags & constants.O_DIRECTORY) !== 0;
+  const directory = (flags & O_DIRECTORY) !== 0;
   const create = (flags & constants.O_CREAT) !== 0;
   const exclusive = (flags & constants.O_EXCL) !== 0;
   let access = SYNCHRONIZE | FILE_READ_ATTRIBUTES | extraAccess;
@@ -591,7 +599,7 @@ async function windowsRemoveChild(
         dir = await windowsOpenChild(
           parent,
           name,
-          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+          constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
         );
       } catch (error) {
         // SAFETY: The surrounding boundary establishes the asserted domain contract.

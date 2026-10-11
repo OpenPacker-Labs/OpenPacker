@@ -8,6 +8,7 @@ import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
 import {
   mkdirChild,
   mkdtempChild,
+  O_DIRECTORY,
   openChild,
   openStableDirectory as openStableDirectoryShared,
   removeChild,
@@ -176,7 +177,7 @@ export async function materialize(input: {
     stagingHandle = await openChild(
       parentHandle,
       stagingName,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
     );
     let published = false;
     try {
@@ -265,7 +266,7 @@ async function openDirectoryAt(
   const handle = await openChild(
     parent,
     name,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   if (!(await handle.stat()).isDirectory()) {
     await handle.close();
