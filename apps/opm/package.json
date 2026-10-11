@@ -30,13 +30,13 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
     "@openpacker/adapters-default": "0.1.0",
     "@openpacker/opm-project": "0.1.0",
     "@openpacker/plugin-host": "0.1.0",
     "@openpacker/plugin-store": "0.1.0"
   },
   "devDependencies": {
-    "@openpacker/adapter-core": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/sandbox": "0.1.0",
     "@types/node": "24.2.1"

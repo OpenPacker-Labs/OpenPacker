@@ -45,6 +45,7 @@ Accepted decisions:
 41. [Host-fetch operator pins and credentials](0041-host-fetch-operator-pins-and-credentials.md)
 42. [Rescoped UPM v1 gaps](0042-upm-v1-gaps.md)
 43. [A closure is what the host installs](0044-a-closure-is-what-the-host-installs.md)
+44. [macOS child I/O uses libc `*at()` calls](0045-macos-child-io-uses-libc-at-calls.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

@@ -117,11 +117,12 @@ tools/dev-bin/opm --help            # one-off, no PATH setup at all
 On Windows, `opm.cmd` and `opmx.cmd` do the same thing, except that they ask
 turbo every time rather than checking file times first — a warm cache hit is
 about 0.4s. Project-state mutation uses the same no-follow, handle-relative open
-as Linux and macOS: POSIX maps an open directory through `/proc/self/fd` or
-`/dev/fd`, and Windows opens children with `NtCreateFile` relative to the parent
-OS handle (`RootDirectory`, reparse points refused) — openat semantics, never a
-lexical pathname fallback. Path escapes, symlink swaps, and linked metadata
-still fail closed with `UNSAFE_PATH`.
+on every platform: Linux maps an open directory through `/proc/self/fd`, macOS
+calls libc `openat` and its siblings through koffi (`/dev/fd/N/child` does not
+resolve there), and Windows opens children with `NtCreateFile` relative to the
+parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
+never a lexical pathname fallback. Path escapes, symlink swaps, and linked
+metadata still fail closed with `UNSAFE_PATH`.
 
 ---
 
@@ -669,6 +670,66 @@ Lifecycle scripts are deny-by-default; an allowlist entry is required under
 strict mode. Host installers only get **limited user-capability** containment.
 
 This is **defense-in-depth**, not a microVM.
+
+---
+
+## Troubleshooting
+
+### `npm run build` warns that it skipped the wasm bindings
+
+```text
+warning: @openpacker/embedded: skipped the wasm bindings, the wasm32-unknown-unknown target and wasm-bindgen are missing; …
+```
+
+Expected on a machine that only needs `opm`, `opmx` or `openpacker`: the
+bindings are the browser and Node wasm builds of the resolver, the CLIs never
+load them, and the build exits 0 with every CLI usable. Packages that import the
+bindings' types (`openpackerd`, two examples) compile against declaration-only
+stubs; importing `@openpacker/embedded/wasm-node` at run time fails until the
+bindings are built. To build them, install what the warning names:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install --locked wasm-bindgen-cli --version 0.2.126
+npm run build:wasm -w @openpacker/embedded
+```
+
+The same condition is an error when `CI` is set (other than `0` or `false`) or
+`OPENPACKER_REQUIRE_WASM=1`, so release and CI builds cannot ship without the
+bindings. A toolchain that is present but fails, such as a `wasm-bindgen`
+version that does not match `Cargo.lock`, is an error in both modes.
+
+### `opm: internal error: fetch failed`
+
+An error opm did not expect, with no code of its own, is printed with its
+`cause` chain: up to three links, one line each, indented one level deeper per
+link. Node's `fetch` reports every network fault as `fetch failed` and keeps the
+reason on the cause:
+
+```text
+opm: internal error: fetch failed
+opm:   caused by: Error: connect ECONNREFUSED 127.0.0.1:34855
+opm: hint: HTTPS_PROXY is set, but Node's built-in fetch ignores proxy variables unless NODE_USE_ENV_PROXY=1 (Node 22.21+); retry with NODE_USE_ENV_PROXY=1
+```
+
+`opmx` prints the same lines without `internal error`. The exit code is
+unchanged (`9`). Everything printed is redacted: a URL keeps its origin and path
+and loses userinfo, query and fragment, and the value after a credential name
+(`token`, `authorization`, `password`, `api-key`, a bearer) is withheld. A
+failure opm named, such as `POLICY_DENIED` or `OFFLINE`, keeps its single line.
+
+The `hint:` line appears only when a cause is a connection fault
+(`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, an
+unreachable host or network, a refused proxy tunnel, a connect timeout), one of
+`HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY` or `http_proxy` is set, and
+`NODE_USE_ENV_PROXY` is not. Node's built-in `fetch`, which opm uses, ignores
+those variables unless `NODE_USE_ENV_PROXY=1` is set (Node 22.21 or later), so a
+proxied network fails here although `curl` and `npm` work. The hint names the
+variable and never prints its value, which can carry credentials.
+
+```sh
+NODE_USE_ENV_PROXY=1 opm add pkg:npm/is-odd
+```
 
 ---
 
