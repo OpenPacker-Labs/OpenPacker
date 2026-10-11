@@ -4,7 +4,7 @@ import {
   rankCandidates,
   type Candidate,
 } from './candidates.js';
-import { discover, type ListMemory } from './discover.js';
+import { discover, type Discovery, type ListMemory } from './discover.js';
 import { checkDigest } from './download.js';
 import { PackslipError, TrustChangeError } from './errors.js';
 import type { Fetcher } from './fetch.js';
@@ -24,6 +24,7 @@ import {
   verifyBundle,
   type SignerExpectation,
   type VerifiedBundle,
+  type VerifyBundleInput,
 } from './verify.js';
 import type { VersionRequest } from './version.js';
 
@@ -234,6 +235,61 @@ function ageMs(
   return now.getTime() - since;
 }
 
+/** What discovery needs: the project, who may sign for it, and how to reach the network. */
+export interface DiscoverRequest {
+  readonly project: Project;
+  readonly signer: SignerConfig;
+  readonly memory?: TrustMemory;
+  readonly listMemory?: ListMemory;
+  readonly fetcher: Fetcher;
+  readonly now: Date;
+  readonly trustedRoot?: string;
+  readonly endpoints?: GithubEndpoints;
+}
+
+export interface Discovered {
+  readonly discovery: Discovery;
+  /** Things worth telling the user, which resolution adds to. */
+  readonly notes: string[];
+  /** The verification settings, reused to verify a release's own bundle. */
+  readonly verifyOptions: Omit<VerifyBundleInput, 'bundle'>;
+}
+
+/**
+ * Find a project's releases, verifying its signed list if it has one. No
+ * release bundle is verified here: discovery is a hint until the bundle behind
+ * it checks out, and listing versions should not cost a download per version.
+ */
+export async function discoverReleases(
+  input: DiscoverRequest,
+): Promise<Discovered> {
+  const { project } = input;
+  const expectation = expectationFor(project, input.signer);
+  const notes: string[] = [];
+  const verifyOptions: Omit<VerifyBundleInput, 'bundle'> = {
+    expectation,
+    ...(input.trustedRoot !== undefined && { trustedRoot: input.trustedRoot }),
+    ...(input.signer.allowUnlogged !== undefined && {
+      allowUnlogged: input.signer.allowUnlogged,
+    }),
+  };
+  const verifyList = (bundle: Uint8Array): ReleaseList => {
+    const verified = verifyBundle({ bundle, ...verifyOptions });
+    const list = decodeReleaseList(parseCanonicalJson(verified.payload));
+    checkSigner(project, list.project, verified, input.memory, notes);
+    return list;
+  };
+  const discovery = await discover({
+    project,
+    fetcher: input.fetcher,
+    now: input.now,
+    verifyList,
+    ...(input.listMemory !== undefined && { memory: input.listMemory }),
+    ...(input.endpoints !== undefined && { endpoints: input.endpoints }),
+  });
+  return { discovery, notes, verifyOptions };
+}
+
 /**
  * Resolve a request to one verified release and the artifact to install.
  *
@@ -251,31 +307,7 @@ export async function resolveRelease(
   input: ResolveInput,
 ): Promise<ResolvedRelease> {
   const { project, request } = input;
-  const expectation = expectationFor(project, input.signer);
-  const notes: string[] = [];
-  const verifyOptions = {
-    expectation,
-    ...(input.trustedRoot !== undefined && { trustedRoot: input.trustedRoot }),
-    ...(input.signer.allowUnlogged !== undefined && {
-      allowUnlogged: input.signer.allowUnlogged,
-    }),
-  };
-
-  const verifyList = (bundle: Uint8Array): ReleaseList => {
-    const verified = verifyBundle({ bundle, ...verifyOptions });
-    const list = decodeReleaseList(parseCanonicalJson(verified.payload));
-    checkSigner(project, list.project, verified, input.memory, notes);
-    return list;
-  };
-
-  const discovery = await discover({
-    project,
-    fetcher: input.fetcher,
-    now: input.now,
-    verifyList,
-    ...(input.listMemory !== undefined && { memory: input.listMemory }),
-    ...(input.endpoints !== undefined && { endpoints: input.endpoints }),
-  });
+  const { discovery, notes, verifyOptions } = await discoverReleases(input);
   const recommendation = chooseRecommendation(
     discovery.signedLatest,
     discovery.githubLatest,

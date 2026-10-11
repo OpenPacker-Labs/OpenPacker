@@ -28,7 +28,11 @@ import {
   selectArtifact,
   verifyBundle,
 } from '../src/index.js';
-import { generateTestKey, signBundle, withPayload } from './support/sign.js';
+import {
+  generateTestKey,
+  signBundle,
+  withPayload,
+} from '@openpacker/packslip-testkit';
 
 const bin = process.env.PACKSLIP_ORACLE_BIN;
 const run = (args: string[], cwd?: string) =>

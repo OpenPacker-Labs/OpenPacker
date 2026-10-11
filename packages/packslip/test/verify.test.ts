@@ -12,7 +12,11 @@ import {
   verifyBundle,
   type KeylessExpectation,
 } from '../src/index.js';
-import { generateTestKey, signBundle, withPayload } from './support/sign.js';
+import {
+  generateTestKey,
+  signBundle,
+  withPayload,
+} from '@openpacker/packslip-testkit';
 
 const fixture = (path: string) =>
   readFileSync(new URL(`./fixtures/${path}`, import.meta.url));

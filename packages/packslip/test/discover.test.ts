@@ -7,14 +7,14 @@ import {
   verifyBundle,
   type Discovery,
 } from '../src/index.js';
-import { generateTestKey, type TestKey } from './support/sign.js';
+import { generateTestKey, type TestKey } from '@openpacker/packslip-testkit';
 import {
   FakeWeb,
   buildList,
   buildRelease,
   githubWorld,
   publish,
-} from './support/world.js';
+} from '@openpacker/packslip-testkit';
 
 let key: TestKey;
 let web: FakeWeb;

@@ -9,7 +9,7 @@ import {
   type ResolvedRelease,
   type TrustMemory,
 } from '../src/index.js';
-import { generateTestKey, type TestKey } from './support/sign.js';
+import { generateTestKey, type TestKey } from '@openpacker/packslip-testkit';
 import {
   FakeWeb,
   buildList,
@@ -17,7 +17,7 @@ import {
   githubWorld,
   publish,
   type BuildOptions,
-} from './support/world.js';
+} from '@openpacker/packslip-testkit';
 
 const NOW = new Date('2026-10-11T00:00:00Z');
 const host = detectHost({

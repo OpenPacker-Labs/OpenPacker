@@ -1,11 +1,22 @@
 import { createHash } from 'node:crypto';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTarGzip, packZip } from '@openpacker/project-io';
-import type { FetchRequest, FetchResponse, Fetcher } from '../../src/index.js';
 import { signBundle, type TestKey } from './sign.js';
 
+/** The shape of a packslip fetch, stated here so the testkit needs no dependency on packslip. */
+export interface FetchRequest {
+  readonly maxBytes: number;
+  readonly accept?: string;
+}
+
+export interface FetchResponse {
+  readonly status: number;
+  readonly bytes: Uint8Array;
+  readonly url: string;
+}
+
 /** A scripted network: URL to response, with every request recorded. */
-export class FakeWeb implements Fetcher {
+export class FakeWeb {
   readonly requests: string[] = [];
   readonly #routes = new Map<string, FetchResponse | (() => FetchResponse)>();
 
@@ -312,4 +323,20 @@ export function githubWorld(web: FakeWeb, repo: GithubRepo): void {
         release.release,
         `https://github.com/${repo.repo}/releases/download/${encodeURIComponent(release.tag)}/packslip.sigstore.json`,
       );
+}
+
+/**
+ * The same scripted network as a standard `fetch`, for code that is handed one
+ * (an adapter context, the opm CLI). Unknown URLs answer 404, and a body over
+ * the size a caller allowed is a failure, as it is for a real bounded client.
+ */
+export function fakeFetch(web: FakeWeb): typeof fetch {
+  return async (input) => {
+    const url = new URL(input instanceof Request ? input.url : input).href;
+    const response = await web.get(url, { maxBytes: Number.MAX_SAFE_INTEGER });
+    // A copy into a plain ArrayBuffer-backed view, which is what Response accepts.
+    return new Response(Uint8Array.from(response.bytes), {
+      status: response.status,
+    });
+  };
 }

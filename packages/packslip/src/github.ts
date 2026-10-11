@@ -161,12 +161,22 @@ export async function fetchGithubList(
   return response.bytes;
 }
 
+/** Where a release asset is downloaded from, built rather than read from an API reply. */
+export function githubAssetUrl(
+  project: Project,
+  tag: string,
+  name: string,
+  endpoints: GithubEndpoints = GITHUB_ENDPOINTS,
+): string {
+  return `${endpoints.web}/${repository(project)}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
+}
+
 export function githubBundleUrl(
   project: Project,
   tag: string,
   endpoints: GithubEndpoints = GITHUB_ENDPOINTS,
 ): string {
-  return `${endpoints.web}/${repository(project)}/releases/download/${encodeURIComponent(tag)}/${bundleFileName(project)}`;
+  return githubAssetUrl(project, tag, bundleFileName(project), endpoints);
 }
 
 /**

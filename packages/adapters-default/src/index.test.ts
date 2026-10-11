@@ -24,6 +24,7 @@ describe('default adapters', () => {
       'apt',
       'winget',
       'chocolatey',
+      'packslip',
     ])
       expect(types, expected).toContain(expected);
 
@@ -213,6 +214,12 @@ describe('default adapters', () => {
         'prex.registry.enumerate-versions/1',
         'prex.registry.artifact/1',
         'prex.registry.package-build/2',
+      ],
+      // Signed vendor releases: metadata and the verified archive, no search.
+      packslip: [
+        'prex.registry.package-metadata/1',
+        'prex.registry.enumerate-versions/1',
+        'prex.registry.artifact/1',
       ],
       // Install-only until catalog/environment exports are wired.
       nix: ['prex.registry.install/1', 'prex.registry.package-build/2'],

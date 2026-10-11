@@ -9,7 +9,7 @@ import {
   fetchArtifact,
   subjectFor,
 } from '../src/index.js';
-import { FakeWeb } from './support/world.js';
+import { FakeWeb } from '@openpacker/packslip-testkit';
 
 const bytes = Buffer.from('the signed bytes');
 const sha256 = createHash('sha256').update(bytes).digest('hex');
