@@ -193,11 +193,20 @@ export function assertEntryName(name: string): void {
   }
 }
 
-async function publishSharedEntry(input: {
+/**
+ * Make sure the shared store holds the package whose archive hashes to
+ * `digest`, extracting `bytes` if it does not, and return where it is.
+ *
+ * `seal: false` leaves the files writable. The shared store always seals; a
+ * private scratch store (a project that opted out of sharing) is only a place
+ * to extract into before linking, and what it links must stay editable.
+ */
+export async function publishSharedEntry(input: {
   sharedRoot: string;
   digest: string;
   format: ArchiveFormat;
   bytes: Uint8Array | (() => Promise<Uint8Array>);
+  seal?: boolean;
 }): Promise<{ path: string; treeDigest: string }> {
   const storeKey = storeKeyFromDigest(input.digest);
   const sharedPath = join(input.sharedRoot, storeKey);
@@ -216,7 +225,7 @@ async function publishSharedEntry(input: {
     try {
       await materializeArchive(bytes, input.format, input.digest, tmp);
       const treeDigest = await stableStoreTreeDigest(tmp);
-      await sealTreeReadOnly(tmp);
+      if (input.seal !== false) await sealTreeReadOnly(tmp);
       await recordTreeDigest(sharedPath, treeDigest);
       try {
         await rename(tmp, sharedPath);
@@ -239,6 +248,20 @@ async function publishSharedEntry(input: {
     'VERIFICATION_FAILED',
     `Shared store entry for ${input.digest} kept changing while it was published`,
   );
+}
+
+/**
+ * The entry for `digest` if the store has it and its tree still hashes to what
+ * was recorded; undefined if it is not there. A tree that does not match is an
+ * error, never a miss: it names the entry to remove.
+ */
+export async function adoptSharedEntry(
+  sharedRoot: string,
+  digest: string,
+): Promise<{ path: string; treeDigest: string } | undefined> {
+  const path = join(sharedRoot, storeKeyFromDigest(assertDigest(digest)));
+  const treeDigest = await adoptExistingEntry(path, digest);
+  return treeDigest === undefined ? undefined : { path, treeDigest };
 }
 
 /**
