@@ -79,6 +79,9 @@ export interface LayoutWriteOptions {
 /** Packages written at the same time within one depth of the tree. */
 const PARALLEL_PACKAGES = 4;
 
+/** Packages written at the same time within one depth of the tree. */
+const PARALLEL_PACKAGES = 4;
+
 export async function writeNodeModules(
   projectRoot: string,
   entries: readonly NativeLockEntry[],
