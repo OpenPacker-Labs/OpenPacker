@@ -281,7 +281,6 @@ export async function addPackage(input: {
   else if (input.source !== undefined) requirement.source = input.source;
 
   manifest.packages[alias] = requirement;
-  await writeManifestFile(paths.manifest, manifest);
 
   const offline = input.offline ?? manifest.options.offline;
   const lock = await resolveManifestToLock({
@@ -292,6 +291,9 @@ export async function addPackage(input: {
       catalogPaths: input.catalogPaths,
     }),
   });
+  // Only once the requirement has resolved. A refused or unsatisfiable add
+  // used to leave it in opm.toml, where every later install tripped over it.
+  await writeManifestFile(paths.manifest, manifest);
   await writeLockfile(paths.lock, lock);
 
   // The whole lock, not just the alias that was named: a package is not

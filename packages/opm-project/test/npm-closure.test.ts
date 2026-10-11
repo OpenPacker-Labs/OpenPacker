@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PolicyInput } from '@openpacker/contracts';
 import {
+  addPackage,
+  initProject,
   defaultHostEnvironment,
   defaultSupplyChainPolicyInput,
   resolveGraph,
@@ -576,5 +578,25 @@ describe('one version per package, and what happens when that cannot hold', () =
         /pkg:npm\/shared is needed at versions no single release satisfies.*the direct requirement requires 2\.0\.0.*pkg:npm\/app@1\.0\.0 requires \^1/su,
       ),
     });
+  });
+});
+
+describe('an add that does not resolve', () => {
+  it('leaves opm.toml as it was, so the next install does not trip over it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
+    try {
+      await initProject({ root, name: 'closure' });
+      const before = await readFile(join(root, 'opm.toml'), 'utf8');
+      await expect(
+        addPackage({
+          root,
+          spec: 'pkg:npm/not-in-any-catalog@1.0.0',
+          offline: true,
+        }),
+      ).rejects.toMatchObject({ code: 'UNRESOLVABLE' });
+      expect(await readFile(join(root, 'opm.toml'), 'utf8')).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
