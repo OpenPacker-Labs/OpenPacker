@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import {
   compareVersions,
+  LayoutTooLargeError,
   planLayout,
   toLayoutEntries,
   unsafeNameProblem,
@@ -247,6 +248,38 @@ describe('planLayout', () => {
     const forward = where(plan(...entries));
     const reversed = where(plan(...[...entries].reverse()));
     expect(reversed).toEqual(forward);
+  });
+});
+
+describe('planLayout limits', () => {
+  it('refuses a plan larger than the limit instead of building it', () => {
+    const entries = [
+      entry('a@1.0.0', { direct: true, requires: ['b@1.0.0', 'c@1.0.0'] }),
+      entry('b@1.0.0'),
+      entry('c@1.0.0'),
+    ];
+    expect(() =>
+      planLayout(toLayoutEntries(entries), { maximumPlacements: 2 }),
+    ).toThrow(LayoutTooLargeError);
+    expect(
+      planLayout(toLayoutEntries(entries), { maximumPlacements: 3 }).placements,
+    ).toHaveLength(3);
+  });
+
+  it('bounds a lock built to nest the same conflict under every dependent', () => {
+    // n dependents each need their own version of c, so c is placed n times.
+    const dependents = Array.from({ length: 40 }, (_, index) =>
+      entry(`d${index}@1.0.0`, {
+        direct: true,
+        requires: [`c@${index + 1}.0.0`],
+      }),
+    );
+    const versions = dependents.map((_, index) => entry(`c@${index + 1}.0.0`));
+    expect(() =>
+      planLayout(toLayoutEntries([...dependents, ...versions]), {
+        maximumPlacements: 50,
+      }),
+    ).toThrow(/refusing to write a layout that large/u);
   });
 });
 

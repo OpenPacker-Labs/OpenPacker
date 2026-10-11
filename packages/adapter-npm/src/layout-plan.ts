@@ -89,7 +89,18 @@ export function toLayoutEntries(
   return out;
 }
 
-export function planLayout(entries: readonly LayoutEntry[]): LayoutPlan {
+/**
+ * Most placements a plan may hold. A package that two dependents need at
+ * different versions is placed once per dependent, so a lock built to nest
+ * thousands of conflicting versions could otherwise ask for a tree of any size.
+ */
+export const MAXIMUM_PLACEMENTS = 50_000;
+
+export function planLayout(
+  entries: readonly LayoutEntry[],
+  options: { maximumPlacements?: number } = {},
+): LayoutPlan {
+  const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const skipped: LayoutSkip[] = [];
   const skippedIds = new Set<string>();
@@ -127,6 +138,8 @@ export function planLayout(entries: readonly LayoutEntry[]): LayoutPlan {
   const placedIds = new Set<string>();
   const queue: Node[] = [];
   const place = (parent: Node, entry: LayoutEntry): Node => {
+    if (placed.length >= maximumPlacements)
+      throw new LayoutTooLargeError(maximumPlacements);
     const node: Node = {
       entry,
       parent,
@@ -224,6 +237,16 @@ export function planLayout(entries: readonly LayoutEntry[]): LayoutPlan {
       ),
     skipped,
   };
+}
+
+export class LayoutTooLargeError extends Error {
+  readonly code = 'LAYOUT_TOO_LARGE';
+  constructor(limit: number) {
+    super(
+      `The lock needs more than ${limit} package directories in node_modules; refusing to write a layout that large`,
+    );
+    this.name = 'LayoutTooLargeError';
+  }
 }
 
 /** What Node finds for `name` from the directory this package lives in. */
