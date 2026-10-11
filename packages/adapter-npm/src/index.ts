@@ -1167,3 +1167,16 @@ export class NpmRegistryProvider implements CatalogProvider {
 }
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
+export {
+  chainOfLockPath,
+  findDuplicateJsonKey,
+  parsePackageLockText,
+  readPackageLock,
+  resolveFromChain,
+  MAXIMUM_LOCK_ENTRIES,
+  type LockEntry,
+  type LockForeignEntry,
+  type LockLink,
+  type LockRoot,
+  type PackageLockTree,
+} from './lock-tree.js';
