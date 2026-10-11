@@ -3,6 +3,12 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+export {
+  detectLibc,
+  detectNativeTarget,
+  evaluateTargetPredicate,
+  type NativeTarget,
+} from './host-target.js';
 import {
   canonicalProjectionDigest,
   formatDigest,
