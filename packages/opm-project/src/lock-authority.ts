@@ -22,6 +22,7 @@ const LOCK_PACKAGE_FIELDS = new Set([
   'sourceKind',
   'lifecycle',
   'nativeIntegrity',
+  'attestation',
 ]);
 
 export function lockPackageBinding(pkg: LockPackage): string {

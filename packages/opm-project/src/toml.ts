@@ -1,5 +1,5 @@
 import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
-import type { PolicyInput } from '@openpacker/contracts';
+import type { JsonValue, PolicyInput } from '@openpacker/contracts';
 import type {
   NativeProjectionLevel,
   OpmManifest,
@@ -10,7 +10,7 @@ import type {
   RequirementScope,
 } from './types.js';
 import { OpmError } from './types.js';
-import { assertDigest } from './paths.js';
+import { assertDigest, MANIFEST_NAME } from './paths.js';
 import { defaultSupplyChainPolicyInput } from './supply-chain.js';
 
 /**
@@ -126,6 +126,8 @@ export function serializeManifest(manifest: OpmManifest): string {
       );
     lines.push('');
   }
+
+  lines.push(...serializeAdapterSettings(manifest.adapterSettings));
 
   lines.push('[options]');
   lines.push(`offline = ${manifest.options.offline ? 'true' : 'false'}`);
@@ -317,6 +319,8 @@ export function parseManifest(text: string): OpmManifest {
       artifact_origin_extra_header_envs?: string[];
     }
   >();
+  let adapterTarget: AdapterTarget | undefined;
+  const adapterSettings: Record<string, Record<string, JsonValue>> = {};
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -361,6 +365,12 @@ export function parseManifest(text: string): OpmManifest {
         sandboxPackageId = rawKey.replace(/^"(.*)"$/u, '$1');
         if (!sandboxPackageScratch.has(sandboxPackageId))
           sandboxPackageScratch.set(sandboxPackageId, {});
+      } else if (name.startsWith('adapters.')) {
+        section = 'adapters';
+        adapterTarget = parseAdapterHeader(name, i + 1);
+        packageAlias = undefined;
+        sandboxPackageId = undefined;
+        adapterTableFor(adapterSettings, adapterTarget, i + 1);
       } else if (name.startsWith('registries.')) {
         section = 'registries';
         registryId = name.slice('registries.'.length);
@@ -456,6 +466,19 @@ export function parseManifest(text: string): OpmManifest {
           'INVALID_MANIFEST',
           `Unknown options field "${key}" at line ${i + 1}`,
         );
+    } else if (section === 'adapters') {
+      if (adapterTarget === undefined)
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Adapter setting outside [adapters.<ecosystem>] at line ${i + 1}`,
+        );
+      const table = adapterTableFor(adapterSettings, adapterTarget, i + 1);
+      if (Object.hasOwn(table, key))
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Duplicate adapter setting "${key}" at line ${i + 1}`,
+        );
+      table[key] = value;
     } else if (section === 'registries') {
       if (registryId === undefined)
         throw new OpmError(
@@ -723,6 +746,9 @@ export function parseManifest(text: string): OpmManifest {
     manifest.plugins = plugins;
   }
 
+  if (Object.keys(adapterSettings).length > 0)
+    manifest.adapterSettings = adapterSettings;
+
   if (hasPolicy) manifest.policy = policyFromScratch(policyScratch);
 
   if (hasSandbox || sandboxPackageScratch.size > 0) {
@@ -742,6 +768,130 @@ export function parseManifest(text: string): OpmManifest {
   }
 
   return manifest;
+}
+
+/**
+ * Where an `[adapters.…]` header points: an ecosystem's own settings, or one
+ * keyed entry of a table inside them (`[adapters.packslip.trust."github.com/a/b"]`).
+ */
+interface AdapterTarget {
+  ecosystem: string;
+  table?: string;
+  entry?: string;
+}
+
+const ADAPTER_ECOSYSTEM = /^[a-z][a-z0-9-]*$/u;
+const ADAPTER_TABLE = /^[a-z][a-z0-9_]*$/u;
+
+function parseAdapterHeader(name: string, line: number): AdapterTarget {
+  const rest = name.slice('adapters.'.length);
+  const quoted = /^([^.]+)\.([^.]+)\.("(?:[^"\\]|\\.)*")$/u.exec(rest);
+  const [ecosystem, table, entry] = quoted
+    ? [quoted[1] ?? '', quoted[2], quoted[3]]
+    : [rest, undefined, undefined];
+  if (!ADAPTER_ECOSYSTEM.test(ecosystem))
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Unsupported TOML section [${name}] at line ${line}`,
+    );
+  if (table === undefined || entry === undefined) return { ecosystem };
+  if (!ADAPTER_TABLE.test(table))
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Unsupported TOML section [${name}] at line ${line}`,
+    );
+  let key: unknown;
+  try {
+    key = JSON.parse(entry);
+  } catch {
+    key = undefined;
+  }
+  if (typeof key !== 'string' || key === '')
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Invalid adapter entry key in [${name}] at line ${line}`,
+    );
+  return { ecosystem, table, entry: key };
+}
+
+/** The mutable table a header's assignments land in, created on first use. */
+function adapterTableFor(
+  settings: Record<string, Record<string, JsonValue>>,
+  target: AdapterTarget,
+  line: number,
+): Record<string, JsonValue> {
+  const root = (settings[target.ecosystem] ??= {});
+  if (target.table === undefined || target.entry === undefined) return root;
+  const tables = (root[target.table] ??= {});
+  if (typeof tables !== 'object' || tables === null || Array.isArray(tables))
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Adapter setting "${target.table}" is both a value and a table at line ${line}`,
+    );
+  const entry = (tables[target.entry] ??= {});
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Adapter entry "${target.entry}" is not a table at line ${line}`,
+    );
+  return entry;
+}
+
+function isJsonTable(
+  value: JsonValue | undefined,
+): value is { readonly [key: string]: JsonValue } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function adapterValue(value: JsonValue, where: string): string {
+  if (typeof value === 'string') return tomlString(value);
+  if (typeof value === 'boolean' || typeof value === 'number')
+    return String(value);
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+    return tomlStringArray(value as string[]);
+  throw new OpmError(
+    'INVALID_MANIFEST',
+    `Adapter setting ${where} cannot be written to ${MANIFEST_NAME}: only strings, booleans, numbers and lists of strings are supported`,
+  );
+}
+
+function serializeAdapterSettings(
+  settings: OpmManifest['adapterSettings'],
+): string[] {
+  const lines: string[] = [];
+  for (const ecosystem of Object.keys(settings ?? {}).sort()) {
+    const root = settings?.[ecosystem] ?? {};
+    const scalars = Object.keys(root)
+      .sort()
+      .filter((key) => !isJsonTable(root[key]));
+    if (scalars.length > 0 || Object.keys(root).length === 0) {
+      lines.push(`[adapters.${ecosystem}]`);
+      for (const key of scalars)
+        lines.push(
+          `${key} = ${adapterValue(root[key] as JsonValue, `${ecosystem}.${key}`)}`,
+        );
+      lines.push('');
+    }
+    for (const table of Object.keys(root).sort()) {
+      const entries = root[table];
+      if (!isJsonTable(entries)) continue;
+      for (const entry of Object.keys(entries).sort()) {
+        const fields = entries[entry];
+        if (!isJsonTable(fields))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `Adapter setting ${ecosystem}.${table}.${entry} must be a table`,
+          );
+        lines.push(`[adapters.${ecosystem}.${table}.${JSON.stringify(entry)}]`);
+        for (const key of Object.keys(fields).sort())
+          lines.push(
+            `${key} = ${adapterValue(fields[key] as JsonValue, `${ecosystem}.${table}.${entry}.${key}`)}`,
+          );
+        lines.push('');
+      }
+    }
+  }
+  return lines;
 }
 
 /** Every field accepted under [policy], with the type it must have. */

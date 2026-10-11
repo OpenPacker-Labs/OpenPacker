@@ -1,0 +1,466 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  FakeWeb,
+  buildRelease,
+  fakeFetch,
+  generateTestKey,
+  githubWorld,
+  type BuildOptions,
+  type TestKey,
+} from '@openpacker/packslip-testkit';
+import {
+  initProject,
+  installFromLock,
+  parseLockfile,
+  parseManifest,
+  parsePackageSpec,
+  readLockfile,
+  resolveManifestToLock,
+  serializeLockfile,
+  updateProject,
+  writeManifestFile,
+  type OpmManifest,
+  type RegistryOptions,
+} from '../src/index.js';
+
+const PROJECT = 'github.com/acme/tool';
+const BASE = `pkg:packslip/${PROJECT}`;
+const NOW = '2026-10-11T00:00:00.000Z';
+const lookup = async () => [{ address: '140.82.112.3', family: 4 as const }];
+
+let key: TestKey;
+let web: FakeWeb;
+let network: ReturnType<typeof fakeFetch>;
+let root: string;
+const roots: string[] = [];
+
+function newWorld(): void {
+  web = new FakeWeb();
+  network = fakeFetch(web);
+}
+
+function publish(
+  versions: string[],
+  over: Partial<BuildOptions> = {},
+): ReturnType<typeof buildRelease>[] {
+  const built = versions.map((version) =>
+    buildRelease({
+      project: PROJECT,
+      version,
+      key,
+      baseUrl: `https://github.com/acme/tool/releases/download/v${version}`,
+      // No os or arch: the release fits whatever machine runs this test.
+      artifacts: [{}],
+      ...over,
+    }),
+  );
+  githubWorld(web, {
+    repo: 'acme/tool',
+    releases: built.map((release, index) => ({
+      tag: `v${versions[index]}`,
+      release,
+    })),
+  });
+  return built;
+}
+
+function manifestText(extra = '', version = '^1.0.0'): string {
+  return `
+[project]
+name = "demo"
+ecosystems = ["packslip"]
+
+[packages.tool]
+purl = "${BASE}"
+version = "${version}"
+
+[adapters.packslip]
+${extra}
+
+[adapters.packslip.trust."${PROJECT}"]
+public_key = "${key.publicKeyFile.split('\n').find((line) => !line.startsWith('untrusted'))}"
+allow_unlogged = true
+
+[options]
+offline = false
+layout = "opm"
+`;
+}
+
+const registryOptions = (): RegistryOptions => ({
+  fetch: network,
+  lookup,
+  now: () => NOW,
+});
+
+async function project(manifest: OpmManifest): Promise<void> {
+  await initProject({ root, name: 'demo' });
+  await writeManifestFile(join(root, 'opm.toml'), manifest);
+}
+
+beforeEach(async () => {
+  key = generateTestKey();
+  newWorld();
+  root = await mkdtemp(join(tmpdir(), 'opm-packslip-'));
+  roots.push(root);
+});
+
+afterEach(async () => {
+  await Promise.all(
+    roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+describe('a packslip-signed tool in an opm project', () => {
+  it('is resolved, verified and locked with what was checked', async () => {
+    publish(['1.0.0']);
+    const manifest = parseManifest(manifestText());
+    const lock = await resolveManifestToLock({
+      root,
+      manifest,
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+    const locked = lock.packages.tool;
+    expect(locked).toMatchObject({
+      purl: `${BASE}@1.0.0`,
+      version: '1.0.0',
+      ecosystem: 'packslip',
+      reason: 'direct',
+      format: 'tar+gzip',
+      mediaType: 'application/gzip',
+      source: expect.stringMatching(
+        /^https:\/\/github\.com\/acme\/tool\/releases\/download\/v1\.0\.0\/tool-1\.0\.0-.*\.tar\.gz$/u,
+      ),
+      registryId: 'urn:openpacker:registry:packslip',
+      sourceKind: 'registry',
+      trustLevel: 'registry-attested',
+      publishedAt: '2026-09-01T00:00:00Z',
+      bins: [{ name: 'tool', path: 'tool/bin/tool', interpreter: 'native' }],
+    });
+    expect(locked?.attestation).toMatchObject({
+      kind: 'packslip',
+      signerIdentity: key.keyId,
+      signedAtVerified: false,
+      evidence: ['packslip'],
+      advancing: ['list'],
+      record: {
+        project: PROJECT,
+        version: '1.0.0',
+        signer: { scheme: 'sigstore-key', identity: key.keyId },
+      },
+    });
+  });
+
+  it('writes a lock that reads back exactly', async () => {
+    publish(['1.0.0']);
+    const lock = await resolveManifestToLock({
+      root,
+      manifest: parseManifest(manifestText()),
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+    const again = parseLockfile(serializeLockfile(lock));
+    expect(again.packages.tool?.attestation).toEqual(
+      lock.packages.tool?.attestation,
+    );
+  });
+
+  it('installs the verified archive and its native executable', async () => {
+    publish(['1.0.0']);
+    const manifest = parseManifest(manifestText());
+    await project(manifest);
+    const lock = await resolveManifestToLock({
+      root,
+      manifest,
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+    const state = await installFromLock({
+      root,
+      lock,
+      offline: false,
+      ...(manifest.policy !== undefined && { policy: manifest.policy }),
+    });
+    const bin = state.packages.tool?.bins[0];
+    expect(bin).toMatchObject({ name: 'tool', interpreter: 'native' });
+    expect((await stat(bin?.target ?? '')).isFile()).toBe(true);
+    expect(await readFile(bin?.target ?? '', 'utf8')).toBe(
+      '#!/bin/sh\necho tool\n',
+    );
+  });
+
+  it('refuses a release when the project trusts a different key', async () => {
+    publish(['1.0.0']);
+    const other = generateTestKey();
+    const manifest = parseManifest(manifestText());
+    manifest.adapterSettings = {
+      packslip: {
+        trust: {
+          [PROJECT]: {
+            public_key: other.publicKeyFile,
+            allow_unlogged: true,
+          },
+        },
+      },
+    };
+    await expect(
+      resolveManifestToLock({
+        root,
+        manifest,
+        offline: false,
+        registryOptions: registryOptions(),
+      }),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_VERIFICATION_FAILED' });
+  });
+
+  it('refuses a misspelled trust setting instead of trusting no one quietly', async () => {
+    publish(['1.0.0']);
+    const manifest = parseManifest(manifestText());
+    manifest.adapterSettings = {
+      packslip: { trust: { [PROJECT]: { public_keys: key.publicKeyFile } } },
+    };
+    await expect(
+      resolveManifestToLock({
+        root,
+        manifest,
+        offline: false,
+        registryOptions: registryOptions(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PACKSLIP_INPUT',
+      message: expect.stringContaining('unknown key "public_keys"'),
+    });
+  });
+
+  it('is held to the default policy: a release that is too new waits', async () => {
+    // Published a moment before "now": the default 24h release-age gate holds.
+    publish(['1.0.0'], { publishedAt: new Date().toISOString() });
+    await expect(
+      resolveManifestToLock({
+        root,
+        manifest: parseManifest(manifestText()),
+        offline: false,
+        registryOptions: registryOptions(),
+      }),
+    ).rejects.toMatchObject({ code: expect.stringMatching(/^POLICY_/u) });
+  });
+
+  it('does not let a pinned key stand in for Sigstore evidence a policy asks for', async () => {
+    publish(['1.0.0']);
+    const manifest = parseManifest(manifestText());
+    await expect(
+      resolveManifestToLock({
+        root,
+        manifest: {
+          ...manifest,
+          policy: {
+            ...(manifest.policy ?? {
+              allowYanked: false,
+              allowQuarantined: false,
+              semanticLossMaximum: 'warning',
+              requiredEvidence: [],
+            }),
+            requiredEvidence: ['sigstore'],
+          },
+        },
+        offline: false,
+        registryOptions: registryOptions(),
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
+    // Asking only for what a packslip verification does prove is satisfied.
+    await expect(
+      resolveManifestToLock({
+        root,
+        manifest: {
+          ...manifest,
+          policy: {
+            ...(manifest.policy ?? {
+              allowYanked: false,
+              allowQuarantined: false,
+              semanticLossMaximum: 'warning',
+              requiredEvidence: [],
+            }),
+            requiredEvidence: ['packslip'],
+          },
+        },
+        offline: false,
+        registryOptions: registryOptions(),
+      }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('remembering who signed', () => {
+  /** A project locked at 1.0.0, the only release there is. */
+  async function lockedProject(): Promise<void> {
+    publish(['1.0.0']);
+    const manifest = parseManifest(manifestText());
+    await project(manifest);
+    const lock = await resolveManifestToLock({
+      root,
+      manifest,
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+    expect(lock.packages.tool?.version).toBe('1.0.0');
+    await writeFile(join(root, 'opm.lock.json'), serializeLockfile(lock));
+  }
+
+  /** The vendor ships 1.1.0, signed by `signer`, and the manifest trusts it. */
+  async function release110(signer: TestKey, approvals: string[] = []) {
+    key = signer;
+    newWorld();
+    publish(['1.0.0', '1.1.0']);
+    await writeManifestFile(
+      join(root, 'opm.toml'),
+      parseManifest(
+        manifestText(
+          approvals.length === 0
+            ? ''
+            : `approvals = [${approvals.map((id) => `"${id}"`).join(', ')}]`,
+        ),
+      ),
+    );
+  }
+
+  const update = () =>
+    updateProject({
+      root,
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+  const failure = (work: Promise<unknown>) =>
+    work.then(
+      () => undefined,
+      (caught: Error) => caught,
+    );
+
+  it('accepts the next release from the same signer', async () => {
+    await lockedProject();
+    await release110(key);
+    const result = await update();
+    expect(result.lock.packages.tool?.version).toBe('1.1.0');
+  });
+
+  it('stops at a signer that changed, and says exactly what to approve', async () => {
+    await lockedProject();
+    await release110(generateTestKey());
+    const error = await failure(update());
+    expect(error).toMatchObject({ code: 'TRUST_CHANGE_REQUIRES_APPROVAL' });
+    expect(error?.message).toMatch(/proposal [0-9a-f]{16}/u);
+    expect(error?.message).toContain('key');
+    // Nothing was written: the lock still says what it said.
+    const kept = await readLockfile(join(root, 'opm.lock.json'));
+    expect(kept?.packages.tool?.version).toBe('1.0.0');
+  });
+
+  it('accepts the change once a person approved that exact proposal', async () => {
+    await lockedProject();
+    const oldKeyId = key.keyId;
+    const rotated = generateTestKey();
+    await release110(rotated);
+    const refused = await failure(update());
+    const id = /proposal ([0-9a-f]{16})/u.exec(refused?.message ?? '')?.[1];
+    expect(id).toBeDefined();
+
+    await release110(rotated, [id ?? '']);
+    const result = await update();
+    expect(result.lock.packages.tool?.version).toBe('1.1.0');
+    expect(result.lock.packages.tool?.attestation?.signerIdentity).toBe(
+      rotated.keyId,
+    );
+    expect(rotated.keyId).not.toBe(oldKeyId);
+  });
+
+  it('does not take an approval for a different change', async () => {
+    await lockedProject();
+    await release110(generateTestKey(), ['0000000000000000']);
+    expect(await failure(update())).toMatchObject({
+      code: 'TRUST_CHANGE_REQUIRES_APPROVAL',
+    });
+  });
+
+  it('is not fooled by deleting the lock: the manifest, not the lock, says who to trust', async () => {
+    await lockedProject();
+    const rotated = generateTestKey();
+    await release110(rotated);
+    await rm(join(root, 'opm.lock.json'));
+    // With no history there is nothing to compare — but the manifest still
+    // trusts only the configured key, so only that signer is accepted.
+    const result = await update();
+    expect(result.lock.packages.tool?.attestation?.signerIdentity).toBe(
+      rotated.keyId,
+    );
+  });
+});
+
+describe('naming a packslip tool on the command line', () => {
+  it.each([
+    [
+      'packslip:github.com/jdx/hk',
+      { alias: 'hk', purl: 'pkg:packslip/github.com/jdx/hk' },
+    ],
+    [
+      'packslip:github.com/jdx/hk@2.5.0',
+      {
+        alias: 'hk',
+        purl: 'pkg:packslip/github.com/jdx/hk@2.5.0',
+        version: '2.5.0',
+      },
+    ],
+    [
+      'packslip:jdx/hk@2.5.0',
+      {
+        alias: 'hk',
+        purl: 'pkg:packslip/github.com/jdx/hk@2.5.0',
+        version: '2.5.0',
+      },
+    ],
+    [
+      'packslip:mise.jdx.dev',
+      { alias: 'mise', purl: 'pkg:packslip/mise.jdx.dev' },
+    ],
+    [
+      'pkg:packslip/github.com/jdx/hk@2.5.0',
+      {
+        alias: 'hk',
+        purl: 'pkg:packslip/github.com/jdx/hk@2.5.0',
+        version: '2.5.0',
+      },
+    ],
+  ])('reads %s', (spec, expected) => {
+    expect(parsePackageSpec(spec)).toMatchObject({
+      ...expected,
+      ecosystem: 'packslip',
+    });
+  });
+
+  it('lets the user choose the alias', () => {
+    expect(
+      parsePackageSpec('packslip:jdx/hk', { alias: 'formatter' }).alias,
+    ).toBe('formatter');
+  });
+
+  it.each([
+    ['nothing after the scheme', 'packslip:'],
+    ['a URL', 'packslip:https://github.com/jdx/hk'],
+    ['an empty path segment', 'packslip:github.com//hk'],
+    ['a path that climbs', 'packslip:github.com/../hk'],
+    ['an empty version', 'packslip:jdx/hk@'],
+    ['characters a project name cannot have', 'packslip:github.com/jdx/h k'],
+  ])('refuses %s', (_label, spec) => {
+    expect(() => parsePackageSpec(spec)).toThrow(
+      expect.objectContaining({ code: 'INVALID_SPEC' }),
+    );
+  });
+
+  it('refuses to be told it is another ecosystem', () => {
+    expect(() =>
+      parsePackageSpec('packslip:jdx/hk', { ecosystem: 'npm' }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_SPEC' }));
+  });
+});
