@@ -426,6 +426,15 @@ async function storeArchives(input: {
         format: inferFormat(pkg.source),
         bytes,
         seal: input.shared,
+      }).catch((error: unknown) => {
+        // The materializer refuses an unsafe archive in its own words; say whose.
+        throw error instanceof OpmError
+          ? error
+          : new OpmError(
+              'UNSAFE_PATH',
+              `${labelOf(pkg)} cannot be extracted: ${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
       });
       if (input.shared) await recordArchiveDigest(storeRoot, key, digest);
       return {
