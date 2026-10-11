@@ -11,6 +11,7 @@ import {
 } from './types.js';
 import {
   assertSafeSegment,
+  O_DIRECTORY,
   ensureStableDirectory,
   openChild,
   openStableDirectory,
@@ -854,7 +855,7 @@ export async function activateGeneration(input: {
       const handle = await openChild(
         store,
         basename(expected),
-        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
       ).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ELOOP')
           throw new OpmError(
