@@ -656,6 +656,38 @@ The same condition is an error when `CI` is set (other than `0` or `false`) or
 bindings. A toolchain that is present but fails, such as a `wasm-bindgen`
 version that does not match `Cargo.lock`, is an error in both modes.
 
+### `opm: internal error: fetch failed`
+
+An error opm did not expect, with no code of its own, is printed with its
+`cause` chain: up to three links, one line each, indented one level deeper per
+link. Node's `fetch` reports every network fault as `fetch failed` and keeps the
+reason on the cause:
+
+```text
+opm: internal error: fetch failed
+opm:   caused by: Error: connect ECONNREFUSED 127.0.0.1:34855
+opm: hint: HTTPS_PROXY is set, but Node's built-in fetch ignores proxy variables unless NODE_USE_ENV_PROXY=1 (Node 22.21+); retry with NODE_USE_ENV_PROXY=1
+```
+
+`opmx` prints the same lines without `internal error`. The exit code is
+unchanged (`9`). Everything printed is redacted: a URL keeps its origin and path
+and loses userinfo, query and fragment, and the value after a credential name
+(`token`, `authorization`, `password`, `api-key`, a bearer) is withheld. A
+failure opm named, such as `POLICY_DENIED` or `OFFLINE`, keeps its single line.
+
+The `hint:` line appears only when a cause is a connection fault
+(`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, an
+unreachable host or network, a refused proxy tunnel, a connect timeout), one of
+`HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY` or `http_proxy` is set, and
+`NODE_USE_ENV_PROXY` is not. Node's built-in `fetch`, which opm uses, ignores
+those variables unless `NODE_USE_ENV_PROXY=1` is set (Node 22.21 or later), so a
+proxied network fails here although `curl` and `npm` work. The hint names the
+variable and never prints its value, which can carry credentials.
+
+```sh
+NODE_USE_ENV_PROXY=1 opm add pkg:npm/is-odd
+```
+
 ---
 
 ## Related
