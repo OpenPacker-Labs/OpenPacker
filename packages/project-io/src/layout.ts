@@ -362,18 +362,14 @@ async function captureTree(
       continue;
     }
     if (!entry.isFile()) throw unsafe(path);
-    const file = await openChild(
-      directory,
-      entry.name,
-      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
-    );
-    try {
-      const info = await file.stat({ bigint: true });
-      if (!info.isFile()) throw unsafe(path);
-      out.set(path, snapshot('file', info));
-    } finally {
-      await file.close();
-    }
+    // The name is looked at, not followed: a link or anything but a regular
+    // file that took the place of a file since the listing is not a file here.
+    // One lstat through the directory handle says what opening the file and
+    // asking it would, at a third of the calls, and a snapshot is taken of
+    // every file of every package several times over.
+    const info = await lstatChild(directory, entry.name);
+    if (!info.isFile()) throw unsafe(path);
+    out.set(path, snapshot('file', info));
   }
   const after = await directory.stat({ bigint: true });
   if (!sameMetadata(before, after)) throw unsafe(at || '<directory handle>');
