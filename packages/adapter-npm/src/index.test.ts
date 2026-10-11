@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { FixtureHttpTransport } from '@openpacker/adapter-core';
+import { FixtureHttpTransport, ProviderError } from '@openpacker/adapter-core';
 import {
   NpmCodec,
   NpmRegistryProvider,
   classifyDependencySpec,
+  npmRangeVers,
   type NpmPackument,
   type NpmVersionMetadata,
 } from './index.js';
@@ -415,6 +416,212 @@ describe('libc from the version document', () => {
     ]);
     expect(inspected.package.nativeSemantics?.data).toMatchObject({
       targetPredicate: { type: 'allOf' },
+    });
+  });
+});
+
+describe('publish time evidence', () => {
+  const url = 'https://fixtures.test/demo';
+  const versions = {
+    '1.0.0': { name: 'demo', version: '1.0.0' },
+    '1.1.0': { name: 'demo', version: '1.1.0' },
+  };
+  const time = {
+    created: '2026-01-01T00:00:00.000Z',
+    '1.0.0': '2026-01-02T03:04:05.000Z',
+    '1.1.0': '2026-02-03T04:05:06.000Z',
+  };
+  const abbreviated = (modified: string, withTime = false) => ({
+    name: 'demo',
+    modified,
+    versions,
+    ...(withTime && { time }),
+  });
+  const full = {
+    name: 'demo',
+    modified: '2026-03-01T00:00:00.000Z',
+    versions,
+    time,
+  };
+  const bytes = (value: unknown) => encoder.encode(JSON.stringify(value));
+
+  /** One URL, two document shapes, told apart by `accept` as npmjs.org does. */
+  function registry(options: { abbreviated: unknown; full?: unknown }): {
+    provider: NpmRegistryProvider;
+    accepts: (string | undefined)[];
+  } {
+    const accepts: (string | undefined)[] = [];
+    const transport = {
+      async request(request: {
+        url: string;
+        headers?: Readonly<Record<string, string>>;
+      }) {
+        accepts.push(request.headers?.accept);
+        const isAbbreviated =
+          request.headers?.accept?.includes('vnd.npm.install-v1') === true;
+        const document = isAbbreviated ? options.abbreviated : options.full;
+        if (document === undefined)
+          throw new ProviderError('UPSTREAM_ERROR', 'no full document here');
+        return {
+          status: 200,
+          headers: {},
+          body: bytes(document),
+          url: request.url,
+        };
+      },
+    };
+    return {
+      provider: new NpmRegistryProvider(
+        transport,
+        { now: () => '2026-08-02T00:00:00Z' },
+        'https://fixtures.test',
+      ),
+      accepts,
+    };
+  }
+
+  const settledBefore = '2026-07-01T00:00:00.000Z';
+
+  it('takes the time from the abbreviated document when a registry supplies it', async () => {
+    const { provider, accepts } = registry({
+      abbreviated: abbreviated('2026-07-30T00:00:00.000Z', true),
+    });
+    expect(
+      await provider.publishTime('pkg:npm/demo@1.1.0', { settledBefore }),
+    ).toEqual({
+      publishedAt: '2026-02-03T04:05:06.000Z',
+      source: 'packument-time',
+    });
+    expect(accepts).toHaveLength(1);
+  });
+
+  it('settles from `modified` alone, with no request beyond the packument', async () => {
+    const { provider, accepts } = registry({
+      abbreviated: abbreviated('2026-02-10T00:00:00.000Z'),
+    });
+    // The document has not changed since 2026-02-10, so no version in it was
+    // published after that, and that is before the cutoff.
+    expect(
+      await provider.publishTime('pkg:npm/demo@1.0.0', { settledBefore }),
+    ).toEqual({
+      publishedNoLaterThan: '2026-02-10T00:00:00.000Z',
+      source: 'packument-modified',
+    });
+    expect(accepts).toEqual(['application/vnd.npm.install-v1+json']);
+  });
+
+  it('reads the full document for a package changed since the cutoff, once', async () => {
+    const { provider, accepts } = registry({
+      abbreviated: abbreviated('2026-07-30T00:00:00.000Z'),
+      full,
+    });
+    expect(
+      await provider.publishTime('pkg:npm/demo@1.0.0', { settledBefore }),
+    ).toEqual({
+      publishedAt: '2026-01-02T03:04:05.000Z',
+      source: 'full-packument',
+    });
+    expect(
+      (await provider.publishTime('pkg:npm/demo@1.1.0', { settledBefore }))
+        ?.publishedAt,
+    ).toBe('2026-02-03T04:05:06.000Z');
+    expect(
+      accepts.filter((accept) => accept === 'application/json'),
+    ).toHaveLength(1);
+  });
+
+  it('wants the exact time when it is not told what would be enough', async () => {
+    const { provider } = registry({
+      abbreviated: abbreviated('2026-02-10T00:00:00.000Z'),
+      full,
+    });
+    expect(await provider.publishTime('pkg:npm/demo@1.0.0')).toMatchObject({
+      publishedAt: '2026-01-02T03:04:05.000Z',
+      source: 'full-packument',
+    });
+  });
+
+  it('says nothing rather than guess when the exact time cannot be had', async () => {
+    const { provider } = registry({
+      abbreviated: abbreviated('2026-07-30T00:00:00.000Z'),
+    });
+    expect(
+      await provider.publishTime('pkg:npm/demo@1.0.0', { settledBefore }),
+    ).toBeUndefined();
+  });
+
+  it('ignores a time that is not a timestamp', async () => {
+    const { provider } = registry({
+      abbreviated: abbreviated('not a date'),
+      full: { ...full, time: { '1.0.0': 'yesterday' } },
+    });
+    expect(
+      await provider.publishTime('pkg:npm/demo@1.0.0', { settledBefore }),
+    ).toBeUndefined();
+  });
+
+  it('uses the packument URL for the full document, so origin rules still apply', async () => {
+    const seen: string[] = [];
+    const provider = new NpmRegistryProvider(
+      {
+        async request(request: { url: string }) {
+          seen.push(request.url);
+          return {
+            status: 200,
+            headers: {},
+            body: bytes(full),
+            url: request.url,
+          };
+        },
+      },
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    await provider.publishTime('pkg:npm/demo@1.0.0', {
+      settledBefore: '2026-01-01T00:00:00.000Z',
+    });
+    expect(new Set(seen)).toEqual(new Set([url]));
+  });
+});
+
+describe('ranges the solver can enforce', () => {
+  const vers = (range: string) =>
+    npmRangeVers(new NpmCodec().parseNativeRange(range).ast);
+
+  it.each([
+    ['^2.9.0', 'vers:npm/>=2.9.0|<3.0.0'],
+    ['~1.2.3', 'vers:npm/>=1.2.3|<1.3.0'],
+    ['>=1 <2', 'vers:npm/>=1.0.0|<2.0.0'],
+    ['^1 || ^2', 'vers:npm/>=1.0.0|<2.0.0||>=2.0.0|<3.0.0'],
+    ['1.2.3', 'vers:npm/=1.2.3'],
+  ])('renders %s as %s', (range, expected) => {
+    expect(vers(range)).toBe(expected);
+  });
+
+  it.each(['*', '', '^1 || *'])('leaves %j unconstrained', (range) => {
+    expect(vers(range)).toBeUndefined();
+  });
+
+  it('puts the constraint on the requirement, and says it is a superset', async () => {
+    // Before this a caret range reached the solver as "any version".
+    const { instance } = await new NpmCodec().translateMetadata(
+      // SAFETY: a literal that carries the fields under test.
+      {
+        name: 'demo',
+        version: '1.0.0',
+        dependencies: { tinybench: '^2.9.0' },
+      } as NpmVersionMetadata,
+      provenance,
+    );
+    const [requirement] = instance.requirements;
+    expect(requirement!.expression).toMatchObject({
+      purl: 'pkg:npm/tinybench',
+      vers: 'vers:npm/>=2.9.0|<3.0.0',
+    });
+    expect(requirement!.semanticLoss[0]).toMatchObject({
+      code: 'NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE',
+      severity: 'warning',
+      representedMeaning: expect.stringContaining('superset'),
     });
   });
 });

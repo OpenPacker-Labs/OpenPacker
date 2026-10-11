@@ -37,6 +37,7 @@ import {
   type NativeCoordinate,
   type ParsedRange,
   type ParsedVersion,
+  type RangeAst,
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
@@ -107,6 +108,9 @@ export interface NpmPackageLockV3 {
     }
   >;
 }
+
+const isTimestamp = (value: unknown): value is string =>
+  typeof value === 'string' && Number.isFinite(Date.parse(value));
 
 const npmName = (namespace: string | undefined, name: string): string =>
   namespace === undefined ? name : `@${namespace.replace(/^@/, '')}/${name}`;
@@ -202,6 +206,39 @@ export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
   }
 }
 
+/**
+ * The comparison form of an npm range, for the solver to enforce.
+ *
+ * `parseNativeRange` offers a VERS only for an exact version, so every `^`,
+ * `~`, `>=` or `||` range reached the solver as "any version of this package".
+ * With one edge per package that went unseen, because the walk only admits
+ * versions that satisfy some edge's range; with two edges that need different
+ * ranges the solver took the newest of the union for both, and a lock could pair
+ * a package with a version it does not accept. Ranges are a union of
+ * conjunctions of comparisons, which is what this dialect of VERS says with
+ * `|` (and) and `||` (or). `*` constrains nothing.
+ *
+ * It is a superset, not an equal: a comparison form admits a prerelease of a
+ * higher version that npm's `^2.9.0` excludes. The solve's answer is therefore
+ * re-checked edge by edge against the native range (see `solveGraph`).
+ */
+export function npmRangeVers(ast: RangeAst): string | undefined {
+  const alternatives = ast.type === 'or' ? ast.items : [ast];
+  const rendered: string[] = [];
+  for (const alternative of alternatives) {
+    if (alternative.type === 'any') return undefined;
+    const clauses =
+      alternative.type === 'and' ? alternative.items : [alternative];
+    const parts: string[] = [];
+    for (const clause of clauses) {
+      if (clause.type !== 'comparison') return undefined;
+      parts.push(`${clause.operator}${clause.version}`);
+    }
+    rendered.push(parts.join('|'));
+  }
+  return rendered.length === 0 ? undefined : `vers:npm/${rendered.join('||')}`;
+}
+
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
   return formatPurl({
@@ -264,13 +301,14 @@ function npmRequirement(
     };
   }
   const parsed = new NpmCodec().parseNativeRange(range);
+  const vers = parsed.vers ?? npmRangeVers(parsed.ast);
   return {
     id: `${dependerNodeId}:${kind}:${name}`,
     dependerNodeId,
     expression: {
       type: 'package',
       purl: npmPackagePurl(name),
-      ...(!(parsed.vers === undefined) && { vers: parsed.vers }),
+      ...(!(vers === undefined) && { vers }),
     },
     kind,
     optional,
@@ -281,7 +319,15 @@ function npmRequirement(
       version: 'npm-v1',
       data: { dependencyField, range },
     },
-    semanticLoss: [...parsed.semanticLoss],
+    semanticLoss: parsed.semanticLoss.map((loss) =>
+      vers === undefined || parsed.vers !== undefined
+        ? loss
+        : {
+            ...loss,
+            representedMeaning:
+              'A comparison form that is a superset of the range: it also admits prereleases npm would exclude. The native range is re-checked after the solve',
+          },
+    ),
   };
 }
 
@@ -670,6 +716,29 @@ export class NpmCodec
   }
 }
 
+/**
+ * What the registry establishes about when a version was published.
+ *
+ * The abbreviated packument carries no per-version times, and the full one is
+ * large (`vite`: 39 MB, 4.6 MB gzipped; the 44 packages of vitest's closure:
+ * 54 MB against 8.7 MB abbreviated), so the evidence comes in the cheapest form
+ * that settles the question asked.
+ */
+export interface PublishTimeEvidence {
+  /** The registry's recorded publish time of exactly this version. */
+  publishedAt?: string;
+  /**
+   * No version of the package was published later than this: the registry last
+   * changed the document then, and publishing a version changes it. Not the
+   * publish time, and never presented as one.
+   */
+  publishedNoLaterThan?: string;
+  source: 'packument-time' | 'packument-modified' | 'full-packument';
+}
+
+/** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
+const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
+
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
   readonly capabilities: ProviderCapabilities = {
@@ -681,6 +750,10 @@ export class NpmRegistryProvider implements CatalogProvider {
     extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
   readonly #records = new Map<string, ProviderRecord<NpmPackument>>();
+  readonly #times = new Map<
+    string,
+    Promise<Record<string, string> | undefined>
+  >();
   readonly #libc = new Map<
     string,
     Promise<{ libc?: string[]; reason: string }>
@@ -768,6 +841,69 @@ export class NpmRegistryProvider implements CatalogProvider {
       translated.instance.identity,
     );
     return { package: translated.instance, record, warnings };
+  }
+
+  /**
+   * Publish-time evidence for one version, from the cheapest source that
+   * settles what the caller needs.
+   *
+   * In order: the packument's own `time` if the registry supplies it in the
+   * abbreviated document (no extra bytes). Then, if `settledBefore` is given,
+   * the document's `modified` stamp: when the registry last changed the
+   * document is an upper bound on every version's publish time, so a package
+   * not touched since before `settledBefore` was published before it, with no
+   * request at all. Otherwise the full packument's `time` for this version,
+   * which is the only exact source the registry offers and the expensive one,
+   * paid only for a package that changed recently. A package whose time cannot
+   * be had yields `undefined`, and the policy then says it was not provided.
+   */
+  async publishTime(
+    exactPurl: string,
+    needed: { settledBefore?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<PublishTimeEvidence | undefined> {
+    const parsed = parsePurl(this.codec.canonicalizePurl(exactPurl));
+    if (!parsed.version) return undefined;
+    const base = formatPurl({ ...parsed, version: undefined });
+    const record = await this.packument(base, signal);
+    const listed = record.body.time?.[parsed.version];
+    if (isTimestamp(listed))
+      return { publishedAt: listed, source: 'packument-time' };
+    const modified = record.body.modified;
+    if (
+      needed.settledBefore !== undefined &&
+      isTimestamp(modified) &&
+      Date.parse(modified) <= Date.parse(needed.settledBefore)
+    )
+      return { publishedNoLaterThan: modified, source: 'packument-modified' };
+    let pending = this.#times.get(base);
+    if (pending === undefined) {
+      pending = this.fetchFullTimes(parsed, signal);
+      this.#times.set(base, pending);
+    }
+    const times = await pending;
+    const exact = times?.[parsed.version];
+    return isTimestamp(exact)
+      ? { publishedAt: exact, source: 'full-packument' }
+      : undefined;
+  }
+
+  private async fetchFullTimes(
+    parsed: ReturnType<typeof parsePurl>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, string> | undefined> {
+    try {
+      const response = await this.transport.request({
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
+        signal,
+        maximumBytes: FULL_PACKUMENT_LIMIT,
+        headers: { accept: 'application/json' },
+      });
+      return json<{ time?: Record<string, string> }>(response).time;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return undefined;
+    }
   }
 
   async fetchArtifactRecord(
