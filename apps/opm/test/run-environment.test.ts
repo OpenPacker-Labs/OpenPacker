@@ -153,6 +153,20 @@ describe('opm --help', () => {
     expect(cap.out).toMatch(/never run/u);
   });
 
+  it('does not print the environment', async () => {
+    const previous = process.env.OPM_TEST_SECRET;
+    process.env.OPM_TEST_SECRET = MARKER;
+    try {
+      const cap = capture();
+      await runOpm(['--help'], cap.io, process.cwd());
+      await runOpm(['run', '--help'], cap.io, process.cwd());
+      expect(cap.out + cap.err).not.toContain(MARKER);
+    } finally {
+      if (previous === undefined) delete process.env.OPM_TEST_SECRET;
+      else process.env.OPM_TEST_SECRET = previous;
+    }
+  });
+
   it('shows the same text for opm run --help', async () => {
     const cap = capture();
     expect(await runOpm(['run', '--help'], cap.io, process.cwd())).toBe(0);
