@@ -75,6 +75,13 @@ jobs:
         # its struct layouts and errno values against Node and Linux.
         if: runner.os == 'macOS'
         run: npm run test -w @openpacker/project-io -- src/handle-darwin.test.ts
+      - name: Handle-relative I/O against the real NT API (Windows)
+        # Windows has no procfs, so child I/O is NtCreateFile with the parent
+        # handle as RootDirectory, through koffi. The unit tests run this
+        # path nowhere else.
+        if: runner.os == 'Windows'
+        run:
+          npm run test -w @openpacker/project-io -- src/handle-windows.test.ts
       - name: Pack publishable packages
         # bash on every runner, and the directory first: npm does not create a
         # --pack-destination, and fails with ENOENT when it is missing.
