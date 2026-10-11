@@ -43,6 +43,14 @@ import { promisify } from 'node:util';
  */
 export const O_DIRECTORY: number = constants.O_DIRECTORY ?? 0x0020_0000;
 
+/**
+ * Internal to the NT backend: open whatever the name is, file or directory.
+ * Statting, renaming and deleting a child do not know its kind, and asking NT
+ * for one kind fails on the other (EISDIR for a directory opened as a file).
+ * Not exported, so no caller can set it.
+ */
+const ANY_KIND = 0x0040_0000;
+
 export class StableHandleError extends Error {
   readonly code = 'UNSAFE_PATH';
 
@@ -179,7 +187,7 @@ export async function lstatChild(
     const handle = await windowsOpenChild(
       parent,
       name,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
     );
     try {
       return await handle.stat({ bigint: true });
@@ -515,7 +523,8 @@ function windowsOpenChild(
       : FILE_OPEN_IF
     : FILE_OPEN;
   let options = FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT;
-  options |= directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE;
+  if ((flags & ANY_KIND) === 0)
+    options |= directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE;
   const status = api.NtCreateFile(
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     ...([
@@ -552,7 +561,7 @@ async function windowsRenameChild(
   const source = await windowsOpenChild(
     parent,
     from,
-    constants.O_RDONLY | constants.O_NOFOLLOW,
+    constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
     undefined,
     DELETE,
   );
@@ -621,7 +630,7 @@ async function windowsRemoveChild(
     const handle = await windowsOpenChild(
       parent,
       name,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
       undefined,
       DELETE,
     );

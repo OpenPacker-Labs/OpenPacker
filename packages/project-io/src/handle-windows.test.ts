@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { mkdtemp, open, rm } from 'node:fs/promises';
 import { writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, parse } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -50,21 +50,19 @@ describe.skipIf(process.platform !== 'win32')(
       await rm(base, { recursive: true, force: true });
     });
 
-    it('opens an existing child directory of a volume root', async () => {
-      const root = parse(base).root;
-      trace(`open the volume root: ${root}`);
-      const volume = await open(root, constants.O_RDONLY);
+    it('opens an existing child directory of an open directory', async () => {
+      const parent = await open(dirname(base), constants.O_RDONLY);
       try {
-        trace('openChild(root, Windows) is the first NT call');
-        const windows = await openChild(
-          volume,
-          'Windows',
+        trace(`openChild(${basename(base)}) is the first NT call`);
+        const child = await openChild(
+          parent,
+          basename(base),
           constants.O_RDONLY | O_DIRECTORY,
         );
         trace('openChild returned a handle');
-        await windows.close();
+        await child.close();
       } finally {
-        await volume.close();
+        await parent.close();
       }
     });
 
@@ -100,6 +98,21 @@ describe.skipIf(process.platform !== 'win32')(
       trace('removeChild directory');
       await removeChild(dir, 'sub', { recursive: true });
       expect(await readDirChild(dir)).toEqual([]);
+    });
+
+    it('refuses a file where a directory was asked for', async () => {
+      trace('create a plain file, then open it as a directory');
+      const plain = await openChild(
+        dir,
+        'plain',
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+        0o644,
+      );
+      await plain.close();
+      await expect(
+        openChild(dir, 'plain', constants.O_RDONLY | O_DIRECTORY),
+      ).rejects.toMatchObject({ code: 'ENOTDIR' });
+      await removeChild(dir, 'plain', {});
     });
 
     it('refuses a name that would leave the directory', async () => {
