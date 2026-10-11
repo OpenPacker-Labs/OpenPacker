@@ -102,6 +102,7 @@ const COMMANDS = new Set([
   'pack',
   'publish',
   'yank',
+  'packslip',
   'plugin',
   'auth',
   'system',
@@ -332,6 +333,10 @@ export async function runOpm(
       case 'yank': {
         const { runYankCommand } = await import('./commands/yank.js');
         return await runYankCommand(args, io, cwd);
+      }
+      case 'packslip': {
+        const { runPackslipCommand } = await import('./commands/packslip.js');
+        return await runPackslipCommand(args, io, cwd);
       }
       case 'list': {
         const root = await requireOpmRoot(cwd);
@@ -647,7 +652,8 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
   return switchGeneration({ root, target: target.generationDigest });
 }
 
-function handleError(error: unknown, io: CliIo): number {
+/** Report a failure and choose the exit code that tells a script what kind it was. */
+export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.stderr.write(`${error.message}\n`);
     return EXIT_CODES.usage;
@@ -713,16 +719,28 @@ function handleError(error: unknown, io: CliIo): number {
           return EXIT_CODES.unavailable;
         case 'PACKAGE_NOT_FOUND':
         case 'ARTIFACT_NOT_FOUND':
+        case 'VERSION_NOT_FOUND':
         case 'PLUGIN_NOT_INSTALLED':
           return EXIT_CODES.notFound;
         case 'DIGEST_MISMATCH':
         case 'SIZE_MISMATCH':
+        // A signed release whose signature, signer, or metadata does not hold
+        // is a verification failure, the same as bytes that do not hash.
+        case 'SIGNATURE_VERIFICATION_FAILED':
+        case 'INVALID_PROVIDER_METADATA':
           return EXIT_CODES.verificationFailed;
         case 'INVALID_PURL':
         case 'UNSUPPORTED_OPERATION':
+        case 'INVALID_PACKSLIP_INPUT':
           return EXIT_CODES.invalidInput;
         case 'UNRESOLVABLE':
+        // Nothing wrong with the release, but nothing in it fits this machine.
+        case 'HOST_INCOMPATIBLE':
           return EXIT_CODES.unsatisfiable;
+        // A signer that changed is a decision for a person, not a failure.
+        case 'TRUST_CHANGE_REQUIRES_APPROVAL':
+        case 'ARTIFACT_TOO_LARGE':
+          return EXIT_CODES.policyDenied;
         default:
           return EXIT_CODES.internal;
       }
@@ -1074,6 +1092,7 @@ function registryEcosystem(args: Parsed, target: string): string {
     const type = target.slice(4).split('/')[0]?.toLowerCase();
     if (type) return type;
   }
+  if (target.startsWith('packslip:')) return 'packslip';
   const ecosystems = registryEcosystems().join('|') || 'npm|cargo|…';
   throw usage(
     `Cannot tell which registry "${target}" belongs to. ` +
@@ -1095,6 +1114,19 @@ Usage:
   opm update [alias...] [--latest] [--offline|--online]
   opm list
   opm why <alias>
+
+Signed vendor releases (packslip — https://packslip.dev):
+  opm add packslip:github.com/jdx/hk[@version]    (or packslip:jdx/hk)
+  opm packslip verify <spec>                      who signed it; installs nothing
+  opm packslip pin <spec> [--write]               hold a keyless project to its signer
+  opm packslip approve <proposal-id>              accept one reported signer change
+  Trust lives in opm.toml, never in the lock:
+    [adapters.packslip.trust."github.com/jdx/hk"]  pin = ["ps1_…"]  (keyless)
+    [adapters.packslip.trust."example.com/tool"]   public_key = "RW…"  (key-signed)
+  A changed signer stops the resolve and prints a proposal id; nothing is
+  accepted until a person approves exactly that change.
+  OPM_PACKSLIP_GITHUB_TOKEN_ENV names the variable holding a GitHub token;
+  OPM_PACKSLIP_TRUSTED_ROOT points at a Sigstore trusted_root.json.
 
 Browse registries (no project needed):
   opm search <query|purl> [--ecosystem|-e <eco>]

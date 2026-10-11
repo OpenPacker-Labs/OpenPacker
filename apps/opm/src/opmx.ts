@@ -15,6 +15,7 @@ import {
   selectToolBin,
   runSandboxedPackageProcess,
   readManifestFile,
+  parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
 
@@ -76,6 +77,9 @@ export async function runOpmx(
     // --plugin, a bare tool name means the plugin's purl type; that is only
     // unambiguous when the named plugins declare exactly one.
     let requested = packageAlias ?? positionals[0];
+    // `packslip:jdx/hk` is a spelling of a PURL, like any other.
+    if (requested?.startsWith('packslip:'))
+      requested = parsePackageSpec(requested).purl;
     if (
       requested !== undefined &&
       !requested.startsWith('pkg:') &&
