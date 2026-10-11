@@ -894,6 +894,28 @@ export async function resolveGraph(input: {
           reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
         });
     }
+    if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
+      unresolved.push({
+        purl: item.purl,
+        reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
+      });
+  }
+
+  // An optional dependency that was admitted is installed, so the edge to it
+  // is a requirement of the solve. One whose every candidate was left out stays
+  // optional and the solve ignores it, as npm does.
+  for (const edge of optionalEdges) {
+    const codec = codecFor(edge.ecosystem);
+    const admittedCandidate = packages.some((instance) => {
+      if (instance.identity.canonicalPurl !== edge.base) return false;
+      if (edge.range === undefined) return true;
+      try {
+        return codec.satisfies(instance.nativeVersion, edge.range);
+      } catch {
+        return true;
+      }
+    });
+    if (admittedCandidate) edge.requirement.optional = false;
   }
 
   // A dist-tag on an alias is the version the registry said it pointed at, for
