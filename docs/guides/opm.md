@@ -485,6 +485,8 @@ their verifier evidence can be independently replayed.
 | `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`. |
 | `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                      |
 | `opm why <alias>`                        | Why a package is present                                                                                                                                          |
+| `opm run [script] [-- args]`             | Run a `package.json` script (pre/post hooks, exit code passed through). Not sandboxed.                                                                            |
+| `opm exec <bin> [-- args]`               | Run an executable from `node_modules/.bin`. Never fetches, never searches PATH. Not sandboxed.                                                                    |
 | `opm search <query>`                     | Candidate packages in a registry                                                                                                                                  |
 | `opm versions <purl>`                    | Every published version, oldest first                                                                                                                             |
 | `opm info <exact-purl>`                  | Digest, size, media type, download URL                                                                                                                            |
@@ -558,6 +560,82 @@ composes with a shell rather than replacing one:
 eval "$(opm shell)"
 opm shell --json   # for tooling
 ```
+
+### Running scripts and executables (`opm run`, `opm exec`)
+
+With `native_projection = "layout"` (above) `node_modules/.bin` holds the
+executables of the packages you added, and these two commands start them. They
+exist so that a repository's `vitest run`, `tsc -b` and `vite build` can be
+written in terms of `opm`
+([ADR 0047](../adr/0047-opm-run-and-exec-run-the-users-own-scripts.md)).
+
+```sh
+opm run                       # list the scripts of package.json
+opm run test                  # pretest, test, posttest, in that order
+opm run test -- --watch       # arguments after -- are appended to `test` only
+opm run lint --if-present     # succeed quietly when there is no `lint`
+opm run build --path ./site   # the package.json in ./site, exactly
+opm exec vitest --version     # node_modules/.bin/vitest, never a download
+opm exec tsc -- -b            # a lone -- right after the bin is dropped
+```
+
+`run` reads the `package.json` at the opm project root (the nearest directory at
+or above where you are that holds an `opm.toml`; where you are when there is
+none) and starts each script with that directory as its working directory.
+`exec` looks for the bin in `node_modules/.bin` of that root and of each parent
+directory, nearest first, and runs it where you are. It does not search `PATH`
+and takes a name, never a path. Everything after the bin name goes to the bin,
+so `opm exec vitest --help` is vitest's help.
+
+What they set up for the child:
+
+- `PATH` starts with those `.bin` directories, then your own `PATH`.
+- Your environment is inherited. Four names are set and nothing else:
+  `npm_lifecycle_event` (`pretest` while the hook runs, `exec` for `exec`),
+  `npm_package_name`, `npm_package_version` and `INIT_CWD` (where `opm` was
+  started; an outer value is kept).
+- Stdin, stdout and stderr are yours. No banner is printed.
+- The exit status is the child's, exactly: a script that exits 7 makes `opm`
+  exit 7, and a child ended by a signal gives 128 plus its number. A failing
+  step also prints one line starting `opm:` to stderr that names it, and a
+  failing `pretest` stops `test`.
+- `SIGINT`, `SIGTERM` and `SIGHUP` sent to `opm` are forwarded to the child;
+  with no terminal attached, to the child's whole process group.
+
+If the bin is missing, `opm exec` says so and says which locked package would
+provide it, then what to change:
+
+```text
+$ opm exec vitest
+opm: "vitest" is not in node_modules/.bin of /work/app or any parent directory; exec never fetches or searches PATH
+The lock would provide it through:
+  vitest (pkg:npm/vitest@4.1.9), a direct requirement, declares it
+Set native_projection = "layout" under [options] in opm.toml, then run: opm sync
+Or run it inside the sandbox with: opmx vitest
+```
+
+Exit codes: a missing script, bin or `package.json` is 4; a flag `opm` does not
+know, or a path where a bin name belongs, is 2; a `package.json` that does not
+parse is 3. These share the numeric space with whatever a script exits with, so
+read the `opm:` line when it matters. A flag `opm` does not know is an error:
+put arguments for the script after `--`.
+
+**These run your code with your authority and are not sandboxed.** The scripts
+are in your own `package.json` and the bins are what your scripts already call,
+exactly as with `npm run`. They do not go through the jail that `opmx`, installs
+and lifecycle scripts use, and `opm --help` says so. They never run a
+dependency's lifecycle scripts, never fetch or install anything, and never print
+the environment. `opm run` is for your repository's commands; use `opmx` for a
+tool you have not reviewed.
+
+Not here: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
+[ADR 0042](../adr/0042-upm-v1-gaps.md)), and the `npm_config_*` and
+`npm_execpath` variables.
+
+On Windows a script, and a bin that is a `.cmd` shim, are started through
+`cmd.exe /d /s /c` with every argument quoted and escaped for it; a real `.exe`
+is started directly. The quoting is covered by tests that run on every platform,
+and has not been run on Windows.
 
 ### `opmx`
 

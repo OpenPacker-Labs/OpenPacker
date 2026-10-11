@@ -48,6 +48,7 @@ Accepted decisions:
 44. [A closure is what the host installs](0044-a-closure-is-what-the-host-installs.md)
 45. [macOS child I/O uses libc `*at()` calls](0045-macos-child-io-uses-libc-at-calls.md)
 46. [A lockfile is installed, not re-resolved](0046-a-lockfile-is-installed-not-re-resolved.md)
+47. [`opm run` and `opm exec` run the user's own scripts](0047-opm-run-and-exec-run-the-users-own-scripts.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

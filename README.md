@@ -66,6 +66,8 @@ node ../../apps/opm/dist/opmx.js demo-tool --version
 | `opm uninstall [alias]` | Remove install links/bins                  |
 | `opm sync`              | Resolve manifest → lock → install          |
 | `opm list` / `opm why`  | Inspect the project graph                  |
+| `opm run [script]`      | Run a `package.json` script (unsandboxed)  |
+| `opm exec <bin>`        | Run a `node_modules/.bin` executable       |
 | `opmx <bin\|pkg>`       | Execute an installed binary                |
 
 Project layout:
