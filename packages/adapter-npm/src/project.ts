@@ -11,6 +11,8 @@ import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   DetectedProject,
+  FrozenLock,
+  FrozenLockOptions,
   NativeLockEntry,
   NativeRequirement,
   PackProjectOptions,
@@ -28,6 +30,7 @@ import {
   ProjectIoError,
   writeFileAtomic,
 } from '@openpacker/project-io';
+import { readFrozenPackageLock } from './frozen-lock.js';
 import { writeNodeModules, type LayoutOutcome } from './layout-write.js';
 
 /** Where each scope lives in package.json. */
@@ -257,6 +260,17 @@ export class NpmProjectFormat implements ProjectFormat {
           ? [layoutLoss(outcome, project.metadata?.layoutOnly === true)]
           : [],
     };
+  }
+
+  /**
+   * `package-lock.json` as `npm ci` reads it: what this machine installs, what
+   * it leaves out, and what the lock holds that cannot be installed.
+   */
+  readFrozenLock(
+    project: DetectedProject,
+    options: FrozenLockOptions,
+  ): Promise<FrozenLock> {
+    return readFrozenPackageLock(project, options);
   }
 
   /**
