@@ -6,6 +6,7 @@ import { registerPlugin } from '@openpacker/plugin-host';
 import {
   OpmError,
   activateGeneration,
+  enableDefaultSharedStore,
   projectPaths,
   readEnvironmentState,
   readGeneration,
@@ -563,6 +564,8 @@ location the plugin publishes and digest-verifies them before anything runs.
 A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
+Tool files are kept once per machine in the shared package store
+(OPM_STORE_HOME, default ~/.cache/openpacker/store; OPM_STORE_HOME=off opts out).
 Tools live in a content-addressed cache under OPM_TOOL_CACHE (else
 XDG_CACHE_HOME, else ~/.cache/openpacker/x). Every run re-resolves the
 registry metadata — an unpinned run is a different thing tomorrow — but the
@@ -574,5 +577,8 @@ stderr either way.
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  // Same user-level package store as `opm`, so a tool run once is not stored
+  // again for the next project.
+  enableDefaultSharedStore();
   process.exitCode = await runOpmx();
 }

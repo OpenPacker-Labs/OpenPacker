@@ -16,7 +16,9 @@ import {
   OpmError,
   addPackage,
   collectGarbage,
+  collectSharedStore,
   configurePackProviders,
+  enableDefaultSharedStore,
   ecosystemFromPurl,
   environmentScript,
   environmentVariables,
@@ -602,6 +604,26 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'gc': {
+        // The shared store belongs to the user, not to a project, so this
+        // needs no project and never runs as part of a project's own gc.
+        if (args.options.has('shared')) {
+          const result = await collectSharedStore({
+            dryRun: args.options.has('dry-run'),
+          });
+          if (result.root === undefined) {
+            io.stdout.write(
+              'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
+            );
+            return EXIT_CODES.success;
+          }
+          const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
+          io.stdout.write(
+            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
+              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
+          );
+          for (const path of result.removed) io.stdout.write(`  ${path}\n`);
+          return EXIT_CODES.success;
+        }
         const root = await requireOpmRoot(cwd);
         const keepValue = option(args, 'keep');
         const result = await collectGarbage({
@@ -822,7 +844,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-network' ||
     key === 'allow-elevation' ||
     key === 'latest' ||
-    key === 'native'
+    key === 'native' ||
+    key === 'shared'
   );
 }
 
@@ -1095,6 +1118,9 @@ Usage:
   opm update [alias...] [--latest] [--offline|--online]
   opm list
   opm why <alias>
+  opm gc [--keep <n>] [--dry-run]     remove store paths no retained generation uses
+  opm gc --shared [--dry-run]         remove entries of the user-level package store
+                                      that no project links to
 
 Browse registries (no project needed):
   opm search <query|purl> [--ecosystem|-e <eco>]
@@ -1181,8 +1207,14 @@ registry and verifies the download against the digest the registry published.
 Project files:
   opm.toml          requirements (edit or use opm add/remove)
   opm.lock.json     exact pins (generated)
-  .opm/store        content-addressed installs
+  .opm/store        content-addressed installs (hard links into the shared store)
   .opm/bin          executable shims (use with opmx or PATH)
+
+Shared package store (one copy of each package per machine, linked into every
+project): $XDG_CACHE_HOME/openpacker/store, else ~/.cache/openpacker/store.
+OPM_STORE_HOME=/abs/path relocates it; OPM_STORE_HOME=off keeps each project
+self-contained. It is used only on the project's own filesystem, where links
+are possible. Free what no project uses with: opm gc --shared
 
 Execute installed bins with: opmx <bin|package> [args...]
   Ephemeral: opmx pkg:nuget/dotnet-cowsay@1.3.0
@@ -1194,5 +1226,8 @@ Protocol/control plane: openpacker (advanced)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  // Process entry: packages are kept once per machine (OPM_STORE_HOME=off opts
+  // out, an absolute path relocates it) and projects link to them.
+  enableDefaultSharedStore();
   process.exitCode = await runOpm();
 }
