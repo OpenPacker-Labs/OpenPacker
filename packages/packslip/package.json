@@ -1,0 +1,48 @@
+{
+  "name": "@openpacker/packslip",
+  "version": "0.1.0",
+  "description": "Consumer-side implementation of the packslip v1 signed release manifest",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node ../../scripts/write-cjs-package.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:conformance": "vitest run",
+    "test:security": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "test:compat": "vitest run",
+    "test:browser": "vitest run",
+    "check:contracts": "vitest run",
+    "check:generated": "vitest run"
+  },
+  "dependencies": {
+    "@openpacker/canonical": "0.1.0",
+    "@openpacker/contracts": "0.1.0",
+    "@sigstore/bundle": "4.0.0",
+    "@sigstore/core": "3.2.1",
+    "@sigstore/protobuf-specs": "0.5.2",
+    "@sigstore/verify": "3.1.1"
+  },
+  "devDependencies": {
+    "@openpacker/project-io": "0.1.0",
+    "@types/semver": "7.7.1",
+    "fast-check": "4.9.0",
+    "semver": "7.8.5"
+  }
+}
