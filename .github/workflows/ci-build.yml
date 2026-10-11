@@ -54,6 +54,13 @@ jobs:
         if: steps.cache-wasm.outputs.cache-hit != 'true'
         run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm ci --ignore-scripts
+      - name: Handle-relative I/O against the real NT API (Windows)
+        # Windows has no procfs, so child I/O is NtCreateFile with the parent
+        # handle as RootDirectory, through koffi. The unit tests run this
+        # path nowhere else.
+        if: runner.os == 'Windows'
+        run:
+          npm run test -w @openpacker/project-io -- src/handle-windows.test.ts
       - run: npm run build
       - name: Smoke the CLI
         run: node apps/openpacker-cli/dist/index.js --help
@@ -64,18 +71,13 @@ jobs:
           OPM: ${{ github.workspace }}/apps/opm/dist/opm.js
         run: |
           set -euo pipefail
-          mkdir smoke-init && (cd smoke-init && node "$OPM" init --name smoke-init && test -f opm.toml)
+          mkdir smoke-init
+          (cd smoke-init && node "$OPM" init --name smoke-init) || { code=$?; echo "opm init exited with $code"; exit "$code"; }
+          test -f smoke-init/opm.toml
           mkdir smoke-import && cd smoke-import
           printf '{"name":"smoke-import","version":"0.0.0","dependencies":{"left-pad":"1.3.0"}}\n' > package.json
           node "$OPM" import --native
           grep -q 'left-pad' opm.toml
-      - name: Handle-relative I/O against the real NT API (Windows)
-        # Windows has no procfs, so child I/O is NtCreateFile with the parent
-        # handle as RootDirectory, through koffi. The unit tests run this
-        # path nowhere else.
-        if: runner.os == 'Windows'
-        run:
-          npm run test -w @openpacker/project-io -- src/handle-windows.test.ts
       - name: Pack publishable packages
         # bash on every runner, and the directory first: npm does not create a
         # --pack-destination, and fails with ENOENT when it is missing.
