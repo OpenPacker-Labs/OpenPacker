@@ -302,6 +302,7 @@ export {
 export {
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
+  loadResolver,
   nativeRange,
   requirementMarker,
   resolveGraph,
