@@ -117,11 +117,12 @@ tools/dev-bin/opm --help            # one-off, no PATH setup at all
 On Windows, `opm.cmd` and `opmx.cmd` do the same thing, except that they ask
 turbo every time rather than checking file times first — a warm cache hit is
 about 0.4s. Project-state mutation uses the same no-follow, handle-relative open
-as Linux and macOS: POSIX maps an open directory through `/proc/self/fd` or
-`/dev/fd`, and Windows opens children with `NtCreateFile` relative to the parent
-OS handle (`RootDirectory`, reparse points refused) — openat semantics, never a
-lexical pathname fallback. Path escapes, symlink swaps, and linked metadata
-still fail closed with `UNSAFE_PATH`.
+on every platform: Linux maps an open directory through `/proc/self/fd`, macOS
+calls libc `openat` and its siblings through koffi (`/dev/fd/N/child` does not
+resolve there), and Windows opens children with `NtCreateFile` relative to the
+parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
+never a lexical pathname fallback. Path escapes, symlink swaps, and linked
+metadata still fail closed with `UNSAFE_PATH`.
 
 ---
 

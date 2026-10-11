@@ -1,24 +1,23 @@
 /**
  * Handle-relative filesystem I/O.
  *
- * POSIX: `/proc/self/fd/N` (Linux) or `/dev/fd/N` (macOS) so `open(join(that,
- * child))` is fd-relative. Windows has no procfs equivalent; child opens use
- * NtCreateFile with RootDirectory set to the parent OS handle (openat), never
- * GetFinalPathNameByHandle + a path re-walk.
+ * Every child operation names a child of an open directory descriptor and
+ * never re-walks a path, so a swapped ancestor cannot redirect it:
+ *
+ * - Linux: `/proc/self/fd/N` is a magic link to the open directory, so
+ *   `open(join(that, child))` is fd-relative. Ordinary fs calls do the work.
+ * - macOS: `/dev/fd/N` is a file-descriptor filesystem, not a link.
+ *   `/dev/fd/N/child` does not resolve (ENOENT/ENOTDIR), so the child
+ *   operations go through libc `openat`/`mkdirat`/`renameat`/`unlinkat`/
+ *   `fstatat` bound with koffi (`handle-libc.ts`, ADR 0045). `/dev/fd/N` still
+ *   names the descriptor's own file when a caller only needs to re-open it.
+ * - Windows has no procfs equivalent; child opens use NtCreateFile with
+ *   RootDirectory set to the parent OS handle (openat), never
+ *   GetFinalPathNameByHandle + a path re-walk.
  */
 
 import { constants } from 'node:fs';
-import {
-  close as closeCb,
-  fchmod as fchmodCb,
-  fstat as fstatCb,
-  fsync as fsyncCb,
-  read as readCb,
-  write as writeCb,
-  type BigIntStats,
-  type Dirent,
-  type Stats,
-} from 'node:fs';
+import { type BigIntStats, type Dirent } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -30,17 +29,15 @@ import {
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
+import { darwinProfile } from './handle-libc-profile.js';
+import {
+  StableHandleError,
+  locateModuleFile,
+  wrapFd,
+} from './handle-support.js';
 
-export class StableHandleError extends Error {
-  readonly code = 'UNSAFE_PATH';
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'StableHandleError';
-  }
-}
+export { StableHandleError };
 
 const SUPPORTED = new Set<NodeJS.Platform>(['linux', 'darwin', 'win32']);
 
@@ -63,8 +60,12 @@ export function handlePathForPlatform(
 }
 
 /**
- * POSIX fd-relative path. On Windows this throws: child I/O must go through
- * `openChild` (NtCreateFile RootDirectory), not a re-walkable pathname.
+ * The pathname of an open descriptor: `/proc/self/fd/N` on Linux, `/dev/fd/N`
+ * on macOS. On Linux, children of it resolve fd-relatively; on macOS only the
+ * descriptor itself does (an `open` of it duplicates the descriptor), so child
+ * I/O goes through `openChild` and its siblings, never `join(path, child)`.
+ * On Windows this throws: child I/O must go through `openChild` (NtCreateFile
+ * RootDirectory), not a re-walkable pathname.
  */
 export function stableHandlePath(
   handle: FileHandle,
@@ -99,6 +100,53 @@ function posixChild(parent: FileHandle, name: string): string {
   return join(stableHandlePath(parent), assertHandleSegment(name));
 }
 
+/** Which mechanism turns "child of this descriptor" into a syscall. */
+export type ChildBackendKind = 'proc-fd' | 'libc-at' | 'nt' | 'unsupported';
+
+/**
+ * The backend a platform uses. Only Linux resolves `/proc/self/fd/N/child`;
+ * macOS uses the libc `*at()` calls, Windows the NT calls, and anything else
+ * is refused rather than guessed.
+ */
+export function childBackendKind(
+  platform: NodeJS.Platform = process.platform,
+): ChildBackendKind {
+  if (platform === 'linux') return 'proc-fd';
+  if (platform === 'darwin') return 'libc-at';
+  if (platform === 'win32') return 'nt';
+  return 'unsupported';
+}
+
+let darwinBackend: ChildBackend | undefined;
+let testBackend: ChildBackend | undefined;
+
+/**
+ * Run every POSIX child operation through `backend` until the returned
+ * function is called. Tests use it to drive the libc implementation against
+ * glibc and to compare it with /proc/self/fd. It is not re-exported from the
+ * package entry, no environment variable reaches it, and win32 ignores it.
+ */
+export function useChildBackendForTesting(backend: ChildBackend): () => void {
+  const previous = testBackend;
+  testBackend = backend;
+  return () => {
+    testBackend = previous;
+  };
+}
+
+/**
+ * The libc backend for this call, or undefined to use /proc/self/fd. The
+ * platform is read at call time, as the Windows branch always has been.
+ */
+function libcBackend(): ChildBackend | undefined {
+  const kind = childBackendKind(process.platform);
+  if (kind === 'nt') return undefined;
+  if (testBackend !== undefined) return testBackend;
+  if (kind !== 'libc-at') return undefined;
+  darwinBackend ??= createLibcAtBackend(darwinProfile(process.arch));
+  return darwinBackend;
+}
+
 export async function openChild(
   parent: FileHandle,
   name: string,
@@ -108,6 +156,8 @@ export async function openChild(
   assertHandleSegment(name);
   if (process.platform === 'win32')
     return windowsOpenChild(parent, name, flags, mode);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.openChild(parent, name, flags, mode);
   return mode === undefined
     ? open(posixChild(parent, name), flags)
     : open(posixChild(parent, name), flags, mode);
@@ -130,6 +180,8 @@ export async function mkdirChild(
     await handle.close();
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.mkdirChild(parent, name);
   await mkdir(posixChild(parent, name));
 }
 
@@ -144,6 +196,8 @@ export async function renameChild(
     await windowsRenameChild(parent, from, to);
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.renameChild(parent, from, to);
   await rename(posixChild(parent, from), posixChild(parent, to));
 }
 
@@ -157,6 +211,8 @@ export async function removeChild(
     await windowsRemoveChild(parent, name, options);
     return;
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.removeChild(parent, name, options);
   await rm(posixChild(parent, name), {
     force: options.force ?? false,
     recursive: options.recursive ?? false,
@@ -166,7 +222,7 @@ export async function removeChild(
 export async function lstatChild(
   parent: FileHandle,
   name: string,
-): Promise<Stats | BigIntStats> {
+): Promise<BigIntStats> {
   assertHandleSegment(name);
   if (process.platform === 'win32') {
     const handle = await windowsOpenChild(
@@ -180,11 +236,15 @@ export async function lstatChild(
       await handle.close();
     }
   }
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.lstatChild(parent, name);
   return lstat(posixChild(parent, name), { bigint: true });
 }
 
 export async function readDirChild(parent: FileHandle): Promise<string[]> {
   if (process.platform === 'win32') return windowsReadDir(parent);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.readDirChild(parent);
   return readdir(stableHandlePath(parent));
 }
 
@@ -192,6 +252,8 @@ export async function readDirChildWithTypes(
   parent: FileHandle,
 ): Promise<Dirent[]> {
   if (process.platform === 'win32') return windowsReadDirWithTypes(parent);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.readDirChildWithTypes(parent);
   return readdir(stableHandlePath(parent), { withFileTypes: true });
 }
 
@@ -211,85 +273,6 @@ export async function mkdtempChild(
     }
   }
   throw new StableHandleError(`Could not create unique directory under handle`);
-}
-
-const closeFd = promisify(closeCb);
-const fsyncFd = promisify(fsyncCb);
-const fchmodFd = promisify(fchmodCb);
-
-function wrapFd(fd: number): FileHandle {
-  const handle = {
-    get fd() {
-      return fd;
-    },
-    async close() {
-      await closeFd(fd);
-    },
-    async stat(options?: { bigint?: boolean }) {
-      return await new Promise<Stats | BigIntStats>((resolve, reject) => {
-        if (options?.bigint === true) {
-          fstatCb(fd, { bigint: true }, (error, stats) =>
-            error ? reject(error) : resolve(stats),
-          );
-          return;
-        }
-        fstatCb(fd, (error, stats) => (error ? reject(error) : resolve(stats)));
-      });
-    },
-    async sync() {
-      await fsyncFd(fd);
-    },
-    async chmod(mode: number) {
-      await fchmodFd(fd, mode);
-    },
-    async writeFile(contents: string | Uint8Array) {
-      const bytes =
-        typeof contents === 'string' ? Buffer.from(contents) : contents;
-      let offset = 0;
-      while (offset < bytes.byteLength) {
-        const written = await new Promise<number>((resolve, reject) => {
-          writeCb(
-            fd,
-            bytes,
-            offset,
-            bytes.byteLength - offset,
-            offset,
-            (error, n) => (error ? reject(error) : resolve(n)),
-          );
-        });
-        if (written === 0) break;
-        offset += written;
-      }
-    },
-    async write(
-      buffer: Uint8Array,
-      offset = 0,
-      length = buffer.byteLength - offset,
-      position: number | null = null,
-    ) {
-      const bytesWritten = await new Promise<number>((resolve, reject) => {
-        writeCb(fd, buffer, offset, length, position, (error, n) =>
-          error ? reject(error) : resolve(n),
-        );
-      });
-      return { bytesWritten, buffer };
-    },
-    async read(
-      buffer: Uint8Array,
-      offset: number,
-      length: number,
-      position: number | null,
-    ) {
-      const bytesRead = await new Promise<number>((resolve, reject) => {
-        readCb(fd, buffer, offset, length, position, (error, n) =>
-          error ? reject(error) : resolve(n),
-        );
-      });
-      return { bytesRead, buffer };
-    },
-  };
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return handle as FileHandle;
 }
 
 function errno(code: string, message: string): NodeJS.ErrnoException {
@@ -718,21 +701,20 @@ function ntDirent(name: string, attributes: number): Dirent {
   } as Dirent;
 }
 
+/** Where this module was loaded from, in a form `createRequire` accepts. */
+export function moduleFileFromStack(stack: string): string | undefined {
+  return locateModuleFile(stack, 'handle-path');
+}
+
 function loadKoffi(): Koffi {
-  try {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const url = Function('return import.meta.url')() as string;
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return createRequire(fileURLToPath(url))('koffi') as Koffi;
-  } catch {
-    const stack = new Error().stack ?? '';
-    const match = /(?:file:\/\/)?(\/[^\s)]*handle-path\.js)/u.exec(stack);
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    if (match?.[1]) return createRequire(match[1])('koffi') as Koffi;
+  const file = moduleFileFromStack(new Error().stack ?? '');
+  if (file === undefined) {
     throw new StableHandleError(
       'Windows handle mapping could not locate this module to load koffi',
     );
   }
+  // SAFETY: koffi is this package's own dependency; the cast names its shape.
+  return createRequire(file)('koffi') as Koffi;
 }
 
 function loadCrt(koffi: Koffi): KoffiLib {
