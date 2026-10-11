@@ -724,6 +724,25 @@ export function moduleFileFromStack(stack: string): string | undefined {
   return locateModuleFile(stack, 'handle-path');
 }
 
+/**
+ * Where this module was loaded from, read off a stack trace, in a form
+ * `createRequire` accepts: a `file:` URL (ESM frames) or an absolute path
+ * (CommonJS frames).
+ *
+ * The package builds twice, and the CommonJS build cannot name `import.meta`,
+ * so the module cannot ask for its own URL. A frame looks like
+ * `file:///D:/a/x/handle-path.js:359:21` from ESM and `D:\a\x\handle-path.js:359:21`
+ * from CommonJS. A URL is handed on whole rather than cut down to
+ * `/D:/a/x/handle-path.js`, which names no file on Windows.
+ */
+export function moduleFileFromStack(stack: string): string | undefined {
+  const frame =
+    /((?:file:\/\/\/|[A-Za-z]:[\\/]|\/)[^()\r\n]*?handle-path\.[cm]?[jt]s)(?::\d+){0,2}[)\r\n]/u.exec(
+      `${stack}\n`,
+    );
+  return frame?.[1];
+}
+
 function loadKoffi(): Koffi {
   const file = moduleFileFromStack(new Error().stack ?? '');
   if (file === undefined) {
