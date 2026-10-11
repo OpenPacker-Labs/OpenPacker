@@ -706,7 +706,7 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
   return switchGeneration({ root, target: target.generationDigest });
 }
 
-function handleError(error: unknown, io: CliIo): number {
+export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.stderr.write(`${error.message}\n`);
     return EXIT_CODES.usage;
@@ -1294,9 +1294,17 @@ Protocol/control plane: openpacker (advanced)
 `;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // Process entry: packages are kept once per machine (OPM_STORE_HOME=off opts
-  // out, an absolute path relocates it) and projects link to them.
+/**
+ * `runOpm` as the process entry runs it: packages are kept once per machine
+ * (OPM_STORE_HOME=off opts out, an absolute path relocates it) and projects
+ * link to them. `main.ts` calls this for every command it does not answer
+ * itself.
+ */
+export async function runOpmFromProcess(): Promise<number> {
   enableDefaultSharedStore();
-  process.exitCode = await runOpm();
+  return await runOpm();
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = await runOpmFromProcess();
 }
