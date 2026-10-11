@@ -29,6 +29,7 @@ import {
   listRegistryVersions,
   registryOptionsForEcosystem,
   resolveRegistryArtifact,
+  type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';

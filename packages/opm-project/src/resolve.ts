@@ -894,11 +894,6 @@ export async function resolveGraph(input: {
           reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
         });
     }
-    if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
-      unresolved.push({
-        purl: item.purl,
-        reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
-      });
   }
 
   // An optional dependency that was admitted is installed, so the edge to it
