@@ -630,6 +630,34 @@ This is **defense-in-depth**, not a microVM.
 
 ---
 
+## Troubleshooting
+
+### `npm run build` warns that it skipped the wasm bindings
+
+```text
+warning: @openpacker/embedded: skipped the wasm bindings, the wasm32-unknown-unknown target and wasm-bindgen are missing; …
+```
+
+Expected on a machine that only needs `opm`, `opmx` or `openpacker`: the
+bindings are the browser and Node wasm builds of the resolver, the CLIs never
+load them, and the build exits 0 with every CLI usable. Packages that import the
+bindings' types (`openpackerd`, two examples) compile against declaration-only
+stubs; importing `@openpacker/embedded/wasm-node` at run time fails until the
+bindings are built. To build them, install what the warning names:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install --locked wasm-bindgen-cli --version 0.2.126
+npm run build:wasm -w @openpacker/embedded
+```
+
+The same condition is an error when `CI` is set (other than `0` or `false`) or
+`OPENPACKER_REQUIRE_WASM=1`, so release and CI builds cannot ship without the
+bindings. A toolchain that is present but fails, such as a `wasm-bindgen`
+version that does not match `Cargo.lock`, is an error in both modes.
+
+---
+
 ## Related
 
 - PREX / advanced CLI: [cli.md](cli.md) (`openpacker`)

@@ -35,7 +35,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs && npm run build:native && npm run build:wasm",
     "build:native": "node scripts/build-native.mjs",
-    "build:wasm": "cargo build -p openpacker-wasm --target wasm32-unknown-unknown --release && wasm-bindgen ../../target/wasm32-unknown-unknown/release/openpacker_wasm.wasm --target web --out-dir dist/esm --out-name openpacker_wasm && wasm-bindgen ../../target/wasm32-unknown-unknown/release/openpacker_wasm.wasm --target nodejs --out-dir dist/cjs --out-name openpacker_wasm",
+    "build:wasm": "node scripts/build-wasm.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:conformance": "vitest run",

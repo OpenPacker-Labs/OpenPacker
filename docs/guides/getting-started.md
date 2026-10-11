@@ -24,7 +24,7 @@ pip, Cargo, or NuGet install semantics. See
 | Node.js             | `^22.19.0 \|\| >=24` (demos target Node 24)            |
 | npm                 | 11.x with the committed lockfile (`npm ci`)            |
 | Rust                | Stable toolchain (2024 edition workspace)              |
-| wasm-bindgen-cli    | Pinned `0.2.126` for WASM builds                       |
+| wasm-bindgen-cli    | Pinned `0.2.126`; WASM bindings only (see below)       |
 | mise                | `2026.7.13` only for the full `npm run demo` mise path |
 | Playwright Chromium | Only for browser gates and full demo                   |
 
@@ -35,6 +35,14 @@ cargo install --locked wasm-bindgen-cli --version 0.2.126
 # Optional for full demo / browser tests:
 npm exec playwright install chromium
 ```
+
+The wasm target and `wasm-bindgen-cli` build only the WASM bindings
+(`@openpacker/embedded/wasm-node` and `/wasm-web`). The CLIs do not load them,
+so on a machine without them `npm run build` skips that one step with a warning
+and still builds everything else; dependents compile against declaration-only
+stubs. `CI` and `OPENPACKER_REQUIRE_WASM=1` turn the same condition into an
+error, so a pipeline cannot ship without the bindings. See
+[Troubleshooting](opm.md#troubleshooting).
 
 ## Fastest offline proofs
 
