@@ -850,9 +850,7 @@ pub(crate) fn compare_selection(input: &SolveInput, left: &[usize], right: &[usi
             "minimize-changes" => changes(input, left).cmp(&changes(input, right)),
             "minimize-package-count" => left.len().cmp(&right.len()),
             "prefer-stable" => prereleases(input, left).cmp(&prereleases(input, right)),
-            "prefer-highest-native-version" => {
-                version_keys(input, right).cmp(&version_keys(input, left))
-            }
+            "prefer-highest-native-version" => version_preference(input, left, right),
             "canonical-lexical-tie-break" => node_ids(input, left).cmp(&node_ids(input, right)),
             _ => Ordering::Equal,
         };
@@ -1358,6 +1356,27 @@ fn prereleases(input: &SolveInput, selected: &[usize]) -> usize {
                 .contains('-')
         })
         .count()
+}
+/// `Less` when `left` selects the newer versions. Compared as versions, not as
+/// their sort keys, which are strings that put `4.0.9` above `4.0.10`; the
+/// objective *tuple* still records the keys, so existing proofs do not change.
+fn version_preference(input: &SolveInput, left: &[usize], right: &[usize]) -> Ordering {
+    let newest = |selected: &[usize]| {
+        let mut packages: Vec<_> = selected
+            .iter()
+            .map(|index| &input.universe.packages[*index])
+            .collect();
+        packages.sort_by(|a, b| crate::semantics::newer_first(a, b));
+        packages
+    };
+    let (left, right) = (newest(left), newest(right));
+    for (a, b) in left.iter().zip(&right) {
+        let ordering = crate::semantics::newer_version_first(a, b);
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    right.len().cmp(&left.len())
 }
 fn version_keys(input: &SolveInput, selected: &[usize]) -> Vec<String> {
     let mut keys: Vec<_> = selected

@@ -247,11 +247,7 @@ impl DependencyProvider for PrexProvider<'_> {
         solvables.sort_by(|left, right| {
             let left = &self.input.universe.packages[self.pool.resolve_solvable(*left).record];
             let right = &self.input.universe.packages[self.pool.resolve_solvable(*right).record];
-            (
-                &right.version_sort_key,
-                right.identity.exact_purl.as_deref(),
-            )
-                .cmp(&(&left.version_sort_key, left.identity.exact_purl.as_deref()))
+            crate::semantics::newer_first(left, right)
         });
     }
     async fn get_dependencies(&self, solvable: SolvableId) -> Dependencies {
