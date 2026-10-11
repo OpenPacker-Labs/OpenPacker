@@ -79,6 +79,7 @@ production.
 | Install / package execution      | Ambient postinstall, credential theft, host mutation via opmx or host installers, fake isolation when no jail available                     | Deny scripts by default; single `runInSandbox` funnel; native jail first, MXC when asked; fail-closed default; host installers are **user-capability limited**, never a full package-exec jail. **Defense-in-depth, not a microVM or finished OS security product** ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)) |
 | Trust and lifecycle              | TUF rollback/freeze/mix-and-match, signature or identity substitution, SLSA mismatch, receipt replay, unauthorized restoration              | Explicit trusted roots/keys/time, consistent-snapshot checks, separate evidence facts, canonical signature input, replay bindings, deterministic authorized lifecycle reduction                                                                                                                                                   |
 | Supply chain (registry publish)  | Compromised fresh publish, malicious postinstall, exotic transitive git/tarball, trust-tier downgrade, registry substitution, typosquat     | Capture publish time / trust tier / source kind / registry id / script intent; mitigate via minimum release age, trust no-downgrade, exotic source block, script deny-by-default, registry pin, lock + exact snapshot ([supply-chain.md](supply-chain.md), [ADR 0033](../adr/0033-native-supply-chain-capture-and-mitigation.md)) |
+| Signed vendor releases           | Forged bundle, silent signer swap, recreated repo name, replayed older list, editable trust file, token leak, SSRF via signed URL           | Sigstore check against a hash-pinned root; trust anchors only in opm.toml; every signer change needs its exact proposal id; repo-ID mismatch and list rollback unapprovable; classify-and-pin transport; token by name only ([guide](../integrations/packslip.md))                                                                |
 | Events and downstream references | Replay, occurrence-ID collision, extension injection changing canonical identity                                                            | Schema validation, canonical data digests, cursor and deduplication rules, declared `externalRefs` outside identity digests                                                                                                                                                                                                       |
 
 ## Security test inventory
@@ -108,6 +109,12 @@ production.
   `packages/sandbox/src/escape.test.ts` are the must-fail jail probes (home
   read, project write, host-install honesty). They skip only when Bubblewrap is
   not on the runner — fail-closed without a backend is still tested.
+- [packslip tests](../../packages/packslip/test) vendor the upstream conformance
+  vectors, verify real Rekor-logged bundles offline, compare against the
+  reference CLI as an oracle (`PACKSLIP_ORACLE_BIN`), and were mutation-checked;
+  [adapter](../../packages/adapter-packslip/test) and
+  [opm-project](../../packages/opm-project/test/packslip.test.ts) tests cover
+  continuity, approvals, evidence honesty, and what reaches the lock.
 - `npm run test:security` is the mandatory focused gate; `npm run test:fuzz`,
   `npm run test:conformance`, and the full offline `npm run verify` add bounded
   mutation, schema, cross-runtime, and end-to-end coverage.

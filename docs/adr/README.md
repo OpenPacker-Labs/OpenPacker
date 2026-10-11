@@ -44,6 +44,7 @@ Accepted decisions:
 40. [Delegated plugins deliver artifact bytes and executables](0040-delegated-plugins-deliver-artifact-bytes-and-executables.md)
 41. [Host-fetch operator pins and credentials](0041-host-fetch-operator-pins-and-credentials.md)
 42. [Rescoped UPM v1 gaps](0042-upm-v1-gaps.md)
+43. [packslip-signed vendor releases are an ecosystem, and trust lives in the manifest](0043-packslip-signed-vendor-releases.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.
