@@ -9,6 +9,7 @@ import {
   type PolicyInput,
   type Requirement,
 } from '@openpacker/contracts';
+import type { EmbeddedResolver } from '@openpacker/embedded';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { providerFor, type RegistryOptions } from './registry.js';
@@ -51,7 +52,11 @@ export interface ResolutionBounds {
 
 const DEFAULT_BOUNDS: Required<ResolutionBounds> = {
   candidatesPerPackage: 6,
-  maximumPackages: 256,
+  // A typical application's closure is hundreds of packages and a large one
+  // over a thousand; 256 stopped the former. It is a ceiling on distinct
+  // packages (not on requirement edges), so it bounds the work and not the
+  // fan-in.
+  maximumPackages: 2048,
 };
 
 /**
@@ -451,6 +456,7 @@ export async function resolveGraph(input: {
   const skippedMarkers: { purl: string; marker: string }[] = [];
   const inspected = new Set<string>();
   const queued = new Set<string>();
+  const discovered = new Set<string>();
 
   const queue: { purl: string; range?: string }[] = input.roots.map((root) => ({
     purl: stripPurlVersion(root.purl),
@@ -459,13 +465,14 @@ export async function resolveGraph(input: {
   for (const item of queue) queued.add(`${item.purl}|${item.range ?? ''}`);
 
   while (queue.length > 0) {
-    if (queued.size > bounds.maximumPackages)
+    const item = queue.shift()!;
+    discovered.add(item.purl);
+    if (discovered.size > bounds.maximumPackages)
       throw new OpmError(
         'UNRESOLVABLE',
         `Dependency graph exceeded ${bounds.maximumPackages} packages. ` +
           `Raise the bound deliberately rather than resolving an unbounded graph.`,
       );
-    const item = queue.shift()!;
     const ecosystem = ecosystemFromPurl(item.purl);
     const ecosystemOptions = input.optionsFor?.(ecosystem) ?? options;
 
@@ -599,15 +606,92 @@ export async function resolveGraph(input: {
  * loader hands wasm-bindgen a relative URL instead and resolves it with
  * `fetch`, and Node's fetch has no `file:` scheme — so that path throws "not
  * implemented" rather than loading anything.
+ *
+ * A checkout that could not build the wasm target (no `wasm32` toolchain, no
+ * `wasm-bindgen`) still builds the Node-API addon from the same crate, so the
+ * solver falls back to `@openpacker/embedded/native` rather than returning no
+ * closure at all. Both are the same engine; `tests/compat/native-node.test.mjs`
+ * holds them to the same answers.
  */
-async function loadResolver() {
-  const { createEmbeddedResolver } = await import('@openpacker/embedded');
-  const specifier = '@openpacker/embedded/wasm-node';
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const bindings = (await import(specifier)) as Record<string, unknown>;
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return createEmbeddedResolver(bindings as never);
+export async function loadResolver(
+  importers: {
+    wasm?: () => Promise<Record<string, unknown>>;
+    native?: () => Promise<EmbeddedResolver>;
+  } = {},
+): Promise<EmbeddedResolver> {
+  const embedded = await import('@openpacker/embedded');
+  const wasm =
+    importers.wasm ??
+    (async () => {
+      const specifier = '@openpacker/embedded/wasm-node';
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      return (await import(specifier)) as Record<string, unknown>;
+    });
+  try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    return embedded.createEmbeddedResolver((await wasm()) as never);
+  } catch (wasmError) {
+    if (!isMissingModule(wasmError)) throw wasmError;
+    try {
+      return await (importers.native ?? loadNativeResolver)();
+    } catch (nativeError) {
+      if (!isMissingModule(nativeError)) throw nativeError;
+      throw new OpmError(
+        'UNRESOLVABLE',
+        'The PREX solver is not built: neither @openpacker/embedded/wasm-node ' +
+          '(npm run build:wasm -w @openpacker/embedded) nor the Node-API addon ' +
+          '(npm run build:native -w @openpacker/embedded) is present',
+      );
+    }
+  }
 }
+
+async function loadNativeResolver(): Promise<EmbeddedResolver> {
+  const specifier = '@openpacker/embedded/native';
+  const native = (await import(specifier)) as {
+    loadNativeEmbeddedResolver: () => Promise<EmbeddedResolver>;
+  };
+  return native.loadNativeEmbeddedResolver();
+}
+
+/** A module the build never produced, as opposed to one that failed to load. */
+function isMissingModule(error: unknown): boolean {
+  // SAFETY: only the optional `code` and `message` of a thrown value are read.
+  const thrown = error as { code?: unknown; message?: unknown } | null;
+  return (
+    thrown?.code === 'ERR_MODULE_NOT_FOUND' ||
+    thrown?.code === 'MODULE_NOT_FOUND' ||
+    // Test runners re-wrap a missing file without keeping Node's code.
+    (typeof thrown?.message === 'string' &&
+      /Cannot find (?:module|package)|Failed to load url/u.test(thrown.message))
+  );
+}
+
+/**
+ * What a closure solve asks of the engine: satisfy every requirement, and skip
+ * what lifecycle policy excludes.
+ *
+ * Not the optimizing ladder (`minimize-package-count`, `prefer-stable`,
+ * `prefer-highest-native-version`, …). The engine can only prove an
+ * optimization objective by exhaustive search, so it refuses one past a
+ * handful of nodes — "objective optimality cannot be independently proven
+ * above 22 nodes", and in practice `RESOURCE_LIMIT` well before that — and a
+ * real closure is hundreds of nodes. Asking for optimization there is not a
+ * stricter request, it is a refused one, and so nothing could ever have been
+ * locked. The same request for every size also means a lock does not change
+ * character when one more package pushes the universe over an invisible line.
+ *
+ * What the lock gets instead is honest about its strength: every hard
+ * requirement is satisfied and the checker re-validates exactly that, and the
+ * engine makes no claim that the set is the smallest or the newest possible.
+ * The choice among candidates is steered by their order, newest first
+ * (`sort_candidates` in the Resolvo engine, over the adapter's
+ * `versionSortKey`), which is the same greedy rule the native resolvers use.
+ */
+export const CLOSURE_OBJECTIVES = [
+  'satisfy-hard-constraints',
+  'exclude-lifecycle-denied',
+] as const;
 
 /**
  * Solve the graph with the PREX engine and return the selected instances.
@@ -642,14 +726,7 @@ export async function solveGraph(input: {
     environment: { installed: [], locked: [] },
     evaluationTime: input.evaluationTime ?? new Date().toISOString(),
     mode: 'closure',
-    objectives: [
-      'satisfy-hard-constraints',
-      'minimize-package-count',
-      'exclude-lifecycle-denied',
-      'prefer-stable',
-      'prefer-highest-native-version',
-      'canonical-lexical-tie-break',
-    ],
+    objectives: [...CLOSURE_OBJECTIVES],
     policy: input.policy ?? {
       acceptedOverlayAuthorities: ['publisher'],
       allowQuarantined: false,

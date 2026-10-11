@@ -220,8 +220,10 @@ export {
 
 export { codecFor } from './codecs.js';
 export {
+  CLOSURE_OBJECTIVES,
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
+  loadResolver,
   nativeRange,
   requirementMarker,
   resolveGraph,
