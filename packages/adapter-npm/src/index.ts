@@ -1,4 +1,5 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import { readPackageLock, type LockEntry } from './lock-tree.js';
 import type {
   ArtifactDescriptor,
   Digest,
@@ -91,7 +92,7 @@ export interface NpmPackument {
 export interface NpmPackageLockV3 {
   name?: string;
   version?: string;
-  lockfileVersion: 3;
+  lockfileVersion: 2 | 3;
   packages: Record<
     string,
     {
@@ -659,46 +660,49 @@ export class NpmCodec
     lock: NpmPackageLockV3,
     provenance: TranslationProvenance,
   ): LockCapture {
-    if (lock.lockfileVersion !== 3)
-      throw new ProviderError(
-        'INVALID_LOCKFILE',
-        `Expected package-lock v3, received ${String(lock.lockfileVersion)}`,
+    const tree = readPackageLock(lock);
+    // One selection per exact PURL. npm repeats a package at every path it is
+    // placed, so the same `name@version` is normal; what a capture records is
+    // the selection, and where it was placed rides along in `native.paths`.
+    const groups = new Map<string, LockEntry[]>();
+    const coordinates = new Map<string, string>();
+    for (const entry of tree.entries) {
+      const coordinate = this.parseNativeCoordinate(entry.packageName);
+      const exactPurl = this.canonicalizePurl(
+        formatPurl({
+          type: 'npm',
+          namespace: npmNamespace(coordinate.namespace),
+          name: coordinate.name,
+          version: entry.version,
+          qualifiers: {},
+        }),
       );
-    const packages = Object.entries(lock.packages)
-      .filter(([, entry]) => entry.link !== true && entry.version !== undefined)
-      .map(([path, entry]) => {
-        const inferred = entry.name ?? path.split('node_modules/').at(-1);
-        if (!inferred || !entry.version)
-          throw new ProviderError(
-            'INVALID_LOCKFILE',
-            `Cannot infer package identity at ${path}`,
-          );
-        const coordinate = this.parseNativeCoordinate(inferred);
+      coordinates.set(exactPurl, `${entry.packageName}@${entry.version}`);
+      groups.set(exactPurl, [...(groups.get(exactPurl) ?? []), entry]);
+    }
+    const packages = [...groups]
+      .map(([exactPurl, placed]) => {
+        const first = placed[0]!;
+        for (const other of placed.slice(1)) assertSameSelection(first, other);
+        const paths = placed.map((entry) => entry.path).sort();
         return {
-          exactPurl: this.canonicalizePurl(
-            formatPurl({
-              type: 'npm',
-              namespace: npmNamespace(coordinate.namespace),
-              name: coordinate.name,
-              version: entry.version,
-              qualifiers: {},
-            }),
-          ),
-          nativeCoordinate: `${inferred}@${entry.version}`,
-          ...(!(entry.resolved === undefined) && { resolved: entry.resolved }),
-          ...(!(entry.integrity === undefined) && {
-            artifactDigest: entry.integrity,
+          exactPurl,
+          nativeCoordinate: coordinates.get(exactPurl)!,
+          ...(!(first.resolved === undefined) && { resolved: first.resolved }),
+          ...(!(first.integrity === undefined) && {
+            artifactDigest: first.integrity,
           }),
           dependencies: {
-            ...entry.dependencies,
-            ...entry.optionalDependencies,
+            ...first.dependencies,
+            ...first.optionalDependencies,
           },
           native: {
-            path,
-            dev: entry.dev ?? false,
-            optional: entry.optional ?? false,
-            ...(!(entry.integrity === undefined) && {
-              integrity: entry.integrity,
+            path: paths[0]!,
+            paths,
+            dev: placed.every((entry) => entry.dev),
+            optional: placed.every((entry) => entry.optional),
+            ...(!(first.integrity === undefined) && {
+              integrity: first.integrity,
             }),
           },
         };
@@ -706,14 +710,50 @@ export class NpmCodec
       .sort((left, right) =>
         compareCodePoints(left.exactPurl, right.exactPurl),
       );
+    // Workspace members and links are the project's own code, not registry
+    // selections. They are left out of the capture, and said so.
+    const local = [
+      ...tree.links.map((link) => ({ path: link.path, kind: 'link' })),
+      ...tree.foreign.map((entry) => ({ path: entry.path, kind: 'member' })),
+    ].sort((left, right) => compareCodePoints(left.path, right.path));
     return {
       format: 'package-lock.json',
-      formatVersion: '3',
+      formatVersion: String(tree.lockfileVersion),
       packages,
-      semanticLoss: [],
+      semanticLoss: local.map((entry) =>
+        semanticLoss(
+          'npm',
+          'NPM_WORKSPACE_ENTRY_NOT_CAPTURED',
+          `/packages/${entry.path}`,
+          `${entry.path} is a workspace ${entry.kind}, the project's own code`,
+          'Not captured as a registry selection',
+        ),
+      ),
       sourceDigest: formatDigest(provenance.metadataDigest),
     };
   }
+}
+
+/**
+ * Two placements of one `name@version` are one selection only if the lock says
+ * the same thing about both. Anything else is a lock that pins one package two
+ * ways, and picking either would be a guess.
+ */
+function assertSameSelection(left: LockEntry, right: LockEntry): void {
+  const differs = (what: string): never => {
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `${left.packageName}@${left.version} is locked with a different ${what} at ${left.path} and at ${right.path}`,
+    );
+  };
+  if (left.resolved !== right.resolved) differs('resolved URL');
+  if (left.integrity !== right.integrity) differs('integrity');
+  const declared = (entry: LockEntry) =>
+    JSON.stringify([
+      Object.entries(entry.dependencies).sort(),
+      Object.entries(entry.optionalDependencies).sort(),
+    ]);
+  if (declared(left) !== declared(right)) differs('set of dependencies');
 }
 
 /**

@@ -1,10 +1,9 @@
 {
   "format": "package-lock",
   "ecosystem": "npm",
-  "packageCount": 2,
+  "packageCount": 1,
   "lockedExactPurls": [
-    "pkg:npm/%40openpacker/demo-tool@1.1.0",
-    "pkg:npm/openpacker-npm-fixture@1.0.0"
+    "pkg:npm/%40openpacker/demo-tool@1.1.0"
   ],
   "semanticLossCodes": [
     "NATIVE_RESULT_CAPTURE_ONLY"
