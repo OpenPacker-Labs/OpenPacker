@@ -133,6 +133,8 @@ export function parseShebang(line: string): Interpreter {
   if (posix.basename(tokens[0]!) === 'env') {
     tokens = tokens.slice(1);
     if (tokens[0] === '-S') tokens = tokens.slice(1);
+    // env finds a command by name on PATH; a path there names nothing env runs.
+    if (tokens[0]?.includes('/')) return NODE;
   }
   const program = posix.basename(tokens[0] ?? '');
   if (program === '' || !INTERPRETER_TOKEN.test(program)) return NODE;

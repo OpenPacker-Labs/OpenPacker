@@ -52,6 +52,9 @@ export interface LayoutOutcome {
 
 const BIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._~+-]*$/u;
 
+/** Packages written at the same time within one depth of the tree. */
+const PARALLEL_PACKAGES = 4;
+
 export async function writeNodeModules(
   projectRoot: string,
   entries: readonly NativeLockEntry[],
@@ -83,17 +86,38 @@ export async function writeNodeModules(
     skipped,
   };
 
-  for (const placement of plan.placements) {
-    // SAFETY: only entries with a store path were planned.
-    const stored = placement.entry.source.storePath!;
-    const result = await materialiseTree(
-      await treeToInstall(stored),
-      directoryOf(root, placement.chain),
-      root,
-      { link: true },
+  // A package replaces its own directory, so the packages of one depth are
+  // independent and go a few at a time; a nested package waits for the level
+  // above it, because writing its parent replaces everything under it.
+  const depths = [
+    ...new Set(plan.placements.map((place) => place.chain.length)),
+  ];
+  for (const depth of depths.sort((left, right) => left - right)) {
+    const level = plan.placements.filter(
+      (place) => place.chain.length === depth,
     );
-    outcome.linked += result.linked;
-    outcome.copied ||= result.copied;
+    let next = 0;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(PARALLEL_PACKAGES, level.length) },
+        async () => {
+          for (;;) {
+            const placement = level[next++];
+            if (placement === undefined) return;
+            // SAFETY: only entries with a store path were planned.
+            const stored = placement.entry.source.storePath!;
+            const result = await materialiseTree(
+              await treeToInstall(stored),
+              directoryOf(root, placement.chain),
+              root,
+              { link: true },
+            );
+            outcome.linked += result.linked;
+            outcome.copied ||= result.copied;
+          }
+        },
+      ),
+    );
   }
 
   const shims = await writeShims(root, plan.placements, skipped);
