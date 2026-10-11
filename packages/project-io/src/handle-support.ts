@@ -25,6 +25,30 @@ export class StableHandleError extends Error {
   }
 }
 
+/**
+ * Where a module of this package was loaded from, read off a stack trace, in a
+ * form `createRequire` accepts: a `file:` URL (ESM frames) or an absolute path
+ * (CommonJS frames, or a test run from source).
+ *
+ * The package builds twice, and the CommonJS build cannot name `import.meta`,
+ * so a module cannot ask for its own URL. A frame looks like
+ * `file:///D:/a/x/handle-path.js:359:21` from ESM and `D:\a\x\handle-path.js:359:21`
+ * from CommonJS. A URL is handed on whole rather than cut down to
+ * `/D:/a/x/handle-path.js`, which names no file on Windows.
+ *
+ * `module` is the file's base name without extension, a constant of the caller.
+ */
+export function locateModuleFile(
+  stack: string,
+  module: 'handle-path' | 'handle-libc',
+): string | undefined {
+  const frame = new RegExp(
+    `((?:file:\\/\\/\\/|[A-Za-z]:[\\\\/]|\\/)[^()\\r\\n]*?${module}\\.[cm]?[jt]s)(?::\\d+){0,2}[)\\r\\n]`,
+    'u',
+  ).exec(`${stack}\n`);
+  return frame?.[1];
+}
+
 const closeFd = promisify(closeCb);
 const fsyncFd = promisify(fsyncCb);
 const fchmodFd = promisify(fchmodCb);

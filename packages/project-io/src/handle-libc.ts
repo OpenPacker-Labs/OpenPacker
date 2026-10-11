@@ -40,7 +40,11 @@ import {
   type LibcAtProfile,
   type LibcSymbol,
 } from './handle-libc-profile.js';
-import { StableHandleError, wrapFd } from './handle-support.js';
+import {
+  StableHandleError,
+  locateModuleFile,
+  wrapFd,
+} from './handle-support.js';
 
 /** One implementation of the child operations `handle-path.ts` exposes. */
 export interface ChildBackend {
@@ -102,19 +106,9 @@ interface LibcApi {
   close(fd: number): number;
 }
 
-/**
- * Where this module was loaded from, read off a stack trace, in a form
- * `createRequire` accepts. The package builds twice and the CommonJS build
- * cannot name `import.meta`, so the module cannot ask for its own URL. Frames
- * look like `file:///D:/x/handle-libc.js:9:3` (ESM), `/x/handle-libc.js:9:3`
- * (CommonJS) or `/x/handle-libc.ts:9:3` (a test run from source).
- */
+/** Where this module was loaded from, in a form `createRequire` accepts. */
 export function libcModuleFromStack(stack: string): string | undefined {
-  const frame =
-    /((?:file:\/\/\/|[A-Za-z]:[\\/]|\/)[^()\r\n]*?handle-libc\.[cm]?[jt]s)(?::\d+){0,2}[)\r\n]/u.exec(
-      `${stack}\n`,
-    );
-  return frame?.[1];
+  return locateModuleFile(stack, 'handle-libc');
 }
 
 function loadKoffi(): Koffi {
