@@ -4,6 +4,10 @@
 - Date: 2026-08-10
 - Amends [ADR 0022](0022-opm-package-manager-surface.md) (“does not replace
   native ecosystem install layouts by default”)
+- Amended by
+  [ADR 0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md):
+  the `layout` level needs no native manifest, plans nested versions from the
+  lock's edges, and links files from the store
 
 ## Context
 

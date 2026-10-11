@@ -44,6 +44,7 @@ Accepted decisions:
 40. [Delegated plugins deliver artifact bytes and executables](0040-delegated-plugins-deliver-artifact-bytes-and-executables.md)
 41. [Host-fetch operator pins and credentials](0041-host-fetch-operator-pins-and-credentials.md)
 42. [Rescoped UPM v1 gaps](0042-upm-v1-gaps.md)
+43. [One copy of a package per machine, and a node_modules Node can resolve](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

@@ -163,21 +163,89 @@ opmx demo-tool --version
 my-project/
   opm.toml           # requirements you edit (or opm add/remove)
   opm.lock.json      # exact pins (generated)
+  node_modules/      # only with native_projection = "layout" (see below)
   .opm/
     catalog.json     # optional local package catalog
-    store/           # content-addressed extracted packages
-                     # (optional OPM_STORE_HOME hardlink/copy source)
+    store/           # content-addressed packages: hard links into the shared store
     bin/             # shims for executables
     links/           # alias → store metadata
     project.json     # installed set
 ```
 
-When `OPM_STORE_HOME` is set to an absolute path, verified package trees are
-also kept there as `sha256-<hex>/` entries. Projects hardlink (or copy on
-`EXDEV`) into `.opm/store`; the project store path stays project-local and
-project GC never deletes the shared root. Unset leaves today's project-only
-store. Relative values fail closed (`UNSAFE_PATH`). Env-only; there is no toml
-`shared_store` key.
+### Where packages live on disk
+
+A package's files exist **once per machine**, in the shared package store.
+`.opm/store` and `node_modules` are trees of hard links to them, so a second
+project, or a second worktree of the same repository, costs directories and
+links, not another copy.
+
+| Setting                    | Effect                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| _(nothing set)_            | `opm` and `opmx` use `$XDG_CACHE_HOME/openpacker/store`, else `~/.cache/openpacker/store`    |
+| `OPM_STORE_HOME=/abs/path` | Use that directory instead. A relative path fails closed (`UNSAFE_PATH`)                     |
+| `OPM_STORE_HOME=off`       | No shared store: the project keeps its own copy (and a tarball beside it for offline repair) |
+
+There is no `opm.toml` key for this on purpose: a committed project file must
+not decide where a machine keeps its packages.
+
+The default store is used only where it saves disk and is safe. It must be on
+the same filesystem as the project (across devices every link would become a
+copy); it is created `0700`, owned by you and never group- or world-writable (a
+store that fails that check is skipped for the default, and an error for an
+explicit `OPM_STORE_HOME`); entry files are read-only; and each adoption
+re-hashes the entry and the project's linked tree, so a file edited in place
+through any link is found before it is trusted. Editing a file under
+`node_modules` in place therefore fails: replace the file (write a new one and
+rename it) instead. On Windows files are copied and the default store is off.
+
+Measured on 50 packages (79 MB unpacked): the first project costs 84 MiB and a
+second adds 2.6 MiB; with `OPM_STORE_HOME=off` each costs 134 MiB
+([ADR 0043](../adr/0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)).
+
+Free what no project uses any more with `opm gc --shared` (see
+[Collecting unused store paths](#collecting-unused-store-paths)).
+
+### `node_modules` (`native_projection`)
+
+opm keeps its own layout (`.opm/`) and does not touch `node_modules` unless
+asked. `[options] native_projection` says how far opm goes into the ecosystem's
+own files ([ADR 0034](../adr/0034-opm-projects-into-native-project-formats.md)):
+
+| Level      | npm                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `off`      | Nothing                                                                                 |
+| `manifest` | _(default)_ Keep `package.json` dependencies in step with `opm.toml`                    |
+| `lock`     | Also write `package-lock.json` (needs the registry's integrity value for every package) |
+| `layout`   | Also write `node_modules/`                                                              |
+
+```toml
+[options]
+native_projection = "layout"
+```
+
+The layout does not need a `package.json`: a plain opm project gets a
+`node_modules` too, and opm creates no `package.json` or `package-lock.json` you
+did not ask for. `manifest` and `lock` still require the file to exist.
+
+What `layout` writes:
+
+- **Node resolves it.** Packages are placed from the dependency edges the lock
+  recorded. A direct requirement, and the version most packages want, sits in
+  `node_modules/<name>`; a package that needs a different version of the same
+  name gets it in its own `node_modules` (`a → c@1` and `b → c@2` becomes
+  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks. A
+  lock with no recorded edges (an offline lock holds only the direct set) is
+  laid out flat by name, newest first, and the version left out is reported.
+- **Hard links, not copies.** Each file is a link to the store's, verified to be
+  the same inode. If the filesystem cannot link, opm copies and says so.
+- **Executables** are small shell scripts in `node_modules/.bin` (plus `.cmd` on
+  Windows) that run the package's `bin` script with the interpreter its first
+  line asks for. They are not symlinks, and a bin whose name or target is not
+  safe is reported and skipped.
+- **No lifecycle scripts run.** The result is equivalent to what npm lays out,
+  not produced by npm, and the projection says so.
+- `node_modules/.opm-layout.json` records what opm wrote. The next layout
+  removes only that; a package you installed some other way is left alone.
 
 ### `opm.toml`
 
@@ -370,6 +438,19 @@ The current generation is always retained; `--keep` bounds history so an
 environment that is never pruned does not grow forever. Dropping a generation
 also drops its record, so what is retained and what is reachable stay
 consistent.
+
+This never touches the shared package store. That one is the user's, not a
+project's:
+
+```sh
+opm gc --shared --dry-run   # report without removing; needs no project
+opm gc --shared
+```
+
+A project's store entry and its `node_modules` are hard links to an entry's
+files, so an entry in which every file has a link count of one is linked by no
+project and is removed. Entries younger than ten minutes are left alone (an
+install may be about to link them), as are entries any project still uses.
 
 ### Shell environment
 
@@ -585,7 +666,8 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Lifecycle scripts (`postinstall`, etc.) are **never** run by default.
 - Installs are content-addressed under `.opm/store/sha256-…`.
 - Digests are verified before materialize.
-- Default layout is **`.opm/`**, not a silent rewrite of `node_modules`.
+- Default layout is **`.opm/`**, not a silent rewrite of `node_modules`;
+  `native_projection = "layout"` is the opt-in that writes it.
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
   through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
