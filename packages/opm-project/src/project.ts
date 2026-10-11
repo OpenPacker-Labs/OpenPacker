@@ -79,8 +79,10 @@ import {
 } from './spec.js';
 import {
   assertSupplyChainAllowed,
+  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
+  insideReleaseAge,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
   type PolicyFacts,
@@ -772,8 +774,14 @@ async function resolveTransitive(input: {
   packages: Record<string, LockPackage>;
   dependencies: Record<string, string[]>;
 }> {
-  const resolvable = input.direct.filter((pkg) =>
-    requireAdapterRegistry().has(pkg.ecosystem),
+  // Only what came from a registry is walked through that registry. A package
+  // pinned to a file, a catalog entry or a URL is not the registry's package of
+  // that name, so asking the registry what it depends on would answer for a
+  // different package, and could pull its dependencies in by name.
+  const resolvable = input.direct.filter(
+    (pkg) =>
+      pkg.sourceKind === 'registry' &&
+      requireAdapterRegistry().has(pkg.ecosystem),
   );
   if (resolvable.length === 0) return { packages: {}, dependencies: {} };
 
@@ -781,9 +789,14 @@ async function resolveTransitive(input: {
   const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
   const dependencies: Record<string, string[]> = {};
+  let unresolved: { purl: string; reason: string }[] = [];
   try {
     const graph = await resolveGraph({
       pool: input.pool,
+      candidateGate: async (exact, provider) =>
+        (await insideReleaseAge(policy, provider, exact, evaluationTime))
+          ? `published inside the ${policy.minimumReleaseAgeMinutes}-minute minimum release age`
+          : undefined,
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
         ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
@@ -791,7 +804,12 @@ async function resolveTransitive(input: {
         }),
       })),
     });
-    if (graph.packages.length === 0) return { packages: {}, dependencies: {} };
+    unresolved = graph.unresolved;
+    if (graph.packages.length === 0)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        'the registry returned nothing to resolve against',
+      );
 
     const solved = await solveGraph({
       graph,
@@ -866,6 +884,14 @@ async function resolveTransitive(input: {
         },
       );
       facts.registryId = artifact.registryId;
+      // The same publish-time evidence a direct package gets: a dependency
+      // nobody asked for by name is the one a release-age window protects.
+      await capturePublishTime(
+        facts,
+        await input.pool.provider(instance.identity.purlType),
+        exact,
+        { minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes },
+      );
       await assertSupplyChainAllowed(policy, facts);
 
       const transitiveIntegrity = nativeIntegrityOf(
@@ -926,23 +952,45 @@ async function resolveTransitive(input: {
     for (const alias of Object.keys(dependencies))
       dependencies[alias] = [...new Set(dependencies[alias])].sort();
   } catch (error) {
-    // Soft-fail at the project boundary: a transitive walk must not make a
-    // previously installable direct set unusable. Unit tests exercise the
-    // walk itself through `resolveGraph` where failures surface.
-    //
-    // A policy refusal or a digest that does not match is not that kind of
-    // failure — swallowing it would turn every mitigation below into advice.
-    if (
-      error instanceof OpmError &&
-      (error.code === 'POLICY_DENIED' ||
-        error.code === 'POLICY_INDETERMINATE' ||
-        error.code === 'DIGEST_MISMATCH' ||
-        error.code === 'SIZE_MISMATCH')
-    )
-      throw error;
-    return { packages: {}, dependencies: {} };
+    // A closure that cannot be computed is an error, not a smaller lock. This
+    // used to fall back to the direct set, which turned every failure here
+    // (a wasm build that was not there, a solve the engine refused, a
+    // dependency written as a git URL) into "Added vitest" and a lock of one
+    // package, and left the install to find out which of its dependencies were
+    // missing. The policy, digest and size refusals already propagated as they
+    // were; the rest now say what stopped the closure.
+    if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new OpmError(
+      error instanceof OpmError ? error.code : 'UNRESOLVABLE',
+      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved)}`,
+    );
   }
   return { packages: out, dependencies };
+}
+
+/** Refusals that were always errors: a mitigation must never read as advice. */
+function isClosureRefusal(error: OpmError): boolean {
+  return (
+    error.code === 'POLICY_DENIED' ||
+    error.code === 'POLICY_INDETERMINATE' ||
+    error.code === 'DIGEST_MISMATCH' ||
+    error.code === 'SIZE_MISMATCH'
+  );
+}
+
+/** The candidates the walk had to set aside, for an error that follows from it. */
+function unresolvedNote(
+  unresolved: readonly { purl: string; reason: string }[],
+): string {
+  if (unresolved.length === 0) return '';
+  const shown = unresolved
+    .slice(0, 5)
+    .map((item) => `\n  - ${item.purl}: ${item.reason}`)
+    .join('');
+  const more =
+    unresolved.length > 5 ? `\n  - and ${unresolved.length - 5} more` : '';
+  return `\nWhat the walk could not use:${shown}${more}`;
 }
 
 /** A filesystem-safe alias for a transitive package. */
@@ -1192,7 +1240,24 @@ async function resolveRequirement(input: {
           stripPurlVersion(requestedPurl),
           registryOptions,
         );
-        const newest = versions[versions.length - 1];
+        // Newest first, skipping a release the policy's minimum age rules out
+        // so that "add foo" lands on the previous release instead of failing
+        // on one published an hour ago. If every release is inside the window
+        // the newest is kept and the policy refuses it by name.
+        const provider = await providerFor(ecosystem, registryOptions);
+        let newest = versions[versions.length - 1];
+        for (let index = versions.length - 1; index >= 0; index -= 1)
+          if (
+            !(await insideReleaseAge(
+              policy,
+              provider,
+              versions[index]!,
+              evaluationTime,
+            ))
+          ) {
+            newest = versions[index];
+            break;
+          }
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
@@ -1243,6 +1308,7 @@ async function resolveRequirement(input: {
         evaluationTime,
         dependencyDepth: 0,
         registryId: artifact.registryId,
+        minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes,
       });
       // Prefer artifact URI for source kind when inspect did not set one.
       if (facts.sourceKind === undefined) {

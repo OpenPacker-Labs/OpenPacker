@@ -267,14 +267,17 @@ export { providerForWithDiscovery, registryEcosystems } from './registry.js';
 
 export {
   assertSupplyChainAllowed,
+  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromInspection,
   captureFactsFromSourceUri,
   defaultSupplyChainPolicyInput,
+  insideReleaseAge,
   lockPackageSupplyChainFields,
   priorTrustFromLock,
   projectPolicyDocument,
   type PolicyDocument,
+  type PublishTimeEvidence,
   type PolicyFacts,
   type PolicyResult,
   type SourceKind,

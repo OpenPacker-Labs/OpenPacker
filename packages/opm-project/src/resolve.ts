@@ -148,6 +148,8 @@ export interface ResolvedGraph {
   skippedMarkers: { purl: string; marker: string }[];
   /** Optional dependencies left out because this host is not one they run on. */
   skippedPlatform: { purl: string; reason: string }[];
+  /** Candidates the caller's gate left out, with its reason. */
+  gated: { purl: string; reason: string }[];
 }
 
 /**
@@ -579,6 +581,16 @@ export async function resolveGraph(input: {
   host?: HostEnvironment;
   /** Providers shared with the steps after the walk; one is made if absent. */
   pool?: ProviderPool;
+  /**
+   * Leaves a candidate out of the universe, with the reason, before it is
+   * inspected. The walk offers every candidate to it, newest first, and it is
+   * how a release the policy would refuse is passed over for the previous one
+   * that satisfies the same range.
+   */
+  candidateGate?: (
+    exactPurl: string,
+    provider: CatalogProvider,
+  ) => Promise<string | undefined>;
 }): Promise<ResolvedGraph> {
   const bounds = { ...DEFAULT_BOUNDS, ...input.bounds };
   const options = input.options ?? {};
@@ -591,6 +603,7 @@ export async function resolveGraph(input: {
   const unresolved: { purl: string; reason: string }[] = [];
   const skippedMarkers: { purl: string; marker: string }[] = [];
   const skippedPlatform: { purl: string; reason: string }[] = [];
+  const gated: { purl: string; reason: string }[] = [];
   const inspected = new Map<string, InspectedCandidate | null>();
   const queued = new Set<string>();
   const discovered = new Set<string>();
@@ -659,6 +672,12 @@ export async function resolveGraph(input: {
       let entry = inspected.get(candidate);
       if (entry === undefined) {
         try {
+          const refusal = await input.candidateGate?.(candidate, provider);
+          if (refusal !== undefined) {
+            gated.push({ purl: candidate, reason: refusal });
+            inspected.set(candidate, null);
+            continue;
+          }
           const instance = (await provider.inspect(candidate)).package;
           entry = {
             instance,
@@ -793,6 +812,7 @@ export async function resolveGraph(input: {
     unresolved,
     skippedMarkers,
     skippedPlatform,
+    gated,
   };
 }
 
@@ -930,7 +950,6 @@ export async function solveGraph(input: {
   proofValid: boolean;
 }> {
   const resolver = await loadResolver();
-  const universe = await universeFrom(input.graph);
 
   const request = {
     environment: { installed: [], locked: [] },
@@ -989,46 +1008,73 @@ export async function solveGraph(input: {
     })),
   };
 
-  const solved = resolver.solve({
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    request: request as never,
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    universe: universe as never,
-  });
-  // The proof is checked rather than trusted: an unchecked proof is only a
-  // claim, and invariant 5 makes an invalid one a hard failure.
-  const checked = resolver.check(
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    { request: request as never, universe: universe as never },
-    solved,
-  );
-  if (!checked.valid)
-    throw new OpmError(
-      'UNRESOLVABLE',
-      `The solver returned a solution its own proof checker rejected: ${checked.diagnostics.join('; ')}`,
+  // The lock holds one version of a package. The engine does not insist on
+  // that (a package may legitimately coexist in PREX), so a requirement that
+  // takes the newest of its own range and another that takes the newest of
+  // another can leave two. When a single candidate would satisfy every selected
+  // requirement on the package, the others are withdrawn and the solve is run
+  // again; when none would, the closure needs what the lock cannot hold.
+  let packages = input.graph.packages;
+  let solved: ReturnType<typeof resolver.solve>;
+  let selected: PackageInstance[];
+  let selectedByPurl: Map<string, PackageInstance>;
+  for (let round = 0; ; round += 1) {
+    const universe = await universeFrom({ ...input.graph, packages });
+    solved = resolver.solve({
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      request: request as never,
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      universe: universe as never,
+    });
+    // The proof is checked rather than trusted: an unchecked proof is only a
+    // claim, and invariant 5 makes an invalid one a hard failure.
+    const checked = resolver.check(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      { request: request as never, universe: universe as never },
+      solved,
     );
+    if (!checked.valid)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `The solver returned a solution its own proof checker rejected: ${checked.diagnostics.join('; ')}`,
+      );
 
-  const byNodeId = new Map(
-    input.graph.packages.map((instance) => [instance.nodeId, instance]),
-  );
-  const selected = solved.solution.selectedNodeIds
-    .map((nodeId) => byNodeId.get(nodeId))
-    .filter((instance): instance is PackageInstance => instance !== undefined);
-  const selectedByPurl = new Map<string, PackageInstance>();
-  for (const instance of selected) {
-    const exact = instance.identity.exactPurl;
-    if (exact === undefined)
+    const byNodeId = new Map(
+      packages.map((instance) => [instance.nodeId, instance]),
+    );
+    selected = solved.solution.selectedNodeIds
+      .map((nodeId) => byNodeId.get(nodeId))
+      .filter(
+        (instance): instance is PackageInstance => instance !== undefined,
+      );
+    const duplicated = new Map<string, PackageInstance[]>();
+    selectedByPurl = new Map<string, PackageInstance>();
+    for (const instance of selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          'Selected package lacks an exact PURL',
+        );
+      const base = stripPurlVersion(exact);
+      const seen = selectedByPurl.get(base);
+      if (seen !== undefined)
+        duplicated.set(base, [...(duplicated.get(base) ?? [seen]), instance]);
+      else selectedByPurl.set(base, instance);
+    }
+    if (duplicated.size === 0) break;
+    if (round >= MAXIMUM_UNIFICATION_ROUNDS)
       throw new OpmError(
         'UNRESOLVABLE',
-        'Selected package lacks an exact PURL',
+        `The closure still holds several versions of ${[...duplicated.keys()].join(', ')} after ${MAXIMUM_UNIFICATION_ROUNDS} attempts to unify them`,
       );
-    const base = stripPurlVersion(exact);
-    if (selectedByPurl.has(base))
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `Selected closure contains multiple versions of ${base}`,
-      );
-    selectedByPurl.set(base, instance);
+    packages = unify({
+      packages,
+      selected,
+      duplicated,
+      rootRequirements: input.rootRequirements,
+      resolver,
+    });
   }
   const dependencyEdges: { fromNodeId: string; toNodeId: string }[] = [];
   for (const instance of selected)
@@ -1047,6 +1093,23 @@ export async function solveGraph(input: {
           'UNRESOLVABLE',
           `Selected closure omits required package ${requirement.expression.purl}`,
         );
+      // The solver enforced a comparison form of the range; the ecosystem's own
+      // reading of it has the last word, so a lock never pairs a package with a
+      // version it does not accept.
+      const range = nativeRange(requirement);
+      if (
+        range !== undefined &&
+        !satisfiesNative(
+          dependency.identity.purlType,
+          dependency.nativeVersion,
+          range,
+        )
+      )
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `${instance.identity.exactPurl} requires ${requirement.expression.purl} ${range}, ` +
+            `but the closure selected ${dependency.identity.exactPurl}`,
+        );
       dependencyEdges.push({
         fromNodeId: instance.nodeId,
         toNodeId: dependency.nodeId,
@@ -1056,8 +1119,102 @@ export async function solveGraph(input: {
     selected,
     dependencyEdges,
     solutionDigest: solved.solution.solutionDigest.value,
-    proofValid: checked.valid,
+    // An invalid proof never gets this far: the loop above throws on it.
+    proofValid: true,
   };
+}
+
+/** Enough for a closure of ordinary shape; a loop here is a bug, not a graph. */
+const MAXIMUM_UNIFICATION_ROUNDS = 32;
+
+/**
+ * Withdraw every candidate of a duplicated package but one that all of its
+ * selected dependents accept, or say who cannot agree.
+ *
+ * The candidate is the newest one that satisfies, by the ecosystem's own reading
+ * of each range, every selected requirement on the package, and the root
+ * requirement on it if there is one. Nothing else about the universe changes, so
+ * the next solve may still move any other package.
+ */
+function unify(input: {
+  packages: PackageInstance[];
+  selected: readonly PackageInstance[];
+  duplicated: ReadonlyMap<string, PackageInstance[]>;
+  rootRequirements: readonly { purl: string; vers?: string }[];
+  resolver: Pick<EmbeddedResolver, 'versionSatisfies'>;
+}): PackageInstance[] {
+  const withdrawn = new Set<string>();
+  for (const [base, chosen] of input.duplicated) {
+    const ecosystem = chosen[0]!.identity.purlType;
+    const needs: {
+      by: string;
+      range: string;
+      accepts: (v: string) => boolean;
+    }[] = [];
+    for (const root of input.rootRequirements)
+      if (stripPurlVersion(root.purl) === base && root.vers !== undefined) {
+        const vers = root.vers;
+        needs.push({
+          by: 'the direct requirement',
+          range: vers.replace(/^vers:[^/]+\//u, ''),
+          accepts: (version) => input.resolver.versionSatisfies(version, vers),
+        });
+      }
+    for (const instance of input.selected)
+      for (const requirement of instance.requirements ?? []) {
+        if (
+          requirement.optional ||
+          !INSTALLED_KINDS.has(requirement.kind) ||
+          requirement.expression.type !== 'package' ||
+          stripPurlVersion(requirement.expression.purl) !== base
+        )
+          continue;
+        const range = nativeRange(requirement);
+        if (range !== undefined)
+          needs.push({
+            by: instance.identity.exactPurl ?? instance.nodeId,
+            range,
+            accepts: (version) => satisfiesNative(ecosystem, version, range),
+          });
+      }
+    const codec = codecFor(ecosystem);
+    const candidates = input.packages
+      .filter((item) => item.identity.canonicalPurl === base)
+      .sort((left, right) =>
+        codec.compareNativeVersions(right.nativeVersion, left.nativeVersion),
+      );
+    const agreed = candidates.find((candidate) =>
+      needs.every((need) => need.accepts(candidate.nativeVersion)),
+    );
+    if (agreed === undefined)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `${base} is needed at versions no single release satisfies, and a lock holds one version of a package: ` +
+          needs.map((need) => `${need.by} requires ${need.range}`).join('; ') +
+          `. The closure would need ${chosen
+            .map((item) => item.identity.exactPurl)
+            .join(' and ')}`,
+      );
+    for (const candidate of candidates)
+      if (candidate !== agreed) withdrawn.add(candidate.nodeId);
+  }
+  return input.packages.filter((item) => !withdrawn.has(item.nodeId));
+}
+
+/**
+ * Whether `version` is inside `range` by the ecosystem's own rules. A range its
+ * codec cannot read cannot be checked, which is not the same as being outside.
+ */
+function satisfiesNative(
+  ecosystem: string,
+  version: string,
+  range: string,
+): boolean {
+  try {
+    return codecFor(ecosystem).satisfies(version, range);
+  } catch {
+    return true;
+  }
 }
 
 /** A `ResolutionUniverse` over everything the walk found. */

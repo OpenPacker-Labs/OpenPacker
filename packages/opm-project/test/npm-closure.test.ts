@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { PolicyInput } from '@openpacker/contracts';
 import {
   defaultHostEnvironment,
+  defaultSupplyChainPolicyInput,
   resolveGraph,
   resolveManifestToLock,
   solveGraph,
@@ -13,6 +14,7 @@ import {
 } from '../src/index.js';
 import {
   NpmRegistryFixture,
+  OLD,
   type FixturePackage,
 } from './npm-registry-fixture.js';
 
@@ -311,5 +313,268 @@ describe('a package reached from several places is read once', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('under the default policy', () => {
+  // `opm init` writes this: a one-day minimum release age, semantic loss capped
+  // at warning, no downgrade of trust, exotic sources blocked below the root.
+  const manifest = (): OpmManifest => ({
+    project: { name: 'closure', ecosystems: ['npm'] },
+    packages: {
+      app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' },
+    },
+    options: { offline: false, layout: 'opm' },
+    policy: defaultSupplyChainPolicyInput(),
+  });
+  const hoursAgo = (hours: number) =>
+    new Date(Date.now() - hours * 3_600_000).toISOString();
+
+  const app = (shared: FixturePackage): FixturePackage[] => [
+    {
+      name: 'app',
+      versions: {
+        '1.0.0': {
+          dependencies: { shared: '^1.0.0' },
+          // Real packages carry engines, and used to be refused for it.
+          engines: { node: '>=20' },
+        },
+      },
+    },
+    shared,
+  ];
+
+  const lockFor = async (
+    transport: NpmRegistryFixture,
+    override: Partial<OpmManifest> = {},
+  ) => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
+    try {
+      return await resolveManifestToLock({
+        root,
+        manifest: { ...manifest(), ...override },
+        offline: false,
+        registryOptions: { transport },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  it('locks a closure of settled packages without reading a full document', async () => {
+    const transport = new NpmRegistryFixture(
+      app({ name: 'shared', versions: { '1.0.0': {}, '1.1.0': {} } }),
+    );
+    const lock = await lockFor(transport);
+    expect(
+      Object.values(lock.packages)
+        .map((item) => item.purl)
+        .sort(),
+    ).toEqual(['pkg:npm/app@1.0.0', 'pkg:npm/shared@1.1.0']);
+    // Neither package was touched inside the window, so `modified` proves each
+    // is old enough and the 54 MB of full packuments are never asked for.
+    expect(transport.fullPackumentRequests()).toEqual([]);
+    // What was only bounded is not recorded as a publish time.
+    expect(lock.packages.app?.publishedAt).toBeUndefined();
+  });
+
+  it('reads the full document for a package changed inside the window, and records the time', async () => {
+    const transport = new NpmRegistryFixture(
+      app({
+        name: 'shared',
+        versions: { '1.0.0': {}, '1.1.0': {} },
+        time: { '1.0.0': OLD, '1.1.0': '2026-02-02T00:00:00.000Z' },
+        modified: hoursAgo(1),
+      }),
+    );
+    const lock = await lockFor(transport);
+    expect(lock.packages.shared).toMatchObject({
+      purl: 'pkg:npm/shared@1.1.0',
+      publishedAt: '2026-02-02T00:00:00.000Z',
+    });
+    expect(transport.fullPackumentRequests()).toHaveLength(1);
+    expect(lock.packages.app?.publishedAt).toBeUndefined();
+  });
+
+  it('passes over a dependency released an hour ago for the previous release in range', async () => {
+    const transport = new NpmRegistryFixture(
+      app({
+        name: 'shared',
+        versions: { '1.0.0': {}, '1.1.0': {}, '1.2.0': {} },
+        time: { '1.0.0': OLD, '1.1.0': OLD, '1.2.0': hoursAgo(1) },
+        modified: hoursAgo(1),
+      }),
+    );
+    const lock = await lockFor(transport);
+    expect(lock.packages.shared?.purl).toBe('pkg:npm/shared@1.1.0');
+  });
+
+  it('refuses a direct package released an hour ago, naming the rule', async () => {
+    const transport = new NpmRegistryFixture([
+      {
+        name: 'app',
+        versions: { '1.0.0': {} },
+        time: { '1.0.0': hoursAgo(1) },
+        modified: hoursAgo(1),
+      },
+    ]);
+    await expect(lockFor(transport)).rejects.toMatchObject({
+      code: 'POLICY_DENIED',
+      message: expect.stringContaining('supply-chain.release-age'),
+    });
+  });
+
+  it('does not call a package old enough on the strength of nothing', async () => {
+    // Changed an hour ago and the registry will not say when this version was
+    // published: not provided, which the default policy does not wave through.
+    const transport = new NpmRegistryFixture(
+      [
+        {
+          name: 'app',
+          versions: { '1.0.0': {} },
+          modified: hoursAgo(1),
+        },
+      ],
+      { serveFull: false },
+    );
+    await expect(lockFor(transport)).rejects.toMatchObject({
+      code: 'POLICY_INDETERMINATE',
+    });
+  });
+
+  it('adds the newest release outside the window when no version is named', async () => {
+    const transport = new NpmRegistryFixture([
+      {
+        name: 'app',
+        versions: { '1.0.0': {}, '1.1.0': {} },
+        time: { '1.0.0': OLD, '1.1.0': hoursAgo(2) },
+        modified: hoursAgo(2),
+      },
+    ]);
+    const lock = await lockFor(transport, {
+      packages: { app: { alias: 'app', purl: 'pkg:npm/app' } },
+    });
+    expect(lock.packages.app?.purl).toBe('pkg:npm/app@1.0.0');
+  });
+});
+
+describe('one version per package, and what happens when that cannot hold', () => {
+  const permissive: PolicyInput = {
+    allowYanked: false,
+    allowQuarantined: false,
+    semanticLossMaximum: 'warning',
+    requiredEvidence: [],
+  };
+  const manifestOf = (packages: OpmManifest['packages']): OpmManifest => ({
+    project: { name: 'closure', ecosystems: ['npm'] },
+    packages,
+    options: { offline: false, layout: 'opm' },
+    policy: permissive,
+  });
+  const lockOf = async (
+    registry: FixturePackage[],
+    packages: OpmManifest['packages'],
+  ) => {
+    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
+    try {
+      return await resolveManifestToLock({
+        root,
+        manifest: manifestOf(packages),
+        offline: false,
+        registryOptions: { transport: new NpmRegistryFixture(registry) },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  it('picks the version both dependents accept, not the newest of either', async () => {
+    // `left` would take 1.3.0; `right` takes only 1.2.x. Both ranges reached
+    // the solver as "any version" until the adapter attached them, so it took
+    // 1.3.0 for both and the lock paired `right` with a version it rejects.
+    const lock = await lockOf(
+      [
+        {
+          name: 'app',
+          versions: { '1.0.0': { dependencies: { left: '^1', right: '^1' } } },
+        },
+        {
+          name: 'left',
+          versions: { '1.0.0': { dependencies: { shared: '^1.0.0' } } },
+        },
+        {
+          name: 'right',
+          versions: { '1.0.0': { dependencies: { shared: '~1.2.0' } } },
+        },
+        {
+          name: 'shared',
+          versions: { '1.0.0': {}, '1.2.0': {}, '1.2.5': {}, '1.3.0': {} },
+        },
+      ],
+      { app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' } },
+    );
+    expect(lock.packages.shared?.purl).toBe('pkg:npm/shared@1.2.5');
+  });
+
+  it('says who cannot agree when no release of the shared package suits both', async () => {
+    // app@2 needs shared 2 and `right` cannot take it; app@1 would have agreed
+    // with it. Backing out of the newer app is a search the single-version lock
+    // does not do: it names the conflict instead of guessing which side gives.
+    await expect(
+      lockOf(
+        [
+          {
+            name: 'root',
+            versions: {
+              '1.0.0': { dependencies: { app: '*', right: '^1' } },
+            },
+          },
+          {
+            name: 'app',
+            versions: {
+              '1.0.0': { dependencies: { shared: '^1' } },
+              '2.0.0': { dependencies: { shared: '^2' } },
+            },
+          },
+          {
+            name: 'right',
+            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
+          },
+          { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
+        ],
+        { root: { alias: 'root', purl: 'pkg:npm/root', version: '1.0.0' } },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UNRESOLVABLE',
+      message: expect.stringMatching(
+        /pkg:npm\/app@2\.0\.0 requires \^2; pkg:npm\/right@1\.0\.0 requires \^1/u,
+      ),
+    });
+  });
+
+  it('refuses, by name, a direct pin that two versions of one package would be needed for', async () => {
+    // npm would nest shared@1 under app and keep shared@2 at the top. A lock
+    // here is one entry per package name, so it cannot hold both, and it used
+    // to keep the direct one and point `app` at it without saying so.
+    await expect(
+      lockOf(
+        [
+          {
+            name: 'app',
+            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
+          },
+          { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
+        ],
+        {
+          app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' },
+          shared: { alias: 'shared', purl: 'pkg:npm/shared', version: '2.0.0' },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'UNRESOLVABLE',
+      message: expect.stringMatching(
+        /pkg:npm\/shared is needed at versions no single release satisfies.*the direct requirement requires 2\.0\.0.*pkg:npm\/app@1\.0\.0 requires \^1/su,
+      ),
+    });
   });
 });

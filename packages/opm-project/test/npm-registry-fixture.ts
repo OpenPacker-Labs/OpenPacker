@@ -137,7 +137,13 @@ export class NpmRegistryFixture implements HttpTransport {
   readonly requests: RecordedRequest[] = [];
   readonly #packages = new Map<string, FixturePackage>();
 
-  constructor(packages: readonly FixturePackage[]) {
+  readonly #serveFull: boolean;
+
+  constructor(
+    packages: readonly FixturePackage[],
+    options: { serveFull?: boolean } = {},
+  ) {
+    this.#serveFull = options.serveFull ?? true;
     for (const item of packages) this.#packages.set(item.name, item);
   }
 
@@ -194,6 +200,11 @@ export class NpmRegistryFixture implements HttpTransport {
       return withUrl(json(fullVersion(name, version, value)));
     }
     const abbreviated = accept?.includes('vnd.npm.install-v1') === true;
+    if (!abbreviated && !this.#serveFull)
+      throw new ProviderError(
+        'UPSTREAM_ERROR',
+        'full documents are not served',
+      );
     const versions = Object.fromEntries(
       Object.entries(found.versions).map(([key, value]) => [
         key,

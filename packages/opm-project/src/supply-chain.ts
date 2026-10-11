@@ -169,7 +169,9 @@ export function captureFactsFromInspection(
           /^(pre|post)?install$|^prepare$|^prepublish/.test(name),
         );
       } else {
-        facts.lifecycleScriptsDeclared = false;
+        // The abbreviated packument omits `scripts` and says only whether
+        // there is an install script, so a missing `scripts` is not "none".
+        facts.lifecycleScriptsDeclared = versionMeta.hasInstallScript === true;
       }
       const dist = versionMeta.dist;
       if (dist && typeof dist === 'object' && dist !== null) {
@@ -407,6 +409,119 @@ export async function assertSupplyChainAllowed(
   );
 }
 
+/**
+ * What a registry establishes about when a version was published, in the form
+ * that settles a minimum release age (see the npm adapter for the ladder).
+ */
+export interface PublishTimeEvidence {
+  publishedAt?: string;
+  publishedNoLaterThan?: string;
+  source: string;
+}
+
+/** A provider that can say when a version was published. */
+interface PublishTimeSource {
+  publishTime(
+    exactPurl: string,
+    needed?: { settledBefore?: string },
+    signal?: AbortSignal,
+  ): Promise<PublishTimeEvidence | undefined>;
+}
+
+function canSayWhenPublished(
+  provider: CatalogProvider,
+): provider is CatalogProvider & PublishTimeSource {
+  return (
+    'publishTime' in provider &&
+    typeof (provider as { publishTime?: unknown }).publishTime === 'function'
+  );
+}
+
+/**
+ * Put publish-time evidence on `facts`, when the policy asks for a minimum
+ * release age and the registry can say.
+ *
+ * Costs nothing when the gate is off. The provider is told the instant a
+ * release must predate, so it can stop at the cheapest evidence that settles
+ * it; a provider with no such evidence leaves the facts as they were, and the
+ * policy then reports the time as not provided rather than being handed a
+ * guess.
+ */
+export async function capturePublishTime(
+  facts: PolicyFacts,
+  provider: CatalogProvider,
+  exactPurl: string,
+  options: {
+    minimumReleaseAgeMinutes?: number | undefined;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  const minutes = options.minimumReleaseAgeMinutes;
+  if (
+    minutes === undefined ||
+    minutes <= 0 ||
+    facts.publishedAt !== undefined ||
+    facts.evaluationTime === undefined ||
+    !canSayWhenPublished(provider)
+  )
+    return;
+  const settledBefore = new Date(
+    Date.parse(facts.evaluationTime) - minutes * 60_000,
+  ).toISOString();
+  let evidence: PublishTimeEvidence | undefined;
+  try {
+    evidence = await provider.publishTime(
+      exactPurl,
+      { settledBefore },
+      options.signal,
+    );
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    return;
+  }
+  if (evidence?.publishedAt !== undefined)
+    facts.publishedAt = evidence.publishedAt;
+  else if (evidence?.publishedNoLaterThan !== undefined)
+    facts.publishedNoLaterThan = evidence.publishedNoLaterThan;
+}
+
+/**
+ * Whether the policy's minimum release age rules this exact version out.
+ *
+ * True only when the registry says, with an exact publish time, that the
+ * release is inside the window. A version whose time cannot be had is not ruled
+ * out here (that is the policy's call at the point of selection, where strict
+ * mode denies it), and one whose package was last changed before the window
+ * needs no request to be cleared. This is what lets a resolve pass over a
+ * dependency released an hour ago for the previous release that satisfies the
+ * same range, as pnpm's minimumReleaseAge does, instead of failing the install.
+ */
+export async function insideReleaseAge(
+  policy: PolicyDocument,
+  provider: CatalogProvider,
+  exactPurl: string,
+  evaluationTime: string,
+): Promise<boolean> {
+  const minutes = policy.minimumReleaseAgeMinutes;
+  if (minutes === undefined || minutes <= 0) return false;
+  const facts: PolicyFacts = {
+    evidence: [],
+    packageId: exactPurl,
+    evaluationTime,
+    sourceKind: 'registry',
+  };
+  await capturePublishTime(facts, provider, exactPurl, {
+    minimumReleaseAgeMinutes: minutes,
+  });
+  if (facts.publishedAt === undefined) return false;
+  const result = await evaluatePolicy(policy, facts);
+  return result.checks.some(
+    (check) =>
+      check.code === 'supply-chain.release-age' &&
+      check.status === 'policy-denied',
+  );
+}
+
 /** Inspect via catalog provider and return captured facts (real path). */
 export async function captureFactsFromCatalog(
   provider: CatalogProvider,
@@ -416,6 +531,7 @@ export async function captureFactsFromCatalog(
     dependencyDepth?: number;
     registryId?: string;
     priorTrustLevel?: TrustTier;
+    minimumReleaseAgeMinutes?: number | undefined;
     signal?: AbortSignal;
   },
 ): Promise<{ inspection: ProviderInspection; facts: PolicyFacts }> {
@@ -432,6 +548,10 @@ export async function captureFactsFromCatalog(
       priorTrustLevel: options.priorTrustLevel,
     }),
     lifecycleScriptsExecuted: false,
+  });
+  await capturePublishTime(facts, provider, exactPurl, {
+    minimumReleaseAgeMinutes: options.minimumReleaseAgeMinutes,
+    ...(!(options.signal === undefined) && { signal: options.signal }),
   });
   return { inspection, facts };
 }
