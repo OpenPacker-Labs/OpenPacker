@@ -233,11 +233,16 @@ export function planFrozenPackageLock(input: {
   const { into, out } = buildEdges(tree, byPath);
   const skipped: FrozenLockSkip[] = [];
   const refused: FrozenLockRefusal[] = [];
-  const skip = (entry: LockEntry, reason: string): void => {
+  const skip = (
+    entry: LockEntry,
+    kind: FrozenLockSkip['kind'],
+    reason: string,
+  ): void => {
     skipped.push({
       path: entry.path,
       name: entry.name,
       version: entry.version,
+      kind,
       reason,
     });
   };
@@ -245,7 +250,7 @@ export function planFrozenPackageLock(input: {
   const left = new Set<LockEntry>();
   for (const entry of tree.entries) {
     if (entry.inBundle) {
-      skip(entry, "shipped inside its parent's tarball");
+      skip(entry, 'bundled', "shipped inside its parent's tarball");
       continue;
     }
     const why =
@@ -258,7 +263,7 @@ export function planFrozenPackageLock(input: {
         omit.has('optional') &&
         omit.has('dev') &&
         'dev and optional dependency (omitted)');
-    if (why) skip(entry, why);
+    if (why) skip(entry, 'omitted', why);
     else left.add(entry);
   }
 
@@ -278,6 +283,7 @@ export function planFrozenPackageLock(input: {
     left.delete(entry);
     skip(
       entry,
+      'platform',
       `optional, and for ${describeDeclared(entry)}, not ${describeTarget(target)}`,
     );
   }
@@ -286,6 +292,7 @@ export function planFrozenPackageLock(input: {
       if (dropped === entry || !left.delete(dropped)) continue;
       skip(
         dropped,
+        'orphaned',
         `only needed by ${entry.path}, which this machine does not install`,
       );
     }

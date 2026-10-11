@@ -123,6 +123,7 @@ describe('which entries a host installs', () => {
     expect(here.skipped).toEqual([
       expect.objectContaining({
         path: 'node_modules/@esbuild/darwin-arm64',
+        kind: 'platform',
         reason: expect.stringMatching(/optional, and for os darwin cpu arm64/u),
       }),
     ]);
@@ -254,6 +255,9 @@ describe('which entries a host installs', () => {
       'node_modules/native-helper',
     ]);
     expect(
+      result.skipped.find((entry) => entry.path.endsWith('native-helper')),
+    ).toMatchObject({ kind: 'orphaned' });
+    expect(
       result.skipped.find((entry) => entry.path.endsWith('native-helper'))
         ?.reason,
     ).toBe(
@@ -327,6 +331,11 @@ describe('which entries a host installs', () => {
         entry.path.endsWith('test-tool'),
       )?.reason,
     ).toBe('dev dependency (omitted)');
+    expect(
+      plan(lock, linuxX64, ['dev']).skipped.find((entry) =>
+        entry.path.endsWith('test-tool'),
+      ),
+    ).toMatchObject({ kind: 'omitted' });
   });
 
   it('does not fetch an entry shipped inside its parent', () => {
@@ -343,6 +352,7 @@ describe('which entries a host installs', () => {
     expect(result.skipped).toEqual([
       expect.objectContaining({
         path: 'node_modules/a/node_modules/b',
+        kind: 'bundled',
         reason: "shipped inside its parent's tarball",
       }),
     ]);

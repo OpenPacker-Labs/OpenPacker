@@ -63,7 +63,13 @@ export interface FrozenLockSkip {
   path: string;
   name: string;
   version: string;
-  /** Why this host does not install it. */
+  /**
+   * Why, in one word: left out by the options (`omitted`), for another
+   * platform (`platform`), needed only by something left out (`orphaned`), or
+   * shipped inside its parent's archive (`bundled`).
+   */
+  kind: 'omitted' | 'platform' | 'orphaned' | 'bundled';
+  /** The same, in words. */
   reason: string;
 }
 
