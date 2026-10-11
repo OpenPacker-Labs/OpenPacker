@@ -554,11 +554,20 @@ interface QueueItem {
   via: 'hard' | 'optional';
 }
 
-interface InspectedCandidate {
-  instance: PackageInstance;
-  host: boolean | 'unknown';
-  expanded: boolean;
-}
+/** What the registry said about one candidate version. */
+type CandidateOutcome =
+  | { kind: 'error'; reason: string }
+  | { kind: 'gated'; reason: string }
+  | {
+      kind: 'ok';
+      instance: PackageInstance;
+      host: boolean | 'unknown';
+    };
+
+/** What reading for a queue item found; the walk applies it in queue order. */
+type PreparedItem =
+  | { failure: string }
+  | { candidates: string[]; bounded: boolean; found: CandidateOutcome[] };
 
 /**
  * Walk from the root requirements to every package they need.
@@ -604,7 +613,8 @@ export async function resolveGraph(input: {
   const skippedMarkers: { purl: string; marker: string }[] = [];
   const skippedPlatform: { purl: string; reason: string }[] = [];
   const gated: { purl: string; reason: string }[] = [];
-  const inspected = new Map<string, InspectedCandidate | null>();
+  const reported = new Set<string>();
+  const expanded = new Set<string>();
   const queued = new Set<string>();
   const discovered = new Set<string>();
   /** Optional edges, made hard afterwards if their target was admitted. */
@@ -617,175 +627,219 @@ export async function resolveGraph(input: {
 
   const keyOf = (item: QueueItem) =>
     `${item.purl}|${item.range ?? ''}|${item.via}`;
-  const queue: QueueItem[] = input.roots.map((root) => ({
-    purl: stripPurlVersion(root.purl),
-    via: 'hard' as const,
-    ...(!(root.range === undefined) && { range: root.range }),
-  }));
-  for (const item of queue) queued.add(keyOf(item));
+  // Start reading a package's metadata as soon as something asks for it, not
+  // when the walk gets to it. Nothing is read that the walk would not read
+  // anyway.
+  const warmed = new Set<string>();
+  const warm = (purl: string) => {
+    if (warmed.has(purl)) return;
+    warmed.add(purl);
+    const ecosystem = ecosystemFromPurl(purl);
+    pool
+      .provider(ecosystem)
+      .then((provider) => provider.enumerate(purl))
+      .catch(() => undefined);
+  };
 
-  while (queue.length > 0) {
-    const item = queue.shift()!;
-    discovered.add(item.purl);
-    if (discovered.size > bounds.maximumPackages)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `Dependency graph exceeded ${bounds.maximumPackages} packages. ` +
-          `Raise the bound deliberately rather than resolving an unbounded graph.`,
-      );
+  // What the registry says about a candidate, asked once however many ranges
+  // reach it.
+  const outcomes = new Map<string, Promise<CandidateOutcome>>();
+  const outcomeOf = (candidate: string, provider: CatalogProvider) => {
+    let outcome = outcomes.get(candidate);
+    if (outcome === undefined) {
+      outcome = (async (): Promise<CandidateOutcome> => {
+        try {
+          const refusal = await input.candidateGate?.(candidate, provider);
+          if (refusal !== undefined) return { kind: 'gated', reason: refusal };
+          const instance = (await provider.inspect(candidate)).package;
+          return { kind: 'ok', instance, host: hostSupport(instance, host) };
+        } catch (error) {
+          return {
+            kind: 'error',
+            reason: error instanceof Error ? error.message : String(error),
+          };
+        }
+      })();
+      outcomes.set(candidate, outcome);
+    }
+    return outcome;
+  };
+
+  // The part of an item that only reads. A level of the walk does this for all
+  // its items together; what each finds is then applied in queue order, so the
+  // graph does not depend on which read finished first.
+  const prepare = async (item: QueueItem): Promise<PreparedItem> => {
     const ecosystem = ecosystemFromPurl(item.purl);
-
-    let provider: CatalogProvider;
-    let candidates: string[];
     try {
-      provider = await pool.provider(ecosystem);
-      candidates = await candidatesFor(
+      const provider = await pool.provider(ecosystem);
+      let candidates = await candidatesFor(
         ecosystem,
         item.purl,
         item.range,
         provider,
       );
+      const bounded = candidates.length > bounds.candidatesPerPackage;
+      if (bounded)
+        candidates = candidates.slice(0, bounds.candidatesPerPackage);
+      const found = await Promise.all(
+        candidates.map((candidate) => outcomeOf(candidate, provider)),
+      );
+      return { candidates, bounded, found };
     } catch (error) {
-      unresolved.push({
-        purl: item.purl,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      continue;
+      return {
+        failure: error instanceof Error ? error.message : String(error),
+      };
     }
-    if (candidates.length === 0) {
-      unresolved.push({
-        purl: item.purl,
-        reason:
-          item.range === undefined
-            ? 'the registry published no versions'
-            : `no published version satisfies ${item.range}`,
-      });
-      continue;
-    }
-    if (candidates.length > bounds.candidatesPerPackage) {
-      truncated.push(item.purl);
-      candidates = candidates.slice(0, bounds.candidatesPerPackage);
-    }
+  };
 
-    let admitted = 0;
-    for (const candidate of candidates) {
-      let entry = inspected.get(candidate);
-      if (entry === undefined) {
-        try {
-          const refusal = await input.candidateGate?.(candidate, provider);
-          if (refusal !== undefined) {
-            gated.push({ purl: candidate, reason: refusal });
-            inspected.set(candidate, null);
-            continue;
-          }
-          const instance = (await provider.inspect(candidate)).package;
-          entry = {
-            instance,
-            host: hostSupport(instance, host),
-            expanded: false,
-          };
-        } catch (error) {
-          entry = null;
-          unresolved.push({
-            purl: candidate,
-            reason: error instanceof Error ? error.message : String(error),
-          });
-        }
-        inspected.set(candidate, entry);
-      }
-      if (entry === null) continue;
+  let queue: QueueItem[] = input.roots.map((root) => ({
+    purl: stripPurlVersion(root.purl),
+    via: 'hard' as const,
+    ...(!(root.range === undefined) && { range: root.range }),
+  }));
+  for (const item of queue) {
+    queued.add(keyOf(item));
+    warm(item.purl);
+  }
 
-      if (entry.host === false) {
-        const reason = `does not run on this host (${describeTarget(host.nativeTarget)})`;
-        if (item.via === 'optional')
-          skippedPlatform.push({ purl: candidate, reason });
-        else unresolved.push({ purl: candidate, reason });
+  while (queue.length > 0) {
+    const level = queue;
+    queue = [];
+    const prepared = await Promise.all(level.map(prepare));
+    for (const [position, item] of level.entries()) {
+      discovered.add(item.purl);
+      if (discovered.size > bounds.maximumPackages)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `Dependency graph exceeded ${bounds.maximumPackages} packages. ` +
+            `Raise the bound deliberately rather than resolving an unbounded graph.`,
+        );
+      const ready = prepared[position]!;
+      if ('failure' in ready) {
+        unresolved.push({ purl: item.purl, reason: ready.failure });
         continue;
       }
-      // An optional dependency whose platform cannot be established is left
-      // out rather than guessed in; a hard one is kept and the solver decides.
-      if (entry.host === 'unknown' && item.via === 'optional') {
-        skippedPlatform.push({
-          purl: candidate,
-          reason: 'its platform restriction could not be evaluated',
+      const { candidates, found } = ready;
+      if (candidates.length === 0) {
+        unresolved.push({
+          purl: item.purl,
+          reason:
+            item.range === undefined
+              ? 'the registry published no versions'
+              : `no published version satisfies ${item.range}`,
         });
         continue;
       }
-      admitted += 1;
-      if (entry.expanded) continue;
-      entry.expanded = true;
+      if (ready.bounded) truncated.push(item.purl);
 
-      // Requirements whose markers are true for this host become hard edges
-      // for the solver. Adapters leave them `optional: true` so capture does
-      // not invent host truth; resolve is the place that decides.
-      const decisions = new Map<Requirement, FollowDecision>();
-      const requirements = (entry.instance.requirements ?? []).map(
-        (requirement) => {
-          const decision = shouldFollowRequirement(requirement, host);
-          const copy = { ...requirement };
-          if (decision.follow && decision.via === undefined)
-            copy.optional = false;
-          decisions.set(copy, decision);
-          return copy;
-        },
-      );
-      const evaluated =
-        entry.host === true && hostPredicateOf(entry.instance) !== undefined
-          ? withHostEvaluated(entry.instance, host)
-          : entry.instance;
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      packages.push({ ...evaluated, requirements } as PackageInstance);
-
-      for (const requirement of requirements) {
-        const decision = decisions.get(requirement)!;
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        const expression = (requirement as { expression?: { purl?: string } })
-          .expression;
-        if (!decision.follow) {
-          const marker = requirementMarker(requirement);
-          if (
-            marker !== undefined &&
-            decision.skipReason?.startsWith('marker false')
-          ) {
-            if (expression?.purl)
-              skippedMarkers.push({ purl: expression.purl, marker });
-          }
-          // Marker unknown: surface so a silent empty graph is not the only
-          // signal that something was skipped.
-          if (decision.skipReason?.startsWith('marker not evaluable')) {
-            if (expression?.purl)
-              unresolved.push({
-                purl: expression.purl,
-                reason: decision.skipReason,
-              });
+      let admitted = 0;
+      for (const [index, candidate] of candidates.entries()) {
+        const outcome = found[index]!;
+        if (outcome.kind !== 'ok') {
+          if (!reported.has(candidate)) {
+            reported.add(candidate);
+            (outcome.kind === 'gated' ? gated : unresolved).push({
+              purl: candidate,
+              reason: outcome.reason,
+            });
           }
           continue;
         }
-        if (!expression?.purl) continue;
-        const range = nativeRange(requirement);
-        const next: QueueItem = {
-          purl: stripPurlVersion(expression.purl),
-          via: decision.via === 'optional' ? 'optional' : 'hard',
-          ...(!(range === undefined) && { range }),
-        };
-        if (next.via === 'optional')
-          optionalEdges.push({
-            requirement,
-            base: next.purl,
-            ecosystem: ecosystemFromPurl(next.purl),
-            ...(!(range === undefined) && { range }),
+        const { instance } = outcome;
+
+        if (outcome.host === false) {
+          const reason = `does not run on this host (${describeTarget(host.nativeTarget)})`;
+          if (item.via === 'optional')
+            skippedPlatform.push({ purl: candidate, reason });
+          else unresolved.push({ purl: candidate, reason });
+          continue;
+        }
+        // An optional dependency whose platform cannot be established is left
+        // out rather than guessed in; a hard one is kept and the solver decides.
+        if (outcome.host === 'unknown' && item.via === 'optional') {
+          skippedPlatform.push({
+            purl: candidate,
+            reason: 'its platform restriction could not be evaluated',
           });
-        const key = keyOf(next);
-        if (queued.has(key)) continue;
-        queued.add(key);
-        queue.push(next);
+          continue;
+        }
+        admitted += 1;
+        if (expanded.has(candidate)) continue;
+        expanded.add(candidate);
+
+        // Requirements whose markers are true for this host become hard edges
+        // for the solver. Adapters leave them `optional: true` so capture does
+        // not invent host truth; resolve is the place that decides.
+        const decisions = new Map<Requirement, FollowDecision>();
+        const requirements = (instance.requirements ?? []).map(
+          (requirement) => {
+            const decision = shouldFollowRequirement(requirement, host);
+            const copy = { ...requirement };
+            if (decision.follow && decision.via === undefined)
+              copy.optional = false;
+            decisions.set(copy, decision);
+            return copy;
+          },
+        );
+        const evaluated =
+          outcome.host === true && hostPredicateOf(instance) !== undefined
+            ? withHostEvaluated(instance, host)
+            : instance;
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        packages.push({ ...evaluated, requirements } as PackageInstance);
+
+        for (const requirement of requirements) {
+          const decision = decisions.get(requirement)!;
+          // SAFETY: The surrounding boundary establishes the asserted domain contract.
+          const expression = (requirement as { expression?: { purl?: string } })
+            .expression;
+          if (!decision.follow) {
+            const marker = requirementMarker(requirement);
+            if (
+              marker !== undefined &&
+              decision.skipReason?.startsWith('marker false')
+            ) {
+              if (expression?.purl)
+                skippedMarkers.push({ purl: expression.purl, marker });
+            }
+            // Marker unknown: surface so a silent empty graph is not the only
+            // signal that something was skipped.
+            if (decision.skipReason?.startsWith('marker not evaluable')) {
+              if (expression?.purl)
+                unresolved.push({
+                  purl: expression.purl,
+                  reason: decision.skipReason,
+                });
+            }
+            continue;
+          }
+          if (!expression?.purl) continue;
+          const range = nativeRange(requirement);
+          const next: QueueItem = {
+            purl: stripPurlVersion(expression.purl),
+            via: decision.via === 'optional' ? 'optional' : 'hard',
+            ...(!(range === undefined) && { range }),
+          };
+          if (next.via === 'optional')
+            optionalEdges.push({
+              requirement,
+              base: next.purl,
+              ecosystem: ecosystemFromPurl(next.purl),
+              ...(!(range === undefined) && { range }),
+            });
+          const key = keyOf(next);
+          if (queued.has(key)) continue;
+          queued.add(key);
+          queue.push(next);
+          warm(next.purl);
+        }
       }
+      if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
+        unresolved.push({
+          purl: item.purl,
+          reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
+        });
     }
-    if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
-      unresolved.push({
-        purl: item.purl,
-        reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
-      });
   }
 
   // An optional dependency that was admitted is installed, so the edge to it

@@ -408,52 +408,83 @@ function etagOf(response: HttpResponse): string | undefined {
 }
 
 /**
- * Answers a repeated read of the same registry document from memory.
+ * Answers a repeated read of the same registry document from memory, and
+ * bounds how many requests are in flight.
  *
  * A provider revalidates a document it already holds on every use, which for a
  * resolve is a round trip per queue item per step for documents that cannot
  * usefully change within it, and a resolve that read one package's metadata in
  * two places could see two different versions of it. This makes one resolve
  * read each document once: a request that carries the `etag` it was already
- * given is answered `304`, one that carries none gets the stored `200`.
+ * given is answered `304`, one that carries none gets the stored `200`, and a
+ * request for a document already being fetched waits for that fetch rather
+ * than starting another.
  *
  * Only small, repeatable reads are kept: a GET, bounded to a few MiB, that is
- * not an artifact download. Artifact bytes pass through and are not held.
+ * not an artifact download. Artifact bytes pass through and are not held. Every
+ * request, kept or not, takes one of a fixed number of slots, so a walk that
+ * reads ahead cannot open a connection per package.
  */
 export class MemoizingTransport implements HttpTransport {
   static readonly ENTRY_LIMIT = 8 * 1024 * 1024;
   static readonly TOTAL_LIMIT = 128 * 1024 * 1024;
-  readonly #kept = new Map<string, HttpResponse>();
+  static readonly CONCURRENCY = 12;
+  readonly #kept = new Map<string, Promise<HttpResponse>>();
+  readonly #waiting: (() => void)[] = [];
   #bytes = 0;
+  #active = 0;
 
   constructor(private readonly inner: HttpTransport) {}
 
   async request(request: HttpRequest): Promise<HttpResponse> {
-    if (!MemoizingTransport.repeatable(request))
-      return this.inner.request(request);
+    if (!MemoizingTransport.repeatable(request)) return this.slot(request);
     const key = `${request.url}\n${request.headers?.accept ?? ''}`;
-    const kept = this.#kept.get(key);
-    if (kept !== undefined) {
-      const validator = request.headers?.['if-none-match'];
-      return validator !== undefined && validator === etagOf(kept)
-        ? {
-            status: 304,
-            headers: { etag: validator },
-            body: new Uint8Array(),
-            url: kept.url,
-          }
-        : kept;
+    const existing = this.#kept.get(key);
+    if (existing === undefined) {
+      const fetched = this.slot(request).then(
+        (response) => {
+          if (
+            response.status === 200 &&
+            response.body.byteLength <= MemoizingTransport.ENTRY_LIMIT &&
+            this.#bytes + response.body.byteLength <=
+              MemoizingTransport.TOTAL_LIMIT
+          )
+            this.#bytes += response.body.byteLength;
+          else this.#kept.delete(key);
+          return response;
+        },
+        (error: unknown) => {
+          this.#kept.delete(key);
+          throw error;
+        },
+      );
+      this.#kept.set(key, fetched);
+      return fetched;
     }
-    const response = await this.inner.request(request);
-    if (
-      response.status === 200 &&
-      response.body.byteLength <= MemoizingTransport.ENTRY_LIMIT &&
-      this.#bytes + response.body.byteLength <= MemoizingTransport.TOTAL_LIMIT
-    ) {
-      this.#kept.set(key, response);
-      this.#bytes += response.body.byteLength;
+    const kept = await existing;
+    const validator = request.headers?.['if-none-match'];
+    return validator !== undefined && validator === etagOf(kept)
+      ? {
+          status: 304,
+          headers: { etag: validator },
+          body: new Uint8Array(),
+          url: kept.url,
+        }
+      : kept;
+  }
+
+  /** Run `request` in one of the fixed number of slots. */
+  private async slot(request: HttpRequest): Promise<HttpResponse> {
+    if (this.#active < MemoizingTransport.CONCURRENCY) this.#active += 1;
+    else await new Promise<void>((resolve) => this.#waiting.push(resolve));
+    try {
+      return await this.inner.request(request);
+    } finally {
+      // Hand the slot straight to the next in line; free it if none is.
+      const next = this.#waiting.shift();
+      if (next === undefined) this.#active -= 1;
+      else next();
     }
-    return response;
   }
 
   private static repeatable(request: HttpRequest): boolean {

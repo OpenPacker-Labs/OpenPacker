@@ -21,6 +21,7 @@ import {
   listRegistryVersions,
   registryOptionsForEcosystem,
   resolveRegistryArtifact,
+  type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -832,6 +833,23 @@ async function resolveTransitive(input: {
     });
 
     const directPurls = new Set(input.direct.map((pkg) => pkg.purl));
+    // Fetch every artifact at once (the pool's transport bounds how many are in
+    // flight), then take the results in solve order, so what is locked and
+    // which failure is reported do not depend on which download finished first.
+    const artifacts = new Map<string, Promise<RegistryArtifact>>();
+    for (const instance of solved.selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined || directPurls.has(exact)) continue;
+      const fetching = input.pool
+        .optionsWithProvider(instance.identity.purlType)
+        .then((options) =>
+          resolveRegistryArtifact(instance.identity.purlType, exact, options),
+        );
+      // Reported where it is awaited below; this only keeps a later failure
+      // from being an unhandled rejection while an earlier one is awaited.
+      fetching.catch(() => undefined);
+      artifacts.set(exact, fetching);
+    }
     for (const instance of solved.selected) {
       const exact = instance.identity.exactPurl;
       if (exact === undefined || directPurls.has(exact)) continue;
@@ -845,11 +863,7 @@ async function resolveTransitive(input: {
       // `inspect` describes a package; the downloadable artifact and its
       // published digest come from the artifact record, which is what the
       // direct path uses too.
-      const artifact = await resolveRegistryArtifact(
-        instance.identity.purlType,
-        exact,
-        await input.pool.optionsWithProvider(instance.identity.purlType),
-      );
+      const artifact = await artifacts.get(exact)!;
       // Same standard as the direct path: the digest that goes in the lock is
       // re-derived from the bytes in hand, not copied from what the provider
       // said about them.
