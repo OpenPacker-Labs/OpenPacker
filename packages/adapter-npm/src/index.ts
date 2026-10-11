@@ -162,6 +162,53 @@ function npmPackagePurl(name: string): string {
   });
 }
 
+/** What the right-hand side of a dependency entry asks npm to do. */
+export type NpmDependencySpecKind =
+  | 'range'
+  | 'tag'
+  | 'alias'
+  | 'git'
+  | 'url'
+  | 'file'
+  | 'workspace';
+
+const GIT_SPEC =
+  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
+const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
+
+/**
+ * Read a dependency specifier the way npm does: anything that is not a version
+ * range and not a recognizable source is a dist-tag.
+ */
+export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
+  const value = spec.trim();
+  if (value.startsWith('npm:')) return 'alias';
+  if (value.startsWith('workspace:')) return 'workspace';
+  if (
+    /^(?:file|link|portal):/iu.test(value) ||
+    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
+  )
+    return 'file';
+  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
+  if (/^https?:\/\//iu.test(value)) return 'url';
+  try {
+    new NpmCodec().parseNativeRange(value);
+    return 'range';
+  } catch {
+    return 'tag';
+  }
+}
+
+function npmPackagePurl(name: string): string {
+  const coordinate = new NpmCodec().parseNativeCoordinate(name);
+  return formatPurl({
+    type: 'npm',
+    namespace: npmNamespace(coordinate.namespace),
+    name: coordinate.name,
+    qualifiers: {},
+  });
+}
+
 function npmRequirement(
   dependerNodeId: string,
   name: string,
