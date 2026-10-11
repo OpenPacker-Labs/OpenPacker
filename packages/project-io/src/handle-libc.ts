@@ -395,10 +395,6 @@ interface Entry {
   readonly kind: EntryKind;
 }
 
-function byteOrder(a: string, b: string): number {
-  return Buffer.compare(Buffer.from(a), Buffer.from(b));
-}
-
 /**
  * Entries of an open directory, without . and .., in byte order (what Node's
  * readdir returns). The listing runs on a descriptor of its own, opened as "."
@@ -444,7 +440,11 @@ function listEntries(api: LibcApi, dirfd: number, display: string): Entry[] {
   } finally {
     api.closedir(stream);
   }
-  return found.sort((a, b) => byteOrder(a.name, b.name));
+  // Node's readdir returns names in byte order; sort on the UTF-8 bytes once.
+  return found
+    .map((entry) => ({ entry, key: Buffer.from(entry.name) }))
+    .sort((a, b) => Buffer.compare(a.key, b.key))
+    .map(({ entry }) => entry);
 }
 
 function nodeKind(entry: Dirent): EntryKind {
