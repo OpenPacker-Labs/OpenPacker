@@ -79,12 +79,27 @@ export interface FrozenLockRefusal {
   reason: string;
 }
 
+/**
+ * What this ecosystem's own extractor accepts beyond opm's default, which a
+ * frozen install must too if it is to install what the native tool would.
+ */
+export interface FrozenExtraction {
+  /**
+   * npm's tar extraction writes `package/./dist/index.js` as
+   * `package/dist/index.js` and a file listed twice once; published packages
+   * carry both spellings.
+   */
+  acceptRedundantEntries: boolean;
+}
+
 export interface FrozenLock {
   /** The lock file read, absolute. */
   lockPath: string;
   /** sha256 over the lock's bytes, hex. */
   lockDigest: string;
   lockfileVersion: number;
+  /** How its archives are to be read. */
+  extraction: FrozenExtraction;
   /** What to install, parents before the packages nested in them. */
   packages: FrozenLockPackage[];
   /** What the lock holds that this host and these options leave out. */

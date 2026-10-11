@@ -8,6 +8,7 @@ import {
 import {
   downloadArchive,
   mapPool,
+  MemoryBudget,
   transportForSources,
 } from '../src/frozen-fetch.js';
 
@@ -214,5 +215,64 @@ describe('mapPool', () => {
 
   it('handles nothing', async () => {
     await expect(mapPool([], 4, async () => 1)).resolves.toEqual([]);
+  });
+});
+
+describe('MemoryBudget', () => {
+  it('lets work run together while it fits and holds the rest back', async () => {
+    const budget = new MemoryBudget(100);
+    let running = 0;
+    let peak = 0;
+    const job = (need: number) =>
+      budget.hold(need, async () => {
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        running -= 1;
+      });
+    await Promise.all([job(40), job(40), job(40), job(40)]);
+    expect(peak).toBe(2);
+  });
+
+  it('runs work that needs more than the pool holds, alone', async () => {
+    const budget = new MemoryBudget(100);
+    let running = 0;
+    let peak = 0;
+    const job = (need: number) =>
+      budget.hold(need, async () => {
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        running -= 1;
+      });
+    await Promise.all([job(1000), job(10), job(1000)]);
+    expect(peak).toBe(1);
+  });
+
+  it('does not let a large job starve behind small ones', async () => {
+    const budget = new MemoryBudget(100);
+    const order: string[] = [];
+    const job = (label: string, need: number) =>
+      budget.hold(need, async () => {
+        order.push(label);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+    await Promise.all([
+      job('a', 60),
+      job('big', 90),
+      job('b', 30),
+      job('c', 30),
+    ]);
+    expect(order.indexOf('big')).toBeLessThan(order.indexOf('b'));
+  });
+
+  it('frees what a failed job held', async () => {
+    const budget = new MemoryBudget(10);
+    await expect(
+      budget.hold(10, async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    await expect(budget.hold(10, async () => 'ok')).resolves.toBe('ok');
   });
 });

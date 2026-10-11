@@ -37,11 +37,17 @@ import {
   type ProjectFormat,
   type ProjectionResult,
 } from '@openpacker/adapter-core';
+import {
+  DEFAULT_MATERIALIZATION_LIMITS,
+  type MaterializationLimits,
+} from '@openpacker/materializer';
 import { removeTree } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import {
   downloadArchive,
   mapPool,
+  MAXIMUM_ARCHIVE_BYTES,
+  MemoryBudget,
   transportForSources,
   type FrozenFetchOptions,
 } from './frozen-fetch.js';
@@ -126,6 +132,31 @@ interface Stored {
 }
 
 const DEFAULT_CONCURRENCY = 8;
+
+/**
+ * Bounds an archive is extracted under. They are larger than the materializer's
+ * defaults, which suit a small tool and not a dependency tree (a native build
+ * of onnxruntime is 287 MB unpacked, some packages ship tens of thousands of
+ * files), and no larger than a tree opm can then hash and link.
+ */
+export function frozenArchiveLimits(extraction: {
+  acceptRedundantEntries: boolean;
+}): MaterializationLimits {
+  return {
+    ...DEFAULT_MATERIALIZATION_LIMITS,
+    maximumFiles: 100_000,
+    maximumExpandedBytes: 1024 * 1024 * 1024,
+    maximumCompressedBytes: MAXIMUM_ARCHIVE_BYTES,
+    maximumCompressionRatio: 128,
+    maximumMemoryBytes: 3 * 1024 * 1024 * 1024,
+    ...(extraction.acceptRedundantEntries && { acceptRedundantEntries: true }),
+  };
+}
+
+/** Memory extraction may hold across all archives at once. */
+const EXTRACTION_MEMORY = 2 * 1024 * 1024 * 1024;
+/** What extracting an archive is expected to hold, per byte of the archive. */
+const EXTRACTION_FOOTPRINT = 8;
 
 function now(): number {
   return performance.now();
@@ -287,6 +318,7 @@ export async function installFrozen(
       claims,
       storeRoot: store.root,
       shared: store.shared,
+      limits: frozenArchiveLimits(lock.extraction),
       offline,
       ecosystem,
       options: input,
@@ -367,11 +399,13 @@ async function storeArchives(input: {
   claims: ReadonlyMap<string, readonly IntegrityClaim[]>;
   storeRoot: string;
   shared: boolean;
+  limits: MaterializationLimits;
   offline: boolean;
   ecosystem: string;
   options: FrozenInstallInput;
 }) {
   const { lock, claims, storeRoot } = input;
+  const memory = new MemoryBudget(EXTRACTION_MEMORY);
   const keyOf = (pkg: FrozenLockPackage) => integrityKey(claims.get(pkg.path)!);
   const firsts = new Map<string, FrozenLockPackage>();
   for (const pkg of lock.packages)
@@ -420,22 +454,27 @@ async function storeArchives(input: {
           `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${pkg.integrity}, ${redactSource(pkg.source)} served ${checked.actual}. Nothing was installed from it`,
         );
       const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-      const entry = await publishSharedEntry({
-        sharedRoot: storeRoot,
-        digest,
-        format: inferFormat(pkg.source),
-        bytes,
-        seal: input.shared,
-      }).catch((error: unknown) => {
-        // The materializer refuses an unsafe archive in its own words; say whose.
-        throw error instanceof OpmError
-          ? error
-          : new OpmError(
-              'UNSAFE_PATH',
-              `${labelOf(pkg)} cannot be extracted: ${error instanceof Error ? error.message : String(error)}`,
-              { cause: error },
-            );
-      });
+      const entry = await memory
+        .hold(bytes.byteLength * EXTRACTION_FOOTPRINT, async () =>
+          publishSharedEntry({
+            sharedRoot: storeRoot,
+            digest,
+            format: inferFormat(pkg.source),
+            bytes,
+            seal: input.shared,
+            limits: input.limits,
+          }),
+        )
+        .catch((error: unknown) => {
+          // The materializer refuses an unsafe archive in its own words; say whose.
+          throw error instanceof OpmError
+            ? error
+            : new OpmError(
+                'UNSAFE_PATH',
+                `${labelOf(pkg)} cannot be extracted: ${error instanceof Error ? error.message : String(error)}`,
+                { cause: error },
+              );
+        });
       if (input.shared) await recordArchiveDigest(storeRoot, key, digest);
       return {
         path: entry.path,
@@ -445,6 +484,7 @@ async function storeArchives(input: {
       };
     },
   );
+  missing.sort();
   if (missing.length > 0)
     throw new OpmError(
       'OFFLINE',

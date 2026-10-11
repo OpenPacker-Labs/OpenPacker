@@ -19,6 +19,7 @@ import {
   type HttpResponse,
   type HttpTransport,
 } from '@openpacker/adapter-core';
+import { gzipSync } from 'node:zlib';
 import { packTarGzip } from '@openpacker/project-io';
 import { installFrozen, type FrozenInstallInput } from '../src/index.js';
 import { uniqueBytes } from './disk-usage.js';
@@ -72,6 +73,36 @@ function tarballOf(pkg: Pkg): Uint8Array {
       executable: path.startsWith('bin/'),
     })),
   );
+}
+
+/**
+ * A gzipped tar with entries spelled exactly as given: `./` segments and a
+ * path listed twice, which `packTarGzip` refuses to write.
+ */
+function rawTarball(entries: { name: string; data: string }[]): Uint8Array {
+  const blocks: Buffer[] = [];
+  for (const { name, data } of entries) {
+    const body = Buffer.from(data);
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 'utf8');
+    header.write('0000644\0', 100, 'ascii');
+    header.write('0000000\0', 108, 'ascii');
+    header.write('0000000\0', 116, 'ascii');
+    header.write(
+      `${body.length.toString(8).padStart(11, '0')}\0`,
+      124,
+      'ascii',
+    );
+    header.write('00000000000\0', 136, 'ascii');
+    header.write('        ', 148, 'ascii');
+    header.write('0', 156, 'ascii');
+    header.write('ustar\0' + '00', 257, 'ascii');
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii');
+    blocks.push(header, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));
+  return new Uint8Array(gzipSync(Buffer.concat(blocks)));
 }
 
 /** A registry that serves what it was given, and remembers what it was asked. */
@@ -212,6 +243,59 @@ describe('installFrozen', () => {
       JSON.parse(await w.read('node_modules/b/node_modules/c/package.json'))
         .version,
     ).toBe('2.0.0');
+  });
+
+  it("installs a package the way npm's extractor reads it: `./` segments and a repeated file", async () => {
+    const w = await setup();
+    const bytes = rawTarball([
+      {
+        name: 'package/package.json',
+        data: '{"name":"agent-base","version":"7.1.4","main":"dist/index.js"}',
+      },
+      { name: 'package/./dist/index.js', data: 'module.exports = "agent";\n' },
+      { name: 'package/dist/index.js', data: 'module.exports = "agent";\n' },
+    ]);
+    const url = `${ORIGIN}/agent-base/-/agent-base-7.1.4.tgz`;
+    w.registry.archives.set(url, bytes);
+    w.raw('node_modules/agent-base', {
+      version: '7.1.4',
+      resolved: url,
+      integrity: sri(bytes),
+    });
+    w.root('dependencies', 'agent-base', '7.1.4');
+    await w.write();
+
+    await w.install();
+
+    expect(w.run("console.log(require('agent-base'))")).toBe('agent');
+  });
+
+  it('still refuses a package that lists one path with two different contents', async () => {
+    const w = await setup();
+    const bytes = rawTarball([
+      {
+        name: 'package/package.json',
+        data: '{"name":"liar","version":"1.0.0"}',
+      },
+      { name: 'package/index.js', data: 'safe' },
+      { name: 'package/./index.js', data: 'malicious' },
+    ]);
+    const url = `${ORIGIN}/liar/-/liar-1.0.0.tgz`;
+    w.registry.archives.set(url, bytes);
+    w.raw('node_modules/liar', {
+      version: '1.0.0',
+      resolved: url,
+      integrity: sri(bytes),
+    });
+    w.root('dependencies', 'liar', '1.0.0');
+    await w.write();
+
+    await expect(w.install()).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringMatching(
+        /liar@1\.0\.0 \(node_modules\/liar\) cannot be extracted.*DUPLICATE_PATH/su,
+      ),
+    });
   });
 
   it('proves every archive against the integrity in the lock before using it', async () => {

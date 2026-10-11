@@ -11,6 +11,7 @@ export {
 } from './host-target.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 export type {
+  FrozenExtraction,
   FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,

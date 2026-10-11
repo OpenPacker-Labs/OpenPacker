@@ -41,7 +41,11 @@ import {
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
-import { materialize, type ArchiveFormat } from '@openpacker/materializer';
+import {
+  materialize,
+  type ArchiveFormat,
+  type MaterializationLimits,
+} from '@openpacker/materializer';
 import { assertHandleSegment, StableHandleError } from '@openpacker/project-io';
 import { stableStoreTreeDigest } from './generations.js';
 import { OpmError } from './types.js';
@@ -207,6 +211,8 @@ export async function publishSharedEntry(input: {
   format: ArchiveFormat;
   bytes: Uint8Array | (() => Promise<Uint8Array>);
   seal?: boolean;
+  /** Bounds the archive is extracted under; the materializer's by default. */
+  limits?: MaterializationLimits;
 }): Promise<{ path: string; treeDigest: string }> {
   const storeKey = storeKeyFromDigest(input.digest);
   const sharedPath = join(input.sharedRoot, storeKey);
@@ -223,7 +229,13 @@ export async function publishSharedEntry(input: {
       `.${storeKey}.materialize-${randomUUID()}`,
     );
     try {
-      await materializeArchive(bytes, input.format, input.digest, tmp);
+      await materializeArchive(
+        bytes,
+        input.format,
+        input.digest,
+        tmp,
+        input.limits,
+      );
       const treeDigest = await stableStoreTreeDigest(tmp);
       if (input.seal !== false) await sealTreeReadOnly(tmp);
       await recordTreeDigest(sharedPath, treeDigest);
@@ -357,6 +369,7 @@ async function materializeArchive(
   format: ArchiveFormat,
   digest: string,
   destination: string,
+  limits?: MaterializationLimits,
 ): Promise<void> {
   await ensureStableDirectory(dirname(destination));
   const descriptor = await descriptorForBytes({
@@ -371,6 +384,7 @@ async function materializeArchive(
     descriptor,
     destination,
     format,
+    ...(limits !== undefined && { limits }),
   });
 }
 

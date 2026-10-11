@@ -131,6 +131,48 @@ export async function downloadArchive(
   }
 }
 
+/**
+ * A pool of bytes of memory that work may hold while it runs.
+ *
+ * Extracting an archive holds the compressed bytes, the expanded tar and a
+ * copy of each file at once, so several large archives at the same time are
+ * how an install of a thousand packages runs out of memory. Work states what
+ * it expects to hold and waits its turn; one that needs more than the pool
+ * holds runs alone.
+ */
+export class MemoryBudget {
+  #free: number;
+  readonly #total: number;
+  readonly #waiting: { need: number; start: () => void }[] = [];
+
+  constructor(total: number) {
+    this.#total = total;
+    this.#free = total;
+  }
+
+  async hold<Result>(
+    need: number,
+    work: () => Promise<Result>,
+  ): Promise<Result> {
+    const held = Math.min(Math.max(need, 1), this.#total);
+    if (this.#free < held || this.#waiting.length > 0)
+      await new Promise<void>((start) =>
+        this.#waiting.push({ need: held, start }),
+      );
+    else this.#free -= held;
+    try {
+      return await work();
+    } finally {
+      this.#free += held;
+      while (this.#waiting.length > 0 && this.#waiting[0]!.need <= this.#free) {
+        const next = this.#waiting.shift()!;
+        this.#free -= next.need;
+        next.start();
+      }
+    }
+  }
+}
+
 /** Run `work` over `items` a few at a time; results keep the items' order. */
 export async function mapPool<Item, Result>(
   items: readonly Item[],

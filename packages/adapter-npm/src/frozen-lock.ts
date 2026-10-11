@@ -581,6 +581,9 @@ export async function readFrozenPackageLock(
     lockPath,
     lockDigest: createHash('sha256').update(lockText).digest('hex'),
     lockfileVersion: tree.lockfileVersion,
+    // npm's own extractor takes `./` segments and a repeated identical file
+    // as they come, and agent-base@7.1.4 is published with both.
+    extraction: { acceptRedundantEntries: true },
   };
   const workspaces = workspaceRefusals(tree, manifest);
   if (workspaces.length > 0)
