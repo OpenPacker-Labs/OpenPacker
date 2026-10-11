@@ -121,18 +121,19 @@ own repository.
     distinct from the generic usage error (2).
 
 16. `SIGINT`, `SIGTERM` and `SIGHUP` sent to `opm` are forwarded. With no
-    terminal on stdin, stdout or stderr the child starts in a process group of
-    its own and the signal goes to the whole group, so `a && b` and everything
-    either started stop with it; this is what a supervisor's `kill` or a CI
-    timeout needs. With a terminal the child stays in the foreground group the
-    terminal already signals, because a child in a group of its own would be
-    stopped the moment it read the terminal. The terminal has then already
-    delivered `SIGINT` to the child, and a second one is read as "stop now" by
-    tools that treat the second that way, so `SIGINT` is left alone and
-    `SIGTERM` and `SIGHUP` go to the child. Measured once by hand under a real
-    pseudo-terminal, not by an automated test: one `^C` reached the script once
-    (a Python `pty` driver sent the interrupt character; the script counted its
-    `SIGINT`s).
+    terminal on stdin, stdout or stderr the child starts in a session and
+    process group of its own (Node's `detached`, which is `setsid`, so it also
+    has no controlling terminal) and the signal goes to the whole group, so
+    `a && b` and everything either started stop with it; this is what a
+    supervisor's `kill` or a CI timeout needs. With a terminal the child stays
+    in the foreground group the terminal already signals, because a child in a
+    group of its own would be stopped the moment it read the terminal. The
+    terminal has then already delivered `SIGINT` to the child, and a second one
+    is read as "stop now" by tools that treat the second that way, so `SIGINT`
+    is left alone and `SIGTERM` and `SIGHUP` go to the child. Measured once by
+    hand under a real pseudo-terminal, not by an automated test: one `^C`
+    reached the script once (a Python `pty` driver sent the interrupt character;
+    the script counted its `SIGINT`s).
 
 ### How a command is handed to the system
 

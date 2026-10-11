@@ -8,8 +8,10 @@
  * to them instead.
  *
  * Termination signals are forwarded. With no terminal on any of the three
- * streams the child gets a process group of its own and the signal goes to the
- * whole group, so `a && b` and anything either started goes with it. With a
+ * streams the child is started with `detached`, which is `setsid`: a session
+ * and process group of its own (and no controlling terminal, which a process
+ * with every stream redirected has no use for). The signal goes to the whole
+ * group, so `a && b` and anything either started goes with it. With a
  * terminal the child stays in the foreground group the terminal already signals
  * (a child in a group of its own would be stopped the moment it read the
  * terminal), so SIGINT is left to the terminal, and SIGTERM and SIGHUP go to
