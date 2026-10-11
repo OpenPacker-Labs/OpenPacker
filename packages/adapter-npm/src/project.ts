@@ -252,7 +252,10 @@ export class NpmProjectFormat implements ProjectFormat {
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],
       ...(outcome.skipped.length > 0 && { skipped: outcome.skipped }),
-      semanticLoss: outcome.packages > 0 ? [layoutLoss(outcome)] : [],
+      semanticLoss:
+        outcome.packages > 0
+          ? [layoutLoss(outcome, project.metadata?.layoutOnly === true)]
+          : [],
     };
   }
 
@@ -399,7 +402,7 @@ function integrityLoss(entry: NativeLockEntry): SemanticLoss {
   };
 }
 
-function layoutLoss(outcome: LayoutOutcome): SemanticLoss {
+function layoutLoss(outcome: LayoutOutcome, layoutOnly: boolean): SemanticLoss {
   const nested =
     outcome.nested > 0
       ? `, ${outcome.nested} nested to keep conflicting versions apart`
@@ -413,7 +416,9 @@ function layoutLoss(outcome: LayoutOutcome): SemanticLoss {
       'node_modules was materialised from the digest-verified opm store',
     representedMeaning: `${outcome.packages} package(s) in a node_modules Node can resolve${nested}, ${
       outcome.copied ? 'copied' : 'hardlinked'
-    } from the store, with ${outcome.bins} executable(s) as script shims in .bin`,
+    } from the store, with ${outcome.bins} executable(s) as script shims in .bin${
+      layoutOnly ? '; there is no package.json here and none was created' : ''
+    }`,
     omittedMeaning:
       'npm was not run: no lifecycle scripts, no symlinked bin links, and a placement that is correct for the selected versions but not necessarily the one npm would choose',
     mitigation:
