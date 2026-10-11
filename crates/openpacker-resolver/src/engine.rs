@@ -617,7 +617,15 @@ fn solve_amended(input: &SolveInput) -> Result<SolveOutput, ResolverError> {
         "prex-calculus-subset-v1" => {
             let best = if crate::resolvo_engine::supports(input) {
                 let selected = crate::resolvo_engine::resolve(input)?;
-                if input.universe.packages.len() <= MAX_COMPANION_NODES {
+                // The bounded optimum is a claim about objectives. A request
+                // that asks only for hard constraints names no optimum for it
+                // to disagree with, so enumerating all 2^n assignments for it
+                // would be refused (RESOURCE_LIMIT) for universes of a dozen
+                // nodes and above, and would fail on a valid selection that is
+                // merely not the oracle's tie-break.
+                if objectives_require_optimization(&input.request)
+                    && input.universe.packages.len() <= MAX_COMPANION_NODES
+                {
                     let oracle = crate::oracle::brute_force_oracle_amended(input)?;
                     let ids = node_ids(input, &selected);
                     if ids != oracle.selected_node_ids {

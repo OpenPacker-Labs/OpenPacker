@@ -423,6 +423,47 @@ fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
 }
 
 #[test]
+fn hard_constraint_objectives_solve_small_universes_without_an_optimum_proof() {
+    let candidate = package('9', "demo", "1.0.0");
+    let mut packages = Vec::new();
+    for index in 1..=22 {
+        let mut candidate = candidate.clone();
+        let version = format!("{index}.0.0");
+        set_identity(&mut candidate, "npm", "demo", &version);
+        candidate.metadata_digest = Digest {
+            algorithm: "sha256".into(),
+            value: format!("{index:064x}"),
+        };
+        packages.push(candidate);
+    }
+    let mut hard = input(
+        packages,
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    hard.request.objectives = vec![
+        "satisfy-hard-constraints".into(),
+        "exclude-lifecycle-denied".into(),
+    ];
+
+    // Twenty-two candidates is a dozen past what the exhaustive oracle can
+    // enumerate. With no objective to optimize there is no optimum to prove,
+    // so the request is answered rather than refused, and the checker agrees.
+    let started = Instant::now();
+    let output = solve(&hard).unwrap();
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(output.solution.selected_node_ids.len(), 1);
+    assert!(check(&hard, &output).unwrap().valid);
+}
+
+#[test]
 fn exhaustive_proof_work_fails_before_enumeration() {
     let candidate = package('9', "demo", "1.0.0");
     let mut packages = Vec::new();
