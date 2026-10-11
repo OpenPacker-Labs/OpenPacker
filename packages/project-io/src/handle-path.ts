@@ -9,7 +9,7 @@
  * - macOS: `/dev/fd/N` is a file-descriptor filesystem, not a link.
  *   `/dev/fd/N/child` does not resolve (ENOENT/ENOTDIR), so the child
  *   operations go through libc `openat`/`mkdirat`/`renameat`/`unlinkat`/
- *   `fstatat` bound with koffi (`handle-libc.ts`, ADR 0043). `/dev/fd/N` still
+ *   `fstatat` bound with koffi (`handle-libc.ts`, ADR 0045). `/dev/fd/N` still
  *   names the descriptor's own file when a caller only needs to re-open it.
  * - Windows has no procfs equivalent; child opens use NtCreateFile with
  *   RootDirectory set to the parent OS handle (openat), never
