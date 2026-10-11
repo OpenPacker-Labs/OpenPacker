@@ -186,16 +186,17 @@ function bindLibc(profile: LibcAtProfile): LibcApi {
     parameters: readonly string[],
   ): Call {
     const names = profile.symbols[symbol];
+    const reasons: string[] = [];
     for (const name of names) {
       try {
         // SAFETY: the declaration handed to koffi is the signature Call names.
         return loaded.func(name, result, parameters) as Call;
-      } catch {
-        // Try the next spelling.
+      } catch (error) {
+        reasons.push(error instanceof Error ? error.message : String(error));
       }
     }
     throw new StableHandleError(
-      `${profile.libraries.join(' or ')} exports none of ${names.join(', ')}`,
+      `${profile.libraries.join(' or ')} exports none of ${names.join(', ')}: ${reasons.join('; ')}`,
     );
   }
   const openat = bind<OpenatCall>('openat', 'int', [

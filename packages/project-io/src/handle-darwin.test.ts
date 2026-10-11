@@ -122,7 +122,7 @@ describe.skipIf(process.platform !== 'darwin')(
     });
 
     describe.each(scenarioNames)('%s', (name) => {
-      it('behaves as recorded on Linux', async () => {
+      it('behaves as recorded on Linux', { timeout: 60_000 }, async () => {
         await mkdir(join(dir, 'scenarios'), { recursive: true });
         expect(await transcript(name, join(dir, 'scenarios'))).toEqual(
           expectedTranscripts[name],

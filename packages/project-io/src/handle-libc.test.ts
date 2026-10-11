@@ -293,7 +293,7 @@ describe.skipIf(!glibcLinux())(
       };
       await withParent(profile, async (backend, parent) => {
         await expect(backend.mkdirChild(parent, 'x')).rejects.toThrow(
-          /exports none of opm_no_such_symbol/u,
+          /exports none of opm_no_such_symbol: .*opm_no_such_symbol/u,
         );
       });
       await expect(
