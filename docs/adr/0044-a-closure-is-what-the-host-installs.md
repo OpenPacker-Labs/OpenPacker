@@ -128,7 +128,17 @@ before it.
    do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
-   repeated read of the same document from memory (never an artifact download).
+   repeated read of the same document from memory (never an artifact download),
+   shares one request among concurrent reads of it, and takes every request
+   through twelve slots.
+
+9. **A level of the walk reads together and is applied in order.** The reads of
+   all the items of one breadth-first level (their candidate lists and the
+   inspection of their candidates) run concurrently; the results are then
+   applied in queue order, so the graph, its package order and every diagnostic
+   are those of a sequential walk and do not depend on which read finished
+   first. The artifacts of the selected packages are fetched together and taken
+   in solve order for the same reason.
 
 ## Consequences
 
@@ -136,13 +146,13 @@ Measured against registry.npmjs.org on 2026-10-11 (Node 22.22.0, linux/x64,
 glibc), project written by `opm init` with `ecosystems = ["npm"]` and the policy
 it writes:
 
-|                                                     | before                                    | after                                                                           |
-| --------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
-| `opm add pkg:npm/vitest@4.1.9`                      | refused                                   | exit 0                                                                          |
-| packages locked                                     | 1 (with the gates off)                    | 44, each with a sha256 digest                                                   |
-| same set as npm's own resolver (`@npmcli/arborist`) | no                                        | yes, 44 of 44 at the same versions                                              |
-| requests                                            | 165 for 42 distinct documents (walk only) | 160, none repeated: 69 packuments, 47 version documents for `libc`, 44 tarballs |
-| wall time                                           | n/a                                       | about 21 s, 13 of it waiting on the network                                     |
+|                                                     | before                                    | after                                                                                           |
+| --------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `opm add pkg:npm/vitest@4.1.9`                      | refused                                   | exit 0                                                                                          |
+| packages locked                                     | 1 (with the gates off)                    | 44, each with a sha256 digest                                                                   |
+| same set as npm's own resolver (`@npmcli/arborist`) | no                                        | yes, 44 of 44 at the same versions                                                              |
+| requests                                            | 165 for 42 distinct documents (walk only) | 160, none repeated: 69 packuments, 47 version documents for `libc`, 44 tarballs                 |
+| wall time                                           | n/a                                       | 13 to 14 s (21 s while the walk read one document at a time, 13 of them waiting on the network) |
 
 The 44 are the 42 non-optional packages npm resolves plus the host's
 `lightningcss-linux-x64-gnu` and `@rolldown/binding-linux-x64-gnu`; the other 25
