@@ -1,10 +1,19 @@
 /**
  * Handle-relative filesystem I/O.
  *
- * POSIX: `/proc/self/fd/N` (Linux) or `/dev/fd/N` (macOS) so `open(join(that,
- * child))` is fd-relative. Windows has no procfs equivalent; child opens use
- * NtCreateFile with RootDirectory set to the parent OS handle (openat), never
- * GetFinalPathNameByHandle + a path re-walk.
+ * Every child operation names a child of an open directory descriptor and
+ * never re-walks a path, so a swapped ancestor cannot redirect it:
+ *
+ * - Linux: `/proc/self/fd/N` is a magic link to the open directory, so
+ *   `open(join(that, child))` is fd-relative. Ordinary fs calls do the work.
+ * - macOS: `/dev/fd/N` is a file-descriptor filesystem, not a link.
+ *   `/dev/fd/N/child` does not resolve (ENOENT/ENOTDIR), so the child
+ *   operations go through libc `openat`/`mkdirat`/`renameat`/`unlinkat`/
+ *   `fstatat` bound with koffi (`handle-libc.ts`, ADR 0043). `/dev/fd/N` still
+ *   names the descriptor's own file when a caller only needs to re-open it.
+ * - Windows has no procfs equivalent; child opens use NtCreateFile with
+ *   RootDirectory set to the parent OS handle (openat), never
+ *   GetFinalPathNameByHandle + a path re-walk.
  */
 
 import { constants } from 'node:fs';
@@ -20,7 +29,8 @@ import {
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { type ChildBackend } from './handle-libc.js';
+import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
+import { darwinProfile } from './handle-libc-profile.js';
 import { StableHandleError, wrapFd } from './handle-support.js';
 
 export { StableHandleError };
@@ -46,8 +56,12 @@ export function handlePathForPlatform(
 }
 
 /**
- * POSIX fd-relative path. On Windows this throws: child I/O must go through
- * `openChild` (NtCreateFile RootDirectory), not a re-walkable pathname.
+ * The pathname of an open descriptor: `/proc/self/fd/N` on Linux, `/dev/fd/N`
+ * on macOS. On Linux, children of it resolve fd-relatively; on macOS only the
+ * descriptor itself does (an `open` of it duplicates the descriptor), so child
+ * I/O goes through `openChild` and its siblings, never `join(path, child)`.
+ * On Windows this throws: child I/O must go through `openChild` (NtCreateFile
+ * RootDirectory), not a re-walkable pathname.
  */
 export function stableHandlePath(
   handle: FileHandle,
@@ -82,6 +96,24 @@ function posixChild(parent: FileHandle, name: string): string {
   return join(stableHandlePath(parent), assertHandleSegment(name));
 }
 
+/** Which mechanism turns "child of this descriptor" into a syscall. */
+export type ChildBackendKind = 'proc-fd' | 'libc-at' | 'nt' | 'unsupported';
+
+/**
+ * The backend a platform uses. Only Linux resolves `/proc/self/fd/N/child`;
+ * macOS uses the libc `*at()` calls, Windows the NT calls, and anything else
+ * is refused rather than guessed.
+ */
+export function childBackendKind(
+  platform: NodeJS.Platform = process.platform,
+): ChildBackendKind {
+  if (platform === 'linux') return 'proc-fd';
+  if (platform === 'darwin') return 'libc-at';
+  if (platform === 'win32') return 'nt';
+  return 'unsupported';
+}
+
+let darwinBackend: ChildBackend | undefined;
 let testBackend: ChildBackend | undefined;
 
 /**
@@ -103,8 +135,12 @@ export function useChildBackendForTesting(backend: ChildBackend): () => void {
  * platform is read at call time, as the Windows branch always has been.
  */
 function libcBackend(): ChildBackend | undefined {
-  if (process.platform === 'win32') return undefined;
-  return testBackend;
+  const kind = childBackendKind(process.platform);
+  if (kind === 'nt') return undefined;
+  if (testBackend !== undefined) return testBackend;
+  if (kind !== 'libc-at') return undefined;
+  darwinBackend ??= createLibcAtBackend(darwinProfile(process.arch));
+  return darwinBackend;
 }
 
 export async function openChild(
