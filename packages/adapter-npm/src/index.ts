@@ -1,5 +1,12 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
+import { npmTargetPredicate } from './platform.js';
+import {
+  compareNpmVersions,
+  npmSatisfies,
+  parseNpmRange,
+  parseNpmVersion,
+} from './npm-range.js';
 import type {
   ArtifactDescriptor,
   Digest,
@@ -8,22 +15,17 @@ import type {
   Requirement,
   SemanticLoss,
   SourceSnapshot,
-  TargetPredicate,
   VersionConstraint,
   JsonValue,
 } from '@openpacker/contracts';
 import {
   assertPackageIdentityMatchesRequest,
-  compareParsedVersions,
   compareCodePoints,
-  evaluateSemverRange,
   formatPurl,
   header,
   json,
   packageNodeId,
   parsePurl,
-  parseSemver,
-  parseSemverRange,
   ProviderError,
   providerErrorForStatus,
   rangeToConstraint,
@@ -332,35 +334,6 @@ function npmRequirement(
   };
 }
 
-function npmTargetPredicate(
-  os: readonly string[] | undefined,
-  cpu: readonly string[] | undefined,
-  libc: readonly string[] | undefined,
-): TargetPredicate | undefined {
-  const predicates: TargetPredicate[] = [];
-  for (const [path, values] of [
-    ['os', os],
-    ['architecture', cpu],
-    ['libc', libc],
-  ] as const) {
-    const included = (values ?? []).filter(
-      (value) => value !== '*' && !value.startsWith('!'),
-    );
-    const excluded = (values ?? [])
-      .filter((value) => value.startsWith('!'))
-      .map((value) => value.slice(1));
-    if (included.length > 0)
-      predicates.push({ type: 'in', path, values: included });
-    if (excluded.length > 0)
-      predicates.push({ type: 'notIn', path, values: excluded });
-  }
-  return predicates.length === 0
-    ? undefined
-    : predicates.length === 1
-      ? predicates[0]
-      : { type: 'allOf', predicates };
-}
-
 export class NpmCodec
   implements EcosystemCodec<NpmVersionMetadata, NpmPackageLockV3>
 {
@@ -402,22 +375,15 @@ export class NpmCodec
   }
 
   parseNativeVersion(value: string): ParsedVersion {
-    return parseSemver(value, 3);
+    return parseNpmVersion(value);
   }
 
   compareNativeVersions(left: string, right: string): number {
-    return compareParsedVersions(
-      this.parseNativeVersion(left),
-      this.parseNativeVersion(right),
-    );
+    return compareNpmVersions(left, right);
   }
 
   parseNativeRange(value: string): ParsedRange {
-    return parseSemverRange(value, {
-      scheme: 'npm',
-      bare: 'exact',
-      hyphenRanges: true,
-    });
+    return parseNpmRange(value);
   }
 
   toVers(value: string): VersionConstraint {
@@ -425,11 +391,7 @@ export class NpmCodec
   }
 
   satisfies(version: string, range: string | ParsedRange): boolean {
-    return evaluateSemverRange(
-      version,
-      typeof range === 'string' ? this.parseNativeRange(range).ast : range.ast,
-      (left, right) => this.compareNativeVersions(left, right),
-    );
+    return npmSatisfies(version, range);
   }
 
   async translateMetadata(
@@ -1207,6 +1169,7 @@ export class NpmRegistryProvider implements CatalogProvider {
 }
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
+export { npmPackageRuns, npmTargetPredicate } from './platform.js';
 export {
   chainOfLockPath,
   findDuplicateJsonKey,
