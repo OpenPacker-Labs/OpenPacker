@@ -94,6 +94,7 @@ import {
 import {
   applyAttestation,
   assertSupplyChainAllowed,
+  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
   lockAttestationFrom,
