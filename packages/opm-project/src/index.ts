@@ -129,6 +129,11 @@ export {
 } from './import-native.js';
 export { updateProject } from './update.js';
 export { uninstallProject, whyPackage, writeManifestFile } from './project.js';
+export {
+  findBinProviders,
+  type BinProvider,
+  type BinProviderReport,
+} from './bin-providers.js';
 
 export {
   GENERATIONS_DIR,
