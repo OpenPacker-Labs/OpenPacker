@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { FixtureHttpTransport } from '@openpacker/adapter-core';
-import { NpmCodec, NpmRegistryProvider, type NpmPackument } from './index.js';
+import {
+  NpmCodec,
+  NpmRegistryProvider,
+  classifyDependencySpec,
+  type NpmPackument,
+  type NpmVersionMetadata,
+} from './index.js';
 
 const encoder = new TextEncoder();
 const packumentBytes = await readFile(
@@ -187,4 +193,228 @@ it('revalidates ETags and explicit invalidation forces a full fetch', async () =
   expect((await provider.snapshot('2026-08-02T00:00:00Z')).etag).toBe(
     '"fixture-2"',
   );
+});
+
+const provenance = {
+  providerId: 'fixture',
+  endpoint: 'https://fixtures.test',
+  retrievedAt: '2026-08-02T00:00:00Z',
+  evaluationTime: '2026-08-02T00:00:00Z',
+  metadataDigest: { algorithm: 'sha256' as const, value: '1'.repeat(64) },
+};
+
+describe('dependency specifiers', () => {
+  it.each([
+    ['^1.2.3', 'range'],
+    ['1.2.x || >=3', 'range'],
+    ['*', 'range'],
+    ['', 'range'],
+    ['latest', 'tag'],
+    ['next', 'tag'],
+    ['npm:react-is@18.3.1', 'alias'],
+    ['npm:@scope/name@^2', 'alias'],
+    ['github:jonschlinkert/time-require', 'git'],
+    ['git+https://example.test/repo.git#v1', 'git'],
+    ['user/repo', 'git'],
+    ['user/repo#semver:^1', 'git'],
+    ['https://example.test/pkg.tgz', 'url'],
+    ['file:../local', 'file'],
+    ['link:../local', 'file'],
+    ['workspace:*', 'workspace'],
+  ] as const)('reads %j as %s', (spec, expected) => {
+    expect(classifyDependencySpec(spec)).toBe(expected);
+  });
+
+  const translate = (metadata: Record<string, unknown>) =>
+    new NpmCodec().translateMetadata(
+      // SAFETY: a literal that carries the fields under test.
+      { name: 'demo', version: '1.0.0', ...metadata } as NpmVersionMetadata,
+      provenance,
+    );
+
+  it('inspects a package whose dev-time tooling uses specifiers no registry resolves', async () => {
+    // @vitest/pretty-format, picomatch, std-env, tinyexec and fdir each failed
+    // to inspect over exactly this, which dropped them out of the candidate set.
+    const { instance } = await translate({
+      devDependencies: {
+        'react-is': 'npm:react-is@18.3.1',
+        'time-require': 'github:jonschlinkert/time-require',
+        'std-env': 'latest',
+        tsc: 'npm:@typescript/typescript6@^6.0.2',
+      },
+    });
+    expect(instance.requirements).toHaveLength(4);
+    for (const requirement of instance.requirements) {
+      expect(requirement.kind).toBe('development');
+      expect(requirement.optional).toBe(true);
+      // No version constraint: it must not read as "any registry version".
+      expect(requirement.expression).not.toHaveProperty('vers');
+      expect(requirement.semanticLoss.map((loss) => loss.code)).toEqual([
+        'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
+      ]);
+      expect(requirement.semanticLoss[0]!.severity).toBe('info');
+    }
+  });
+
+  it('keeps an unreadable optional peer without failing the package', async () => {
+    const { instance } = await translate({
+      peerDependencies: { host: 'latest' },
+      peerDependenciesMeta: { host: { optional: true } },
+    });
+    expect(instance.requirements[0]).toMatchObject({
+      kind: 'peer',
+      optional: true,
+    });
+  });
+
+  it.each([
+    ['dependencies', { dependencies: { bar: 'github:user/bar' } }],
+    ['dependencies', { dependencies: { bar: 'npm:baz@^1' } }],
+    ['dependencies', { dependencies: { bar: 'latest' } }],
+    ['peerDependencies', { peerDependencies: { bar: 'next' } }],
+  ])('refuses %s it would have to guess at', async (_field, metadata) => {
+    // Resolving "github:user/bar" as the registry's "bar" is how a dependency
+    // confusion attack lands, so these fail by name instead.
+    await expect(translate(metadata)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_DEPENDENCY_SPEC',
+      message: expect.stringContaining('demo@1.0.0 depends on bar'),
+    });
+  });
+});
+
+describe('semantic loss that stays out of the way', () => {
+  const translate = (metadata: Record<string, unknown>) =>
+    new NpmCodec().translateMetadata(
+      // SAFETY: a literal that carries the fields under test.
+      { name: 'demo', version: '1.0.0', ...metadata } as NpmVersionMetadata,
+      provenance,
+    );
+
+  it('treats engines as information, since npm only advises on them', async () => {
+    const { instance } = await translate({ engines: { node: '>=22' } });
+    const loss = instance.semanticLoss.find(
+      ({ code }) => code === 'NPM_ENGINE_RANGE_NATIVE_ONLY',
+    );
+    expect(loss?.severity).toBe('info');
+    expect(instance.nativeSemantics?.data).toMatchObject({
+      engines: { node: '>=22' },
+    });
+  });
+
+  it('keeps os, cpu and libc as a loss the policy decides about', async () => {
+    const { instance } = await translate({
+      os: ['linux'],
+      cpu: ['x64'],
+      libc: ['glibc'],
+    });
+    const loss = instance.semanticLoss.find(
+      ({ code }) => code === 'NPM_PACKAGE_TARGET_PREDICATE_ARTIFACT_ONLY',
+    );
+    expect(loss?.severity).toBe('error');
+    expect(instance.nativeSemantics?.data).toMatchObject({
+      targetPredicate: {
+        type: 'allOf',
+        predicates: [
+          { type: 'in', path: 'os', values: ['linux'] },
+          { type: 'in', path: 'architecture', values: ['x64'] },
+          { type: 'in', path: 'libc', values: ['glibc'] },
+        ],
+      },
+    });
+  });
+
+  it('reports an install script the abbreviated packument only flags', async () => {
+    const { instance } = await translate({ hasInstallScript: true });
+    expect(instance.semanticLoss.map((loss) => loss.code)).toContain(
+      'NPM_LIFECYCLE_SCRIPTS_NOT_EXECUTED',
+    );
+  });
+});
+
+describe('libc from the version document', () => {
+  const abbreviated = {
+    name: '@scope/binding',
+    'dist-tags': { latest: '1.0.0' },
+    modified: '2026-01-01T00:00:00.000Z',
+    versions: {
+      '1.0.0': {
+        name: '@scope/binding',
+        version: '1.0.0',
+        os: ['linux'],
+        cpu: ['x64'],
+      },
+      '1.0.1': {
+        name: '@scope/binding',
+        version: '1.0.1',
+        os: ['darwin'],
+        cpu: ['arm64'],
+      },
+    },
+  };
+  const packumentUrl = 'https://fixtures.test/%40scope%2Fbinding';
+  const body = (value: unknown) => encoder.encode(JSON.stringify(value));
+
+  it('completes a linux package, once, from the per-version document', async () => {
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [packumentUrl, { status: 200, headers: {}, body: body(abbreviated) }],
+        [
+          `${packumentUrl}/1.0.0`,
+          {
+            status: 200,
+            headers: {},
+            body: body({ ...abbreviated.versions['1.0.0'], libc: ['musl'] }),
+          },
+        ],
+      ]),
+    );
+    const provider = new NpmRegistryProvider(
+      transport,
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    const first = await provider.inspect('pkg:npm/%40scope/binding@1.0.0');
+    await provider.inspect('pkg:npm/%40scope/binding@1.0.0');
+    expect(first.package.nativeSemantics?.data).toMatchObject({
+      libc: ['musl'],
+    });
+    expect(first.warnings).toEqual([]);
+    expect(
+      transport.requests.filter((request) => request.url.endsWith('/1.0.0')),
+    ).toHaveLength(1);
+  });
+
+  it('does not ask about a package that is not linux-only', async () => {
+    const transport = new FixtureHttpTransport(
+      new Map([
+        [packumentUrl, { status: 200, headers: {}, body: body(abbreviated) }],
+      ]),
+    );
+    const provider = new NpmRegistryProvider(
+      transport,
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    await provider.inspect('pkg:npm/%40scope/binding@1.0.1');
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('inspects with a warning when the version document cannot be had', async () => {
+    const provider = new NpmRegistryProvider(
+      new FixtureHttpTransport(
+        new Map([
+          [packumentUrl, { status: 200, headers: {}, body: body(abbreviated) }],
+        ]),
+      ),
+      { now: () => '2026-08-02T00:00:00Z' },
+      'https://fixtures.test',
+    );
+    const inspected = await provider.inspect('pkg:npm/%40scope/binding@1.0.0');
+    expect(inspected.warnings.map((warning) => warning.code)).toEqual([
+      'NPM_LIBC_NOT_CAPTURED',
+    ]);
+    expect(inspected.package.nativeSemantics?.data).toMatchObject({
+      targetPredicate: { type: 'allOf' },
+    });
+  });
 });

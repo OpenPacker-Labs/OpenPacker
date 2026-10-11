@@ -55,6 +55,14 @@ export interface NpmVersionMetadata {
   engines?: Record<string, string>;
   os?: string[];
   cpu?: string[];
+  /**
+   * The C library a binary package was built for. The abbreviated packument
+   * omits it (the per-version document and the full packument carry it), so it
+   * is completed from the version document where it can matter.
+   */
+  libc?: string[];
+  /** The abbreviated packument's stand-in for `scripts`, which it omits. */
+  hasInstallScript?: boolean;
   deprecated?: string;
   dist?: {
     tarball?: string;
@@ -73,6 +81,8 @@ export interface NpmPackument {
   versions: Record<string, NpmVersionMetadata>;
   'dist-tags'?: Record<string, string>;
   time?: Record<string, string>;
+  /** When the registry last changed this document (any version, tag or flag). */
+  modified?: string;
   etag?: string;
   [key: string]: unknown;
 }
@@ -155,6 +165,53 @@ function sriSha256(value: string | undefined): Digest | undefined {
   }
 }
 
+/** What the right-hand side of a dependency entry asks npm to do. */
+export type NpmDependencySpecKind =
+  | 'range'
+  | 'tag'
+  | 'alias'
+  | 'git'
+  | 'url'
+  | 'file'
+  | 'workspace';
+
+const GIT_SPEC =
+  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
+const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
+
+/**
+ * Read a dependency specifier the way npm does: anything that is not a version
+ * range and not a recognizable source is a dist-tag.
+ */
+export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
+  const value = spec.trim();
+  if (value.startsWith('npm:')) return 'alias';
+  if (value.startsWith('workspace:')) return 'workspace';
+  if (
+    /^(?:file|link|portal):/iu.test(value) ||
+    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
+  )
+    return 'file';
+  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
+  if (/^https?:\/\//iu.test(value)) return 'url';
+  try {
+    new NpmCodec().parseNativeRange(value);
+    return 'range';
+  } catch {
+    return 'tag';
+  }
+}
+
+function npmPackagePurl(name: string): string {
+  const coordinate = new NpmCodec().parseNativeCoordinate(name);
+  return formatPurl({
+    type: 'npm',
+    namespace: npmNamespace(coordinate.namespace),
+    name: coordinate.name,
+    qualifiers: {},
+  });
+}
+
 function npmRequirement(
   dependerNodeId: string,
   name: string,
@@ -163,20 +220,56 @@ function npmRequirement(
   optional: boolean,
   endpoint: string,
   path: string,
+  owner: string,
+  enforced: boolean,
 ): Requirement {
-  const coordinate = new NpmCodec().parseNativeCoordinate(name);
+  const specKind = classifyDependencySpec(range);
+  const dependencyField = path.slice(1).split('/')[0]!;
+  if (specKind !== 'range') {
+    // An install walks into `dependencies` and required peers. Reading
+    // "github:user/repo" as "any version of the registry package with that
+    // name" would be a dependency-confusion door, so those fail here, by name.
+    // The fields an install does not walk (development, optional, optional
+    // peers) are kept as what they say, with no version constraint attached,
+    // so inspecting a package never depends on its dev-time tooling.
+    if (enforced)
+      throw new ProviderError(
+        'UNSUPPORTED_DEPENDENCY_SPEC',
+        `${owner} depends on ${name} as "${range}", a ${specKind} specifier ` +
+          `that is not a registry version range`,
+      );
+    return {
+      id: `${dependerNodeId}:${kind}:${name}`,
+      dependerNodeId,
+      expression: { type: 'package', purl: npmPackagePurl(name) },
+      kind,
+      optional: true,
+      source: sourceRef('npm', endpoint),
+      authority: 'native',
+      raw: { path, range },
+      nativeSemantics: {
+        version: 'npm-v1',
+        data: { dependencyField, range, specKind },
+      },
+      semanticLoss: [
+        semanticLoss(
+          'npm',
+          'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
+          path,
+          `The ${specKind} specifier "${range}" is not a registry version range`,
+          'The package is named without a version constraint and the specifier is retained verbatim',
+          'info',
+        ),
+      ],
+    };
+  }
   const parsed = new NpmCodec().parseNativeRange(range);
   return {
     id: `${dependerNodeId}:${kind}:${name}`,
     dependerNodeId,
     expression: {
       type: 'package',
-      purl: formatPurl({
-        type: 'npm',
-        namespace: npmNamespace(coordinate.namespace),
-        name: coordinate.name,
-        qualifiers: {},
-      }),
+      purl: npmPackagePurl(name),
       ...(!(parsed.vers === undefined) && { vers: parsed.vers }),
     },
     kind,
@@ -186,7 +279,7 @@ function npmRequirement(
     raw: { path, range },
     nativeSemantics: {
       version: 'npm-v1',
-      data: { dependencyField: path.slice(1).split('/')[0]!, range },
+      data: { dependencyField, range },
     },
     semanticLoss: [...parsed.semanticLoss],
   };
@@ -195,11 +288,13 @@ function npmRequirement(
 function npmTargetPredicate(
   os: readonly string[] | undefined,
   cpu: readonly string[] | undefined,
+  libc: readonly string[] | undefined,
 ): TargetPredicate | undefined {
   const predicates: TargetPredicate[] = [];
   for (const [path, values] of [
     ['os', os],
     ['architecture', cpu],
+    ['libc', libc],
   ] as const) {
     const included = (values ?? []).filter(
       (value) => value !== '*' && !value.startsWith('!'),
@@ -332,6 +427,8 @@ export class NpmCodec
       [metadata.peerDependencies, 'peer', false, 'peerDependencies'],
       [metadata.devDependencies, 'development', true, 'devDependencies'],
     ];
+    const losses: SemanticLoss[] = [];
+    const owner = `${metadata.name}@${metadata.version}`;
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(
         ([left], [right]) => compareCodePoints(left, right),
@@ -340,21 +437,45 @@ export class NpmCodec
           optionalByKind ||
           (field === 'peerDependencies' &&
             metadata.peerDependenciesMeta?.[name]?.optional === true);
-        requirements.push(
-          npmRequirement(
-            nodeId,
-            name,
-            range,
-            kind,
-            optional,
-            provenance.endpoint,
-            `/${field}/${name}`,
-          ),
-        );
+        // What an install walks into: runtime dependencies and required peers.
+        const enforced =
+          field === 'dependencies' ||
+          (field === 'peerDependencies' && !optional);
+        try {
+          requirements.push(
+            npmRequirement(
+              nodeId,
+              name,
+              range,
+              kind,
+              optional,
+              provenance.endpoint,
+              `/${field}/${name}`,
+              owner,
+              enforced,
+            ),
+          );
+        } catch (error) {
+          if (enforced) throw error;
+          // A dev-time or optional entry this codec cannot read must not stop
+          // the package from being inspected. It is recorded, not dropped.
+          losses.push(
+            semanticLoss(
+              'npm',
+              'NPM_DEPENDENCY_NOT_REPRESENTABLE',
+              `/${field}/${name}`,
+              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              undefined,
+              'info',
+            ),
+          );
+        }
       }
     }
-    const losses: SemanticLoss[] = [];
-    if (metadata.scripts && Object.keys(metadata.scripts).length > 0) {
+    if (
+      (metadata.scripts && Object.keys(metadata.scripts).length > 0) ||
+      metadata.hasInstallScript === true
+    ) {
       losses.push(
         semanticLoss(
           'npm',
@@ -364,28 +485,39 @@ export class NpmCodec
         ),
       );
     }
-    const targetPredicate = npmTargetPredicate(metadata.os, metadata.cpu);
-    if (metadata.os || metadata.cpu) {
+    const targetPredicate = npmTargetPredicate(
+      metadata.os,
+      metadata.cpu,
+      metadata.libc,
+    );
+    if (metadata.os || metadata.cpu || metadata.libc) {
       losses.push(
         semanticLoss(
           'npm',
           'NPM_PACKAGE_TARGET_PREDICATE_ARTIFACT_ONLY',
           '/os',
-          'npm os and cpu constraints apply to the package as a whole',
+          'npm os, cpu and libc constraints apply to the package as a whole',
           'The exact predicate is preserved and applied to artifacts, but PackageInstance has no package-level predicate',
           'error',
         ),
       );
     }
     if (metadata.engines)
+      // npm treats `engines` as advice (EBADENGINE is a warning unless
+      // engine-strict is set), and the range is kept verbatim in
+      // nativeSemantics.data.engines. Nothing about which packages are selected
+      // or which bytes are installed depends on it, so this is information, not
+      // a loss that should keep a package out. Declared `error`, it denied
+      // every real package under the default policy, since almost all of them
+      // say which Node they support.
       losses.push(
         semanticLoss(
           'npm',
           'NPM_ENGINE_RANGE_NATIVE_ONLY',
           '/engines',
           'npm engine compatibility uses npm range and advisory enforcement semantics',
-          undefined,
-          'error',
+          'The range is retained verbatim in nativeSemantics.data.engines and is not evaluated against the target',
+          'info',
         ),
       );
     const artifacts: ArtifactDescriptor[] = [];
@@ -457,6 +589,8 @@ export class NpmCodec
           engines: metadata.engines ?? {},
           os: metadata.os ?? [],
           cpu: metadata.cpu ?? [],
+          libc: metadata.libc ?? [],
+          hasInstallScript: metadata.hasInstallScript === true,
           ...(!(targetPredicate === undefined) && { targetPredicate }),
           peerDependenciesMeta: metadata.peerDependenciesMeta ?? {},
           scripts: metadata.scripts ?? {},
@@ -544,9 +678,13 @@ export class NpmRegistryProvider implements CatalogProvider {
     qualifierSupport: 'complete',
     targetSpecificSemantics: true,
     offlineReplay: true,
-    extensions: { 'openpacker.dev/packument': 'full-metadata' },
+    extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
   readonly #records = new Map<string, ProviderRecord<NpmPackument>>();
+  readonly #libc = new Map<
+    string,
+    Promise<{ libc?: string[]; reason: string }>
+  >();
 
   constructor(
     private readonly transport: HttpTransport,
@@ -600,12 +738,13 @@ export class NpmRegistryProvider implements CatalogProvider {
       formatPurl({ ...parsed, version: undefined }),
       signal,
     );
-    const metadata = record.body.versions[parsed.version];
-    if (!metadata)
+    const listed = record.body.versions[parsed.version];
+    if (!listed)
       throw new ProviderError(
         'VERSION_NOT_FOUND',
         `${canonical} is absent from the packument`,
       );
+    const { metadata, warnings } = await this.withLibc(listed, signal);
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       JSON.parse(JSON.stringify(metadata)) as JsonValue,
@@ -628,7 +767,7 @@ export class NpmRegistryProvider implements CatalogProvider {
       canonical,
       translated.instance.identity,
     );
-    return { package: translated.instance, record, warnings: [] };
+    return { package: translated.instance, record, warnings };
   }
 
   async fetchArtifactRecord(
@@ -763,6 +902,73 @@ export class NpmRegistryProvider implements CatalogProvider {
       recordsDigest,
       evidenceRefs: [],
     };
+  }
+
+  /**
+   * Add the `libc` the abbreviated packument leaves out.
+   *
+   * `@rolldown/binding-linux-x64-gnu` and `-musl` are the same `os`/`cpu` in
+   * the abbreviated document and differ only in `libc`, so without it a
+   * linux/x64 host would take both. The version document is a few KB and is
+   * asked for only for a package that is restricted to linux and does not
+   * already say. If it cannot be had the package is still inspected, with a
+   * warning, and the predicate simply has no `libc` clause.
+   */
+  private async withLibc(
+    metadata: NpmVersionMetadata,
+    signal?: AbortSignal,
+  ): Promise<{
+    metadata: NpmVersionMetadata;
+    warnings: { code: string; message: string }[];
+  }> {
+    if (metadata.libc !== undefined || !metadata.os?.includes('linux'))
+      return { metadata, warnings: [] };
+    const key = `${metadata.name}@${metadata.version}`;
+    let pending = this.#libc.get(key);
+    if (pending === undefined) {
+      pending = this.fetchLibc(metadata, signal);
+      this.#libc.set(key, pending);
+    }
+    const found = await pending;
+    return found.libc === undefined
+      ? {
+          metadata,
+          warnings: [
+            {
+              code: 'NPM_LIBC_NOT_CAPTURED',
+              message: `The version document for ${key} did not supply libc: ${found.reason}`,
+            },
+          ],
+        }
+      : { metadata: { ...metadata, libc: found.libc }, warnings: [] };
+  }
+
+  private async fetchLibc(
+    metadata: NpmVersionMetadata,
+    signal?: AbortSignal,
+  ): Promise<{ libc?: string[]; reason: string }> {
+    try {
+      const response = await this.transport.request({
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(metadata.name)}/${encodeURIComponent(metadata.version)}`,
+        signal,
+        maximumBytes: 1024 * 1024,
+        headers: { accept: 'application/json' },
+      });
+      const document = json<NpmVersionMetadata>(response);
+      if (
+        document.name !== metadata.name ||
+        document.version !== metadata.version
+      )
+        return { reason: 'it describes a different package version' };
+      return Array.isArray(document.libc)
+        ? { libc: document.libc, reason: '' }
+        : { libc: [], reason: '' };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return {
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private purlFor(coordinate: NativeCoordinate): string {
