@@ -170,6 +170,8 @@ export {
 
 export {
   DEFAULT_REGISTRY_ENDPOINTS,
+  MemoizingTransport,
+  ProviderPool,
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
   listRegistryVersions,
@@ -220,6 +222,12 @@ export {
 
 export { codecFor } from './codecs.js';
 export {
+  detectLibc,
+  detectNativeTarget,
+  evaluateTargetPredicate,
+  type NativeTarget,
+} from './host-target.js';
+export {
   CLOSURE_OBJECTIVES,
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
@@ -230,6 +238,7 @@ export {
   shouldFollowRequirement,
   solveGraph,
   universeFrom,
+  type FollowDecision,
   type HostEnvironment,
   type ResolutionBounds,
   type ResolvedGraph,

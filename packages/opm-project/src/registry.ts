@@ -11,6 +11,8 @@ import {
   redactUrl,
   type CatalogProvider,
   type HostLookup,
+  type HttpRequest,
+  type HttpResponse,
   type HttpTransport,
   type ProviderExecutable,
   type ProviderInspection,
@@ -202,6 +204,13 @@ export interface RegistryOptions {
   /** Configured endpoint selected from opm.toml. */
   endpoint?: string;
   transport?: HttpTransport;
+  /**
+   * A provider already built for this ecosystem and source, to be used as is.
+   * A provider remembers the registry documents it has read, so handing the same
+   * one to each step of a resolve means a package's metadata is fetched once
+   * rather than once per step.
+   */
+  provider?: CatalogProvider;
   fetch?: typeof fetch;
   /**
    * Host-fetch DNS seam. Production resolves with `dns.lookup({ all: true })`.
@@ -319,17 +328,15 @@ export async function providerFor(
   return providerForWithDiscovery(ecosystem, options, requiredResources);
 }
 
-/** Fail closed when the registry definition omits a required resource. */
-export async function providerForWithDiscovery(
+/**
+ * The endpoint and transport a provider for `ecosystem` is built on: the
+ * caller's, else the first-party one for the endpoint in force. A named source
+ * with no endpoint of its own has neither, and the adapter supplies them.
+ */
+function transportFor(
   ecosystem: string,
-  options: RegistryOptions = {},
-  requiredResources: readonly string[] = ['prex.registry.package-metadata/1'],
-): Promise<CatalogProvider> {
-  assertOnline(ecosystem, options.offline);
-  const registry = requireAdapterRegistry();
-  // A named source owns its own endpoint and origin allowlist; applying the
-  // ecosystem's would point a mirror at npmjs.org, or refuse the mirror's own
-  // origin as unsafe.
+  options: RegistryOptions,
+): { endpoint: string | undefined; transport: HttpTransport | undefined } {
   const named = options.sourceId !== undefined;
   const endpoint =
     options.endpoint ??
@@ -340,6 +347,22 @@ export async function providerForWithDiscovery(
   const transport =
     options.transport ??
     (endpoint ? firstPartyTransport(ecosystem, options) : undefined);
+  return { endpoint, transport };
+}
+
+/** Fail closed when the registry definition omits a required resource. */
+export async function providerForWithDiscovery(
+  ecosystem: string,
+  options: RegistryOptions = {},
+  requiredResources: readonly string[] = ['prex.registry.package-metadata/1'],
+): Promise<CatalogProvider> {
+  assertOnline(ecosystem, options.offline);
+  if (options.provider !== undefined) return options.provider;
+  const registry = requireAdapterRegistry();
+  // A named source owns its own endpoint and origin allowlist; applying the
+  // ecosystem's would point a mirror at npmjs.org, or refuse the mirror's own
+  // origin as unsafe.
+  const { endpoint, transport } = transportFor(ecosystem, options);
   try {
     return await registry.catalogFor(
       ecosystem,
@@ -357,6 +380,125 @@ export async function providerForWithDiscovery(
     );
   } catch (error) {
     mapHostError(error);
+  }
+}
+
+/** What a resolve asks of a registry, in one provider. */
+const POOLED_RESOURCES = [
+  'prex.registry.package-metadata/1',
+  'prex.registry.enumerate-versions/1',
+  'prex.registry.artifact/1',
+] as const;
+
+/**
+ * The providers one resolve uses, built on first use and kept.
+ *
+ * A provider caches the documents it reads, but the adapter host builds a new
+ * one on every request for it. Walking a closure asked for a provider per
+ * queue item and per step, so a package referenced from ten places had its
+ * packument fetched ten times: 165 requests for 42 distinct documents when
+ * resolving vitest, `vite` alone seven times at 2.3 MB. One pool per resolve
+ * brings that to one fetch per package, and the artifact step reuses the same
+ * documents instead of asking again.
+ */
+function etagOf(response: HttpResponse): string | undefined {
+  for (const [name, value] of Object.entries(response.headers))
+    if (name.toLowerCase() === 'etag') return value;
+  return undefined;
+}
+
+/**
+ * Answers a repeated read of the same registry document from memory.
+ *
+ * A provider revalidates a document it already holds on every use, which for a
+ * resolve is a round trip per queue item per step for documents that cannot
+ * usefully change within it, and a resolve that read one package's metadata in
+ * two places could see two different versions of it. This makes one resolve
+ * read each document once: a request that carries the `etag` it was already
+ * given is answered `304`, one that carries none gets the stored `200`.
+ *
+ * Only small, repeatable reads are kept: a GET, bounded to a few MiB, that is
+ * not an artifact download. Artifact bytes pass through and are not held.
+ */
+export class MemoizingTransport implements HttpTransport {
+  static readonly ENTRY_LIMIT = 8 * 1024 * 1024;
+  static readonly TOTAL_LIMIT = 128 * 1024 * 1024;
+  readonly #kept = new Map<string, HttpResponse>();
+  #bytes = 0;
+
+  constructor(private readonly inner: HttpTransport) {}
+
+  async request(request: HttpRequest): Promise<HttpResponse> {
+    if (!MemoizingTransport.repeatable(request))
+      return this.inner.request(request);
+    const key = `${request.url}\n${request.headers?.accept ?? ''}`;
+    const kept = this.#kept.get(key);
+    if (kept !== undefined) {
+      const validator = request.headers?.['if-none-match'];
+      return validator !== undefined && validator === etagOf(kept)
+        ? {
+            status: 304,
+            headers: { etag: validator },
+            body: new Uint8Array(),
+            url: kept.url,
+          }
+        : kept;
+    }
+    const response = await this.inner.request(request);
+    if (
+      response.status === 200 &&
+      response.body.byteLength <= MemoizingTransport.ENTRY_LIMIT &&
+      this.#bytes + response.body.byteLength <= MemoizingTransport.TOTAL_LIMIT
+    ) {
+      this.#kept.set(key, response);
+      this.#bytes += response.body.byteLength;
+    }
+    return response;
+  }
+
+  private static repeatable(request: HttpRequest): boolean {
+    return (
+      (request.method === undefined || request.method === 'GET') &&
+      request.headers?.accept !== 'application/octet-stream' &&
+      (request.maximumBytes === undefined ||
+        request.maximumBytes <= MemoizingTransport.ENTRY_LIMIT)
+    );
+  }
+}
+
+export class ProviderPool {
+  readonly #providers = new Map<string, Promise<CatalogProvider>>();
+
+  constructor(
+    private readonly optionsFor: (ecosystem: string) => RegistryOptions,
+  ) {}
+
+  /** The options a step for `ecosystem` is made with, provider included. */
+  async optionsWithProvider(ecosystem: string): Promise<RegistryOptions> {
+    return {
+      ...this.optionsFor(ecosystem),
+      provider: await this.provider(ecosystem),
+    };
+  }
+
+  provider(ecosystem: string): Promise<CatalogProvider> {
+    let provider = this.#providers.get(ecosystem);
+    if (provider === undefined) {
+      const options = this.optionsFor(ecosystem);
+      const { transport } = transportFor(ecosystem, options);
+      provider = providerForWithDiscovery(
+        ecosystem,
+        transport === undefined
+          ? options
+          : { ...options, transport: new MemoizingTransport(transport) },
+        POOLED_RESOURCES,
+      );
+      this.#providers.set(ecosystem, provider);
+      // A failed build is not remembered: the next step tries again and reports
+      // its own error rather than replaying this one.
+      provider.catch(() => this.#providers.delete(ecosystem));
+    }
+    return provider;
   }
 }
 

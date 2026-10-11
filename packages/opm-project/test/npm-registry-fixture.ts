@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import {
   ProviderError,
   type HttpRequest,
@@ -16,9 +17,40 @@ import {
 
 export const NPM_ORIGIN = 'https://registry.npmjs.org';
 
-/** Stand-in tarball bytes; nothing that uses this fixture extracts them. */
-export const TARBALL = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3, 4]);
-const TARBALL_SRI = `sha512-${createHash('sha512').update(TARBALL).digest('base64')}`;
+/** A real (if tiny) npm tarball: gzip of a ustar archive of package/package.json. */
+export function tarball(name: string, version: string): Uint8Array {
+  const body = Buffer.from(JSON.stringify({ name, version }));
+  const header = Buffer.alloc(512);
+  header.write('package/package.json', 0, 'utf8');
+  header.write('0000644\0', 100, 'ascii');
+  header.write('0000000\0', 108, 'ascii');
+  header.write('0000000\0', 116, 'ascii');
+  header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii');
+  header.write('00000000000\0', 136, 'ascii');
+  header.write('        ', 148, 'ascii');
+  header.write('0', 156, 'ascii');
+  header.write('ustar\0' + '00', 257, 'ascii');
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii');
+  const padded = Buffer.concat([
+    body,
+    Buffer.alloc((512 - (body.length % 512)) % 512),
+  ]);
+  return new Uint8Array(
+    gzipSync(Buffer.concat([header, padded, Buffer.alloc(1024)])),
+  );
+}
+
+const tarballs = new Map<string, Uint8Array>();
+function tarballOf(name: string, version: string): Uint8Array {
+  const key = `${name}@${version}`;
+  let bytes = tarballs.get(key);
+  if (bytes === undefined) {
+    bytes = tarball(name, version);
+    tarballs.set(key, bytes);
+  }
+  return bytes;
+}
 
 export interface FixtureVersion {
   dependencies?: Record<string, string>;
@@ -66,10 +98,11 @@ function tarballUrl(name: string, version: string): string {
 }
 
 function distFor(name: string, version: string) {
+  const bytes = tarballOf(name, version);
   return {
     tarball: tarballUrl(name, version),
-    integrity: TARBALL_SRI,
-    size: TARBALL.byteLength,
+    integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+    size: bytes.byteLength,
   };
 }
 
@@ -126,13 +159,18 @@ export class NpmRegistryFixture implements HttpTransport {
   async request(request: HttpRequest): Promise<HttpResponse> {
     const accept = request.headers?.accept;
     this.requests.push({ url: request.url, accept });
-    if (request.url.endsWith('.tgz'))
+    if (request.url.endsWith('.tgz')) {
+      // /name/-/base-1.2.3.tgz, with a scoped name's scope in the path.
+      const match = /^(.+)\/-\/[^/]+-(\d[^/]*)\.tgz$/u.exec(
+        decodeURIComponent(request.url.slice(NPM_ORIGIN.length + 1)),
+      );
       return {
         status: 200,
         headers: { 'content-type': 'application/octet-stream' },
-        body: TARBALL,
+        body: tarballOf(match![1]!, match![2]!),
         url: request.url,
       };
+    }
     const path = request.url.slice(NPM_ORIGIN.length + 1);
     const versionSplit = path.lastIndexOf('/');
     // `/name` is a packument; `/name/1.2.3` and `/@scope%2fname/1.2.3` are a

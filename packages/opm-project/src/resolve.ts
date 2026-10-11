@@ -8,12 +8,19 @@ import {
   type PackageInstance,
   type PolicyInput,
   type Requirement,
+  type TargetPredicate,
 } from '@openpacker/contracts';
+import type { CatalogProvider } from '@openpacker/adapter-core';
 import type { EmbeddedResolver } from '@openpacker/embedded';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
-import { providerFor, type RegistryOptions } from './registry.js';
+import { ProviderPool, type RegistryOptions } from './registry.js';
 import { codecFor } from './codecs.js';
+import {
+  detectNativeTarget,
+  evaluateTargetPredicate,
+  type NativeTarget,
+} from './host-target.js';
 
 /**
  * Transitive dependency resolution.
@@ -40,8 +47,24 @@ import { codecFor } from './codecs.js';
  * one.
  */
 
-/** Requirement kinds that belong in an install. */
-const INSTALLED_KINDS = new Set(['runtime', 'peer']);
+/**
+ * Requirement kinds that belong in an install.
+ *
+ * `optional` is npm's `optionalDependencies`, which npm installs and tolerates
+ * the failure of. Whether one belongs *here* depends on the host, so the walk
+ * decides it per dependency (see `shouldFollowRequirement`); the kind is listed
+ * so that an optional edge the walk made hard is read as an install edge.
+ */
+const INSTALLED_KINDS = new Set(['runtime', 'peer', 'optional']);
+
+/**
+ * Losses that say a package-level target predicate could not be expressed and
+ * so was applied to artifacts only. The walk evaluates that predicate against
+ * the host of this resolve, which is the evidence the loss asked for.
+ */
+const HOST_EVALUATED_LOSS_CODES = new Set([
+  'NPM_PACKAGE_TARGET_PREDICATE_ARTIFACT_ONLY',
+]);
 
 export interface ResolutionBounds {
   /** Newest candidates kept per package. */
@@ -76,6 +99,8 @@ export interface HostEnvironment {
   platformSystem: string;
   /** Requested extras; empty means a bare install. */
   extras: ReadonlySet<string>;
+  /** The machine in npm's vocabulary, for `os`/`cpu`/`libc` predicates. */
+  nativeTarget: NativeTarget;
 }
 
 export function defaultHostEnvironment(
@@ -106,6 +131,7 @@ export function defaultHostEnvironment(
           ? 'Darwin'
           : 'Linux'),
     extras: overrides.extras ?? new Set(),
+    nativeTarget: overrides.nativeTarget ?? detectNativeTarget(),
   };
 }
 
@@ -120,6 +146,8 @@ export interface ResolvedGraph {
   unresolved: { purl: string; reason: string }[];
   /** Marker-gated requirements skipped because the host marker is false. */
   skippedMarkers: { purl: string; marker: string }[];
+  /** Optional dependencies left out because this host is not one they run on. */
+  skippedPlatform: { purl: string; reason: string }[];
 }
 
 /**
@@ -360,22 +388,57 @@ function compareDotted(
   }
 }
 
+/** How the walk treats one requirement. */
+export interface FollowDecision {
+  follow: boolean;
+  skipReason?: string;
+  /**
+   * `optional` when the edge is followed on condition of the dependency itself
+   * (npm's optionalDependencies: installed where the dependency runs). The
+   * condition cannot be read from the edge, so the walk decides it once it has
+   * inspected the dependency.
+   */
+  via?: 'optional';
+}
+
+/** The kind of specifier a requirement carries, when it is not a version range. */
+function nativeSpecKind(requirement: unknown): string | undefined {
+  // SAFETY: only the optional `specKind` of the adapter's native data is read.
+  const value = requirement as {
+    nativeSemantics?: { data?: { specKind?: unknown } };
+  };
+  const kind = value.nativeSemantics?.data?.specKind;
+  return typeof kind === 'string' ? kind : undefined;
+}
+
 /**
  * Whether a requirement should be followed during the install walk.
  *
  * Hard requirements always are. Optional ones are followed only when they
  * carry an environment marker that evaluates to true for this host — that is
  * how PyPI encodes "required on this platform" without making every marker a
- * hard edge on every host.
+ * hard edge on every host. npm's `optionalDependencies` are followed where the
+ * dependency runs (see `FollowDecision.via`). A specifier that is not a version
+ * range (a git URL, a dist-tag, an alias) is never followed: reading it as the
+ * registry's package of that name is how dependency confusion lands.
  */
 export function shouldFollowRequirement(
   requirement: Requirement,
   env: HostEnvironment,
-) {
+): FollowDecision {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const kind = (requirement as { kind?: string }).kind ?? 'runtime';
   if (!INSTALLED_KINDS.has(kind))
     return { follow: false, skipReason: `kind ${kind} is not installed` };
+
+  const specKind = nativeSpecKind(requirement);
+  if (specKind !== undefined && specKind !== 'range')
+    return {
+      follow: false,
+      skipReason: `specifier is a ${specKind}, not a registry version range`,
+    };
+
+  if (kind === 'optional') return { follow: true, via: 'optional' };
 
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const optional = (requirement as { optional?: boolean }).optional === true;
@@ -408,11 +471,8 @@ async function candidatesFor(
   ecosystem: string,
   basePurl: string,
   range: string | undefined,
-  options: RegistryOptions,
+  provider: CatalogProvider,
 ): Promise<string[]> {
-  const provider = await providerFor(ecosystem, options, [
-    'prex.registry.enumerate-versions/1',
-  ]);
   const published = await provider.enumerate(basePurl);
   if (range === undefined || range === '' || range === '*')
     return [...published].reverse();
@@ -434,11 +494,82 @@ async function candidatesFor(
 }
 
 /**
+ * Whether a candidate runs on the host this resolve is for.
+ *
+ * `true` for a package that states no platform, `'unknown'` for a predicate
+ * this cannot evaluate. Only npm's `os`/`cpu`/`libc` are evaluated: they are
+ * stored in npm's own vocabulary, which is what the native target is in.
+ */
+function hostSupport(
+  instance: PackageInstance,
+  host: HostEnvironment,
+): boolean | 'unknown' {
+  if (instance.identity.purlType !== 'npm') return true;
+  const predicate = hostPredicateOf(instance);
+  if (predicate === undefined) return true;
+  return evaluateTargetPredicate(predicate, host.nativeTarget);
+}
+
+function describeTarget(target: NativeTarget): string {
+  return [
+    `os=${target.os}`,
+    `architecture=${target.architecture}`,
+    ...(target.libc === undefined ? [] : [`libc=${target.libc}`]),
+  ].join(' ');
+}
+
+/**
+ * The candidate with the platform loss marked as met, once the predicate it
+ * says was not evaluated has been evaluated for this host.
+ */
+function withHostEvaluated(
+  instance: PackageInstance,
+  host: HostEnvironment,
+): PackageInstance {
+  if (
+    !instance.semanticLoss.some((loss) =>
+      HOST_EVALUATED_LOSS_CODES.has(loss.code),
+    )
+  )
+    return instance;
+  return {
+    ...instance,
+    semanticLoss: instance.semanticLoss.map((loss) =>
+      HOST_EVALUATED_LOSS_CODES.has(loss.code)
+        ? {
+            ...loss,
+            severity: 'warning' as const,
+            mitigation: `Evaluated against the host of this resolve (${describeTarget(host.nativeTarget)}) and satisfied`,
+          }
+        : loss,
+    ),
+  };
+}
+
+interface QueueItem {
+  purl: string;
+  range?: string;
+  via: 'hard' | 'optional';
+}
+
+interface InspectedCandidate {
+  instance: PackageInstance;
+  host: boolean | 'unknown';
+  expanded: boolean;
+}
+
+/**
  * Walk from the root requirements to every package they need.
  *
  * Breadth-first, so the shallowest constraint on a package is seen first and
  * the bound truncates the deepest candidates rather than the most relevant
  * ones.
+ *
+ * Optional dependencies (npm's optionalDependencies) are followed only to
+ * candidates that run on this host, and the edge to them is made hard, because
+ * that is what an install does: the platform-specific binary a native package
+ * ships as `pkg-linux-x64-gnu` is installed and its siblings are not. A hard
+ * dependency that does not run on this host is refused, as npm refuses it.
  */
 export async function resolveGraph(input: {
   roots: readonly { purl: string; range?: string }[];
@@ -446,23 +577,39 @@ export async function resolveGraph(input: {
   options?: RegistryOptions;
   optionsFor?: (ecosystem: string) => RegistryOptions;
   host?: HostEnvironment;
+  /** Providers shared with the steps after the walk; one is made if absent. */
+  pool?: ProviderPool;
 }): Promise<ResolvedGraph> {
   const bounds = { ...DEFAULT_BOUNDS, ...input.bounds };
   const options = input.options ?? {};
   const host = input.host ?? defaultHostEnvironment();
+  const pool =
+    input.pool ??
+    new ProviderPool((ecosystem) => input.optionsFor?.(ecosystem) ?? options);
   const packages: PackageInstance[] = [];
   const truncated: string[] = [];
   const unresolved: { purl: string; reason: string }[] = [];
   const skippedMarkers: { purl: string; marker: string }[] = [];
-  const inspected = new Set<string>();
+  const skippedPlatform: { purl: string; reason: string }[] = [];
+  const inspected = new Map<string, InspectedCandidate | null>();
   const queued = new Set<string>();
   const discovered = new Set<string>();
+  /** Optional edges, made hard afterwards if their target was admitted. */
+  const optionalEdges: {
+    requirement: Requirement;
+    base: string;
+    ecosystem: string;
+    range?: string;
+  }[] = [];
 
-  const queue: { purl: string; range?: string }[] = input.roots.map((root) => ({
+  const keyOf = (item: QueueItem) =>
+    `${item.purl}|${item.range ?? ''}|${item.via}`;
+  const queue: QueueItem[] = input.roots.map((root) => ({
     purl: stripPurlVersion(root.purl),
+    via: 'hard' as const,
     ...(!(root.range === undefined) && { range: root.range }),
   }));
-  for (const item of queue) queued.add(`${item.purl}|${item.range ?? ''}`);
+  for (const item of queue) queued.add(keyOf(item));
 
   while (queue.length > 0) {
     const item = queue.shift()!;
@@ -474,15 +621,16 @@ export async function resolveGraph(input: {
           `Raise the bound deliberately rather than resolving an unbounded graph.`,
       );
     const ecosystem = ecosystemFromPurl(item.purl);
-    const ecosystemOptions = input.optionsFor?.(ecosystem) ?? options;
 
+    let provider: CatalogProvider;
     let candidates: string[];
     try {
+      provider = await pool.provider(ecosystem);
       candidates = await candidatesFor(
         ecosystem,
         item.purl,
         item.range,
-        ecosystemOptions,
+        provider,
       );
     } catch (error) {
       unresolved.push({
@@ -506,64 +654,86 @@ export async function resolveGraph(input: {
       candidates = candidates.slice(0, bounds.candidatesPerPackage);
     }
 
-    const provider = await providerFor(ecosystem, ecosystemOptions, [
-      'prex.registry.package-metadata/1',
-    ]);
+    let admitted = 0;
     for (const candidate of candidates) {
-      if (inspected.has(candidate)) continue;
-      inspected.add(candidate);
-      let instance: PackageInstance;
-      try {
-        instance = (await provider.inspect(candidate)).package;
-      } catch (error) {
-        unresolved.push({
+      let entry = inspected.get(candidate);
+      if (entry === undefined) {
+        try {
+          const instance = (await provider.inspect(candidate)).package;
+          entry = {
+            instance,
+            host: hostSupport(instance, host),
+            expanded: false,
+          };
+        } catch (error) {
+          entry = null;
+          unresolved.push({
+            purl: candidate,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+        inspected.set(candidate, entry);
+      }
+      if (entry === null) continue;
+
+      if (entry.host === false) {
+        const reason = `does not run on this host (${describeTarget(host.nativeTarget)})`;
+        if (item.via === 'optional')
+          skippedPlatform.push({ purl: candidate, reason });
+        else unresolved.push({ purl: candidate, reason });
+        continue;
+      }
+      // An optional dependency whose platform cannot be established is left
+      // out rather than guessed in; a hard one is kept and the solver decides.
+      if (entry.host === 'unknown' && item.via === 'optional') {
+        skippedPlatform.push({
           purl: candidate,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: 'its platform restriction could not be evaluated',
         });
         continue;
       }
+      admitted += 1;
+      if (entry.expanded) continue;
+      entry.expanded = true;
+
       // Requirements whose markers are true for this host become hard edges
       // for the solver. Adapters leave them `optional: true` so capture does
       // not invent host truth; resolve is the place that decides.
-      const rewrittenRequirements = (instance.requirements ?? []).map(
+      const decisions = new Map<Requirement, FollowDecision>();
+      const requirements = (entry.instance.requirements ?? []).map(
         (requirement) => {
           const decision = shouldFollowRequirement(requirement, host);
-          if (
-            decision.follow &&
-            // SAFETY: The surrounding boundary establishes the asserted domain contract.
-            (requirement as { optional?: boolean }).optional === true
-          ) {
-            return { ...requirement, optional: false };
-          }
-          return requirement;
+          const copy = { ...requirement };
+          if (decision.follow && decision.via === undefined)
+            copy.optional = false;
+          decisions.set(copy, decision);
+          return copy;
         },
       );
+      const evaluated =
+        entry.host === true && hostPredicateOf(entry.instance) !== undefined
+          ? withHostEvaluated(entry.instance, host)
+          : entry.instance;
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      packages.push({
-        ...instance,
-        requirements: rewrittenRequirements,
-      } as PackageInstance);
+      packages.push({ ...evaluated, requirements } as PackageInstance);
 
-      for (const requirement of rewrittenRequirements) {
-        const decision = shouldFollowRequirement(requirement, host);
+      for (const requirement of requirements) {
+        const decision = decisions.get(requirement)!;
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        const expression = (requirement as { expression?: { purl?: string } })
+          .expression;
         if (!decision.follow) {
           const marker = requirementMarker(requirement);
           if (
             marker !== undefined &&
             decision.skipReason?.startsWith('marker false')
           ) {
-            const expression =
-              // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              (requirement as { expression?: { purl?: string } }).expression;
             if (expression?.purl)
               skippedMarkers.push({ purl: expression.purl, marker });
           }
           // Marker unknown: surface so a silent empty graph is not the only
           // signal that something was skipped.
           if (decision.skipReason?.startsWith('marker not evaluable')) {
-            const expression =
-              // SAFETY: The surrounding boundary establishes the asserted domain contract.
-              (requirement as { expression?: { purl?: string } }).expression;
             if (expression?.purl)
               unresolved.push({
                 purl: expression.purl,
@@ -572,21 +742,48 @@ export async function resolveGraph(input: {
           }
           continue;
         }
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        const expression = (requirement as { expression?: { purl?: string } })
-          .expression;
         if (!expression?.purl) continue;
         const range = nativeRange(requirement);
-        const next = {
+        const next: QueueItem = {
           purl: stripPurlVersion(expression.purl),
+          via: decision.via === 'optional' ? 'optional' : 'hard',
           ...(!(range === undefined) && { range }),
         };
-        const key = `${next.purl}|${next.range ?? ''}`;
+        if (next.via === 'optional')
+          optionalEdges.push({
+            requirement,
+            base: next.purl,
+            ecosystem: ecosystemFromPurl(next.purl),
+            ...(!(range === undefined) && { range }),
+          });
+        const key = keyOf(next);
         if (queued.has(key)) continue;
         queued.add(key);
         queue.push(next);
       }
     }
+    if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
+      unresolved.push({
+        purl: item.purl,
+        reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
+      });
+  }
+
+  // An optional dependency that was admitted is installed, so the edge to it
+  // is a requirement of the solve. One whose every candidate was left out stays
+  // optional and the solve ignores it, as npm does.
+  for (const edge of optionalEdges) {
+    const codec = codecFor(edge.ecosystem);
+    const admittedCandidate = packages.some((instance) => {
+      if (instance.identity.canonicalPurl !== edge.base) return false;
+      if (edge.range === undefined) return true;
+      try {
+        return codec.satisfies(instance.nativeVersion, edge.range);
+      } catch {
+        return true;
+      }
+    });
+    if (admittedCandidate) edge.requirement.optional = false;
   }
 
   return {
@@ -595,7 +792,20 @@ export async function resolveGraph(input: {
     truncated: [...new Set(truncated)],
     unresolved,
     skippedMarkers,
+    skippedPlatform,
   };
+}
+
+/** The platform predicate the npm adapter stores in an instance's native data. */
+function hostPredicateOf(
+  instance: PackageInstance,
+): TargetPredicate | undefined {
+  // SAFETY: nativeSemantics.data is adapter-written JSON; only the optional
+  // `targetPredicate` the npm adapter stores is read.
+  const data = instance.nativeSemantics?.data as
+    | { targetPredicate?: TargetPredicate }
+    | undefined;
+  return data?.targetPredicate;
 }
 
 /**
@@ -752,7 +962,11 @@ export async function solveGraph(input: {
       abi: {},
       architecture: process.arch === 'x64' ? 'x86_64' : process.arch,
       capabilities: [],
-      libc: 'glibc',
+      // What this host reports, and nothing on a host that has no libc to
+      // report, instead of a "glibc" that was true only on glibc linux.
+      ...(!(defaultHostEnvironment().nativeTarget.libc === undefined) && {
+        libc: defaultHostEnvironment().nativeTarget.libc,
+      }),
       os: process.platform === 'win32' ? 'windows' : process.platform,
       runtimes: {
         node: process.versions.node.split('.')[0]!,

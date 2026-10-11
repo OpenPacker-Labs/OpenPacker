@@ -85,7 +85,7 @@ import {
   projectPolicyDocument,
   type PolicyFacts,
 } from './supply-chain.js';
-import { providerFor } from './registry.js';
+import { ProviderPool, providerFor } from './registry.js';
 import { projectNativeFormats } from './native.js';
 import { defaultManifest, parseManifest, serializeManifest } from './toml.js';
 import { discoverNpmBins } from './bins.js';
@@ -673,6 +673,15 @@ export async function resolveManifestToLock(input: {
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
   lock.manifestDigest = manifestDigest(input.manifest);
+  // One provider per ecosystem for the whole resolve: the direct requirements,
+  // the walk and the artifact steps then share what each has already read.
+  const pool = new ProviderPool((ecosystem) =>
+    registryOptionsForEcosystem(
+      ecosystem,
+      input.manifest,
+      input.registryOptions ?? {},
+    ),
+  );
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
     const locked = await resolveRequirement({
       root: input.root,
@@ -681,6 +690,7 @@ export async function resolveManifestToLock(input: {
       offline: input.offline,
       catalog,
       manifest: input.manifest,
+      pool,
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
@@ -700,6 +710,7 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
+      pool,
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
@@ -756,6 +767,7 @@ async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  pool: ProviderPool;
 }): Promise<{
   packages: Record<string, LockPackage>;
   dependencies: Record<string, string[]>;
@@ -770,20 +782,14 @@ async function resolveTransitive(input: {
   const out: Record<string, LockPackage> = {};
   const dependencies: Record<string, string[]> = {};
   try {
-    const optionsFor = (ecosystem: string) =>
-      registryOptionsForEcosystem(
-        ecosystem,
-        input.manifest,
-        input.registryOptions ?? {},
-      );
     const graph = await resolveGraph({
+      pool: input.pool,
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
         ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
           range: nativeRangeFor(pkg, input.manifest)!,
         }),
       })),
-      optionsFor,
     });
     if (graph.packages.length === 0) return { packages: {}, dependencies: {} };
 
@@ -824,7 +830,7 @@ async function resolveTransitive(input: {
       const artifact = await resolveRegistryArtifact(
         instance.identity.purlType,
         exact,
-        optionsFor(instance.identity.purlType),
+        await input.pool.optionsWithProvider(instance.identity.purlType),
       );
       // Same standard as the direct path: the digest that goes in the lock is
       // re-derived from the bytes in hand, not copied from what the provider
@@ -968,6 +974,8 @@ async function resolveRequirement(input: {
   >;
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  /** The providers of this resolve, so a registry document is read once. */
+  pool?: ProviderPool | undefined;
 }): Promise<LockPackage> {
   const requestedPurl = canonicalCatalogPurl(input.req.purl, 'manifest');
   const ecosystem = ecosystemFromPurl(requestedPurl);
@@ -1166,11 +1174,14 @@ async function resolveRequirement(input: {
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
   if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
-    const registryOptions = registryOptionsForEcosystem(
-      ecosystem,
-      input.manifest,
-      input.registryOptions ?? {},
-    );
+    const registryOptions =
+      input.pool === undefined
+        ? registryOptionsForEcosystem(
+            ecosystem,
+            input.manifest,
+            input.registryOptions ?? {},
+          )
+        : await input.pool.optionsWithProvider(ecosystem);
     const target =
       candidateExact ??
       (await (async () => {
