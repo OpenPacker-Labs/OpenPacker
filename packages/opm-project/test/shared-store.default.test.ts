@@ -35,6 +35,7 @@ import {
   sealVerifiedArtifactBinding,
 } from '../src/install.js';
 import { sharedStoreHome } from '../src/paths.js';
+import { uniqueBytes } from './disk-usage.js';
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -612,24 +613,6 @@ describe('opm gc --shared', () => {
 });
 
 describe('what a second project costs', () => {
-  /** Bytes on disk counting each inode once, directories included. */
-  async function uniqueBytes(paths: string[]): Promise<number> {
-    const seen = new Set<string>();
-    let total = 0;
-    const visit = async (path: string): Promise<void> => {
-      const info = await lstat(path, { bigint: true });
-      const id = `${info.dev}:${info.ino}`;
-      if (!seen.has(id)) {
-        seen.add(id);
-        total += Number(info.blocks) * 512;
-      }
-      if (info.isDirectory())
-        for (const name of await readdir(path)) await visit(join(path, name));
-    };
-    for (const path of paths) await visit(path);
-    return total;
-  }
-
   it('is links and directories only: under 5% of what the first project took', async () => {
     const { mkdtemp: make } = await import('node:fs/promises');
     const shared = await tempDir('opm-shared-');

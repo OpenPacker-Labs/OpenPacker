@@ -8,6 +8,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
   lstat,
   mkdir,
@@ -41,6 +42,7 @@ import {
   type OpmLockfile,
 } from '../src/index.js';
 import { bindManifestSourceAuthority } from '../src/install.js';
+import { uniqueBytes } from './disk-usage.js';
 
 configureDefaultAdapters();
 
@@ -98,6 +100,10 @@ interface Fixture {
  */
 async function conflictingClosure(options: {
   packageJson?: boolean;
+  /** Pseudo-random bytes in c@2, so the closure has weight to measure. */
+  bulk?: number;
+  /** Use another fixture's tarballs: the same packages in another project. */
+  vendor?: string;
 }): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), 'opm-layout-'));
   temps.push(root);
@@ -121,21 +127,28 @@ async function conflictingClosure(options: {
       '{\n  "name": "layout-app",\n  "version": "0.0.0"\n}\n',
     );
 
-  const vendor = join(root, 'vendor');
-  await mkdir(vendor);
-  const archives = {
-    a: tarball('a', '1.0.0', { 'index.js': requiresC }),
-    b: tarball('b', '1.0.0', { 'index.js': requiresC }),
-    c1: tarball('c', '1.0.0'),
-    c2: tarball(
-      'c',
-      '2.0.0',
-      { 'cli.js': "#!/usr/bin/env node\nconsole.log('c2 cli');\n" },
-      { bin: { c2: 'cli.js' } },
-    ),
-  };
-  for (const [key, bytes] of Object.entries(archives))
-    await writeFile(join(vendor, `${key}.tgz`), bytes);
+  const vendor = options.vendor ?? join(root, 'vendor');
+  if (options.vendor === undefined) {
+    await mkdir(vendor);
+    const archives = {
+      a: tarball('a', '1.0.0', { 'index.js': requiresC }),
+      b: tarball('b', '1.0.0', { 'index.js': requiresC }),
+      c1: tarball('c', '1.0.0'),
+      c2: tarball(
+        'c',
+        '2.0.0',
+        {
+          'cli.js': "#!/usr/bin/env node\nconsole.log('c2 cli');\n",
+          ...(options.bulk !== undefined && {
+            'data/blob.txt': randomBytes(options.bulk).toString('base64'),
+          }),
+        },
+        { bin: { c2: 'cli.js' } },
+      ),
+    };
+    for (const [key, bytes] of Object.entries(archives))
+      await writeFile(join(vendor, `${key}.tgz`), bytes);
+  }
 
   const paths = projectPaths(root);
   const specs = [
@@ -362,5 +375,55 @@ describe('native_projection = "layout"', () => {
     ).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+
+  it('costs a second project under 5% of the first when they share the store', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-layout-shared-'));
+    temps.push(shared);
+    const previous = process.env.OPM_STORE_HOME;
+    process.env.OPM_STORE_HOME = shared;
+    try {
+      const first = await conflictingClosure({ bulk: 4 * 1024 * 1024 });
+      await first.install();
+      const second = await conflictingClosure({ vendor: first.vendor });
+      await second.install();
+
+      // Both projects are real: Node resolves the same two versions in each.
+      for (const project of [first, second])
+        expect(
+          project.run(
+            "console.log(JSON.stringify([require('a').c, require('b').c]))",
+          ),
+        ).toBe('["1.0.0","2.0.0"]');
+
+      const one = await uniqueBytes([shared, first.root]);
+      const both = await uniqueBytes([shared, first.root, second.root]);
+      const added = both - one;
+      // The second project's own opm.toml, lock and directories — and none of
+      // the megabytes of package content.
+      expect(one).toBeGreaterThan(4 * 1024 * 1024);
+      expect(added / one).toBeLessThan(0.05);
+      // And what it holds is the first project's files, not copies of them.
+      const lock = (await readLockfile(projectPaths(second.root).lock))!;
+      expect(
+        (await stat(join(second.root, 'node_modules', 'c', 'data', 'blob.txt')))
+          .ino,
+      ).toBe(
+        (
+          await stat(
+            join(
+              projectPaths(first.root).store,
+              lock.packages['c-2']!.storeKey,
+              'package',
+              'data',
+              'blob.txt',
+            ),
+          )
+        ).ino,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPM_STORE_HOME;
+      else process.env.OPM_STORE_HOME = previous;
+    }
   });
 });
