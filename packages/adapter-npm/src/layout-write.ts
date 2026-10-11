@@ -22,10 +22,14 @@ import {
   renderPosixShim,
   type PackageBin,
 } from './layout-bins.js';
+import { chainOfLockPath } from './lock-tree.js';
 import {
   planLayout,
+  planLayoutFromPaths,
   toLayoutEntries,
   unsafeNameProblem,
+  type LayoutEntry,
+  type LayoutPlan,
   type Placement,
 } from './layout-plan.js';
 
@@ -69,7 +73,7 @@ export async function writeNodeModules(
     });
     return false;
   });
-  const plan = planLayout(toLayoutEntries(storable));
+  const plan = planFor(storable);
   for (const refusal of plan.skipped)
     skipped.push({
       path: join(root, ...refusal.entry.name.split('/')),
@@ -146,11 +150,54 @@ export async function writeNodeModules(
   return outcome;
 }
 
-/** npm tarballs wrap their contents in `package/`; node_modules wants inside. */
+/**
+ * Follow the lock's own placements when every entry carries one, else plan.
+ *
+ * A frozen install names the path of each package (`layoutPath`) and the
+ * layout is exactly that. An opm lock names none, and the placement is derived
+ * from the edges it records. Half of each would be a layout nobody chose.
+ */
+function planFor(entries: readonly NativeLockEntry[]): LayoutPlan {
+  const withPath = entries.filter((entry) => entry.layoutPath !== undefined);
+  if (withPath.length === 0) return planLayout(toLayoutEntries(entries));
+  if (withPath.length !== entries.length)
+    throw new Error(
+      'Either every package of a layout names its place in the lock, or none does',
+    );
+  const seen = new Set<string>();
+  const placed = entries.map((source) => {
+    const path = source.layoutPath!;
+    const chain = chainOfLockPath(path);
+    if (chain === undefined)
+      throw new Error(`${path} is not a place under node_modules`);
+    if (seen.has(path)) throw new Error(`${path} is claimed twice`);
+    seen.add(path);
+    const entry: LayoutEntry = {
+      id: path,
+      name: chain.at(-1)!,
+      version: source.version,
+      digest: source.digest,
+      direct: !source.transitive,
+      dependencies: [],
+      source,
+    };
+    return { entry, chain };
+  });
+  return planLayoutFromPaths(placed);
+}
+
+/**
+ * npm tarballs wrap their contents in one directory, `package/` by
+ * convention; node_modules wants what is inside it. npm strips the first path
+ * component whatever it is called, so a tarball that wraps in another name
+ * (older packages do) is read the same way here.
+ */
 async function treeToInstall(storePath: string): Promise<string> {
   try {
-    await readdir(join(storePath, 'package'));
-    return join(storePath, 'package');
+    const children = await readdir(storePath, { withFileTypes: true });
+    const only = children.length === 1 ? children[0] : undefined;
+    if (only?.isDirectory() === true) return join(storePath, only.name);
+    return storePath;
   } catch {
     return storePath;
   }

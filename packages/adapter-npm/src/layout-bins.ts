@@ -40,20 +40,30 @@ export async function readPackageBins(
   bins: PackageBin[];
   refused: { name: string; reason: string }[];
 }> {
-  let parsed: { bin?: unknown };
+  let parsed: { bin?: unknown; name?: unknown };
   try {
     const path = join(packageDirectory, 'package.json');
     const info = await lstat(path);
     if (!info.isFile() || info.size > MAX_PACKAGE_JSON_BYTES)
       return { bins: [], refused: [] };
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    parsed = JSON.parse(await readFile(path, 'utf8')) as { bin?: unknown };
+    parsed = JSON.parse(await readFile(path, 'utf8')) as {
+      bin?: unknown;
+      name?: unknown;
+    };
   } catch {
     return { bins: [], refused: [] };
   }
   const declared: [string, unknown][] = [];
+  // A bare `bin` string is named after the package, by the name its own
+  // package.json states: the directory it lives in is the alias for an aliased
+  // dependency.
+  const ownName =
+    typeof parsed.name === 'string' && parsed.name !== ''
+      ? parsed.name
+      : packageName;
   if (typeof parsed.bin === 'string')
-    declared.push([packageName.split('/').at(-1)!, parsed.bin]);
+    declared.push([ownName.split('/').at(-1)!, parsed.bin]);
   else if (
     typeof parsed.bin === 'object' &&
     parsed.bin !== null &&
