@@ -30,6 +30,7 @@ import {
   sep,
 } from 'node:path';
 import {
+  O_DIRECTORY,
   mkdirChild,
   openChild,
   removeChild,
@@ -159,7 +160,7 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
   const root = parse(path).root;
   let handle = await open(
     root,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   try {
     for (const part of relative(root, path).split(sep).filter(Boolean)) {
@@ -169,7 +170,7 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
       const next = await openChild(
         handle,
         part,
-        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
       );
       await handle.close();
       handle = next;
@@ -200,6 +201,7 @@ export async function assertNamedDirectory(
 export {
   assertHandleSegment,
   handlePathForPlatform,
+  O_DIRECTORY,
   lstatChild,
   mkdirChild,
   mkdtempChild,
