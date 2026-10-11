@@ -90,30 +90,34 @@ describe('shared store chaos', () => {
     expect(fetches).toBe(1);
   });
 
-  it('fails closed when the shared root is read-only and leaves no trusted digest dir', async () => {
-    const sharedHome = await tempDir('opm-shared-ro-');
-    await chmod(sharedHome, 0o555);
-    const bytes = fixtureArchive();
-    const digest = archiveDigest(bytes);
-    const projectStorePath = join(
-      await tempDir('opm-proj-ro-'),
-      storeKeyFromDigest(digest),
-    );
+  // A root user can write into a 0555 directory, so there is nothing to fail.
+  it.skipIf(process.getuid?.() === 0)(
+    'fails closed when the shared root is read-only and leaves no trusted digest dir',
+    async () => {
+      const sharedHome = await tempDir('opm-shared-ro-');
+      await chmod(sharedHome, 0o555);
+      const bytes = fixtureArchive();
+      const digest = archiveDigest(bytes);
+      const projectStorePath = join(
+        await tempDir('opm-proj-ro-'),
+        storeKeyFromDigest(digest),
+      );
 
-    await expect(
-      materializeThroughSharedStore({
-        digest,
-        projectStorePath,
-        bytes,
-        format: 'tar+gzip',
-        env: { OPM_STORE_HOME: sharedHome },
-      }),
-    ).rejects.toThrow();
+      await expect(
+        materializeThroughSharedStore({
+          digest,
+          projectStorePath,
+          bytes,
+          format: 'tar+gzip',
+          env: { OPM_STORE_HOME: sharedHome },
+        }),
+      ).rejects.toThrow();
 
-    const leftover = join(sharedHome, storeKeyFromDigest(digest));
-    await expect(lstat(leftover)).rejects.toMatchObject({ code: 'ENOENT' });
-    await chmod(sharedHome, 0o755);
-  });
+      const leftover = join(sharedHome, storeKeyFromDigest(digest));
+      await expect(lstat(leftover)).rejects.toMatchObject({ code: 'ENOENT' });
+      await chmod(sharedHome, 0o755);
+    },
+  );
 
   it('refuses a symlink as a shared store entry', async () => {
     const sharedHome = await tempDir('opm-shared-link-');

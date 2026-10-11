@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -294,10 +301,15 @@ describe('materializeThroughSharedStore', () => {
       env: { OPM_STORE_HOME: sharedHome },
     });
 
-    await writeFile(
-      join(sharedHome, storeKeyFromDigest(digest), 'package/index.js'),
-      'tampered\n',
+    // Entry files are read-only, so corrupting one takes undoing that first.
+    const victim = join(
+      sharedHome,
+      storeKeyFromDigest(digest),
+      'package/index.js',
     );
+    expect((await stat(victim)).mode & 0o222).toBe(0);
+    await chmod(victim, 0o644);
+    await writeFile(victim, 'tampered\n');
 
     const retryPath = join(
       await tempDir('opm-proj-tamper2-'),
