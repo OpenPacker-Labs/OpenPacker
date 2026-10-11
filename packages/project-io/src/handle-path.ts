@@ -20,6 +20,7 @@ import {
   type Stats,
 } from 'node:fs';
 import {
+  link,
   lstat,
   mkdir,
   open,
@@ -161,6 +162,32 @@ export async function removeChild(
     force: options.force ?? false,
     recursive: options.recursive ?? false,
   });
+}
+
+/**
+ * Hard-link `fromParent/fromName` as `toParent/toName`.
+ *
+ * Both directories are reached through their open handles, so a swapped
+ * ancestor cannot redirect either end. The final component of the source is
+ * not followed by link(2) on POSIX, which means a name swapped for a symlink
+ * after the caller inspected it links the symlink itself; the caller must
+ * compare the linked entry's identity with what it inspected (see
+ * `materialiseTree`). Windows has no handle-relative link here and throws, so
+ * callers copy instead.
+ */
+export async function linkChild(
+  fromParent: FileHandle,
+  fromName: string,
+  toParent: FileHandle,
+  toName: string,
+): Promise<void> {
+  assertHandleSegment(fromName);
+  assertHandleSegment(toName);
+  if (process.platform === 'win32')
+    throw new StableHandleError(
+      'Hard links through directory handles are unavailable on Windows',
+    );
+  await link(posixChild(fromParent, fromName), posixChild(toParent, toName));
 }
 
 export async function lstatChild(

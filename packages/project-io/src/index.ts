@@ -200,6 +200,7 @@ export async function assertNamedDirectory(
 export {
   assertHandleSegment,
   handlePathForPlatform,
+  linkChild,
   lstatChild,
   mkdirChild,
   mkdtempChild,
@@ -320,6 +321,7 @@ export {
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
+  type MaterialiseOptions,
   type MaterialiseResult,
 } from './layout.js';
 

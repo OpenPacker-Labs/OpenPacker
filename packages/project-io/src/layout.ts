@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, type BigIntStats } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -26,18 +26,37 @@ import {
 } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
+  linkChild,
   lstatChild,
   mkdirChild,
   openChild,
   readDirChildWithTypes,
   removeChild,
   renameChild,
+  StableHandleError,
   supportsStableHandles,
 } from './handle-path.js';
+
+export interface MaterialiseOptions {
+  /**
+   * Hard-link each file from `source` instead of copying its bytes.
+   *
+   * The linked entry must be the very inode that was opened and inspected
+   * through the source directory handle; a name that was swapped between the
+   * inspection and the link is refused, never kept. A filesystem that cannot
+   * link (another device, a platform without handle-relative links, a file
+   * system that refuses) falls back to a verified copy for the rest of the
+   * tree, and `copied` says so. Linked files share their inode with the
+   * source, so their mode is the source's and is never changed from here.
+   */
+  link?: boolean;
+}
 
 export interface MaterialiseResult {
   /** Files linked or copied. */
   files: number;
+  /** Of `files`, how many are hard links to the source rather than copies. */
+  linked: number;
   /** True when at least one file had to be copied rather than linked. */
   copied: boolean;
 }
@@ -49,6 +68,27 @@ interface TreeEntrySnapshot {
   size: bigint;
   ctimeNs: bigint;
   mtimeNs: bigint;
+  /**
+   * A hard-linked inode changes ctime whenever another link to it is made or
+   * dropped, which a second project doing the same thing does at any moment.
+   * Content identity (inode, size, mtime) is still compared.
+   */
+  volatileCtime?: boolean;
+}
+
+/** Why a link attempt means "copy instead" and not "something is wrong". */
+const LINK_FALLBACK = new Set([
+  'EXDEV',
+  'EPERM',
+  'ENOTSUP',
+  'EOPNOTSUPP',
+  'ENOSYS',
+  'EMLINK',
+]);
+
+interface LinkState {
+  /** Set once the filesystem has said it cannot link; later files just copy. */
+  unavailable: boolean;
 }
 
 /**
@@ -61,11 +101,14 @@ export async function materialiseTree(
   source: string,
   destination: string,
   root: string,
+  options: MaterialiseOptions = {},
 ): Promise<MaterialiseResult> {
   assertContained(root, destination);
   const rootHandle = await openStableDirectory(root, true);
   const handles: FileHandle[] = [rootHandle];
-  const result: MaterialiseResult = { files: 0, copied: false };
+  const result: MaterialiseResult = { files: 0, linked: 0, copied: false };
+  const link: LinkState | undefined =
+    options.link === true ? { unavailable: false } : undefined;
   let staging: string | undefined;
   let stagingParent = rootHandle;
   try {
@@ -99,6 +142,7 @@ export async function materialiseTree(
       '',
       sourceSnapshot,
       stagedSnapshot,
+      link,
     );
     await assertTreeSnapshot(sourceHandle, sourceSnapshot);
     await assertTreeSnapshot(stagingHandle, stagedSnapshot);
@@ -153,6 +197,7 @@ async function walk(
   at: string,
   sourceSnapshot: Map<string, TreeEntrySnapshot>,
   destinationSnapshot: Map<string, TreeEntrySnapshot>,
+  link: LinkState | undefined,
 ): Promise<void> {
   const sourceDirectoryBefore = await source.stat({ bigint: true });
   const entries = await readDirChildWithTypes(source);
@@ -170,6 +215,7 @@ async function walk(
           relativePath,
           sourceSnapshot,
           destinationSnapshot,
+          link,
         );
       } finally {
         await Promise.all([fromHandle.close(), toHandle.close()]);
@@ -193,6 +239,25 @@ async function walk(
       if (!before.isFile()) throw unsafe(relativePath);
       if (before.size > BigInt(Number.MAX_SAFE_INTEGER))
         throw unsafe(relativePath);
+      if (
+        link &&
+        !link.unavailable &&
+        (await linkVerified({
+          source,
+          destination,
+          name: entry.name,
+          file,
+          before,
+          relativePath,
+          link,
+          sourceSnapshot,
+          destinationSnapshot,
+        }))
+      ) {
+        result.files += 1;
+        result.linked += 1;
+        continue;
+      }
       const size = Number(before.size);
       output = await openChild(
         destination,
@@ -300,11 +365,71 @@ async function captureTree(
   out.set(at, snapshot('directory', before));
 }
 
+/**
+ * Link one file and prove the link is the inode that was inspected.
+ *
+ * Returns false when the filesystem cannot link, so the caller copies. Any
+ * other outcome that is not exactly "the entry I opened, now with one more
+ * name" removes the new name and fails closed.
+ */
+async function linkVerified(input: {
+  source: FileHandle;
+  destination: FileHandle;
+  name: string;
+  file: FileHandle;
+  before: BigIntStats;
+  relativePath: string;
+  link: LinkState;
+  sourceSnapshot: Map<string, TreeEntrySnapshot>;
+  destinationSnapshot: Map<string, TreeEntrySnapshot>;
+}): Promise<boolean> {
+  const { destination, name, file, before, relativePath } = input;
+  try {
+    await linkChild(input.source, name, destination, name);
+  } catch (error) {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const code = (error as NodeJS.ErrnoException).code ?? '';
+    if (error instanceof StableHandleError || LINK_FALLBACK.has(code)) {
+      // One inode out of links is that file's problem; every other reason
+      // means this filesystem will not link at all.
+      if (code !== 'EMLINK') input.link.unavailable = true;
+      return false;
+    }
+    throw error;
+  }
+  const refuse = async (): Promise<never> => {
+    await removeChild(destination, name, { force: true }).catch(
+      () => undefined,
+    );
+    throw unsafe(relativePath);
+  };
+  const placed = await lstatChild(destination, name);
+  if (
+    !placed.isFile() ||
+    BigInt(placed.dev) !== BigInt(before.dev) ||
+    BigInt(placed.ino) !== BigInt(before.ino)
+  )
+    return refuse();
+  const after = await file.stat({ bigint: true });
+  if (
+    after.dev !== before.dev ||
+    after.ino !== before.ino ||
+    after.size !== before.size ||
+    after.mtimeNs !== before.mtimeNs
+  )
+    return refuse();
+  input.sourceSnapshot.set(relativePath, snapshot('file', after, true));
+  input.destinationSnapshot.set(relativePath, snapshot('file', placed, true));
+  return true;
+}
+
 function snapshot(
   type: TreeEntrySnapshot['type'],
   info: Awaited<ReturnType<FileHandle['stat']>>,
+  volatileCtime = false,
 ): TreeEntrySnapshot {
   return {
+    ...(volatileCtime && { volatileCtime }),
     type,
     dev: BigInt(info.dev),
     ino: BigInt(info.ino),
@@ -321,10 +446,13 @@ function snapshot(
 }
 
 function sameSnapshot(
-  left: TreeEntrySnapshot,
-  right: TreeEntrySnapshot,
+  expected: TreeEntrySnapshot,
+  actual: TreeEntrySnapshot,
 ): boolean {
-  return left.type === right.type && sameMetadata(left, right);
+  return (
+    expected.type === actual.type &&
+    sameMetadata(expected, actual, expected.volatileCtime === true)
+  );
 }
 
 function sameMetadata(
@@ -342,12 +470,13 @@ function sameMetadata(
     ctimeNs: bigint;
     mtimeNs: bigint;
   },
+  ignoreCtime = false,
 ): boolean {
   return (
     left.dev === right.dev &&
     left.ino === right.ino &&
     left.size === right.size &&
-    left.ctimeNs === right.ctimeNs &&
+    (ignoreCtime || left.ctimeNs === right.ctimeNs) &&
     left.mtimeNs === right.mtimeNs
   );
 }
