@@ -162,6 +162,15 @@ export function allowedOriginsFor(ecosystem: string): string[] {
 }
 
 /**
+ * The origins an operator has named for this ecosystem (`OPM_REGISTRY_<ECO>`),
+ * which are the ones allowed to resolve to a private address. A default public
+ * registry is never in this list.
+ */
+export function pinnedOriginsFor(ecosystem: string): string[] {
+  return firstPartyPolicy(ecosystem).pinnedOrigins;
+}
+
+/**
  * Production first-party registry transport. Classify-and-pin; public CDNs
  * are allowlisted-not-pinned; an operator-named endpoint or `OPM_REGISTRY_*`
  * override is pinned and does not inherit hardcoded `ARTIFACT_ORIGINS`.

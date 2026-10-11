@@ -51,6 +51,12 @@ export interface FrozenLockPackage {
   hasInstallScript: boolean;
   /** The registry's deprecation message, when the lock carries one. */
   deprecated?: string;
+  /**
+   * Set when the lock says this release has been withdrawn. npm's lock carries
+   * no such flag; a format that does fills this, and policy then denies the
+   * package unless the project allows that kind of release.
+   */
+  withdrawn?: 'yanked' | 'quarantined' | 'revoked' | 'delisted';
 }
 
 export interface FrozenLockSkip {

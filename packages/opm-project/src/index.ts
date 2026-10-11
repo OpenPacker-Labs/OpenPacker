@@ -229,6 +229,18 @@ export {
 
 export { codecFor } from './codecs.js';
 export {
+  installFrozen,
+  type FrozenInstallInput,
+  type FrozenInstallResult,
+} from './frozen-install.js';
+export { MAXIMUM_ARCHIVE_BYTES } from './frozen-fetch.js';
+export {
+  checkIntegrity,
+  integrityKey,
+  strongestClaims,
+  type IntegrityClaim,
+} from './integrity.js';
+export {
   detectLibc,
   detectNativeTarget,
   evaluateTargetPredicate,
