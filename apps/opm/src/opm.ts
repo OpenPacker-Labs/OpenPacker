@@ -109,6 +109,12 @@ export interface RunOpmOptions {
   adapters?: readonly AdapterModule[];
 }
 
+/** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
+export interface RunOpmOptions {
+  /** Network used by `plugin add`; production resolves and pins real addresses. */
+  fetch?: typeof fetch;
+}
+
 export async function runOpm(
   argv = process.argv.slice(2),
   io: CliIo = process,
