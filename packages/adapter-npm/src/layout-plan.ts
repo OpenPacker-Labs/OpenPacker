@@ -288,6 +288,16 @@ export function planLayout(
   };
 }
 
+export class LayoutTooLargeError extends Error {
+  readonly code = 'LAYOUT_TOO_LARGE';
+  constructor(limit: number) {
+    super(
+      `The lock needs more than ${limit} package directories in node_modules; refusing to write a layout that large`,
+    );
+    this.name = 'LayoutTooLargeError';
+  }
+}
+
 /** What Node finds for `name` from the directory this package lives in. */
 function lookup(from: Node, name: string): Node | undefined {
   for (
