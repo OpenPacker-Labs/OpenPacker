@@ -30,7 +30,6 @@ import {
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 export class StableHandleError extends Error {
@@ -718,21 +717,34 @@ function ntDirent(name: string, attributes: number): Dirent {
   } as Dirent;
 }
 
+/**
+ * Where this module was loaded from, read off a stack trace, in a form
+ * `createRequire` accepts: a `file:` URL (ESM frames) or an absolute path
+ * (CommonJS frames).
+ *
+ * The package builds twice, and the CommonJS build cannot name `import.meta`,
+ * so the module cannot ask for its own URL. A frame looks like
+ * `file:///D:/a/x/handle-path.js:359:21` from ESM and `D:\a\x\handle-path.js:359:21`
+ * from CommonJS. A URL is handed on whole rather than cut down to
+ * `/D:/a/x/handle-path.js`, which names no file on Windows.
+ */
+export function moduleFileFromStack(stack: string): string | undefined {
+  const frame =
+    /((?:file:\/\/\/|[A-Za-z]:[\\/]|\/)[^()\r\n]*?handle-path\.[cm]?[jt]s)(?::\d+){0,2}[)\r\n]/u.exec(
+      `${stack}\n`,
+    );
+  return frame?.[1];
+}
+
 function loadKoffi(): Koffi {
-  try {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const url = Function('return import.meta.url')() as string;
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return createRequire(fileURLToPath(url))('koffi') as Koffi;
-  } catch {
-    const stack = new Error().stack ?? '';
-    const match = /(?:file:\/\/)?(\/[^\s)]*handle-path\.js)/u.exec(stack);
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    if (match?.[1]) return createRequire(match[1])('koffi') as Koffi;
+  const file = moduleFileFromStack(new Error().stack ?? '');
+  if (file === undefined) {
     throw new StableHandleError(
       'Windows handle mapping could not locate this module to load koffi',
     );
   }
+  // SAFETY: koffi is this package's own dependency; the cast names its shape.
+  return createRequire(file)('koffi') as Koffi;
 }
 
 function loadCrt(koffi: Koffi): KoffiLib {
