@@ -382,7 +382,7 @@ function loadNtApi() {
   });
   const ntdll = koffi.load('ntdll.dll');
   const kernel32 = koffi.load('kernel32.dll');
-  const crt = loadCrt(koffi);
+  const host = loadNodeHost(koffi);
   return {
     koffi,
     HANDLE,
@@ -410,13 +410,13 @@ function loadNtApi() {
       'int32 __stdcall CloseHandle(void *hObject)',
     ) as (handle: unknown) => number,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    getOsFHandle: crt.func('void * __cdecl _get_osfhandle(int fd)') as (
+    getOsFHandle: host.func('void * __cdecl uv_get_osfhandle(int fd)') as (
       fd: number,
     ) => KoffiHandle,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    openOsFHandle: crt.func(
-      'int __cdecl _open_osfhandle(void *osfhandle, int flags)',
-    ) as (handle: unknown, flags: number) => number,
+    openOsFHandle: host.func('int __cdecl uv_open_osfhandle(void *os_fd)') as (
+      handle: unknown,
+    ) => number,
   };
 }
 
@@ -451,9 +451,6 @@ const FILE_READ_ATTRIBUTES = 0x00000080;
 const FileRenameInformation = 10;
 const FileDispositionInformation = 13;
 const FileDirectoryInformation = 1;
-const _O_RDONLY = 0;
-const _O_RDWR = 2;
-const _O_BINARY = 0x8000;
 
 function windowsOpenChild(
   parent: FileHandle,
@@ -529,15 +526,10 @@ function windowsOpenChild(
   );
   if (ntStatus(status) !== STATUS_SUCCESS) throwNt(status, name);
   const osHandle = outHandle[0];
-  const crtFlags =
-    _O_BINARY |
-    ((flags & constants.O_RDWR) !== 0 || (flags & constants.O_WRONLY) !== 0
-      ? _O_RDWR
-      : _O_RDONLY);
-  const fd = api.openOsFHandle(osHandle, crtFlags);
+  const fd = api.openOsFHandle(osHandle);
   if (fd < 0) {
     api.CloseHandle(osHandle);
-    throw new StableHandleError(`_open_osfhandle failed for ${name}`);
+    throw new StableHandleError(`uv_open_osfhandle failed for ${name}`);
   }
   return Promise.resolve(wrapFd(fd));
 }
@@ -747,21 +739,21 @@ function loadKoffi(): Koffi {
   return createRequire(file)('koffi') as Koffi;
 }
 
-function loadCrt(koffi: Koffi): KoffiLib {
-  const names = [
-    'api-ms-win-crt-filesystem-l1-1-0.dll',
-    'ucrtbase.dll',
-    'msvcrt.dll',
-  ];
-  let last: unknown;
-  for (const name of names) {
-    try {
-      return koffi.load(name);
-    } catch (error) {
-      last = error;
-    }
+/**
+ * The library that owns Node's file descriptors, which is node.exe itself.
+ *
+ * node.exe links its own copy of the C runtime, so a descriptor Node hands out
+ * means nothing to the system UCRT: asking `_get_osfhandle` about it trips the
+ * invalid-parameter handler, and the process dies with no JavaScript error.
+ * libuv exports the two conversions that use the right table, as
+ * `uv_get_osfhandle` and `uv_open_osfhandle`, so they are called from here.
+ */
+function loadNodeHost(koffi: Koffi): KoffiLib {
+  try {
+    return koffi.load(process.execPath);
+  } catch (error) {
+    throw new StableHandleError(
+      `Windows handle mapping could not load libuv from ${process.execPath}: ${String(error)}`,
+    );
   }
-  throw new StableHandleError(
-    `Windows handle mapping could not load CRT: ${String(last)}`,
-  );
 }
