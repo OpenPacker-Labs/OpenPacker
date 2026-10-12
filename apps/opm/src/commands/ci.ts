@@ -5,6 +5,7 @@ import {
   type FrozenInstallResult,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 import { report } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
@@ -101,17 +102,24 @@ export async function runCiCommand(
   if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
-    io.stdout.write(`  install script not run: ${item.name}@${item.version}\n`);
+    io.stdout.write(
+      `  install script not run: ${plainLine(item.name)}@${plainLine(item.version)}\n`,
+    );
   if (noScripts > shown.length)
     io.stdout.write(`  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
-    io.stderr.write(report('opm: ', `skipped ${entry.path}: ${entry.reason}`));
+    io.stderr.write(
+      report(
+        'opm: ',
+        `skipped ${plainLine(entry.path)}: ${plainLine(entry.reason)}`,
+      ),
+    );
   for (const loss of result.layout.semanticLoss)
     if (loss.severity !== 'info')
       io.stderr.write(
         report(
           'opm: ',
-          `${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}`,
+          `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
         ),
       );
   return 0;
