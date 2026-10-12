@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { afterEach, describe, expect, it } from 'vitest';
+import type { NativeLockEntry } from '@openpacker/adapter-core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireAdapterRegistry } from '../src/index.js';
 import type { FrozenInstallInput } from '../src/index.js';
 import {
   cleanup,
@@ -241,5 +243,46 @@ describe('installFrozen against what npm ci installs for a workspace with aliase
         );
       },
     );
+  });
+});
+
+describe('installFrozen and the names an aliased package has', () => {
+  it("hands the adapter the package's own name, and the install name where it differs", async () => {
+    const w = await fixture();
+    const format = await requireAdapterRegistry().projectFormatFor('npm');
+    const spy = vi.spyOn(Object.getPrototypeOf(format!), 'writeLayout');
+    let entries: NativeLockEntry[];
+    try {
+      await w.install({});
+      entries = spy.mock.calls[0]![1] as NativeLockEntry[];
+    } finally {
+      spy.mockRestore();
+    }
+    const at = (path: string) => entries.find((e) => e.layoutPath === path);
+    expect(at('node_modules/string-width-cjs')).toMatchObject({
+      name: 'string-width',
+      installName: 'string-width-cjs',
+      purl: 'pkg:npm/string-width',
+    });
+    expect(at('packages/lib/node_modules/pad')).toMatchObject({
+      name: 'left-pad',
+      installName: 'pad',
+    });
+    expect(at('node_modules/string-width')?.name).toBe('string-width');
+    expect(at('node_modules/string-width')).not.toHaveProperty('installName');
+  });
+
+  it('names a case collision between two install names by the package, not by either alias', async () => {
+    const w = await setup();
+    const same = { name: 'string-width', version: '4.2.3' };
+    w.place('node_modules/string-width-CJS', same, { name: 'string-width' });
+    w.place('node_modules/string-width-cjs', same, { name: 'string-width' });
+    await w.write();
+    await expect(w.install({})).rejects.toMatchObject({
+      code: 'INVALID_LOCK',
+      message: expect.stringContaining(
+        'string-width@4.2.3 would be installed as string-width-cjs, which differs only by case from string-width-CJS (string-width@4.2.3)',
+      ),
+    });
   });
 });
