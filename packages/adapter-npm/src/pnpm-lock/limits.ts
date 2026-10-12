@@ -6,12 +6,21 @@
  * ceiling, and exceeding one is a refusal that names the number.
  *
  * The defaults sit about ten times above the largest real lock measured (HoBo:
- * 792 importers, 2,160 packages, 2,193 snapshots, 0.8 MB, 0.6 s, 146 MB resident)
- * and are set by what the reader costs: 0.74 s and 73 MB of resident memory per
- * megabyte of a realistic lock (6.5 MB took 4.8 s and 478 MB; 13 MB took 9.6 s
- * and 951 MB), about 1 s and 90 MB per megabyte of one that is all tiny entries
- * (8.3 MB took 8.8 s and 758 MB). The byte ceiling keeps the worst case near
- * 9 s and 800 MB; a project with a larger lock raises the number it names.
+ * 825,879 bytes, 46,862 YAML nodes, 159,674 lexemes, 792 importers, 2,160
+ * packages, 2,193 snapshots; read in 0.7 s at 146 MB resident, of which 77 MB
+ * is node): 8 MiB is 10.2 times its bytes, 500,000 nodes 10.7 times its nodes,
+ * and the lexeme budget (five a node, so 2.5 million) 15.7 times its lexemes.
+ *
+ * Reading costs about 0.6 s and 55 MB per megabyte of a lock of HoBo's kind:
+ * 7.9 MB of it (HoBo's packages and snapshots eleven times over, 450,432 nodes)
+ * takes 4.0 to 5.6 s and 500 MB. Input built to cost the most per byte (blank
+ * lines, empty list items, comments, tiny flow entries, tiny block entries) is
+ * refused at the lexeme budget after 3 to 5 s and at most 492 MB. The first
+ * defaults (1,000,000 nodes, six lexemes a node) refused the worst of them
+ * only after 11.6 s and 969 MB (12.6 s and 1.24 GB in an independent run).
+ * Every figure is a fresh process per input on a shared 4-CPU machine (peak
+ * resident memory from `process.resourceUsage().maxRSS`); a project with a
+ * larger lock raises the number the refusal names.
  */
 
 import { PnpmLockError } from './errors.js';
@@ -43,7 +52,7 @@ export interface PnpmLockLimits {
 
 export const DEFAULT_PNPM_LOCK_LIMITS: PnpmLockLimits = {
   maxBytes: 8 * 1024 * 1024,
-  maxNodes: 1_000_000,
+  maxNodes: 500_000,
   maxDepth: 16,
   maxImporters: 20_000,
   maxPackages: 100_000,

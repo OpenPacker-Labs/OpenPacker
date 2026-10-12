@@ -1,7 +1,14 @@
+import { Lexer, parseDocument, visit } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { PnpmLockError, type PnpmLockReason } from './errors.js';
+import { FIXTURES, fixtureText } from './fixture-support.js';
 import { DEFAULT_PNPM_LOCK_LIMITS, resolvePnpmLockLimits } from './limits.js';
-import { readYamlTree, type YamlMap, type YamlValue } from './yaml-tree.js';
+import {
+  LEXEMES_PER_NODE,
+  readYamlTree,
+  type YamlMap,
+  type YamlValue,
+} from './yaml-tree.js';
 
 const read = (text: string, limits = DEFAULT_PNPM_LOCK_LIMITS) =>
   readYamlTree(text, limits);
@@ -229,6 +236,47 @@ describe('readYamlTree: bounds', () => {
     const error = refusal(text, small({ maxNodes: 200 }));
     expect(error.reason).toBe('limit');
     expect(error.message).toContain('maxNodes');
+  });
+
+  describe('the lexeme budget, which counts what the node count cannot', () => {
+    const lexemesOf = (text: string) => [...new Lexer().lex(text)].length;
+    // A key and a value, then blank lines: two nodes and a hundred lexemes.
+    const blank = `a: 1\n${'\n'.repeat(120)}`;
+
+    it('refuses more lexemes than maxNodes times LEXEMES_PER_NODE, though the nodes are few', () => {
+      const lexemes = lexemesOf(blank);
+      const fits = Math.ceil(lexemes / LEXEMES_PER_NODE);
+      expect(fits).toBeGreaterThan(2);
+      expect(() => read(blank, small({ maxNodes: fits }))).not.toThrow();
+      const error = refusal(
+        blank,
+        small({ maxNodes: Math.floor((lexemes - 1) / LEXEMES_PER_NODE) }),
+      );
+      expect(error.reason).toBe('limit');
+      expect(error.message).toMatch(/has \d+ lexemes, more than the limit of/u);
+      expect(error.message).toContain('maxNodes');
+    });
+
+    it('refuses empty list items and comments the same way', () => {
+      const limits = small({ maxNodes: 40 });
+      expect(reasonOf(`x:\n${'  -\n'.repeat(400)}`, limits)).toBe('limit');
+      expect(reasonOf(`x: 1\n${'#\n'.repeat(400)}`, limits)).toBe('limit');
+    });
+
+    it('is more than the real locks need, by a third', () => {
+      for (const name of FIXTURES) {
+        const text = fixtureText(name);
+        let nodes = 0;
+        visit(parseDocument(text, { uniqueKeys: false }), {
+          Node() {
+            nodes += 1;
+          },
+        });
+        const perNode = lexemesOf(text) / nodes;
+        expect(perNode, name).toBeLessThan(4);
+        expect(perNode * 1.25, name).toBeLessThan(LEXEMES_PER_NODE);
+      }
+    });
   });
 
   it('refuses a key or a string over its length', () => {

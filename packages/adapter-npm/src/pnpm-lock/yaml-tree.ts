@@ -70,8 +70,14 @@ function forbiddenAt(text: string): number {
 }
 const CONFLICT_MARKER = /^(?:<{7}|>{7})(?: |$)/mu;
 
-/** Lexemes the lexer may produce per node allowed; the walk below counts nodes exactly. */
-const LEXEMES_PER_NODE = 6;
+/**
+ * Lexemes the lexer may produce per node allowed; the walk below counts nodes
+ * exactly. The four real locks cost 3.4 lexemes a node and the same lock
+ * reformatted by Prettier 3.6 (or wrapped at 40 columns) 3.8, so 5 leaves a third
+ * to spare. What the budget is for is input that is mostly lexemes and hardly any
+ * nodes (blank lines, comments, empty list items), which costs memory all the same.
+ */
+export const LEXEMES_PER_NODE = 5;
 
 function lineOf(text: string, offset: number): number {
   let line = 1;
