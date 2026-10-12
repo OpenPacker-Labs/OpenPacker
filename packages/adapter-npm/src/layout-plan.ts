@@ -322,7 +322,7 @@ export class LayoutPathsError extends Error {
  */
 export function planLayoutFromPaths(
   placed: readonly PlacedEntry[],
-  options: { maximumPlacements?: number } = {},
+  options: PlanOptions = {},
 ): LayoutPlan {
   const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   if (placed.length > maximumPlacements)
@@ -360,15 +360,17 @@ export function planLayoutFromPaths(
       );
   }
   if (problems.length > 0) throw new LayoutPathsError(problems);
+  const placements = placed
+    .map(({ entry, chain }) => ({ entry, chain }))
+    .sort(
+      (left, right) =>
+        left.chain.length - right.chain.length ||
+        compareText(left.chain.join('\0'), right.chain.join('\0')),
+    );
   return {
-    placements: placed
-      .map(({ entry, chain }) => ({ entry, chain }))
-      .sort(
-        (left, right) =>
-          left.chain.length - right.chain.length ||
-          compareText(left.chain.join('\0'), right.chain.join('\0')),
-      ),
+    placements,
     skipped: [],
+    links: checkLayoutLinks(options.links ?? [], placements),
   };
 }
 
