@@ -215,7 +215,7 @@ export async function runOpmx(
  * carry a string `code`, and both map here instead of collapsing into a
  * generic internal error.
  */
-function exitForError(error: unknown): number {
+export function exitForError(error: unknown): number {
   let code: string | undefined;
   if (error instanceof OpmError) code = error.code;
   else if (error instanceof Error && 'code' in error) {
@@ -227,20 +227,32 @@ function exitForError(error: unknown): number {
     case 'NOT_FOUND':
     case 'NO_PROJECT':
     case 'PLUGIN_NOT_INSTALLED':
+    case 'VERSION_NOT_FOUND':
       return EXIT_CODES.notFound;
     case 'USAGE':
       return EXIT_CODES.usage;
+    case 'INVALID_PACKSLIP_INPUT':
+      return EXIT_CODES.invalidInput;
+    case 'HOST_INCOMPATIBLE':
+      return EXIT_CODES.unsatisfiable;
     case 'SANDBOX_UNAVAILABLE':
     case 'POLICY_DENIED':
+    // A signer that changed is a decision for a person, not a failure.
+    case 'TRUST_CHANGE_REQUIRES_APPROVAL':
+    case 'ARTIFACT_TOO_LARGE':
       return EXIT_CODES.policyDenied;
     case 'OFFLINE':
     case 'PLUGIN_ERROR':
     case 'PLUGIN_FAILED':
+    case 'UPSTREAM_UNAVAILABLE':
       return EXIT_CODES.unavailable;
     case 'DIGEST_MISMATCH':
     case 'SIZE_MISMATCH':
     case 'PLUGIN_DIGEST_MISMATCH':
     case 'INVALID_DIGEST':
+    // The same classes of failure as `opm`: a signature or signer that does not hold.
+    case 'SIGNATURE_VERIFICATION_FAILED':
+    case 'INVALID_PACKSLIP_METADATA':
       return EXIT_CODES.verificationFailed;
     default:
       return EXIT_CODES.internal;

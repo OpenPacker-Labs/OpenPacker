@@ -724,10 +724,12 @@ export function handleError(error: unknown, io: CliIo): number {
           return EXIT_CODES.notFound;
         case 'DIGEST_MISMATCH':
         case 'SIZE_MISMATCH':
-        // A signed release whose signature, signer, or metadata does not hold
-        // is a verification failure, the same as bytes that do not hash.
+        // A signed release whose signature, signer, or signed document does
+        // not hold is a verification failure, the same as bytes that do not
+        // hash. (`INVALID_PROVIDER_METADATA` stays what it was: another
+        // registry's malformed response is not evidence of tampering.)
         case 'SIGNATURE_VERIFICATION_FAILED':
-        case 'INVALID_PROVIDER_METADATA':
+        case 'INVALID_PACKSLIP_METADATA':
           return EXIT_CODES.verificationFailed;
         case 'INVALID_PURL':
         case 'UNSUPPORTED_OPERATION':
@@ -737,7 +739,8 @@ export function handleError(error: unknown, io: CliIo): number {
         // Nothing wrong with the release, but nothing in it fits this machine.
         case 'HOST_INCOMPATIBLE':
           return EXIT_CODES.unsatisfiable;
-        // A signer that changed is a decision for a person, not a failure.
+        // A signer that changed is a decision for a person, not a failure; an
+        // archive over the limit is a limit opm sets.
         case 'TRUST_CHANGE_REQUIRES_APPROVAL':
         case 'ARTIFACT_TOO_LARGE':
           return EXIT_CODES.policyDenied;
@@ -840,7 +843,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-network' ||
     key === 'allow-elevation' ||
     key === 'latest' ||
-    key === 'native'
+    key === 'native' ||
+    key === 'write'
   );
 }
 

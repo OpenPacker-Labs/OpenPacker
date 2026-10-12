@@ -101,10 +101,12 @@ async function resolve(
     root === undefined
       ? undefined
       : await readManifestFile(projectPaths(root).manifest);
+  // Only the signer history is wanted from the lock, and a lock that cannot be
+  // read is no history; it must not stop a read-only look at a release.
   const lock =
     root === undefined
       ? undefined
-      : await readLockfile(projectPaths(root).lock);
+      : await readLockfile(projectPaths(root).lock).catch(() => undefined);
   const options = registryOptionsForEcosystem(
     'packslip',
     manifest ?? {},
@@ -225,6 +227,11 @@ async function pin(
   cwd: string,
   transport: RegistryOptions,
 ): Promise<number> {
+  // `--write=false` must not write, and must not be mistaken for a request not
+  // to: it is refused before anything is fetched.
+  const write = args.options.get('write');
+  if (write !== undefined && write !== true)
+    throw new OpmError('INVALID_SPEC', '--write takes no value');
   const release = await resolve(args, cwd, 'pin', transport);
   const signer = signerOf(release);
   const fingerprint = text(signer.fingerprint);
@@ -236,7 +243,7 @@ async function pin(
         `${release.project}"].`,
     );
   const stanza = `[adapters.packslip.trust."${release.project}"]\npin = ["${fingerprint}"]\n`;
-  if (!args.options.has('write')) {
+  if (write !== true) {
     io.stdout.write(stanza);
     io.stderr.write(
       'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
@@ -284,7 +291,11 @@ async function approve(
   const root = await requireOpmRoot(cwd);
   const manifest = await readManifestFile(projectPaths(root).manifest);
   const settings = { ...manifest.adapterSettings?.packslip };
-  const held = Array.isArray(settings.approvals) ? settings.approvals : [];
+  const held = Array.isArray(settings.approvals)
+    ? settings.approvals
+    : typeof settings.approvals === 'string'
+      ? [settings.approvals]
+      : [];
   if (held.includes(id)) {
     io.stdout.write(`Proposal ${id} is already approved\n`);
     return 0;
