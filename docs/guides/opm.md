@@ -236,10 +236,14 @@ What `layout` writes:
   recorded. A direct requirement, and the version most packages want, sits in
   `node_modules/<name>`; a package that needs a different version of the same
   name gets it in its own `node_modules` (`a → c@1` and `b → c@2` becomes
-  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks,
-  except a workspace member's link ([below](#workspace-member-links)). A lock
-  with no recorded edges (an offline lock holds only the direct set) is laid out
-  flat by name, newest first, and the version left out is reported.
+  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). A package a
+  dependent requires under an alias
+  (`"string-width-cjs": "npm:string-width@^4"`) is the directory of that name,
+  beside the package of its own name if that is there too, and its `.bin` shims
+  point at that directory. No symlinks, except a workspace member's link
+  ([below](#workspace-member-links)). A lock with no recorded edges (an offline
+  lock holds only the direct set) is laid out flat by name, newest first, and
+  the version left out is reported.
 - **Hard links, not copies.** Each file is a link to the store's, verified to be
   the same inode. If the filesystem cannot link, opm copies and says so.
 - **Executables** are small shell scripts in `node_modules/.bin` (plus `.cmd` on
@@ -354,7 +358,17 @@ directory (a directory junction on Windows), so an edit to a member's source is
 seen by the others at once. A version of a package only one member wants is
 written in that member's own `node_modules` (`packages/web/node_modules/left`),
 and a member's executables get shims in the project's `node_modules/.bin`, where
-npm links them. No member's scripts are run.
+npm links them. No member's scripts are run. A dependency a member holds under
+an alias (`"pad": "npm:left-pad@^0.9.0"`) is installed under that name, in the
+project's `node_modules`, in the member's own or inside a package (`pad`, not
+`left-pad`): the package keeps its own name in its `package.json`, and the
+member's own `node_modules` record, the shims of its executables and what a
+later layout removes go by the directory
+([ADR 0054](../adr/0054-aliases-and-several-versions-in-the-closure.md)). One
+name at several versions, in the project and in members, is installed where the
+lock says. Two names that differ only by case in one `node_modules` directory
+are refused, because they are one directory on macOS and Windows; each member's
+own `node_modules` is a directory of its own for that rule.
 
 ```sh
 opm ci                              # the project, every member, everything they need
@@ -574,6 +588,11 @@ version is keyed by its name again), so `opm install` still accepts the lock. A
 label in `opm.toml` names one package: `opm add is-number@npm:is-odd` over an
 `is-number` that is another package is refused, and says to remove it or to use
 `--alias`.
+
+`opm ci` installs both shapes from a lock without resolving anything, a
+workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
+and `opm update` resolve the project's `opm.toml` and do not read a workspace's
+members.
 
 **Limits.** A package a required peer dependency points at must be one version:
 a closure that needs it at two fails and names who requires what, as npm's

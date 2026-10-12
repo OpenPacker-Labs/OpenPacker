@@ -9,7 +9,11 @@
   layout nests; it now also places by install name),
   [0046](0046-a-lockfile-is-installed-not-re-resolved.md) (a frozen install
   already installs both shapes, because an npm lock records a path per package),
-  [0049](0049-workspaces-are-a-model-before-they-are-an-install.md)
+  [0049](0049-workspaces-are-a-model-before-they-are-an-install.md),
+  [0051](0051-opm-ci-installs-workspace-locks.md) (a workspace lock holds both
+  shapes too: §16 and §17 say how they meet),
+  [0052](0052-pnpm-lockfile-model.md) (a pnpm lock models an alias and installs
+  nothing yet)
 
 ## Context
 
@@ -36,8 +40,8 @@ package by one key, and a key is a package name.
    but one and solved again. npm and pnpm nest. Names that a real lock holds in
    more than one version: 15 of 416 in ts-autocode, 29 of 751 in gitlang, 101 of
    870 in ceremony (their `package-lock.json`), 248 of 1,791 in HoBo. `opm ci`
-   already installs such locks, and the layout planner already nests; only the
-   resolver and the lock model refused.
+   already installs such locks (a workspace's too, ADR 0051), and the layout
+   planner already nests; only the resolver and the lock model refused.
 
 What an alias is, in npm's terms (`npm-package-arg`, which is what the oracle
 uses): `name@npm:target[@spec]` where the dependency key is the directory the
@@ -252,6 +256,41 @@ Approaches compared.
     packed and agent-base@7.1.4, which npm's own closure reaches, is published
     with `package/./dist/index.js`.
 
+### With the workspace install and the pnpm reader (ADR 0051, ADR 0052)
+
+16. **An alias in a workspace lock is installed under its install name.**
+    `opm ci` writes a package where its lock puts it, and in an npm lock that
+    place is the install name: `node_modules/string-width-cjs` holds the entry
+    whose `name` is `string-width`, in the project's `node_modules`, in a
+    member's own (`packages/lib/node_modules/pad`) or inside a package. The
+    adapter is given what a resolved closure's entry carries, the package's own
+    name (`name`) and the install name (`installName`, set when the place's last
+    name is not the package's), and the lock-driven layout
+    (`planLayoutFromPaths`) takes the directory from the place and never from
+    the name. Everything ADR 0051 writes per directory goes by the directory: a
+    member's `.opm-layout.json` and so what a later layout removes there, the
+    `.bin` shims in each `node_modules` (the shim's relative path, and who keeps
+    a contested name), and a nested package's. What the package calls itself
+    decides one thing, as in §11: what a bare `bin` string is named.
+17. **The case rule (§11) is per `node_modules` directory, and a lock-driven
+    layout is refused, not skipped.** A frozen install is the lock, so a lock
+    that places two names differing only by case in one directory is refused
+    with both and the place (`planLayoutFromPaths`), where the planner of §11
+    would skip the second. The directory is the unit: the project's
+    `node_modules`, each member's own and each package's are separate
+    namespaces, so `Foo` in one member and `foo` in another, or one at the root
+    and one inside a package, are fine. The rule goes by the install name, not
+    the package's own: one package installed as `string-width-cjs` and as
+    `string-width-CJS` collides, a package beside its own alias does not. A lock
+    with such a pair installs on Linux and is refused on every platform, so that
+    what a lock lays out does not depend on the machine it is installed on.
+18. **Only `opm ci` installs a workspace.** `opm add`, `sync` and `update`
+    resolve the project's `opm.toml` and do not read members (ADR 0049's model
+    is used by `opm ci`, `opm run` and `opm exec`), so the resolver of this
+    record never solves for a member. ADR 0052's reader records whether a pnpm
+    dependency was an alias (`parseRef`, one rule) and installs nothing, so
+    nothing here applies to a pnpm lock yet.
+
 ## Consequences
 
 All numbers are from this host (linux x64, Node 22.22.0) against the live
@@ -352,6 +391,16 @@ The vitest figures of the first table (160 requests, 17.34 MB) were the
 registry's that day; the registry published since, and both builds now make 167.
 The two builds still cost the same.
 
+**Together with the workspace install** (ADR 0051), measured on the merged tree
+on 2026-10-12 with the oracle of ADR 0051 (`@npmcli/arborist` 8.0.1
+`loadVirtual`, read-only):
+
+| What                                                                                                    | Result                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a fixture workspace lock: aliases at the root, in a member and in a package; one name at three versions | 4 option sets (everything, `-w` for each member, `--workspaces=false`): installed equals arborist's, 0 differences; the oracle gives the alias as the path and the package's own name                                                                                                                                                                                              |
+| ts-autocode's lock (6 aliased entries), `opm ci`                                                        | 438 packages and 4 links; 442 expected, 442 installed, 0 differences either way (the number before the merge)                                                                                                                                                                                                                                                                      |
+| gitlang's lock (9 aliased entries: the `-cjs` three and the six codex platform builds), `opm ci`        | 758 packages and 8 links; 766 expected, 766 installed, 0 differences; `string-width-cjs` is `string-width@4.2.3`; only `@openai/codex-linux-x64` of the six platform builds is installed; the workspace install's own branch before this merge gives the same 766 of 766, the same `require` resolution counts, byte-identical `.bin` shims and an identical project layout record |
+
 **Legacy locks.** `legacy-closure.opm.lock.txt` is a lock written by the build
 before this change. It parses and serializes to the same bytes, and resolving
 the same registry state with the new build writes the same bytes.
@@ -378,4 +427,4 @@ the same registry state with the new build writes the same bytes.
   direct (a trust tier of `unsigned` where a resolve reads a dependency's as
   `unknown`); the lock is otherwise what a resolve writes. It was not checked on
   the build before the series.
-- The case rule (§11) was exercised on Linux only.
+- The case rule (§11, §17) was exercised on Linux only.
