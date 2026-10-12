@@ -78,6 +78,8 @@ export async function materializeThroughSharedStore(input: {
   /** Already resolved by the caller; skips resolving it again. */
   sharedRoot?: string;
   linkFile?: (existingPath: string, newPath: string) => Promise<void>;
+  /** Bounds the archive is extracted under; the materializer's by default. */
+  limits?: MaterializationLimits;
 }): Promise<{ path: string; shared: boolean; treeDigest?: string }> {
   const digest = assertDigest(input.digest);
   const projectStorePath = input.projectStorePath;
@@ -87,7 +89,13 @@ export async function materializeThroughSharedStore(input: {
     input.sharedRoot ?? (await usableSharedRoot(projectStorePath, input.env));
   if (sharedRoot === undefined) {
     const bytes = await resolveBytes(input.bytes, digest);
-    await materializeArchive(bytes, format, digest, projectStorePath);
+    await materializeArchive(
+      bytes,
+      format,
+      digest,
+      projectStorePath,
+      input.limits,
+    );
     return { path: projectStorePath, shared: false };
   }
 
@@ -99,6 +107,7 @@ export async function materializeThroughSharedStore(input: {
       digest,
       format,
       bytes: input.bytes,
+      ...(input.limits !== undefined && { limits: input.limits }),
     });
     try {
       await linkTree(published.path, projectStorePath, linkFile);

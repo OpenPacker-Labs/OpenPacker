@@ -18,11 +18,10 @@ import {
 
 export const NPM_ORIGIN = 'https://registry.npmjs.org';
 
-/** A real (if tiny) npm tarball: gzip of a ustar archive of package/package.json. */
-export function tarball(name: string, version: string): Uint8Array {
-  const body = Buffer.from(JSON.stringify({ name, version }));
+/** A ustar entry: a 512-byte header, the body, and padding to a block. */
+function tarEntry(path: string, body: Buffer): Buffer {
   const header = Buffer.alloc(512);
-  header.write('package/package.json', 0, 'utf8');
+  header.write(path, 0, 'utf8');
   header.write('0000644\0', 100, 'ascii');
   header.write('0000000\0', 108, 'ascii');
   header.write('0000000\0', 116, 'ascii');
@@ -33,13 +32,38 @@ export function tarball(name: string, version: string): Uint8Array {
   header.write('ustar\0' + '00', 257, 'ascii');
   const checksum = header.reduce((sum, byte) => sum + byte, 0);
   header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii');
-  const padded = Buffer.concat([
+  return Buffer.concat([
+    header,
     body,
     Buffer.alloc((512 - (body.length % 512)) % 512),
   ]);
+}
+
+/**
+ * A gzipped ustar archive whose paths are written exactly as given, which
+ * `packTarGzip` refuses to do for `package/./dist/index.js`, though a published
+ * package (agent-base@7.1.4) is spelled that way.
+ */
+export function rawTarball(
+  entries: readonly { path: string; body: string }[],
+): Uint8Array {
   return new Uint8Array(
-    gzipSync(Buffer.concat([header, padded, Buffer.alloc(1024)])),
+    gzipSync(
+      Buffer.concat([
+        ...entries.map((entry) =>
+          tarEntry(entry.path, Buffer.from(entry.body)),
+        ),
+        Buffer.alloc(1024),
+      ]),
+    ),
   );
+}
+
+/** A real (if tiny) npm tarball: gzip of a ustar archive of package/package.json. */
+export function tarball(name: string, version: string): Uint8Array {
+  return rawTarball([
+    { path: 'package/package.json', body: JSON.stringify({ name, version }) },
+  ]);
 }
 
 const tarballs = new Map<string, Uint8Array>();
@@ -48,28 +72,51 @@ function tarballOf(
   version: string,
   value: FixtureVersion = {},
 ): Uint8Array {
-  const key = `${name}@${version}:${JSON.stringify([value.files, value.bin])}`;
+  const key = `${name}@${version}:${JSON.stringify(
+    [value.files, value.bin],
+    (_key, item) =>
+      item instanceof Uint8Array
+        ? `bytes:${item.length}:${createHash('sha1').update(item).digest('hex')}`
+        : item,
+  )}`;
   let bytes = tarballs.get(key);
   if (bytes === undefined) {
+    const literalPaths = Object.keys(value.files ?? {}).some((path) =>
+      path.startsWith('./'),
+    );
     bytes =
       value.files === undefined && value.bin === undefined
         ? tarball(name, version)
-        : packTarGzip(
-            Object.entries({
-              'package.json': JSON.stringify({
-                name,
-                version,
-                main: 'index.js',
-                ...(value.bin !== undefined && { bin: value.bin }),
-              }),
-              'index.js': `module.exports = { name: ${JSON.stringify(name)}, version: ${JSON.stringify(version)} };\n`,
-              ...value.files,
-            }).map(([path, contents]) => ({
-              path: `package/${path}`,
-              contents: new TextEncoder().encode(contents),
-              executable: path === value.bin || path.startsWith('bin/'),
-            })),
-          );
+        : literalPaths
+          ? rawTarball([
+              {
+                path: 'package/package.json',
+                body: JSON.stringify({ name, version, main: 'index.js' }),
+              },
+              ...Object.entries(value.files ?? {}).map(([path, contents]) => ({
+                path: `package/${path}`,
+                body: String(contents),
+              })),
+            ])
+          : packTarGzip(
+              Object.entries({
+                'package.json': JSON.stringify({
+                  name,
+                  version,
+                  main: 'index.js',
+                  ...(value.bin !== undefined && { bin: value.bin }),
+                }),
+                'index.js': `module.exports = { name: ${JSON.stringify(name)}, version: ${JSON.stringify(version)} };\n`,
+                ...value.files,
+              }).map(([path, contents]) => ({
+                path: `package/${path}`,
+                contents:
+                  typeof contents === 'string'
+                    ? new TextEncoder().encode(contents)
+                    : contents,
+                executable: path === value.bin || path.startsWith('bin/'),
+              })),
+            );
     tarballs.set(key, bytes);
   }
   return bytes;
@@ -92,7 +139,7 @@ export interface FixtureVersion {
   /** Names of dependencies the package ships inside its own archive. */
   bundleDependencies?: string[];
   /** Files in the archive besides package.json, which is written for it. */
-  files?: Record<string, string>;
+  files?: Record<string, string | Uint8Array>;
   /** `bin` for the package.json inside the archive. */
   bin?: string | Record<string, string>;
 }

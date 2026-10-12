@@ -29,6 +29,7 @@ import {
   materializeThroughSharedStore,
   usableSharedRoot,
 } from './shared-store.js';
+import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { restoreSharedBins } from './bin-restore.js';
@@ -712,6 +713,7 @@ export async function materializeLockPackage(input: {
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
           sharedRoot,
+          limits: installArchiveLimits(pkg.ecosystem),
         });
         viaShared = true;
         adoptedTreeDigest = adopted.treeDigest;
@@ -736,6 +738,7 @@ export async function materializeLockPackage(input: {
           destination: stagedPath,
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
+          limits: installArchiveLimits(pkg.ecosystem),
         });
       }
       await revalidateStableDirectory(paths.store, storeHandle);

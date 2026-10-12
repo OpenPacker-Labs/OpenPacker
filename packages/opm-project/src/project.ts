@@ -8,6 +8,7 @@ import type {
   ParsedPackageSpec,
   ProjectState,
 } from './types.js';
+import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
 import {
   canonicalCatalogPurl,
@@ -1160,6 +1161,9 @@ async function discoverBinsFromArchive(
       destination: dir,
       format,
       managedDestination: true,
+      // Only npm packages are looked into, and they are read the way `npm`
+      // reads them and bounded the way their install is.
+      limits: installArchiveLimits('npm'),
     });
     return discoverNpmBins(dir);
   } finally {
