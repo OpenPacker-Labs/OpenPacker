@@ -23,6 +23,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { echoed } from '@openpacker/adapter-core';
 import {
   streamFromBytes,
   descriptorForBytes,
@@ -131,7 +132,7 @@ export function parsePluginSpec(spec: string): PluginSpec {
     if (!value.startsWith(`pkg:${PLUGIN_PURL_TYPE}/`))
       throw new OpmError(
         'INVALID_PLUGIN_SPEC',
-        `Not a plugin purl: "${spec}" (expected pkg:${PLUGIN_PURL_TYPE}/<name>[@<version>])`,
+        `Not a plugin purl: "${echoed(spec)}" (expected pkg:${PLUGIN_PURL_TYPE}/<name>[@<version>])`,
       );
     value = value.slice(`pkg:${PLUGIN_PURL_TYPE}/`.length);
   }
@@ -148,7 +149,7 @@ export function parsePluginName(name: string): string {
   if (!PLUGIN_NAME.test(name))
     throw new OpmError(
       'INVALID_PLUGIN_SPEC',
-      `Invalid plugin name "${name}" (must match ${PLUGIN_NAME})`,
+      `Invalid plugin name "${echoed(name)}" (must match ${PLUGIN_NAME})`,
     );
   return name;
 }
@@ -157,7 +158,7 @@ function parsePluginVersion(version: string): string {
   if (!PLUGIN_VERSION.test(version))
     throw new OpmError(
       'INVALID_PLUGIN_SPEC',
-      `Invalid plugin version "${version}" (must match ${PLUGIN_VERSION})`,
+      `Invalid plugin version "${echoed(version)}" (must match ${PLUGIN_VERSION})`,
     );
   return version;
 }
@@ -241,8 +242,8 @@ export async function addPlugin(
     if (wantedExact !== undefined && existing.exactPurl !== wantedExact)
       throw new OpmError(
         'PLUGIN_ALREADY_INSTALLED',
-        `Plugin "${name}" is installed as ${existing.exactPurl}. ` +
-          `Remove it first (opm plugin remove ${name}) to install ${wantedExact}.`,
+        `Plugin "${echoed(name)}" is installed as ${echoed(existing.exactPurl)}. ` +
+          `Remove it first (opm plugin remove ${echoed(name)}) to install ${echoed(wantedExact)}.`,
       );
     const intact = await verifyEntry(root, existing);
     // Nothing came from the `.artifact` cache here: the intact store entry
@@ -260,7 +261,7 @@ export async function addPlugin(
     if (offline)
       throw new OpmError(
         'OFFLINE',
-        `Plugin "${name}" is pinned but neither its store entry nor its ` +
+        `Plugin "${echoed(name)}" is pinned but neither its store entry nor its ` +
           'cached artifact is present, and reinstalling needs the plugin registry.',
       );
     // Online repair: refetch the pinned exact identity.
@@ -278,7 +279,7 @@ export async function addPlugin(
   if (offline)
     throw new OpmError(
       'OFFLINE',
-      `Cannot install plugin "${name}" while offline: nothing is pinned for ` +
+      `Cannot install plugin "${echoed(name)}" while offline: nothing is pinned for ` +
         'it and resolution needs the plugin registry.',
     );
   return acquire(root, indexPath, index, name, wantedExact, options, now);
@@ -332,7 +333,7 @@ async function acquire(
       if (!newest)
         throw new OpmError(
           'UNRESOLVABLE',
-          `The plugin registry published no versions of ${basePurl}.`,
+          `The plugin registry published no versions of ${echoed(basePurl)}.`,
         );
       return newest;
     })());
@@ -370,8 +371,8 @@ async function acquire(
   if (digestOf(artifact.bytes) !== artifact.digest)
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Plugin artifact for ${artifact.exactPurl} does not hash to the ` +
-        `published ${artifact.digest}`,
+      `Plugin artifact for ${echoed(artifact.exactPurl)} does not hash to the ` +
+        `published ${echoed(artifact.digest)}`,
     );
 
   const pin: PluginPin = {
@@ -431,9 +432,9 @@ async function materializeAndPin(
   if (conflict !== undefined)
     throw new OpmError(
       'PLUGIN_ID_CONFLICT',
-      `Plugin "${pin.name}" declares manifest id "${pin.id}", which the ` +
-        `installed plugin "${conflict.name}" already provides. Remove it ` +
-        `first (opm plugin remove ${conflict.name}).`,
+      `Plugin "${echoed(pin.name)}" declares manifest id "${echoed(pin.id)}", which the ` +
+        `installed plugin "${echoed(conflict.name)}" already provides. Remove it ` +
+        `first (opm plugin remove ${echoed(conflict.name)}).`,
     );
   const storeKey = storeKeyFromDigest(pin.storeDigest);
   const storePath = join(root, storeKey);
@@ -484,7 +485,7 @@ async function materializeAndPin(
   )
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Materialized plugin entry for ${pin.exactPurl} does not match the verified artifact`,
+      `Materialized plugin entry for ${echoed(pin.exactPurl)} does not match the verified artifact`,
     );
   const publishedManifest = await readStableFile(
     join(storePath, PLUGIN_MANIFEST_NAME),
@@ -495,7 +496,7 @@ async function materializeAndPin(
   )
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Published plugin manifest for ${pin.exactPurl} does not match the verified artifact`,
+      `Published plugin manifest for ${echoed(pin.exactPurl)} does not match the verified artifact`,
     );
   pin.treeDigest = await stableStoreTreeDigest(storePath);
 
@@ -531,7 +532,7 @@ async function inspectPluginArtifact(
   const invalid = (message: string): OpmError =>
     new OpmError(
       'INVALID_PLUGIN_ARTIFACT',
-      `Plugin artifact for ${artifact.exactPurl} ${message}`,
+      `Plugin artifact for ${echoed(artifact.exactPurl)} ${message}`,
     );
   if (entries.some((entry) => entry.type !== 'file'))
     throw invalid('must contain regular files only (no directories or links)');
@@ -552,18 +553,18 @@ async function inspectPluginArtifact(
   } catch {
     throw new OpmError(
       'INVALID_PLUGIN_MANIFEST',
-      `Plugin manifest in ${artifact.exactPurl} is not valid UTF-8`,
+      `Plugin manifest in ${echoed(artifact.exactPurl)} is not valid UTF-8`,
     );
   }
   const parsed = parseAndValidateContract(MANIFEST_SCHEMA, manifestText);
   if (!parsed.valid || parsed.value === undefined)
     throw new OpmError(
       'INVALID_PLUGIN_MANIFEST',
-      `Plugin manifest in ${artifact.exactPurl} does not match ${MANIFEST_SCHEMA}: ` +
+      `Plugin manifest in ${echoed(artifact.exactPurl)} does not match ${MANIFEST_SCHEMA}: ` +
         parsed.errors
           .map(
             (error) =>
-              `${error.instancePath || '/'} ${error.message ?? 'is invalid'}`,
+              `${echoed(error.instancePath || '/')} ${echoed(error.message ?? 'is invalid')}`,
           )
           .join('; '),
     );
@@ -571,13 +572,13 @@ async function inspectPluginArtifact(
   const manifest = parsed.value as DelegatedAdapterManifest;
   if (executables.length !== 1 || executables[0]!.path !== manifest.executable)
     throw invalid(
-      `must contain exactly one executable, named "${manifest.executable}" ` +
-        `as the manifest declares (found: ${executables.map((entry) => entry.path).join(', ') || 'none'})`,
+      `must contain exactly one executable, named "${echoed(manifest.executable)}" ` +
+        `as the manifest declares (found: ${executables.map((entry) => echoed(entry.path)).join(', ') || 'none'})`,
     );
   const executableEntry = executables[0]!;
   if ((executableEntry.mode & 0o111) === 0)
     throw invalid(
-      `executable entry "${manifest.executable}" is not marked executable`,
+      `executable entry "${echoed(manifest.executable)}" is not marked executable`,
     );
   return { manifest, manifestEntry, executableEntry };
 }
@@ -597,9 +598,9 @@ export async function verifiedPluginEntry(
   if (!(await verifyEntry(root, pin)))
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Plugin store entry for ${pin.exactPurl} is missing or no longer ` +
-        `digests to the pinned ${pin.treeDigest}; repair it with ` +
-        `\`opm plugin remove ${pin.name}\` and \`opm plugin add ${pin.name}\`.`,
+      `Plugin store entry for ${echoed(pin.exactPurl)} is missing or no longer ` +
+        `digests to the pinned ${echoed(pin.treeDigest)}; repair it with ` +
+        `\`opm plugin remove ${echoed(pin.name)}\` and \`opm plugin add ${echoed(pin.name)}\`.`,
     );
   return storePath;
 }
@@ -679,7 +680,7 @@ async function readCachedArtifact(
   if (digestOf(bytes) !== pin.storeDigest)
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Cached artifact for ${pin.exactPurl} does not hash to the pinned ${pin.storeDigest}`,
+      `Cached artifact for ${echoed(pin.exactPurl)} does not hash to the pinned ${echoed(pin.storeDigest)}`,
     );
   return { exactPurl: pin.exactPurl, bytes, format: pin.format };
 }
