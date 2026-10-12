@@ -1,4 +1,8 @@
-import { hasOverlongHost, redactUrl } from '@openpacker/adapter-core';
+import {
+  hasOverlongHost,
+  parseUntrustedUrl,
+  redactUrl,
+} from '@openpacker/adapter-core';
 
 /**
  * Withhold what must not reach a terminal, a log or a pasted bug report.
@@ -141,7 +145,7 @@ function redactUrlText(match: string): string {
   // of CPU for 524,295 characters), so such a URL is withheld whole, unread.
   if (hasOverlongHost(match)) return '[url]';
   try {
-    const url = new URL(match);
+    const url = parseUntrustedUrl(match);
     // A URL with an opaque origin (`socks5://…`) still has a host.
     return shown(
       url.origin === 'null'
