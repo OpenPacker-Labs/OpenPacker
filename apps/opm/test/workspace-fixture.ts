@@ -3,6 +3,7 @@
  * Scripts call `trace.cjs`, which records when each member started and ended in
  * `log.txt` at the workspace root, so order and overlap are read from the log.
  */
+import { EventEmitter } from 'node:events';
 import {
   chmod,
   mkdir,
@@ -14,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, vi } from 'vitest';
+import { processHost, type ChildHost } from '../src/commands/run-child.js';
 import { processContext, runProjectCommand } from '../src/commands/run.js';
 import type { RunContext } from '../src/commands/run-context.js';
 import { addFakeTool, capture } from './run-fixture.js';
@@ -267,5 +269,33 @@ export async function go(
     const { handleError } = await import('../src/opm.js');
     const status = handleError(error, cap.io);
     return { status, out: cap.out, err: cap.err };
+  }
+}
+
+/** A host with no terminal whose signals the test sends. */
+export function hostWithSignals() {
+  const signals = new EventEmitter();
+  const host: ChildHost = {
+    ...processHost,
+    hasTerminal: false,
+    onSignal(signal, listener) {
+      signals.on(signal, listener);
+      return () => {
+        signals.off(signal, listener);
+      };
+    },
+  };
+  return { host, signals };
+}
+
+/** Poll until `condition` holds; the budget is generous because it is only spent when something is wrong. */
+export async function until(
+  condition: () => Promise<boolean>,
+  ms = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }

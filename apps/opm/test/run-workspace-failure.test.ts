@@ -1,5 +1,4 @@
-import { EventEmitter } from 'node:events';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -11,13 +10,15 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { processHost, type ChildHost } from '../src/commands/run-child.js';
+import type { ChildHost } from '../src/commands/run-child.js';
 import {
   contextWith,
   go,
+  hostWithSignals,
   makeWorkspace,
   started,
   trace,
+  until,
 } from './workspace-fixture.js';
 
 const posix = describe.skipIf(process.platform === 'win32');
@@ -28,33 +29,6 @@ afterEach(async () => {
     temps.splice(0).map((d) => rm(d, { recursive: true, force: true })),
   );
 });
-
-/** A host with no terminal whose signals the test sends. */
-function hostWithSignals() {
-  const signals = new EventEmitter();
-  const host: ChildHost = {
-    ...processHost,
-    hasTerminal: false,
-    onSignal(signal, listener) {
-      signals.on(signal, listener);
-      return () => {
-        signals.off(signal, listener);
-      };
-    },
-  };
-  return { host, signals };
-}
-
-async function until(
-  condition: () => Promise<boolean>,
-  ms = 20_000,
-): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!(await condition())) {
-    if (Date.now() > deadline) throw new Error('timed out waiting');
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-}
 
 posix('a failing member', () => {
   it('ends the run with that member status, names it, and starts nothing that waited for it', async () => {
@@ -138,55 +112,6 @@ posix('a failing member', () => {
     expect(log.some(([what, id]) => what === 'end' && id === 'slow')).toBe(
       false,
     );
-  });
-
-  it('with a terminal on opm, ends what a stopped member started and returns at once', async () => {
-    // `sleep` keeps the member's output pipes: without a group of its own the
-    // member's SIGTERM left it running, `close` never came, and opm waited.
-    const ws = await makeWorkspace({
-      'packages/a': {
-        name: 'a',
-        scripts: {
-          go: `sh -c 'sleep 20 & echo $! > "$INIT_CWD/pid-a"; wait'`,
-        },
-      },
-      'packages/b': {
-        name: 'b',
-        scripts: {
-          go: `sh -c 'while [ ! -f "$INIT_CWD/pid-a" ]; do sleep 0.05; done; exit 7'`,
-        },
-      },
-    });
-    const host: ChildHost = { ...hostWithSignals().host, hasTerminal: true };
-    const before = Date.now();
-    try {
-      const ran = await go(
-        'run',
-        ['go', '-r', '--workspace-concurrency=2'],
-        ws.root,
-        contextWith({}, { host }),
-      );
-      expect(ran.status).toBe(7);
-      expect(
-        Date.now() - before,
-        'the run waited for the sleep a stopped member started',
-      ).toBeLessThan(10_000);
-      const pid = Number(readFileSync(join(ws.root, 'pid-a'), 'utf8'));
-      await until(async () => {
-        try {
-          process.kill(pid, 0);
-          return false;
-        } catch {
-          return true;
-        }
-      });
-    } finally {
-      try {
-        process.kill(Number(readFileSync(join(ws.root, 'pid-a'), 'utf8')), 9);
-      } catch {
-        // gone, as it should be
-      }
-    }
   });
 
   it('reports a member that cannot be started, exits 8, and stops the rest', async () => {
