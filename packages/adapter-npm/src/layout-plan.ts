@@ -22,6 +22,7 @@
  */
 
 import type { NativeLockEntry } from '@openpacker/adapter-core';
+import { checkLayoutLinks, type LayoutLink } from './layout-links.js';
 
 /** One package the plan places. */
 export interface LayoutEntry {
@@ -53,6 +54,18 @@ export interface LayoutPlan {
   /** Parents before the packages nested in them. */
   placements: readonly Placement[];
   skipped: readonly LayoutSkip[];
+  /**
+   * The workspace-member links, checked against the placements (see
+   * `layout-links.ts`) and in path order. Empty unless the caller asked for some.
+   */
+  links: readonly LayoutLink[];
+}
+
+/** What a planner is told besides the packages. */
+export interface PlanOptions {
+  maximumPlacements?: number;
+  /** Member links to carry in the plan; refused whole if any is not acceptable. */
+  links?: readonly LayoutLink[];
 }
 
 interface Node {
@@ -98,7 +111,7 @@ export const MAXIMUM_PLACEMENTS = 50_000;
 
 export function planLayout(
   entries: readonly LayoutEntry[],
-  options: { maximumPlacements?: number } = {},
+  options: PlanOptions = {},
 ): LayoutPlan {
   const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
@@ -227,15 +240,17 @@ export function planLayout(
       );
   }
 
+  const placements = placed
+    .map((node) => ({ entry: node.entry!, chain: node.chain }))
+    .sort(
+      (left, right) =>
+        left.chain.length - right.chain.length ||
+        compareText(left.chain.join('\0'), right.chain.join('\0')),
+    );
   return {
-    placements: placed
-      .map((node) => ({ entry: node.entry!, chain: node.chain }))
-      .sort(
-        (left, right) =>
-          left.chain.length - right.chain.length ||
-          compareText(left.chain.join('\0'), right.chain.join('\0')),
-      ),
+    placements,
     skipped,
+    links: checkLayoutLinks(options.links ?? [], placements),
   };
 }
 
@@ -273,7 +288,7 @@ export class LayoutPathsError extends Error {
  */
 export function planLayoutFromPaths(
   placed: readonly PlacedEntry[],
-  options: { maximumPlacements?: number } = {},
+  options: PlanOptions = {},
 ): LayoutPlan {
   const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   if (placed.length > maximumPlacements)
@@ -311,15 +326,17 @@ export function planLayoutFromPaths(
       );
   }
   if (problems.length > 0) throw new LayoutPathsError(problems);
+  const placements = placed
+    .map(({ entry, chain }) => ({ entry, chain }))
+    .sort(
+      (left, right) =>
+        left.chain.length - right.chain.length ||
+        compareText(left.chain.join('\0'), right.chain.join('\0')),
+    );
   return {
-    placements: placed
-      .map(({ entry, chain }) => ({ entry, chain }))
-      .sort(
-        (left, right) =>
-          left.chain.length - right.chain.length ||
-          compareText(left.chain.join('\0'), right.chain.join('\0')),
-      ),
+    placements,
     skipped: [],
+    links: checkLayoutLinks(options.links ?? [], placements),
   };
 }
 
