@@ -96,6 +96,91 @@ async function collect(
 }
 
 describe('collectArtifacts', () => {
+  it('reports what it reported before collection was handle-relative', async () => {
+    // Five artifacts, one of them 3 MiB, unicode names, and a directory and a
+    // symlink that must be skipped. The expected digests were recorded from the
+    // implementation that read /proc/self/fd/N paths, so this is the byte for
+    // byte comparison, not a re-derivation: the archives are digest-pinned.
+    const directory = await output();
+    const big = Buffer.alloc(3 * 1024 * 1024 + 17);
+    for (let index = 0; index < big.length; index += 1)
+      big[index] = (index * 31 + 7) & 0xff;
+    await writeFile(join(directory, 'big.test'), big);
+    await writeFile(join(directory, 'z.test'), 'ascii');
+    await writeFile(join(directory, 'ä.test'), 'umlaut');
+    await writeFile(join(directory, 'empty.test'), '');
+    await writeFile(
+      join(directory, 'exact.bin'),
+      Buffer.from([0, 1, 2, 3, 255]),
+    );
+    await writeFile(join(directory, 'ignored.txt'), 'not an artifact');
+    await mkdir(join(directory, 'dir.test'));
+    await symlink(join(directory, 'z.test'), join(directory, 'link.test'));
+    const handle = await openStablePath(directory);
+    try {
+      const found = await collectArtifacts(handle, '/reported/out', plan(), {
+        outputEntries: 4_096,
+        artifacts: 256,
+        artifactBytes: 1_073_741_824n,
+        totalArtifactBytes: 2_147_483_648n,
+        readChunkBytes: 64 * 1_024,
+      });
+      const row = (
+        outputName: string,
+        size: number,
+        digest: string,
+        mediaType: string,
+        nativeRole: string,
+      ) => ({
+        outputName,
+        size,
+        digest: `sha256:${digest}`,
+        mediaType,
+        nativeRole,
+        path: `/reported/out/${outputName}`,
+      });
+      expect(found).toEqual([
+        row(
+          'big.test',
+          3_145_745,
+          '27f3f0120d4a72b66e7b58152c631644bd689231ebd4487469b59226f1be13af',
+          'application/x-test',
+          'distribution',
+        ),
+        row(
+          'empty.test',
+          0,
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          'application/x-test',
+          'distribution',
+        ),
+        row(
+          'exact.bin',
+          5,
+          'ff5d8507b6a72bee2debce2c0054798deaccdc5d8a1b945b6280ce8aa9cba52e',
+          'application/octet-stream',
+          'metadata',
+        ),
+        row(
+          'z.test',
+          5,
+          'c543ece81605c7d202121c62080a0db4020fc2c75bfac35d101d7f3e93c93949',
+          'application/x-test',
+          'distribution',
+        ),
+        row(
+          'ä.test',
+          6,
+          '46265dd2e7076be5d1b793a7042ca66a0e7cbea186cdf38c335d6425ab6e01b4',
+          'application/x-test',
+          'distribution',
+        ),
+      ]);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it('hashes the declared artifacts, in canonical order, and nothing else', async () => {
     const directory = await output();
     await writeFile(join(directory, 'z.test'), 'ascii');
