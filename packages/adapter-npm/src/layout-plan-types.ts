@@ -1,7 +1,7 @@
 /**
  * What a layout plan is made of: the packages it places, where it puts them,
- * the links it carries, and the one rule about names that every place a package
- * can be written from a registry or a lock has to pass.
+ * the links it carries. The rule about which names a directory may have is
+ * `layout-names.ts`.
  */
 
 import type { NativeLockEntry } from '@openpacker/adapter-core';
@@ -15,20 +15,34 @@ export interface LayoutEntry {
   version: string;
   digest: string;
   direct: boolean;
+  /** `id` of every entry this one requires under that entry's own name. */
   dependencies: readonly string[];
+  /**
+   * The name an entry is installed under when it is not its own
+   * (`"string-width-cjs": "npm:string-width@^4"`): the key of a direct
+   * requirement, or the last name of the place a lock gave the package.
+   * Directory names come from here (or from the placement's chain), never from
+   * `name`, which is what the package calls itself.
+   */
+  installName?: string;
+  /** `id` of every entry this one requires under another name: name → id. */
+  aliases?: Readonly<Record<string, string>>;
   source: NativeLockEntry;
 }
 
 export interface Placement {
   entry: LayoutEntry;
   /**
-   * Package names from the project root down: `['b', 'c']` is
-   * `node_modules/b/node_modules/c`.
+   * Directory names from the project root down: `['b', 'c']` is
+   * `node_modules/b/node_modules/c`. These are install names: for an aliased
+   * package the last one is the alias, not the name the package calls itself
+   * (`entry.name`).
    */
   chain: readonly string[];
   /**
    * The workspace member (its directory) whose own `node_modules` the chain
-   * starts in; absent for the project's own `node_modules`.
+   * starts in; absent for the project's own `node_modules`. Each member's
+   * `node_modules` is a directory of its own, with names of its own.
    */
   base?: string;
 }
@@ -77,28 +91,4 @@ export class LayoutTooLargeError extends Error {
     );
     this.name = 'LayoutTooLargeError';
   }
-}
-
-/**
- * Why a registry-supplied name is not a safe directory name, or undefined.
- *
- * A name becomes a path under a recursive delete, and a leading dot would let a
- * package replace `.bin`, so this is stricter than the registry's own rules.
- */
-export function unsafeNameProblem(name: string): string | undefined {
-  const segments = name.split('/');
-  const scoped = name.startsWith('@');
-  if (segments.length !== (scoped ? 2 : 1))
-    return `${JSON.stringify(name)} is not an npm package name`;
-  for (const [index, segment] of segments.entries()) {
-    const body = scoped && index === 0 ? segment.slice(1) : segment;
-    if (
-      body === '' ||
-      body.startsWith('.') ||
-      body.toLowerCase() === 'node_modules' ||
-      !/^[A-Za-z0-9._~+-]+$/u.test(body)
-    )
-      return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
-  }
-  return undefined;
 }

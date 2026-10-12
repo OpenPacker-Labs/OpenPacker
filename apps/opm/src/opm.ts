@@ -270,8 +270,13 @@ export async function runOpm(
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
+        const installName = result.lock.packages[result.alias]?.installName;
         io.stdout.write(
-          `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}\n`,
+          `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}` +
+            (installName === undefined
+              ? ''
+              : ` (installed as ${installName})`) +
+            '\n',
         );
         writeNativeProjection(result.native, io);
         io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
@@ -392,8 +397,12 @@ export async function runOpm(
           const status = row.installed ? 'installed' : 'not-installed';
           const bins =
             row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
+          const names =
+            row.installedAs.length > 0
+              ? ` as=[${row.installedAs.join(',')}]`
+              : '';
           io.stdout.write(
-            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}\n`,
+            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}${names}\n`,
           );
         }
         return EXIT_CODES.success;

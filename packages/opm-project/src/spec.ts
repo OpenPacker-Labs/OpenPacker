@@ -29,6 +29,11 @@ export function parsePackageSpec(
     return parsePackslipSpec(trimmed, options);
   }
 
+  // `string-width-cjs@npm:string-width@^4.2.0`: npm's alias, installed under
+  // the first name. Only npm spells it, so the ecosystem is npm.
+  const aliasAt = trimmed.indexOf('@npm:', 1);
+  if (aliasAt > 0) return parseAliasSpec(trimmed, aliasAt, options);
+
   const ecosystem = options.ecosystem;
   if (!ecosystem) {
     throw new OpmError(
@@ -53,6 +58,51 @@ export function parsePackageSpec(
     ecosystem,
   };
   if (at.version !== undefined) result.version = at.version;
+  if (options.source !== undefined) result.source = options.source;
+  return result;
+}
+
+/**
+ * A project's own name for a package that npm installs under another name:
+ * `installName@npm:target[@spec]`. The target is the registry package, the
+ * spec is what is asked of it (a version, a range, a dist-tag, or nothing for
+ * any version), and the install name is the directory it is installed in.
+ */
+function parseAliasSpec(
+  trimmed: string,
+  aliasAt: number,
+  options: { ecosystem?: string; source?: string; alias?: string },
+): ParsedPackageSpec {
+  if (options.ecosystem !== undefined && options.ecosystem !== 'npm')
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${trimmed}" is an npm: alias, and --ecosystem is ${options.ecosystem}`,
+    );
+  const installName = trimmed.slice(0, aliasAt);
+  const body = trimmed.slice(aliasAt + '@npm:'.length);
+  const at = splitNameVersion(body);
+  if (at.name === '' || at.name.startsWith('npm:'))
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${trimmed}" does not name a registry package after npm:`,
+    );
+  if (!/^(?:@[^/\s@]+\/)?[^@/\s:]+$/u.test(at.name))
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${at.name}" is not a package name (in ${trimmed})`,
+    );
+  const result: ParsedPackageSpec = {
+    alias:
+      options.alias ??
+      simpleAlias(
+        installName.includes('/') ? installName.split('/').pop()! : installName,
+      ),
+    purl: `pkg:npm/${encodePurlName(at.name, 'npm')}`,
+    ecosystem: 'npm',
+    installName,
+  };
+  if (at.version !== undefined && at.version !== '')
+    result.version = at.version;
   if (options.source !== undefined) result.source = options.source;
   return result;
 }
@@ -230,4 +280,24 @@ export function stripPurlVersion(purl: string): string {
   const base = match[1] ?? purl;
   const query = match[3] ? `?${match[3]}` : '';
   return `${base}${query}`;
+}
+
+/**
+ * The name an ecosystem spells a package with, recovered from its PURL.
+ *
+ * PURL percent-encodes the parts that would otherwise be structural, so `@` in
+ * an npm scope arrives as `%40`. Decoding per segment rather than over the
+ * whole string keeps a literal `/` inside a segment from becoming a separator.
+ * A version or qualifiers on the PURL are not part of the name.
+ */
+export function purlPackageName(purl: string): string {
+  const withoutScheme = purl.replace(/^pkg:[A-Za-z0-9.+-]+\//u, '');
+  const withoutQualifiers = withoutScheme.split(/[?#]/u)[0] ?? withoutScheme;
+  const slash = withoutQualifiers.lastIndexOf('/');
+  const at = withoutQualifiers.indexOf('@', slash + 1);
+  const body = at === -1 ? withoutQualifiers : withoutQualifiers.slice(0, at);
+  return body
+    .split('/')
+    .map((segment) => decodeURIComponent(segment))
+    .join('/');
 }

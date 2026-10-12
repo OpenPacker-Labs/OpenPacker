@@ -8,21 +8,14 @@ import type {
   LockPackage,
   OpmLockfile,
 } from './types.js';
+import {
+  inFileOrder,
+  isLifecycleState,
+  isNativeIntegrity,
+  parseAliases,
+  parseInstallName,
+} from './lock-fields.js';
 import { OpmError } from './types.js';
-
-const LIFECYCLE_STATUSES = new Set([
-  'published',
-  'yanked',
-  'deprecated',
-  'quarantined',
-  'revoked',
-  'delisted',
-  'restored',
-  'promoted',
-  'removed-from-channel',
-  'ownership-transferred',
-  'unknown',
-]);
 
 export function emptyLockfile(): OpmLockfile {
   return {
@@ -280,7 +273,9 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       'INVALID_LOCK',
       `Package "${alias}" has invalid dependencies`,
     );
-  return {
+  const aliases = parseAliases(alias, pkg.aliases);
+  const installName = parseInstallName(alias, pkg.installName);
+  const built: LockPackage = {
     alias,
     purl: requiredString('purl'),
     version: requiredString('version'),
@@ -297,6 +292,8 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       dependencies: [...new Set(pkg.dependencies as string[])].sort(),
     }),
+    ...(!(aliases === undefined) && { aliases }),
+    ...(!(installName === undefined) && { installName }),
     ...(isTrustTier(pkg.trustLevel) && { trustLevel: pkg.trustLevel }),
     ...(typeof pkg.publishedAt === 'string' && {
       publishedAt: pkg.publishedAt,
@@ -309,6 +306,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     }),
     ...(attestation !== undefined && { attestation }),
   };
+  return inFileOrder(built, Object.keys(pkg));
 }
 
 const ATTESTATION_KEYS = new Set([
@@ -383,37 +381,6 @@ function parseAttestation(
     // SAFETY: checked above to be a list of strings.
     ...(advancing !== undefined && { advancing: [...(advancing as string[])] }),
   };
-}
-
-function isNativeIntegrity(
-  value: unknown,
-): value is NonNullable<LockPackage['nativeIntegrity']> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    return false;
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const integrity = value as Record<string, unknown>;
-  return (
-    typeof integrity.algorithm === 'string' &&
-    integrity.algorithm !== '' &&
-    typeof integrity.value === 'string' &&
-    integrity.value !== '' &&
-    typeof integrity.encoding === 'string' &&
-    integrity.encoding !== ''
-  );
-}
-
-function isLifecycleState(
-  value: unknown,
-): value is NonNullable<LockPackage['lifecycle']> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    return false;
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const lifecycle = value as Record<string, unknown>;
-  return (
-    typeof lifecycle.eligible === 'boolean' &&
-    typeof lifecycle.status === 'string' &&
-    LIFECYCLE_STATUSES.has(lifecycle.status)
-  );
 }
 
 export async function readLockfile(

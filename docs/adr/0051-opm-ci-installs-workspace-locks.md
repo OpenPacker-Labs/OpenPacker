@@ -9,7 +9,9 @@
 - Relates: [0049](0049-workspaces-are-a-model-before-they-are-an-install.md)
   (the model whose discovery this uses), [0050](0050-workspace-member-links.md)
   (the link it writes, and the warning that a lock's `resolved` is untrusted
-  input)
+  input), [0054](0054-aliases-and-several-versions-in-the-closure.md) (a lock's
+  alias, and a name at several versions, in the project's, a member's and a
+  package's `node_modules`: §11 here says how they are written)
 
 ## Context
 
@@ -144,7 +146,24 @@ are not downloading:
     file on the way is `UNSAFE_PATH`; a place under a directory the layout was
     not given is refused). That `node_modules` has its own `.bin` for what is in
     it and its own `.opm-layout.json`, so a later layout removes what opm wrote
-    there and leaves what it did not.
+    there and leaves what it did not. A package is written under the name its
+    lock's key gives it, which is not always its own: an aliased dependency
+    (`"string-width-cjs": "npm:string-width@^4"`) is the key
+    `node_modules/string-width-cjs` with `name: "string-width"`, and is
+    installed as `string-width-cjs`, in the project's, a member's or a package's
+    `node_modules`. The adapter is given the package's own name and the install
+    name, as a resolved closure's entry has them; the member's record and what a
+    later layout removes, the `.bin` shims (their relative path and the owner of
+    a contested name) and the directory itself go by the install name, and the
+    package's own name decides only what a bare `bin` string is called
+    ([ADR 0054](0054-aliases-and-several-versions-in-the-closure.md) §16). Two
+    names that differ only by case in one `node_modules` directory (the
+    project's, each member's own and each package's are separate ones) are one
+    directory on a case-insensitive filesystem, so such a lock is refused,
+    naming both and the place (§17 there). The rule is judged on what the
+    install selects (a dev-only `React` beside `react` is refused by `opm ci`
+    and installed by `opm ci --omit dev`), and a member's link counts as a name
+    in its directory (§17 there).
 12. **A member's own executables are shimmed in the project's `.bin`**, a shim
     and never a link, where npm links them: arborist's `#createBinLinks` links
     the bins of a link node into the `node_modules/.bin` of the directory the
@@ -197,7 +216,14 @@ sets (`--omit`, `-w`, `--include-workspace-root`, `--workspaces`,
 `--workspaces=false`) and compares the result to the sets arborist gave,
 recorded in `test/fixtures/workspace-install-oracle.json` by
 `install-oracle.cjs --print-expected`. With the dev omission switched off for
-packages inside a member, 3 of the 10 fail.
+packages inside a member, 3 of the 10 fail. A second suite,
+`frozen-install.alias.test.ts`, does the same for a lock with what ADR 0054
+adds: aliases at the project, in a member's own `node_modules` and in a package,
+one name at three versions, an aliased package with an executable, with 4 option
+sets recorded in `test/fixtures/workspace-alias-oracle.json` (0 differences),
+and it checks that Node finds each alias from where each member sits, that each
+`node_modules` record names the install names and that the shim of an aliased
+executable runs.
 
 | Measured                                                                                                                                           | Result                                                                                                                                                                                                |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -208,6 +234,8 @@ packages inside a member, 3 of the 10 fail.
 | this repository, `opm ci` in a clean scratch worktree                                                                                              | 263 packages and 50 member links, 313 expected, 313 installed, 0 differences; 267 edges found where the lock says                                                                                     |
 | after the move to the base that added packslip: this repository again, 53 members                                                                  | 268 packages and 53 links, 321 expected, 321 installed, 0 differences; 291 edges found where the lock says; second project 4,820 KB of 385,504 KB (1.25%), 11.3 s with every archive in the store     |
 | this repository, `--production`, `-w @openpacker/project-io`, `--workspaces=false`, `-w packages/adapter-npm -w apps/opm --include-workspace-root` | 119, 11, 71, 128: each equal to the oracle                                                                                                                                                            |
+| after the merge with ADR 0054: ts-autocode again (6 aliased entries in its lock)                                                                   | 438 packages and 4 links; 442 expected, 442 installed, 0 differences either way                                                                                                                       |
+| after the merge with ADR 0054: gitlang (9 aliased entries: `string-width-cjs` and two more, the six codex platform builds), 8 members              | 758 packages and 8 links; 766 expected, 766 installed, 0 differences; `string-width-cjs` is `string-width@4.2.3`, and of the six platform builds only `@openai/codex-linux-x64` is installed          |
 | built and tested with only `opm`                                                                                                                   | `opm ci`, then `opm exec turbo -- run build --filter=@openpacker/adapter-npm...`, then `opm run test`: adapter-npm 344 passed, project-io 540 passed                                                  |
 | cold: empty store, 103.1 MB fetched                                                                                                                | 56.7 s                                                                                                                                                                                                |
 | partly warm: 62 of 262 archives already in the store, 86.2 MB fetched                                                                              | 38.3 s (all 262 in the store, for a second project: 12.0 s)                                                                                                                                           |

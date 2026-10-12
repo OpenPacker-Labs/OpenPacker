@@ -224,6 +224,73 @@ describe('installFrozen refuses, before it fetches or writes anything', () => {
     await symlink(real, join(w.dir, 'packages'));
     await refused(w, 'UNSAFE_PATH', /packages/u);
   });
+
+  // The plan of the lock's places is knowable from the lock alone, so a place
+  // that cannot be written is refused here, with the project's node_modules
+  // (the `keep` the helper puts there) still in place.
+  it.each([
+    ['the project', 'node_modules'],
+    ['a member', 'packages/one/node_modules'],
+  ])(
+    'two names that differ only by case in the node_modules of %s',
+    async (_who, dir) => {
+      const w = await standard((x) => {
+        x.place(`${dir}/MS`, { name: 'ms', version: '2.1.3' }, { name: 'ms' });
+        x.place(`${dir}/ms`, { name: 'ms', version: '2.1.3' });
+      });
+      await w.write();
+      await refused(
+        w,
+        'INVALID_LOCK',
+        new RegExp(
+          `ms@2\\.1\\.3 would be installed as ms, which differs only by case from MS.*\\(at ${dir.replaceAll('/', '\\/')}\\/ms\\)`,
+          'u',
+        ),
+      );
+    },
+  );
+
+  it("a member's link beside a package whose name differs only by case", async () => {
+    const w = await standard((x) => {
+      x.place('node_modules/@fx/lib', { name: '@fx/lib', version: '1.0.0' });
+      x.member('@fx/Lib');
+    });
+    await w.write();
+    await refused(
+      w,
+      'INVALID_LOCK',
+      /the link to \.\.\/\.\.\/packages\/Lib would be installed as @fx\/Lib, which differs only by case from @fx\/lib \(@fx\/lib@1\.0\.0\).*\(at node_modules\/@fx\/Lib\)/u,
+    );
+  });
+});
+
+describe('the case rule is judged on what the install selects, not on the lock', () => {
+  const caseful = () =>
+    standard((x) => {
+      x.place(
+        'node_modules/React',
+        { name: 'react', version: '18.0.0' },
+        { name: 'react', dev: true },
+      );
+      x.place('node_modules/react', { name: 'react', version: '18.0.0' });
+    });
+
+  it('refuses the pair when both are installed', async () => {
+    const w = await caseful();
+    await w.write();
+    await expect(w.install()).rejects.toMatchObject({
+      code: 'INVALID_LOCK',
+      message: expect.stringMatching(/differs only by case from React/u),
+    });
+  });
+
+  it('installs the other when --omit dev leaves one of them out', async () => {
+    const w = await caseful();
+    await w.write();
+    await w.install({ omit: ['dev'] });
+    expect(await w.list('node_modules')).toContain('react');
+    expect(await w.list('node_modules')).not.toContain('React');
+  });
 });
 
 describe('a project without a workspace', () => {

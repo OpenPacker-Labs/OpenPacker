@@ -251,7 +251,12 @@ export async function installFrozen(
       const archive = stored.byPath.get(pkg.path)!;
       return {
         purl: pkg.purl,
-        name: pkg.name,
+        // The package's own name, as a resolved closure's entry has; the
+        // directory it lives under is `layoutPath`, and for an aliased
+        // dependency (`"string-width-cjs": "npm:string-width@^4"`) that name
+        // is the install name.
+        name: pkg.packageName,
+        ...(pkg.name !== pkg.packageName && { installName: pkg.name }),
         scope: pkg.scope,
         exactPurl: pkg.exactPurl,
         version: pkg.version,

@@ -1,10 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FrozenInstallInput } from '../src/index.js';
 import { cleanup, setup, type World } from './frozen-workspace-fixture.js';
-import { walkInstalled } from './workspace-install-oracle.js';
+import { askOracle, walkInstalled } from './workspace-install-oracle.js';
 
 afterEach(cleanup);
 
@@ -28,10 +26,6 @@ afterEach(cleanup);
  */
 const RECORDED = new URL(
   './fixtures/workspace-install-oracle.json',
-  import.meta.url,
-);
-const ORACLE = new URL(
-  '../../adapter-npm/test/workspace-oracle/install-oracle.cjs',
   import.meta.url,
 );
 
@@ -140,18 +134,6 @@ async function fixture(): Promise<World> {
   return w;
 }
 
-function ask(dir: string, oracle: readonly string[]): string[] {
-  return JSON.parse(
-    execFileSync(
-      process.execPath,
-      [fileURLToPath(ORACLE), dir, ...oracle, '--print-expected'],
-      {
-        encoding: 'utf8',
-      },
-    ),
-  ) as string[];
-}
-
 const recording = process.env.OPM_RECORD_ORACLE !== undefined;
 
 const recorded: Record<string, string[]> = recording
@@ -163,7 +145,8 @@ describe('installFrozen against what npm ci installs for a workspace', () => {
     it('records what arborist says', async () => {
       const w = await fixture();
       const sets: Record<string, string[]> = {};
-      for (const entry of CASES) sets[entry.label] = ask(w.dir, entry.oracle);
+      for (const entry of CASES)
+        sets[entry.label] = askOracle(w.dir, entry.oracle);
       writeFileSync(RECORDED, `${JSON.stringify(sets, undefined, 2)}\n`);
     });
     return;

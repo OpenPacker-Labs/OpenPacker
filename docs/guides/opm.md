@@ -236,10 +236,14 @@ What `layout` writes:
   recorded. A direct requirement, and the version most packages want, sits in
   `node_modules/<name>`; a package that needs a different version of the same
   name gets it in its own `node_modules` (`a → c@1` and `b → c@2` becomes
-  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks,
-  except a workspace member's link ([below](#workspace-member-links)). A lock
-  with no recorded edges (an offline lock holds only the direct set) is laid out
-  flat by name, newest first, and the version left out is reported.
+  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). A package a
+  dependent requires under an alias
+  (`"string-width-cjs": "npm:string-width@^4"`) is the directory of that name,
+  beside the package of its own name if that is there too, and its `.bin` shims
+  point at that directory. No symlinks, except a workspace member's link
+  ([below](#workspace-member-links)). A lock with no recorded edges (an offline
+  lock holds only the direct set) is laid out flat by name, newest first, and
+  the version left out is reported.
 - **Hard links, not copies.** Each file is a link to the store's, verified to be
   the same inode. If the filesystem cannot link, opm copies and says so.
 - **Executables** are small shell scripts in `node_modules/.bin` (plus `.cmd` on
@@ -317,8 +321,10 @@ What it does, in order:
 
 1. **Reads the lock, refuses what it cannot install.** A git or path source, an
    entry with no `resolved` or no `integrity`, a link or key in a workspace lock
-   that is not a member's, and a `package.json` that no longer matches the lock
-   are each named, and nothing is installed. Exit code 3.
+   that is not a member's, a place the lock names that cannot be written (two
+   names that differ only by case in one directory), and a `package.json` that
+   no longer matches the lock are each named, and nothing is installed or
+   removed. Exit code 3.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release
@@ -354,7 +360,19 @@ directory (a directory junction on Windows), so an edit to a member's source is
 seen by the others at once. A version of a package only one member wants is
 written in that member's own `node_modules` (`packages/web/node_modules/left`),
 and a member's executables get shims in the project's `node_modules/.bin`, where
-npm links them. No member's scripts are run.
+npm links them. No member's scripts are run. A dependency a member holds under
+an alias (`"pad": "npm:left-pad@^0.9.0"`) is installed under that name, in the
+project's `node_modules`, in the member's own or inside a package (`pad`, not
+`left-pad`): the package keeps its own name in its `package.json`, and the
+member's own `node_modules` record, the shims of its executables and what a
+later layout removes go by the directory
+([ADR 0054](../adr/0054-aliases-and-several-versions-in-the-closure.md)). One
+name at several versions, in the project and in members, is installed where the
+lock says. Two names that differ only by case in one `node_modules` directory
+are refused, because they are one directory on macOS and Windows; each member's
+own `node_modules` is a directory of its own for that rule, a member's link
+counts as a name in its directory, and the rule is judged on what the install
+selects (`--omit dev` leaves a dev-only package out of it).
 
 ```sh
 opm ci                              # the project, every member, everything they need
@@ -412,13 +430,14 @@ layout = "opm"
 
 ### Specs for `opm add`
 
-| Spec                         | Notes                                   |
-| ---------------------------- | --------------------------------------- |
-| `pkg:npm/@scope/name@1.2.3`  | Full PURL (preferred)                   |
-| `packslip:jdx/hk@2.5.0`      | A vendor's signed release ([packslip])  |
-| `name@1.2.3 --ecosystem npm` | Bare name requires `-e` / `--ecosystem` |
-| `… --source ./pkg.tgz`       | Local artifact (offline)                |
-| `… --alias tool`             | Override local alias                    |
+| Spec                         | Notes                                    |
+| ---------------------------- | ---------------------------------------- |
+| `pkg:npm/@scope/name@1.2.3`  | Full PURL (preferred)                    |
+| `packslip:jdx/hk@2.5.0`      | A vendor's signed release ([packslip])   |
+| `name@1.2.3 --ecosystem npm` | Bare name requires `-e` / `--ecosystem`  |
+| `… --source ./pkg.tgz`       | Local artifact (offline)                 |
+| `… --alias tool`             | Override local alias                     |
+| `dir@npm:name@^4.2.0 -e npm` | Install `name` under the directory `dir` |
 
 Bare names are **fail-closed**: `opm add lodash` errors unless you pass
 `--ecosystem`.
@@ -538,10 +557,18 @@ resolver produces, in about 15 seconds from cold. What is followed:
   `darwin-arm64`, …); `os`, `cpu` and `libc` are checked against what Node
   reports, the one that runs here is locked, and the rest are never downloaded.
   A hard dependency that does not run here is refused;
+- an `npm:` alias (`"string-width-cjs": "npm:string-width@^4.2.0"`) as the
+  package it names: the target is resolved and policy-checked as itself, its own
+  `package.json` keeps its own name, and it is installed under the alias
+  (`node_modules/string-width-cjs`). `npm:name`, `npm:@scope/name@range` and
+  `npm:name@tag` are read too; the lock records the version a tag points at;
+- not a dependency a package **bundles** (`bundleDependencies`): its copies are
+  in the package's own archive, so `pkg:npm/npm@10.9.4` is one package, as npm
+  resolves it;
 - never development dependencies, optional peers, or a specifier that is not a
-  registry version range (`github:…`, a URL, `npm:` alias, a dist-tag). Those
-  are not looked up as the registry's package of that name. In a `dependencies`
-  entry they fail the resolve and name the package.
+  registry version range or an alias (`github:…`, a URL, a plain dist-tag).
+  Those are not looked up as the registry's package of that name. In a
+  `dependencies` entry they fail the resolve and name the package.
 
 The set is chosen newest-first and every requirement is checked twice, once by
 the solver and once by the ecosystem's own range rules, so a lock never pairs a
@@ -551,11 +578,32 @@ that every requirement is satisfied; it does not claim the set is optimal.
 A failure to compute the closure is an error that says why. It does not fall
 back to the direct requirement.
 
-**Limits.** A lock holds one version of a package, so a closure that needs two
-(npm and pnpm nest them) fails and names who requires what, for example
-`opm add tinybench` next to `vitest@4.1.9`. The locked platform packages are the
-ones for the machine that resolved. See
-[ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md).
+**Several versions of one package.** A closure that needs a package at two
+versions locks both, as npm and pnpm do: `opm add tinybench` next to
+`vitest@4.1.9` keeps `tinybench@6.2.2` at the root and `tinybench@2.9.0` beside
+`vitest`. A name is held at one version whenever one release suits every
+dependent; it is held at several only where none does. The second version of a
+name is keyed `<name>.<version>` in `opm.lock.json`; an alias is an entry in the
+requiring package's `aliases`, and `opm list` shows it as `as=[…]`.
+`opm why <name>` takes a manifest alias, a lock key, a package name or an
+install name and says which package requires the entry and under what name.
+`opm remove` leaves the keys a fresh resolve would write (a name left at one
+version is keyed by its name again), so `opm install` still accepts the lock. A
+label in `opm.toml` names one package: `opm add is-number@npm:is-odd` over an
+`is-number` that is another package is refused, and says to remove it or to use
+`--alias`.
+
+`opm ci` installs both shapes from a lock without resolving anything, a
+workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
+and `opm update` resolve the project's `opm.toml` and do not read a workspace's
+members.
+
+**Limits.** A package a required peer dependency points at must be one version:
+a closure that needs it at two fails and names who requires what, as npm's
+`ERESOLVE` does. A plain dist-tag (`"foo": "latest"`) as a dependency is
+refused. The locked platform packages are the ones for the machine that
+resolved. See [ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
+[ADR 54](../adr/0054-aliases-and-several-versions-in-the-closure.md).
 
 **Release age.** With `minimum_release_age_minutes` set, a version published
 inside the window is passed over for the previous release that satisfies the

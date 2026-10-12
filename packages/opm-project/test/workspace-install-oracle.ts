@@ -5,8 +5,30 @@
  * `<path>|<name>|<version>|-> <target>` for a member's link.
  */
 
+import { execFileSync } from 'node:child_process';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ORACLE = new URL(
+  '../../adapter-npm/test/workspace-oracle/install-oracle.cjs',
+  import.meta.url,
+);
+
+/**
+ * What arborist (the npm that comes with this Node) says `npm ci` installs
+ * into `dir`, for the options the oracle takes (`--omit`, `--workspace`, …).
+ * Only for recording: the suites replay what this once said.
+ */
+export function askOracle(dir: string, oracle: readonly string[]): string[] {
+  return JSON.parse(
+    execFileSync(
+      process.execPath,
+      [fileURLToPath(ORACLE), dir, ...oracle, '--print-expected'],
+      { encoding: 'utf8' },
+    ),
+  ) as string[];
+}
 
 /** Every package in the project's `node_modules` and in each member's, links not followed into. */
 export async function walkInstalled(

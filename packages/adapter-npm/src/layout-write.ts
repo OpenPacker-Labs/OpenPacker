@@ -29,7 +29,7 @@ import {
   placeWantedLinks,
   removeStaleLinks,
 } from './layout-write-links.js';
-import { chainOfLockPath, splitNestedLockPath } from './lock-entry.js';
+import { placeOfLockPath } from './lock-entry.js';
 import {
   planLayout,
   planLayoutFromPaths,
@@ -90,7 +90,7 @@ export async function writeNodeModules(
   const storable = entries.filter((entry) => {
     if (entry.storePath) return true;
     skipped.push({
-      path: join(root, ...entry.name.split('/')),
+      path: join(root, ...(entry.installName ?? entry.name).split('/')),
       reason: 'the package is not materialised in the opm store',
     });
     return false;
@@ -102,7 +102,10 @@ export async function writeNodeModules(
   );
   for (const refusal of plan.skipped)
     skipped.push({
-      path: join(root, ...refusal.entry.name.split('/')),
+      path: join(
+        root,
+        ...(refusal.entry.installName ?? refusal.entry.name).split('/'),
+      ),
       reason: refusal.reason,
     });
 
@@ -175,13 +178,15 @@ export async function writeNodeModules(
   outcome.bins = shims.total;
 
   const previous = await readRecord(root);
+  // The directory a package sits in is its install name, which for an aliased
+  // package is not the name the package calls itself.
   const namesIn = (base: string): Set<string> =>
     new Set(
       plan.placements
         .filter(
           (place) => (place.base ?? '') === base && place.chain.length === 1,
         )
-        .map((place) => place.entry.name),
+        .map((place) => place.chain[0]!),
     );
   const names = namesIn('');
   const rootBins = shims.names.get(root) ?? [];
@@ -251,14 +256,19 @@ function planFor(
   const seen = new Set<string>();
   const placed = entries.map((source): PlacedEntry => {
     const path = source.layoutPath!;
-    const where = placeOf(path);
+    const where = placeOfLockPath(path);
     if (where === undefined)
       throw new Error(`${path} is not a place under node_modules`);
     if (seen.has(path)) throw new Error(`${path} is claimed twice`);
     seen.add(path);
+    // The directory is where the lock puts the package, whatever the package
+    // calls itself: an aliased dependency is `string-width` at
+    // `node_modules/string-width-cjs`.
+    const installed = where.chain.at(-1)!;
     const entry: LayoutEntry = {
       id: path,
-      name: where.chain.at(-1)!,
+      name: source.name,
+      ...(installed !== source.name && { installName: installed }),
       version: source.version,
       digest: source.digest,
       direct: !source.transitive,
@@ -268,16 +278,6 @@ function planFor(
     return { entry, ...where };
   });
   return planLayoutFromPaths(placed, { links, members });
-}
-
-/** A lock's place for a package: in the project's `node_modules`, or a member's. */
-function placeOf(path: string): { chain: string[]; base?: string } | undefined {
-  const own = chainOfLockPath(path);
-  if (own !== undefined) return { chain: own };
-  const nested = splitNestedLockPath(path);
-  if (nested === undefined) return undefined;
-  const chain = chainOfLockPath(nested.place);
-  return chain === undefined ? undefined : { chain, base: nested.directory };
 }
 
 /**

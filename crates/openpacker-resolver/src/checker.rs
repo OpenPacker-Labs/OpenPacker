@@ -415,32 +415,33 @@ fn expression_witness(
             purl,
             vers,
             qualifiers,
-        } => selected.iter().find_map(|node_id| {
-            let package = input
-                .universe
-                .packages
-                .iter()
-                .find(|package| package.node_id == *node_id)?;
-            ((package.identity.canonical_purl == *purl
-                || package.identity.exact_purl.as_deref() == Some(purl))
-                && qualifiers
-                    .iter()
-                    .all(|(key, value)| package.identity.qualifiers.get(key) == Some(value))
-                && vers.as_deref().is_none_or(|constraint| {
-                    version_satisfies(&package.normalized_version, constraint)
-                }))
-            .then(|| vec![node_id.clone()])
-        }),
+        } => {
+            // The first selected release that satisfies it, in the order the
+            // universe lists them: the order the solve names its witness in.
+            // Walking the node ids in string order picked another release when
+            // two selected ones both satisfy the requirement, and rejected a
+            // proof that was complete.
+            input.universe.packages.iter().find_map(|package| {
+                (selected.contains(&package.node_id)
+                    && (package.identity.canonical_purl == *purl
+                        || package.identity.exact_purl.as_deref() == Some(purl))
+                    && qualifiers
+                        .iter()
+                        .all(|(key, value)| package.identity.qualifiers.get(key) == Some(value))
+                    && vers.as_deref().is_none_or(|constraint| {
+                        version_satisfies(&package.normalized_version, constraint)
+                    }))
+                .then(|| vec![package.node_id.clone()])
+            })
+        }
         RequirementExpression::Capability {
             name,
             vers,
             attributes,
-        } => selected.iter().find_map(|node_id| {
-            let package = input
-                .universe
-                .packages
-                .iter()
-                .find(|package| package.node_id == *node_id)?;
+        } => input.universe.packages.iter().find_map(|package| {
+            if !selected.contains(&package.node_id) {
+                return None;
+            }
             package
                 .capabilities
                 .iter()
@@ -462,7 +463,7 @@ fn expression_witness(
                                 .is_some_and(|version| version_satisfies(version, constraint))
                         })
                 })
-                .map(|_| vec![node_id.clone()])
+                .map(|_| vec![package.node_id.clone()])
         }),
         RequirementExpression::AllOf { expressions } => {
             let mut nodes = Vec::new();

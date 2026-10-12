@@ -6,7 +6,6 @@
  * the rest of the toolchain disagree about what the project needs.
  */
 
-import { createHash } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
@@ -24,16 +23,17 @@ import type {
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
-import {
-  collectFiles,
-  editJsonFile,
-  packTarGzip,
-  ProjectIoError,
-  writeFileAtomic,
-} from '@openpacker/project-io';
+import { editJsonFile, writeFileAtomic } from '@openpacker/project-io';
+import { formatNpmAlias, isNpmAlias, parseNpmAlias } from './alias.js';
 import { readFrozenPackageLock } from './frozen-lock.js';
 import { layoutLoss } from './layout-loss.js';
+import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
+import { integrityLoss, scopeLoss } from './project-losses.js';
+import { packNpmProject } from './project-pack.js';
+import { purlForName } from './purl.js';
+
+export { npmPublishPaths } from './project-pack.js';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD = {
@@ -95,6 +95,23 @@ export class NpmProjectFormat implements ProjectFormat {
     for (const field of DEPENDENCY_FIELDS) {
       const scope = scopeOfField(field);
       for (const [name, range] of Object.entries(parsed[field] ?? {})) {
+        // `"string-width-cjs": "npm:string-width@^4.2.0"` asks for string-width,
+        // installed as string-width-cjs; reading it as the registry's package of
+        // the key's name would be a different package.
+        const alias =
+          typeof range === 'string' && isNpmAlias(range)
+            ? parseNpmAlias(range)
+            : undefined;
+        if (alias !== undefined && 'target' in alias) {
+          out.push({
+            purl: purlForName(alias.target),
+            name: alias.target,
+            installName: name,
+            ...(alias.spec !== '*' && { range: alias.spec }),
+            scope,
+          });
+          continue;
+        }
         out.push({
           purl: purlForName(name),
           name,
@@ -121,11 +138,15 @@ export class NpmProjectFormat implements ProjectFormat {
         semanticLoss.push(scopeLoss(requirement));
         continue;
       }
-      managed.set(requirement.name, {
+      managed.set(requirement.installName ?? requirement.name, {
         field,
         // npm accepts `*` for "any version". Writing an empty string produces
-        // a manifest npm rejects, so absence becomes the range npm spells.
-        range: requirement.range ?? '*',
+        // a manifest npm rejects, so absence becomes the range npm spells. An
+        // alias is written as npm writes one: the key is the install name.
+        range:
+          requirement.installName === undefined
+            ? (requirement.range ?? '*')
+            : formatNpmAlias(requirement.name, requirement.range),
       });
     }
 
@@ -189,18 +210,9 @@ export class NpmProjectFormat implements ProjectFormat {
 
     const semanticLoss: SemanticLoss[] = [];
     const entries: Record<string, unknown> = {};
-    for (const entry of packages) {
-      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'sri') {
+    for (const entry of packages)
+      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'sri')
         semanticLoss.push(integrityLoss(entry));
-        continue;
-      }
-      entries[`node_modules/${entry.name}`] = {
-        version: entry.version,
-        resolved: entry.source,
-        integrity: `${entry.nativeIntegrity.algorithm}-${entry.nativeIntegrity.value}`,
-        ...(entry.scope === 'development' && { dev: true }),
-      };
-    }
     if (semanticLoss.length > 0)
       // Partial lockfiles are how a build silently installs something nobody
       // pinned. All or nothing.
@@ -214,6 +226,35 @@ export class NpmProjectFormat implements ProjectFormat {
         ],
         semanticLoss,
       };
+    // Where Node would find each package: a name selected at two versions, or
+    // installed under an alias, is not at `node_modules/<name>`.
+    const plan = planLayout(toLayoutEntries(packages));
+    if (plan.skipped.length > 0)
+      return {
+        written: [],
+        skipped: [
+          {
+            path: lockPath,
+            reason: `the closure cannot be laid out as npm would: ${plan.skipped
+              .slice(0, 3)
+              .map((item) => item.reason)
+              .join('; ')}`,
+          },
+        ],
+        semanticLoss: [],
+      };
+    for (const { entry, chain } of plan.placements) {
+      const source = entry.source;
+      const integrity = source.nativeIntegrity!;
+      entries[`node_modules/${chain.join('/node_modules/')}`] = {
+        // A package installed under another name says what it is.
+        ...(chain.at(-1) !== entry.name && { name: entry.name }),
+        version: entry.version,
+        resolved: source.source,
+        integrity: `${integrity.algorithm}-${integrity.value}`,
+        ...(source.scope === 'development' && { dev: true }),
+      };
+    }
 
     const name = await manifestName(project.manifestPath);
     const body = {
@@ -228,7 +269,12 @@ export class NpmProjectFormat implements ProjectFormat {
               .filter(
                 (entry) => !entry.transitive && entry.scope !== 'development',
               )
-              .map((entry) => [entry.name, entry.range ?? entry.version]),
+              .map((entry) => [
+                entry.installName ?? entry.name,
+                entry.installName === undefined
+                  ? (entry.range ?? entry.version)
+                  : formatNpmAlias(entry.name, entry.range ?? entry.version),
+              ]),
           ),
         },
         ...entries,
@@ -309,55 +355,8 @@ export class NpmProjectFormat implements ProjectFormat {
     project: DetectedProject,
     options: PackProjectOptions = {},
   ): Promise<PackedArtifact> {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const manifest = JSON.parse(
-      await readFile(project.manifestPath, 'utf8'),
-    ) as PackageJson;
-    const name = manifest.name ?? 'package';
-    const version = manifest.version ?? '0.0.0';
-
-    const all = await collectFiles(project.root);
-    const publishPaths = new Set(await npmPublishPaths(project));
-    const included = all.filter((file) => publishPaths.has(file.path));
-
-    // npm archives put everything under `package/`.
-    const bytes = packTarGzip(
-      included.map((file) => ({
-        path: `package/${file.path}`,
-        contents: file.contents,
-        executable: file.executable,
-      })),
-    );
-
-    const fileName = `${name.replace('@', '').replace('/', '-')}-${version}.tgz`;
-    assertPackFileName(fileName, project.manifestPath);
-    const outputPath = join(options.outputDirectory ?? project.root, fileName);
-    await writeFileAtomic(outputPath, bytes);
-
-    return {
-      path: outputPath,
-      exactPurl: `${purlForName(name)}@${version}`,
-      mediaType: 'application/vnd.npm.install-v1+json',
-      size: bytes.length,
-      digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
-      semanticLoss: [packLoss()],
-    };
+    return packNpmProject(project, options);
   }
-}
-
-function assertPackFileName(fileName: string, manifestPath: string): void {
-  if (
-    fileName === '.' ||
-    fileName === '..' ||
-    fileName.includes('/') ||
-    fileName.includes('\\') ||
-    fileName.includes('\0')
-  )
-    throw new ProjectIoError(
-      'UNSAFE_PATH',
-      manifestPath,
-      `Package metadata produced an unsafe artifact filename: ${fileName}`,
-    );
 }
 
 function scopeOfField(
@@ -375,153 +374,10 @@ function scopeOfField(
   }
 }
 
-/** `@scope/name` → `pkg:npm/%40scope/name`, per the PURL npm rules. */
-function purlForName(name: string): string {
-  if (!name.startsWith('@')) return `pkg:npm/${encodeURIComponent(name)}`;
-  const slash = name.indexOf('/');
-  if (slash === -1) return `pkg:npm/${encodeURIComponent(name)}`;
-  return `pkg:npm/%40${encodeURIComponent(name.slice(1, slash))}/${encodeURIComponent(
-    name.slice(slash + 1),
-  )}`;
-}
-
-function scopeLoss(requirement: NativeRequirement): SemanticLoss {
-  return {
-    code: 'NATIVE_SCOPE_UNSUPPORTED',
-    severity: 'warning',
-    sourceEcosystem: 'npm',
-    sourcePath: `/packages/${requirement.name}/scope`,
-    originalMeaning: `${requirement.name} is declared with scope "${requirement.scope}"`,
-    representedMeaning: 'The requirement was not written to package.json',
-    omittedMeaning: `npm has no dependency field for the "${requirement.scope}" scope`,
-    mitigation:
-      'Declare the package with a scope npm expresses: runtime, development, optional, or peer.',
-    blocksProfile: ['native-validated-v1'],
-  };
-}
-
 async function manifestName(manifestPath: string): Promise<string> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     name?: string;
   };
   return parsed.name ?? 'project';
-}
-
-function integrityLoss(entry: NativeLockEntry): SemanticLoss {
-  return {
-    code: 'NATIVE_LOCK_INTEGRITY_UNAVAILABLE',
-    severity: 'warning',
-    sourceEcosystem: 'npm',
-    sourcePath: `/packages/${entry.name}`,
-    originalMeaning: `${entry.name}@${entry.version} was resolved and pinned by digest`,
-    representedMeaning: 'No package-lock.json was written',
-    omittedMeaning:
-      'npm pins with Subresource Integrity over the tarball, which was not captured for this package',
-    mitigation:
-      'Re-resolve so the integrity value is captured, or keep native_projection at "manifest".',
-    blocksProfile: ['native-validated-v1'],
-  };
-}
-
-/** Paths npm never publishes, whatever the manifest says. */
-const NEVER_PUBLISH = new Set([
-  '.git',
-  '.npmrc',
-  'node_modules',
-  'package-lock.json',
-  '.opm',
-]);
-
-/** Paths npm always publishes, whatever `files` says. */
-const ALWAYS_PUBLISH = [
-  /^package\.json$/u,
-  /^readme(\.|$)/iu,
-  /^licen[cs]e(\.|$)/iu,
-  /^changelog(\.|$)/iu,
-];
-
-/** The exact project paths OpenPacker's npm implementation may publish. */
-export async function npmPublishPaths(
-  project: DetectedProject,
-): Promise<readonly string[]> {
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const manifest = JSON.parse(
-    await readFile(project.manifestPath, 'utf8'),
-  ) as PackageJson;
-  const ignore = await readIgnoreFile(project.root);
-  return (await listFilePaths(project.root)).filter((path) =>
-    shouldPublish(path, manifest.files, ignore),
-  );
-}
-
-async function listFilePaths(root: string): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises');
-  const paths: string[] = [];
-  const walk = async (directory: string, prefix: string): Promise<void> => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-      if (entry.isDirectory()) {
-        if (prefix === '' && NEVER_PUBLISH.has(entry.name)) continue;
-        await walk(join(directory, entry.name), path);
-      } else if (entry.isFile()) paths.push(path);
-    }
-  };
-  await walk(root, '');
-  return paths;
-}
-
-async function readIgnoreFile(root: string): Promise<string[]> {
-  const { readFile: read } = await import('node:fs/promises');
-  for (const name of ['.npmignore', '.gitignore']) {
-    try {
-      return (await read(join(root, name), 'utf8'))
-        .split(/\r?\n/u)
-        .map((line) => line.split('#')[0]!.trim())
-        .filter((line) => line !== '');
-    } catch {
-      // try the next one
-    }
-  }
-  return [];
-}
-
-function shouldPublish(
-  path: string,
-  files: readonly string[] | undefined,
-  ignore: readonly string[],
-): boolean {
-  const first = path.split('/')[0]!;
-  if (NEVER_PUBLISH.has(first)) return false;
-  if (ALWAYS_PUBLISH.some((pattern) => pattern.test(path))) return true;
-  if (files && files.length > 0)
-    return files.some(
-      (entry) =>
-        path === entry ||
-        path.startsWith(`${entry.replace(/\/$/u, '')}/`) ||
-        first === entry,
-    );
-  return !ignore.some(
-    (entry) =>
-      path === entry ||
-      first === entry.replace(/\/$/u, '') ||
-      path.startsWith(`${entry.replace(/\/$/u, '')}/`),
-  );
-}
-
-function packLoss(): SemanticLoss {
-  return {
-    code: 'NATIVE_PACK_NOT_TOOL_EQUIVALENT',
-    severity: 'info',
-    sourceEcosystem: 'npm',
-    sourcePath: '/pack',
-    originalMeaning: 'A publishable npm tarball was built from the project',
-    representedMeaning:
-      'A deterministic gzipped tar with the package/ prefix, honouring files, .npmignore and npm always-include rules',
-    omittedMeaning:
-      'npm pack was not run: prepack and prepare scripts did not execute, and npm ignore precedence is approximated rather than reimplemented',
-    mitigation:
-      'Run npm pack when a package depends on its prepack scripts to produce publishable output.',
-    blocksProfile: [],
-  };
 }

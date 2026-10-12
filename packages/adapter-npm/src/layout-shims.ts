@@ -139,6 +139,10 @@ export async function writeShims(
   for (const placement of placements) {
     const modules = modulesOf(projectRoot, placement.base ?? '');
     const directory = directoryOf(modules, placement.chain);
+    // The directory the package is in, which for an alias is not its name: the
+    // shim addresses that directory, and a contested name goes by it. The
+    // executables a package declares are named by the package itself.
+    const installed = placement.chain.at(-1)!;
     const { bins, refused } = await readPackageBins(
       directory,
       placement.entry.name,
@@ -150,11 +154,11 @@ export async function writeShims(
       });
     for (const bin of bins)
       offer(containerOf(modules, placement.chain), {
-        owner: placement.entry.name,
+        owner: installed,
         direct: placement.entry.direct,
         member: false,
         bin,
-        relative: `../${placement.entry.name}/${bin.target}`,
+        relative: `../${installed}/${bin.target}`,
         script: join(directory, ...bin.target.split('/')),
       });
   }

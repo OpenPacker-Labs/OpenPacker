@@ -183,6 +183,46 @@ describe('reading a project', () => {
     ).rejects.toThrow(/package\.json is not valid JSON/u);
   });
 
+  describe('a lock whose places cannot be written', () => {
+    const both = {
+      'node_modules/MS': registry('ms', '2.1.3', { name: 'ms' }),
+      'node_modules/ms': registry('ms', '2.1.3'),
+    };
+    const deps = { ms: '2.1.3', MS: 'npm:ms@2.1.3' };
+
+    it('is refused while it is read, before anything is fetched or removed', async () => {
+      const { detected } = await project({
+        'package.json': { name: 'app', dependencies: deps },
+        'package-lock.json': lockOf(both, { dependencies: deps }),
+      });
+      await expect(
+        new NpmProjectFormat().readFrozenLock!(detected, options),
+      ).rejects.toMatchObject({
+        code: 'LAYOUT_PATHS_INVALID',
+        message: expect.stringMatching(
+          /ms@2\.1\.3 would be installed as ms, which differs only by case from MS.*\(at node_modules\/ms\)/u,
+        ),
+      });
+    });
+
+    it('is not asked about when the lock is already refused for what it holds', async () => {
+      const { detected } = await project({
+        'package.json': { name: 'app', dependencies: deps },
+        'package-lock.json': lockOf(
+          { ...both, 'node_modules/x': { version: '1.0.0' } },
+          { dependencies: deps },
+        ),
+      });
+      const result = await new NpmProjectFormat().readFrozenLock!(
+        detected,
+        options,
+      );
+      expect(result.refused.map((entry) => entry.path)).toEqual([
+        'node_modules/x',
+      ]);
+    });
+  });
+
   it('does not follow a symbolic link to the lock', async () => {
     const { dir, detected } = await project({
       'package.json': { name: 'app' },

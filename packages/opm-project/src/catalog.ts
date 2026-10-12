@@ -165,6 +165,19 @@ export function canonicalCatalogPurl(value: string, path = 'catalog'): string {
   }
 }
 
+/**
+ * A PURL in its one canonical spelling, or as written when it has none. A
+ * manifest may write an npm scope's `@` literally; a lock never does, and the
+ * two name one package.
+ */
+export function canonicalPurlOrSelf(purl: string): string {
+  try {
+    return canonicalCatalogPurl(purl);
+  } catch {
+    return purl;
+  }
+}
+
 export function resolveSource(source: string, baseDir: string): string {
   if (source.startsWith('file:')) {
     // file:/rel, file:///abs, file://localhost/abs

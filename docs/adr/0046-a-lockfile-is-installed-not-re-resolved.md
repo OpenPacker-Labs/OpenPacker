@@ -109,13 +109,23 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    resolve to a private address.
 
 6. **The layout is the lock's.** `planLayoutFromPaths` places each package at
-   the chain its key gives; it chooses nothing and refuses, before writing
-   anything, what cannot be written as written (an unsafe name, two packages
-   claiming one place, a package inside a parent that is not installed).
-   Executables are the `.bin` shims of ADR 0048; no symlink is made. A tarball's
-   single top-level directory is stripped whatever it is called, as npm does,
-   and a bare `bin` string is named by the package's own `name`, not by the
-   alias it lives under.
+   the chain its key gives; it chooses nothing and refuses what cannot be
+   written as written (an unsafe name, two packages claiming one place, a
+   package inside a parent that is not installed, and, since ADR 0054 §17, two
+   names that differ only by case in one directory). Those rules look at the
+   lock's keys alone, so they are asked when the lock is read (step 1 of the
+   host's order): a lock they refuse is refused before any archive is fetched
+   and before the project's `node_modules` is removed, which stays as it was. A
+   lock with more than one defect reports the placement one: it is asked at read
+   time, so it comes before a policy denial, a git or path source, an integrity
+   or an offline refusal that used to be reported first (nothing is installed
+   either way; the exit code changes, a policy denial being 6 and a placement
+   refusal 3). What can only be found while writing (a link or a file on the
+   way, the filesystem refusing) is found after the old `node_modules` has been
+   removed, as with `npm ci`. Executables are the `.bin` shims of ADR 0048; no
+   symlink is made. A tarball's single top-level directory is stripped whatever
+   it is called, as npm does, and a bare `bin` string is named by the package's
+   own `name`, not by the alias it lives under.
 
 7. **The materializer takes an ecosystem's own tolerance only when asked.** An
    archive whose paths carry a `.` segment, or that lists the same file twice

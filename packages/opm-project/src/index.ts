@@ -122,7 +122,6 @@ export {
   installProject,
   listInstalled,
   readManifestFile,
-  removePackage,
   requireOpmRoot,
   resolveManifestToLock,
   syncProject,
@@ -131,6 +130,7 @@ export {
   importNativeProject,
   type NativeImportResult,
 } from './import-native.js';
+export { removePackage } from './remove.js';
 export { updateProject } from './update.js';
 export { uninstallProject, whyPackage, writeManifestFile } from './project.js';
 export {
@@ -258,21 +258,20 @@ export {
   type NativeTarget,
 } from './host-target.js';
 export {
-  CLOSURE_OBJECTIVES,
   defaultHostEnvironment,
   evaluateEnvironmentMarker,
-  loadResolver,
   nativeRange,
   requirementMarker,
   resolveGraph,
   shouldFollowRequirement,
-  solveGraph,
-  universeFrom,
   type FollowDecision,
   type HostEnvironment,
   type ResolutionBounds,
   type ResolvedGraph,
 } from './resolve.js';
+export { loadResolver } from './resolver-load.js';
+export { CLOSURE_OBJECTIVES, solveGraph } from './solve.js';
+export { universeFrom } from './universe.js';
 
 export {
   hostSandboxFromPolicy,

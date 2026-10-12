@@ -4,7 +4,9 @@ Date: 2026-10-11
 
 ## Status
 
-Accepted.
+Accepted. Amended by
+[0054](0054-aliases-and-several-versions-in-the-closure.md): an `npm:` alias is
+followed (§1) and a lock may hold several versions of a package (§4).
 
 Relates to: [0006](0006-resolution-semantics-profiles.md),
 [0007](0007-loss-aware-ir.md),
