@@ -19,6 +19,8 @@
  * feeds kept, for a writer whose messages are lists.
  */
 
+import type { JsonValue } from '@openpacker/contracts';
+
 /** How many characters of the text a message may carry. */
 export const ECHO_LIMIT = 64;
 
@@ -159,6 +161,25 @@ function read(
     count += 1;
   }
   return { shown, end: index };
+}
+
+/**
+ * A value as a message says it: text as it is, and anything else the way a
+ * template literal does (`undefined`, `null`, `5`, `x` for `['x']`).
+ *
+ * The JSON parser builds objects with no prototype, and `String` throws a
+ * `TypeError` ("Cannot convert object to primitive value") on one, and on an
+ * array that holds one. A message that repeats a field of a document is written
+ * while the document is being refused, so it must not be the thing that throws:
+ * those are `[object Object]` and `[object Array]`.
+ */
+export function printable(value: JsonValue | undefined): string {
+  if (typeof value === 'string') return value;
+  try {
+    return String(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
 }
 
 /**

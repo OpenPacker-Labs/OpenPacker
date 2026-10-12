@@ -1,4 +1,4 @@
-import { safeEcho } from '@openpacker/canonical';
+import { printable, safeEcho } from '@openpacker/canonical';
 import { redactText } from './redact-text.js';
 
 /**
@@ -24,7 +24,7 @@ export const ECHO_TEXT_LIMIT = 256;
  * the same, and `safeEcho`, which reads the length of its argument, would throw.
  */
 export function echoed(text: string, limit = ECHO_TEXT_LIMIT): string {
-  return safeEcho(String(text), limit);
+  return safeEcho(printable(text), limit);
 }
 
 /**
@@ -34,5 +34,5 @@ export function echoed(text: string, limit = ECHO_TEXT_LIMIT): string {
  * before it is cut, since a cut address is another address.
  */
 export function echoedValue(text: string, limit = ECHO_TEXT_LIMIT): string {
-  return echoed(redactText(String(text)), limit);
+  return echoed(redactText(printable(text)), limit);
 }

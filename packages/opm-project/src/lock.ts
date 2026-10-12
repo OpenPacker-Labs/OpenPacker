@@ -1,5 +1,5 @@
 import { echoed } from '@openpacker/adapter-core';
-import { parseCanonicalJson } from '@openpacker/canonical';
+import { parseCanonicalJson, printable } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import { readStableFile, writeStableFile } from './paths.js';
@@ -93,7 +93,7 @@ export function reproducibleLockForm(
 }
 
 export function parseLockfile(text: string): OpmLockfile {
-  let value: unknown;
+  let value: JsonValue;
   try {
     value = parseCanonicalJson(text);
   } catch (error) {
@@ -105,18 +105,17 @@ export function parseLockfile(text: string): OpmLockfile {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new OpmError('INVALID_LOCK', 'opm.lock.json must be a JSON object');
   }
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const record = value as Record<string, unknown>;
+  const record = value;
   if (record.schemaVersion !== 1) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unsupported lock schemaVersion: ${echoed(String(record.schemaVersion))}`,
+      `Unsupported lock schemaVersion: ${echoed(printable(record.schemaVersion))}`,
     );
   }
   if (record.generatedBy !== 'opm') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unexpected generatedBy: ${echoed(String(record.generatedBy))}`,
+      `Unexpected generatedBy: ${echoed(printable(record.generatedBy))}`,
     );
   }
   if (

@@ -19,6 +19,7 @@ import {
   compareCanonicalStrings,
   parseDigest,
   parseUntrustedUrl,
+  printable,
   safeEcho,
   sha256,
 } from '@openpacker/canonical';
@@ -35,7 +36,7 @@ type TokenRequestHeaders = Record<string, string>;
 function echoed(text: string, limit = 256): string {
   // What a registry sends is cast JSON: `String` says a missing or odd value as
   // a template literal did, where `safeEcho` would throw on it.
-  return safeEcho(String(text), limit);
+  return safeEcho(printable(text), limit);
 }
 
 /**
