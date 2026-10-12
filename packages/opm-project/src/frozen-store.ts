@@ -108,9 +108,22 @@ export function labelOf(pkg: FrozenLockPackage): string {
   return `${pkg.packageName}@${pkg.version} (${pkg.path})`;
 }
 
+/**
+ * A lock entry's source as an error may show it: the same address without
+ * userinfo, query and fragment, and with its scheme. An address with an origin
+ * is shown as its origin and path (`redactUrl`). `git+https:`, `git+ssh:`,
+ * `file:` and the other schemes that have none have no origin to show, so the
+ * address itself is shown, cleared.
+ */
 export function redactSource(source: string): string {
   try {
-    return redactUrl(new URL(source));
+    const url = new URL(source);
+    if (url.origin !== 'null') return redactUrl(url);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.href;
   } catch {
     return source.replace(/\/\/[^/@]*@/u, '//');
   }
