@@ -9,7 +9,7 @@
 
 import { compareText } from './layout-compare.js';
 import { checkLayoutLinks, placePath } from './layout-links.js';
-import { unsafeNameProblem } from './layout-names.js';
+import { caseCollision, unsafeNameProblem } from './layout-names.js';
 import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
@@ -62,8 +62,11 @@ export class LayoutPathsError extends Error {
  * and sorted, parents before the packages nested in them.
  *
  * A placement that cannot be written (an unsafe name, two packages claiming one
- * place, a package inside a parent that is not installed) is an error, not a
- * skip: dropping it would install something other than the lock.
+ * place, two names that differ only by case in one `node_modules`, which are
+ * one directory on a case-insensitive filesystem, a package inside a parent
+ * that is not installed) is an error, not a skip: dropping it would install
+ * something other than the lock. The directory is the unit of the case rule:
+ * the project's `node_modules` and each member's own are separate namespaces.
  */
 export function planLayoutFromPaths(
   placed: readonly PlacedEntry[],
@@ -75,6 +78,9 @@ export function planLayoutFromPaths(
   const problems: string[] = [];
   const members = new Set(options.members ?? []);
   const taken = new Map<string, LayoutEntry>();
+  // Names that differ only by case, beside each other in one `node_modules`:
+  // the project's and each member's own are directories of their own.
+  const casing = new Map<string, { installName: string; entry: LayoutEntry }>();
   for (const { entry, chain, base = '' } of placed) {
     const where = placePath(chain, base);
     if (chain.length === 0) {
@@ -101,6 +107,12 @@ export function planLayoutFromPaths(
       continue;
     }
     taken.set(key, entry);
+    const installName = chain.at(-1)!;
+    const folded = `${placementKey(base, chain.slice(0, -1))}\u0002${installName.toLowerCase()}`;
+    const twin = casing.get(folded);
+    if (twin !== undefined && twin.installName !== installName)
+      problems.push(`${caseCollision(entry, installName, twin)} (at ${where})`);
+    else casing.set(folded, { installName, entry });
   }
   for (const { entry, chain, base = '' } of placed) {
     if (chain.length < 2) continue;
