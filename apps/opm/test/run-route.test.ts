@@ -92,6 +92,54 @@ describe('routeRun: options before the command, as pnpm and npm write them', () 
   });
 });
 
+describe('routeRun: pnpm-style options before a command that does not read them', () => {
+  it.each([
+    [['--filter', '@w/a', 'sync'], '--filter', 'sync'],
+    [['--filter=a', 'install', 'x'], '--filter', 'install'],
+    [['-r', 'install'], '-r', 'install'],
+    [['--recursive', 'update'], '--recursive', 'update'],
+    [['--workspace-concurrency', '2', 'ci'], '--workspace-concurrency', 'ci'],
+    [['--silent', 'list'], '--silent', 'list'],
+    [['--workspaces', 'sync'], '--workspaces', 'sync'],
+  ] as const)(
+    'refuses %j rather than run %s with the option dropped',
+    async (argv, option, command) => {
+      const root = await project();
+      await expect(routeRun([...argv], root)).rejects.toMatchObject({
+        code: 'USAGE',
+        message: expect.stringContaining(`${option}`),
+      });
+      await expect(routeRun([...argv], root)).rejects.toMatchObject({
+        message: expect.stringContaining(`opm ${command}`),
+      });
+    },
+  );
+
+  it('says --path for the directory options, which the other commands spell that way', async () => {
+    const root = await project();
+    for (const argv of [
+      ['-C', 'dir', 'sync'],
+      ['--dir', 'dir', 'sync'],
+      ['--prefix=dir', 'sync'],
+    ])
+      await expect(routeRun(argv, root), argv.join(' ')).rejects.toMatchObject({
+        code: 'USAGE',
+        message: expect.stringContaining('--path <dir> after the command name'),
+      });
+  });
+
+  it('leaves everything that reads no such option to the full command line', async () => {
+    const root = await project();
+    for (const argv of [
+      ['--offline', 'install'],
+      ['install', '--filter', 'a'],
+      ['sync', '-r'],
+      ['sync'],
+    ])
+      expect(await routeRun(argv, root), argv.join(' ')).toBeUndefined();
+  });
+});
+
 describe('routeRun: a word where a command goes', () => {
   it('is a script or executable of the project when pnpm-style options came first', async () => {
     const root = await project();
@@ -161,7 +209,14 @@ describe('routeRun: a word where a command goes', () => {
   it('never takes the place of a command, even for a script that has its name', async () => {
     const root = await project();
     expect(await routeRun(['list'], root)).toBeUndefined();
-    expect(await routeRun(['--filter', 'a', 'list'], root)).toBeUndefined();
+    // With a pnpm-style option in front, the command is still the command: it
+    // is refused for not reading the option, never run as the script `list`.
+    await expect(
+      routeRun(['--filter', 'a', 'list'], root),
+    ).rejects.toMatchObject({
+      code: 'USAGE',
+      message: expect.stringContaining('opm list'),
+    });
   });
 
   it('finds an executable in the .bin of a parent directory', async () => {

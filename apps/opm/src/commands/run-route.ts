@@ -38,6 +38,22 @@ function leadingWidth(token: string): number {
 const AMBIGUOUS_ROOT =
   "-w means the workspace root to pnpm and selects a workspace by name or directory to npm; opm reads npm's, so write --workspace-root for the root, or -w <name>";
 
+/**
+ * pnpm takes its workspace options before any command; here only `run` and
+ * `exec` read them. In front of another command the full command line would
+ * drop them (or take the command for the option's value: `opm -r install`
+ * printed the usage and exited 0), so the entry says so instead.
+ */
+function refuseBeforeCommand(lead: readonly string[], command: string): Error {
+  const option = lead[0] ?? '';
+  const name = option.split('=')[0] ?? option;
+  return usageError(
+    PATH_ALIASES.includes(name)
+      ? `${name} sets the project directory for opm run and opm exec; opm ${command} takes --path <dir> after the command name`
+      : `${name} selects workspace members for opm run and opm exec; opm ${command} does not take it`,
+  );
+}
+
 /** A word that could be a script or an executable of the project here. */
 async function definedHere(word: string, cwd: string): Promise<boolean> {
   const paths = await import('./run-paths.js');
@@ -111,7 +127,10 @@ export async function routeRun(
   const after = argv.slice(leading.at + 1);
   if (word === 'run' || word === 'exec')
     return named(word, leading.lead, after);
-  if (COMMANDS.has(word)) return undefined;
+  if (COMMANDS.has(word)) {
+    if (leading.lead.length > 0) throw refuseBeforeCommand(leading.lead, word);
+    return undefined;
+  }
   // A word that is no command is a script or an executable of this project:
   // always when pnpm-style options came first, and otherwise only if it is
   // one, so that a mistyped command is still reported as an unknown command.

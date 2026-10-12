@@ -204,7 +204,15 @@ refused by name with the reason. An unknown option stays a usage error (0047
     of `opm`'s own options that still arrive before it are refused ("Put -r
     after the command name") instead of dropped: left in the parser's `head`
     they would be ignored, and `opm -r --offline run build` would run the root's
-    script alone.
+    script alone. Only `run` and `exec` read these options, so in front of any
+    other command they are refused too: `opm -r install` used to hand `install`
+    to `-r` as its value, print the usage and exit 0, and `opm --filter a sync`
+    synced the whole project with the filter dropped. The message says the
+    option belongs to `run` and `exec` (and that `--path <dir>` is the other
+    commands' spelling of `-C`, `--dir` and `--prefix`). An option that arrives
+    _after_ a command other than `run` and `exec` is the general parser's, which
+    ignores one it does not know, as before: "pnpm's order works" is a claim
+    about `run` and `exec`.
 13. **A word where a command goes is the project's script, else its
     executable.** `opm typecheck`, `opm --filter a build`,
     `opm test:file a.test.ts`, `opm biome check`. Everything after the word goes

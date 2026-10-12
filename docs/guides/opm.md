@@ -698,7 +698,7 @@ opm run dev -r --parallel                # every member at once, streamed, no or
 opm run build -w @acme/web               # npm's -w: a name or a directory
 opm run build --workspaces               # npm's: every member, directory order, one at a time
 opm exec --filter @acme/web tsc -- -b    # the bin, run in that member's directory
-opm -r exec vitest run                   # pnpm's order works too: options before the command
+opm -r exec vitest run                   # pnpm's order works for run and exec: options before the command
 ```
 
 | Option                          | Meaning                                                                                                                         |
