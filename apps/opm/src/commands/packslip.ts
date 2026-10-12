@@ -1,3 +1,4 @@
+import { plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -15,6 +16,7 @@ import {
   type OpmManifest,
   type RegistryOptions,
 } from '@openpacker/opm-project';
+import { report } from '../error-report.js';
 
 export interface CommandArgs {
   positionals: string[];
@@ -167,7 +169,12 @@ async function verify(
   const signer = signerOf(release);
   const executables = (inspection.executables ?? []).map((bin) => bin.name);
   for (const warning of inspection.warnings)
-    io.stderr.write(`opm: ${warning.code}: ${warning.message}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(warning.code)}: ${plainLine(warning.message)}`,
+      ),
+    );
 
   if (args.options.has('json')) {
     io.stdout.write(
@@ -246,8 +253,11 @@ async function pin(
   if (write !== true) {
     io.stdout.write(stanza);
     io.stderr.write(
-      'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
-        'before relying on it; pass --write to record it in opm.toml.\n',
+      report(
+        'opm: ',
+        'this fingerprint is what the release showed just now. Confirm it with the vendor ' +
+          'before relying on it; pass --write to record it in opm.toml.',
+      ),
     );
     return 0;
   }

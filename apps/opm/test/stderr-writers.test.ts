@@ -189,6 +189,7 @@ describe('what opm writes to stderr', () => {
         'opmx.ts',
         'commands/auth.ts',
         'commands/ci.ts',
+        'commands/packslip.ts',
         'commands/run-child.ts',
         'commands/run.ts',
       ]),
