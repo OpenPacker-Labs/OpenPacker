@@ -26,6 +26,7 @@ import {
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveTransitive } from './closure-lock.js';
 import { lockEdgeKeys, reachableKeys } from './lock-edges.js';
+import { entriesNamed, explainEntry, installedAs } from './why.js';
 import { isExactVersion, registryTargetFor } from './registry-target.js';
 import {
   emptyLockfile,
@@ -65,7 +66,6 @@ import {
   assertSafeSegment,
   CATALOG_NAME,
   ensureStableDirectory,
-  LOCK_NAME,
   MANIFEST_NAME,
   parentDirs,
   projectPaths,
@@ -604,6 +604,8 @@ export async function listInstalled(
     digest: string;
     installed: boolean;
     bins: string[];
+    /** Names the package is installed under that are not its own (aliases). */
+    installedAs: string[];
   }[]
 > {
   assertStableProjectMetadataSupported(platform);
@@ -626,6 +628,7 @@ export async function listInstalled(
       digest: locked?.digest ?? installed?.digest ?? '',
       installed: installed !== undefined,
       bins: (installed?.bins ?? locked?.bins ?? []).map((b) => b.name),
+      installedAs: installedAs(lock, alias),
     };
   });
 }
@@ -634,26 +637,10 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
   const paths = projectPaths(root);
   const manifest = await readManifestFile(paths.manifest);
   const lock = await readLockfile(paths.lock);
-  if (manifest.packages[alias]) {
-    const req = manifest.packages[alias]!;
-    const locked = lock?.packages[alias];
-    return [
-      `"${alias}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${req.purl}`,
-      req.version ? `  version constraint: ${req.version}` : undefined,
-      req.source ? `  source: ${req.source}` : undefined,
-      locked
-        ? `  locked: ${locked.purl} (${locked.digest})`
-        : '  locked: (none)',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-  if (lock?.packages[alias]) {
-    const locked = lock.packages[alias]!;
-    return `"${alias}" is in ${LOCK_NAME} as ${locked.reason} dependency\n  ${locked.purl}`;
-  }
-  throw new OpmError('NOT_FOUND', `Unknown package "${alias}"`);
+  const keys = entriesNamed(manifest, lock, alias);
+  if (keys.length === 0)
+    throw new OpmError('NOT_FOUND', `Unknown package "${alias}"`);
+  return keys.map((key) => explainEntry(manifest, lock, key)).join('\n\n');
 }
 
 export async function resolveManifestToLock(input: {
