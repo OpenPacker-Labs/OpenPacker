@@ -4,6 +4,7 @@ import type {
   JsonValue,
 } from '@openpacker/contracts';
 import { ParseBudget } from './budget.js';
+import { safeEcho } from './echo.js';
 import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
 
 export {
@@ -11,6 +12,7 @@ export {
   CanonicalJsonLimitError,
   type CanonicalParseLimits,
 } from './errors.js';
+export { ECHO_LIMIT, safeEcho } from './echo.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
@@ -133,7 +135,7 @@ class JsonParser {
       if (this.input[this.index] !== '"')
         this.fail('Object member name must be a string');
       const key = this.string();
-      if (keys.has(key)) this.fail(`Duplicate object member: ${key}`);
+      if (keys.has(key)) this.fail(`Duplicate object member: ${safeEcho(key)}`);
       keys.add(key);
       this.space();
       if (!this.take(':')) this.fail('Expected colon after object member name');

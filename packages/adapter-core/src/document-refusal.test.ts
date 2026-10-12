@@ -69,3 +69,30 @@ describe('a body that is not text', () => {
     expect(isDocumentRefusal(caught)).toBe(true);
   });
 });
+
+describe('a document that repeats a key a registry chose', () => {
+  const UNSAFE = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
+  const key = `\u001b]0;pwned\u0007x\n${'k'.repeat(1024 * 1024)}\u001b[31m`;
+
+  it('is refused in a message with none of the key but its first characters, made plain', () => {
+    const member = JSON.stringify(key);
+    let caught: unknown;
+    try {
+      json({
+        status: 200,
+        headers: {},
+        body: new TextEncoder().encode(`{${member}:1,${member}:2}`),
+        url: 'https://registry.test/x',
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ProviderError);
+    const message = (caught as ProviderError).message;
+    expect(message).toMatch(
+      /^Duplicate object member: xk{63}… \(1048593 characters\) at byte \d+$/u,
+    );
+    expect(UNSAFE.test(message)).toBe(false);
+    expect(isDocumentRefusal(caught)).toBe(true);
+  });
+});

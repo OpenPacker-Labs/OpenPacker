@@ -104,6 +104,21 @@ describe('a full packument the client refuses', () => {
     });
   });
 
+  it('says nothing of a repeated key but its first characters, made plain', async () => {
+    // The key is the registry's, and the reason goes on to the policy's message
+    // and a terminal: an escape sequence, a newline and two megabytes of it.
+    const key = JSON.stringify(
+      `\u001b]0;pwned\u0007x\ny\u001b[31m${'k'.repeat(2 * 1024 * 1024)}`,
+    );
+    const { provider } = registry(() => body(`{"time":{},${key}:1,${key}:2}`));
+    const error = await ask(provider).catch((caught: unknown) => caught);
+    const message = (error as Error).message;
+    expect(message).toMatch(
+      /^The full packument of demo is not usable: Duplicate object member: xy(k{62})… \(2097170 characters\) at byte \d+$/u,
+    );
+    expect(/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(message)).toBe(false);
+  });
+
   it('is a refusal when it holds more than the parser allows, with how far it got', async () => {
     const { provider } = registry(() => body('['.repeat(100)));
     const error = await ask(provider).catch((caught: unknown) => caught);

@@ -124,6 +124,29 @@ describe(
       });
     });
 
+    it('puts none of a hostile key in the message but its first characters, made plain', async () => {
+      // The full packument repeats a member whose name is 2 MiB of the
+      // registry's choosing, with an escape sequence and a newline in it. The
+      // reason goes to the person's terminal, and to the policy's report.
+      const key = JSON.stringify(
+        `\u001b]0;pwned\u0007x\ny\u001b[31m${'k'.repeat(2 * 1024 * 1024)}`,
+      );
+      const registry = new NpmRegistryFixture(
+        heavy({
+          modified: hoursAgo(2),
+          fullBody: `{"time":{},${key}:1,${key}:2}`,
+        }),
+      );
+      const error = await lockFor(registry).catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: 'POLICY_INDETERMINATE' });
+      const message = (error as Error).message;
+      expect(message).toMatch(
+        /not captured for minimum release age: The full packument of heavy is not usable: Duplicate object member: xyk{62}… \(2097170 characters\) at byte \d+$/u,
+      );
+      expect(/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(message)).toBe(false);
+      expect(message.length).toBeLessThan(400);
+    });
+
     it('adds nothing to the message when the registry simply does not serve it', async () => {
       const registry = new NpmRegistryFixture(
         heavy({ modified: hoursAgo(2), time: { '1.0.0': OLD } }),
