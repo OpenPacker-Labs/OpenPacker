@@ -14,14 +14,17 @@ import {
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
+  type ProviderAttestation,
   type ProviderExecutable,
   type ProviderInspection,
 } from '@openpacker/adapter-core';
+import type { JsonValue } from '@openpacker/contracts';
 import { AdapterHostError } from '@openpacker/adapter-host';
 import { OpmError } from './types.js';
-import type { OpmManifest, PluginBinding } from './types.js';
+import type { OpmLockfile, OpmManifest, PluginBinding } from './types.js';
 import { MANIFEST_NAME } from './paths.js';
 import { requireAdapterRegistry } from './adapters.js';
+import { stripPurlVersion } from './spec.js';
 
 /**
  * Resolving a PURL against the ecosystem's real registry.
@@ -233,20 +236,67 @@ export interface RegistryOptions {
    * `provider.providerId`. Absent on ephemeral runs.
    */
   pluginBindings?: Readonly<Record<string, PluginBinding>>;
+  /**
+   * What the project configured for this ecosystem's adapter. opm hands it
+   * over untouched; the adapter decodes it and refuses what it does not know.
+   */
+  settings?: { readonly [key: string]: JsonValue };
+  /**
+   * What the lock already records about packages of this ecosystem, by
+   * versionless PURL, so the adapter can notice a signer that changed.
+   */
+  priorAttestations?: { readonly [basePurl: string]: JsonValue };
+}
+
+/**
+ * The signature evidence a lock kept, for the adapter that produced it.
+ *
+ * Keyed by versionless PURL. When one package appears more than once (two
+ * aliases at two versions) the most recently signed record wins: that is the
+ * signer the project last accepted.
+ */
+export function priorAttestationsFromLock(
+  lock: Pick<OpmLockfile, 'packages'> | undefined,
+  ecosystem: string,
+): { readonly [basePurl: string]: JsonValue } | undefined {
+  if (lock === undefined) return undefined;
+  const newest = new Map<string, { signedAt: number; record: JsonValue }>();
+  for (const pkg of Object.values(lock.packages)) {
+    if (pkg.ecosystem !== ecosystem || pkg.attestation === undefined) continue;
+    const key = stripPurlVersion(pkg.purl);
+    const signedAt = Date.parse(pkg.attestation.signedAt);
+    const held = newest.get(key);
+    if (held === undefined || signedAt > held.signedAt)
+      newest.set(key, { signedAt, record: pkg.attestation.record });
+  }
+  if (newest.size === 0) return undefined;
+  return Object.fromEntries(
+    [...newest].map(([key, { record }]) => [key, record]),
+  );
 }
 
 /** Bind a project registry selection to the endpoint the adapter will use. */
 export function registryOptionsForEcosystem(
   ecosystem: string,
-  manifest: Pick<OpmManifest, 'registries' | 'plugins'>,
+  manifest: Pick<OpmManifest, 'registries' | 'plugins' | 'adapterSettings'>,
   requested: RegistryOptions = {},
+  previousLock?: Pick<OpmLockfile, 'packages'>,
 ): RegistryOptions {
-  const withBindings =
-    requested.pluginBindings !== undefined
+  const prior =
+    requested.priorAttestations === undefined
+      ? priorAttestationsFromLock(previousLock, ecosystem)
+      : undefined;
+  const projectSettings = manifest.adapterSettings?.[ecosystem];
+  const withBindings: RegistryOptions = {
+    ...(requested.pluginBindings !== undefined || manifest.plugins === undefined
       ? requested
-      : manifest.plugins === undefined
-        ? requested
-        : { ...requested, pluginBindings: manifest.plugins };
+      : { ...requested, pluginBindings: manifest.plugins }),
+    // The committed manifest is where trust anchors come from. A caller that
+    // passes its own settings (a test, a host) replaces them wholesale.
+    ...(requested.settings === undefined &&
+      projectSettings !== undefined && { settings: projectSettings }),
+    ...(prior !== undefined && { priorAttestations: prior }),
+  };
   if (withBindings.endpoint !== undefined)
     return {
       ...withBindings,
@@ -383,7 +433,14 @@ export async function providerForWithDiscovery(
         ...(!(endpoint === undefined) && { endpoint }),
         ...(!(transport === undefined) && { transport }),
         ...(options.fetch && { fetch: options.fetch }),
+        ...(options.lookup && { lookup: options.lookup }),
         ...(options.now && { now: options.now }),
+        ...(!(options.settings === undefined) && {
+          settings: options.settings,
+        }),
+        ...(!(options.priorAttestations === undefined) && {
+          priorAttestations: options.priorAttestations,
+        }),
       },
       requiredResources,
     );
@@ -621,6 +678,8 @@ export interface RegistryArtifact {
    */
   bins: readonly ProviderExecutable[];
   registryId: string;
+  /** Signature evidence the provider verified for this release, if any. */
+  attestation?: ProviderAttestation;
 }
 
 export async function resolveRegistryArtifact(
@@ -666,6 +725,7 @@ export async function resolveRegistryArtifact(
       bytes: fetched.bytes,
       bins: inspection.executables ?? [],
       registryId,
+      ...attestationOf(inspection),
     };
   }
 
@@ -681,7 +741,16 @@ export async function resolveRegistryArtifact(
     bytes: record.rawBody,
     bins: inspection.executables ?? [],
     registryId,
+    ...attestationOf(inspection),
   };
+}
+
+function attestationOf(
+  inspection: ProviderInspection,
+): { attestation: ProviderAttestation } | Record<string, never> {
+  return inspection.attestation === undefined
+    ? {}
+    : { attestation: inspection.attestation };
 }
 
 /** The delegated provider marker: metadata authority, host-fetched bytes. */
@@ -835,6 +904,8 @@ export interface DeferredRegistryArtifact {
   uri: string;
   bins: readonly ProviderExecutable[];
   registryId: string;
+  /** Signature evidence the provider verified for this release, if any. */
+  attestation?: ProviderAttestation;
   /**
    * The artifact bytes, when learning the digest already downloaded them: a
    * first-party fetch-artifact-record carries the bytes it hashes. Absent
@@ -894,6 +965,7 @@ export async function resolveRegistryArtifactDeferred(
       uri: descriptor.uri,
       bins,
       registryId,
+      ...attestationOf(inspection),
       fetchBytes: async () =>
         (
           await fetchDelegatedArtifactBytes({
@@ -938,6 +1010,7 @@ export async function resolveRegistryArtifactDeferred(
       uri: descriptor.uri,
       bins,
       registryId,
+      ...attestationOf(inspection),
       fetchBytes: async () => {
         const record = await provider.fetchArtifactRecord(inspectedPurl);
         assertRecordMatchesDescriptor(record.rawBody, descriptor, exactPurl);
@@ -961,6 +1034,7 @@ export async function resolveRegistryArtifactDeferred(
     bytes: record.rawBody,
     bins,
     registryId,
+    ...attestationOf(inspection),
     fetchBytes: async () => record.rawBody,
   };
 }

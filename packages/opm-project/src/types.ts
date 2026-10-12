@@ -1,4 +1,8 @@
-import type { LifecycleState, PolicyInput } from '@openpacker/contracts';
+import type {
+  JsonValue,
+  LifecycleState,
+  PolicyInput,
+} from '@openpacker/contracts';
 import type { SourceKind, TrustTier } from '@openpacker/policy';
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
@@ -160,6 +164,43 @@ export interface OpmManifest {
    * Digested when evaluated; no secret expansion in registry URLs.
    */
   policy?: PolicyInput;
+  /**
+   * What the project configured for an ecosystem's adapter, keyed by purl type,
+   * as plain JSON the adapter decodes itself. opm does not interpret it: trust
+   * anchors for signed releases live here, in the committed manifest, because a
+   * lock that anyone can edit must never be the thing that says who to trust.
+   * It is part of the manifest digest, so changing it makes the lock stale.
+   */
+  adapterSettings?: Record<string, { readonly [key: string]: JsonValue }>;
+}
+
+/**
+ * Signature evidence the provider verified for a locked package.
+ *
+ * It is a record of what was checked when the lock was written, not an
+ * authority: a resolution re-derives it from the signed bytes. The lock keeps
+ * it so a later resolution can notice that the signer changed.
+ */
+export interface LockAttestation {
+  /** Which scheme produced it, such as `packslip`. */
+  kind: string;
+  /** Who vouched for the artifact, as accepted-identity policy matches it. */
+  signerIdentity: string;
+  /** The OIDC issuer behind a keyless identity. */
+  issuer?: string;
+  /** When the signature was made. */
+  signedAt: string;
+  /** Whether a transparency log vouches for `signedAt`. */
+  signedAtVerified: boolean;
+  /** Evidence types the provider verified. */
+  evidence: readonly string[];
+  /** What the provider reads back on the next resolution; opaque to opm. */
+  record: { readonly [key: string]: JsonValue };
+  /**
+   * Keys of `record` that advance on their own; a frozen install does not
+   * require them to match a fresh resolution.
+   */
+  advancing?: readonly string[];
 }
 
 export interface LockPackage {
@@ -196,6 +237,8 @@ export interface LockPackage {
    * native lockfile written with an invented value is worse than none.
    */
   nativeIntegrity?: NativeIntegrity;
+  /** Signature evidence the provider verified when the package was locked. */
+  attestation?: LockAttestation;
 }
 
 export interface NativeIntegrity {
