@@ -33,6 +33,7 @@ import { join } from 'node:path';
 import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
 import { darwinProfile } from './handle-libc-profile.js';
 import { listNtDirectory } from './handle-nt-dir.js';
+import { lstatOpened } from './handle-nt-lstat.js';
 import { readReparse } from './handle-nt-reparse.js';
 import {
   StableHandleError,
@@ -270,18 +271,14 @@ export async function lstatChild(
   name: string,
 ): Promise<BigIntStats> {
   assertHandleSegment(name);
-  if (process.platform === 'win32') {
-    const handle = await windowsOpenChild(
-      parent,
-      name,
-      constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
+  if (process.platform === 'win32')
+    return lstatOpened(
+      await windowsOpenChild(
+        parent,
+        name,
+        constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
+      ),
     );
-    try {
-      return await handle.stat({ bigint: true });
-    } finally {
-      await handle.close();
-    }
-  }
   const libc = libcBackend();
   if (libc !== undefined) return libc.lstatChild(parent, name);
   return lstat(posixChild(parent, name), { bigint: true });
