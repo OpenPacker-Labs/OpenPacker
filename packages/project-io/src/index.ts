@@ -225,6 +225,7 @@ export {
   readlinkChild,
   symlinkChild,
   unlinkChild,
+  type LinkExpectation,
   type LinkOutcome,
   type LinkSite,
 } from './handle-link.js';

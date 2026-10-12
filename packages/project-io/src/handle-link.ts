@@ -148,6 +148,16 @@ function checkRequest(site: LinkSite, name: string, target: string): void {
  *
  * Two callers creating the same link at once both succeed. If the two disagree
  * about the target, one gets the conflict.
+ *
+ * Beyond the text of the target, the nearest existing prefix of the place it
+ * names is walked with no-follow opens, and a link on the way refuses the
+ * request, also when the link is already there (`link-prefix.ts`, ADR 0050).
+ *
+ * `site` is the caller's statement of where `directory` sits in the project. It
+ * is what the rules and the walk are applied to, and it is not proved against
+ * the handle: a handle names the directory it opened, whatever the pathname has
+ * become. `placeMemberLink` builds its site from its own walk, so for it the
+ * statement is true by construction; a direct caller vouches for it.
  */
 export async function symlinkChild(
   directory: FileHandle,

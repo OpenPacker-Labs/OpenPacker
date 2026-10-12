@@ -224,6 +224,12 @@ describe('the override cannot weaken a shipped build', () => {
       'windowsReadReparse',
       'openProjectDirectory',
       'libcBackend',
+      'rmdirChild',
+      'unlinkNonDirectory',
+      'unlinkJunction',
+      'linkOnTheWayTo',
+      'stepPlainDirectory',
+      'lstatOpened',
     ])
       expect(Object.keys(entry)).not.toContain(internal);
     for (const exported of [
