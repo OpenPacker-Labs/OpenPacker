@@ -26,6 +26,7 @@ import {
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveTransitive } from './closure-lock.js';
 import { lockEdgeKeys, reachableKeys } from './lock-edges.js';
+import { isExactVersion, registryTargetFor } from './registry-target.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -276,6 +277,8 @@ export async function addPackage(input: {
     purl: stripPurlVersion(parsed.purl),
   };
   if (parsed.version !== undefined) requirement.version = parsed.version;
+  if (parsed.installName !== undefined)
+    requirement.installName = parsed.installName;
   if (parsed.source !== undefined) requirement.source = parsed.source;
   else if (input.source !== undefined) requirement.source = input.source;
 
@@ -529,6 +532,11 @@ function assertLockMatchesManifest(
         'INVALID_LOCK',
         `Lock package ${alias} does not match its manifest source`,
       );
+    if (pkg.installName !== requirement.installName)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} is installed as ${pkg.installName ?? 'its own name'}, and the manifest says ${requirement.installName ?? 'its own name'}`,
+      );
   }
   for (const [alias, pkg] of Object.entries(lock.packages))
     if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
@@ -693,6 +701,7 @@ export async function resolveManifestToLock(input: {
         registryOptions: input.registryOptions,
       }),
     });
+    if (req.installName !== undefined) locked.installName = req.installName;
     lock.packages[alias] = locked;
   }
 
@@ -960,8 +969,26 @@ async function resolveRequirement(input: {
             input.registryOptions ?? {},
           )
         : await input.pool.optionsWithProvider(ecosystem);
+    // A range or a dist-tag in the manifest is resolved here; a version is a
+    // version. (`candidateExact` treats anything but ^ and ~ as a version.)
+    const registryHint =
+      versionHint !== undefined &&
+      versionHint !== '' &&
+      !isExactVersion(ecosystem, versionHint)
+        ? versionHint
+        : undefined;
     const target =
-      candidateExact ??
+      (registryHint === undefined
+        ? candidateExact
+        : await registryTargetFor({
+            ecosystem,
+            purl: requestedPurl,
+            hint: registryHint,
+            options: registryOptions,
+            provider: await providerFor(ecosystem, registryOptions),
+            policy,
+            evaluationTime,
+          })) ??
       (await (async () => {
         // No exact version given, so ask the registry what exists and take the
         // newest. `enumerate` returns oldest-first.

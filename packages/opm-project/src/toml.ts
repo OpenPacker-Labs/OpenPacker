@@ -62,6 +62,8 @@ export function serializeManifest(manifest: OpmManifest): string {
         lines.push(`source = ${tomlString(pkg.source)}`);
       if (pkg.scope !== undefined && pkg.scope !== 'runtime')
         lines.push(`scope = ${tomlString(pkg.scope)}`);
+      if (pkg.installName !== undefined)
+        lines.push(`install_name = ${tomlString(pkg.installName)}`);
       if (pkg.bins !== undefined && pkg.bins.length > 0) {
         // bins expressed as parallel arrays for simple TOML subset
         lines.push(
@@ -289,6 +291,7 @@ export function parseManifest(text: string): OpmManifest {
       bin_names?: string[];
       bin_paths?: string[];
       scope?: RequirementScope;
+      install_name?: string;
     }
   >();
   let registryId: string | undefined;
@@ -600,6 +603,13 @@ export function parseManifest(text: string): OpmManifest {
             `packages.${packageAlias}.scope must be runtime|development|optional|peer|build (line ${i + 1})`,
           );
         scratch.scope = value;
+      } else if (key === 'install_name') {
+        if (typeof value !== 'string' || !INSTALL_NAME.test(value))
+          throw new OpmError(
+            'INVALID_MANIFEST',
+            `packages.${packageAlias}.install_name must be a package name such as string-width-cjs or @scope/name (line ${i + 1})`,
+          );
+        scratch.install_name = value;
       } else if (key === 'alias' && typeof value === 'string') {
         // ignore explicit alias; section key wins
       } else
@@ -630,6 +640,8 @@ export function parseManifest(text: string): OpmManifest {
     if (scratch.version !== undefined) requirement.version = scratch.version;
     if (scratch.source !== undefined) requirement.source = scratch.source;
     if (scratch.scope !== undefined) requirement.scope = scratch.scope;
+    if (scratch.install_name !== undefined)
+      requirement.installName = scratch.install_name;
     if (scratch.bin_names !== undefined || scratch.bin_paths !== undefined) {
       const names = scratch.bin_names ?? [];
       const paths = scratch.bin_paths ?? [];
@@ -743,6 +755,14 @@ export function parseManifest(text: string): OpmManifest {
 
   return manifest;
 }
+
+/**
+ * What a project may install a package under: a package name's shape, and not
+ * `node_modules`. The layout holds it to the stricter rule again, because a
+ * lock can be edited by hand and this is a directory name.
+ */
+const INSTALL_NAME =
+  /^(?!node_modules$)(?:@[A-Za-z0-9._~+-]+\/)?[A-Za-z0-9_~+][A-Za-z0-9._~+-]*$/u;
 
 /** Every field accepted under [policy], with the type it must have. */
 const POLICY_FIELD_TYPES: Readonly<
