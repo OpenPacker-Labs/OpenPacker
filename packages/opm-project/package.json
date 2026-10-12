@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@openpacker/adapters-default": "0.1.0",
+    "@openpacker/packslip-testkit": "0.1.0",
     "@types/node": "24.2.1"
   }
 }

@@ -4,6 +4,7 @@ export type {
   CatalogPackage,
   InstalledPackageRecord,
   LockPackage,
+  LockAttestation,
   OpmCatalog,
   OpmLockfile,
   NativeIntegrity,
@@ -25,6 +26,7 @@ export {
   emptyLockfile,
   parseLockfile,
   readLockfile,
+  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
@@ -173,6 +175,7 @@ export {
   REGISTRY_ECOSYSTEMS,
   allowedOriginsFor,
   listRegistryVersions,
+  priorAttestationsFromLock,
   providerFor,
   registryDefinitionFor,
   registryEndpoint,
@@ -256,10 +259,12 @@ export { providerForWithDiscovery, registryEcosystems } from './registry.js';
 
 export {
   assertSupplyChainAllowed,
+  applyAttestation,
   captureFactsFromCatalog,
   captureFactsFromInspection,
   captureFactsFromSourceUri,
   defaultSupplyChainPolicyInput,
+  lockAttestationFrom,
   lockPackageSupplyChainFields,
   priorTrustFromLock,
   projectPolicyDocument,

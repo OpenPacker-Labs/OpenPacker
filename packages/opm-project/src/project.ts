@@ -28,6 +28,7 @@ import { resolveGraph, solveGraph } from './resolve.js';
 import {
   emptyLockfile,
   readLockfile,
+  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
@@ -78,9 +79,11 @@ import {
   stripPurlVersion,
 } from './spec.js';
 import {
+  applyAttestation,
   assertSupplyChainAllowed,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
+  lockAttestationFrom,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
   type PolicyFacts,
@@ -288,6 +291,7 @@ export async function addPackage(input: {
     ...(input.catalogPaths !== undefined && {
       catalogPaths: input.catalogPaths,
     }),
+    previousLock: await readPreviousLock(paths.lock),
   });
   await writeLockfile(paths.lock, lock);
 
@@ -389,6 +393,7 @@ export async function syncProject(input: {
     ...(input.catalogPaths !== undefined && {
       catalogPaths: input.catalogPaths,
     }),
+    previousLock: await readPreviousLock(paths.lock),
   });
   await writeLockfile(paths.lock, lock);
 
@@ -465,10 +470,11 @@ export async function installProject(input: {
     root: input.root,
     manifest,
     offline,
+    previousLock: lock,
   });
   if (
-    canonicalize(JSON.parse(serializeLockfile(lock))) !==
-    canonicalize(JSON.parse(serializeLockfile(verifiedLock)))
+    canonicalize(reproducibleLockForm(lock, verifiedLock)) !==
+    canonicalize(reproducibleLockForm(verifiedLock, verifiedLock))
   )
     throw new OpmError(
       'INVALID_LOCK',
@@ -570,6 +576,26 @@ function manifestDigest(manifest: OpmManifest): string {
   return digestOf(new TextEncoder().encode(serializeManifest(manifest)));
 }
 
+/**
+ * The lock about to be replaced, for the signature evidence it kept.
+ *
+ * A lock that is missing or unreadable is the same as no history: the lock is
+ * a file anyone with write access can edit or delete, so it is never the thing
+ * that decides who to trust (the manifest is), and a resolve that is about to
+ * rewrite it must not be blocked by what it held.
+ */
+async function readPreviousLock(
+  path: string,
+): Promise<OpmLockfile | undefined> {
+  try {
+    return await readLockfile(path);
+  } catch {
+    // Damaged, oversized, a symlink, unreadable: each is "no history". The
+    // lock is about to be rewritten, and it was never allowed to block that.
+    return undefined;
+  }
+}
+
 function normalizedRequirementSource(source: string, root: string): string {
   const resolved = resolveSource(source, root);
   return resolved.startsWith('/') || /^[A-Za-z]:/u.test(resolved)
@@ -657,6 +683,12 @@ export async function resolveManifestToLock(input: {
   catalogPaths?: readonly string[];
   /** Transport / endpoint overrides for the transitive walk (tests, hosts). */
   registryOptions?: RegistryOptions;
+  /**
+   * The lock this resolution replaces. Its attestations are how a provider
+   * notices that a package's signer changed since it was last accepted; it is
+   * evidence for drift detection, never an authority.
+   */
+  previousLock?: OpmLockfile | undefined;
 }): Promise<OpmLockfile> {
   const paths = projectPaths(input.root);
   const catalogPaths = [
@@ -684,6 +716,7 @@ export async function resolveManifestToLock(input: {
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
+      previousLock: input.previousLock,
     });
     lock.packages[alias] = locked;
   }
@@ -703,6 +736,7 @@ export async function resolveManifestToLock(input: {
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
+      previousLock: input.previousLock,
     });
     for (const [alias, pkg] of Object.entries(transitive.packages))
       if (!lock.packages[alias]) lock.packages[alias] = pkg;
@@ -756,6 +790,7 @@ async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  previousLock?: OpmLockfile | undefined;
 }): Promise<{
   packages: Record<string, LockPackage>;
   dependencies: Record<string, string[]>;
@@ -775,6 +810,7 @@ async function resolveTransitive(input: {
         ecosystem,
         input.manifest,
         input.registryOptions ?? {},
+        input.previousLock,
       );
     const graph = await resolveGraph({
       roots: resolvable.map((pkg) => ({
@@ -860,6 +896,8 @@ async function resolveTransitive(input: {
         },
       );
       facts.registryId = artifact.registryId;
+      if (artifact.attestation !== undefined)
+        applyAttestation(facts, artifact.attestation);
       await assertSupplyChainAllowed(policy, facts);
 
       const transitiveIntegrity = nativeIntegrityOf(
@@ -883,6 +921,9 @@ async function resolveTransitive(input: {
           nativeIntegrity: transitiveIntegrity,
         }),
         ...lockPackageSupplyChainFields(facts),
+        ...(artifact.attestation !== undefined && {
+          attestation: lockAttestationFrom(artifact.attestation),
+        }),
       };
       bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
       out[alias] = locked;
@@ -968,6 +1009,7 @@ async function resolveRequirement(input: {
   >;
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  previousLock?: OpmLockfile | undefined;
 }): Promise<LockPackage> {
   const requestedPurl = canonicalCatalogPurl(input.req.purl, 'manifest');
   const ecosystem = ecosystemFromPurl(requestedPurl);
@@ -1170,6 +1212,7 @@ async function resolveRequirement(input: {
       ecosystem,
       input.manifest,
       input.registryOptions ?? {},
+      input.previousLock,
     );
     const target =
       candidateExact ??
@@ -1244,6 +1287,10 @@ async function resolveRequirement(input: {
           }),
         );
       }
+      // What the artifact resolution verified is authoritative over a second
+      // inspection, so the policy never sees less than was checked.
+      if (artifact.attestation !== undefined)
+        applyAttestation(facts, artifact.attestation);
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
       verifiedFacts = facts;
@@ -1269,6 +1316,8 @@ async function resolveRequirement(input: {
         },
       );
       facts.registryId = artifact.registryId;
+      if (artifact.attestation !== undefined)
+        applyAttestation(facts, artifact.attestation);
       await assertSupplyChainAllowed(policy, facts);
       supplyFields = lockPackageSupplyChainFields(facts);
       verifiedFacts = facts;
@@ -1290,6 +1339,9 @@ async function resolveRequirement(input: {
       ecosystem,
       ...(!(nativeIntegrity === undefined) && { nativeIntegrity }),
       ...supplyFields,
+      ...(artifact.attestation !== undefined && {
+        attestation: lockAttestationFrom(artifact.attestation),
+      }),
     };
     bindVerifiedArtifactBytes(result, bytes, 'registry', verifiedFacts);
     return result;

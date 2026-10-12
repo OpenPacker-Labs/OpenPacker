@@ -135,6 +135,7 @@ export async function updateProject(input: {
       manifest,
       offline,
       latest,
+      previousLock: existing,
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
@@ -190,6 +191,7 @@ export async function updateProject(input: {
     ...(!(input.registryOptions === undefined) && {
       registryOptions: input.registryOptions,
     }),
+    previousLock: existing,
   });
   lock.manifestDigest = manifestDigest(committed);
   await assertLockStillPresent(paths.lock, startedWithLock);
@@ -312,6 +314,7 @@ async function newestEligibleVersion(input: {
   offline: boolean;
   latest: boolean;
   registryOptions?: RegistryOptions;
+  previousLock?: OpmLockfile | undefined;
 }): Promise<string | undefined> {
   const ecosystem = ecosystemFromPurl(input.req.purl);
   const codec = codecFor(ecosystem);
@@ -328,6 +331,7 @@ async function newestEligibleVersion(input: {
         ecosystem,
         input.manifest,
         input.registryOptions ?? {},
+        input.previousLock,
       );
       const listed = await listRegistryVersions(
         ecosystem,
