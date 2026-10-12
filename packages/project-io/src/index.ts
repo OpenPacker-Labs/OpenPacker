@@ -360,12 +360,8 @@ export {
   removeTree,
   supportsStableTreeLayout,
   type CollectOptions,
-  type CollectTreeOptions,
-  type CollectedLink,
-  type CollectedTree,
   type MaterialiseOptions,
   type MaterialiseResult,
-  type RecordedLinks,
 } from './layout.js';
 
 export type {
