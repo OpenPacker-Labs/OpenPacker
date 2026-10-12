@@ -264,6 +264,35 @@ describe('installFrozen refuses, before it fetches or writes anything', () => {
   });
 });
 
+describe('the case rule is judged on what the install selects, not on the lock', () => {
+  const caseful = () =>
+    standard((x) => {
+      x.place(
+        'node_modules/React',
+        { name: 'react', version: '18.0.0' },
+        { name: 'react', dev: true },
+      );
+      x.place('node_modules/react', { name: 'react', version: '18.0.0' });
+    });
+
+  it('refuses the pair when both are installed', async () => {
+    const w = await caseful();
+    await w.write();
+    await expect(w.install()).rejects.toMatchObject({
+      code: 'INVALID_LOCK',
+      message: expect.stringMatching(/differs only by case from React/u),
+    });
+  });
+
+  it('installs the other when --omit dev leaves one of them out', async () => {
+    const w = await caseful();
+    await w.write();
+    await w.install({ omit: ['dev'] });
+    expect(await w.list('node_modules')).toContain('react');
+    expect(await w.list('node_modules')).not.toContain('React');
+  });
+});
+
 describe('a project without a workspace', () => {
   it('is installed as it always was, and refuses a workspace flag', async () => {
     const w = await setup();

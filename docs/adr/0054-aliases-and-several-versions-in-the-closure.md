@@ -289,9 +289,13 @@ Approaches compared.
     `string-width-CJS` collides, a package beside its own alias does not. A
     workspace member's link is an entry of its directory like a package:
     `@fx/Lib` linked beside a registry `@fx/lib` is refused, the link named by
-    its target. A lock with such a pair installs on Linux and is refused on
-    every platform, so that what a lock lays out does not depend on the machine
-    it is installed on.
+    its target. A lock with such a pair installs on Linux with npm, and it is
+    refused wherever the pair is selected: the rule is judged on the packages
+    the install selects and not on the lock, so a lock with `React` (dev) and
+    `react` is refused by `opm ci` and installed by `opm ci --omit dev`, and a
+    platform that leaves one of the two out installs the other. The question is
+    asked when the lock is read (ADR 0046 §6), before anything is fetched or
+    removed.
 18. **Only `opm ci` installs a workspace.** `opm add`, `sync` and `update`
     resolve the project's `opm.toml` and do not read members (ADR 0049's model
     is used by `opm ci`, `opm run` and `opm exec`), so the resolver of this
