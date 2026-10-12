@@ -20,6 +20,7 @@ import {
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
 import { formatFailure, parseFailure, report } from './error-report.js';
+import { out, outRaw } from '@openpacker/canonical';
 
 export const EXIT_CODES = {
   success: 0,
@@ -45,7 +46,7 @@ export async function runOpmx(
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
-      io.stdout.write(help());
+      out(io, help());
       return argv.length === 0 ? EXIT_CODES.usage : EXIT_CODES.success;
     }
 
@@ -395,7 +396,7 @@ async function spawnProcess(
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
     });
-    if (outcome.stdout) io.stdout.write(outcome.stdout);
+    if (outcome.stdout) outRaw(io, outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
     if (
       outcome.exitCode !== 0 &&

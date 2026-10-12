@@ -6,6 +6,7 @@ import {
   readManifestFile,
   requireOpmRoot,
 } from '@openpacker/opm-project';
+import { out } from '@openpacker/canonical';
 
 export interface CommandArgs {
   positionals: string[];
@@ -79,7 +80,8 @@ export async function runPublishCommand(
     'package';
   const version =
     result.request.location.annotations?.['openpacker.package.version'] ?? '';
-  io.stdout.write(
+  out(
+    io,
     `Published ${name}${version ? `@${version}` : ''} to ${result.registry}\n`,
   );
   return 0;

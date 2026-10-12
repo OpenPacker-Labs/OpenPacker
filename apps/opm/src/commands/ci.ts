@@ -5,7 +5,7 @@ import {
   type FrozenInstallResult,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
-import { plainLine } from '@openpacker/canonical';
+import { out, plainLine } from '@openpacker/canonical';
 import { report } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
@@ -92,21 +92,23 @@ export async function runCiCommand(
   });
 
   const noScripts = result.installScripts.length;
-  io.stdout.write(
+  out(
+    io,
     `Installed ${result.installed} package${result.installed === 1 ? '' : 's'} into ${resolve(root, 'node_modules')} ` +
       `(${result.fromStore} from the store, ${result.fetched} fetched, ${megabytes(result.fetchedBytes)}) ` +
       `in ${(result.milliseconds.total / 1000).toFixed(1)} s; ` +
       `${noScripts} ${noScripts === 1 ? 'declares an install script' : 'declare install scripts'}, which opm does not run\n`,
   );
   const clause = leftOut(result);
-  if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
-    io.stdout.write(
+    out(
+      io,
       `  install script not run: ${plainLine(item.name)}@${plainLine(item.version)}\n`,
     );
   if (noScripts > shown.length)
-    io.stdout.write(`  ... and ${noScripts - shown.length} more\n`);
+    out(io, `  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
     io.stderr.write(
       report(

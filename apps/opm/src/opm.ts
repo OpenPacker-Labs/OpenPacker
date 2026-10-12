@@ -2,7 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
-import { plainLine } from '@openpacker/canonical';
+import { out, outJson, outRaw, plainLine } from '@openpacker/canonical';
 import {
   registerInstalledPlugins,
   verifyPluginBindings,
@@ -198,7 +198,7 @@ export async function runOpm(
       args.options.has('help') ||
       args.command === ''
     ) {
-      io.stdout.write(help());
+      out(io, help());
       return EXIT_CODES.success;
     }
     if (!COMMANDS.has(args.command)) {
@@ -214,12 +214,13 @@ export async function runOpm(
           ...(name !== undefined && { name }),
           force: args.options.has('force'),
         });
-        io.stdout.write(
+        out(
+          io,
           result.created
             ? `Initialized opm project at ${result.manifestPath}\n`
             : `opm project already exists at ${result.manifestPath}\n`,
         );
-        io.stdout.write(`Next: opm add <pkg> --ecosystem npm && opm install\n`);
+        out(io, `Next: opm add <pkg> --ecosystem npm && opm install\n`);
         return EXIT_CODES.success;
       }
       case 'import': {
@@ -230,11 +231,10 @@ export async function runOpm(
           root,
           force: args.options.has('force'),
         });
-        io.stdout.write(
-          importHeading(result.imported.length, result.manifestPath),
-        );
-        for (const item of result.imported) io.stdout.write(importLine(item));
-        io.stdout.write(
+        out(io, importHeading(result.imported.length, result.manifestPath));
+        for (const item of result.imported) out(io, importLine(item));
+        out(
+          io,
           'opm.toml is authoritative; later sync does not re-read native manifests.\n',
         );
         return EXIT_CODES.success;
@@ -283,11 +283,12 @@ export async function runOpm(
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
-        io.stdout.write(
+        out(
+          io,
           `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}\n`,
         );
         writeNativeProjection(result.native, io);
-        io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
+        out(io, `Installed into ${projectPaths(root).store}\n`);
         return EXIT_CODES.success;
       }
       case 'remove': {
@@ -302,7 +303,7 @@ export async function runOpm(
           alias,
           ...(!(offline === undefined) && { offline }),
         });
-        io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
+        out(io, `Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
       case 'ci': {
@@ -323,11 +324,13 @@ export async function runOpm(
           ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.state.packages).length;
-        io.stdout.write(
+        out(
+          io,
           `Installed ${count} package(s) into ${projectPaths(root).opmDir}\n`,
         );
         writeNativeProjection(result.native, io);
-        io.stdout.write(
+        out(
+          io,
           `Bins: ${projectPaths(root).bin}  (export PATH="$PWD/.opm/bin:$PATH")\n`,
         );
         return EXIT_CODES.success;
@@ -340,7 +343,8 @@ export async function runOpm(
           root,
           ...(alias !== undefined && { alias }),
         });
-        io.stdout.write(
+        out(
+          io,
           alias
             ? `Uninstalled ${alias} (left in manifest/lock unless you opm remove)\n`
             : `Uninstalled all project packages from .opm/\n`,
@@ -356,9 +360,7 @@ export async function runOpm(
           ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.lock.packages).length;
-        io.stdout.write(
-          `Synced ${count} package(s); lock and .opm/ store updated\n`,
-        );
+        out(io, `Synced ${count} package(s); lock and .opm/ store updated\n`);
         writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
       }
@@ -372,7 +374,8 @@ export async function runOpm(
           latest: args.options.has('latest'),
           ...(!(offline === undefined) && { offline }),
         });
-        io.stdout.write(
+        out(
+          io,
           result.updated.length === 0
             ? 'Already up to date\n'
             : `Updated ${result.updated.length} package(s): ${result.updated.join(', ')}\n`,
@@ -396,17 +399,17 @@ export async function runOpm(
         const root = await requireOpmRoot(cwd);
         const rows = await listInstalled(root);
         if (rows.length === 0) {
-          io.stdout.write('(no packages)\n');
+          out(io, '(no packages)\n');
           return EXIT_CODES.success;
         }
-        for (const row of rows) io.stdout.write(listLine(row));
+        for (const row of rows) out(io, listLine(row));
         return EXIT_CODES.success;
       }
       case 'why': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
         if (!alias) throw usage('opm why requires a package alias');
-        io.stdout.write(`${await whyPackage(root, alias)}\n`);
+        out(io, `${await whyPackage(root, alias)}\n`);
         return EXIT_CODES.success;
       }
       // Browsing does not need a project: looking up what a registry has is
@@ -419,10 +422,10 @@ export async function runOpm(
           offline: args.options.has('offline'),
         });
         if (found.length === 0) {
-          io.stdout.write('(no matches)\n');
+          out(io, '(no matches)\n');
           return EXIT_CODES.success;
         }
-        for (const item of found) io.stdout.write(`${item.canonicalPurl}\n`);
+        for (const item of found) out(io, `${item.canonicalPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'versions': {
@@ -436,12 +439,12 @@ export async function runOpm(
           { offline: args.options.has('offline') },
         );
         if (versions.length === 0) {
-          io.stdout.write('(no published versions)\n');
+          out(io, '(no published versions)\n');
           return EXIT_CODES.success;
         }
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
-        for (const version of versions) io.stdout.write(`${version}\n`);
+        for (const version of versions) out(io, `${version}\n`);
         return EXIT_CODES.success;
       }
       case 'resolve': {
@@ -477,11 +480,12 @@ export async function runOpm(
           graph,
           rootRequirements: [{ purl: target }],
         });
-        io.stdout.write(
+        out(
+          io,
           `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
         );
         for (const instance of solved.selected)
-          io.stdout.write(`  ${instance.identity.exactPurl}\n`);
+          out(io, `  ${instance.identity.exactPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'info': {
@@ -491,7 +495,8 @@ export async function runOpm(
         const artifact = await resolveRegistryArtifact(ecosystem, target, {
           offline: args.options.has('offline'),
         });
-        io.stdout.write(
+        out(
+          io,
           `${artifact.exactPurl}\n` +
             `  version   ${artifact.version}\n` +
             `  digest    ${artifact.digest}\n` +
@@ -529,12 +534,13 @@ export async function runOpm(
         const destination = option(args, 'output');
         if (destination) {
           await writeFile(destination, built.bytes);
-          io.stdout.write(`${destination}\n`);
-          io.stdout.write(
+          out(io, `${destination}\n`);
+          out(
+            io,
             `  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
           );
         } else {
-          io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
+          outJson(io, new TextDecoder().decode(built.bytes));
         }
         for (const loss of built.manifest.semanticLoss ?? [])
           io.stderr.write(
@@ -605,11 +611,10 @@ export async function runOpm(
         if (!result.performed) {
           const commands =
             result.commands ?? (result.command ? [result.command] : []);
-          if (commands.length === 0) io.stdout.write(`standard ${ecosystem}\n`);
-          for (const command of commands)
-            io.stdout.write(`${command.join(' ')}\n`);
+          if (commands.length === 0) out(io, `standard ${ecosystem}\n`);
+          for (const command of commands) out(io, `${command.join(' ')}\n`);
           for (const command of result.cleanupCommands ?? [])
-            io.stdout.write(`cleanup: ${command.join(' ')}\n`);
+            out(io, `cleanup: ${command.join(' ')}\n`);
           return EXIT_CODES.success;
         }
         if (result.exitCode !== 0)
@@ -618,8 +623,9 @@ export async function runOpm(
             result.stderr || `Pack exited ${result.exitCode}`,
           );
         for (const artifact of result.artifacts) {
-          io.stdout.write(`${artifact.path}\n`);
-          io.stdout.write(
+          out(io, `${artifact.path}\n`);
+          out(
+            io,
             `  ${artifact.digest}  ${artifact.size} bytes  ${artifact.nativeRole}\n`,
           );
         }
@@ -649,13 +655,14 @@ export async function runOpm(
         const state = await readEnvironmentState(root);
         const generations = await listGenerations(root);
         if (generations.length === 0) {
-          io.stdout.write('No generations yet. Run: opm install\n');
+          out(io, 'No generations yet. Run: opm install\n');
           return EXIT_CODES.success;
         }
         for (const generation of generations) {
           const current =
             generation.generationDigest === state?.currentGenerationDigest;
-          io.stdout.write(
+          out(
+            io,
             `${current ? '*' : ' '} ${generation.sequence}\t${generation.createdAt}\t${generation.members.length} package(s)\n`,
           );
         }
@@ -667,7 +674,7 @@ export async function runOpm(
         const target = to
           ? await switchGeneration({ root, target: Number(to) })
           : await rollbackToPrevious(root);
-        io.stdout.write(`Rolled back to generation ${target.sequence}\n`);
+        out(io, `Rolled back to generation ${target.sequence}\n`);
         return EXIT_CODES.success;
       }
       case 'gc': {
@@ -678,17 +685,19 @@ export async function runOpm(
             dryRun: args.options.has('dry-run'),
           });
           if (result.root === undefined) {
-            io.stdout.write(
+            out(
+              io,
               'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
             );
             return EXIT_CODES.success;
           }
           const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-          io.stdout.write(
+          out(
+            io,
             `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
               `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
           );
-          for (const path of result.removed) io.stdout.write(`  ${path}\n`);
+          for (const path of result.removed) out(io, `  ${path}\n`);
           return EXIT_CODES.success;
         }
         const root = await requireOpmRoot(cwd);
@@ -699,22 +708,23 @@ export async function runOpm(
           dryRun: args.options.has('dry-run'),
         });
         const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-        io.stdout.write(
+        out(
+          io,
           `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
         );
-        for (const path of result.removed) io.stdout.write(`  ${path}\n`);
+        for (const path of result.removed) out(io, `  ${path}\n`);
         return EXIT_CODES.success;
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
         if (args.options.has('json')) {
           const environment = await environmentVariables({ root });
-          io.stdout.write(`${JSON.stringify(environment, null, 2)}\n`);
+          outJson(io, JSON.stringify(environment, null, 2));
           return EXIT_CODES.success;
         }
         // Printing assignments keeps this composable: `eval "$(opm shell)"`
         // works without opm needing to spawn or manage a shell.
-        io.stdout.write(await environmentScript({ root }));
+        out(io, await environmentScript({ root }));
         return EXIT_CODES.success;
       }
       default:
@@ -988,12 +998,14 @@ async function runPluginCommand(
       ...(!(offline === undefined) && { offline }),
       ...(!(options.fetch === undefined) && { fetch: options.fetch }),
     });
-    io.stdout.write(
+    out(
+      io,
       installed.alreadyInstalled
         ? `Plugin ${installed.name} is already installed at ${installed.exactPurl}\n`
         : `Installed plugin ${installed.exactPurl}\n`,
     );
-    io.stdout.write(
+    out(
+      io,
       `  id:     ${installed.id}\n` +
         `  digest: ${installed.storeDigest}\n` +
         `  store:  ${installed.storePath}\n`,
@@ -1004,18 +1016,19 @@ async function runPluginCommand(
     const name = args.positionals[1];
     if (!name) throw usage('opm plugin remove requires a plugin name');
     const removed = await removePlugin(name);
-    io.stdout.write(`Removed plugin ${removed.name} (${removed.exactPurl})\n`);
+    out(io, `Removed plugin ${removed.name} (${removed.exactPurl})\n`);
     return EXIT_CODES.success;
   }
   if (sub === 'list') {
     const plugins = await listPlugins();
     if (plugins.length === 0) {
-      io.stdout.write('(no plugins installed)\n');
+      out(io, '(no plugins installed)\n');
       return EXIT_CODES.success;
     }
     for (const plugin of plugins) {
       const missing = plugin.present ? '' : '  (store entry missing)';
-      io.stdout.write(
+      out(
+        io,
         `${plugin.name}\t${plugin.exactPurl}\t${plugin.storeDigest}\t${plugin.installedAt}${missing}\n`,
       );
     }
@@ -1043,7 +1056,7 @@ async function runSystemCommand(
       const status = entry.availability.available
         ? `available${entry.availability.tool?.version ? ` (${entry.availability.tool.name} ${entry.availability.tool.version})` : ''}`
         : `unavailable: ${entry.availability.reason ?? 'unknown'}`;
-      io.stdout.write(`${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
+      out(io, `${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
     }
     return EXIT_CODES.success;
   }
@@ -1081,8 +1094,7 @@ function writeNativeProjection(
 ): void {
   if (!native) return;
   for (const projection of native.projections) {
-    for (const path of projection.written)
-      io.stdout.write(`  updated ${path}\n`);
+    for (const path of projection.written) out(io, `  updated ${path}\n`);
     for (const entry of projection.skipped ?? [])
       io.stderr.write(
         report(
@@ -1142,7 +1154,7 @@ function writeHostInstallResult(
   io: CliIo,
 ): number {
   const { plan, outcome } = result;
-  io.stdout.write(`${plan.command.join(' ')}\n`);
+  out(io, `${plan.command.join(' ')}\n`);
   for (const loss of plan.semanticLoss)
     io.stderr.write(
       report(
@@ -1155,13 +1167,14 @@ function writeHostInstallResult(
       'opm: host install needs elevation; pass --allow-elevation to consent\n',
     );
   if (!outcome) return EXIT_CODES.success;
-  if (outcome.stdout) io.stdout.write(outcome.stdout);
+  if (outcome.stdout) outRaw(io, outcome.stdout);
   if (outcome.stderr) io.stderr.write(outcome.stderr);
   if (outcome.exitCode !== 0) {
     io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
     return EXIT_CODES.internal;
   }
-  io.stdout.write(
+  out(
+    io,
     `Host-installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
   );
   return EXIT_CODES.success;

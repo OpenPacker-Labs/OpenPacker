@@ -143,14 +143,16 @@ function oneLine(command: string, plainLine: (text: string) => string): string {
 }
 
 async function listScripts(pkg: PackageFile, io: ChildIo): Promise<number> {
-  const plainLine = await plain();
+  // Through a dynamic import, like `plain`, so that starting a script loads
+  // nothing but Node and this directory.
+  const { out, plainLine } = await import('@openpacker/canonical');
   let listed = 0;
   for (const [name, command] of pkg.scripts)
     if (typeof command === 'string') {
-      io.stdout.write(`${plainLine(name)}\t${oneLine(command, plainLine)}\n`);
+      out(io, `${plainLine(name)}\t${oneLine(command, plainLine)}\n`);
       listed += 1;
     }
-  if (listed === 0) io.stdout.write('(no scripts)\n');
+  if (listed === 0) out(io, '(no scripts)\n');
   return 0;
 }
 

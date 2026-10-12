@@ -33,7 +33,40 @@ export interface Use {
   routed: boolean;
 }
 
-const ROUTES = new Set(['report', 'formatFailure']);
+/** What distinguishes the stream a scan is about. */
+export interface StreamKind {
+  /** The property the stream is reached by. */
+  readonly name: 'stderr' | 'stdout';
+  /** Its file descriptor, as written. */
+  readonly descriptor: string;
+  readonly paths: ReadonlySet<string>;
+  /** The imported writers whose call, as the whole argument of a write, is the allowed form. */
+  readonly routes: ReadonlySet<string>;
+  /** Functions whose every call is reported, so that the list of uses names them. */
+  readonly reportedCalls: ReadonlySet<string>;
+}
+
+export const STDERR: StreamKind = {
+  name: 'stderr',
+  descriptor: '2',
+  paths: new Set(['/dev/stderr', '/dev/fd/2', '/proc/self/fd/2']),
+  routes: new Set(['report', 'formatFailure']),
+  reportedCalls: new Set(),
+};
+
+/**
+ * Standard output has no write that is allowed: the writers (`out`, `outJson`)
+ * take the command's `io` and never name the stream, so every reference to it is
+ * a use. `outRaw`, which passes a child's own output through, is named by every
+ * call, so that the test lists each with its reason.
+ */
+export const STDOUT: StreamKind = {
+  name: 'stdout',
+  descriptor: '1',
+  paths: new Set(['/dev/stdout', '/dev/fd/1', '/proc/self/fd/1']),
+  routes: new Set(),
+  reportedCalls: new Set(['outRaw']),
+};
 /** The objects a stream is reached through. */
 const STREAM_HOLDERS = /(^|\.)(io|process|host|streams?)$/u;
 /** `fs` calls that take a descriptor or a path to write to. */
@@ -48,7 +81,6 @@ const DESCRIPTOR_CALLS = new Set([
   'openSync',
   'open',
 ]);
-const STDERR_PATHS = new Set(['/dev/stderr', '/dev/fd/2', '/proc/self/fd/2']);
 
 /** Strips the wrappers that do not change what a value is. */
 function unwrap(node: ts.Expression): ts.Expression {
@@ -90,6 +122,18 @@ function isMemberName(node: ts.Identifier): boolean {
 }
 
 export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
+  return findStreamUses(text, file, STDERR);
+}
+
+export function findStdoutUses(text: string, file = 'probe.ts'): Use[] {
+  return findStreamUses(text, file, STDOUT);
+}
+
+export function findStreamUses(
+  text: string,
+  file: string,
+  kind: StreamKind,
+): Use[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const found: Use[] = [];
   const oneLine = (node: ts.Node): string =>
@@ -111,7 +155,7 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
         ts.isVariableDeclaration(node)) &&
       node.name !== undefined &&
       ts.isIdentifier(node.name) &&
-      ROUTES.has(node.name.text) &&
+      kind.routes.has(node.name.text) &&
       !ts.isSourceFile(node)
     )
       declaredHere.add(node.name.text);
@@ -123,7 +167,7 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
     return (
       ts.isCallExpression(target) &&
       ts.isIdentifier(target.expression) &&
-      ROUTES.has(target.expression.text) &&
+      kind.routes.has(target.expression.text) &&
       !declaredHere.has(target.expression.text)
     );
   };
@@ -136,7 +180,10 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
     if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'write')
       return undefined;
     const stream = unwrap(callee.expression);
-    if (!ts.isPropertyAccessExpression(stream) || stream.name.text !== 'stderr')
+    if (
+      !ts.isPropertyAccessExpression(stream) ||
+      stream.name.text !== kind.name
+    )
       return undefined;
     return {
       stream,
@@ -166,7 +213,10 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
           : ts.isIdentifier(callee)
             ? callee.text
             : undefined;
-        if (name === 'emitWarning') note('emitWarning', node);
+        if (name === 'emitWarning' && kind.name === 'stderr')
+          note('emitWarning', node);
+        if (name !== undefined && kind.reportedCalls.has(name))
+          note(name, node);
         const first = node.arguments[0];
         if (
           name !== undefined &&
@@ -174,7 +224,7 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
           first !== undefined
         ) {
           const shown = first.getText(source);
-          if (shown === '2' || shown.endsWith('.fd'))
+          if (shown === kind.descriptor || shown.endsWith('.fd'))
             note(`${name}(descriptor 2)`, node);
         }
       }
@@ -185,21 +235,22 @@ export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
         note('new Console', node);
     }
     if (ts.isPropertyAccessExpression(node) && !consumed.has(node)) {
-      if (node.name.text === 'stderr' && !inTypePosition(node))
-        note('.stderr', node);
+      if (node.name.text === kind.name && !inTypePosition(node))
+        note(`.${kind.name}`, node);
     }
     if (ts.isElementAccessExpression(node) && !inTypePosition(node)) {
       const key = node.argumentExpression;
       const holder = oneLine(node.expression);
       if (ts.isStringLiteralLike(key)) {
-        if (key.text === 'stderr') note("['stderr']", node);
+        if (key.text === kind.name) note(`['${kind.name}']`, node);
       } else if (!ts.isNumericLiteral(key) && STREAM_HOLDERS.test(holder))
         note(`${holder}[computed]`, node);
     }
-    if (ts.isStringLiteralLike(node) && STDERR_PATHS.has(node.text))
+    if (ts.isStringLiteralLike(node) && kind.paths.has(node.text))
       note(`path ${node.text}`, node);
     if (ts.isIdentifier(node) && !isMemberName(node) && !inTypePosition(node)) {
-      if (/^stderr$/iu.test(node.text)) note('stderr binding', node);
+      if (new RegExp(`^${kind.name}$`, 'iu').test(node.text))
+        note(`${kind.name} binding`, node);
       else if (node.text === 'console') note('console', node);
       else if (node.text === 'Console') note('Console', node);
     }

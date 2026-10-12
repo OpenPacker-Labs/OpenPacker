@@ -1,4 +1,4 @@
-import { plainLine, plainText } from '@openpacker/canonical';
+import { plainLine, plainText, report } from '@openpacker/canonical';
 import { scrub } from './scrub.js';
 
 export { scrub };
@@ -36,31 +36,27 @@ export { scrub };
  * client, the materializer, npm and the policy, and `plainLine`, at the line
  * that quotes it, for what `opm list`, `why`, `import --native`, `run`, `exec`
  * and a successful `opm ci` print and for the lost meaning `manifest`, `pack`
- * and `ci` report. Nothing checks stdout: a new line there that repeats a
- * value from a repository must be made plain by whoever writes it. Text that
- * does not come through one of those (a plugin's, a path project-io refuses, a
- * packer's file name, a child's own stderr) reaches this writer unflattened,
- * safe from escapes and not from line feeds. It also reads an unterminated
- * `ESC ]` or `ESC P` as running to the end of the message, as a terminal does,
- * so a field that ends in one drops the entries after it (ADR 0044). The
- * `openpacker` command line (`apps/openpacker-cli`) has no writer and is not
- * covered.
+ * and `ci` report. Standard output is held the same way: `out`, `outJson` and
+ * `outRaw` (`@openpacker/canonical`) are its only writers, and
+ * `stdout-writers.test.ts` fails on any other reference to it. `out` removes
+ * escape sequences and control characters and keeps line feeds, as this writer
+ * does, so a value that carries a line feed still starts a line of its own:
+ * whoever quotes a value from a repository or a registry makes it one line
+ * where it is quoted. Text that does not come through one of those (a plugin's,
+ * a path project-io refuses, a packer's file name, a child's own stderr)
+ * reaches this writer unflattened, safe from escapes and not from line feeds.
+ * It also reads an unterminated `ESC ]` or `ESC P` as running to the end of the
+ * message, as a terminal does, so a field that ends in one drops the entries
+ * after it (ADR 0044). The `openpacker` command line and the daemon's start
+ * write their errors through the same `report`, and `stderr-writers.test.ts`
+ * holds them to it.
  */
 
-/**
- * What an error's `message` may be when the error came from a library: its type
- * says a string, and a foreign value need not keep to that.
- */
-export type MessageLike = string | number | boolean | bigint | null | undefined;
-
-/**
- * `prefix` and `message` as the lines of an error report, ending in a newline.
- * The prefix is ours; the message is made plain and keeps its line breaks. A
- * message that is not a string is written as `String` writes it.
- */
-export function report(prefix: string, message: MessageLike): string {
-  return `${prefix}${plainText(String(message))}\n`;
-}
+// The one writer of an error, and the type of what it may be handed, are in
+// `@openpacker/canonical` beside `plainText`, so that the `openpacker` command
+// line writes its errors through the same function.
+export { report };
+export type { MessageLike } from '@openpacker/canonical';
 
 /** How many `cause` links below the reported error are followed. */
 export const MAX_CAUSE_DEPTH = 3;

@@ -11,8 +11,9 @@
  * A new reference that is neither fails here, and an entry that no longer
  * matches a use fails too, so the list cannot outlive the code it excuses. The
  * scanner is held to the ways round the obvious spelling by fixtures that must
- * be caught. `apps/openpacker-cli` and the other packages are not scanned: this
- * is the `opm` command line's contract.
+ * be caught. The `openpacker` command line and the daemon's start are scanned
+ * the same way (they write through `report`, which is `@openpacker/canonical`'s,
+ * the one `opm` writes through); the other packages are not.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -20,7 +21,20 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { findStderrUses, type Use } from './stderr-scan.js';
 
-const src = join(dirname(fileURLToPath(import.meta.url)), '../src');
+const here = dirname(fileURLToPath(import.meta.url));
+/**
+ * The command lines scanned: `opm`'s, and the two others that write an error
+ * (`openpacker`, and `openpackerd` when it cannot start). A file is named by the
+ * path below its `src`, with the app's name before it for the two others.
+ */
+const ROOTS = [
+  { prefix: '', directory: join(here, '../src') },
+  {
+    prefix: 'openpacker-cli/',
+    directory: join(here, '../../openpacker-cli/src'),
+  },
+  { prefix: 'openpackerd/', directory: join(here, '../../openpackerd/src') },
+] as const;
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
@@ -168,11 +182,13 @@ const EXEMPT: ReadonlyArray<{
   },
 ];
 
-const places: Place[] = sourceFiles(src).flatMap((path) =>
-  findStderrUses(readFileSync(path, 'utf8'), path).map((written) => ({
-    ...written,
-    file: relative(src, path),
-  })),
+const places: Place[] = ROOTS.flatMap(({ prefix, directory }) =>
+  sourceFiles(directory).flatMap((path) =>
+    findStderrUses(readFileSync(path, 'utf8'), path).map((written) => ({
+      ...written,
+      file: `${prefix}${relative(directory, path)}`,
+    })),
+  ),
 );
 const exempted = (place: Place) =>
   EXEMPT.find(
@@ -192,6 +208,8 @@ describe('what opm writes to stderr', () => {
         'commands/packslip.ts',
         'commands/run-child.ts',
         'commands/run.ts',
+        'openpacker-cli/index.ts',
+        'openpackerd/cli.ts',
       ]),
     );
   });

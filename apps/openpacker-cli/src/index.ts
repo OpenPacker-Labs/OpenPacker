@@ -18,8 +18,11 @@ import {
   compareCanonicalStrings,
   formatDigest,
   parseCanonicalJson,
+  out,
+  outJson,
   parseDigest,
   parseUntrustedUrl,
+  report,
 } from '@openpacker/canonical';
 import { validateContract } from '@openpacker/conformance';
 import type {
@@ -94,7 +97,7 @@ export async function runCli(
   try {
     const args = parseArguments(argv);
     if (args.options.has('help')) {
-      io.stdout.write(help());
+      out(io, help());
       return EXIT_CODES.success;
     }
     if (!COMMANDS.has(args.command))
@@ -141,10 +144,23 @@ export async function runCli(
     const message =
       error instanceof Error ? error.message : 'Unknown OpenPacker CLI error';
     const json = argv.includes('--json');
+    // The one writer of an error (`report`): the message is a server's, a file's
+    // or an argument's text, and is made plain whether it is a line or a field
+    // of the JSON document.
     io.stderr.write(
-      json
-        ? `${JSON.stringify({ error: { message, exitCode: code, ...(error instanceof PrexClientError && error.problem && { problem: error.problem }) } })}\n`
-        : `openpacker: ${message}\n`,
+      report(
+        json ? '' : 'openpacker: ',
+        json
+          ? JSON.stringify({
+              error: {
+                message,
+                exitCode: code,
+                ...(error instanceof PrexClientError &&
+                  error.problem && { problem: error.problem }),
+              },
+            })
+          : message,
+      ),
     );
     return code;
   }
@@ -588,9 +604,8 @@ async function output(
 ): Promise<void> {
   const destination = option(args, 'output');
   if (destination) await writeFile(destination, rawBytes);
-  if (args.options.has('json'))
-    io.stdout.write(`${new TextDecoder().decode(rawBytes)}\n`);
-  else io.stdout.write(`${JSON.stringify(redact(value), null, 2)}\n`);
+  if (args.options.has('json')) outJson(io, new TextDecoder().decode(rawBytes));
+  else outJson(io, JSON.stringify(redact(value), null, 2));
 }
 
 async function serve(args: ParsedArguments, io: CliIo): Promise<number> {
@@ -611,11 +626,9 @@ async function serve(args: ParsedArguments, io: CliIo): Promise<number> {
     port: numberOption(args, 'port', 7337),
     logger: !args.options.has('json'),
   });
-  io.stdout.write(
-    args.options.has('json')
-      ? `${JSON.stringify({ address: server.address })}\n`
-      : `openpackerd listening at ${server.address}\n`,
-  );
+  if (args.options.has('json'))
+    outJson(io, JSON.stringify({ address: server.address }));
+  else out(io, `openpackerd listening at ${server.address}\n`);
   await new Promise<void>((resolve) => {
     for (const signal of ['SIGINT', 'SIGTERM'] as const)
       process.once(signal, () => void server.close().then(resolve));
@@ -662,10 +675,11 @@ async function demo(args: ParsedArguments, io: CliIo): Promise<number> {
     offline: args.options.has('offline'),
   });
   const bytes = canonicalBytes(result);
-  io.stdout.write(
+  outJson(
+    io,
     args.options.has('json')
-      ? `${new TextDecoder().decode(bytes)}\n`
-      : `${JSON.stringify(result, null, 2)}\n`,
+      ? new TextDecoder().decode(bytes)
+      : JSON.stringify(result, null, 2),
   );
   return EXIT_CODES.success;
 }
