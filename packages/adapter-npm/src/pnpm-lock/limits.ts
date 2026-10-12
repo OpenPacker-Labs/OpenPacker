@@ -3,9 +3,15 @@
  *
  * A lock is input from a repository, and `opm` reads it before it has decided
  * to trust anything in it, so every dimension that costs memory or time has a
- * ceiling, and exceeding one is a refusal that names the number. The defaults
- * sit well above the largest real locks measured (HoBo: 792 importers, 2,160
- * packages, 2,193 snapshots, 0.8 MB) and well below what would hurt.
+ * ceiling, and exceeding one is a refusal that names the number.
+ *
+ * The defaults sit about ten times above the largest real lock measured (HoBo:
+ * 792 importers, 2,160 packages, 2,193 snapshots, 0.8 MB, 0.6 s, 146 MB resident)
+ * and are set by what the reader costs: 0.74 s and 73 MB of resident memory per
+ * megabyte of a realistic lock (6.5 MB took 4.8 s and 478 MB; 13 MB took 9.6 s
+ * and 951 MB), about 1 s and 90 MB per megabyte of one that is all tiny entries
+ * (8.3 MB took 8.8 s and 758 MB). The byte ceiling keeps the worst case near
+ * 9 s and 800 MB; a project with a larger lock raises the number it names.
  */
 
 import { PnpmLockError } from './errors.js';
@@ -36,8 +42,8 @@ export interface PnpmLockLimits {
 }
 
 export const DEFAULT_PNPM_LOCK_LIMITS: PnpmLockLimits = {
-  maxBytes: 32 * 1024 * 1024,
-  maxNodes: 4_000_000,
+  maxBytes: 8 * 1024 * 1024,
+  maxNodes: 1_000_000,
   maxDepth: 16,
   maxImporters: 20_000,
   maxPackages: 100_000,
