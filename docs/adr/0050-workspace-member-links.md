@@ -8,8 +8,11 @@
   libc symbols) and [ADR 0034](0034-opm-projects-into-native-project-formats.md)
   (the Windows handle-relative creation)
 - Relates: [ADR 0042](0042-upm-v1-gaps.md) (no workspace graph),
-  [ADR 0046](0046-a-lockfile-is-installed-not-re-resolved.md) (`opm ci` refuses
-  the lock entries this makes room for)
+  [ADR 0046](0046-a-lockfile-is-installed-not-re-resolved.md) (`opm ci` refused
+  the lock entries this makes room for;
+  [ADR 0051](0051-opm-ci-installs-workspace-locks.md) installs them, and checks
+  every `link: true` entry of a lock against the lock's own member list before
+  it reaches this layer)
 
 ## Context
 
@@ -330,11 +333,10 @@ place that removes the whole directory is `opm ci`'s `removeTree`.
   `handle-nt-dir.test.ts`). The `ci-build.yml` macOS and Windows legs are the
   first evidence, and until they have run, every statement above about NTFS or
   libSystem is a statement about the code, not about the system.
-- `opm ci` still refuses a lock with `link: true` entries, and workspaces
-  (`--filter`, per-member `node_modules`) are not part of this change: this
-  record covers creating, recording, reading and removing the links, and the
-  layout plan and writer that carry them. Reading members out of a lock and
-  installing a workspace is the work that uses it.
+- When this was written `opm ci` still refused a lock with `link: true` entries:
+  this record covers creating, recording, reading and removing the links, and
+  the layout plan and writer that carry them. Reading members out of a lock and
+  installing a workspace is [ADR 0051](0051-opm-ci-installs-workspace-locks.md).
 - Sharing a project directory with Windows tools that cannot read junctions
   (older archivers) can copy the target's contents or fail; that is the
   platform's, and the link is still a junction.
