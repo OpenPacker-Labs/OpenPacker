@@ -164,3 +164,46 @@ describe('opm exec, for a bin the lock declares and node_modules lacks', () => {
     },
   );
 });
+
+describe('opm manifest, for a project whose lock names an ecosystem', () => {
+  it('says what it leaves out of the manifest on one line', async () => {
+    const go = (text: string) =>
+      runWith(
+        {
+          ...npmFiles('plain', () => {}),
+          ...opmFiles((lock) => {
+            const packages = member(lock, 'packages');
+            // A second package in a real ecosystem keeps the manifest buildable.
+            packages.b = { ...member(lock, 'packages', 'a') };
+            member(lock, 'packages', 'a').ecosystem = `go${text}`;
+          }),
+        },
+        ['manifest'],
+      );
+    expect((await go('x')).err).toContain(
+      'NATIVE_DISTRIBUTION_ABSENT: This project has no gox project file',
+    );
+    // The JSON document on stdout holds what a string in it holds: only stderr is held to this.
+    await expectPlain(go, { stdout: false });
+  });
+});
+
+describe('opm pack, for a project with an environment file', () => {
+  it('names the file it leaves out on one line', async () => {
+    const go = (text: string) =>
+      runWith(
+        {
+          'package.json': JSON.stringify({ name: 'p', version: '1.0.0' }),
+          'opm.toml': '[project]\nname = "p"\necosystems = ["npm"]\n',
+          'index.js': 'x\n',
+          // A file name holds anything but a slash.
+          [`.env.${text.replaceAll('/', '_')}`]: 'SECRET=1\n',
+        },
+        ['pack', 'npm', '--package-version', '1.0.0'],
+      );
+    expect((await go('x')).err).toContain(
+      'NORMALIZED_SENSITIVE_FILES_EXCLUDED: .env.x\n',
+    );
+    await expectPlain(go);
+  });
+});

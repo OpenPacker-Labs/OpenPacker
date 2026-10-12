@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { plainLine } from '@openpacker/canonical';
 import {
   registerInstalledPlugins,
   verifyPluginBindings,
@@ -457,7 +458,12 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          io.stderr.write(report('opm: ', `${item.purl}: ${item.reason}`));
+          io.stderr.write(
+            report(
+              'opm: ',
+              `${plainLine(item.purl)}: ${plainLine(item.reason)}`,
+            ),
+          );
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -523,7 +529,10 @@ export async function runOpm(
         }
         for (const loss of built.manifest.semanticLoss ?? [])
           io.stderr.write(
-            report('opm: ', `${loss.code}: ${loss.omittedMeaning ?? ''}`),
+            report(
+              'opm: ',
+              `${plainLine(loss.code)}: ${plainLine(loss.omittedMeaning ?? '')}`,
+            ),
           );
         return EXIT_CODES.success;
       }
@@ -607,7 +616,10 @@ export async function runOpm(
         }
         for (const loss of result.semanticLoss)
           io.stderr.write(
-            report('opm: ', `${loss.code}: ${loss.omittedMeaning ?? ''}`),
+            report(
+              'opm: ',
+              `${plainLine(loss.code)}: ${plainLine(loss.omittedMeaning ?? '')}`,
+            ),
           );
         return EXIT_CODES.success;
       }
@@ -1047,13 +1059,16 @@ function writeNativeProjection(
       io.stdout.write(`  updated ${path}\n`);
     for (const entry of projection.skipped ?? [])
       io.stderr.write(
-        report('opm: ', `skipped ${entry.path}: ${entry.reason}`),
+        report(
+          'opm: ',
+          `skipped ${plainLine(entry.path)}: ${plainLine(entry.reason)}`,
+        ),
       );
     for (const loss of projection.semanticLoss)
       io.stderr.write(
         report(
           'opm: ',
-          `${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}`,
+          `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
         ),
       );
   }
@@ -1104,7 +1119,10 @@ function writeHostInstallResult(
   io.stdout.write(`${plan.command.join(' ')}\n`);
   for (const loss of plan.semanticLoss)
     io.stderr.write(
-      report('opm: ', `${loss.code}: ${loss.representedMeaning}`),
+      report(
+        'opm: ',
+        `${plainLine(loss.code)}: ${plainLine(String(loss.representedMeaning))}`,
+      ),
     );
   if (plan.requiresElevation && !args.options.has('allow-elevation'))
     io.stderr.write(
