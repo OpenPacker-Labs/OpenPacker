@@ -256,11 +256,15 @@ refused by name with the reason. An unknown option stays a usage error (0047
     is refused with its path, the file is opened without following a link, and
     the real path of the directory is compared once the file is read. Tests put
     a link where a pattern selects it, where a `**` passes it, above the members
-    and as `--filter`'s target, and check the script behind it never runs. What
-    remains is the window between the check and the read: a path swapped for a
-    link in it is followed. Closing it needs the handle-relative walk discovery
-    uses, and whoever can win that race can also edit the script they would be
-    making `opm` read.
+    and as `--filter`'s target, and check the script behind it never runs.
+    `exec` reads the same file only for the name and version it puts in the
+    environment, and tolerates a missing or invalid one; a link there is still a
+    refusal (the first version swallowed it, leaving discovery as `exec`'s only
+    protection), and tests put a link in an `exec` workspace too. What remains
+    is the window between the check and the read: a path swapped for a link in
+    it is followed. Closing it needs the handle-relative walk discovery uses,
+    and whoever can win that race can also edit the script they would be making
+    `opm` read.
 18. The library behind this (workspace discovery, the graph, ordering, the
     scheduler) is loaded only when a selection option, a pnpm-style prefix or a
     script word asks for it. A plain `opm run build` loads none of it; a test

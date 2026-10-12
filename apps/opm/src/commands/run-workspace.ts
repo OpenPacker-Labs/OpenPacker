@@ -160,10 +160,15 @@ export async function runExecInWorkspace(
   const initCwd = resolve(cwd);
   const tasks: MemberTask[] = [];
   for (const member of plan.members) {
-    // package.json only names the run in the environment; a broken one must
-    // not stop an executable that needs nothing from it.
+    // package.json only names the run in the environment; a broken or missing
+    // one must not stop an executable that needs nothing from it. A link is
+    // another matter: it is a refusal, here as everywhere a member is read.
     const pkg = await readMemberPackage(plan.root, member.dir).catch(
-      () => undefined,
+      (error: unknown) => {
+        if (error instanceof RunError && error.code === 'UNSAFE_PATH')
+          throw error;
+        return undefined;
+      },
     );
     const file = found.get(member.dir)!;
     tasks.push({
