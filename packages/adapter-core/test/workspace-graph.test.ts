@@ -136,6 +136,40 @@ describe('edges', () => {
   });
 });
 
+describe('a file: specifier', () => {
+  const tree: Tree = {
+    '': { name: 'root' },
+    'packages/a': {
+      name: 'a',
+      dependencies: {
+        z: 'file:../z.tgz',
+        t: 'file:../t.tar.gz',
+        u: 'file:../u.zip',
+        v: 'file:../v.tar',
+        w: 'link:../w.tgz',
+        d: 'file:../d',
+      },
+    },
+    // Directories that happen to be named like archives.
+    'packages/z.tgz': { name: 'z' },
+    'packages/t.tar.gz': { name: 't' },
+    'packages/u.zip': { name: 'u' },
+    'packages/v.tar': { name: 'v' },
+    'packages/w.tgz': { name: 'w' },
+    'packages/d': { name: 'd' },
+  };
+
+  it('with an archive extension names a tarball, never the member directory called that', () => {
+    for (const policy of ['workspace-protocol', 'satisfied-range'] as const)
+      expect(
+        graphOf(tree, policy).edges.map((e) => [e.dependency, e.to, e.via]),
+      ).toEqual([
+        ['d', 'packages/d', 'path'],
+        ['w', 'packages/w.tgz', 'path'],
+      ]);
+  });
+});
+
 describe('the link policy', () => {
   const tree: Tree = {
     '': { name: 'root' },

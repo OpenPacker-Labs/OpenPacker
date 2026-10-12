@@ -156,6 +156,8 @@ describe('parsing workspace: specifiers', () => {
     ['workspace:other@', /names no version/u],
     ['workspace:_x@1.0.0', /not a version range/u],
     ['workspace:a b@1.0.0', /alias is not a package name/u],
+    ['workspace:other@../b', /a path cannot carry an alias/u],
+    ['workspace:other@./b', /a path cannot carry an alias/u],
     ['npm:foo@1', /not a workspace: form/u],
   ])('refuses %s, naming the specifier and the member', (written, reason) => {
     const run = () => parse(written);
@@ -313,6 +315,23 @@ describe('the published form', () => {
         ),
       ),
     ).toBe('WORKSPACE_SPEC_UNSUPPORTED');
+  });
+
+  it('refuses a peer written as a path or with an alias, which pnpm rewrites as text', () => {
+    for (const [key, written] of [
+      ['b', 'workspace:../b'],
+      ['c', 'workspace:other@*'],
+      ['c', 'workspace:other@^4.0.0'],
+    ] as const) {
+      const run = () => published('peerDependencies', key, written);
+      expect(codeOf(run), written).toBe('WORKSPACE_SPEC_UNSUPPORTED');
+      expect(run, written).toThrowError(/cannot be rewritten for publication/u);
+    }
+    // The same forms are rewritten properly in the lists pnpm handles properly.
+    expect(published('dependencies', 'b', 'workspace:../b')).toBe('1.2.3');
+    expect(published('dependencies', 'c', 'workspace:other@*')).toBe(
+      'npm:other@4.5.6',
+    );
   });
 
   it('leaves every other specifier as written', () => {

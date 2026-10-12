@@ -168,6 +168,25 @@ describe('selecting', () => {
     expect(codeOf(() => pick('zzz'))).toBe('WORKSPACE_FILTER_NO_MATCH');
   });
 
+  it('takes no member for a bare name that two scopes share, and names the exact one', () => {
+    const shared = graphOf({
+      '': { name: 'top' },
+      'p/x': { name: '@x/dup' },
+      'p/y': { name: '@y/dup' },
+      'p/z': { name: '@z/solo' },
+      'p/plain': { name: 'plain' },
+      'p/also': { name: '@x/plain' },
+    });
+    const run = (text: string) =>
+      selectMembers(shared, [parse(text)], { allowEmpty: true });
+    expect(run('dup').selected).toEqual([]);
+    expect(run('dup').unmatched).toEqual(['dup']);
+    expect(run('@x/dup').selected).toEqual(['p/x']);
+    expect(run('solo').selected).toEqual(['p/z']);
+    // A member that carries the bare name itself wins over the scoped ones.
+    expect(run('plain').selected).toEqual(['p/plain']);
+  });
+
   it('adds what a package depends on with name..., and what depends on it with ...name', () => {
     expect(names(pick('@h/a...'))).toEqual(['@h/a', '@h/b', '@h/c']);
     expect(names(pick('...@h/b'))).toEqual([

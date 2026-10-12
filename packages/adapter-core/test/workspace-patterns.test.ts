@@ -273,6 +273,24 @@ describe('workspace glob dialect', () => {
     expect(code('packages/a\u0000')).toBe('WORKSPACE_PATTERN_INVALID');
   });
 
+  it('refuses a pattern that names the root under npm, and drops it under pnpm', () => {
+    for (const patterns of [['.'], ['{.,p}'], ['p/*', '.']]) {
+      const run = (tool: WorkspaceTool) => () =>
+        compileWorkspacePatterns(patterns, tool, limits);
+      expect(run('npm'), JSON.stringify(patterns)).toThrowError(
+        expect.objectContaining({
+          code: 'WORKSPACE_PATTERN_INVALID',
+          message: expect.stringContaining('names the root itself') as string,
+        }) as Error,
+      );
+      expect(run('pnpm'), JSON.stringify(patterns)).not.toThrow();
+    }
+    // Under pnpm it adds nothing: the root is always a member, and p/* still works.
+    const compiled = compileWorkspacePatterns(['p/*', '.'], 'pnpm', limits);
+    expect(compiled.isMember(['p', 'a'])).toBe(true);
+    expect(compiled.isMember([])).toBe(false);
+  });
+
   it('bounds a pattern: its length and what its braces expand to', () => {
     expect(() => compileGlob('a'.repeat(1025), limits)).toThrowError(
       /1025 characters long, more than the limit of 1024/u,
