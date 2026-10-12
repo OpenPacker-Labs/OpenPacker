@@ -193,6 +193,8 @@ export async function addPackage(input: {
    */
   allowElevation?: boolean;
   dryRun?: boolean;
+  /** Transport / endpoint overrides for the registry walk (tests, hosts). */
+  registryOptions?: RegistryOptions;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -299,12 +301,25 @@ export async function addPackage(input: {
     ...(input.catalogPaths !== undefined && {
       catalogPaths: input.catalogPaths,
     }),
+    ...(input.registryOptions !== undefined && {
+      registryOptions: input.registryOptions,
+    }),
     previousLock: await readPreviousLock(paths.lock),
   });
   // Only once the requirement has resolved. A refused or unsatisfiable add
   // used to leave it in opm.toml, where every later install tripped over it.
   await writeManifestFile(paths.manifest, manifest);
   await writeLockfile(paths.lock, lock);
+
+  // What is installed under a key the lock no longer has: adding the package
+  // that makes a name two versions re-keys the first (`ansi-regex` is
+  // `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now), and the old record would
+  // go on being listed as installed.
+  const stale = Object.keys(
+    (await readProjectState(paths.projectState))?.packages ?? {},
+  ).filter((key) => !lock.packages[key]);
+  if (stale.length > 0)
+    await uninstallPackages({ root: input.root, aliases: stale });
 
   // The whole lock, not just the alias that was named: a package is not
   // installed in any useful sense without the things it needs, and the lock now
