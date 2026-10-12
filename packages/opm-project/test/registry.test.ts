@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -855,8 +855,9 @@ describe('ephemeral tool selection', () => {
 });
 
 describe('ephemeral tool cache (first-party)', () => {
-  // fetchTool takes no transport, so the default npm endpoint is served
-  // through a stubbed global fetch; the tarball URL stands in for the byte
+  // The default npm endpoint is served through the `fetch` handed to
+  // fetchTool: production dials the pinned address of the real registry, which
+  // a stubbed global never sees. The tarball URL stands in for the byte
   // download and the packument URL for registry metadata.
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
   const PACKUMENT_URL = 'https://registry.npmjs.org/demo-tool';
@@ -888,7 +889,7 @@ describe('ephemeral tool cache (first-party)', () => {
     };
     const requests: string[] = [];
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
+    const registryFetch = (async (input: URL | Request | string) => {
       const url = String(input);
       requests.push(url);
       if (url === PACKUMENT_URL)
@@ -902,7 +903,7 @@ describe('ephemeral tool cache (first-party)', () => {
           headers: { 'content-type': 'application/octet-stream' },
         });
       return new Response('missing', { status: 404 });
-    }) as typeof fetch);
+    }) as typeof fetch;
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-npm-cache-'));
     const tarballs = () =>
       requests.filter((url) => url.endsWith('.tgz')).length;
@@ -912,6 +913,7 @@ describe('ephemeral tool cache (first-party)', () => {
       const first = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
+        fetch: registryFetch,
       });
       expect(first.cached).toBe(false);
       expect(first.bins.map((bin) => bin.name)).toEqual(['demo-tool']);
@@ -921,6 +923,7 @@ describe('ephemeral tool cache (first-party)', () => {
       const second = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
+        fetch: registryFetch,
       });
       expect(second.cached).toBe(true);
       expect(second.storePath).toBe(first.storePath);
@@ -930,7 +933,6 @@ describe('ephemeral tool cache (first-party)', () => {
       // ...but the registry metadata was re-read: resolution is not cached.
       expect(packuments()).toBeGreaterThan(metadataAfterFirst);
     } finally {
-      vi.unstubAllGlobals();
       await rm(cacheRoot, { recursive: true, force: true });
     }
   });
