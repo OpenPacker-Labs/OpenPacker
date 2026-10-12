@@ -33,6 +33,7 @@ import {
   isNode,
   isScalar,
   isSeq,
+  type CST,
   type Document,
   type Node,
 } from 'yaml';
@@ -125,6 +126,27 @@ function checkText(text: string, limits: PnpmLockLimits): void {
 }
 
 /**
+ * The tokens as they are, but a directive (`%YAML`, `%TAG`, anything else that
+ * starts with `%`) is refused. It is checked where the parser yields it, because
+ * afterwards the document cannot tell a `%TAG !! ...` that redefines the default
+ * handle from no directive at all.
+ */
+function* refuseDirectives(
+  text: string,
+  tokens: Iterable<CST.Token>,
+): Generator<CST.Token> {
+  for (const token of tokens) {
+    if (token.type === 'directive')
+      throw feature(
+        text,
+        token.offset,
+        `the directive ${token.source.split(/\s/u, 1)[0] ?? '%'}`,
+      );
+    yield token;
+  }
+}
+
+/**
  * The document, composed from a lexer and parser that are stopped as soon as
  * the text nests deeper or runs longer than a lock may.
  */
@@ -142,7 +164,7 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
     for (const lexeme of lexer.lex(text)) {
       lexemes += 1;
       checkLimit(lexemes, lexemeLimit, 'lexemes', 'maxNodes');
-      yield* parser.next(lexeme);
+      yield* refuseDirectives(text, parser.next(lexeme));
       checkLimit(
         parser.stack.length,
         limits.maxDepth + 3,
@@ -150,7 +172,7 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
         'maxDepth',
       );
     }
-    yield* parser.end();
+    yield* refuseDirectives(text, parser.end());
   }
   const documents: Document.Parsed[] = [];
   try {
@@ -289,7 +311,9 @@ export function readYamlTree(text: string, limits: PnpmLockLimits): YamlValue {
     throw syntax(
       text,
       first.pos[0],
-      first.message.split('\n')[0] ?? first.code,
+      first.code === 'KEY_OVER_1024_CHARS'
+        ? 'a mapping key of more than 1024 characters written on one line; YAML allows that only in the explicit form (`? key`, then `: value`), which is how pnpm writes one'
+        : (first.message.split('\n')[0] ?? first.code),
     );
   const warning = document.warnings[0];
   if (warning !== undefined)
@@ -298,10 +322,5 @@ export function readYamlTree(text: string, limits: PnpmLockLimits): YamlValue {
       warning.pos[0],
       warning.message.split('\n')[0] ?? warning.code,
     );
-  if (
-    document.directives.yaml.explicit === true ||
-    Object.keys(document.directives.tags).length !== 1
-  )
-    throw feature(text, 0, 'a directive (%YAML or %TAG)');
   return walkValue({ text, limits, nodes: 0 }, document.contents, 0);
 }

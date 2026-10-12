@@ -16,6 +16,7 @@ export const FIXTURES = [
   'hobo.cut.pnpm-lock.yaml',
   'opensesame.cut.pnpm-lock.yaml',
   'exotic.pnpm-lock.yaml',
+  'long-key.pnpm-lock.yaml',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];
@@ -90,7 +91,7 @@ export function withBlocksReversed(text: string): string {
       out.push(line);
     } else if (
       ['importers', 'packages', 'snapshots'].includes(section) &&
-      /^ {2}[^ #]/u.test(line)
+      /^ {2}(?!: )[^ #]/u.test(line)
     ) {
       blocks.push([line]);
     } else if (blocks.length > 0) {

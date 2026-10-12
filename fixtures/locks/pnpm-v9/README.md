@@ -3,7 +3,8 @@
 Lockfiles for the reader in `packages/adapter-npm/src/pnpm-lock/` (ADR 0052).
 Three are real files written by pnpm 9 or 10, kept as pnpm wrote them (so
 `.prettierignore` leaves them alone); one is written by hand for the source
-forms no real lock here contains.
+forms no real lock here contains; one is the output of the YAML writer pnpm is
+built on, for the one YAML form no real lock here contains.
 
 | File                            | Importers | Packages | Snapshots | Importer links | Aliases |
 | ------------------------------- | --------: | -------: | --------: | -------------: | ------: |
@@ -11,6 +12,7 @@ forms no real lock here contains.
 | `hobo.cut.pnpm-lock.yaml`       |         9 |      432 |       436 |              2 |       6 |
 | `opensesame.cut.pnpm-lock.yaml` |         7 |      348 |       348 |              4 |       3 |
 | `exotic.pnpm-lock.yaml`         |         3 |       22 |        22 |              1 |       1 |
+| `long-key.pnpm-lock.yaml`       |         1 |       46 |        46 |              0 |       0 |
 
 ## Where each came from
 
@@ -62,6 +64,21 @@ packages that have one there) or the SHA-512 of a dummy string (those that do
 not, and the react and scheduler entries, which are not meant to be the real
 packages' digests). It cannot show that pnpm writes these forms; it shows that
 this reader reads them.
+
+`long-key.pnpm-lock.yaml` is the verbatim output of js-yaml 4.3.0 (sha256
+`7c0907d01ee2749ffa155e3b4e9415f755835dbbb29606f54463349c3a0ad5f4`), dumping a
+small lock object with the options pnpm 10.28 passes (`lineWidth: -1`,
+`noCompatMode`, `noRefs`, `sortKeys: false`; `blankLines` belongs to the fork
+pnpm bundles and 4.3.0 lacks, so there are no blank lines between entries and
+`resolution` is a block mapping, not `{integrity: ...}`). The object is one
+importer and a package with 45 peer dependencies, so its snapshot key is 1,358
+characters. js-yaml writes a mapping key of more than 1,024 characters in the
+explicit form (`? key`, then `: value`), and pnpm's bundled dumper has the same
+rule (`state.dump.length > 1024`, in the 10.28 bundle); YAML allows an implicit
+key only up to 1,024. Every integrity in it is the SHA-512 of a dummy string. No
+real lock here has a key that long (HoBo's longest is 905 characters), so this
+is the only evidence for the form, and it is a writer's output, not a lock pnpm
+wrote.
 
 ## expected.json
 

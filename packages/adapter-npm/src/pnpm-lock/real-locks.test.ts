@@ -104,6 +104,44 @@ describe.each(FIXTURES)('%s', (name) => {
   });
 });
 
+describe('long-key.pnpm-lock.yaml', () => {
+  const text = fixtureText('long-key.pnpm-lock.yaml');
+
+  it('has a snapshot key of more than 1024 characters, written as pnpm writes one (`? key`, then `: value`), and reads it whole', () => {
+    const lock = parsePnpmLock(text);
+    const [longest] = [...lock.snapshots].sort(
+      (a, b) => b.key.length - a.key.length,
+    );
+    expect(longest?.key.length).toBe(1358);
+    expect(longest?.path.peers).toHaveLength(45);
+    expect(text).toContain(`\n  ? ${longest?.key}\n  : dependencies:\n`);
+  });
+
+  it('is refused with a message that says what to do when the key is written on one line', () => {
+    const implicit = text
+      .split('\n')
+      .flatMap((line) =>
+        line.startsWith('  ? ')
+          ? [`  ${line.slice(4)}:`]
+          : line === '  : dependencies:'
+            ? ['    dependencies:']
+            : [line],
+      )
+      .join('\n');
+    expect(implicit).not.toBe(text);
+    let raised: unknown;
+    try {
+      parsePnpmLock(implicit);
+    } catch (error) {
+      raised = error;
+    }
+    expect(raised).toMatchObject({
+      reason: 'yaml-syntax',
+      message: expect.stringContaining('explicit form'),
+    });
+  });
+});
+
 /** How deep the parentheses of a key nest: a group is one level, and a peer's own groups are inside it. */
 function groupDepth(path: DepPath): number {
   const own =

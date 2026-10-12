@@ -137,13 +137,37 @@ describe('readYamlTree: what it refuses', () => {
     expect(refusal('a: 1\nb: 2\nc: *x\n').message).toContain('line 3');
   });
 
-  it('refuses a tag and a directive', () => {
+  it('refuses a tag', () => {
     expect(reasonOf('a: !!str 1\n')).toBe('yaml-feature');
     expect(reasonOf('a: !custom x\n')).toBe('yaml-feature');
-    expect(reasonOf('%YAML 1.2\n---\na: 1\n')).toBe('yaml-feature');
     expect(reasonOf('%TAG !e! tag:example.com,2000:\n---\na: !e!x 1\n')).toBe(
       'yaml-feature',
     );
+  });
+
+  it.each([
+    ['%YAML 1.2', '%YAML'],
+    ['%YAML 1.1', '%YAML'],
+    ['%TAG ! tag:example.com,2000:', '%TAG'],
+    ['%TAG !e! tag:example.com,2000:', '%TAG'],
+    // Redefining the default handle leaves one handle, as having none does.
+    ['%TAG !! tag:example.com,2000:', '%TAG'],
+    ['%TAG !! tag:yaml.org,2002:', '%TAG'],
+    ['%FOO bar', '%FOO'],
+  ])('refuses the directive %s, though nothing uses it', (directive, name) => {
+    const error = refusal(`${directive}\n---\na: 1\n`);
+    expect(error.reason).toBe('yaml-feature');
+    expect(error.message).toContain(`the directive ${name}`);
+    expect(error.message).toContain('line 1');
+  });
+
+  it('refuses a directive that has no document after it', () => {
+    expect(reasonOf('%YAML 1.2\n')).toBe('yaml-feature');
+  });
+
+  it('accepts the document markers, which are not directives', () => {
+    expect(() => read('---\na: 1\n')).not.toThrow();
+    expect(() => read('---\na: 1\n...\n')).not.toThrow();
   });
 
   it('refuses several documents and an empty text', () => {
@@ -171,6 +195,23 @@ describe('readYamlTree: what it refuses', () => {
     expect(reasonOf('null: a\n')).toBe('shape');
     expect(() => read("'123': a\n")).not.toThrow();
     expect(reasonOf('? [1, 2]\n: a\n')).toBe('yaml-syntax');
+  });
+
+  it('reads a key of any length in the explicit form, as pnpm writes one', () => {
+    const key = 'k'.repeat(1500);
+    const tree = asMap(read(`top:\n  ? ${key}\n  : a: 1\n`));
+    expect([...asMap(tree.get('top')!).keys()]).toEqual([key]);
+    expect(() => read(`top:\n  ? '${key}'\n  : a: 1\n`)).not.toThrow();
+  });
+
+  it('says what is wrong with a key over 1024 characters on one line', () => {
+    for (const key of [`'${'k'.repeat(1100)}'`, 'k'.repeat(1100)]) {
+      const error = refusal(`top:\n  ${key}:\n    a: 1\n`);
+      expect(error.reason).toBe('yaml-syntax');
+      expect(error.message).toContain('more than 1024 characters');
+      expect(error.message).toContain('explicit form');
+      expect(error.message).toContain('line 2');
+    }
   });
 
   it('refuses text that is not YAML, with the line', () => {
@@ -214,6 +255,42 @@ describe('readYamlTree: bounds', () => {
     expect(reasonOf('a: ' + '{a: '.repeat(100_000))).toBe('limit');
     expect(Date.now() - started).toBeLessThan(5000);
   });
+
+  /** Text whose deepest scalar has `depth` collections above it, the top mapping being the first. */
+  const NESTED = {
+    'block mappings': (depth: number) =>
+      [
+        ...Array.from(
+          { length: depth - 1 },
+          (_, i) => `${' '.repeat(i)}k${i}:`,
+        ),
+        `${' '.repeat(depth - 1)}v: 1`,
+      ].join('\n'),
+    'block sequences': (depth: number) =>
+      [
+        ...Array.from({ length: depth - 1 }, (_, i) => `${' '.repeat(i)}-`),
+        `${' '.repeat(depth - 1)}- 1`,
+      ].join('\n'),
+    'flow sequences': (depth: number) =>
+      `a: ${'['.repeat(depth - 1)}1${']'.repeat(depth - 1)}`,
+    'flow mappings': (depth: number) =>
+      `a: ${'{a: '.repeat(depth - 1)}1${'}'.repeat(depth - 1)}`,
+  };
+
+  it.each(Object.entries(NESTED))(
+    'accepts %s down to maxDepth and refuses one level more',
+    (_kind, nested) => {
+      for (const maxDepth of [3, DEFAULT_PNPM_LOCK_LIMITS.maxDepth]) {
+        const limits = small({ maxDepth });
+        expect(() => read(nested(maxDepth), limits)).not.toThrow();
+        const error = refusal(nested(maxDepth + 1), limits);
+        expect(error.reason).toBe('limit');
+        expect(error.message).toContain(
+          `${maxDepth + 1} levels of nesting, more than the limit of ${maxDepth}`,
+        );
+      }
+    },
+  );
 
   it('refuses block nesting deeper than maxDepth', () => {
     const nested = Array.from(

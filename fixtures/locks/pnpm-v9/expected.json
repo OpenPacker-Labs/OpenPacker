@@ -848,6 +848,39 @@
     "snapshots": 436,
     "snapshotsWithoutPackage": 0
   },
+  "long-key.pnpm-lock.yaml": {
+    "aliasEdges": {
+      "importers": 0,
+      "snapshots": 0
+    },
+    "danglingEdges": 0,
+    "deepestPeerNesting": 1,
+    "dependencyEdges": {
+      "importers": 46,
+      "snapshots": 45
+    },
+    "exoticSources": {
+      "directory": 0,
+      "git": 0,
+      "runtime": 0,
+      "tarball": 0
+    },
+    "importers": 1,
+    "linkEdges": {
+      "importers": 0,
+      "snapshots": 0
+    },
+    "multiVersionNames": [],
+    "orphanPackages": [],
+    "orphanSnapshots": [],
+    "packages": 46,
+    "patchedSnapshots": 0,
+    "peerSuffixedSnapshots": 1,
+    "platformRestricted": [],
+    "sha256": "7c0907d01ee2749ffa155e3b4e9415f755835dbbb29606f54463349c3a0ad5f4",
+    "snapshots": 46,
+    "snapshotsWithoutPackage": 0
+  },
   "opensesame.cut.pnpm-lock.yaml": {
     "aliasEdges": {
       "importers": 0,
