@@ -12,6 +12,7 @@
 
 import {
   BoundedFetchTransport,
+  echoed,
   redactUrl,
   type HostLookup,
   type HttpTransport,
@@ -49,7 +50,7 @@ export function transportForSources(
     } catch {
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `${source} is not a URL opm can fetch`,
+        `${echoed(source)} is not a URL opm can fetch`,
       );
     }
     origins.add(origin);
@@ -75,7 +76,7 @@ export function transportForSources(
     if (error instanceof OpmError) throw error;
     throw new OpmError(
       'UNSAFE_SOURCE',
-      `The lock names a source opm will not fetch from: ${error instanceof Error ? error.message : String(error)}`,
+      `The lock names a source opm will not fetch from: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
 }
@@ -124,7 +125,7 @@ export async function downloadArchive(
       }
       throw new OpmError(
         'FETCH_FAILED',
-        `Failed to fetch ${label} from ${where}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to fetch ${label} from ${echoed(where)}: ${echoed(error instanceof Error ? error.message : String(error))}`,
         { cause: error },
       );
     }

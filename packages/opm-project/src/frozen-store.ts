@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
+  echoed,
   redactUrl,
   type FrozenLock,
   type FrozenLockPackage,
@@ -105,7 +106,7 @@ export async function openStore(root: string, env: NodeJS.ProcessEnv) {
 }
 
 export function labelOf(pkg: FrozenLockPackage): string {
-  return `${pkg.packageName}@${pkg.version} (${pkg.path})`;
+  return `${echoed(pkg.packageName)}@${echoed(pkg.version)} (${echoed(pkg.path)})`;
 }
 
 export function redactSource(source: string): string {
@@ -180,7 +181,7 @@ export async function storeArchives(input: {
       if (!checked.ok)
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${pkg.integrity}, ${redactSource(pkg.source)} served ${checked.actual}. Nothing was installed from it`,
+          `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${echoed(pkg.integrity ?? '')}, ${echoed(redactSource(pkg.source))} served ${checked.actual}. Nothing was installed from it`,
         );
       const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
       const entry = await memory
@@ -200,7 +201,7 @@ export async function storeArchives(input: {
             ? error
             : new OpmError(
                 'UNSAFE_PATH',
-                `${labelOf(pkg)} cannot be extracted: ${error instanceof Error ? error.message : String(error)}`,
+                `${labelOf(pkg)} cannot be extracted: ${echoed(error instanceof Error ? error.message : String(error))}`,
                 { cause: error },
               );
         });

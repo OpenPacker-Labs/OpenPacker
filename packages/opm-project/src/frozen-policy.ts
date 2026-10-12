@@ -15,7 +15,7 @@
  * everything else the project's policy says still deny.
  */
 
-import type { FrozenLockPackage } from '@openpacker/adapter-core';
+import { echoed, type FrozenLockPackage } from '@openpacker/adapter-core';
 import type { LifecycleState, PolicyInput } from '@openpacker/contracts';
 import {
   evaluatePolicy,
@@ -112,9 +112,11 @@ export async function assertFrozenAllowed(
     if (result.decision === 'deny') denied = true;
     const why = result.checks
       .filter((check) => check.status !== 'valid')
-      .map((check) => `${check.code}: ${check.message}`)
+      .map((check) => `${check.code}: ${echoed(check.message)}`)
       .join('; ');
-    refusals.push(`${pkg.path} (${pkg.packageName}@${pkg.version}): ${why}`);
+    refusals.push(
+      `${echoed(pkg.path)} (${echoed(pkg.packageName)}@${echoed(pkg.version)}): ${why}`,
+    );
   }
   if (refusals.length === 0) return;
   throw new OpmError(

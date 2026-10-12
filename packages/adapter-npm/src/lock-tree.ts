@@ -15,7 +15,7 @@
  * malformed lock is refused rather than read generously.
  */
 
-import { ProviderError } from '@openpacker/adapter-core';
+import { echoed, ProviderError } from '@openpacker/adapter-core';
 import { quoted, unsafeNameProblem } from './layout-plan.js';
 
 /** Most entries a lock may hold; the layout planner's own ceiling. */
@@ -197,7 +197,7 @@ function stringMap(value: unknown, where: string): StringMap {
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== 'string')
-      throw invalid(`${where}.${key} must be a string`);
+      throw invalid(`${where}.${echoed(key)} must be a string`);
     out[key] = entry;
   }
   return out;
@@ -257,7 +257,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
     );
   if (version !== 2 && version !== 3)
     throw invalid(
-      `Expected package-lock v2 or v3, received ${String(version)}`,
+      `Expected package-lock v2 or v3, received ${echoed(String(version))}`,
     );
   const packages = lock.packages;
   if (!isRecord(packages))
@@ -408,7 +408,7 @@ export function parsePackageLockText(text: string): PackageLockTree {
     parsed = JSON.parse(text);
   } catch (error) {
     throw invalid(
-      `package-lock.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `package-lock.json is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   return readPackageLock(parsed);

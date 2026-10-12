@@ -22,6 +22,7 @@
  * host's to judge.
  */
 
+import { echoed } from '@openpacker/adapter-core';
 import type {
   FrozenLockOptions,
   FrozenLockPackage,
@@ -52,15 +53,20 @@ export interface FrozenInstallPlan {
   refused: FrozenLockRefusal[];
 }
 
+/** A locked package as a message names it: its name, `@`, its version. */
+function label(entry: LockEntry): string {
+  return `${echoed(entry.packageName)}@${echoed(entry.version)}`;
+}
+
 function describeTarget(target: NativeTarget): string {
   return `${target.os}/${target.architecture}${target.libc === undefined ? '' : `/${target.libc}`}`;
 }
 
 function describeDeclared(entry: LockEntry): string {
   return [
-    entry.os && `os ${entry.os.join(',')}`,
-    entry.cpu && `cpu ${entry.cpu.join(',')}`,
-    entry.libc && `libc ${entry.libc.join(',')}`,
+    entry.os && `os ${entry.os.map((item) => echoed(item)).join(',')}`,
+    entry.cpu && `cpu ${entry.cpu.map((item) => echoed(item)).join(',')}`,
+    entry.libc && `libc ${entry.libc.map((item) => echoed(item)).join(',')}`,
   ]
     .filter(Boolean)
     .join(' ');
@@ -246,7 +252,7 @@ export function planFrozenPackageLock(input: {
       left.delete(entry);
       refused.push({
         path: entry.path,
-        reason: `${entry.packageName}@${entry.version} is for ${describeDeclared(entry)}, not this machine (${describeTarget(target)}), and is not optional`,
+        reason: `${label(entry)} is for ${describeDeclared(entry)}, not this machine (${describeTarget(target)}), and is not optional`,
       });
     }
   }
@@ -264,7 +270,7 @@ export function planFrozenPackageLock(input: {
       skip(
         dropped,
         'orphaned',
-        `only needed by ${entry.path}, which this machine does not install`,
+        `only needed by ${echoed(entry.path)}, which this machine does not install`,
       );
     }
 
@@ -281,7 +287,7 @@ export function planFrozenPackageLock(input: {
     if (parent !== undefined && !installed(left, byPath.get(parent))) {
       refused.push({
         path: entry.path,
-        reason: `${entry.packageName}@${entry.version} lives inside ${parent}, which is not installed; the lock's flags do not match its dependency graph`,
+        reason: `${label(entry)} lives inside ${echoed(parent)}, which is not installed; the lock's flags do not match its dependency graph`,
       });
       continue;
     }
@@ -289,14 +295,14 @@ export function planFrozenPackageLock(input: {
     if ('problem' in source) {
       refused.push({
         path: entry.path,
-        reason: `${entry.packageName}@${entry.version} ${source.problem}`,
+        reason: `${label(entry)} ${source.problem}`,
       });
       continue;
     }
     if (entry.integrity === undefined) {
       refused.push({
         path: entry.path,
-        reason: `${entry.packageName}@${entry.version} has no integrity, so the lock does not pin its bytes`,
+        reason: `${label(entry)} has no integrity, so the lock does not pin its bytes`,
       });
       continue;
     }
