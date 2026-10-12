@@ -175,23 +175,30 @@ and keeps the final name from ever being a half-made link:
 1. an empty directory is created under a staging name
    (`.<name>.opm-link-<uuid>`) with `NtCreateFile`, `FILE_CREATE`,
    `RootDirectory` = the parent handle;
-2. the reparse data is sent through the handle that created it, so the object
-   that becomes a junction is the object that was created, whatever happens to
-   names meanwhile;
-3. the handle is closed and the directory is renamed to the final name with
-   `ReplaceIfExists` **off**: a taken name is `EEXIST`, and a name is either
-   absent or a complete junction. If anything fails, the staging directory is
-   removed.
+2. the reparse data is sent through the handle that created it, so the reparse
+   data lands on the directory this call created, whatever happens to names
+   meanwhile;
+3. the handle is closed and the directory is renamed **by its staging name** to
+   the final name with `ReplaceIfExists` **off**: a taken name is `EEXIST`, and
+   a name is either absent or a complete junction. If anything fails, the
+   staging directory is removed.
 
 **The window that remains** is the staging name itself. Between steps 1 and 3 an
 entry named `.<name>.opm-link-<uuid>` is visible in the directory, first as an
 empty directory and then as a junction. It is never the name anything resolves,
 it is a dot name no layout lists, and a process that dies in the interval leaves
 it behind; the next layout write does not touch it. Its content is the same
-junction the final name would hold. No step re-walks a path, no step follows a
-reparse point, and the absolute path inside the junction is derived from the
-project root the caller names, not read back from the handle
-(`GetFinalPathNameByHandle` stays unused, as ADR 0034 says).
+junction the final name would hold. The rename in step 3 is by name, after the
+handle of step 2 is closed, so the guarantee of step 2 is about the reparse data
+and not about the rename: a process of the same user that replaced the staging
+name in that interval would have _its_ object published under the final name.
+That is an object it made in a directory it can write to, and the first junction
+made in a process is read back (below) before anything relies on it; the rename
+could be made through the open handle instead, and has not been, because that
+cannot be tried here. No step re-walks a path, no step follows a reparse point,
+and the absolute path inside the junction is derived from the project root the
+caller names, not read back from the handle (`GetFinalPathNameByHandle` stays
+unused, as ADR 0034 says).
 
 `placeMemberLink` and its siblings also refuse, by what it is, any directory
 component on the way down that is a reparse point (`FSCTL_GET_REPARSE_POINT`
@@ -251,6 +258,14 @@ relative text. The planner refuses, naming every problem:
 not accept a plan from a caller), writes the packages, shims and stale removal,
 and then the links, through `placeMemberLink` and nothing else. It then checks
 that no package it placed is a symlink nobody declared.
+
+The links go in two halves with the record between them: the recorded links that
+are no longer wanted are removed, the record is written with the links the
+layout wants, and only then are those made. So a link that was made is a link
+that was recorded, whichever later link is refused (a name that holds a
+directory) or whenever the process stops, and the next layout removes it. A
+recorded link that was never made is nothing to remove (`absent`), or, if the
+name now holds something else, is left and listed under `skipped`.
 
 `node_modules/.opm-layout.json` gains `links: { path, target }[]`, omitted when
 there are none, so a layout without links is recorded byte for byte as before.

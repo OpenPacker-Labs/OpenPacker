@@ -24,11 +24,12 @@ import {
   LAYOUT_RECORD,
   readRecord,
   removeStale,
-  type LayoutRecord,
+  writeRecord,
 } from './layout-record.js';
 import {
   assertNoUndeclaredSymlinks,
-  writeMemberLinks,
+  placeWantedLinks,
+  removeStaleLinks,
 } from './layout-write-links.js';
 import { chainOfLockPath } from './lock-tree.js';
 import {
@@ -154,38 +155,29 @@ export async function writeNodeModules(
   );
   await removeStale(root, previous, names, new Set(shims.root));
   // Links last: a name that was a package is gone by now, and a package that
-  // takes the place of an old link has already replaced it.
-  const links = await writeMemberLinks(
+  // takes the place of an old link has already replaced it. They go in two
+  // halves with the record between them, so that a link made is a link recorded
+  // even if a later one is refused or the process stops.
+  const stale = await removeStaleLinks(
     projectRoot,
     plan.links,
     previous.links ?? [],
     new Set(plan.placements.map((place) => placePath(place.chain))),
   );
-  const { kept, ...counts } = links;
-  outcome.memberLinks = { declared: plan.links.length, ...counts };
-  skipped.push(...kept);
+  await writeRecord(root, previous, {
+    packages: [...names],
+    bins: shims.root,
+    links: plan.links,
+  });
+  const made = await placeWantedLinks(projectRoot, plan.links, stale.emptied);
+  outcome.memberLinks = {
+    declared: plan.links.length,
+    created: made.created,
+    unchanged: made.unchanged,
+    removed: stale.removed,
+  };
+  skipped.push(...stale.kept);
   await assertNoUndeclaredSymlinks(projectRoot, plan.placements, plan.links);
-  if (
-    plan.placements.length > 0 ||
-    previous.packages.length > 0 ||
-    plan.links.length > 0 ||
-    (previous.links?.length ?? 0) > 0
-  )
-    await writeFileAtomic(
-      join(root, LAYOUT_RECORD),
-      `${JSON.stringify(
-        {
-          layoutVersion: 1,
-          packages: [...names].sort(),
-          bins: [...shims.root].sort(),
-          ...(plan.links.length > 0 && {
-            links: plan.links.map(({ path, target }) => ({ path, target })),
-          }),
-        } satisfies LayoutRecord,
-        undefined,
-        2,
-      )}\n`,
-    );
   return outcome;
 }
 

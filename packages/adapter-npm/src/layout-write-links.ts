@@ -24,12 +24,19 @@ import {
 import { type LayoutLink, placePath } from './layout-links.js';
 import type { Placement } from './layout-plan.js';
 
-export interface LinkWriteOutcome {
-  created: number;
-  unchanged: number;
+/** What taking the stale links away did. */
+export interface LinkRemovalOutcome {
   removed: number;
   /** Recorded links that were not removed because they are no longer what was written. */
   kept: { path: string; reason: string }[];
+  /** Scope directories a removal may have emptied. */
+  emptied: ReadonlySet<string>;
+}
+
+/** What making the wanted links did. */
+export interface LinkPlacementOutcome {
+  created: number;
+  unchanged: number;
 }
 
 /** The scope directory a link sits in, or undefined when it sits in a node_modules. */
@@ -42,40 +49,50 @@ function scopeOf(path: string): string | undefined {
 }
 
 /**
- * Make `wanted` the links of the layout: take away the recorded links that are
- * no longer wanted (or want another target), then make the wanted ones.
+ * The first half of making `wanted` the links of the layout: take away the
+ * recorded links that are no longer wanted (or want another target).
  *
  * A path the layout installs a package at now (`placed`) is not removed here:
  * installing the package replaced the link, without following it.
  */
-export async function writeMemberLinks(
+export async function removeStaleLinks(
   projectRoot: string,
   wanted: readonly LayoutLink[],
   recorded: readonly LayoutLink[],
   placed: ReadonlySet<string>,
-): Promise<LinkWriteOutcome> {
-  const outcome: LinkWriteOutcome = {
-    created: 0,
-    unchanged: 0,
-    removed: 0,
-    kept: [],
-  };
+): Promise<LinkRemovalOutcome> {
   const target = new Map(wanted.map((link) => [link.path, link.target]));
+  const kept: { path: string; reason: string }[] = [];
   const emptied = new Set<string>();
+  let removed = 0;
   for (const old of recorded) {
     if (placed.has(old.path)) continue;
     if (target.get(old.path) === old.target) continue;
     const result = await removeMemberLink(projectRoot, old.path, old.target);
     if (result === 'removed') {
-      outcome.removed += 1;
+      removed += 1;
       const scope = scopeOf(old.path);
       if (scope !== undefined) emptied.add(scope);
     } else if (result === 'kept')
-      outcome.kept.push({
+      kept.push({
         path: join(projectRoot, ...old.path.split('/')),
         reason: `${old.path} is no longer the link opm wrote (${old.target}), so it is left as it is`,
       });
   }
+  return { removed, kept, emptied };
+}
+
+/**
+ * The second half: make the wanted links, then remove the scope directories the
+ * removals emptied. The caller has recorded `wanted` before this runs, so a link
+ * made here is never one the record does not know, whichever later one fails.
+ */
+export async function placeWantedLinks(
+  projectRoot: string,
+  wanted: readonly LayoutLink[],
+  emptied: ReadonlySet<string>,
+): Promise<LinkPlacementOutcome> {
+  const outcome: LinkPlacementOutcome = { created: 0, unchanged: 0 };
   for (const link of wanted) {
     const result = await placeMemberLink(projectRoot, link.path, link.target);
     if (result === 'created') outcome.created += 1;

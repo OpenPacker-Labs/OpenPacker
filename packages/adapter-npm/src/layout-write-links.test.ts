@@ -191,6 +191,49 @@ describe('writeNodeModules with workspace links', () => {
     );
   });
 
+  it('records a link before it makes it, so a link made before a later one fails is not left behind', async () => {
+    const p = await project();
+    await mkdir(join(p.modules, 'z-taken'), { recursive: true });
+    await writeFile(join(p.modules, 'z-taken', 'mine'), 'precious');
+    const first = {
+      path: 'node_modules/a-first',
+      target: '../packages/member',
+    };
+    const second = {
+      path: 'node_modules/z-taken',
+      target: '../packages/member',
+    };
+
+    await expect(p.write([], [first, second])).rejects.toMatchObject({
+      code: 'LINK_CONFLICT',
+      path: 'node_modules/z-taken',
+    });
+
+    expect(
+      (await lstat(join(p.modules, 'a-first'))).isSymbolicLink(),
+      'node_modules/a-first, made before node_modules/z-taken was refused',
+    ).toBe(true);
+    expect(
+      (await p.record()).links,
+      'links in .opm-layout.json after the write that stopped at the second link',
+    ).toEqual([first, second]);
+
+    // The next layout, which wants no links, takes away what the failed one made.
+    const outcome = await p.write([], []);
+
+    await expect(
+      lstat(join(p.modules, 'a-first')),
+      'node_modules/a-first after a layout that wants no links',
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(p.modules, 'z-taken', 'mine'), 'utf8')).toBe(
+      'precious',
+    );
+    expect(outcome.memberLinks.removed).toBe(1);
+    expect(outcome.skipped.map((entry) => entry.path)).toEqual([
+      join(p.modules, 'z-taken'),
+    ]);
+  });
+
   it('refuses a link somebody else made to another place, and leaves it', async () => {
     const p = await project();
     await mkdir(join(p.root, 'elsewhere'));

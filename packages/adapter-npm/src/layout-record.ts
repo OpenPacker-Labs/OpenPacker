@@ -9,7 +9,11 @@
 
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { memberLinkProblem, removeTree } from '@openpacker/project-io';
+import {
+  memberLinkProblem,
+  removeTree,
+  writeFileAtomic,
+} from '@openpacker/project-io';
 import type { LayoutLink } from './layout-links.js';
 import { unsafeNameProblem } from './layout-plan.js';
 
@@ -112,4 +116,48 @@ async function removeIfEmpty(directory: string): Promise<void> {
   } catch {
     // already gone
   }
+}
+
+/**
+ * Write the record of this layout: the packages and bins it wrote and the
+ * member links it is about to make. Nothing is written when there is nothing to
+ * say now and nothing was said before, so an empty project stays without one.
+ *
+ * It is written before the links are made, not after. A link made and then
+ * followed by a failure (a name that holds a directory, a crash) is already in
+ * it, so the next layout removes it, and a recorded link that was never made is
+ * nothing to remove. Written after, the failure left the earlier links of the
+ * same layout unrecorded, and nothing would ever take them away.
+ */
+export async function writeRecord(
+  root: string,
+  previous: LayoutRecord,
+  now: {
+    packages: readonly string[];
+    bins: readonly string[];
+    links: readonly LayoutLink[];
+  },
+): Promise<void> {
+  if (
+    now.packages.length === 0 &&
+    previous.packages.length === 0 &&
+    now.links.length === 0 &&
+    (previous.links?.length ?? 0) === 0
+  )
+    return;
+  await writeFileAtomic(
+    join(root, LAYOUT_RECORD),
+    `${JSON.stringify(
+      {
+        layoutVersion: 1,
+        packages: [...now.packages].sort(),
+        bins: [...now.bins].sort(),
+        ...(now.links.length > 0 && {
+          links: now.links.map(({ path, target }) => ({ path, target })),
+        }),
+      } satisfies LayoutRecord,
+      undefined,
+      2,
+    )}\n`,
+  );
 }
