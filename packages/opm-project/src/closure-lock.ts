@@ -16,7 +16,8 @@ import {
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
-import { resolveGraph, solveGraph, type ResolvedGraph } from './resolve.js';
+import { resolveGraph, type ResolvedGraph } from './resolve.js';
+import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import {
   assertSupplyChainAllowed,
