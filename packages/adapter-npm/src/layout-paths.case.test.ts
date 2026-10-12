@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
+import type { LayoutLink } from './layout-links.js';
 import {
   LayoutPathsError,
   planLayoutFromPaths,
@@ -33,9 +34,12 @@ function at(name: string, chain: string[], base?: string, version = '1.0.0') {
 
 const MEMBERS = ['packages/a', 'packages/b'];
 
-function problemsOf(placed: ReturnType<typeof at>[]): readonly string[] {
+function problemsOf(
+  placed: ReturnType<typeof at>[],
+  links: readonly LayoutLink[] = [],
+): readonly string[] {
   try {
-    planLayoutFromPaths(placed, { members: MEMBERS });
+    planLayoutFromPaths(placed, { members: MEMBERS, links });
   } catch (error) {
     if (error instanceof LayoutPathsError) return error.problems;
     throw error;
@@ -123,6 +127,40 @@ describe('planLayoutFromPaths and names that differ only by case', () => {
         at('foo-x', ['foo-x']),
         at('fo0', ['fo0']),
       ]),
+    ).toEqual([]);
+  });
+});
+
+describe('planLayoutFromPaths and a workspace member link', () => {
+  const link = (path: string, target: string): LayoutLink => ({ path, target });
+  const lib = link('node_modules/@fx/lib', '../../packages/lib');
+  const upper = link('node_modules/@fx/Lib', '../../packages/Lib');
+
+  it('is one directory with a package whose name differs only by case', () => {
+    expect(problemsOf([at('@fx/lib', ['@fx/lib'])], [upper])).toEqual([
+      expect.stringMatching(
+        /the link to \.\.\/\.\.\/packages\/Lib would be installed as @fx\/Lib, which differs only by case from @fx\/lib \(@fx\/lib@1\.0\.0\).*\(at node_modules\/@fx\/Lib\)/u,
+      ),
+    ]);
+  });
+
+  it('is one directory with another link', () => {
+    expect(problemsOf([], [lib, upper])).toEqual([
+      expect.stringMatching(
+        /the link to \.\.\/\.\.\/packages\/Lib would be installed as @fx\/Lib, which differs only by case from @fx\/lib \(the link to \.\.\/\.\.\/packages\/lib\)/u,
+      ),
+    ]);
+  });
+
+  it('is not one with a package in another directory, or with its own package of the same name', () => {
+    expect(
+      problemsOf(
+        [at('host', ['host']), at('@fx/Lib', ['host', '@fx/Lib'])],
+        [lib],
+      ),
+    ).toEqual([]);
+    expect(
+      problemsOf([at('@fx/lib', ['@fx/lib'], 'packages/a')], [lib]),
     ).toEqual([]);
   });
 });

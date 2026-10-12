@@ -249,6 +249,19 @@ describe('installFrozen refuses, before it fetches or writes anything', () => {
       );
     },
   );
+
+  it("a member's link beside a package whose name differs only by case", async () => {
+    const w = await standard((x) => {
+      x.place('node_modules/@fx/lib', { name: '@fx/lib', version: '1.0.0' });
+      x.member('@fx/Lib');
+    });
+    await w.write();
+    await refused(
+      w,
+      'INVALID_LOCK',
+      /the link to \.\.\/\.\.\/packages\/Lib would be installed as @fx\/Lib, which differs only by case from @fx\/lib \(@fx\/lib@1\.0\.0\).*\(at node_modules\/@fx\/Lib\)/u,
+    );
+  });
 });
 
 describe('a project without a workspace', () => {

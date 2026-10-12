@@ -281,9 +281,12 @@ Approaches compared.
     namespaces, so `Foo` in one member and `foo` in another, or one at the root
     and one inside a package, are fine. The rule goes by the install name, not
     the package's own: one package installed as `string-width-cjs` and as
-    `string-width-CJS` collides, a package beside its own alias does not. A lock
-    with such a pair installs on Linux and is refused on every platform, so that
-    what a lock lays out does not depend on the machine it is installed on.
+    `string-width-CJS` collides, a package beside its own alias does not. A
+    workspace member's link is an entry of its directory like a package:
+    `@fx/Lib` linked beside a registry `@fx/lib` is refused, the link named by
+    its target. A lock with such a pair installs on Linux and is refused on
+    every platform, so that what a lock lays out does not depend on the machine
+    it is installed on.
 18. **Only `opm ci` installs a workspace.** `opm add`, `sync` and `update`
     resolve the project's `opm.toml` and do not read members (ADR 0049's model
     is used by `opm ci`, `opm run` and `opm exec`), so the resolver of this

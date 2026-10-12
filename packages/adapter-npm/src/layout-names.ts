@@ -30,10 +30,23 @@ export function unsafeNameProblem(name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * What the case check says of something that takes a directory: a package by
+ * `name@version`, or, with a `label`, anything else (a member link).
+ */
+export interface Occupant {
+  name: string;
+  version: string;
+  label?: string;
+}
+
+const labelOf = (occupant: Occupant): string =>
+  occupant.label ?? `${occupant.name}@${occupant.version}`;
+
 /** What the case check needs to know of a placed package. */
 interface Placed {
   installName: string;
-  entry: { name: string; version: string } | undefined;
+  entry: Occupant | undefined;
 }
 
 /**
@@ -53,9 +66,9 @@ export function caseVariant<T extends Placed>(
 }
 
 export function caseCollision(
-  entry: { name: string; version: string },
+  entry: Occupant,
   name: string,
   variant: Placed,
 ): string {
-  return `${entry.name}@${entry.version} would be installed as ${name}, which differs only by case from ${variant.installName} (${variant.entry!.name}@${variant.entry!.version}) in the same directory; they are one directory on a case-insensitive filesystem`;
+  return `${labelOf(entry)} would be installed as ${name}, which differs only by case from ${variant.installName} (${labelOf(variant.entry!)}) in the same directory; they are one directory on a case-insensitive filesystem`;
 }

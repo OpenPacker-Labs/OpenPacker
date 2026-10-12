@@ -14,11 +14,16 @@
 
 import { compareText } from './layout-compare.js';
 import {
+  chainOfPlace,
   checkLayoutLinks,
   placePath,
   type LayoutLink,
 } from './layout-links.js';
-import { caseCollision, unsafeNameProblem } from './layout-names.js';
+import {
+  caseCollision,
+  unsafeNameProblem,
+  type Occupant,
+} from './layout-names.js';
 import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
@@ -129,10 +134,7 @@ export function checkLockPlacements(
   const taken = new Map<string, PlaceToCheck>();
   // Names that differ only by case, beside each other in one `node_modules`:
   // the project's and each member's own are directories of their own.
-  const casing = new Map<
-    string,
-    { installName: string; entry: PlaceToCheck }
-  >();
+  const casing = new Map<string, { installName: string; entry: Occupant }>();
   for (const entry of placed) {
     const { chain, base = '' } = entry;
     const where = placePath(chain, base);
@@ -165,6 +167,24 @@ export function checkLockPlacements(
     const twin = casing.get(folded);
     if (twin !== undefined && twin.installName !== installName)
       problems.push(`${caseCollision(entry, installName, twin)} (at ${where})`);
+    else casing.set(folded, { installName, entry });
+  }
+  // A member's link is a directory entry of the project's `node_modules` too.
+  for (const link of options.links ?? []) {
+    const chain = chainOfPlace(link.path);
+    if (chain === undefined) continue; // the links' own check says why
+    const installName = chain.at(-1)!;
+    const folded = `${placementKey('', chain.slice(0, -1))}\u0002${installName.toLowerCase()}`;
+    const entry = {
+      name: installName,
+      version: '',
+      label: `the link to ${link.target}`,
+    };
+    const twin = casing.get(folded);
+    if (twin !== undefined && twin.installName !== installName)
+      problems.push(
+        `${caseCollision(entry, installName, twin)} (at ${link.path})`,
+      );
     else casing.set(folded, { installName, entry });
   }
   for (const { id, chain, base = '' } of placed) {
