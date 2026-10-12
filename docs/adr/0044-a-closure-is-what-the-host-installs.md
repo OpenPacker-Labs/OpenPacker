@@ -375,6 +375,31 @@ independent review got the same two figures.
   as long as the key, escape and newline in it. It gives
   `Duplicate object member: ` and `xy` and 62 `k`, then
   `… (2097170 characters) at byte N`.
+- **The CLI makes what it writes of an error plain, once.** A `safeEcho` at each
+  site that repeats registry text kept missing one. A review found a
+  dependency's name and range in `UNSUPPORTED_DEPENDENCY_SPEC` and the
+  `modified` timestamp in the release-age check that passes, and a probe after
+  it a version string in `Invalid version`, each with its escape sequences
+  intact (V8 reads a parenthesised comment after a date as part of the date, so
+  `2020-01-01 (<escape>)` is a time). The sites that were found now use
+  `safeEcho` (the dependency's name, range and owner in the three messages of
+  `dependency-spec.ts`, `Invalid npm coordinate`, and the policy's bound), and
+  the one place the CLI writes an error, `report` in
+  `apps/opm/src/error-report.ts`, passes every message through `plainLine`
+  (`@openpacker/canonical`, the same reading as `safeEcho` without the cut):
+  escape sequences and control, format and bidirectional characters are removed
+  and each run of line breaks and tabs is one space, so the only line break in
+  what is written is the one the writer adds. It does this before the secrets
+  are withheld, so a zero-width character cannot split a credential's name past
+  the redaction. `handleError` (usage, run, `OpmError` and coded errors),
+  `formatFailure` (an error with no code, its causes, and `opmx`'s) and the
+  reasons `opm resolve` lists use it. A message with nothing to remove is
+  written byte for byte as before (`apps/opm/test/error-text.test.ts` pins six
+  real ones). Not covered: stderr lines that are not errors (what a conversion
+  lost, a skipped path), `opm plugin` store messages, a child process's own
+  stderr, and `opmx`'s spawn failures; and the other ecosystems' adapters still
+  word their own errors from their registries' text, which the CLI now makes
+  plain on the way out.
 
 ### The value limit is a budget the parser stops at
 

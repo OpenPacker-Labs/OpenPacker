@@ -174,7 +174,9 @@ resolve ends, so a registry that makes a resolve visit many packages can make it
 hold more than one document's worth. A refusal names the package, the size seen
 and the limit, and a publish time that is missing because the registry's
 document was refused says so in the policy message; the text it repeats from the
-document is capped and has its control characters removed. See the
+document is capped and has its control characters removed, and the command line
+removes escape sequences, control characters and line breaks from the errors it
+reports, whatever adapter worded them. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 Host installers that only advertise `install` still participate: their plans
