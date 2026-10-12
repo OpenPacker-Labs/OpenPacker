@@ -8,7 +8,7 @@ import { hasOverlongHost } from '../src/url-host.js';
  * `new URL` on a grid of addresses and holds the helper to that.
  *
  * Every address of the grid carries 32 KiB of `ß.é.` somewhere it could be read
- * as host. On the unguarded shapes the parser takes about 60 ms; on anything it
+ * as host (the review's forms also with 96 KiB of percent-escaped labels). On the unguarded shapes the parser takes about 60 ms; on anything it
  * reads in linear time it takes well under 2 ms. An address the helper lets
  * through must be the second kind: if it took over 25 ms (three tries, so that
  * a busy machine does not fail the test) the helper missed a way of reading a
@@ -17,6 +17,8 @@ import { hasOverlongHost } from '../src/url-host.js';
  */
 
 const PAYLOAD = 'ß.é.'.repeat(8192);
+/** Percent-escaped labels are slower to decode and cheaper to write: 96 KiB for the same cost. */
+const ESCAPED = '%C3%A9.'.repeat(14043);
 const BOUND_MS = 25;
 
 function seeded(seed: number): () => number {
@@ -121,7 +123,10 @@ function* grid(): Generator<string> {
     'http:///x[h.test/',
   ];
   for (const prefix of named)
-    for (const tail of TAILS) yield tail(`${prefix}${PAYLOAD}`);
+    for (const tail of TAILS) {
+      yield tail(`${prefix}${PAYLOAD}`);
+      yield tail(`${prefix}${ESCAPED}`);
+    }
   for (const scheme of SCHEMES)
     for (const slashes of ['//', '\\\\'])
       for (const host of HOSTS)
