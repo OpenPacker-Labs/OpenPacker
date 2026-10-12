@@ -730,7 +730,8 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
 
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
-    io.stderr.write(`${report('', error.message)}\n${help()}\n`);
+    io.stderr.write(report('', error.message));
+    io.stderr.write(`\n${help()}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
