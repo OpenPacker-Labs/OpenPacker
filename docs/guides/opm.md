@@ -122,7 +122,9 @@ calls libc `openat` and its siblings through koffi (`/dev/fd/N/child` does not
 resolve there), and Windows opens children with `NtCreateFile` relative to the
 parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
 never a lexical pathname fallback. Path escapes, symlink swaps, and linked
-metadata still fail closed with `UNSAFE_PATH`.
+metadata still fail closed with `UNSAFE_PATH`. The one symlink opm makes, a
+workspace member's link in `node_modules`, goes through the same handles
+([below](#workspace-member-links)).
 
 ---
 
@@ -234,9 +236,10 @@ What `layout` writes:
   recorded. A direct requirement, and the version most packages want, sits in
   `node_modules/<name>`; a package that needs a different version of the same
   name gets it in its own `node_modules` (`a → c@1` and `b → c@2` becomes
-  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks. A
-  lock with no recorded edges (an offline lock holds only the direct set) is
-  laid out flat by name, newest first, and the version left out is reported.
+  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks,
+  except a workspace member's link ([below](#workspace-member-links)). A lock
+  with no recorded edges (an offline lock holds only the direct set) is laid out
+  flat by name, newest first, and the version left out is reported.
 - **Hard links, not copies.** Each file is a link to the store's, verified to be
   the same inode. If the filesystem cannot link, opm copies and says so.
 - **Executables** are small shell scripts in `node_modules/.bin` (plus `.cmd` on
@@ -247,6 +250,46 @@ What `layout` writes:
   not produced by npm, and the projection says so.
 - `node_modules/.opm-layout.json` records what opm wrote. The next layout
   removes only that; a package you installed some other way is left alone.
+
+#### Workspace member links
+
+A workspace's members are the one thing in `node_modules` that is a symlink (a
+junction on Windows). A link from a member's name to the member's own directory
+lets `packages/b` resolve `packages/a`'s live source with no install: an edit to
+`a` is seen at once. Nothing else is a symlink, and the rules are code, not
+convention ([ADR 0050](../adr/0050-workspace-member-links.md), decided
+2026-10-12):
+
+- The link lives in a `node_modules` (or a scope directory in one), is named
+  after one package, and points by a relative path at a place **inside the
+  project** that is not under `node_modules` or `.opm`. An absolute target, a
+  `..` that leaves the project, an empty or NUL-containing text, a link in
+  `.bin` and a link where a package is installed are all refused before anything
+  is written. So is a target that goes through a directory which is itself a
+  symlink (a committed `packages -> ../outside`): the part of the target that
+  exists is walked without following anything, at every layout write. A target
+  that does not exist yet is allowed. The check is of the moment it runs; a
+  directory swapped for a link after it is found at the next write.
+- It is made through the same no-follow, handle-relative calls as every other
+  write. A name that already holds something else (a file, a directory, a link
+  to another place) is an error that names it and is not replaced; the same link
+  again changes nothing.
+- `node_modules/.opm-layout.json` lists each link (`links`: path and text). The
+  next layout removes a link only while it is exactly the one that was written,
+  so a link you made by hand, or repointed, is left and reported. (On Linux and
+  macOS a file put at that exact name in the instant between the check and the
+  removal is removed with it; a directory never is. ADR 0050 has the table.)
+- A tool that reads `node_modules` treats a listed link as a leaf: it reads the
+  link and not what it points at, so a member's source is never hashed or
+  counted as part of `node_modules`. A symlink that is not listed is refused as
+  it always was.
+- On Windows a link is a directory junction, which needs no privilege. It holds
+  an absolute path, so a project moved on disk needs its layout written again,
+  and a member must be a directory.
+
+The layout writer and its plan carry these links today. Reading members out of a
+lock and installing a workspace (`opm ci` still refuses a lock that has
+`link: true` entries) is not part of this.
 
 ### Installing exactly a lock (`opm ci`)
 
@@ -287,7 +330,9 @@ What it does, in order:
    the previous `node_modules` as it was. The only hosts contacted are those of
    the lock's `resolved` URLs.
 4. **Writes the lock's layout.** Each package is at the path its key names,
-   hard-linked from the store, with `.bin` shims; no symlinks.
+   hard-linked from the store, with `.bin` shims; no symlinks (a lock's
+   workspace links are refused for now, see
+   [Workspace member links](#workspace-member-links)).
 
 Which entries a machine installs follows npm: `dev`, `optional` and `peer`
 entries are dropped by `--omit`; an optional package for another `os`, `cpu` or
@@ -648,14 +693,68 @@ dependency's lifecycle scripts, never fetch or install anything, and never print
 the environment. `opm run` is for your repository's commands; use `opmx` for a
 tool you have not reviewed.
 
-Not here: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
-[ADR 0042](../adr/0042-upm-v1-gaps.md)), and the `npm_config_*` and
+Not here yet: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
+the model they will be built on is described under
+[Workspaces](#workspaces-the-model) below), and the `npm_config_*` and
 `npm_execpath` variables.
 
 On Windows a script, and a bin that is a `.cmd` shim, are started through
 `cmd.exe /d /s /c` with every argument quoted and escaped for it; a real `.exe`
 is started directly. The quoting is covered by tests that run on every platform,
 and has not been run on Windows.
+
+### Workspaces (the model)
+
+`opm` can read an npm or pnpm workspace repository: which directories are
+members, which member depends on which, in what order they build, and which
+members a `--filter` selects
+([ADR 0049](../adr/0049-workspaces-are-a-model-before-they-are-an-install.md)).
+No command uses this yet; `opm ci` still refuses a workspace lock, and `opm run`
+has no `--filter`. It is a library that the commands will be built on, in
+`@openpacker/opm-project` (reading the directory) and `@openpacker/adapter-core`
+(the pure model).
+
+```ts
+import { discoverWorkspace, graphOfWorkspace } from '@openpacker/opm-project';
+import {
+  parseFilter,
+  selectMembers,
+  topologicalOrder,
+  DEFAULT_WORKSPACE_LIMITS,
+} from '@openpacker/adapter-core';
+
+const found = await discoverWorkspace('/work/repo'); // undefined: not a workspace
+const graph = graphOfWorkspace(found!); // each tool's own link policy; pass one to override
+const order = topologicalOrder(graph, { cycles: 'tolerate' });
+const limits = DEFAULT_WORKSPACE_LIMITS;
+const picked = selectMembers(graph, [
+  parseFilter('@acme/app...', { cwd: '', limits }), // the package and what it depends on
+]).selected;
+```
+
+What it reads: `pnpm-workspace.yaml` `packages:` (with `!` exclusions) when the
+root has one, otherwise `package.json` `workspaces`. The globs are `*`, `?`,
+`**` and `{a,b}`, read as the two tools read them; anything else (a character
+class, a backslash, a `..`) is refused by name. Everything is bounded (members,
+entries read, depth, file sizes), a name that is not a package name or that two
+members share is refused, and **a symbolic link is never followed**: one a
+pattern names is an error, one met while a `**` searches is passed over and
+listed.
+
+Two settings are yours to state, not the model's to guess. `linkPolicy` says
+whether a plain `^1.0.0` reaches a member that satisfies it (npm: always; pnpm
+since v9: only with `link-workspace-packages`); `cycles` says whether a cycle
+among members is an error or is tolerated and reported (pnpm warns). A
+`workspace:` specifier that names nothing, or that the model does not support,
+is an error that names the specifier and the member, and `publishedDependencies`
+gives the `^1.2.3` that `workspace:^` becomes when a package is packed. Filters
+are `pnpm --filter`'s: a name, `@scope/*`, `./dir`, `{dir/**}`, `name...`,
+`...name`, `^` and `!`; `[since]` is refused until `opm` can ask git. A
+directory is a pattern, as in pnpm 10: `./packages/a` is the member in that
+directory and nothing inside it, `./packages` is no member at all, and
+`./packages/*` or `{packages/**}` are the ones to write for several.
+`legacyDirFiltering: true` gives pnpm's `legacy-dir-filtering` instead (a
+directory and everything under it); `.npmrc` is not read, so you say which.
 
 ### `opmx`
 

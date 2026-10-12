@@ -8,6 +8,9 @@
   [ADR 0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md):
   the `layout` level needs no native manifest, plans nested versions from the
   lock's edges, and links files from the store
+- Amended by [ADR 0050](0050-workspace-member-links.md): the handle-relative
+  create gains workspace-member links, on Windows as a junction made relative to
+  the parent handle (and the one window that leaves)
 
 ## Context
 

@@ -5,6 +5,8 @@ Date: 2026-10-11
 ## Status
 
 Accepted — amends [0034](0034-opm-projects-into-native-project-formats.md).
+Amended by [0050](0050-workspace-member-links.md): `symlinkat` and `readlinkat`
+([Amendment](#amendment-2026-10-12-symlinkat-and-readlinkat)).
 
 ## Context
 
@@ -77,3 +79,41 @@ Still Linux-shaped, outside `opm init`, `import`, `add` and `sync`:
 and `opm pack` output collection (`pack-provider/src/packer.ts`) join children
 onto `/dev/fd/N`, and `pack-provider/src/executable.ts` snapshots with
 `O_TMPFILE`. None has been exercised on macOS and each wants the same treatment.
+
+## Amendment (2026-10-12): `symlinkat` and `readlinkat`
+
+[ADR 0050](0050-workspace-member-links.md) allows one kind of symlink in
+`node_modules`, a workspace member's link, and creates it through this backend.
+The table in the Decision gains two calls:
+
+| Platform | Link operation                                                                       |
+| -------- | ------------------------------------------------------------------------------------ |
+| Linux    | `symlink`/`readlink` on `/proc/self/fd/N/name` (the final component is not followed) |
+| macOS    | libc `symlinkat`, `readlinkat`                                                       |
+
+Both are in `handle-libc-profile.ts` under their plain names on every target
+(`$INODE64` does not apply to either), so a missing symbol is the same
+`StableHandleError` as any other, raised before a call is made. The signatures
+are the part to get right: `symlinkat(target, newdirfd, linkpath)` puts the
+directory between the two paths, and `readlinkat(dirfd, path, buf, size)`
+returns an `ssize_t` count with no terminating NUL. Errors are Node-shaped
+(`EEXIST: file already exists, symlink '<target>' -> '<name>'`); a read that
+fills its 4096-byte buffer is refused as possibly truncated rather than
+returned.
+
+The first-use layout checks gain one, in the way the stat and dirent checks
+work: the first link made reads its own text back with `readlinkat` and asks
+`fstatat` with `AT_SYMLINK_NOFOLLOW` what it is. The text must equal the bytes
+given, `fstatat` must say link, and its size must be the target's length. If
+not, the link is removed and the error names the call and the raw bytes, for
+example
+`libc symlinkat/readlinkat "darwin-arm64" disagree: readlinkat returned 3 bytes 2e2e2f but symlinkat was given 15 bytes 2e2e2f7061636b616765732f706b67`.
+The glibc profile runs the same check, and the suite fails it on purpose with a
+wrong `AT_SYMLINK_NOFOLLOW` value.
+
+`handle-link.test.ts` runs through `/proc/self/fd` and, as
+`handle-link.libc-at.test.ts`, through this backend bound to glibc; the macOS
+leg of CI runs it against libSystem with no override, and the conformance
+scenarios `links`, `linkRefusals` and `linkRaces` must give the transcript Linux
+recorded. What no Linux host can show remains the layout facts above plus these
+two symbols' behaviour in libSystem.

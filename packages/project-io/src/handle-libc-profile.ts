@@ -57,16 +57,22 @@ export interface DirentLayout {
   readonly nameOffset: number;
 }
 
-export type LibcSymbol =
-  | 'openat'
-  | 'mkdirat'
-  | 'renameat'
-  | 'unlinkat'
-  | 'fstatat'
-  | 'fdopendir'
-  | 'readdir'
-  | 'closedir'
-  | 'close';
+/** The C functions the backend calls; a profile says which exported names to try for each. */
+const SYMBOLS = [
+  'openat',
+  'mkdirat',
+  'renameat',
+  'unlinkat',
+  'fstatat',
+  'symlinkat',
+  'readlinkat',
+  'fdopendir',
+  'readdir',
+  'closedir',
+  'close',
+] as const;
+
+export type LibcSymbol = (typeof SYMBOLS)[number];
 
 export interface LibcAtProfile {
   /** Names the profile in diagnostics. */
@@ -183,17 +189,10 @@ const LINUX_ARM64_STAT: StatLayout = {
 const LINUX_DIRENT: DirentLayout = { typeOffset: 18, nameOffset: 19 };
 
 function plainSymbols(): Record<LibcSymbol, readonly string[]> {
-  return {
-    openat: ['openat'],
-    mkdirat: ['mkdirat'],
-    renameat: ['renameat'],
-    unlinkat: ['unlinkat'],
-    fstatat: ['fstatat'],
-    fdopendir: ['fdopendir'],
-    readdir: ['readdir'],
-    closedir: ['closedir'],
-    close: ['close'],
-  };
+  // SAFETY: the loop gives every symbol of SYMBOLS exactly itself.
+  const symbols = {} as Record<LibcSymbol, readonly string[]>;
+  for (const symbol of SYMBOLS) symbols[symbol] = [symbol];
+  return symbols;
 }
 
 function requireLittleEndian(): void {

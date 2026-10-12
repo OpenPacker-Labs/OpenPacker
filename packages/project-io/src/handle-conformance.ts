@@ -26,6 +26,7 @@ import {
 import { constants as osConstants } from 'node:os';
 import { join, parse, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { linkRaces, linkRefusals, links } from './handle-conformance-links.js';
 import {
   lstatChild,
   mkdirChild,
@@ -714,22 +715,18 @@ export const scenarios = {
   concurrency,
   segments,
   errors,
+  links,
+  linkRefusals,
+  linkRaces,
 };
 
 export type ScenarioName = keyof typeof scenarios;
 
-export const scenarioNames: readonly ScenarioName[] = [
-  'walk',
-  'files',
-  'stats',
-  'renames',
-  'removals',
-  'listings',
-  'swapped',
-  'concurrency',
-  'segments',
-  'errors',
-];
+// SAFETY: the keys of `scenarios` are exactly its ScenarioNames, in the order it lists them.
+const names = Object.keys(scenarios) as ScenarioName[];
+
+/** Every scenario, in the order `scenarios` lists them. */
+export const scenarioNames: readonly ScenarioName[] = names;
 
 /** The transcript of one scenario in a fresh subdirectory of `dir`. */
 export async function transcript(

@@ -8,10 +8,12 @@
 import { constants } from 'node:fs';
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   open,
   readFile,
+  readlink,
   realpath,
   rm,
   stat,
@@ -23,6 +25,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectedTranscripts } from './handle-conformance.expected.js';
 import { scenarioNames, transcript } from './handle-conformance.js';
+import { readlinkChild, symlinkChild, unlinkChild } from './handle-link.js';
 import {
   childBackendKind,
   lstatChild,
@@ -118,6 +121,65 @@ describe.skipIf(process.platform !== 'darwin')(
         }
       } finally {
         await parent.close();
+      }
+    });
+
+    it('makes, reads and removes a member link with symlinkat and readlinkat, in agreement with Node', async () => {
+      // The first link made checks libSystem's symlinkat, readlinkat and
+      // fstatat against each other (handle-libc.ts) and throws, naming the
+      // call and the raw bytes, if they disagree.
+      const here = await scratch();
+      const target = '../packages/pkg';
+      await mkdir(join(here, 'node_modules'));
+      await mkdir(join(here, 'packages', 'pkg'), { recursive: true });
+      const modules = await open(
+        join(here, 'node_modules'),
+        constants.O_RDONLY | constants.O_DIRECTORY,
+      );
+      const site = { directory: 'node_modules', projectRoot: here };
+      try {
+        expect(
+          await symlinkChild(modules, 'pkg', target, site),
+          'symlinkChild(node_modules, pkg) through libSystem symlinkat',
+        ).toBe('created');
+        expect(
+          await readlink(join(here, 'node_modules', 'pkg')),
+          "Node's readlink of the link libSystem symlinkat made",
+        ).toBe(target);
+        expect(
+          await readlinkChild(modules, 'pkg', site),
+          'readlinkChild(node_modules, pkg) through libSystem readlinkat',
+        ).toBe(target);
+        const seen = await lstatChild(modules, 'pkg');
+        expect(
+          [seen.isSymbolicLink(), seen.size],
+          'fstatat(AT_SYMLINK_NOFOLLOW) of the link: [isSymbolicLink, size]',
+        ).toEqual([true, BigInt(target.length)]);
+        expect(await symlinkChild(modules, 'pkg', target, site)).toBe(
+          'unchanged',
+        );
+        const mismatch = await symlinkChild(
+          modules,
+          'pkg',
+          '../packages/other',
+          site,
+        ).catch((error: NodeJS.ErrnoException) => error.code);
+        expect(mismatch, 'symlinkChild over a link to another target').toBe(
+          'LINK_CONFLICT',
+        );
+        await unlinkChild(modules, 'pkg');
+        await expect(
+          lstat(join(here, 'node_modules', 'pkg')),
+          'lstat after unlinkChild (unlinkat of the link)',
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(
+          await stat(join(here, 'packages', 'pkg')).then((info) =>
+            info.isDirectory(),
+          ),
+          'the member directory after unlinkChild, which must not have followed the link',
+        ).toBe(true);
+      } finally {
+        await modules.close();
       }
     });
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as entry from './index.js';
+import { symlinkChild } from './handle-link.js';
 import {
   StableHandleError,
   childBackendKind,
@@ -57,6 +58,10 @@ describe('child operations on this platform', () => {
     lstatChild: () => Promise.reject(new Error('backend reached')),
     readDirChild: () => Promise.reject(new Error('backend reached')),
     readDirChildWithTypes: () => Promise.reject(new Error('backend reached')),
+    symlinkChild: () => Promise.reject(new Error('backend reached')),
+    readlinkChild: () => Promise.reject(new Error('backend reached')),
+    unlinkNonDirectory: () => Promise.reject(new Error('backend reached')),
+    rmdirChild: () => Promise.reject(new Error('backend reached')),
   };
 
   describe.skipIf(process.platform !== 'linux')('on Linux', () => {
@@ -101,6 +106,43 @@ describe('child operations on this platform', () => {
       expect(await readdir(dir)).toEqual([]);
     });
   });
+
+  describe.skipIf(process.platform !== 'linux')(
+    'a link on a platform whose backend cannot load',
+    () => {
+      const member = '../packages/pkg';
+
+      it.each([
+        [
+          'darwin',
+          'node_modules',
+          /could not load (koffi|\/usr\/lib\/libSystem\.B\.dylib)/u,
+        ],
+        ['win32', 'C:\\project', /./u],
+      ] as const)(
+        'refuses on %s and never makes the link through /proc/self/fd',
+        async (platform, projectRoot, reason) => {
+          const parent = await open(
+            dir,
+            constants.O_RDONLY | constants.O_DIRECTORY,
+          );
+          const restore = spoofPlatform(platform);
+          try {
+            const failure = await symlinkChild(parent, 'pkg', member, {
+              directory: 'node_modules',
+              projectRoot: platform === 'win32' ? projectRoot : dir,
+            }).catch((error: Error) => error);
+            expect(failure).toBeInstanceOf(Error);
+            expect((failure as Error).message).toMatch(reason);
+          } finally {
+            restore();
+            await parent.close();
+          }
+          expect(await readdir(dir)).toEqual([]);
+        },
+      );
+    },
+  );
 
   describe.skipIf(!glibcLinux())('the test override', () => {
     it('routes Linux calls through the backend it is given, until restored', async () => {
@@ -172,11 +214,49 @@ describe('the override cannot weaken a shipped build', () => {
     expect(Object.keys(entry)).not.toContain('linuxGlibcProfile');
   });
 
-  it.each(['handle-path.ts', 'handle-libc.ts', 'handle-libc-profile.ts'])(
-    'is not switched by an environment variable in %s',
-    (file) => {
-      const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-      expect(source).not.toMatch(/process\.env|\benv\[/u);
-    },
-  );
+  it('does not export the seams of the link code, only what makes, reads and removes a link', () => {
+    for (const internal of [
+      'NtJunctions',
+      'realNtLinkOps',
+      'createJunction',
+      'readJunction',
+      'inspectReparse',
+      'windowsReadReparse',
+      'openProjectDirectory',
+      'libcBackend',
+      'rmdirChild',
+      'unlinkNonDirectory',
+      'unlinkJunction',
+      'linkOnTheWayTo',
+      'stepPlainDirectory',
+      'lstatOpened',
+    ])
+      expect(Object.keys(entry)).not.toContain(internal);
+    for (const exported of [
+      'symlinkChild',
+      'readlinkChild',
+      'unlinkChild',
+      'placeMemberLink',
+      'readMemberLink',
+      'removeMemberLink',
+      'removeEmptyScope',
+      'collectTree',
+    ])
+      expect(Object.keys(entry)).toContain(exported);
+  });
+
+  it.each([
+    'handle-path.ts',
+    'handle-libc.ts',
+    'handle-libc-profile.ts',
+    'handle-link.ts',
+    'handle-nt-link.ts',
+    'handle-nt-reparse.ts',
+    'member-link.ts',
+    'link-rules.ts',
+    'reparse-data.ts',
+  ])('is not switched by an environment variable in %s', (file) => {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    expect(source).not.toMatch(/process\.env|\benv\[/u);
+  });
 });

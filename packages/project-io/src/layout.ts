@@ -7,36 +7,31 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { constants, type BigIntStats } from 'node:fs';
-import {
-  lstat,
-  mkdir,
-  open,
-  realpath,
-  type FileHandle,
-} from 'node:fs/promises';
-import {
-  basename,
-  dirname,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { constants } from 'node:fs';
+import { lstat, type FileHandle } from 'node:fs/promises';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
-  linkChild,
-  O_DIRECTORY,
   lstatChild,
   mkdirChild,
   openChild,
   readDirChildWithTypes,
   removeChild,
   renameChild,
-  StableHandleError,
   supportsStableHandles,
 } from './handle-path.js';
+import { linkVerified, type LinkState } from './layout-hardlink.js';
+import {
+  openDirectoryAt,
+  openProjectDirectory,
+  unsafe,
+} from './stable-open.js';
+import {
+  assertTreeSnapshot,
+  sameMetadata,
+  snapshot,
+  type TreeEntrySnapshot,
+} from './tree-snapshot.js';
 
 export interface MaterialiseOptions {
   /**
@@ -53,21 +48,6 @@ export interface MaterialiseOptions {
   link?: boolean;
 }
 
-/** Files of one directory read at the same time while collecting a tree. */
-const COLLECT_CONCURRENCY = 16;
-
-export interface CollectOptions {
-  /**
-   * Accept a file whose only change while it was read is its change time.
-   *
-   * A store file is hard-linked into every project that uses it, and a project
-   * linking or unlinking it at that moment changes its ctime without touching a
-   * byte. Inode, size and modification time still have to hold still. Do not
-   * set this for a working tree that nothing else should be touching.
-   */
-  linkTolerant?: boolean;
-}
-
 export interface MaterialiseResult {
   /** Files linked or copied. */
   files: number;
@@ -75,36 +55,6 @@ export interface MaterialiseResult {
   linked: number;
   /** True when at least one file had to be copied rather than linked. */
   copied: boolean;
-}
-
-interface TreeEntrySnapshot {
-  type: 'directory' | 'file';
-  dev: bigint;
-  ino: bigint;
-  size: bigint;
-  ctimeNs: bigint;
-  mtimeNs: bigint;
-  /**
-   * A hard-linked inode changes ctime whenever another link to it is made or
-   * dropped, which a second project doing the same thing does at any moment.
-   * Content identity (inode, size, mtime) is still compared.
-   */
-  volatileCtime?: boolean;
-}
-
-/** Why a link attempt means "copy instead" and not "something is wrong". */
-const LINK_FALLBACK = new Set([
-  'EXDEV',
-  'EPERM',
-  'ENOTSUP',
-  'EOPNOTSUPP',
-  'ENOSYS',
-  'EMLINK',
-]);
-
-interface LinkState {
-  /** Set once the filesystem has said it cannot link; later files just copy. */
-  unavailable: boolean;
 }
 
 /**
@@ -120,7 +70,7 @@ export async function materialiseTree(
   options: MaterialiseOptions = {},
 ): Promise<MaterialiseResult> {
   assertContained(root, destination);
-  const rootHandle = await openStableDirectory(root, true);
+  const rootHandle = await openProjectDirectory(root, true);
   const handles: FileHandle[] = [rootHandle];
   const result: MaterialiseResult = { files: 0, linked: 0, copied: false };
   const link: LinkState | undefined =
@@ -147,7 +97,7 @@ export async function materialiseTree(
     await mkdirChild(parent, stagingName);
     const stagingHandle = await openDirectoryAt(parent, stagingName);
     handles.push(stagingHandle);
-    const sourceHandle = await openStableDirectory(source, false);
+    const sourceHandle = await openProjectDirectory(source, false);
     handles.push(sourceHandle);
     const sourceSnapshot = new Map<string, TreeEntrySnapshot>();
     const stagedSnapshot = new Map<string, TreeEntrySnapshot>();
@@ -331,233 +281,6 @@ async function walk(
   );
 }
 
-async function assertTreeSnapshot(
-  root: FileHandle,
-  expected: ReadonlyMap<string, TreeEntrySnapshot>,
-): Promise<void> {
-  const actual = new Map<string, TreeEntrySnapshot>();
-  await captureTree(root, '', actual);
-  if (actual.size !== expected.size) throw unsafe('<directory handle>');
-  for (const [path, snapshot] of expected) {
-    const current = actual.get(path);
-    if (!current || !sameSnapshot(snapshot, current))
-      throw unsafe(path === '' ? '<directory handle>' : path);
-  }
-}
-
-async function captureTree(
-  directory: FileHandle,
-  at: string,
-  out: Map<string, TreeEntrySnapshot>,
-): Promise<void> {
-  const before = await directory.stat({ bigint: true });
-  for (const entry of await readDirChildWithTypes(directory)) {
-    const path = at === '' ? entry.name : `${at}/${entry.name}`;
-    if (entry.isDirectory()) {
-      const child = await openDirectoryAt(directory, entry.name);
-      try {
-        await captureTree(child, path, out);
-      } finally {
-        await child.close();
-      }
-      continue;
-    }
-    if (!entry.isFile()) throw unsafe(path);
-    // The name is looked at, not followed: a link or anything but a regular
-    // file that took the place of a file since the listing is not a file here.
-    // One lstat through the directory handle says what opening the file and
-    // asking it would, at a third of the calls, and a snapshot is taken of
-    // every file of every package several times over.
-    const info = await lstatChild(directory, entry.name);
-    if (!info.isFile()) throw unsafe(path);
-    out.set(path, snapshot('file', info));
-  }
-  const after = await directory.stat({ bigint: true });
-  if (!sameMetadata(before, after)) throw unsafe(at || '<directory handle>');
-  out.set(at, snapshot('directory', before));
-}
-
-/**
- * Link one file and prove the link is the inode that was inspected.
- *
- * Returns false when the filesystem cannot link, so the caller copies. Any
- * other outcome that is not exactly "the entry I opened, now with one more
- * name" removes the new name and fails closed.
- */
-async function linkVerified(input: {
-  source: FileHandle;
-  destination: FileHandle;
-  name: string;
-  file: FileHandle;
-  before: BigIntStats;
-  relativePath: string;
-  link: LinkState;
-  sourceSnapshot: Map<string, TreeEntrySnapshot>;
-  destinationSnapshot: Map<string, TreeEntrySnapshot>;
-}): Promise<boolean> {
-  const { destination, name, file, before, relativePath } = input;
-  try {
-    await linkChild(input.source, name, destination, name);
-  } catch (error) {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const code = (error as NodeJS.ErrnoException).code ?? '';
-    if (error instanceof StableHandleError || LINK_FALLBACK.has(code)) {
-      // One inode out of links is that file's problem; every other reason
-      // means this filesystem will not link at all.
-      if (code !== 'EMLINK') input.link.unavailable = true;
-      return false;
-    }
-    throw error;
-  }
-  const refuse = async (): Promise<never> => {
-    await removeChild(destination, name, { force: true }).catch(
-      () => undefined,
-    );
-    throw unsafe(relativePath);
-  };
-  const placed = await lstatChild(destination, name);
-  if (
-    !placed.isFile() ||
-    BigInt(placed.dev) !== BigInt(before.dev) ||
-    BigInt(placed.ino) !== BigInt(before.ino)
-  )
-    return refuse();
-  const after = await file.stat({ bigint: true });
-  if (
-    after.dev !== before.dev ||
-    after.ino !== before.ino ||
-    after.size !== before.size ||
-    after.mtimeNs !== before.mtimeNs
-  )
-    return refuse();
-  input.sourceSnapshot.set(relativePath, snapshot('file', after, true));
-  input.destinationSnapshot.set(relativePath, snapshot('file', placed, true));
-  return true;
-}
-
-function snapshot(
-  type: TreeEntrySnapshot['type'],
-  info: Awaited<ReturnType<FileHandle['stat']>>,
-  volatileCtime = false,
-): TreeEntrySnapshot {
-  return {
-    ...(volatileCtime && { volatileCtime }),
-    type,
-    dev: BigInt(info.dev),
-    ino: BigInt(info.ino),
-    size: BigInt(info.size),
-    ctimeNs:
-      'ctimeNs' in info
-        ? BigInt(info.ctimeNs)
-        : BigInt(info.ctimeMs) * 1_000_000n,
-    mtimeNs:
-      'mtimeNs' in info
-        ? BigInt(info.mtimeNs)
-        : BigInt(info.mtimeMs) * 1_000_000n,
-  };
-}
-
-function sameSnapshot(
-  expected: TreeEntrySnapshot,
-  actual: TreeEntrySnapshot,
-): boolean {
-  return (
-    expected.type === actual.type &&
-    sameMetadata(expected, actual, expected.volatileCtime === true)
-  );
-}
-
-function sameMetadata(
-  left: {
-    dev: bigint;
-    ino: bigint;
-    size: bigint;
-    ctimeNs: bigint;
-    mtimeNs: bigint;
-  },
-  right: {
-    dev: bigint;
-    ino: bigint;
-    size: bigint;
-    ctimeNs: bigint;
-    mtimeNs: bigint;
-  },
-  ignoreCtime = false,
-): boolean {
-  return (
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    (ignoreCtime || left.ctimeNs === right.ctimeNs) &&
-    left.mtimeNs === right.mtimeNs
-  );
-}
-
-/**
- * Canonicalize the existing ancestor prefix of a stable target.
- *
- * The no-follow component walk refuses symlinked path components, which would
- * reject every layout under a legitimately symlinked ancestor — macOS
- * `/var` → `/private/var` (all of `$TMPDIR`), symlinked home directories,
- * automounters. Honor such a stable pre-existing prefix once by realpath-ing
- * the deepest existing ancestor here; the final component stays lexical so a
- * symlinked target itself is still refused, and all subsequent traversal is
- * fd-relative, so a later swap of the prefix cannot redirect anything.
- */
-async function canonicalizeStableTarget(path: string): Promise<string> {
-  const absolute = resolve(path);
-  const tail: string[] = [basename(absolute)];
-  let candidate = dirname(absolute);
-  for (;;) {
-    try {
-      const canonical = await realpath(candidate);
-      return join(canonical, ...tail.reverse());
-    } catch (error) {
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ELOOP' || code === 'ENOTDIR') throw unsafe(path);
-      if (code !== 'ENOENT') throw error;
-    }
-    const parent = dirname(candidate);
-    if (parent === candidate) return absolute;
-    tail.push(basename(candidate));
-    candidate = parent;
-  }
-}
-
-async function openStableDirectory(
-  path: string,
-  create: boolean,
-): Promise<FileHandle> {
-  const absolute = await canonicalizeStableTarget(path);
-  const root = parse(absolute).root;
-  let handle = await openDirectory(root, false);
-  try {
-    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      if (create)
-        await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'EEXIST') throw error;
-        });
-      const next = await openDirectoryAt(handle, part);
-      await handle.close();
-      handle = next;
-    }
-    return handle;
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    if (
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOENT'
-    )
-      throw unsafe(path);
-    throw error;
-  }
-}
-
 async function assertNamedHandle(
   path: string,
   handle: FileHandle,
@@ -569,66 +292,10 @@ async function assertNamedHandle(
   if (opened.dev !== named.dev || opened.ino !== named.ino) throw unsafe(path);
 }
 
-async function openDirectory(
-  path: string,
-  create: boolean,
-): Promise<FileHandle> {
-  if (create)
-    await mkdir(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EEXIST') throw error;
-    });
-  try {
-    const handle = await open(
-      path,
-      constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-    if (!(await handle.stat()).isDirectory()) {
-      await handle.close();
-      throw unsafe(path);
-    }
-    return handle;
-  } catch (error) {
-    if (
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOENT'
-    )
-      throw unsafe(path);
-    throw error;
-  }
-}
-
-async function openDirectoryAt(
-  parent: FileHandle,
-  name: string,
-): Promise<FileHandle> {
-  const handle = await openChild(
-    parent,
-    name,
-    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-  );
-  if (!(await handle.stat()).isDirectory()) {
-    await handle.close();
-    throw unsafe(name);
-  }
-  return handle;
-}
-
 export function supportsStableTreeLayout(
   platform: NodeJS.Platform = process.platform,
 ): boolean {
   return supportsStableHandles(platform);
-}
-
-function unsafe(path: string): ProjectIoError {
-  return new ProjectIoError(
-    'UNSAFE_PATH',
-    path,
-    `Layout path is linked, special, or unstable: ${path}`,
-  );
 }
 
 /**
@@ -651,7 +318,7 @@ function assertContained(root: string, destination: string): void {
 
 /** Remove a layout directory if it exists. */
 export async function removeTree(path: string): Promise<void> {
-  const parent = await openStableDirectory(dirname(resolve(path)), false);
+  const parent = await openProjectDirectory(dirname(resolve(path)), false);
   try {
     await removeChild(parent, resolve(path).split(sep).at(-1)!, {
       recursive: true,
@@ -660,140 +327,4 @@ export async function removeTree(path: string): Promise<void> {
   } finally {
     await parent.close();
   }
-}
-
-/** Every file under `root`, as archive entries with forward-slash paths. */
-export async function collectFiles(
-  root: string,
-  prefix = '',
-): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
-  const rootHandle = await openStableDirectory(root, false);
-  try {
-    return await collectFilesFromHandle(rootHandle, prefix, root);
-  } finally {
-    await rootHandle.close();
-  }
-}
-
-/** Collect a stable tree through authority the caller already retained. */
-export async function collectFilesFromHandle(
-  rootHandle: FileHandle,
-  prefix = '',
-  displayRoot = '<directory handle>',
-  options: CollectOptions = {},
-): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
-  const linkTolerant = options.linkTolerant === true;
-  const out: {
-    path: string;
-    contents: Uint8Array;
-    executable: boolean;
-  }[] = [];
-  const snapshots = new Map<string, TreeEntrySnapshot>();
-  // Bytes read or being read; a tree past the limit is refused before the
-  // read that would cross it, however many files are in flight.
-  let reservedBytes = 0;
-  const readFileAt = async (
-    directory: FileHandle,
-    name: string,
-    path: string,
-  ): Promise<{
-    contents: Uint8Array;
-    executable: boolean;
-    before: BigIntStats;
-  }> => {
-    const file = await openChild(
-      directory,
-      name,
-      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
-    );
-    try {
-      const before = await file.stat({ bigint: true });
-      if (!before.isFile() || before.size > 512n * 1024n * 1024n)
-        throw unsafe(path);
-      const size = Number(before.size);
-      if (reservedBytes > 1024 * 1024 * 1024 - size) throw unsafe(displayRoot);
-      reservedBytes += size;
-      const contents = new Uint8Array(size);
-      let offset = 0;
-      while (offset < size) {
-        const { bytesRead } = await file.read(
-          contents,
-          offset,
-          size - offset,
-          offset,
-        );
-        if (bytesRead === 0) break;
-        offset += bytesRead;
-      }
-      const [after, named] = await Promise.all([
-        file.stat({ bigint: true }),
-        lstatChild(directory, name),
-      ]);
-      if (
-        offset !== size ||
-        !sameMetadata(before, after, linkTolerant) ||
-        after.dev !== named.dev ||
-        after.ino !== named.ino
-      )
-        throw unsafe(path);
-      return { contents, executable: (before.mode & 0o111n) !== 0n, before };
-    } finally {
-      await file.close();
-    }
-  };
-  const walkOne = async (directory: FileHandle, at: string): Promise<void> => {
-    const beforeDirectory = await directory.stat({ bigint: true });
-    const entries = await readDirChildWithTypes(directory);
-    const pathOf = (name: string) => (at === '' ? name : `${at}/${name}`);
-    for (const entry of entries)
-      if (!entry.isDirectory() && !entry.isFile())
-        throw unsafe(pathOf(entry.name));
-    // The files of one directory are read a few at a time: a package is
-    // mostly many small files, and one at a time is all waiting on the disk.
-    // The results are used in directory order, so the output is the same.
-    const wanted = entries.filter((entry) => entry.isFile());
-    const read = new Map<string, Awaited<ReturnType<typeof readFileAt>>>();
-    let next = 0;
-    await Promise.all(
-      Array.from(
-        { length: Math.min(COLLECT_CONCURRENCY, wanted.length) },
-        async () => {
-          for (;;) {
-            const entry = wanted[next++];
-            if (entry === undefined) return;
-            read.set(
-              entry.name,
-              await readFileAt(directory, entry.name, pathOf(entry.name)),
-            );
-          }
-        },
-      ),
-    );
-    for (const entry of entries) {
-      const path = pathOf(entry.name);
-      if (entry.isDirectory()) {
-        const child = await openDirectoryAt(directory, entry.name);
-        try {
-          await walkOne(child, path);
-        } finally {
-          await child.close();
-        }
-        continue;
-      }
-      const { contents, executable, before } = read.get(entry.name)!;
-      snapshots.set(path, snapshot('file', before, linkTolerant));
-      out.push({
-        path: prefix === '' ? path : `${prefix}/${path}`,
-        contents,
-        executable,
-      });
-    }
-    const afterDirectory = await directory.stat({ bigint: true });
-    if (!sameMetadata(beforeDirectory, afterDirectory))
-      throw unsafe(displayRoot);
-    snapshots.set(at, snapshot('directory', beforeDirectory));
-  };
-  await walkOne(rootHandle, '');
-  await assertTreeSnapshot(rootHandle, snapshots);
-  return out;
 }

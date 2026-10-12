@@ -1,0 +1,3944 @@
+{
+  "repo": "HoBo",
+  "tool": "pnpm",
+  "declaration": {
+    "file": "pnpm-workspace.yaml",
+    "text": "packages:\n  - \"site\"\n  - \"media\"\n  - \"packages/*\"\n  - \"packages/adapters/*\"\n  - \"packages/connectors/*\"\n  - \"packages/runtimes/*\"\n  - \"packages/providers/*\"\n  - \"packages/packs/*\"\n  - \"packages/iac/*\"\n  - \"examples/*\"\n  - \"src/draft/technical-proofs/*\"\n  - \"src/draft/exp-proofs/*/*\"\n  - \"src/draft/epic-proofs/*\"\n  - \"src/draft/projects/*\"\n  - \"external/ts-autocode\"\n  - \"external/ts-autocode/packages/*\"\nminimumReleaseAgeExclude:\n  - '@turbo/darwin-64@2.10.1'\n  - '@turbo/darwin-arm64@2.10.1'\n  - '@turbo/linux-64@2.10.1'\n  - '@turbo/linux-arm64@2.10.1'\n  - '@turbo/windows-64@2.10.1'\n  - '@turbo/windows-arm64@2.10.1'\n  - '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-darwin-x64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-linux-arm64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-linux-arm@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-linux-x64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-win32-arm64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview-win32-x64@7.0.0-dev.20260629.1'\n  - '@typescript/native-preview@7.0.0-dev.20260629.1'\n  - turbo@2.10.1\nallowBuilds:\n  \"@ast-grep/cli\": true\n  \"@bufbuild/buf\": true\n  esbuild: true\n  protobufjs: true\n"
+  },
+  "root": {
+    "name": "hobo-design",
+    "private": true,
+    "pnpm": {
+      "overrides": {
+        "ts-autocode-grounding": "workspace:*",
+        "ts-autocode-harness": "workspace:*",
+        "ts-autocode-rewrite": "workspace:*",
+        "ts-autocode-training": "workspace:*"
+      }
+    }
+  },
+  "bare": [
+    "examples/browser-runtime",
+    "examples/wasp-opensaas",
+    "packages/adapters",
+    "packages/connectors",
+    "packages/iac",
+    "packages/packs",
+    "packages/providers",
+    "packages/runtimes",
+    "src/draft/technical-proofs/autonomous-action-safety-rail-model",
+    "src/draft/technical-proofs/non-ts-idiom-roundtrip-spike"
+  ],
+  "members": {
+    "examples/ci-runner-balancing": {
+      "name": "@hobo/example-ci-runner-balancing",
+      "version": "0.1.0",
+      "private": true
+    },
+    "examples/convex-swaghaus": { "private": true },
+    "examples/durable-agent": {
+      "name": "@hobo/example-durable-agent",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": { "@hobo/runtime": "workspace:*" }
+    },
+    "examples/firecrawl-research": {
+      "name": "@hobo/example-firecrawl-research",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/connector-firecrawl": "workspace:*",
+        "@hobo/stations": "workspace:*"
+      }
+    },
+    "examples/hello-bindle": {
+      "name": "@hobo/example-hello-bindle",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@hobo/adapter-hono": "workspace:*",
+        "@hobo/bindles": "workspace:*",
+        "@hobo/cli": "workspace:*"
+      }
+    },
+    "examples/multi-cloud-shop": {
+      "name": "@hobo/example-multi-cloud-shop",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/cli": "workspace:*"
+      }
+    },
+    "examples/self-host-station": {
+      "name": "@hobo/example-self-host-station",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": { "@hobo/stations": "workspace:*" }
+    },
+    "examples/self-host-yard": {
+      "name": "@hobo/example-self-host-yard",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/camps": "workspace:*",
+        "@hobo/cli": "workspace:*",
+        "@hobo/hobo": "workspace:*",
+        "@hobo/runtime-local": "workspace:*",
+        "@hobo/yards": "workspace:*"
+      }
+    },
+    "examples/try-site": {
+      "name": "@hobo/example-try-site",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/convex": "workspace:*",
+        "@hobo/provider-browser-wasm": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/provider-lakebed": "workspace:*",
+        "@hobo/provider-netlify": "workspace:*",
+        "@hobo/provider-vercel": "workspace:*",
+        "@hobo/provider-webernetes": "workspace:*",
+        "@hobo/runtime": "workspace:*",
+        "@hobo/wasp": "workspace:*"
+      }
+    },
+    "external/ts-autocode": {
+      "name": "ts-autocode",
+      "version": "0.1.0",
+      "workspaces": ["packages/*"],
+      "dependencies": {
+        "ts-autocode-grounding": "0.1.0",
+        "ts-autocode-harness": "0.1.0",
+        "ts-autocode-rewrite": "0.1.0",
+        "ts-autocode-training": "0.1.0"
+      }
+    },
+    "external/ts-autocode/packages/grounding": {
+      "name": "ts-autocode-grounding",
+      "version": "0.1.0"
+    },
+    "external/ts-autocode/packages/harness": {
+      "name": "ts-autocode-harness",
+      "version": "0.1.0"
+    },
+    "external/ts-autocode/packages/rewrite": {
+      "name": "ts-autocode-rewrite",
+      "version": "0.1.0"
+    },
+    "external/ts-autocode/packages/training": {
+      "name": "ts-autocode-training",
+      "version": "0.1.0",
+      "devDependencies": { "ts-autocode-rewrite": "0.1.0" }
+    },
+    "media": { "name": "hobo-media", "version": "0.0.0", "private": true },
+    "packages/adapters/adapter-better-auth": {
+      "name": "@hobo/adapter-better-auth",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/adapters/adapter-drizzle": {
+      "name": "@hobo/adapter-drizzle",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/adapters/adapter-hono": {
+      "name": "@hobo/adapter-hono",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/adapters/adapter-openbao": {
+      "name": "@hobo/adapter-openbao",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/identity": "workspace:*" }
+    },
+    "packages/agent-skills": {
+      "name": "@hobo/agent-skills",
+      "version": "0.0.1",
+      "private": true
+    },
+    "packages/auth-md": { "name": "@hobo/auth-md", "version": "0.0.1" },
+    "packages/bindings": {
+      "name": "@hobo/bindings",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/bindles": {
+      "name": "@hobo/bindles",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/broker": {
+      "name": "@hobo/broker",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/contracts": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/provider-cedar": "workspace:*",
+        "@hobo/provider-opa": "workspace:*"
+      },
+      "devDependencies": { "@hobo/storage-sqlite": "workspace:*" }
+    },
+    "packages/camps": {
+      "name": "@hobo/camps",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/capability-matrix": {
+      "name": "@hobo/capability-matrix",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/trust": "workspace:*"
+      },
+      "devDependencies": { "@hobo/cloud": "workspace:*" }
+    },
+    "packages/capability-profiles": {
+      "name": "@hobo/capability-profiles",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/manifest-capability": "workspace:*",
+        "@hobo/manifest-request": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/ci-guard": {
+      "name": "@hobo/ci-guard",
+      "version": "0.0.1",
+      "private": true
+    },
+    "packages/claims": {
+      "name": "@hobo/claims",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/cli": {
+      "name": "@hobo/cli",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/cloud": "workspace:*",
+        "@hobo/componentize": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/patterns": "workspace:*",
+        "ts-autocode-grounding": "workspace:*",
+        "ts-autocode-training": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/data": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/runtime": "workspace:*",
+        "@hobo/runtime-local": "workspace:*"
+      }
+    },
+    "packages/cloud": {
+      "name": "@hobo/cloud",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/bindles": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/data": "workspace:*",
+        "@hobo/events": "workspace:*",
+        "@hobo/identity": "workspace:*",
+        "@hobo/manifest-declaration": "workspace:*",
+        "@hobo/manifest-plan": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/contract-harness": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/runtime-local": "workspace:*"
+      }
+    },
+    "packages/cloud-providers": {
+      "name": "@hobo/cloud-providers",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/provider-aws": "workspace:*",
+        "@hobo/provider-azure": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/provider-digitalocean": "workspace:*",
+        "@hobo/provider-gcp": "workspace:*",
+        "@hobo/provider-hetzner": "workspace:*",
+        "@hobo/provider-hostinger": "workspace:*",
+        "@hobo/provider-kubernetes": "workspace:*",
+        "@hobo/provider-vercel": "workspace:*",
+        "@hobo/yards": "workspace:*"
+      }
+    },
+    "packages/code": {
+      "name": "@hobo/code",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/evals": "workspace:*",
+        "@hobo/fuzz": "workspace:*",
+        "@hobo/identity": "workspace:*",
+        "@hobo/patterns": "workspace:*",
+        "@hobo/rift": "workspace:*",
+        "@hobo/replay": "workspace:*",
+        "@hobo/runtime-local": "workspace:*",
+        "@hobo/stations": "workspace:*",
+        "@hobo/status-page": "workspace:*"
+      }
+    },
+    "packages/componentize": {
+      "name": "@hobo/componentize",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/conformance": {
+      "name": "@hobo/conformance",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/runtime": "workspace:*",
+        "@hobo/trust": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/provider-kafka": "workspace:*",
+        "@hobo/runtime-dapr": "workspace:*"
+      }
+    },
+    "packages/connectivity": {
+      "name": "@hobo/connectivity",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/connectors/connector-acp": {
+      "name": "@hobo/connector-acp",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/connectors/connector-firecrawl": {
+      "name": "@hobo/connector-firecrawl",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/bindles": "workspace:*" }
+    },
+    "packages/connectors/swe-claude": {
+      "name": "@hobo/swe-claude",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-codex": {
+      "name": "@hobo/swe-codex",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-copilot": {
+      "name": "@hobo/swe-copilot",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-cursor": {
+      "name": "@hobo/swe-cursor",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-gemini": {
+      "name": "@hobo/swe-gemini",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-grok": {
+      "name": "@hobo/swe-grok",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/connector-acp": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/swe-shared": "workspace:*"
+      }
+    },
+    "packages/connectors/swe-shared": {
+      "name": "@hobo/swe-shared",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/connector-acp": "workspace:*" }
+    },
+    "packages/contract-harness": {
+      "name": "@hobo/contract-harness",
+      "version": "0.0.1"
+    },
+    "packages/contracts": {
+      "name": "@hobo/contracts",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/policy": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/control-api": {
+      "name": "@hobo/control-api",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/management": "workspace:*",
+        "@hobo/yard-world": "workspace:*"
+      },
+      "devDependencies": { "@hobo/runtime-local": "workspace:*" }
+    },
+    "packages/control-yard": {
+      "name": "@hobo/control-yard",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/control-api": "workspace:*",
+        "@hobo/management": "workspace:*"
+      },
+      "devDependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/convex": {
+      "name": "@hobo/convex",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/runtime": "workspace:*"
+      },
+      "devDependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/core": {
+      "name": "@hobo/core",
+      "version": "0.0.1",
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/data": {
+      "name": "@hobo/data",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/storage-sqlite": "workspace:*"
+      },
+      "devDependencies": { "@hobo/runtime-local": "workspace:*" }
+    },
+    "packages/data-postgres": {
+      "name": "@hobo/data-postgres",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/capability-profiles": "workspace:*" },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/dispatcher": { "name": "@hobo/dispatcher", "version": "0.0.1" },
+    "packages/evals": {
+      "name": "@hobo/evals",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/contracts": "workspace:*" }
+    },
+    "packages/events": {
+      "name": "@hobo/events",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/data": "workspace:*"
+      },
+      "devDependencies": { "@hobo/runtime-local": "workspace:*" }
+    },
+    "packages/fuzz": {
+      "name": "@hobo/fuzz",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/bindles": "workspace:*" }
+    },
+    "packages/hobo": {
+      "name": "@hobo/hobo",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/bindles": "workspace:*",
+        "@hobo/broker": "workspace:*",
+        "@hobo/camps": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/cli": "workspace:*",
+        "@hobo/cloud": "workspace:*",
+        "@hobo/code": "workspace:*",
+        "@hobo/conformance": "workspace:*",
+        "@hobo/connectivity": "workspace:*",
+        "@hobo/contracts": "workspace:*",
+        "@hobo/control-api": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/data": "workspace:*",
+        "@hobo/iac-pulumi": "workspace:*",
+        "@hobo/identity": "workspace:*",
+        "@hobo/management": "workspace:*",
+        "@hobo/mcp": "workspace:*",
+        "@hobo/policy": "workspace:*",
+        "@hobo/provider-aws": "workspace:*",
+        "@hobo/provider-azure": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/provider-digitalocean": "workspace:*",
+        "@hobo/provider-gcp": "workspace:*",
+        "@hobo/provider-hetzner": "workspace:*",
+        "@hobo/provider-hostinger": "workspace:*",
+        "@hobo/provider-kafka": "workspace:*",
+        "@hobo/provider-kubernetes": "workspace:*",
+        "@hobo/provider-lakebed": "workspace:*",
+        "@hobo/provider-neon": "workspace:*",
+        "@hobo/provider-netlify": "workspace:*",
+        "@hobo/provider-prisma-postgres": "workspace:*",
+        "@hobo/provider-ttl-sh": "workspace:*",
+        "@hobo/provider-upstash": "workspace:*",
+        "@hobo/provider-vercel": "workspace:*",
+        "@hobo/recipes": "workspace:*",
+        "@hobo/replay": "workspace:*",
+        "@hobo/runner-blacksmith": "workspace:*",
+        "@hobo/runner-depot": "workspace:*",
+        "@hobo/runner-github": "workspace:*",
+        "@hobo/runtime-cloud-native": "workspace:*",
+        "@hobo/runtime-dapr": "workspace:*",
+        "@hobo/runtime-local": "workspace:*",
+        "@hobo/runtime-oci": "workspace:*",
+        "@hobo/runtime-wasm": "workspace:*",
+        "@hobo/stations": "workspace:*",
+        "@hobo/trails": "workspace:*",
+        "@hobo/trust": "workspace:*",
+        "@hobo/yards": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/contract-harness": "workspace:*",
+        "@hobo/testing": "workspace:*"
+      }
+    },
+    "packages/iac/iac-crossplane": {
+      "name": "@hobo/iac-crossplane",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/iac/iac-pulumi": {
+      "name": "@hobo/iac-pulumi",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/iac/iac-terraform": {
+      "name": "@hobo/iac-terraform",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/identity": {
+      "name": "@hobo/identity",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/junctions": {
+      "name": "@hobo/junctions",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/yards": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/camps": "workspace:*"
+      }
+    },
+    "packages/kv-redis-compatible": {
+      "name": "@hobo/kv-redis-compatible",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/capability-profiles": "workspace:*" }
+    },
+    "packages/management": {
+      "name": "@hobo/management",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/cloud": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/identity": "workspace:*",
+        "@hobo/runtime-local": "workspace:*",
+        "@hobo/stations": "workspace:*"
+      }
+    },
+    "packages/manifest-capability": {
+      "name": "@hobo/manifest-capability",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/manifest-declaration": {
+      "name": "@hobo/manifest-declaration",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/manifest-plan": {
+      "name": "@hobo/manifest-plan",
+      "version": "0.0.1",
+      "devDependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/manifest-request": {
+      "name": "@hobo/manifest-request",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/manifest-round-trip": {
+      "name": "@hobo/manifest-round-trip",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/manifest-capability": "workspace:*",
+        "@hobo/manifest-request": "workspace:*",
+        "@hobo/manifest-declaration": "workspace:*",
+        "@hobo/manifest-plan": "workspace:*"
+      },
+      "devDependencies": { "@hobo/capability-profiles": "workspace:*" }
+    },
+    "packages/mcp": {
+      "name": "@hobo/mcp",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/cli": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/identity": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/cloud": "workspace:*",
+        "@hobo/data": "workspace:*",
+        "@hobo/provider-cloudflare": "workspace:*",
+        "@hobo/runtime-local": "workspace:*"
+      }
+    },
+    "packages/packs/pack-framework": {
+      "name": "@hobo/pack-framework",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*"
+      },
+      "devDependencies": {
+        "@hobo/cloud": "workspace:*",
+        "@hobo/contract-harness": "workspace:*"
+      }
+    },
+    "packages/packs/pack-postgres-oci": {
+      "name": "@hobo/pack-postgres-oci",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/pack-framework": "workspace:*"
+      }
+    },
+    "packages/packs/pack-valkey-oci": {
+      "name": "@hobo/pack-valkey-oci",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/pack-framework": "workspace:*"
+      }
+    },
+    "packages/patterns": {
+      "name": "@hobo/patterns",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/storage-sqlite": "workspace:*"
+      }
+    },
+    "packages/pixel-village": {
+      "name": "@hobo/pixel-village",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/control-api": "workspace:*",
+        "@hobo/management": "workspace:*",
+        "@hobo/yard-world": "workspace:*"
+      }
+    },
+    "packages/policy": { "name": "@hobo/policy", "version": "0.0.1" },
+    "packages/providers/provider-agentv": {
+      "name": "@hobo/provider-agentv",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" },
+      "devDependencies": { "@hobo/training-pipeline": "workspace:*" }
+    },
+    "packages/providers/provider-aws": {
+      "name": "@hobo/provider-aws",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-ax": {
+      "name": "@hobo/provider-ax",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" },
+      "devDependencies": { "@hobo/runtime": "workspace:*" }
+    },
+    "packages/providers/provider-azure": {
+      "name": "@hobo/provider-azure",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-browser-wasm": {
+      "name": "@hobo/provider-browser-wasm",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-cedar": {
+      "name": "@hobo/provider-cedar",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/contracts": "workspace:*" }
+    },
+    "packages/providers/provider-cloudflare": {
+      "name": "@hobo/provider-cloudflare",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/providers/provider-config": {
+      "name": "@hobo/provider-config",
+      "version": "0.0.1",
+      "private": true
+    },
+    "packages/providers/provider-convex": {
+      "name": "@hobo/provider-convex",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/sdk": "workspace:*"
+      },
+      "devDependencies": { "@hobo/bindles": "workspace:*" }
+    },
+    "packages/providers/provider-digitalocean": {
+      "name": "@hobo/provider-digitalocean",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-flux": {
+      "name": "@hobo/provider-flux",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-gcp": {
+      "name": "@hobo/provider-gcp",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-hetzner": {
+      "name": "@hobo/provider-hetzner",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-hostinger": {
+      "name": "@hobo/provider-hostinger",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-kafka": {
+      "name": "@hobo/provider-kafka",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-kubernetes": {
+      "name": "@hobo/provider-kubernetes",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-lakebed": {
+      "name": "@hobo/provider-lakebed",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-neon": {
+      "name": "@hobo/provider-neon",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/providers/provider-netlify": {
+      "name": "@hobo/provider-netlify",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/providers/provider-opa": {
+      "name": "@hobo/provider-opa",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/contracts": "workspace:*" }
+    },
+    "packages/providers/provider-prisma-postgres": {
+      "name": "@hobo/provider-prisma-postgres",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*"
+      }
+    },
+    "packages/providers/provider-railway": {
+      "name": "@hobo/provider-railway",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/provider-ttl-sh": {
+      "name": "@hobo/provider-ttl-sh",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/providers/provider-upstash": {
+      "name": "@hobo/provider-upstash",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/kv-redis-compatible": "workspace:*"
+      }
+    },
+    "packages/providers/provider-vercel": {
+      "name": "@hobo/provider-vercel",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/core": "workspace:*"
+      }
+    },
+    "packages/providers/provider-webernetes": {
+      "name": "@hobo/provider-webernetes",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/providers/runner-blacksmith": {
+      "name": "@hobo/runner-blacksmith",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/runner-github": "workspace:*"
+      }
+    },
+    "packages/providers/runner-depot": {
+      "name": "@hobo/runner-depot",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/runner-github": "workspace:*"
+      },
+      "devDependencies": { "@hobo/runner-blacksmith": "workspace:*" }
+    },
+    "packages/providers/runner-github": {
+      "name": "@hobo/runner-github",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/recipes": {
+      "name": "@hobo/recipes",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindings": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/claims": "workspace:*",
+        "@hobo/trust": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/registry": {
+      "name": "@hobo/registry",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/cloud": "workspace:*",
+        "@hobo/identity": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/replay": {
+      "name": "@hobo/replay",
+      "version": "0.0.1",
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/rift": {
+      "name": "@hobo/rift",
+      "version": "0.0.1",
+      "devDependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/runtime": {
+      "name": "@hobo/runtime",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "ts-autocode-grounding": "workspace:*",
+        "@hobo/wit": "workspace:*"
+      }
+    },
+    "packages/runtimes/runtime-browser": {
+      "name": "@hobo/runtime-browser",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/storage-sqlite": "workspace:*"
+      }
+    },
+    "packages/runtimes/runtime-celld": {
+      "name": "@hobo/runtime-celld",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/runtimes/runtime-cloud-native": {
+      "name": "@hobo/runtime-cloud-native",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/runtimes/runtime-dapr": {
+      "name": "@hobo/runtime-dapr",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/runtimes/runtime-local": {
+      "name": "@hobo/runtime-local",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/core": "workspace:*",
+        "@hobo/storage-sqlite": "workspace:*"
+      },
+      "devDependencies": { "@hobo/conformance": "workspace:*" }
+    },
+    "packages/runtimes/runtime-oci": {
+      "name": "@hobo/runtime-oci",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/runtimes/runtime-rivet": {
+      "name": "@hobo/runtime-rivet",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/runtimes/runtime-wasm": {
+      "name": "@hobo/runtime-wasm",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/schema-tools": {
+      "name": "@hobo/schema-tools",
+      "version": "0.0.1",
+      "private": true
+    },
+    "packages/sdk": {
+      "name": "@hobo/sdk",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/cloud": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/contracts": "workspace:*",
+        "@hobo/dispatcher": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/stage-gate": {
+      "name": "@hobo/stage-gate",
+      "version": "0.0.1",
+      "private": true,
+      "devDependencies": { "@hobo/componentize": "workspace:*" }
+    },
+    "packages/stations": {
+      "name": "@hobo/stations",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/connectivity": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/dispatcher": "workspace:*"
+      }
+    },
+    "packages/status-page": {
+      "name": "@hobo/status-page",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/capability-profiles": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/data": "workspace:*"
+      },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/storage-sqlite": {
+      "name": "@hobo/storage-sqlite",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/testing": {
+      "name": "@hobo/testing",
+      "version": "0.0.1",
+      "dependencies": {
+        "@hobo/contract-harness": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/runtime-local": "workspace:*"
+      }
+    },
+    "packages/trails": {
+      "name": "@hobo/trails",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/identity": "workspace:*" }
+    },
+    "packages/training": {
+      "name": "@hobo/training",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/training-pipeline": {
+      "name": "@hobo/training-pipeline",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/trust": {
+      "name": "@hobo/trust",
+      "version": "0.0.1",
+      "dependencies": { "@hobo/capability-profiles": "workspace:*" },
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/wasp": {
+      "name": "@hobo/wasp",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/runtime": "workspace:*"
+      },
+      "devDependencies": { "@hobo/core": "workspace:*" }
+    },
+    "packages/wit": { "name": "@hobo/wit", "version": "0.0.1" },
+    "packages/yard-world": {
+      "name": "@hobo/yard-world",
+      "version": "0.0.1",
+      "private": true,
+      "devDependencies": { "@hobo/contract-harness": "workspace:*" }
+    },
+    "packages/yards": {
+      "name": "@hobo/yards",
+      "version": "0.0.1",
+      "private": true,
+      "dependencies": {
+        "@hobo/camps": "workspace:*",
+        "@hobo/core": "workspace:*"
+      },
+      "devDependencies": { "@hobo/bindles": "workspace:*" }
+    },
+    "site": {
+      "name": "hobo-site",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/convex": "workspace:*",
+        "@hobo/provider-convex": "workspace:*",
+        "@hobo/recipes": "workspace:*",
+        "@hobo/runtime": "workspace:*",
+        "@hobo/wasp": "workspace:*"
+      }
+    },
+    "src/draft/epic-proofs/cli-mcp-developer-experience": {
+      "name": "@hobo/epic-reference-cli-mcp-developer-experience",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/epic-proofs/contracts-policy-governance": {
+      "name": "@hobo/epic-reference-contracts-policy-governance",
+      "private": true
+    },
+    "src/draft/epic-proofs/control-plane-planner-matching-orchestrator": {
+      "name": "@hobo/epic-reference-control-plane",
+      "private": true
+    },
+    "src/draft/epic-proofs/data-plane-event-sourcing-cqrs-reactivity": {
+      "name": "@hobo/epic-reference-data-plane-event-sourcing-cqrs-reactivity",
+      "private": true
+    },
+    "src/draft/epic-proofs/deployment-strategy-saga-orchestrator": {
+      "name": "@hobo-draft/deployment-strategy-saga-orchestrator",
+      "private": true
+    },
+    "src/draft/epic-proofs/finops-budget-routing-control-plane": {
+      "name": "@hobo/epic-proof-finops-budget-routing-control-plane",
+      "private": true
+    },
+    "src/draft/epic-proofs/foundations-build-conformance-harness": {
+      "name": "@hobo/epic-reference-foundations-build-conformance-harness",
+      "private": true
+    },
+    "src/draft/epic-proofs/gated-live-fix-loop": {
+      "name": "@hobo/epic-reference-gated-live-fix-loop",
+      "private": true
+    },
+    "src/draft/epic-proofs/generation-pipeline-training-ai-safety": {
+      "name": "@hobo/epic-reference-generation-pipeline-training-ai-safety",
+      "private": true
+    },
+    "src/draft/epic-proofs/governance-planes-s6-08": {
+      "name": "@hobo-draft/governance-planes-s6-08",
+      "private": true
+    },
+    "src/draft/epic-proofs/hobo-code-session-orchestration": {
+      "name": "@hobo/draft-hobo-code-session-orchestration",
+      "private": true,
+      "dependencies": { "@hobo/code": "workspace:*" }
+    },
+    "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa": {
+      "name": "@hobo/epic-reference-identity-xaa",
+      "private": true
+    },
+    "src/draft/epic-proofs/mapping-styles-planner-resolution": {
+      "name": "@hobo/epic-reference-mapping-styles-planner-resolution",
+      "private": true
+    },
+    "src/draft/epic-proofs/networking-connectivity-dns-relay": {
+      "name": "@hobo/epic-reference-networking-connectivity-dns-relay",
+      "private": true
+    },
+    "src/draft/epic-proofs/operators-sre-crew": {
+      "name": "@hobo-draft/operators-sre-crew-reference",
+      "private": true
+    },
+    "src/draft/epic-proofs/portability-registry-distribution": {
+      "name": "@hobo/epic-reference-portability-registry-distribution",
+      "private": true
+    },
+    "src/draft/epic-proofs/progressive-delivery-harness": {
+      "name": "@hobo-draft/progressive-delivery-harness-reference",
+      "private": true
+    },
+    "src/draft/epic-proofs/providers-iac-build-adapters": {
+      "name": "@hobo/epic-reference-providers-iac-build-adapters",
+      "private": true
+    },
+    "src/draft/epic-proofs/reliability-observability-cost-finops": {
+      "name": "@hobo/epic-reference-reliability-observability-cost-finops",
+      "private": true
+    },
+    "src/draft/epic-proofs/s1-10-conformance-trust-boundary": {
+      "name": "@hobo/epic-reference-s1-10-conformance-trust-boundary",
+      "private": true
+    },
+    "src/draft/epic-proofs/s2-stage-gate-first-cloud-yard": {
+      "name": "@hobo-draft/s2-stage-gate-first-cloud-yard",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/epic-proofs/s5-stage-gate-forge-extensibility": {
+      "name": "@hobo/epic-reference-s5-stage-gate-forge-extensibility",
+      "private": true
+    },
+    "src/draft/epic-proofs/sdk-authoring-ifc-bindles": {
+      "name": "@hobo/epic-reference-sdk-authoring",
+      "private": true
+    },
+    "src/draft/epic-proofs/stage-6-acceptance-gate": {
+      "name": "@hobo/epic-reference-stage-6-acceptance-gate",
+      "private": true
+    },
+    "src/draft/epic-proofs/stage-gate-s3-agent-mcp-brokered-deploy": {
+      "name": "@hobo/epic-reference-stage-gate-s3-agent-mcp-brokered-deploy",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/epic-proofs/v1-vibe-example-gap-closure": {
+      "name": "@hobo/epic-reference-v1-vibe-example-gap-closure",
+      "private": true
+    },
+    "src/draft/epic-proofs/wit-component-model-runtime-membrane": {
+      "name": "@hobo/epic-reference-wit-component-model-runtime-membrane",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/control-plane-api-resource-lifecycle-shapes": {
+      "name": "@hobo/draft-control-plane-api-resource-lifecycle-shapes",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/meta-cloud-broker-rejection-matrix-contract": {
+      "name": "@hobo-draft/meta-cloud-broker-rejection-matrix-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/meta-cloud-broker-scope-contract": {
+      "name": "@hobo/meta-cloud-broker-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/organization-workspace-model-contract": {
+      "name": "@hobo/draft-organization-workspace-model-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/per-app-tenant-routing-contract": {
+      "name": "@hobo-draft/per-app-tenant-routing-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/policy-audit-export-contract": {
+      "name": "@hobo/policy-audit-export-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes": {
+      "name": "@hobo/sdk-object-graph-manifest-ir-shapes",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/sdk-to-cli-golden-path": {
+      "name": "@hobo/draft-sdk-to-cli-golden-path",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/wrpc-wit-baseline-poc": {
+      "name": "@hobo-draft/wrpc-wit-baseline-poc",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/api/xaa-scope-inference-contract": {
+      "name": "@hobo/draft-xaa-scope-inference-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ax/cli-mcp-parity-resource-lifecycle-contracts": {
+      "name": "@hobo/draft-cli-mcp-parity-resource-lifecycle-contracts",
+      "private": true
+    },
+    "src/draft/exp-proofs/ax/rem-030-crew-mcp-autonomy-limitation": {
+      "name": "@hobo/rem-030-crew-mcp-autonomy-limitation",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts": {
+      "name": "@hobo/draft-role-journey-cli-mcp-transcripts",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/ai-generation-launch-posture-contract": {
+      "name": "@hobo/draft-ai-generation-launch-posture-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/beta-pilot-dogfood-alpha-evidence-contract": {
+      "name": "@hobo/draft-beta-pilot-dogfood-alpha-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/beta-pilot-feedback-contract": {
+      "name": "@hobo/draft-beta-pilot-feedback-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/beta-pilot-ga-handoff-evidence-contract": {
+      "name": "@hobo/draft-beta-pilot-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/beta-pilot-release-candidate-evidence-contract": {
+      "name": "@hobo/draft-beta-pilot-release-candidate-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/billing-credits-scope-contract": {
+      "name": "@hobo/billing-credits-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/billing-launch-policy-contract": {
+      "name": "@hobo/draft-billing-launch-policy-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/capability-review-approval-scope": {
+      "name": "@hobo/capability-review-approval-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/compatibility-matrix-scope-contract": {
+      "name": "@hobo/draft-compatibility-matrix-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/compliance-evidence-pack-scope": {
+      "name": "@hobo/compliance-evidence-pack-scope",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/customer-assurance-evidence-packet-contract": {
+      "name": "@hobo/customer-assurance-evidence-packet-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/customer-onboarding-scope-acceptance": {
+      "name": "@hobo/customer-onboarding-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/customer-onboarding-script-contract": {
+      "name": "customer-onboarding-script-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/entitlements-plan-limits-scope": {
+      "name": "@hobo/entitlements-plan-limits-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/hosted-broker-ga-handoff-evidence-contract": {
+      "name": "@hobo/hosted-broker-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/incident-communications-scope-contract": {
+      "name": "@hobo/incident-communications-scope-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/known-limitations-register-contract": {
+      "name": "@hobo/known-limitations-register-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-blocker-taxonomy-contract": {
+      "name": "@hobo/draft-launch-blocker-taxonomy-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-messaging-claim-register": {
+      "name": "@hobo/draft-launch-messaging-claim-register",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-site-demo-alpha-evidence-contract": {
+      "name": "launch-site-demo-alpha-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-site-ga-handoff-evidence-contract": {
+      "name": "@hobo/draft-launch-site-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-site-private-beta-evidence-contract": {
+      "name": "@hobo/draft-launch-site-private-beta-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-site-release-candidate-evidence-contract": {
+      "name": "@hobo/draft-launch-site-release-candidate-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-support-dogfood-alpha-evidence": {
+      "name": "@hobo-draft/launch-support-dogfood-alpha-evidence",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-support-escalation-matrix": {
+      "name": "@hobo-draft/launch-support-escalation-matrix",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-support-ga-handoff-evidence-contract": {
+      "name": "@hobo/draft-launch-support-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-support-private-beta-evidence-contract": {
+      "name": "@hobo/draft-launch-support-private-beta-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/launch-support-release-candidate-evidence-contract": {
+      "name": "@hobo/draft-launch-support-release-candidate-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/legal-privacy-ga-handoff-evidence-contract": {
+      "name": "@hobo/draft-legal-privacy-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/legal-privacy-private-beta-evidence-contract": {
+      "name": "@hobo/draft-legal-privacy-private-beta-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/legal-privacy-release-candidate-evidence-contract": {
+      "name": "@hobo/draft-legal-privacy-release-candidate-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/legal-privacy-terms-readiness-contract": {
+      "name": "@hobo-draft/legal-privacy-terms-readiness-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/marketplace-payout-hooks-scope-contract": {
+      "name": "@hobo/marketplace-payout-hooks-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/marketplace-publisher-trust-evidence-contract": {
+      "name": "@hobo-draft/marketplace-publisher-trust-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/pre-launch-outcome-contract": {
+      "name": "@hobo/draft-pre-launch-outcome-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/sbom-vulnerability-notice-evidence-contract": {
+      "name": "@hobo-draft/sbom-vulnerability-notice-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/support-debug-tools-scope-contract": {
+      "name": "@hobo/support-debug-tools-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/support-sla-channels-contract": {
+      "name": "@hobo/support-sla-channels-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/support-workflow-scope-contract": {
+      "name": "@hobo/support-workflow-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/tenant-data-lifecycle-contract": {
+      "name": "@hobo/tenant-data-lifecycle-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/upgrade-migration-scope-contract": {
+      "name": "@hobo/upgrade-migration-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/usage-metering-scope-contract": {
+      "name": "@hobo/usage-metering-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-beta-pilot-private-beta-evidence": {
+      "name": "@hobo/draft-v1-beta-pilot-private-beta-evidence",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-release-notes-dogfood-alpha-evidence": {
+      "name": "v1-release-notes-dogfood-alpha-evidence",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-release-notes-private-beta-evidence-contract": {
+      "name": "v1-release-notes-private-beta-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-ga-handoff-evidence-contract": {
+      "name": "@hobo/v1-release-notes-upgrade-guide-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-release-candidate-evidence-contract": {
+      "name": "@hobo/draft-v1-release-notes-upgrade-guide-release-candidate-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/v1-supported-platform-matrix-contract": {
+      "name": "@hobo/v1-supported-platform-matrix-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/vulnerability-disclosure-launch-blocker-contract": {
+      "name": "@hobo/draft-vulnerability-disclosure-launch-blocker-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/cx/workspace-activation-telemetry-contract": {
+      "name": "@hobo/draft-workspace-activation-telemetry-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/adr-0064-ui-generation-citation-contract": {
+      "name": "@hobo/draft-adr-0064-ui-generation-citation-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/app-dev-journey-contract": {
+      "name": "@hobo/draft-app-dev-journey-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/artifact-store-scope-contract": {
+      "name": "@hobo/artifact-store-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/backup-restore-launch-drill-contract": {
+      "name": "@hobo/backup-restore-launch-drill-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/backup-restore-scope-contract": {
+      "name": "@hobo/backup-restore-scope-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/bootstrap-installer-scope-contract": {
+      "name": "@hobo/bootstrap-installer-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/bootstrap-launch-smoke-matrix-contract": {
+      "name": "@hobo/bootstrap-launch-smoke-matrix-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/chaos-resilience-tests-scope-acceptance": {
+      "name": "@hobo-draft/chaos-resilience-tests-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/cli-cloud-yard-path": {
+      "name": "@hobo/draft-cli-cloud-yard-path",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/cli-deploy-transcript-prototype": {
+      "name": "@hobo/draft-cli-deploy-transcript-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/cli-error-refusal-examples": {
+      "name": "@hobo/draft-cli-error-refusal-examples",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/cli-manage-inspect-logs-drift-prototype": {
+      "name": "@hobo/draft-cli-manage-inspect-logs-drift-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/cli-migration-transcript-prototype": {
+      "name": "@hobo/draft-cli-migration-transcript-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/convex-swaghaus-bindle": {
+      "name": "@hobo/draft-convex-swaghaus-bindle",
+      "private": true,
+      "dependencies": {
+        "@hobo/bindles": "workspace:*",
+        "@hobo/convex": "workspace:*"
+      }
+    },
+    "src/draft/exp-proofs/dx/dapr-parity-anchor-audit": {
+      "name": "@hobo/draft-dapr-parity-anchor-audit",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/data-flywheel-privacy-spike": {
+      "name": "@hobo/draft-data-flywheel-privacy-spike",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/default-role-action-matrix-contract": {
+      "name": "default-role-action-matrix-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/devops-canary-rollout-journey-contract": {
+      "name": "@hobo/devops-canary-rollout-journey-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/devops-self-host-yard-journey-contract": {
+      "name": "@hobo/draft-devops-self-host-yard-journey-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/docs-portal-scope-contract": {
+      "name": "@hobo/docs-portal-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dogfood-yard-acceptance-contract": {
+      "name": "dogfood-yard-acceptance-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dogfood-yard-ga-handoff-evidence-contract": {
+      "name": "@hobo/draft-dogfood-yard-ga-handoff-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dogfood-yard-m1-evidence-contract": {
+      "name": "@hobo/dogfood-yard-m1-evidence-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dogfood-yard-private-beta-evidence-contract": {
+      "name": "@hobo/dogfood-yard-private-beta-evidence-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dogfood-yard-release-candidate-contract": {
+      "name": "@hobo/draft-dogfood-yard-release-candidate-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/drift-reconciliation-scope-contract": {
+      "name": "@hobo/drift-reconciliation-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe": {
+      "name": "@hobo/dx-backbone-resource-lifecycle-vibe",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus": {
+      "name": "@hobo/dx-resource-lifecycle-fixture-corpus",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix": {
+      "name": "@hobo/draft-dx-resource-lifecycle-scenario-matrix",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dx-result-refusal-proof-envelopes": {
+      "name": "@hobo/dx-result-refusal-proof-envelopes",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/dx-sdk-resilience-scope-contract": {
+      "name": "@hobo/dx-sdk-resilience-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/e2e-test-matrix-scope-acceptance": {
+      "name": "@hobo-draft/e2e-test-matrix-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/enterprise-deployment-hardening-scope-contract": {
+      "name": "@hobo/enterprise-deployment-hardening-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/environment-lifecycle-scope": {
+      "name": "@hobo/environment-lifecycle-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/example-apps-scope-acceptance": {
+      "name": "example-apps-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/gitops-ci-journey-contract": {
+      "name": "@hobo/gitops-ci-journey-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/hobo-code-harness-experience": {
+      "name": "@hobo/draft-hobo-code-harness-experience",
+      "private": true,
+      "dependencies": { "@hobo/code": "workspace:*" }
+    },
+    "src/draft/exp-proofs/dx/inline-budget-authoring": {
+      "name": "@hobo/inline-budget-authoring",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/intent-alignment-iter2": {
+      "name": "@hobo/draft-intent-alignment-iter2",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/launch-demo-golden-path-contract": {
+      "name": "launch-demo-golden-path-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/launch-performance-capacity-envelope-contract": {
+      "name": "@hobo/draft-launch-performance-capacity-envelope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/org-catalogs-scope-acceptance": {
+      "name": "@hobo/org-catalogs-scope-acceptance",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/package-cache-scope-contract": {
+      "name": "@hobo/package-cache-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/performance-load-tests-scope-contract": {
+      "name": "@hobo-draft/performance-load-tests-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/provenance-retention-scope-acceptance": {
+      "name": "@hobo-draft/provenance-retention-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/release-channels-scope": {
+      "name": "@hobo/release-channels-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/resource-garbage-collection-scope-acceptance": {
+      "name": "@hobo/resource-garbage-collection-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples": {
+      "name": "@hobo/draft-resource-lifecycle-quickstart-examples",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/secops-policy-audit-journey-contract": {
+      "name": "secops-policy-audit-journey-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/security-verification-scope-acceptance": {
+      "name": "@hobo/security-verification-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/session-replay-local-path": {
+      "name": "@hobo/draft-session-replay-local-path",
+      "private": true,
+      "dependencies": { "@hobo/replay": "workspace:*" }
+    },
+    "src/draft/exp-proofs/dx/sre-drift-remediation-journey-contract": {
+      "name": "@hobo/draft-sre-drift-remediation-journey-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/svid-cross-tenant-guard-contract": {
+      "name": "@hobo/draft-svid-cross-tenant-guard-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/teardown-recovery-scope-acceptance": {
+      "name": "@hobo/teardown-recovery-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/tenant-isolation-quotas-scope": {
+      "name": "@hobo/tenant-isolation-quotas-scope",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/threat-model-security-review-scope-acceptance": {
+      "name": "@hobo/threat-model-security-review-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/troubleshooting-guides-scope-acceptance": {
+      "name": "troubleshooting-guides-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/tutorials-walkthroughs-scope-acceptance": {
+      "name": "tutorials-walkthroughs-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/upgrade-test-suite-scope-contract": {
+      "name": "@hobo/upgrade-test-suite-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/v1-critical-path-dependency-map-contract": {
+      "name": "@hobo/draft-v1-critical-path-dependency-map-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/dx/v1-e2e-persona-matrix-contract": {
+      "name": "@hobo-draft/v1-e2e-persona-matrix-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/accessibility-usability-launch-baseline-contract": {
+      "name": "@hobo/draft-accessibility-usability-launch-baseline-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/admin-console-scope": {
+      "name": "@hobo/admin-console-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/admin-support-breakglass-boundaries": {
+      "name": "@hobo/admin-support-breakglass-boundaries",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/audit-explorer-scope-contract": {
+      "name": "@hobo/audit-explorer-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/control-yard": {
+      "name": "@hobo/draft-control-yard",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/deployment-dashboard-topology-scope-contract": {
+      "name": "@hobo/draft-deployment-dashboard-topology-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/full-dashboard-projection-views-contract": {
+      "name": "@hobo/draft-full-dashboard-projection-views-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/marketplace-ux-scope-contract": {
+      "name": "@hobo/marketplace-ux-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/member-rbac-administration-scope": {
+      "name": "@hobo/member-rbac-administration-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/plan-diff-viewer-scope-acceptance": {
+      "name": "plan-diff-viewer-scope-acceptance",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/publisher-portal-scope-contract": {
+      "name": "@hobo/publisher-portal-scope-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/settings-project-lifecycle-scope": {
+      "name": "@hobo/settings-project-lifecycle-scope",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/v1-readiness-dashboard-contract": {
+      "name": "@hobo/draft-v1-readiness-dashboard-contract",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist": {
+      "name": "@hobo/draft-vibe-accessibility-usability-checklist",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough": {
+      "name": "@hobo/draft-vibe-clickable-first-run-walkthrough",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures": {
+      "name": "@hobo/draft-vibe-dashboard-freshness-rbac-fixtures",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups": {
+      "name": "@hobo/draft-vibe-deployment-dashboard-mockups",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states": {
+      "name": "@hobo/draft-vibe-docs-portal-ia-states",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard": {
+      "name": "@hobo/draft-vibe-first-customer-pilot-storyboard",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-first-run-activation-rail": {
+      "name": "@hobo/draft-vibe-first-run-activation-rail",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan": {
+      "name": "@hobo/draft-vibe-launch-asset-refresh-plan",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype": {
+      "name": "@hobo/draft-vibe-marketplace-discovery-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups": {
+      "name": "@hobo/draft-vibe-marketplace-installability-mockups",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states": {
+      "name": "@hobo/draft-vibe-marketplace-trust-copy-states",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough": {
+      "name": "@hobo/draft-vibe-pilot-first-proof-walkthrough",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode": {
+      "name": "@hobo/draft-vibe-plan-annotation-pseudocode",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype": {
+      "name": "@hobo/draft-vibe-plan-diff-review-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-plan-review-states": {
+      "name": "@hobo/draft-vibe-plan-review-states",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups": {
+      "name": "@hobo/draft-vibe-publisher-portal-review-mockups",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks": {
+      "name": "@hobo/draft-vibe-representative-a11y-usability-checks",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines": {
+      "name": "@hobo/draft-vibe-role-tutorial-outlines",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard": {
+      "name": "@hobo/draft-vibe-snapshop-launch-demo-storyboard",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence": {
+      "name": "@hobo/draft-vibe-support-case-redacted-evidence",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-support-workflow-mockups": {
+      "name": "@hobo/draft-vibe-support-workflow-mockups",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-topology-status-prototype": {
+      "name": "@hobo/draft-vibe-topology-status-prototype",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees": {
+      "name": "@hobo/draft-vibe-troubleshooting-decision-trees",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/vibe-workspace-project-states": {
+      "name": "@hobo/draft-vibe-workspace-project-states",
+      "private": true
+    },
+    "src/draft/exp-proofs/ux/workspace-onboarding-scope-acceptance": {
+      "name": "workspace-onboarding-scope-acceptance",
+      "private": true
+    },
+    "src/draft/projects/otel-office": {
+      "name": "@hobo-draft/otel-office",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/projects/s0-03-hobo-core": {
+      "name": "@hobo-draft/s0-03-hobo-core",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/projects/s1-23-hobo-build": {
+      "name": "@hobo-draft/s1-23-hobo-build",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/projects/s1-24-conformance-sdk": {
+      "name": "@hobo-draft/s1-24-conformance-sdk",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/projects/s2-08-provider-cloudflare": {
+      "name": "@hobo-draft/s2-08-provider-cloudflare",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/projects/s3-02-hobo-identity": {
+      "name": "@hobo-draft/s3-02-hobo-identity",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/projects/s6-06-finops-plane": {
+      "name": "@hobo-draft/s6-06-finops-plane",
+      "private": true
+    },
+    "src/draft/technical-proofs/acme-dns01-cert-issuance-contract": {
+      "name": "@hobo-draft/acme-dns01-cert-issuance-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/actor-host-runtime-port-contract": {
+      "name": "@hobo-draft/actor-host-runtime-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/adopt-in-place-contract": {
+      "name": "@hobo-draft/adopt-in-place-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/agent-session-control-plane-contract": {
+      "name": "@hobo/draft-agent-session-control-plane-contract",
+      "private": true,
+      "dependencies": { "@hobo/code": "workspace:*" }
+    },
+    "src/draft/technical-proofs/alertmanager-routing-contract": {
+      "name": "@hobo/draft-alertmanager-routing-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/anonymous-preview-path-contract": {
+      "name": "@hobo-draft/anonymous-preview-path-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/artifact-repo-port-contract": {
+      "name": "@hobo/draft-artifact-repo-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/aspire-hosting-testing-tracker-contract": {
+      "name": "@hobo-draft/aspire-hosting-testing-tracker-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/auth-flag-readset-contract": {
+      "name": "@hobo/draft-auth-flag-readset-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/auth-port-rbac-resolution-contract": {
+      "name": "auth-port-rbac-resolution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/author-time-capability-feedback-contract": {
+      "name": "@hobo/draft-author-time-capability-feedback-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/autonomous-drift-remediation-contract": {
+      "name": "@hobo-draft/autonomous-drift-remediation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/availability-view-contract": {
+      "name": "@hobo/draft-availability-view-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/bind-reference-wiring-contract": {
+      "name": "@hobo-draft/bind-reference-wiring-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/bindles-api-freeze-contract": {
+      "name": "@hobo/draft-bindles-api-freeze-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/broker-admin-controls-contract": {
+      "name": "@hobo/broker-admin-controls-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/broker-environment-publication-contract": {
+      "name": "@hobo-draft/broker-environment-publication-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/broker-receipt-integrity-contract": {
+      "name": "@hobo/broker-receipt-integrity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/budget-quota-policy-contract": {
+      "name": "@hobo-draft/budget-quota-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/build-dagger-provider-contract": {
+      "name": "@hobo-draft/build-dagger-provider-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/build-wasm-provider-contract": {
+      "name": "@hobo-draft/build-wasm-provider-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/built-in-flag-store-contract": {
+      "name": "@hobo/draft-built-in-flag-store-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/built-in-opto-training-engine-contract": {
+      "name": "@hobo/draft-built-in-opto-training-engine-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/built-in-policy-engine-contract": {
+      "name": "@hobo/draft-built-in-policy-engine-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/cache-port-catalog-contract": {
+      "name": "@hobo-draft/cache-port-catalog-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/camp-eventstore-runtime-port-contract": {
+      "name": "@hobo/draft-camp-eventstore-runtime-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/camp-mapping-sugar-compiler": {
+      "name": "@hobo/draft-camp-mapping-sugar-compiler",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/can-deploy-compatibility-gate-contract": {
+      "name": "can-deploy-compatibility-gate-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/capability-enforcement-contract": {
+      "name": "@hobo/draft-capability-enforcement-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/capability-indexed-discovery-contract": {
+      "name": "@hobo/draft-capability-indexed-discovery-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/capability-negotiation-contract": {
+      "name": "@hobo/draft-capability-negotiation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/capability-spec-contract": {
+      "name": "@hobo/draft-capability-spec-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/champion-challenger-promotion-contract": {
+      "name": "@hobo-draft/champion-challenger-promotion-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/chaos-experiment-orchestration-contract": {
+      "name": "@hobo-draft/chaos-experiment-orchestration-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/choreographed-compensation-contract": {
+      "name": "@hobo/choreographed-compensation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/choreography-saga-engine-contract": {
+      "name": "@hobo/choreography-saga-engine-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/ci-fabric-oidc-e2e-contract": {
+      "name": "@hobo-draft/ci-fabric-oidc-e2e-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cli-credential-hardening-contract": {
+      "name": "@hobo/draft-cli-credential-hardening-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/client-optimistic-update-contract": {
+      "name": "@hobo/draft-client-optimistic-update-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-author-flow-contract": {
+      "name": "@hobo/closure-builder-author-flow-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-manifest-lowering-contract": {
+      "name": "@hobo/closure-builder-manifest-lowering-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-public-api-contract": {
+      "name": "@hobo/closure-builder-public-api-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-resource-handles-contract": {
+      "name": "@hobo/closure-builder-resource-handles-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-tooling-contract": {
+      "name": "@hobo/closure-builder-tooling-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/closure-builder-v1-finalization-contract": {
+      "name": "@hobo/closure-builder-v1-finalization-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/collection-coverage-gate-contract": {
+      "name": "@hobo-draft/collection-coverage-gate-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/compensation-escalation-contract": {
+      "name": "@hobo/compensation-escalation-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/component-host-adapter-certification-spike": {
+      "name": "@hobo-draft/component-host-adapter-certification-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/component-host-conformance-suite": {
+      "name": "@hobo-draft/component-host-conformance-suite",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/component-host-oci-floor-contract": {
+      "name": "@hobo-draft/component-host-oci-floor-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/componentize-artifact-trust-contract": {
+      "name": "@hobo/draft-componentize-artifact-trust-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/componentize-js-determinism-spike": {
+      "name": "@hobo-draft/componentize-js-determinism-spike",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/conformance-port-suite-contract": {
+      "name": "@hobo/draft-conformance-port-suite-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/connectivity-cost-feedback-contract": {
+      "name": "@hobo-draft/connectivity-cost-feedback-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/connectivity-policy-enforcement-contract": {
+      "name": "@hobo/draft-connectivity-policy-enforcement-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/connectivity-tier-ir-contract": {
+      "name": "@hobo/draft-connectivity-tier-ir-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/connector-authoring-contract": {
+      "name": "@hobo/draft-connector-authoring-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/connector-runtime-broker-contract": {
+      "name": "@hobo/draft-connector-runtime-broker-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/container-fallback-wiring-parity-contract": {
+      "name": "@hobo-draft/container-fallback-wiring-parity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/contract-engine-port-contract": {
+      "name": "contract-engine-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/control-plane-action-taxonomy-contract": {
+      "name": "control-plane-action-taxonomy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/control-plane-authz-cache-contract": {
+      "name": "@hobo/draft-control-plane-authz-cache-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/control-plane-event-schema-contract": {
+      "name": "@hobo/draft-control-plane-event-schema-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/control-plane-policy-bypass-guard": {
+      "name": "@hobo/draft-control-plane-policy-bypass-guard",
+      "private": true
+    },
+    "src/draft/technical-proofs/convex-swaghaus-deploy-adapter": {
+      "name": "@hobo/draft-convex-swaghaus-deploy-adapter",
+      "private": true,
+      "dependencies": { "@hobo/provider-convex": "workspace:*" }
+    },
+    "src/draft/technical-proofs/cost-degradation-saga-contract": {
+      "name": "@hobo-draft/cost-degradation-saga-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/cost-routing-eligibility-contract": {
+      "name": "@hobo-draft/cost-routing-eligibility-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cost-signal-contract": {
+      "name": "@hobo-draft/cost-signal-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/cqrs-command-aggregate-contract": {
+      "name": "@hobo-draft/cqrs-command-aggregate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/credential-audit-projection-contract": {
+      "name": "@hobo-draft/credential-audit-projection-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/credit-ledger-view-contract": {
+      "name": "@hobo-draft/credit-ledger-view-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/crew-event-contract": {
+      "name": "@hobo-draft/crew-event-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-camp-bounded-staleness-contract": {
+      "name": "@hobo-draft/cross-camp-bounded-staleness-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-camp-flag-state-consistency-contract": {
+      "name": "@hobo/cross-camp-flag-state-consistency-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-camp-routing-policy-contract": {
+      "name": "@hobo-draft/cross-camp-routing-policy-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-cloud-equivalence-model": {
+      "name": "@hobo-draft/cross-cloud-equivalence-model",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-cloud-junction-mtls-contract": {
+      "name": "@hobo-draft/cross-cloud-junction-mtls-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-layer-generated-stack-propagation-contract": {
+      "name": "@hobo/cross-layer-generated-stack-propagation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/cross-yard-policy-attestation-contract": {
+      "name": "@hobo/draft-cross-yard-policy-attestation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/crypto-shred-erasure-contract": {
+      "name": "@hobo/crypto-shred-erasure-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/curated-catalog-policy-contract": {
+      "name": "@hobo-draft/curated-catalog-policy-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/data-governance-policy-contract": {
+      "name": "@hobo-draft/data-governance-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/data-paradigm-authoring-contract": {
+      "name": "@hobo/draft-data-paradigm-authoring-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/default-read-surface-contract": {
+      "name": "@hobo-draft/default-read-surface-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/delivery-experiment-adapter-conformance-suite": {
+      "name": "@hobo/draft-delivery-experiment-adapter-conformance-suite",
+      "private": true
+    },
+    "src/draft/technical-proofs/delivery-orchestrator-skeleton-contract": {
+      "name": "@hobo/delivery-orchestrator-skeleton-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/delta-set-apply-reconcile-contract": {
+      "name": "@hobo/draft-delta-set-apply-reconcile-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/deny-ceiling-algebra-poc": {
+      "name": "deny-ceiling-algebra-poc",
+      "private": true
+    },
+    "src/draft/technical-proofs/deployment-plan-ir-contract": {
+      "name": "@hobo/draft-deployment-plan-ir-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/deployment-strategy-saga-templates-contract": {
+      "name": "@hobo/deployment-strategy-saga-templates-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/deployment-view-saga-graph-contract": {
+      "name": "@hobo-draft/deployment-view-saga-graph-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/deterministic-replay-engine": {
+      "name": "@hobo-draft/deterministic-replay-engine",
+      "private": true
+    },
+    "src/draft/technical-proofs/disaster-recovery-failover-contract": {
+      "name": "@hobo/disaster-recovery-failover-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/dispatcher-maximize-credits-contract": {
+      "name": "@hobo-draft/dispatcher-maximize-credits-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/dispatcher-reservation-hardening-contract": {
+      "name": "@hobo-draft/dispatcher-reservation-hardening-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/distributed-artifact-resolver-contract": {
+      "name": "@hobo/draft-distributed-artifact-resolver-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/distributed-artifact-version-policy": {
+      "name": "@hobo/draft-distributed-artifact-version-policy",
+      "private": true
+    },
+    "src/draft/technical-proofs/dns-validation-gate-threat-model": {
+      "name": "@hobo/draft-dns-validation-gate-threat-model",
+      "private": true
+    },
+    "src/draft/technical-proofs/dns-validation-rebinding-guard-contract": {
+      "name": "@hobo/draft-dns-validation-rebinding-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/document-projection-sink-contract": {
+      "name": "@hobo-draft/document-projection-sink-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/domain-cutover-saga-contract": {
+      "name": "@hobo-draft/domain-cutover-saga-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/domain-event-body-contract": {
+      "name": "@hobo/draft-domain-event-body-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/domain-validation-gate-contract": {
+      "name": "@hobo/draft-domain-validation-gate-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/dr-failover-integrity-contract": {
+      "name": "@hobo/dr-failover-integrity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/drift-detection-loop-contract": {
+      "name": "@hobo/draft-drift-detection-loop-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/drift-orphan-sweep-contract": {
+      "name": "@hobo/drift-orphan-sweep-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/driver-dispatch-routing-contract": {
+      "name": "@hobo/draft-driver-dispatch-routing-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/durable-agent-primitive-contract": {
+      "name": "@hobo-draft/durable-agent-primitive-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/end-user-authorization-policy-contract": {
+      "name": "@hobo/draft-end-user-authorization-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/endpoint-monitor-operator-contract": {
+      "name": "@hobo-draft/endpoint-monitor-operator-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/entitlement-abuse-rate-limit-policy-contract": {
+      "name": "@hobo/entitlement-abuse-rate-limit-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/error-budget-deploy-gate-contract": {
+      "name": "@hobo/draft-error-budget-deploy-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/eval-promotion-gate-contract": {
+      "name": "@hobo-draft/eval-promotion-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/evals-training-promotion-gates-poc": {
+      "name": "@hobo-draft/evals-training-promotion-gates-poc",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/event-body-upcaster-gate": {
+      "name": "@hobo/draft-event-body-upcaster-gate",
+      "private": true
+    },
+    "src/draft/technical-proofs/execution-host-provider-contract": {
+      "name": "@hobo-draft/execution-host-provider-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/executor-skeleton-contract": {
+      "name": "@hobo/draft-executor-skeleton-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/experiment-statistical-analysis-contract": {
+      "name": "@hobo/draft-experiment-statistical-analysis-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/failure-taxonomy-safe-fix-classifier": {
+      "name": "@hobo-draft/failure-taxonomy-safe-fix-classifier",
+      "private": true
+    },
+    "src/draft/technical-proofs/feature-flag-governance-contract": {
+      "name": "@hobo/feature-flag-governance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/federated-policy-pack-conflict-contract": {
+      "name": "federated-policy-pack-conflict-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/flag-debt-auto-cleanup-contract": {
+      "name": "@hobo/draft-flag-debt-auto-cleanup-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/flag-event-contract": {
+      "name": "@hobo/draft-flag-event-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/flag-partition-consistency-contract": {
+      "name": "@hobo/draft-flag-partition-consistency-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/flag-ruleset-sync-contract": {
+      "name": "flag-ruleset-sync-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/forge-certification-loop-contract": {
+      "name": "@hobo/draft-forge-certification-loop-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/full-text-search-contract": {
+      "name": "@hobo-draft/full-text-search-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/gated-autonomous-remediation-contract": {
+      "name": "@hobo-draft/gated-autonomous-remediation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/gatekeeper-v1-policy-contracts": {
+      "name": "gatekeeper-v1-policy-contracts",
+      "private": true
+    },
+    "src/draft/technical-proofs/gatekeeper-verify-contract": {
+      "name": "gatekeeper-verify-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/gateway-realization-contract": {
+      "name": "@hobo-draft/gateway-realization-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generateprovider-correctness-spike": {
+      "name": "@hobo-draft/generateprovider-correctness-spike",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-bounded-repair-loop-contract": {
+      "name": "@hobo/draft-generation-bounded-repair-loop-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-certify-stage-contract": {
+      "name": "@hobo-draft/generation-certify-stage-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-eval-methodology-spike": {
+      "name": "@hobo-draft/generation-eval-methodology-spike",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-llm-fill-contract": {
+      "name": "@hobo-draft/generation-llm-fill-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-material-sanitization-contract": {
+      "name": "@hobo-draft/generation-material-sanitization-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-pipeline-io-contract": {
+      "name": "@hobo-draft/generation-pipeline-io-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-promotion-policy-gate-contract": {
+      "name": "@hobo-draft/generation-promotion-policy-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-provider-loop-contract": {
+      "name": "@hobo-draft/generation-provider-loop-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-reference-run-contract": {
+      "name": "@hobo/draft-generation-reference-run-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-safety-gate-contract": {
+      "name": "@hobo-draft/generation-safety-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-scaffold-stage-contract": {
+      "name": "@hobo-draft/generation-scaffold-stage-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/generation-validation-stage-contract": {
+      "name": "@hobo-draft/generation-validation-stage-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/genesis-breakglass-contract": {
+      "name": "@hobo/draft-genesis-breakglass-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/go-no-go-decision-record-contract": {
+      "name": "@hobo/draft-go-no-go-decision-record-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/golden-suite-chaos-verification-contract": {
+      "name": "@hobo/draft-golden-suite-chaos-verification-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/governance-conformance-suite-contract": {
+      "name": "@hobo/draft-governance-conformance-suite-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/graphql-facade-generation-poc": {
+      "name": "@hobo-draft/graphql-facade-generation-poc",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/graphql-facade-runtime-contract": {
+      "name": "@hobo-draft/graphql-facade-runtime-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/guardrail-policy-gate-contract": {
+      "name": "@hobo-draft/guardrail-policy-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-612-dev-local-loop-poc": {
+      "name": "@hobo-draft/hobo-612-dev-local-loop-poc",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-700-runtime-code-mutation-pattern-adr-contract": {
+      "name": "@hobo-draft/hobo-700-runtime-code-mutation-pattern-adr-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-703-aspire-waitfor-parity-audit": {
+      "name": "@hobo-draft/hobo-703-aspire-waitfor-parity-audit",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-add-install-verification-contract": {
+      "name": "@hobo-draft/hobo-add-install-verification-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-async-building-block-ports": {
+      "name": "@hobo-draft/async-building-block-ports",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-auth-authoring-surface": {
+      "name": "@hobo/auth-authoring-surface-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-auth-consumer-contract": {
+      "name": "hobo-auth-consumer-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-auth-federate-verify-contract": {
+      "name": "@hobo/draft-auth-federate-verify-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-auth-json-contract": {
+      "name": "hobo-auth-json-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-bindles-resource-catalog": {
+      "name": "@hobo-draft/bindles-resource-catalog",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-build-cli-contract": {
+      "name": "@hobo-draft/build-cli-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-cli-shell-contract": {
+      "name": "@hobo/draft-cli-shell-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-code-dsl-contract": {
+      "name": "@hobo/draft-hobo-code-dsl-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-codegen-cli-contract": {
+      "name": "@hobo-draft/codegen-cli-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-collect-cli-contract": {
+      "name": "@hobo/draft-hobo-collect-cli-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-componentize": {
+      "name": "@hobo-draft/componentize",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-componentize-contract": {
+      "name": "@hobo-draft/componentize-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-config-secret-schema-contract": {
+      "name": "@hobo/draft-config-secret-schema-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-contract-ir": {
+      "name": "@hobo/draft-contract-ir",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-core-contract": {
+      "name": "@hobo-draft/core-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-delivery-port": {
+      "name": "@hobo-draft/delivery-port",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-dev-fidelity-drift-contract": {
+      "name": "@hobo-draft/hobo-dev-fidelity-drift-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-dev-loop-contract": {
+      "name": "@hobo-draft/hobo-dev-loop-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-dns-port-contract": {
+      "name": "@hobo/draft-dns-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-doctor-contract": {
+      "name": "@hobo/draft-doctor-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-down-lifecycle-contract": {
+      "name": "@hobo/draft-down-lifecycle-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-experiment-port": {
+      "name": "@hobo-draft/experiment-port",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-feature-flag-port": {
+      "name": "@hobo-draft/feature-flag-port",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-gateway-port": {
+      "name": "@hobo-draft/gateway-port",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-inspect-projection-contract": {
+      "name": "@hobo-draft/hobo-inspect-projection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-jwt-svid-contract": {
+      "name": "hobo-jwt-svid-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-login-claim-contract": {
+      "name": "@hobo/draft-login-claim-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-logs-cli-contract": {
+      "name": "@hobo/draft-hobo-logs-cli-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-manifest-contract": {
+      "name": "@hobo-draft/manifest-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-mcp-server-contract": {
+      "name": "@hobo-draft/hobo-mcp-server-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-monorepo-skeleton-contract": {
+      "name": "@hobo/draft-monorepo-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-new-scaffold-contract": {
+      "name": "@hobo/draft-new-scaffold-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-package-namespace-map": {
+      "name": "@hobo-draft/package-namespace-map",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-plan-preview-contract": {
+      "name": "@hobo/draft-plan-preview-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-policy-ir-contract": {
+      "name": "@hobo-draft/policy-ir-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-principal-ref-contract": {
+      "name": "hobo-principal-ref-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-projection-port-contract": {
+      "name": "@hobo-draft/projection-port-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-realize-emission-contract": {
+      "name": "@hobo/draft-realize-emission-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-relay-contract": {
+      "name": "@hobo/draft-hobo-relay-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-remediation-action-contract": {
+      "name": "@hobo-draft/remediation-action-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-runtime-primitives": {
+      "name": "@hobo-draft/runtime-primitives",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-runtime-ts-primitives": {
+      "name": "@hobo/draft-hobo-runtime-ts-primitives",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-sdk-aggregate-wit-contract": {
+      "name": "@hobo-draft/sdk-aggregate-wit-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-up-convergence-contract": {
+      "name": "@hobo/draft-up-convergence-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/hobo-wit-toolchain-contract": {
+      "name": "@hobo-draft/wit-toolchain-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/host-version-upgrade-contract": {
+      "name": "@hobo-draft/host-version-upgrade-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/human-approval-generation-gate-contract": {
+      "name": "human-approval-generation-gate-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/human-operator-console-contract": {
+      "name": "@hobo-draft/human-operator-console-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-cdktf-import-only-contract": {
+      "name": "@hobo-draft/iac-cdktf-import-only-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-crossplane-backend-contract": {
+      "name": "@hobo/iac-crossplane-backend-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-drift-refresh-fidelity-contract": {
+      "name": "@hobo-draft/iac-drift-refresh-fidelity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-opentofu-backend-contract": {
+      "name": "@hobo-draft/iac-opentofu-backend-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-partial-apply-compensation-contract": {
+      "name": "@hobo/iac-partial-apply-compensation-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-pulumi-backend-contract": {
+      "name": "@hobo-draft/iac-pulumi-backend-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/iac-state-model-contract": {
+      "name": "@hobo-draft/iac-state-model-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/id-jag-threat-model-spike": {
+      "name": "@hobo/draft-id-jag-threat-model-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/id-jag-token-exchange-contract": {
+      "name": "@hobo/draft-id-jag-token-exchange-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/identity-event-contract": {
+      "name": "@hobo/draft-identity-event-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/identity-ocsf-export-contract": {
+      "name": "@hobo/identity-ocsf-export-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/idiom-layer-lowering-contract": {
+      "name": "@hobo/draft-idiom-layer-lowering-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/idiom-semantics-annex": {
+      "name": "@hobo/draft-idiom-semantics-annex",
+      "private": true
+    },
+    "src/draft/technical-proofs/ifc-author-flow-contract": {
+      "name": "@hobo-draft/ifc-author-flow-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/ifc-handler-trigger-contract": {
+      "name": "@hobo/draft-ifc-handler-trigger-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/ifc-handler-trigger-hobo-608": {
+      "name": "@hobo/draft-ifc-handler-trigger-hobo-608",
+      "private": true
+    },
+    "src/draft/technical-proofs/inbound-xaa-resource-server-contract": {
+      "name": "@hobo/draft-inbound-xaa-resource-server-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/incident-aggregate-contract": {
+      "name": "@hobo-draft/incident-aggregate-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/internal-ca-private-acme-contract": {
+      "name": "@hobo-draft/internal-ca-private-acme-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/internal-service-discovery-contract": {
+      "name": "@hobo/draft-internal-service-discovery-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/issue-worker-guardrail-mapping-contract": {
+      "name": "@hobo-draft/issue-worker-guardrail-mapping-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/junction-connectivity-inference-spike": {
+      "name": "@hobo/draft-junction-connectivity-inference-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/junction-connectivity-plan-contract": {
+      "name": "@hobo-draft/junction-connectivity-plan-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/junction-federated-domain-contract": {
+      "name": "@hobo-draft/junction-federated-domain-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/junction-registry-federation-contract": {
+      "name": "@hobo/draft-junction-registry-federation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/jwt-svid-issuance-contract": {
+      "name": "@hobo/draft-jwt-svid-issuance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/legal-privacy-terms-dogfood-alpha-evidence": {
+      "name": "@hobo-draft/legal-privacy-terms-dogfood-alpha-evidence",
+      "private": true
+    },
+    "src/draft/technical-proofs/lifecycle-phase-policy-contract": {
+      "name": "@hobo/draft-lifecycle-phase-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/listing-lifecycle-yank-contract": {
+      "name": "@hobo/draft-listing-lifecycle-yank-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/live-evals-runtime-contract": {
+      "name": "@hobo-draft/live-evals-runtime-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/live-fix-gated-candidate-contract": {
+      "name": "@hobo/live-fix-gated-candidate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/local-dev-orchestration-contract": {
+      "name": "@hobo/draft-local-dev-orchestration-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/local-dev-test-authoring-contract": {
+      "name": "@hobo/local-dev-test-authoring-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/malicious-provider-containment-contract": {
+      "name": "@hobo/draft-malicious-provider-containment-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/manifest-resource-intent-bridge-contract": {
+      "name": "@hobo-draft/manifest-resource-intent-bridge-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/matching-engine-skeleton-contract": {
+      "name": "@hobo/draft-matching-engine-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/matching-specificity-vectors": {
+      "name": "@hobo/draft-matching-specificity-vectors",
+      "private": true
+    },
+    "src/draft/technical-proofs/materialization-subscription-contract": {
+      "name": "@hobo-draft/materialization-subscription-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/mcp-server-hardening-contract": {
+      "name": "@hobo-draft/mcp-server-hardening-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/membrane-deadline-backpressure-contract": {
+      "name": "@hobo-draft/membrane-deadline-backpressure-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/messaging-dapr-kafka": {
+      "name": "@hobo-draft/messaging-dapr-kafka",
+      "private": true,
+      "dependencies": {
+        "@hobo/camps": "workspace:*",
+        "@hobo/core": "workspace:*",
+        "@hobo/junctions": "workspace:*",
+        "@hobo/provider-kafka": "workspace:*",
+        "@hobo/runtime": "workspace:*",
+        "@hobo/runtime-dapr": "workspace:*",
+        "@hobo/yards": "workspace:*"
+      }
+    },
+    "src/draft/technical-proofs/meta-cloud-broker-artifact-contract": {
+      "name": "@hobo-draft/meta-cloud-broker-artifact-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/meta-cloud-broker-resolution-contract": {
+      "name": "@hobo-draft/meta-cloud-broker-resolution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/metering-view-projection-contract": {
+      "name": "@hobo-draft/metering-view-projection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/metrics-catalog-pipeline-contract": {
+      "name": "@hobo-draft/metrics-catalog-pipeline-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/mirror-digest-selection-contract": {
+      "name": "@hobo-draft/mirror-digest-selection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/mtls-by-default-conformance-gate": {
+      "name": "@hobo-draft/mtls-by-default-conformance-gate",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/mtls-data-path-contract": {
+      "name": "@hobo/draft-mtls-data-path-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/multi-cloud-shop-provider-e2e-contract": {
+      "name": "multi-cloud-shop-provider-e2e-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/multi-region-dr-replay-contract": {
+      "name": "@hobo/draft-multi-region-dr-replay-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/native-log-projection-contract": {
+      "name": "@hobo-draft/native-log-projection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/no-egress-generation-sandbox-contract": {
+      "name": "@hobo-draft/no-egress-generation-sandbox-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/no-privilege-escalation-policy-contract": {
+      "name": "@hobo/draft-no-privilege-escalation-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/non-iac-driver-adapters-contract": {
+      "name": "@hobo/draft-non-iac-driver-adapters-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/obligation-engine-contract": {
+      "name": "@hobo/obligation-engine-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/observability-cost-guard-contract": {
+      "name": "@hobo-draft/observability-cost-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/observed-contract-promotion-contract": {
+      "name": "@hobo-draft/observed-contract-promotion-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/oci-artifact-storage-contract": {
+      "name": "@hobo/draft-oci-artifact-storage-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/offline-import-integrity-contract": {
+      "name": "@hobo/draft-offline-import-integrity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/oidc-federation-sts-contract": {
+      "name": "@hobo/draft-oidc-federation-sts-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/on-call-escalation-contract": {
+      "name": "@hobo-draft/on-call-escalation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/openexperiment-runtime-data-contract": {
+      "name": "@hobo/draft-openexperiment-runtime-data-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/openfeature-provider-adapters-contract": {
+      "name": "@hobo/draft-openfeature-provider-adapters-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/openinference-live-eval-stream-contract": {
+      "name": "@hobo-draft/openinference-live-eval-stream-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/openinference-trajectory-capture-contract": {
+      "name": "@hobo-draft/openinference-trajectory-capture-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/operations-manifests-contract": {
+      "name": "@hobo/draft-operations-manifests-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/operator-integration-ports-contract": {
+      "name": "@hobo/draft-operator-integration-ports-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/orchestrator-choreography-skeleton-contract": {
+      "name": "@hobo/orchestrator-choreography-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/orchestrator-reconciliation-fsm-contract": {
+      "name": "@hobo/draft-orchestrator-reconciliation-fsm-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/otel-traces-pipeline-contract": {
+      "name": "@hobo-draft/otel-traces-pipeline-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/outbound-xaa-token-exchange-contract": {
+      "name": "@hobo/draft-outbound-xaa-token-exchange-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/pact-contract-harness": {
+      "name": "@hobo/draft-pact-contract-harness",
+      "private": true
+    },
+    "src/draft/technical-proofs/paginated-query-contract": {
+      "name": "@hobo-draft/paginated-query-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/paradigm-idiom-packages-contract": {
+      "name": "@hobo/draft-paradigm-idiom-packages-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/partial-realize-rollback-contract": {
+      "name": "@hobo/partial-realize-rollback-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/patterns-standards-cross-links": {
+      "name": "@hobo/draft-patterns-standards-cross-links",
+      "private": true
+    },
+    "src/draft/technical-proofs/persona-operating-profile-contract": {
+      "name": "@hobo/draft-persona-operating-profile-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/planner-dag-skeleton-contract": {
+      "name": "@hobo/draft-planner-dag-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/platform-engineer-flow-contract": {
+      "name": "@hobo-draft/platform-engineer-flow-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/poison-event-quarantine-contract": {
+      "name": "@hobo-draft/poison-event-quarantine-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-authoring-waiver-contract": {
+      "name": "@hobo/draft-policy-authoring-waiver-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-engine-port-contract": {
+      "name": "@hobo/draft-policy-engine-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-engine-provider-adapters-contract": {
+      "name": "@hobo/policy-engine-provider-adapters-contract",
+      "version": "0.1.0"
+    },
+    "src/draft/technical-proofs/policy-fail-closed-contract": {
+      "name": "policy-fail-closed-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-gated-flag-flips-contract": {
+      "name": "@hobo/draft-policy-gated-flag-flips-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-pack-federation-contract": {
+      "name": "@hobo-draft/policy-pack-federation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/policy-supply-chain-trust-contract": {
+      "name": "@hobo/draft-policy-supply-chain-trust-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/portability-report-contract": {
+      "name": "@hobo/draft-portability-report-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/portability-swap-equivalent-contract": {
+      "name": "@hobo/draft-portability-swap-equivalent-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/post-core-cross-cutting-delta-pattern": {
+      "name": "@hobo/post-core-cross-cutting-delta-pattern",
+      "private": true
+    },
+    "src/draft/technical-proofs/preview-ephemeral-environments-contract": {
+      "name": "@hobo-draft/preview-ephemeral-environments-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/product-notification-taxonomy-contract": {
+      "name": "@hobo-draft/product-notification-taxonomy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/projection-consistency-reactivity-contract": {
+      "name": "@hobo-draft/projection-consistency-reactivity-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/projection-lag-consistency-contract": {
+      "name": "@hobo-draft/projection-lag-consistency-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/projection-rebuild-contract": {
+      "name": "@hobo-draft/projection-rebuild-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/projection-sink-change-feed-conformance-contract": {
+      "name": "@hobo-draft/projection-sink-change-feed-conformance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-authoring-contract": {
+      "name": "@hobo-draft/provider-authoring-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-aws-contract": {
+      "name": "@hobo-draft/provider-aws-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-aws-full-capability-catalog-contract": {
+      "name": "@hobo-draft/provider-aws-full-capability-catalog-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-azure-contract": {
+      "name": "@hobo-draft/provider-azure-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-capability-conformance-suites": {
+      "name": "@hobo/draft-provider-capability-conformance-suites",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-capability-manifest-contract": {
+      "name": "@hobo-draft/provider-capability-manifest-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-cloudflare-contract": {
+      "name": "@hobo-draft/provider-cloudflare-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-default-definitions-contract": {
+      "name": "@hobo/draft-provider-default-definitions-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-fly-contract": {
+      "name": "@hobo/draft-provider-fly-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-gcp-contract": {
+      "name": "@hobo-draft/provider-gcp-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-hetzner-contract": {
+      "name": "@hobo-draft/provider-hetzner-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-kubernetes-contract": {
+      "name": "@hobo-draft/provider-kubernetes-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-local-zero-infra": {
+      "name": "@hobo/draft-provider-local-zero-infra",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-options-pattern-contract": {
+      "name": "@hobo-draft/provider-options-pattern-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-port-contract": {
+      "name": "@hobo-draft/provider-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/provider-vercel-contract": {
+      "name": "@hobo/draft-provider-vercel-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/public-status-page-incident-communication-contract": {
+      "name": "@hobo-draft/public-status-page-incident-communication-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/queue-clock-runtime-port-contract": {
+      "name": "@hobo-draft/queue-clock-runtime-port-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/raw-driver-escape-hatch-contract": {
+      "name": "@hobo-draft/raw-driver-escape-hatch-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/rbac-role-binding-contract": {
+      "name": "rbac-role-binding-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/reactor-coalescing-fanout-contract": {
+      "name": "@hobo/reactor-coalescing-fanout-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/reactor-skeleton-contract": {
+      "name": "@hobo/draft-reactor-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/reads-your-writes-contract": {
+      "name": "@hobo/draft-reads-your-writes-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/region-objective-ranking-contract": {
+      "name": "@hobo/draft-region-objective-ranking-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-artifact-descriptor-contract": {
+      "name": "@hobo/draft-registry-artifact-descriptor-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-capability-manifest-ingest-contract": {
+      "name": "@hobo/draft-registry-capability-manifest-ingest-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-compromise-guard-contract": {
+      "name": "@hobo/draft-registry-compromise-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-dependency-confusion-guard-contract": {
+      "name": "@hobo-draft/registry-dependency-confusion-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-import-contract": {
+      "name": "@hobo/draft-registry-import-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/registry-publish-flow-contract": {
+      "name": "@hobo/draft-registry-publish-flow-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/relational-projection-sink-contract": {
+      "name": "@hobo-draft/relational-projection-sink-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/release-artifact-provenance-retention-contract": {
+      "name": "@hobo-draft/release-artifact-provenance-retention-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/reliability-sla-rollup-contract": {
+      "name": "@hobo/draft-reliability-sla-rollup-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/rem-038-stage6-notify-separation": {
+      "name": "@hobo/draft-rem-038-stage6-notify-separation",
+      "private": true
+    },
+    "src/draft/technical-proofs/remediation-safety-gate-contract": {
+      "name": "@hobo/remediation-safety-gate-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/replay-live-equivalence-poc": {
+      "name": "@hobo-draft/replay-live-equivalence-poc",
+      "private": true
+    },
+    "src/draft/technical-proofs/repo-view-escape-hatches-contract": {
+      "name": "@hobo-draft/repo-view-escape-hatches-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resilience-semantics-annex": {
+      "name": "@hobo/draft-resilience-semantics-annex",
+      "private": true
+    },
+    "src/draft/technical-proofs/resource-collection-engine-contract": {
+      "name": "@hobo-draft/resource-collection-engine-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resource-definition-driver-contract": {
+      "name": "@hobo/draft-resource-definition-driver-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resource-definitions-matching-packs-contract": {
+      "name": "@hobo/draft-resource-definitions-matching-packs-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resource-pack-distribution-contract": {
+      "name": "@hobo/draft-resource-pack-distribution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resourceactor-fsm-contract": {
+      "name": "@hobo/draft-resourceactor-fsm-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/resourceactor-reconcile-loop-contract": {
+      "name": "@hobo/draft-resourceactor-reconcile-loop-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/rollback-failure-compensation-contract": {
+      "name": "@hobo/rollback-failure-compensation-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/run-inspector-projection-contract": {
+      "name": "@hobo-draft/run-inspector-projection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/runaway-remediation-guard-contract": {
+      "name": "@hobo-draft/runaway-remediation-guard-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/runaway-spend-circuit-breaker-contract": {
+      "name": "@hobo-draft/runaway-spend-circuit-breaker-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/runbook-contract": {
+      "name": "@hobo-draft/runbook-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/runbook-execution-engine-contract": {
+      "name": "@hobo/runbook-execution-engine-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/runtime-local-component-host": {
+      "name": "@hobo-draft/runtime-local-component-host",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/runtime-local-execution-limits-contract": {
+      "name": "@hobo-draft/runtime-local-execution-limits-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/runtime-port-conformance-contract": {
+      "name": "@hobo-draft/runtime-port-conformance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/runtime-postgres-ports": {
+      "name": "@hobo/draft-runtime-postgres-ports",
+      "private": true
+    },
+    "src/draft/technical-proofs/s0-04-protobuf-cue-codegen": {
+      "name": "@hobo-draft/s0-04-protobuf-cue-codegen",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s1-15-bind-wiring-topology-contract": {
+      "name": "@hobo-draft/s1-15-bind-wiring-topology-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s1-17-usage-permissions-coverage-poc": {
+      "name": "@hobo-draft/s1-17-usage-permissions-coverage-poc",
+      "version": "0.0.1",
+      "private": true
+    },
+    "src/draft/technical-proofs/s1-19-ctx-config-local-resolution": {
+      "name": "@hobo/draft-s1-19-ctx-config-local-resolution",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s1-21-collect-codegen-cli-poc": {
+      "name": "@hobo-draft/s1-21-collect-codegen-cli-poc",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s1-stage-gate": {
+      "name": "@hobo-draft/s1-stage-gate",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s2-03-cloud-yard-shell-hobo-618": {
+      "name": "@hobo-draft/s2-03-cloud-yard-shell-hobo-618",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s2-04-planner-deployment-plan-dag-poc": {
+      "name": "@hobo-draft/s2-04-planner-deployment-plan-dag-poc",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter": {
+      "name": "@hobo-draft/s2-06-iac-pulumi-automation-adapter",
+      "private": true
+    },
+    "src/draft/technical-proofs/s3-05-allow-triple-effects-poc": {
+      "name": "@hobo/draft-s3-05-allow-triple-effects-poc",
+      "private": true
+    },
+    "src/draft/technical-proofs/s3-07-agent-guardrails-contract": {
+      "name": "@hobo-draft/s3-07-agent-guardrails-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/s3-08-hobo-mcp-server-poc": {
+      "name": "@hobo-draft/s3-08-hobo-mcp-server-poc",
+      "private": true
+    },
+    "src/draft/technical-proofs/s4-03-provider-azure-full-capability-manifest": {
+      "name": "@hobo-draft/s4-03-provider-azure-full-capability-manifest",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s4-08-portability-conformance-lane-contract": {
+      "name": "@hobo/draft-s4-08-portability-conformance-lane-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/s4-stage-gate-multi-cloud-contract": {
+      "name": "s4-stage-gate-multi-cloud-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/s5-02-wit-interface-conformance-coverage": {
+      "name": "@hobo-draft/s5-02-wit-interface-conformance-coverage",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s5-03-forge-ingestion-contract": {
+      "name": "@hobo-draft/s5-03-forge-ingestion-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s5-05-forge-signing-registry-certification-contract": {
+      "name": "@hobo-draft/s5-05-forge-signing-registry-certification-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/s6-02-control-plane-ha-contract": {
+      "name": "@hobo-draft/s6-02-control-plane-ha-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/s6-05-observability-drift-loop-contract": {
+      "name": "@hobo-draft/s6-05-observability-drift-loop-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/s6-09-operator-crew-yard-services-contract": {
+      "name": "@hobo/s6-09-operator-crew-yard-services-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/saga-compensation-engine-contract": {
+      "name": "@hobo-draft/saga-compensation-engine-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/saga-credit-reconciliation-spike": {
+      "name": "@hobo-draft/saga-credit-reconciliation-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/sandboxed-executors-contract": {
+      "name": "@hobo/draft-sandboxed-executors-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sdk-codegen-surface-contract": {
+      "name": "@hobo/draft-sdk-codegen-surface-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sdk-flag-surface-contract": {
+      "name": "@hobo/draft-sdk-flag-surface-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sdk-idiom-conformance-gate": {
+      "name": "@hobo/draft-sdk-idiom-conformance-gate",
+      "private": true
+    },
+    "src/draft/technical-proofs/search-extension-packages-contract": {
+      "name": "@hobo-draft/search-extension-packages-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/secret-zero-genesis-bootstrap-contract": {
+      "name": "@hobo/draft-secret-zero-genesis-bootstrap-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/secretless-config-resolution-contract": {
+      "name": "@hobo/draft-secretless-config-resolution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/self-host-bootstrap-ordering-spike": {
+      "name": "@hobo/draft-self-host-bootstrap-ordering-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/self-host-bootstrap-saga-contract": {
+      "name": "@hobo-draft/self-host-bootstrap-saga-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/session-replay-contracts": {
+      "name": "@hobo-draft/session-replay-contracts",
+      "private": true,
+      "dependencies": { "@hobo/replay": "workspace:*" }
+    },
+    "src/draft/technical-proofs/session-revocation-contract": {
+      "name": "@hobo/draft-session-revocation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/shared-cost-attribution-contract": {
+      "name": "@hobo-draft/shared-cost-attribution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/showback-attribution-contract": {
+      "name": "@hobo-draft/showback-attribution-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/signed-artifact-publish-install-contract": {
+      "name": "@hobo/draft-signed-artifact-publish-install-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/signed-offline-bundle-contract": {
+      "name": "@hobo/draft-signed-offline-bundle-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-as-code-contract": {
+      "name": "@hobo/draft-slo-as-code-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-computation-engine-contract": {
+      "name": "@hobo/draft-slo-computation-engine-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-gaming-guard-contract": {
+      "name": "@hobo/draft-slo-gaming-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-gated-rollback-analysis-contract": {
+      "name": "@hobo/slo-gated-rollback-analysis-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-promotion-gate-contract": {
+      "name": "@hobo-draft/slo-promotion-gate-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/slo-rollback-decision-correctness-spike": {
+      "name": "@hobo-draft/slo-rollback-decision-correctness-spike",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/slsa-provenance-certification-contract": {
+      "name": "@hobo-draft/slsa-provenance-certification-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/snapshot-compaction-contract": {
+      "name": "@hobo-draft/snapshot-compaction-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/snapshot-replay-divergence-contract": {
+      "name": "@hobo/snapshot-replay-divergence-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/split-horizon-partition-connectivity-contract": {
+      "name": "@hobo/split-horizon-partition-connectivity-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sre-decision-tree-contract": {
+      "name": "@hobo/sre-decision-tree-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sre-diagnose-projection-contract": {
+      "name": "@hobo-draft/sre-diagnose-projection-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/sre-mttd-mttr-postmortem-contract": {
+      "name": "@hobo-draft/sre-mttd-mttr-postmortem-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/sre-operator-skeleton-contract": {
+      "name": "@hobo-draft/sre-operator-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/static-key-escape-hatch-contract": {
+      "name": "@hobo/draft-static-key-escape-hatch-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/streamer-runtime-port-contract": {
+      "name": "@hobo/draft-streamer-runtime-port-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/structured-log-pipeline-contract": {
+      "name": "@hobo-draft/structured-log-pipeline-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/stub-implementation-generation-contract": {
+      "name": "@hobo/draft-stub-implementation-generation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/stuck-rollout-convergence-contract": {
+      "name": "@hobo/stuck-rollout-convergence-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/supervision-child-lifetime-contract": {
+      "name": "@hobo/draft-supervision-child-lifetime-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/svid-auto-rotation-contract": {
+      "name": "@hobo/draft-svid-auto-rotation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/svid-partition-grace-spike": {
+      "name": "@hobo/draft-svid-partition-grace-spike",
+      "private": true
+    },
+    "src/draft/technical-proofs/system-failure-classifier-contract": {
+      "name": "@hobo-draft/system-failure-classifier-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/tax-currency-receipt-obligations-contract": {
+      "name": "@hobo/draft-tax-currency-receipt-obligations-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/telemetry-envelope-contract": {
+      "name": "@hobo-draft/telemetry-envelope-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/tier-five-public-mtls-contract": {
+      "name": "@hobo/tier-five-public-mtls-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/tier-four-overlay-mesh-contract": {
+      "name": "@hobo/tier-four-overlay-mesh-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/tier-one-private-network-contract": {
+      "name": "@hobo-draft/tier-one-private-network-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/tier-three-private-interconnect-contract": {
+      "name": "@hobo-draft/tier-three-private-interconnect-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/tier-two-cross-region-network-contract": {
+      "name": "@hobo-draft/tier-two-cross-region-network-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/token-broker-exchange-contract": {
+      "name": "@hobo/draft-token-broker-exchange-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/token-broker-ha-cache-contract": {
+      "name": "@hobo/draft-token-broker-ha-cache-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/token-broker-skeleton-contract": {
+      "name": "@hobo/draft-token-broker-skeleton-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/token-budget-governance-contract": {
+      "name": "@hobo-draft/token-budget-governance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/token-replay-resistance-contract": {
+      "name": "@hobo/draft-token-replay-resistance-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/topology-objects-contract": {
+      "name": "@hobo-draft/topology-objects-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/topology-override-conflict-contract": {
+      "name": "@hobo/topology-override-conflict-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/trace-context-propagation-contract": {
+      "name": "@hobo-draft/trace-context-propagation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/training-data-poisoning-guard-contract": {
+      "name": "@hobo-draft/training-data-poisoning-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/training-engine-port-contract": {
+      "name": "@hobo/draft-training-engine-port-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/trust-tier-policy-contract": {
+      "name": "@hobo/draft-trust-tier-policy-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/upgrade-rollback-dry-run-contract": {
+      "name": "@hobo/upgrade-rollback-dry-run-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/usage-inferred-permissions-contract": {
+      "name": "@hobo-draft/usage-inferred-permissions-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/usage-to-invoice-reconciliation-contract": {
+      "name": "@hobo/usage-to-invoice-reconciliation-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/v1-cutline-contract": {
+      "name": "@hobo/draft-v1-cutline-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/v1-outcome-activation-rail-contract": {
+      "name": "@hobo/v1-outcome-activation-rail-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/v1-release-notes-upgrade-guide-contract": {
+      "name": "v1-release-notes-upgrade-guide-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/version-compat-resolution-semantics": {
+      "name": "@hobo/draft-version-compat-resolution-semantics",
+      "private": true
+    },
+    "src/draft/technical-proofs/version-pinning-drift-guard-contract": {
+      "name": "@hobo/draft-version-pinning-drift-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/vm-microvm-build-providers-contract": {
+      "name": "@hobo/vm-microvm-build-providers-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/vscode-extension-contract": {
+      "name": "@hobo-draft/vscode-extension-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/wasi-interface-pins": {
+      "name": "@hobo-draft/wasi-interface-pins",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/websocket-preview-wit-contract": {
+      "name": "@hobo-draft/websocket-preview-wit-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/websocket-streamer-fanout-contract": {
+      "name": "@hobo/draft-websocket-streamer-fanout-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/wire-version-negotiation-contract": {
+      "name": "@hobo-draft/wire-version-negotiation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/wit-port-stub-contract": {
+      "name": "@hobo-draft/wit-port-stub-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/workload-attestation-intake-contract": {
+      "name": "workload-attestation-intake-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/wrpc-deadline-propagation-contract": {
+      "name": "@hobo-draft/wrpc-deadline-propagation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/wrpc-in-process-link-contract": {
+      "name": "@hobo-draft/wrpc-in-process-link-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/wrpc-lattice-transport-contract": {
+      "name": "@hobo-draft/wrpc-lattice-transport-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/wrpc-link-layer-contract": {
+      "name": "@hobo-draft/wrpc-link-layer-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/wrpc-membrane-failure-contract": {
+      "name": "@hobo-draft/wrpc-membrane-failure-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/x509-svid-mtls-contract": {
+      "name": "@hobo/x509-svid-mtls-contract",
+      "version": "0.0.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/xaa-confused-deputy-guard-contract": {
+      "name": "@hobo/draft-xaa-confused-deputy-guard-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/yard-domain-validation-contract": {
+      "name": "@hobo-draft/yard-domain-validation-contract",
+      "version": "0.1.0",
+      "private": true
+    },
+    "src/draft/technical-proofs/yard-identity-issuer-contract": {
+      "name": "@hobo/draft-yard-identity-issuer-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/yard-receipt-consumption-contract": {
+      "name": "@hobo/yard-receipt-consumption-contract",
+      "private": true
+    },
+    "src/draft/technical-proofs/yard-topology-manifest-contract": {
+      "name": "@hobo/draft-yard-topology-manifest-contract",
+      "private": true
+    }
+  }
+}

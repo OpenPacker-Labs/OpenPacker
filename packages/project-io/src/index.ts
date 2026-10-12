@@ -221,6 +221,25 @@ export {
   StableHandleError,
 } from './handle-path.js';
 
+export {
+  readlinkChild,
+  symlinkChild,
+  unlinkChild,
+  type LinkExpectation,
+  type LinkOutcome,
+  type LinkSite,
+} from './handle-link.js';
+
+export {
+  MAXIMUM_TARGET_LENGTH,
+  linkDirectoryProblem,
+  linkNameProblem,
+  linkTargetProblem,
+  memberLinkProblem,
+  splitLinkPath,
+  type LinkPlace,
+} from './link-rules.js';
+
 /** Restore a file's original line endings and trailing-newline habit. */
 export function matchFileStyle(file: TextFile, body: string): string {
   const normalized = body.replace(/\r\n/gu, '\n');
@@ -324,12 +343,32 @@ export {
 export {
   collectFiles,
   collectFilesFromHandle,
+  collectTree,
+  collectTreeFromHandle,
+  type CollectOptions,
+} from './layout-collect.js';
+
+export {
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
-  type CollectOptions,
   type MaterialiseOptions,
   type MaterialiseResult,
 } from './layout.js';
+
+export type {
+  CollectTreeOptions,
+  CollectedLink,
+  CollectedTree,
+  RecordedLinks,
+} from './layout-links.js';
+
+export {
+  placeMemberLink,
+  readMemberLink,
+  removeEmptyScope,
+  removeMemberLink,
+  type MemberLinkState,
+} from './member-link.js';
 
 export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';

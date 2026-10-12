@@ -7,14 +7,10 @@
  * script shims. Nothing here runs a package script.
  */
 
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
-import {
-  materialiseTree,
-  removeTree,
-  writeFileAtomic,
-} from '@openpacker/project-io';
+import { materialiseTree, writeFileAtomic } from '@openpacker/project-io';
 import {
   interpreterFor,
   readPackageBins,
@@ -22,27 +18,31 @@ import {
   renderPosixShim,
   type PackageBin,
 } from './layout-bins.js';
+import type { LayoutLink } from './layout-links.js';
+import { placePath } from './layout-links.js';
+import {
+  LAYOUT_RECORD,
+  readRecord,
+  removeStale,
+  writeRecord,
+} from './layout-record.js';
+import {
+  assertNoUndeclaredSymlinks,
+  placeWantedLinks,
+  removeStaleLinks,
+} from './layout-write-links.js';
 import { chainOfLockPath } from './lock-tree.js';
 import {
   planLayout,
   planLayoutFromPaths,
   toLayoutEntries,
-  unsafeNameProblem,
   type LayoutEntry,
   type LayoutPlan,
   type Placement,
 } from './layout-plan.js';
 
 /** What opm wrote, so a later layout removes those and nothing else. */
-export const LAYOUT_RECORD = '.opm-layout.json';
-
-interface LayoutRecord {
-  layoutVersion: 1;
-  /** Package names at the top of node_modules. */
-  packages: string[];
-  /** File names under node_modules/.bin. */
-  bins: string[];
-}
+export { LAYOUT_RECORD };
 
 export interface LayoutOutcome {
   root: string;
@@ -51,10 +51,23 @@ export interface LayoutOutcome {
   linked: number;
   copied: boolean;
   bins: number;
+  /** The workspace-member links of the layout, and what writing it did to them. */
+  memberLinks: {
+    declared: number;
+    created: number;
+    unchanged: number;
+    removed: number;
+  };
   skipped: { path: string; reason: string }[];
 }
 
-const BIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._~+-]*$/u;
+export interface LayoutWriteOptions {
+  /**
+   * The workspace-member links to leave in `node_modules`. Checked against the
+   * packages here (`checkLayoutLinks`), whatever the caller already checked.
+   */
+  links?: readonly LayoutLink[];
+}
 
 /** Packages written at the same time within one depth of the tree. */
 const PARALLEL_PACKAGES = 4;
@@ -62,6 +75,7 @@ const PARALLEL_PACKAGES = 4;
 export async function writeNodeModules(
   projectRoot: string,
   entries: readonly NativeLockEntry[],
+  options: LayoutWriteOptions = {},
 ): Promise<LayoutOutcome> {
   const root = join(projectRoot, 'node_modules');
   const skipped: { path: string; reason: string }[] = [];
@@ -73,7 +87,7 @@ export async function writeNodeModules(
     });
     return false;
   });
-  const plan = planFor(storable);
+  const plan = planFor(storable, options.links ?? []);
   for (const refusal of plan.skipped)
     skipped.push({
       path: join(root, ...refusal.entry.name.split('/')),
@@ -87,6 +101,12 @@ export async function writeNodeModules(
     linked: 0,
     copied: false,
     bins: 0,
+    memberLinks: {
+      declared: plan.links.length,
+      created: 0,
+      unchanged: 0,
+      removed: 0,
+    },
     skipped,
   };
 
@@ -134,19 +154,30 @@ export async function writeNodeModules(
       .map((place) => place.entry.name),
   );
   await removeStale(root, previous, names, new Set(shims.root));
-  if (plan.placements.length > 0 || previous.packages.length > 0)
-    await writeFileAtomic(
-      join(root, LAYOUT_RECORD),
-      `${JSON.stringify(
-        {
-          layoutVersion: 1,
-          packages: [...names].sort(),
-          bins: [...shims.root].sort(),
-        } satisfies LayoutRecord,
-        undefined,
-        2,
-      )}\n`,
-    );
+  // Links last: a name that was a package is gone by now, and a package that
+  // takes the place of an old link has already replaced it. They go in two
+  // halves with the record between them, so that a link made is a link recorded
+  // even if a later one is refused or the process stops.
+  const stale = await removeStaleLinks(
+    projectRoot,
+    plan.links,
+    previous.links ?? [],
+    new Set(plan.placements.map((place) => placePath(place.chain))),
+  );
+  await writeRecord(root, previous, {
+    packages: [...names],
+    bins: shims.root,
+    links: plan.links,
+  });
+  const made = await placeWantedLinks(projectRoot, plan.links, stale.emptied);
+  outcome.memberLinks = {
+    declared: plan.links.length,
+    created: made.created,
+    unchanged: made.unchanged,
+    removed: stale.removed,
+  };
+  skipped.push(...stale.kept);
+  await assertNoUndeclaredSymlinks(projectRoot, plan.placements, plan.links);
   return outcome;
 }
 
@@ -157,9 +188,13 @@ export async function writeNodeModules(
  * layout is exactly that. An opm lock names none, and the placement is derived
  * from the edges it records. Half of each would be a layout nobody chose.
  */
-function planFor(entries: readonly NativeLockEntry[]): LayoutPlan {
+function planFor(
+  entries: readonly NativeLockEntry[],
+  links: readonly LayoutLink[],
+): LayoutPlan {
   const withPath = entries.filter((entry) => entry.layoutPath !== undefined);
-  if (withPath.length === 0) return planLayout(toLayoutEntries(entries));
+  if (withPath.length === 0)
+    return planLayout(toLayoutEntries(entries), { links });
   if (withPath.length !== entries.length)
     throw new Error(
       'Either every package of a layout names its place in the lock, or none does',
@@ -183,7 +218,7 @@ function planFor(entries: readonly NativeLockEntry[]): LayoutPlan {
     };
     return { entry, chain };
   });
-  return planLayoutFromPaths(placed);
+  return planLayoutFromPaths(placed, { links });
 }
 
 /**
@@ -293,68 +328,4 @@ function outranks(candidate: Placement, rival: Placement): boolean {
   if (candidate.entry.direct !== rival.entry.direct)
     return candidate.entry.direct;
   return candidate.entry.name < rival.entry.name;
-}
-
-async function readRecord(root: string): Promise<LayoutRecord> {
-  const empty: LayoutRecord = { layoutVersion: 1, packages: [], bins: [] };
-  try {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const parsed = JSON.parse(
-      await readFile(join(root, LAYOUT_RECORD), 'utf8'),
-    ) as Partial<LayoutRecord>;
-    if (parsed.layoutVersion !== 1) return empty;
-    const strings = (value: unknown): string[] =>
-      Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === 'string')
-        : [];
-    return {
-      layoutVersion: 1,
-      packages: strings(parsed.packages),
-      bins: strings(parsed.bins),
-    };
-  } catch {
-    return empty;
-  }
-}
-
-/**
- * Remove what an earlier layout wrote and this one does not.
- *
- * Only names the record lists, and only if they still look like what the
- * record can contain: a hand-edited record must not turn into a path.
- */
-async function removeStale(
-  root: string,
-  previous: LayoutRecord,
-  packages: ReadonlySet<string>,
-  bins: ReadonlySet<string>,
-): Promise<void> {
-  for (const name of previous.packages) {
-    if (packages.has(name) || unsafeNameProblem(name) !== undefined) continue;
-    await removeIfPresent(join(root, ...name.split('/')));
-    if (name.startsWith('@'))
-      await removeIfEmpty(join(root, name.split('/')[0]!));
-  }
-  for (const name of previous.bins) {
-    if (bins.has(name) || !BIN_NAME.test(name)) continue;
-    await removeIfPresent(join(root, '.bin', name));
-    await removeIfPresent(join(root, '.bin', `${name}.cmd`));
-  }
-}
-
-async function removeIfPresent(path: string): Promise<void> {
-  try {
-    await lstat(path);
-  } catch {
-    return;
-  }
-  await removeTree(path);
-}
-
-async function removeIfEmpty(directory: string): Promise<void> {
-  try {
-    if ((await readdir(directory)).length === 0) await removeTree(directory);
-  } catch {
-    // already gone
-  }
 }

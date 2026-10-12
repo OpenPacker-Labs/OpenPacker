@@ -184,6 +184,17 @@ describe('profiles', () => {
     expect(darwinProfile('arm64').symbols.fstatat).toEqual(['fstatat']);
   });
 
+  it('binds symlinkat and readlinkat by their plain names on every target', () => {
+    for (const profile of [
+      darwinProfile('arm64'),
+      darwinProfile('x64'),
+      linuxGlibcProfile(),
+    ]) {
+      expect(profile.symbols.symlinkat).toEqual(['symlinkat']);
+      expect(profile.symbols.readlinkat).toEqual(['readlinkat']);
+    }
+  });
+
   it('refuses an architecture it has no layout for', () => {
     expect(() => darwinProfile('ia32')).toThrow(StableHandleError);
     expect(() => linuxGlibcProfile('riscv64')).toThrow(StableHandleError);

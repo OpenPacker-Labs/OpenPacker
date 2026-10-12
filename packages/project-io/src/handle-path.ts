@@ -32,6 +32,9 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
 import { darwinProfile } from './handle-libc-profile.js';
+import { listNtDirectory } from './handle-nt-dir.js';
+import { lstatOpened } from './handle-nt-lstat.js';
+import { readReparse } from './handle-nt-reparse.js';
 import {
   StableHandleError,
   locateModuleFile,
@@ -53,9 +56,10 @@ export const O_DIRECTORY: number = constants.O_DIRECTORY ?? 0x0020_0000;
  * Internal to the NT backend: open whatever the name is, file or directory.
  * Statting, renaming and deleting a child do not know its kind, and asking NT
  * for one kind fails on the other (EISDIR for a directory opened as a file).
- * Not exported, so no caller can set it.
+ * Shared with the NT link code beside it, and not part of the package entry,
+ * so no caller of the package can set it.
  */
-const ANY_KIND = 0x0040_0000;
+export const ANY_KIND = 0x0040_0000;
 
 export { StableHandleError };
 
@@ -116,7 +120,7 @@ export function assertHandleSegment(name: string): string {
   return name;
 }
 
-function posixChild(parent: FileHandle, name: string): string {
+export function posixChild(parent: FileHandle, name: string): string {
   return join(stableHandlePath(parent), assertHandleSegment(name));
 }
 
@@ -158,7 +162,7 @@ export function useChildBackendForTesting(backend: ChildBackend): () => void {
  * The libc backend for this call, or undefined to use /proc/self/fd. The
  * platform is read at call time, as the Windows branch always has been.
  */
-function libcBackend(): ChildBackend | undefined {
+export function libcBackend(): ChildBackend | undefined {
   const kind = childBackendKind(process.platform);
   if (kind === 'nt') return undefined;
   if (testBackend !== undefined) return testBackend;
@@ -267,18 +271,15 @@ export async function lstatChild(
   name: string,
 ): Promise<BigIntStats> {
   assertHandleSegment(name);
-  if (process.platform === 'win32') {
-    const handle = await windowsOpenChild(
-      parent,
-      name,
-      constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
+  if (process.platform === 'win32')
+    return lstatOpened(
+      await windowsOpenChild(
+        parent,
+        name,
+        constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
+      ),
+      windowsReadReparse,
     );
-    try {
-      return await handle.stat({ bigint: true });
-    } finally {
-      await handle.close();
-    }
-  }
   const libc = libcBackend();
   if (libc !== undefined) return libc.lstatChild(parent, name);
   return lstat(posixChild(parent, name), { bigint: true });
@@ -325,11 +326,11 @@ function errno(code: string, message: string): NodeJS.ErrnoException {
   return error;
 }
 
-function ntStatus(code: number): number {
+export function ntStatus(code: number): number {
   return code >>> 0;
 }
 
-const STATUS_SUCCESS = 0;
+export const STATUS_SUCCESS = 0;
 const STATUS_OBJECT_NAME_COLLISION = 0xc0000035;
 const STATUS_OBJECT_NAME_NOT_FOUND = 0xc0000034;
 const STATUS_OBJECT_PATH_NOT_FOUND = 0xc000003a;
@@ -337,10 +338,10 @@ const STATUS_STOPPED_ON_SYMLINK = 0x8000002d;
 const STATUS_REPARSE = 0x00000104;
 const STATUS_NOT_A_DIRECTORY = 0xc0000103;
 const STATUS_FILE_IS_A_DIRECTORY = 0xc00000ba;
-const STATUS_NO_MORE_FILES = 0x80000006;
 const STATUS_ACCESS_DENIED = 0xc0000022;
+const STATUS_DIRECTORY_NOT_EMPTY = 0xc0000101;
 
-function throwNt(status: number, name: string): never {
+export function throwNt(status: number, name: string): never {
   const code = ntStatus(status);
   if (code === STATUS_OBJECT_NAME_COLLISION)
     throw errno('EEXIST', `EEXIST: ${name}`);
@@ -356,6 +357,8 @@ function throwNt(status: number, name: string): never {
   if (code === STATUS_FILE_IS_A_DIRECTORY)
     throw errno('EISDIR', `EISDIR: ${name}`);
   if (code === STATUS_ACCESS_DENIED) throw errno('EACCES', `EACCES: ${name}`);
+  if (code === STATUS_DIRECTORY_NOT_EMPTY)
+    throw errno('ENOTEMPTY', `ENOTEMPTY: ${name}`);
   throw new StableHandleError(
     `NtCreateFile failed for ${name} with status 0x${code.toString(16)}`,
   );
@@ -429,6 +432,10 @@ function loadNtApi() {
       'int32 NtSetInformationFile(void *FileHandle, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass)',
     ) as (...args: never[]) => number,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    NtFsControlFile: ntdll.func(
+      'int32 NtFsControlFile(void *FileHandle, void *Event, void *ApcRoutine, void *ApcContext, _Out_ void *IoStatusBlock, uint32 FsControlCode, void *InputBuffer, uint32 InputBufferLength, _Out_ void *OutputBuffer, uint32 OutputBufferLength)',
+    ) as (...args: never[]) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     NtQueryDirectoryFile: ntdll.func(
       'int32 NtQueryDirectoryFile(void *FileHandle, void *Event, void *ApcRoutine, void *ApcContext, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass, uint8 ReturnSingleEntry, void *FileName, uint8 RestartScan)',
     ) as (...args: never[]) => number,
@@ -447,7 +454,7 @@ function loadNtApi() {
   };
 }
 
-function nt(): ReturnType<typeof loadNtApi> {
+export function nt(): ReturnType<typeof loadNtApi> {
   cachedNt ??= loadNtApi();
   return cachedNt;
 }
@@ -456,8 +463,6 @@ const OBJ_CASE_INSENSITIVE = 0x00000040;
 const OBJ_DONT_REPARSE = 0x00001000;
 const FILE_SHARE_ALL = 0x00000007;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
-const FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
-const FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
 const FILE_OPEN = 1;
 const FILE_CREATE = 2;
 const FILE_OPEN_IF = 3;
@@ -465,7 +470,7 @@ const FILE_DIRECTORY_FILE = 0x00000001;
 const FILE_NON_DIRECTORY_FILE = 0x00000040;
 const FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
 const FILE_OPEN_REPARSE_POINT = 0x00200000;
-const DELETE = 0x00010000;
+export const DELETE = 0x00010000;
 const SYNCHRONIZE = 0x00100000;
 const GENERIC_READ = 0x80000000;
 const GENERIC_WRITE = 0x40000000;
@@ -477,9 +482,8 @@ const FILE_DELETE_CHILD = 0x00000040;
 const FILE_READ_ATTRIBUTES = 0x00000080;
 const FileRenameInformation = 10;
 const FileDispositionInformation = 13;
-const FileDirectoryInformation = 1;
 
-function windowsOpenChild(
+export function windowsOpenChild(
   parent: FileHandle,
   name: string,
   flags: number,
@@ -562,10 +566,15 @@ function windowsOpenChild(
   return Promise.resolve(wrapFd(fd));
 }
 
-async function windowsRenameChild(
+/**
+ * Rename a child of `parent`. `replaceIfExists` false makes a name that is
+ * taken a collision (EEXIST) instead of being overwritten.
+ */
+export async function windowsRenameChild(
   parent: FileHandle,
   from: string,
   to: string,
+  replaceIfExists = true,
 ): Promise<void> {
   const api = nt();
   // FileRenameInformation requires DELETE access on the handle being renamed.
@@ -585,7 +594,7 @@ async function windowsRenameChild(
     // root. Struct encoding keeps the opaque koffi pointer intact.
     const info = Buffer.alloc(api.sizeofRename + nameW.length);
     api.koffi.encode(info, api.FILE_RENAME_INFORMATION, {
-      ReplaceIfExists: 1,
+      ReplaceIfExists: replaceIfExists ? 1 : 0,
       RootDirectory: parentOsHandle,
       FileNameLength: nameW.length,
     });
@@ -607,7 +616,38 @@ async function windowsRenameChild(
   }
 }
 
-async function windowsRemoveChild(
+/**
+ * The reparse data of an open handle (FSCTL_GET_REPARSE_POINT), whole, or
+ * undefined when the object is not a reparse point.
+ */
+export function windowsReadReparse(fd: number): Buffer | undefined {
+  return readReparse(nt(), fd);
+}
+
+/**
+ * Mark the object behind an open handle (opened with `DELETE` access) for
+ * deletion, and say what NT answered. The object that goes is the one the
+ * handle holds, whatever its name has become.
+ */
+export function windowsDeleteOpened(fd: number): number {
+  const api = nt();
+  const info = Buffer.alloc(1);
+  info.writeUInt8(1, 0);
+  return ntStatus(
+    api.NtSetInformationFile(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      ...([
+        api.getOsFHandle(fd),
+        Buffer.alloc(16),
+        info,
+        1,
+        FileDispositionInformation,
+      ] as never[]),
+    ),
+  );
+}
+
+export async function windowsRemoveChild(
   parent: FileHandle,
   name: string,
   options: { recursive?: boolean; force?: boolean },
@@ -627,11 +667,15 @@ async function windowsRemoveChild(
       }
       if (dir) {
         try {
-          for (const child of await windowsReadDir(dir))
-            await windowsRemoveChild(dir, child, {
-              recursive: true,
-              force: true,
-            });
+          // A junction or a directory link is removed as the link it is. It
+          // was opened as itself, but listing it is asking the system about
+          // what it points at, and nothing it points at is this call's to delete.
+          if (windowsReadReparse(dir.fd) === undefined)
+            for (const child of await windowsReadDir(dir))
+              await windowsRemoveChild(dir, child, {
+                recursive: true,
+                force: true,
+              });
         } finally {
           await dir.close();
         }
@@ -646,16 +690,8 @@ async function windowsRemoveChild(
       DELETE,
     );
     try {
-      const api = nt();
-      const osHandle = api.getOsFHandle(handle.fd);
-      const info = Buffer.alloc(1);
-      info.writeUInt8(1, 0);
-      const iosb = Buffer.alloc(16);
-      const status = api.NtSetInformationFile(
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        ...([osHandle, iosb, info, 1, FileDispositionInformation] as never[]),
-      );
-      if (ntStatus(status) !== STATUS_SUCCESS) throwNt(status, name);
+      const status = windowsDeleteOpened(handle.fd);
+      if (status !== STATUS_SUCCESS) throwNt(status, name);
     } finally {
       await handle.close();
     }
@@ -675,66 +711,7 @@ async function windowsReadDir(parent: FileHandle): Promise<string[]> {
 }
 
 async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
-  const api = nt();
-  const osHandle = api.getOsFHandle(parent.fd);
-  const buffer = Buffer.alloc(16 * 1024);
-  const iosb = Buffer.alloc(16);
-  const entries: Dirent[] = [];
-  let restart = 1;
-  for (;;) {
-    const status = api.NtQueryDirectoryFile(
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      ...([
-        osHandle,
-        null,
-        null,
-        null,
-        iosb,
-        buffer,
-        buffer.length,
-        FileDirectoryInformation,
-        0,
-        null,
-        restart,
-      ] as never[]),
-    );
-    restart = 0;
-    const code = ntStatus(status);
-    if (code === STATUS_NO_MORE_FILES) break;
-    if (code !== STATUS_SUCCESS) throwNt(status, '<directory>');
-    let offset = 0;
-    for (;;) {
-      const next = buffer.readUInt32LE(offset);
-      const attributes = buffer.readUInt32LE(offset + 56);
-      const nameLength = buffer.readUInt32LE(offset + 60);
-      const name = buffer.toString(
-        'utf16le',
-        offset + 64,
-        offset + 64 + nameLength,
-      );
-      if (name !== '.' && name !== '..')
-        entries.push(ntDirent(name, attributes));
-      if (next === 0) break;
-      offset += next;
-    }
-  }
-  return entries;
-}
-
-function ntDirent(name: string, attributes: number): Dirent {
-  const reparse = (attributes & FILE_ATTRIBUTE_REPARSE_POINT) !== 0;
-  const directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) !== 0;
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return {
-    name,
-    isDirectory: () => directory && !reparse,
-    isFile: () => !directory && !reparse,
-    isSymbolicLink: () => reparse,
-    isBlockDevice: () => false,
-    isCharacterDevice: () => false,
-    isFIFO: () => false,
-    isSocket: () => false,
-  } as Dirent;
+  return listNtDirectory(nt(), parent.fd, throwNt);
 }
 
 /** Where this module was loaded from, in a form `createRequire` accepts. */
