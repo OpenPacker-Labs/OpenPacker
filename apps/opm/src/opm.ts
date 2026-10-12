@@ -950,6 +950,8 @@ function shortToLong(short: string): string {
       return 'help';
     case 'w':
       return 'workspace';
+    case 'F':
+      return 'filter';
     default:
       return short;
   }
@@ -976,6 +978,7 @@ function isBooleanFlag(key: string): boolean {
     key === 'workspaces' ||
     key === 'no-workspaces' ||
     key === 'include-workspace-root' ||
+    key === 'plan' ||
     key === 'write'
   );
 }

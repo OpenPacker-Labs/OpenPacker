@@ -40,19 +40,16 @@ import {
   type ProjectionResult,
 } from '@openpacker/adapter-core';
 import { removeBelow, removeTree } from '@openpacker/project-io';
-import { requireAdapterRegistry } from './adapters.js';
-import { type FrozenFetchOptions } from './frozen-fetch.js';
 import {
-  assertFrozenAllowed,
-  frozenPolicyDocument,
-  listLines,
-} from './frozen-policy.js';
+  adapterFailure,
+  now,
+  prepareFrozen,
+  type FrozenInstallInput,
+} from './frozen-prepare.js';
 import { installScriptFlags } from './frozen-scripts.js';
 import {
   frozenArchiveLimits,
-  labelOf,
   openStore,
-  redactSource,
   storeArchives,
 } from './frozen-store.js';
 import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
@@ -115,6 +112,8 @@ export interface FrozenInstallResult {
   shared: boolean;
   /** What the lock holds that this machine and these options leave out. */
   skipped: readonly FrozenLockSkip[];
+  /** The machines the install was for, when that is more than this one. */
+  targets?: readonly NativeTarget[];
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
@@ -394,6 +393,7 @@ async function installFrozenInStep(
       fetchedBytes: stored.fetchedBytes,
       shared: store.shared,
       skipped: lock.skipped,
+      ...(lock.targets !== undefined && { targets: lock.targets }),
       installScripts: lock.packages
         .filter((pkg) => declares.get(pkg.path) === true)
         .map((pkg) => ({

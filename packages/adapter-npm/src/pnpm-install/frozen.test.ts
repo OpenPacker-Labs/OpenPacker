@@ -1,89 +1,18 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type {
-  DetectedProject,
-  FrozenLock,
-  FrozenLockOptions,
-  WorkspaceMember,
-} from '@openpacker/adapter-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import type { FrozenLock, FrozenLockOptions } from '@openpacker/adapter-core';
+import { describe, expect, it } from 'vitest';
 import {
   fixtureBytes,
   type FixtureName,
 } from '../pnpm-lock/fixture-support.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
-import { readFrozenPnpmLock } from './frozen.js';
+import { worldOf } from './frozen-support.js';
 import { buildPnpmModel } from './model.js';
 
-const temps: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
-});
-
-const LINUX = { os: 'linux', architecture: 'x64', libc: 'glibc' } as const;
-
-/** The members the lock's importers stand for, named by the links that point at them. */
-function membersOf(text: Uint8Array): WorkspaceMember[] {
-  const model = buildPnpmModel(readPnpmLock(text).lock);
-  const names = new Map<string, string>();
-  for (const top of model.tops.values())
-    for (const edge of top.edges)
-      if (edge.kind === 'link' && edge.memberId !== undefined)
-        names.set(edge.memberId, edge.as);
-  return [...model.tops.values()].map((top) => ({
-    dir: top.dir,
-    root: top.dir === '',
-    name:
-      top.dir === ''
-        ? 'project'
-        : (names.get(top.id) ?? top.dir.split('/').at(-1)!),
-    nameFromDirectory: false,
-    manifest: {
-      name: undefined,
-      version: undefined,
-      private: true,
-      dependencies: new Map(),
-      devDependencies: new Map(),
-      optionalDependencies: new Map(),
-      peerDependencies: new Map(),
-      optionalPeers: new Set(),
-      workspaces: undefined,
-      bin: {},
-    },
-  }));
-}
-
 async function read(
-  fixture: FixtureName | { text: string },
+  fixture: FixtureName,
   options: Partial<FrozenLockOptions> = {},
 ): Promise<FrozenLock> {
-  const dir = await mkdtemp(join(tmpdir(), 'pnpm-plan-'));
-  temps.push(dir);
-  const bytes =
-    typeof fixture === 'string'
-      ? fixtureBytes(fixture)
-      : new TextEncoder().encode(fixture.text);
-  const lockPath = join(dir, 'pnpm-lock.yaml');
-  await writeFile(lockPath, bytes);
-  await mkdir(dir, { recursive: true });
-  const project: DetectedProject = {
-    root: dir,
-    manifestPath: join(dir, 'package.json'),
-  };
-  const members = membersOf(bytes);
-  return readFrozenPnpmLock(
-    project,
-    {
-      target: LINUX,
-      omit: new Set(),
-      workspace: { disk: async () => members, scope: { kind: 'all' } },
-      ...options,
-    },
-    lockPath,
-  );
+  return (await worldOf(fixtureBytes(fixture))).read(options);
 }
 
 describe.each([

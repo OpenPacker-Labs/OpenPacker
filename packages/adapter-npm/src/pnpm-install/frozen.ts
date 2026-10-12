@@ -17,11 +17,16 @@ import type {
   FrozenLockPackage,
   FrozenLockRefusal,
   FrozenLockWorkspace,
-  NativeTarget,
   WorkspaceMember,
 } from '@openpacker/adapter-core';
 import { ProviderError } from '@openpacker/adapter-core';
 import { MAXIMUM_LOCK_BYTES, readBoundedBytes } from '../frozen-read.js';
+import {
+  freshnessProblems,
+  memberProblems,
+  readRootProject,
+  refuseStale,
+} from './check.js';
 import { linkTargetBetween, placePath } from '../layout-links.js';
 import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
@@ -36,34 +41,10 @@ import {
   type InstanceSource,
 } from './refuse.js';
 import { selectTops } from './scope.js';
+import { platformsOf } from './targets.js';
 import { selectInstances, type Selection } from './select.js';
 
 const PUBLIC_REGISTRY = 'https://registry.npmjs.org';
-
-/** How the members the lock lists differ from the ones on disk, as sentences. */
-function memberDisagreements(
-  model: PnpmModel,
-  disk: readonly WorkspaceMember[],
-): string[] {
-  const inLock = new Set([...model.tops.values()].map((top) => top.dir));
-  // A project that declares no workspace is its root alone.
-  const onDisk = new Set(
-    disk.length === 0 ? [''] : disk.map((member) => member.dir),
-  );
-  const show = (dir: string): string => (dir === '' ? '(root)' : dir);
-  const lines: string[] = [];
-  const unlisted = [...onDisk].filter((dir) => !inLock.has(dir)).sort();
-  const missing = [...inLock].filter((dir) => !onDisk.has(dir)).sort();
-  if (unlisted.length > 0)
-    lines.push(
-      `the project has ${unlisted.map(show).join(', ')}, which the lock does not list`,
-    );
-  if (missing.length > 0)
-    lines.push(
-      `the lock lists ${missing.map(show).join(', ')}, which the project does not have`,
-    );
-  return lines;
-}
 
 /** The refusals of the instances being installed: where they come from, what pins them. */
 function instanceSources(
@@ -80,10 +61,6 @@ function instanceSources(
     else sources.set(key, source);
   }
   return { sources, refused };
-}
-
-function targetsOf(options: FrozenLockOptions): readonly NativeTarget[] {
-  return options.targets ?? [options.target];
 }
 
 /** Read `pnpm-lock.yaml` in `project` for a frozen install. */
@@ -118,11 +95,13 @@ export async function readFrozenPnpmLock(
       'opm ci --omit peer does not apply to a pnpm lock: it writes resolved peers as ordinary dependencies, so there is nothing to omit them by',
     );
   const tops = selectTops(model, options.workspace?.scope);
+  const root = await readRootProject(project);
+  const targets = platformsOf(options, root.config);
   const selection = selectInstances({
     model,
     tops,
     omit: options.omit,
-    targets: targetsOf(options),
+    targets,
   });
   const { sources, refused: sourceRefusals } = instanceSources(
     model,
@@ -137,14 +116,15 @@ export async function readFrozenPnpmLock(
     model.tops.size > 1 || options.workspace !== undefined
       ? ((await options.workspace?.disk()) ?? [])
       : [];
-  if (options.workspace !== undefined) {
-    const lines = memberDisagreements(model, disk);
-    if (lines.length > 0)
-      throw new ProviderError(
-        'INVALID_LOCKFILE',
-        `pnpm-lock.yaml and the project's workspace are not in sync (pnpm install --frozen-lockfile would refuse too): ${lines.join('; ')}`,
-      );
-  }
+  const members =
+    options.workspace === undefined ? [] : memberProblems(model, disk);
+  if (members.length > 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `pnpm-lock.yaml and the project's workspace are not in sync (pnpm install --frozen-lockfile would refuse too): ${members.join('; ')}`,
+    );
+  const stale = freshnessProblems({ root, model, tops, disk });
+  if (stale.length > 0) refuseStale(stale);
 
   // 3. What needs the machine.
   if (selection.refused.length > 0) return refuse([...selection.refused]);
@@ -189,6 +169,7 @@ export async function readFrozenPnpmLock(
   const workspace = workspaceOf(model, tops, placement.links, disk);
   return {
     ...common,
+    ...(targets.length > 1 && { targets }),
     packages,
     skipped: [...selection.skipped],
     refused: [],

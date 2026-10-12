@@ -12,6 +12,9 @@
 
 import {
   WorkspaceError,
+  parseFilter,
+  resolveWorkspaceLimits,
+  selectMembers,
   selectNpmWorkspaces,
   type FrozenWorkspaceInput,
   type ProjectFormat,
@@ -31,6 +34,13 @@ export interface FrozenWorkspaceRequest {
    * need. A directory selects the members one level below it.
    */
   select?: readonly string[];
+  /**
+   * `--filter <selector>`, repeatable: pnpm's grammar (a name, a glob, `./dir`,
+   * `name...`, `!name`), choosing members as `opm run --filter` does; what the
+   * install then reaches is `--workspace`'s (the members they link and what
+   * those need). The root only with `includeRoot`.
+   */
+  filter?: readonly string[];
   /**
    * `--include-workspace-root`: with a selection, the project's own
    * dependencies too. Alone it changes nothing, as in npm.
@@ -60,6 +70,7 @@ export function workspaceFailure(error: WorkspaceError): OpmError {
 function asksForWorkspace(request: FrozenWorkspaceRequest): boolean {
   return (
     (request.select?.length ?? 0) > 0 ||
+    (request.filter?.length ?? 0) > 0 ||
     request.includeRoot === true ||
     request.all === true ||
     request.ignore === true
@@ -87,15 +98,21 @@ export async function prepareFrozenWorkspace(
     if (asksForWorkspace(request))
       throw new OpmError(
         'INVALID_SPEC',
-        `${format.purlType} projects have no workspaces; --workspace, --include-workspace-root and --workspaces do not apply`,
+        `${format.purlType} projects have no workspaces; --filter, --workspace, --include-workspace-root and --workspaces do not apply`,
       );
     return undefined;
   }
-  const selecting = (request.select?.length ?? 0) > 0;
+  const filtering = (request.filter?.length ?? 0) > 0;
+  const selecting = (request.select?.length ?? 0) > 0 || filtering;
   if (request.ignore === true && (selecting || request.all === true))
     throw new OpmError(
       'INVALID_SPEC',
-      '--workspaces=false installs no member, so it cannot be combined with --workspace or --workspaces',
+      '--workspaces=false installs no member, so it cannot be combined with --filter, --workspace or --workspaces',
+    );
+  if (filtering && ((request.select?.length ?? 0) > 0 || request.all === true))
+    throw new OpmError(
+      'INVALID_SPEC',
+      "--filter chooses members by pnpm's grammar and --workspace by npm's; pass one of them",
     );
   const tool = workspaceTool;
   let discovery: Promise<WorkspaceDiscovery | undefined> | undefined;
@@ -115,9 +132,19 @@ export async function prepareFrozenWorkspace(
     );
   let dirs: readonly string[];
   try {
-    dirs = selectNpmWorkspaces(graphOfWorkspace(found), request.select ?? [], {
-      cwd: '',
-    });
+    const graph = graphOfWorkspace(found);
+    dirs = filtering
+      ? selectMembers(
+          graph,
+          (request.filter ?? []).map((selector) =>
+            parseFilter(selector, {
+              cwd: '',
+              limits: resolveWorkspaceLimits(),
+            }),
+          ),
+          { excludeRoot: request.includeRoot !== true },
+        ).selected
+      : selectNpmWorkspaces(graph, request.select ?? [], { cwd: '' });
   } catch (error) {
     throw error instanceof WorkspaceError ? workspaceFailure(error) : error;
   }
