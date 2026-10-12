@@ -1,6 +1,6 @@
 import type { PolicyDocument } from '@openpacker/policy';
 import type { CatalogProvider } from '@openpacker/adapter-core';
-import { codecFor } from './codecs.js';
+import { codecFor, hasCodec } from './codecs.js';
 import { listRegistryVersions, type RegistryOptions } from './registry.js';
 import { stripPurlVersion } from './spec.js';
 import { insideReleaseAge } from './supply-chain.js';
@@ -20,6 +20,10 @@ import { OpmError } from './types.js';
 
 /** Whether `hint` is one release, in the ecosystem's own grammar. */
 export function isExactVersion(ecosystem: string, hint: string): boolean {
+  // With no codec nothing can tell a range or a tag from a version, so what the
+  // manifest wrote is a version, as it was before ranges were read, and the
+  // registry the adapter names accepts or refuses it.
+  if (!hasCodec(ecosystem)) return true;
   try {
     codecFor(ecosystem).parseNativeVersion(hint);
     return true;
@@ -42,15 +46,6 @@ export function registryHintFor(
   if (version === undefined || version === '' || !hasCodec(ecosystem))
     return undefined;
   return isExactVersion(ecosystem, version) ? undefined : version;
-}
-
-function hasCodec(ecosystem: string): boolean {
-  try {
-    codecFor(ecosystem);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** What a version (not a range) may be spelled with, in any ecosystem. */
