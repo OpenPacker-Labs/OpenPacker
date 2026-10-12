@@ -150,4 +150,129 @@ describe('a source named in an error', () => {
       `https://${host}/o/r.tgz`,
     );
   });
+
+  /**
+   * A password may hold anything a person types, and `new URL` splits an
+   * address at the first `/`, `?` or `#` it meets. Whatever the password holds,
+   * and wherever in it, no part of it is printed.
+   */
+  describe('a password that holds the characters that end userinfo', () => {
+    const PIECES = ['', '@', '?', '#', ':', '/'];
+    const [C1, C2, C3] = [
+      'vtok_dummy_marker_aaaaaaaa',
+      'vtok_dummy_marker_bbbbbbbb',
+      'vtok_dummy_marker_cccccccc',
+    ] as const;
+    const passwords = PIECES.flatMap((first) =>
+      PIECES.map((second) => `${C1}${first}${C2}${second}${C3}`),
+    );
+
+    it.each([
+      [
+        'a scp-like git address, which the parser refuses',
+        'git+ssh://',
+        '@github.com:o/r.git',
+      ],
+      ['a git address with a path', 'git+https://', '@github.com/o/r.git'],
+      ['an ssh address with a port', 'ssh://', '@github.com:22/o/r.git'],
+      ['an https address', 'https://', '@registry.example/a/-/a-1.0.0.tgz'],
+    ])('is not printed from %s', (_, before, after) => {
+      for (const password of passwords) {
+        const shown = redactSource(`${before}deploy:${password}${after}`);
+        expect(shown, password).not.toContain('vtok_dummy_marker');
+        expect(shown, password).not.toContain('deploy');
+      }
+    });
+
+    it('keeps the host and the path where the address says where they are', () => {
+      expect(
+        redactSource(`git+ssh://deploy:${C1}/${C2}@github.com:o/r.git`),
+      ).toBe('git+ssh://github.com:o/r.git');
+      expect(redactSource(`git+ssh://deploy:${C1}@github.com:o/r.git`)).toBe(
+        'git+ssh://github.com:o/r.git',
+      );
+    });
+
+    it('is withheld from a user name, a query and a fragment too', () => {
+      for (const address of [
+        `git+ssh://${C1}:${C2}@github.com:o/r.git?x=${C3}`,
+        `git+ssh://${C1}@github.com:o/r.git#${C2}`,
+        `//deploy:${C1}/${C2}@github.com/o/r.git?x=${C3}`,
+      ])
+        expect(redactSource(address)).not.toContain('vtok_dummy_marker');
+    });
+
+    it('costs an @ in the rest of an address its front: that is the price', () => {
+      // Userinfo ends at the last @, so an @ in the path or the query of an
+      // address the parser refuses takes the host with it.
+      expect(redactSource('git+ssh://git@github.com:@scope/pkg.git')).toBe(
+        'git+ssh://scope/pkg.git',
+      );
+      expect(redactSource('git+ssh://u@h.example?x=a@b')).toBe('git+ssh://b');
+    });
+  });
+
+  /**
+   * An address with a scheme and no authority has an opaque path, which is where
+   * userinfo stands when someone writes `user:password@host:path` or
+   * `github:user:password@owner/repo`: the parser accepts it, with the user name
+   * as the scheme, and the address printed as it was.
+   */
+  it.each([
+    ['a hosted shorthand', `github:u:${CANARY}@o/r`, 'github:o/r'],
+    [
+      'a hosted shorthand with a fragment',
+      `github:u:${CANARY}@o/r#abc`,
+      'github:o/r',
+    ],
+    [
+      'a scp-like address with a user name taken for a scheme',
+      `user:${CANARY}@host:o/r`,
+      'user:host:o/r',
+    ],
+    [
+      'a scp-like address under a git scheme and no slashes',
+      `git+ssh:git:${CANARY}@github.com:o/r.git?token=${CANARY}`,
+      'git+ssh:github.com:o/r.git',
+    ],
+  ])('keeps no userinfo from %s', (_, source, expected) => {
+    expect(redactSource(source)).toBe(expected);
+    expect(redactSource(source)).not.toContain(CANARY);
+  });
+
+  it.each([
+    ['an https address', 'blob:https://h/x', 'blob:https://h/x'],
+    [
+      'an https address with userinfo, a query and a fragment',
+      `blob:https://u:${CANARY}@h/x?q=${CANARY}#${CANARY}`,
+      'blob:https://h/x',
+    ],
+    [
+      'userinfo that the path takes for a scheme',
+      `blob:u:${CANARY}@h/x`,
+      'blob:u:h/x',
+    ],
+    [
+      'a blob in a blob',
+      `blob:blob:https://u:${CANARY}@h/x`,
+      'blob:blob:https://h/x',
+    ],
+    ['a path that is not an address', 'blob:null/0c8d2f', 'blob:null/0c8d2f'],
+  ])(
+    'shows a blob URL holding %s as its address, redacted',
+    (_, source, expected) => {
+      expect(redactSource(source)).toBe(expected);
+      expect(redactSource(source)).not.toContain(CANARY);
+    },
+  );
+
+  it('does not parse the address in a blob URL again', () => {
+    // `origin` of a blob URL parses its path: 5 seconds for this one.
+    const started = performance.now();
+    const shown = redactSource(
+      `blob:https://${'a'.repeat(250)}.${'ß.é.'.repeat(60)}`,
+    );
+    expect(shown).toBe('[url]');
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });

@@ -10,8 +10,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
-  hasOverlongHost,
-  redactUrl,
+  redactAddress,
   type FrozenLock,
   type FrozenLockPackage,
 } from '@openpacker/adapter-core';
@@ -110,31 +109,13 @@ export function labelOf(pkg: FrozenLockPackage): string {
 }
 
 /**
- * A lock entry's source as an error may show it: the same address without
- * userinfo, query and fragment, and with its scheme. An address with an origin
- * is shown as its origin and path (`redactUrl`). `git+https:`, `git+ssh:`,
- * `file:` and the other schemes that have none have no origin to show, so the
- * address itself is shown, cleared. An address the URL parser refuses is cut as
- * text, and loses the same three things. One whose host is longer than a DNS
- * name can be is shown as `[url]`.
+ * A lock entry's source as an error may show it (`redactAddress` in
+ * `@openpacker/adapter-core`, which `classifyResolved` and the fetch plan use
+ * for the same text): without userinfo, query and fragment, with its scheme, and
+ * `[url]` for a host the URL parser should not be given.
  */
 export function redactSource(source: string): string {
-  // A host no DNS name could be is not handed to the URL parser (see `scrub`).
-  if (hasOverlongHost(source)) return '[url]';
-  try {
-    const url = new URL(source);
-    if (url.origin !== 'null') return redactUrl(url);
-    url.username = '';
-    url.password = '';
-    url.search = '';
-    url.hash = '';
-    return url.href;
-  } catch {
-    // Not a URL the parser accepts, so cut it as text. Userinfo goes first and
-    // ends at the last `@` before the first `/`, because a password may hold a
-    // `?`, a `#` or an `@`; then nothing from the first `?` or `#` is kept.
-    return source.replace(/\/\/[^/]*@/u, '//').replace(/[?#].*$/su, '');
-  }
+  return redactAddress(source);
 }
 
 /**

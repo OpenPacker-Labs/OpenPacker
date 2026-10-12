@@ -9,6 +9,7 @@ import {
   ResponseTooLargeError,
 } from './document-refusal.js';
 export { ProviderError } from './provider-error.js';
+export { redactAddress, redactAddressText } from './redact-address.js';
 export {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
