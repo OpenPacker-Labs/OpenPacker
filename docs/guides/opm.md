@@ -455,6 +455,16 @@ more is fetched), otherwise the full packument, only for a package changed
 inside the window. A time the registry will not give is _not provided_, which
 the default policy does not wave through.
 
+**Large packuments.** A package's registry document lists every version it has
+published, so the heavy ones are the busy ones: `next` is 25.6 MB abbreviated,
+`gatsby` 15.7 MB, `typescript` 8.7 MB. opm reads an abbreviated packument of up
+to 64 MiB and a full one of up to 96 MiB, counted as the body arrives. Past that
+the command stops with exit 8 and says which package, how much it had read and
+what the limit is, for example
+`The packument of x exceeds the limit of 67108864 bytes (64.00 MiB): stopped reading at 67174400 bytes (64.06 MiB)`.
+See the
+[amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
+
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
 

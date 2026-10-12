@@ -182,5 +182,142 @@ Limits, stated rather than hidden.
   `pick-manifest` additionally prefers `latest` if it satisfies and avoids
   deprecated versions, which this does not.
 - A runtime dependency written as git, URL, alias or dist-tag is refused.
-- A packument over 8 MiB is refused by the adapter's bound.
+- A packument over 64 MiB (the full one, 96 MiB) is refused by the adapter's
+  bound. It was 8 MiB, which refused `typescript`; see the amendment below.
 - The `os`/`cpu`/`libc` predicate is evaluated for npm only.
+
+## Amendment, 2026-10-12: the packument bound
+
+`opm add pkg:npm/typescript@5.9.3` exited 8 with
+`opm: Response exceeds 8388608 bytes`. The abbreviated packument lists every
+version ever published, and typescript publishes nightlies: 3,850 versions,
+8,728,082 bytes. A package manager that cannot add typescript cannot replace
+npm. Lifting the 8 MiB showed a second bound behind it, and a third behind that.
+
+### What the registry serves
+
+Measured against registry.npmjs.org on 2026-10-12, decoded, over about 50
+packages chosen for their number of versions. The registry answers with
+`content-encoding: br` and no `Content-Length`; the wire size is a fifth of
+these.
+
+| package         | abbreviated | values  | versions | full       | values (full) |
+| --------------- | ----------- | ------- | -------- | ---------- | ------------- |
+| next            | 25,636,598  | 846,076 | 3,986    | 31,405,652 |               |
+| gatsby          | 15,734,819  | 512,428 | 2,995    | 23,623,202 |               |
+| @ionic/core     | 10,128,386  | 255,914 | 4,942    | 27,340,880 |               |
+| firebase        | 9,876,235   | 184,635 | 4,224    | 30,429,747 |               |
+| typescript      | 8,728,082   | 260,520 | 3,850    | 15,783,773 | 538,245       |
+| playwright-core | 8,418,576   | 156,979 | 5,714    | 18,551,593 |               |
+| vite            | 2,333,244   | 79,105  | 760      | 38,988,699 | 128,822       |
+
+All six of the first rows are over 8 MiB. A document costs 27 to 54 bytes a
+value and is 6 levels deep.
+
+### Three bounds, not one
+
+1. **Bytes.** The adapter asked the transport for at most 8 MiB.
+2. **Parsed values.** `json()` refused any document of more than 200,000 values,
+   after reading it. `typescript` is 260,520; `next` is 846,076. The full
+   packument, read for publish times (decision 5), is 538,245 values for
+   `typescript`, and its failure was swallowed, so under the default policy the
+   add would still have failed, now with
+   `publishedAt/evaluationTime not captured for minimum release age`, whenever
+   `typescript` had been modified within the release window: it published on 55
+   of the last 60 days.
+3. **The resolve's memory.** `MemoizingTransport` kept a document only if the
+   request asked for at most 8 MiB. Lifting the adapter's bound alone left every
+   large packument unkept, so the walk fetched it again at each use (a fixture
+   registry served a packument the size of `typescript`'s eight times, the
+   165-for-42 of decision 8 returning for the biggest documents).
+
+### Decision
+
+- **The abbreviated packument is bounded at 64 MiB**, `MAXIMUM_PACKUMENT_BYTES`
+  (`MAXIMUM_METADATA_BYTES` in `@openpacker/adapter-core`, shared so the
+  transport and the adapter cannot drift apart). It is 2.6 times `next`, the
+  largest measured, and 7.3 times `typescript`. `next` published 580 versions in
+  the year to 2026-10-12 at 6.4 KB each, 3.6 MiB a year, so the bound has about
+  a decade of room and still means something: a registry that sends more is not
+  serving a packument. It is also below the 128 MiB an artifact may weigh, so a
+  hostile registry is allowed no more of the client's memory by a packument than
+  it already had by a tarball. 32 MiB (1.25 times `next`) was rejected as a fit
+  to today that `next` outgrows; 128 MiB as double the envelope with nothing
+  measured that needs it.
+- **A parsed document may hold one value per 16 bytes of its byte bound**
+  (`metadataValueLimit`): 4,194,304 for the abbreviated packument, 6,291,456 for
+  the full one (96 MiB, unchanged: the largest full packument measured is
+  `vite`, 39 MB). The count is derived rather than chosen so that it cannot fall
+  behind the bytes again, and it is above any real document (five times `next`)
+  and below what a body of `[1,1,1]` would make (two bytes a value). Other
+  documents keep the 200,000 default.
+- **The bound is enforced while the body arrives.** A `Content-Length` over the
+  limit is refused without reading the body; otherwise chunks are counted as
+  they come and the read is cancelled on the chunk that crosses the limit. A
+  missing length, or one smaller than the body, therefore still bounds what is
+  held. The header counts wire bytes, so for a compressed response it
+  understates what decoding makes; the count that matters is the decoded one and
+  that is the one taken. This was already how the transport worked; it is now
+  pinned by tests (an endless body with no length, a body longer than its
+  announced length, a declared length over the limit, a body of exactly the
+  limit and of one byte more).
+- **A refusal names what was being read and what was seen.**
+  `The packument of @scope/name is 67108865 bytes (64.00 MiB) and exceeds the limit of 67108864 bytes (64.00 MiB)`,
+  or, for a body streamed to the point it went over,
+  `... exceeds the limit of ...: stopped reading at N bytes`. The number is
+  where the read stopped, and is said to be, not the size of the response. The
+  code is still `UPSTREAM_RESPONSE_TOO_LARGE`.
+- **The resolve keeps what an adapter may ask for.** `MemoizingTransport`'s
+  per-document limit is `MAXIMUM_METADATA_BYTES` and its total four of those
+  (256 MiB). What it keeps is what the provider holds for the resolve anyway
+  (the same buffer), so this changes how much can be answered from memory and
+  not how much is held.
+
+### Not done: reading only what the walk needs
+
+Parsing less of a packument was considered and not done. The walk picks a
+version by range, so any version may be inspected; it needs the version list,
+the dependency fields and `dist` of nearly all of them, and the abbreviated
+document has already dropped everything else. The provider also keeps the body
+it read, which is what the record's evidence refers to. A projection would save
+memory that is not the constraint (below), at the cost of a second parser on the
+path every locked package takes.
+
+### Memory
+
+A hostile registry can have a resolve hold up to twelve bodies at once (the
+transport's slots), each up to 64 MiB, and up to twice that for the instant the
+chunks are joined: 0.75 GiB steady, 1.5 GiB at worst. An artifact download has
+the same shape at 128 MiB, so this is not a new kind of exposure.
+
+Measured on Node 22.22.0, linux/x64, live registry, in a project written by
+`opm init` with its default policy:
+
+|                                             | requests | wire bytes | wall   | peak RSS |
+| ------------------------------------------- | -------- | ---------- | ------ | -------- |
+| `opm add pkg:npm/typescript@5.9.3`          | 3        | 8,041,336  | 4.7 s  | 367 MB   |
+| `opm sync` (`native_projection = "layout"`) | 3        | 8,043,278  | 4.7 s  | 362 MB   |
+| `opm add pkg:npm/@types/node`               | 4        | 1,632,949  | 2.5 s  | 167 MB   |
+| `opm add pkg:npm/vitest@4.1.9`              | 160      | 17,342,455 | 13.8 s | 433 MB   |
+| `opm resolve pkg:npm/next`                  | 108      | 14,570,411 | 22.5 s | 958 MB   |
+| the same with `--max-old-space-size=256`    | 108      | 14,569,442 | 34.2 s | 458 MB   |
+
+Wire bytes are as received, compressed, tarballs included. The three requests
+for `typescript` are its abbreviated packument, its full packument (for the
+publish time of a package modified within the last day) and the tarball.
+`vitest` is the 160 requests, none repeated, of the table above. The resolve of
+`next` holds a 25.6 MB packument and finishes inside a 256 MB old-space limit,
+so the 958 MB is the collector's slack and not live data.
+
+### Limits
+
+- The other ecosystems' metadata bounds (cargo, PyPI, NuGet, Go, Maven: 8 MiB
+  each) were not measured against their registries here.
+- A refusal of the full packument is still swallowed: the publish time is then
+  "not provided". The cause is no longer a size the real registry reaches, but
+  the policy message still does not say why a time was missing.
+- Parsing is the cost of a large document: the canonical parser reads 12 to 16
+  MB a second, `next`'s packument takes 1.6 s, and the resolve of `next` is
+  CPU-bound at 22 s.
+- Revisit the bound when any real abbreviated packument passes 32 MiB, half of
+  it.

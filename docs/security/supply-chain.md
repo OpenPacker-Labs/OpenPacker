@@ -146,6 +146,16 @@ or trusted-publisher evidence exists, trust tier SHOULD be set from verified
 facts only. Exotic coordinates (git, direct URL) MUST set `sourceKind`
 accordingly so policy can block them.
 
+A provider reads registry metadata under a byte bound that is applied while the
+body arrives, so a missing or understated `Content-Length` does not lift it, and
+under a bound on the values the parsed document may hold, one per 16 bytes of
+the byte bound. npm's abbreviated packument is bounded at 64 MiB and the full
+one at 96 MiB: above the largest the public registry serves (`next`, 25.6 MB and
+31.4 MB on 2026-10-12) and below the 128 MiB an artifact may weigh, so a hostile
+registry gets no more of the client's memory from a packument than from a
+tarball. A refusal names the package, the size seen and the limit. See the
+[amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
+
 Host installers that only advertise `install` still participate: their plans
 emit irreversible / non-byte-verified loss, and policy can deny based on that
 loss (`deniedSemanticLossCodes` or severity caps).
