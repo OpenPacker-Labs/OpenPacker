@@ -390,7 +390,7 @@
         "HoBo": 1,
         "OpenSesame": 1
       },
-      "opm": "not a run form",
+      "opm": "\u2014",
       "note": "A version query; outside this slice."
     },
     {
@@ -504,7 +504,7 @@
       "repos": {
         "OpenSesame": 1
       },
-      "opm": "not a run form",
+      "opm": "\u2014",
       "note": "A version query; outside this slice."
     },
     {
@@ -542,13 +542,13 @@
       ]
     },
     {
-      "form": "pnpm --package dlx <package> <args>",
+      "form": "pnpm --package <package> dlx <command> <args>",
       "kind": "redirected",
       "count": 1,
       "repos": {
         "OpenSesame": 1
       },
-      "opm": "opmx <package> <args>",
+      "opm": "opmx <package> (fetched and sandboxed)",
       "note": "No `opm dlx`: opm answers the word with that pointer (exit 2)."
     },
     {

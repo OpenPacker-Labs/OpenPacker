@@ -153,6 +153,23 @@ describe('opm --help', () => {
     expect(cap.out).toMatch(/never run/u);
   });
 
+  it('names the member options and where dlx and npx went', async () => {
+    const cap = capture();
+    expect(await runOpm(['--help'], cap.io, process.cwd())).toBe(0);
+    for (const text of [
+      '--filter <selector>',
+      '-r, --recursive',
+      '--workspaces',
+      '--workspace-root',
+      '--workspace-concurrency',
+      '--parallel',
+      '--no-sort, --reverse, --stream',
+      'opmx <package>',
+      'opm <script|bin>',
+    ])
+      expect(cap.out, text).toContain(text);
+  });
+
   it('does not print the environment', async () => {
     const previous = process.env.OPM_TEST_SECRET;
     process.env.OPM_TEST_SECRET = MARKER;
