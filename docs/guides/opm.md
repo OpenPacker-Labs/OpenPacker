@@ -684,7 +684,12 @@ among members is an error or is tolerated and reported (pnpm warns). A
 is an error that names the specifier and the member, and `publishedDependencies`
 gives the `^1.2.3` that `workspace:^` becomes when a package is packed. Filters
 are `pnpm --filter`'s: a name, `@scope/*`, `./dir`, `{dir/**}`, `name...`,
-`...name`, `^` and `!`; `[since]` is refused until `opm` can ask git.
+`...name`, `^` and `!`; `[since]` is refused until `opm` can ask git. A
+directory is a pattern, as in pnpm 10: `./packages/a` is the member in that
+directory and nothing inside it, `./packages` is no member at all, and
+`./packages/*` or `{packages/**}` are the ones to write for several.
+`legacyDirFiltering: true` gives pnpm's `legacy-dir-filtering` instead (a
+directory and everything under it); `.npmrc` is not read, so you say which.
 
 ### `opmx`
 

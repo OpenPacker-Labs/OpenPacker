@@ -1,0 +1,3919 @@
+{
+  "generatedWith": {
+    "pnpm": "pnpm 10.28.0: `pnpm --filter=<selector> ... ls --depth -1 --json` run in the directory named by cwd, with the setting legacy-dir-filtering on (npm_config_legacy_dir_filtering=true) where legacy is true; the root is a member and ls does not leave it out"
+  },
+  "patterns": ["packages/**", "apps/*", "tools/*"],
+  "members": {
+    "": {
+      "name": "hobo-root",
+      "version": "1.0.0",
+      "private": true
+    },
+    "packages/a": {
+      "name": "@h/a",
+      "version": "1.0.0",
+      "dependencies": {
+        "@h/b": "workspace:*"
+      }
+    },
+    "packages/a/inner": {
+      "name": "@h/inner",
+      "version": "1.0.0",
+      "dependencies": {
+        "@h/c": "workspace:*"
+      }
+    },
+    "packages/b": {
+      "name": "@h/b",
+      "version": "1.0.0",
+      "dependencies": {
+        "@h/c": "workspace:*"
+      }
+    },
+    "packages/c": {
+      "name": "@h/c",
+      "version": "1.0.0"
+    },
+    "packages/d": {
+      "name": "@h/d",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@h/b": "workspace:*"
+      },
+      "optionalDependencies": {
+        "@h/e": "workspace:*"
+      }
+    },
+    "packages/e": {
+      "name": "@h/e",
+      "version": "1.0.0"
+    },
+    "packages/v1.2": {
+      "name": "v1.2",
+      "version": "1.0.0"
+    },
+    "packages/deep/er/leaf": {
+      "name": "leaf",
+      "version": "1.0.0"
+    },
+    "apps/x": {
+      "name": "x",
+      "version": "1.0.0",
+      "dependencies": {
+        "@h/a": "workspace:*"
+      }
+    },
+    "apps/y": {
+      "name": "y-app",
+      "version": "1.0.0",
+      "dependencies": {
+        "@h/d": "workspace:*"
+      }
+    },
+    "tools/site": {
+      "name": "site",
+      "version": "1.0.0",
+      "dependencies": {
+        "x": "workspace:*"
+      }
+    }
+  },
+  "cases": [
+    {
+      "cwd": "",
+      "filters": ["."],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["./"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": [".."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": [".."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{..}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{..}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["../"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["../"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{../}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{../}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages}"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/}"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/inner}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/inner}"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner/"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner/"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/inner/}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/inner/}"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*/"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*/"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*/}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*/}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**/"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**/"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**/}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**/}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/*"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/*}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/**"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/**}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a/**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**/leaf"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**/leaf"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**/leaf}"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/**/leaf}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*/inner"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*/inner}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/*/inner}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a?"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a?"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a?}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a?}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/?"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/?"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/?}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/?}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.2"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.2"],
+      "legacy": true,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1.2}"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1.2}"],
+      "legacy": true,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.?"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.?"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1.?}"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1.?}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1?2"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1?2"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1?2}"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/v1?2}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep"],
+      "legacy": true,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/deep}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/deep}"],
+      "legacy": true,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep/**"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep/**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/deep/**}"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/deep/**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps"],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps}"],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/**"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps/**}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./apps/**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./tools"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./tools"],
+      "legacy": true,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./tools}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./tools}"],
+      "legacy": true,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./tools/*"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./tools/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./tools/*}"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./tools/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./nothing"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./nothing"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./nothing}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./nothing}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./nothing/*"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./nothing/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./nothing/*}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./nothing/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./*"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./*}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./*/*"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./*/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./*/*}"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./*/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./**"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./**}"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./**/*"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./**/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./**/*}"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./**/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/{a,b}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/{a,b}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/[ab]"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/[ab]"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/[ab]}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/[ab]}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/@(a|b)"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/@(a|b)"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/@(a|b)}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/@(a|b)}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a,b"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a,b"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a,b}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{./packages/a,b}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["."],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["."],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{.}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./inner"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./inner}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./inner}"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./inner/"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./inner/"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./inner/}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./inner/}"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": [".."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": [".."],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{..}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{..}"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../b"],
+      "legacy": false,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../b"],
+      "legacy": true,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../b}"],
+      "legacy": false,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../b}"],
+      "legacy": true,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../**"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../apps/x"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../apps/x"],
+      "legacy": true,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../apps/x}"],
+      "legacy": true,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../apps/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../apps/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./*"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./*}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./**"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["./**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./**}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{./**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../.."],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../.."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../..}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../..}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../.."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["../../.."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../..}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages/a",
+      "filters": ["{../../..}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["."],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{.}"],
+      "legacy": true,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": [".."],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "packages",
+      "filters": [".."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{..}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{..}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a/"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a/"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a/}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a/}"],
+      "legacy": true,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./a/inner"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a/inner}"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./a/inner}"],
+      "legacy": true,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./**"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./deep/**"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["./deep/**"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./deep/**}"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{./deep/**}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../apps"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../apps"],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../apps}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../apps}"],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../apps/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../apps/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../tools/site"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../tools/site"],
+      "legacy": true,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../tools/site}"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../tools/site}"],
+      "legacy": true,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../.."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["../.."],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../..}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "packages",
+      "filters": ["{../..}"],
+      "legacy": true,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "apps",
+      "filters": ["."],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{.}"],
+      "legacy": true,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["./x"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["./x"],
+      "legacy": true,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{./x}"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{./x}"],
+      "legacy": true,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["./*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["./*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{./*}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{./*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "apps",
+      "filters": ["../packages/b"],
+      "legacy": false,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["../packages/b"],
+      "legacy": true,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{../packages/b}"],
+      "legacy": false,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{../packages/b}"],
+      "legacy": true,
+      "selected": ["packages/b"]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["../packages/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["../packages/*"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{../packages/*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "apps",
+      "filters": ["{../packages/*}"],
+      "legacy": true,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/?"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["@*/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["x*"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*e"],
+      "legacy": false,
+      "selected": ["packages/e", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/a"],
+      "legacy": false,
+      "selected": ["apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a^..."],
+      "legacy": false,
+      "selected": ["packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/b..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/b^..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/c..."],
+      "legacy": false,
+      "selected": ["packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/a"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/*"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/deep/er/leaf",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!...@h/c"],
+      "legacy": false,
+      "selected": ["", "packages/deep/er/leaf", "packages/e", "packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/a..."],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a/inner",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["c"],
+      "legacy": false,
+      "selected": ["packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["leaf"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["y-app"],
+      "legacy": false,
+      "selected": ["apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["x"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "",
+      "filters": ["site..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...site"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["v1.2"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["v1.*"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing..."],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...nothing"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a{packages/a}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a{apps}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["x{apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*{apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*{./apps/*}..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{apps/x}..."],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^{apps/x}"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{apps/x}^..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a/**}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "packages/a/inner", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/**}..."],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a/**}"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["{./}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["!{apps/x}"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!{packages/**}"],
+      "legacy": false,
+      "selected": ["", "apps/x", "apps/y", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["!./apps/*"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!./packages"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!{packages/a}..."],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a/inner",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}", "@h/*{packages/**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c", "./**", "@h/?"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a", "{packages/*}", "...^@h/a"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages", "*{apps/*}", "!@h/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/b^...", "...@h/c", "./**/*"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*", ".", "./packages/a"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a}", "./apps"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/a"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@*/a", "./*", "@*/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}", "./", "v1.*"],
+      "legacy": false,
+      "selected": ["", "packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^{apps/x}", "...@h/a"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1?2", "@h/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing", "@h/*{packages/**}", "inner"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a...", "a"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a", "!@h/*", "{./}"],
+      "legacy": false,
+      "selected": ["", "apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}", "...{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["leaf", "...{packages/a}"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/deep/er/leaf",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a^..."],
+      "legacy": false,
+      "selected": ["packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./tools"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a^...", "{.}"],
+      "legacy": false,
+      "selected": ["", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.2"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}", "./nothing", "x"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["!{apps/x}", "*{apps/*}", "!./apps/*"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a", "!./packages"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*{./apps/*}..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/a", "...^@h/b^..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./**", "y-app", "...{packages/a}"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["*e", "./packages/a/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner", "packages/e", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner", "!@h/a"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.?", "{packages/**}...", "nothing"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep/**", "./packages/deep"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**", "./packages/deep", "./apps/**"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages", "!./packages", "@h/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c", "x*"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}", "{packages/**}...", "inner"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}", "@h/*", "./apps/**"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/*", "{packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}", "./packages/?"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a", "./packages/deep", "{./}"],
+      "legacy": false,
+      "selected": ["", "packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["inner", "@h/a^...", "...@h/c"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^{apps/x}"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner/"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps", "./packages"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a}", "inner"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "packages/a/inner", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}", "./packages/a"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**/leaf", "...{packages/a}"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/deep/er/leaf",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!./apps/*", "./packages/", "./packages/*"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/*", "{apps/x}^...", "./packages/v1.2"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c", "@h/a"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["v1.2", "./packages/a"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^{apps/x}", "...nothing"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a{apps}", "v1.2", "!@h/a"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/", "./packages"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing", "./apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...nothing", "./packages/*/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{.}"],
+      "legacy": false,
+      "selected": [""]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/", "c"],
+      "legacy": false,
+      "selected": ["packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/a", "...^{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["c", "@h/a...", "...{packages/a}"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a}", "@h/a", "...^{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/a"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}", "{packages/*}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{apps/x}", "...{packages/a/**}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "packages/a/inner", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/*/inner", "c", "./nothing/*"],
+      "legacy": false,
+      "selected": ["packages/a/inner", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@*/a", "...{apps/x}", "site..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/a{apps}", "v1.*"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...site"],
+      "legacy": false,
+      "selected": ["tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/b^...", "./packages/**", "...@h/b..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing", "./packages/**/", "@h/?"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/v1.?", "...{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/v1.2", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*", "...^@h/a", "./apps"],
+      "legacy": false,
+      "selected": [
+        "",
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a/**}"],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a", "packages/a/inner", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/deep/**", "nothing", "nothing"],
+      "legacy": false,
+      "selected": ["packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/a/inner"],
+      "legacy": false,
+      "selected": ["packages/a/inner"]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/*", "v1.2"],
+      "legacy": false,
+      "selected": ["packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/?", "{packages}", "*e"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages/**"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["nothing"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...{apps/x}"],
+      "legacy": false,
+      "selected": ["apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["inner", "v1.2", "./packages/v1.2"],
+      "legacy": false,
+      "selected": ["packages/a/inner", "packages/v1.2"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{apps/x}^..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}..."],
+      "legacy": false,
+      "selected": ["packages/a", "packages/b", "packages/c"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./packages", "*e", "{.}"],
+      "legacy": false,
+      "selected": ["", "packages/e", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}", "./packages/deep/**", "{.}"],
+      "legacy": false,
+      "selected": ["", "packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages}"],
+      "legacy": false,
+      "selected": []
+    },
+    {
+      "cwd": "",
+      "filters": ["...^@h/b^..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["@*/a"],
+      "legacy": false,
+      "selected": ["packages/a"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{packages/a/**}", "./packages/deep", "!@h/a..."],
+      "legacy": false,
+      "selected": ["apps/x", "packages/a/inner", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*{packages/**}", "!@h/a"],
+      "legacy": false,
+      "selected": [
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./", "./packages/a/", "./packages/deep/**"],
+      "legacy": false,
+      "selected": ["", "packages/a", "packages/deep/er/leaf"]
+    },
+    {
+      "cwd": "",
+      "filters": ["*e", "y-app", "./packages/a"],
+      "legacy": false,
+      "selected": ["apps/y", "packages/a", "packages/e", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["@h/*", "./", "./packages/v1.2"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a/**}", "./tools/*", "./apps/*"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["./", "./packages/*/", "./tools/*"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["{packages/a}...", "./**/*", "@h/a^..."],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!@h/*", "x{apps/*}"],
+      "legacy": false,
+      "selected": ["apps/x"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{apps/x}", "./"],
+      "legacy": false,
+      "selected": ["", "apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["!{apps/x}", "@h/*", "...^@h/a"],
+      "legacy": false,
+      "selected": [
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/e",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["...{apps/x}", "./packages"],
+      "legacy": false,
+      "selected": ["apps/x", "tools/site"]
+    },
+    {
+      "cwd": "",
+      "filters": ["./apps/*"],
+      "legacy": false,
+      "selected": ["apps/x", "apps/y"]
+    },
+    {
+      "cwd": "",
+      "filters": ["...@h/c"],
+      "legacy": false,
+      "selected": [
+        "apps/x",
+        "apps/y",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["!./apps/*"],
+      "legacy": false,
+      "selected": [
+        "",
+        "packages/a",
+        "packages/a/inner",
+        "packages/b",
+        "packages/c",
+        "packages/d",
+        "packages/deep/er/leaf",
+        "packages/e",
+        "packages/v1.2",
+        "tools/site"
+      ]
+    },
+    {
+      "cwd": "",
+      "filters": ["a", "leaf", "c"],
+      "legacy": false,
+      "selected": ["packages/a", "packages/c", "packages/deep/er/leaf"]
+    }
+  ]
+}

@@ -105,6 +105,30 @@ the wrong thing.
    `selectNpmWorkspaces` is `npm -w`: a name, a directory, or the directory
    above.
 
+   **A directory selector is a pattern, not a subtree.** pnpm 10 reads
+   `./packages/a` and `{packages/a}` with `use-glob-dir-filtering`, which is on
+   unless the setting `legacy-dir-filtering` turns it off (pnpm 10.28.0 sets
+   `useGlobDirFiltering: !config.legacyDirFiltering`). So `./packages/a` selects
+   the member whose directory is `packages/a` and not the member inside it,
+   `./packages` selects nothing when no member lives in `packages`, and
+   `./packages/*` or `{packages/**}` select by pattern. Reading a directory as
+   "this directory and everything under it" is the legacy behaviour: the pnpm
+   10.28.0 command line, run over a workspace of `packages/a`,
+   `packages/a/inner` and `packages/b`, selects nothing for `./packages` and
+   only `packages/a` for `./packages/a`. `legacyDirFiltering: true` on the
+   filter's context asks for the legacy reading, where a wildcard is an ordinary
+   character; `.npmrc` is not read, so the caller says which. The grammar is
+   pinned to the real command line, `pnpm --filter=... ls`, on 460 selector
+   lists from the root and from three directories below it, with and without the
+   legacy setting (`workspace-filter-oracle.json`, replayed by
+   `workspace-filter.oracle.test.ts`). The model reads 438 of the 460 and
+   selects what pnpm selected on each. It refuses the other 22, by name, in
+   three kinds: a path that leaves the workspace root (16; pnpm matches nothing,
+   and under the legacy setting a path above the root takes every member),
+   braces in a directory (2: `./packages/{a,b}`), and a character class or an
+   extglob (4: `./packages/[ab]`, `@(a|b)`), which pnpm's matcher reads as a
+   pattern.
+
 ### Where npm and pnpm differ, as found
 
 The patterns were put to the tools themselves on 115 pattern lists over one

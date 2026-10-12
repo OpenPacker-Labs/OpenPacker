@@ -9,13 +9,21 @@ import { resolveRelativeDirectory } from './spec.js';
  * | written            | selects                                                  |
  * | ------------------ | -------------------------------------------------------- |
  * | `name`, `@s/*`     | members by name; `*` is the only wildcard and crosses "/"|
- * | `./path`, `../path`| members at or below that directory                       |
- * | `{packages/**}`    | members whose directory matches that pattern             |
+ * | `./path`, `../path`| the member in that directory, none below it             |
+ * | `./packages/*`     | the members whose directory matches that pattern         |
+ * | `{packages/**}`    | the same, written in braces                              |
  * | `name...`          | the member and everything it depends on                  |
  * | `...name`          | the member and everything that depends on it             |
  * | `name^...`, `...^name` | the same, without the member itself                  |
  * | `!selector`        | takes the members it selects away from the others        |
  * | `name{dir}`        | the members of that name inside that directory           |
+ *
+ * A directory is always a pattern, as pnpm 10 reads it with its default
+ * `use-glob-dir-filtering`: one with no wildcard names a single directory, so
+ * `./packages` selects a member whose directory is `packages` and nothing
+ * below it. pnpm's `legacy-dir-filtering` setting turns that off and reads a
+ * path as "this directory and everything under it"; `legacyDirFiltering`
+ * asks for that reading, and a wildcard is then an ordinary character.
  *
  * `[since]` selects by git history and is refused until opm can ask git.
  */
@@ -41,6 +49,11 @@ export interface FilterContext {
   /** The directory the command ran in, relative to the workspace root; `''` is the root. */
   readonly cwd: string;
   readonly limits: WorkspaceLimits;
+  /**
+   * pnpm's `legacy-dir-filtering`: a directory selector takes every member at
+   * or below it. Off unless set, as in pnpm 10; `.npmrc` is not read here.
+   */
+  readonly legacyDirFiltering?: boolean;
 }
 
 function invalid(source: string, problem: string): WorkspaceError {
@@ -67,9 +80,11 @@ function directoryOf(
   if (inner.includes('\\'))
     throw invalid(source, 'uses a backslash; write the path with "/"');
   if (inner.includes('{'))
-    throw invalid(source, 'nests braces in a directory selector');
-  const meta = /[*?]/u.test(inner);
-  if (!meta) {
+    throw invalid(
+      source,
+      'uses braces in a directory selector; write one selector for each directory',
+    );
+  if (context.legacyDirFiltering === true) {
     const dir = resolveRelativeDirectory(context.cwd, inner);
     if (dir === undefined) throw invalid(source, 'leaves the workspace root');
     return { kind: 'subtree', dir };
@@ -82,8 +97,23 @@ function directoryOf(
         throw invalid(source, 'leaves the workspace root');
     } else parts.push(part);
   }
-  const alternatives = compileGlob(parts.join('/'), context.limits);
-  return { kind: 'glob', alternatives };
+  try {
+    return {
+      kind: 'glob',
+      alternatives: compileGlob(parts.join('/'), context.limits),
+    };
+  } catch (error) {
+    if (
+      error instanceof WorkspaceError &&
+      error.code === 'WORKSPACE_PATTERN_UNSUPPORTED'
+    )
+      throw new WorkspaceError(
+        'WORKSPACE_FILTER_UNSUPPORTED',
+        `The filter ${JSON.stringify(source)} uses a character class, an extglob or a group in a directory, which is not supported; use *, ? and ** with "/" separators`,
+        [source],
+      );
+    throw error;
+  }
 }
 
 /** Parse one `--filter` value. Refuses what it would have to guess at, by name. */

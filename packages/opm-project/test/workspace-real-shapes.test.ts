@@ -170,8 +170,19 @@ describe('the four real workspaces', () => {
           graph.members.findIndex((m) => m.dir === b),
       ),
     );
-    expect(select('./src/draft/technical-proofs').length).toBeGreaterThan(5);
+    // The directory forms HoBo's scripts use: one member's directory, a level of them.
     expect(select('./packages/core').map(nameOf)).toEqual(['@hobo/core']);
+    expect(
+      select('./src/draft/technical-proofs/pact-contract-harness'),
+    ).toEqual(['src/draft/technical-proofs/pact-contract-harness']);
+    expect(select('./site')).toEqual(['site']);
+    expect(select('./packages/*').length).toBeGreaterThan(30);
+    expect(select('./src/draft/technical-proofs/*').length).toBeGreaterThan(5);
+    // pnpm 10 reads a directory with no wildcard as that one directory, so the
+    // directory that merely holds members selects none of them.
+    expect(() => select('./src/draft/technical-proofs')).toThrowError(
+      /No workspace member matches the filter "\.\/src\/draft\/technical-proofs"/u,
+    );
   });
 
   it('ai-bdd (pnpm): 9 importers, the 17 links its lock lists', async () => {

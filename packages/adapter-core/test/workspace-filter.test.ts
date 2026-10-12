@@ -70,36 +70,25 @@ describe('parsing a filter', () => {
     ['...@h/a...', { includeDependents: true, includeDependencies: true }],
     ['!@h/a', { exclude: true, name: '@h/a' }],
     ['!...@h/a', { exclude: true, includeDependents: true }],
-    [
-      './packages/a',
-      { name: undefined, directory: { kind: 'subtree', dir: 'packages/a' } },
-    ],
-    ['{packages/a}', { directory: { kind: 'subtree', dir: 'packages/a' } }],
-    [
-      '@h/a{packages}',
-      { name: '@h/a', directory: { kind: 'subtree', dir: 'packages' } },
-    ],
+    ['./packages/a', { name: undefined, directory: { kind: 'glob' } }],
+    ['{packages/a}', { directory: { kind: 'glob' } }],
+    ['@h/a{packages}', { name: '@h/a', directory: { kind: 'glob' } }],
     [
       '{./packages/a}...',
-      {
-        includeDependencies: true,
-        directory: { kind: 'subtree', dir: 'packages/a' },
-      },
+      { includeDependencies: true, directory: { kind: 'glob' } },
     ],
   ])('reads %s', (text, expected) => {
     expect(parse(text)).toMatchObject(expected);
   });
 
   it('reads a path from the directory the command ran in', () => {
-    expect(parse('./a', 'packages').directory).toEqual({
-      kind: 'subtree',
-      dir: 'packages/a',
-    });
-    expect(parse('../tools', 'packages').directory).toEqual({
-      kind: 'subtree',
-      dir: 'tools',
-    });
-    expect(parse('{../tools/*}', 'packages').directory?.kind).toBe('glob');
+    const where = (text: string, cwd: string) =>
+      selectMembers(graph, [parse(text, cwd)], { allowEmpty: true }).selected;
+    expect(where('./b', 'packages')).toEqual(['packages/b']);
+    expect(where('../tools/*', 'packages')).toEqual(['tools/site']);
+    expect(where('{../packages/c}', 'tools')).toEqual(['packages/c']);
+    expect(where('.', 'packages/a')).toEqual(['packages/a']);
+    expect(where('..', 'packages/a')).toEqual([]);
     expect(codeOf(() => parse('../..', 'packages'))).toBe(
       'WORKSPACE_FILTER_INVALID',
     );
@@ -159,7 +148,7 @@ describe('selecting', () => {
       '@h/e',
     ]);
     expect(pick('./packages/b')).toEqual(['packages/b']);
-    expect(pick('./tools')).toEqual(['tools/nested/deep', 'tools/site']);
+    expect(pick('./tools/*')).toEqual(['tools/site']);
     expect(pick('{packages/*}')).toEqual([
       'packages/a',
       'packages/b',
@@ -227,7 +216,7 @@ describe('selecting', () => {
     expect(names(pick('@h/a...', '!@h/b'))).toEqual(['@h/a', '@h/c']);
     expect(names(pick('!@h/*'))).toEqual(['hobo-design', 'deep', 'hobo-site']);
     expect(names(pick('@h/*', '!...@h/b'))).toEqual(['@h/c', '@h/e']);
-    expect(names(pick('!./tools'))).toEqual(
+    expect(names(pick('!./tools/**'))).toEqual(
       names(graph.members.map((m) => m.dir)).filter(
         (n) => n !== 'deep' && n !== 'hobo-site',
       ),
@@ -236,7 +225,9 @@ describe('selecting', () => {
 
   it('combines a name and a directory, narrowing to both', () => {
     expect(names(pick('@h/*{packages/a}'))).toEqual(['@h/a']);
-    expect(codeOf(() => pick('@h/a{tools}'))).toBe('WORKSPACE_FILTER_NO_MATCH');
+    expect(codeOf(() => pick('@h/a{tools/*}'))).toBe(
+      'WORKSPACE_FILTER_NO_MATCH',
+    );
   });
 
   it('follows only the lists it is told to', () => {
@@ -257,6 +248,71 @@ describe('selecting', () => {
         selectMembers(graph, [parse('!@h/*')], { excludeRoot: true }).selected,
       ),
     ).toEqual(['deep', 'hobo-site']);
+  });
+});
+
+describe('a directory selector', () => {
+  /** p/a holds a member of its own; q/x sits beside; the root is a member. */
+  const nested = graphOf({
+    '': { name: 'top' },
+    'p/a': { name: 'a' },
+    'p/a/inner': { name: 'inner' },
+    'p/b': { name: 'b' },
+    'q/x': { name: 'x' },
+  });
+  const options = { allowEmpty: true };
+  const select = (text: string, legacyDirFiltering = false, cwd = '') =>
+    selectMembers(
+      nested,
+      [
+        parseFilter(text, {
+          cwd,
+          limits: DEFAULT_WORKSPACE_LIMITS,
+          legacyDirFiltering,
+        }),
+      ],
+      options,
+    ).selected;
+
+  // pnpm 10.28.0 with its default use-glob-dir-filtering, run over this very
+  // shape (test/fixtures/workspace-filter-oracle.json holds the whole battery).
+  it('without a wildcard names one directory: a member there, and nothing below it', () => {
+    expect(select('./p/a')).toEqual(['p/a']);
+    expect(select('{p/a}')).toEqual(['p/a']);
+    expect(select('./p/a/')).toEqual(['p/a']);
+    expect(select('./p/a/inner')).toEqual(['p/a/inner']);
+    expect(select('.')).toEqual(['']);
+  });
+
+  it('selects nothing when the directory holds no member, whatever lies below it', () => {
+    expect(select('./p')).toEqual([]);
+    expect(select('{p}')).toEqual([]);
+    expect(select('./q')).toEqual([]);
+  });
+
+  it('with a wildcard selects the members whose directories match', () => {
+    expect(select('./p/*')).toEqual(['p/a', 'p/b']);
+    expect(select('./p/**')).toEqual(['p/a', 'p/a/inner', 'p/b']);
+    expect(select('./p/a/**')).toEqual(['p/a', 'p/a/inner']);
+    expect(select('./**')).toEqual(nested.members.map((m) => m.dir));
+  });
+
+  it("takes every member at or below it under pnpm's legacy-dir-filtering", () => {
+    expect(select('./p', true)).toEqual(['p/a', 'p/a/inner', 'p/b']);
+    expect(select('./p/a', true)).toEqual(['p/a', 'p/a/inner']);
+    expect(select('{p}', true)).toEqual(['p/a', 'p/a/inner', 'p/b']);
+    expect(select('.', true, 'p/a')).toEqual(['p/a', 'p/a/inner']);
+    // A wildcard is an ordinary character there, so it names no directory.
+    expect(select('./p/*', true)).toEqual([]);
+  });
+
+  it('refuses syntax pnpm reads and the model does not, by name', () => {
+    for (const text of ['./p/[ab]', '{p/@(a|b)}'])
+      expect(
+        codeOf(() => parse(text)),
+        text,
+      ).toBe('WORKSPACE_FILTER_UNSUPPORTED');
+    expect(codeOf(() => parse('./p/{a,b}'))).toBe('WORKSPACE_FILTER_INVALID');
   });
 });
 
