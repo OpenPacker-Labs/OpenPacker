@@ -18,9 +18,11 @@ export interface LayoutEntry {
   /** `id` of every entry this one requires under that entry's own name. */
   dependencies: readonly string[];
   /**
-   * The name a direct entry is installed under when it is not its own
-   * (`"string-width-cjs": "npm:string-width@^4"`). Directory names come from
-   * here, never from `name`, which is what the package calls itself.
+   * The name an entry is installed under when it is not its own
+   * (`"string-width-cjs": "npm:string-width@^4"`): the key of a direct
+   * requirement, or the last name of the place a lock gave the package.
+   * Directory names come from here (or from the placement's chain), never from
+   * `name`, which is what the package calls itself.
    */
   installName?: string;
   /** `id` of every entry this one requires under another name: name → id. */

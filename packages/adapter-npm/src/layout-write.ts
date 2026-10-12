@@ -90,7 +90,7 @@ export async function writeNodeModules(
   const storable = entries.filter((entry) => {
     if (entry.storePath) return true;
     skipped.push({
-      path: join(root, ...entry.name.split('/')),
+      path: join(root, ...(entry.installName ?? entry.name).split('/')),
       reason: 'the package is not materialised in the opm store',
     });
     return false;
@@ -102,7 +102,10 @@ export async function writeNodeModules(
   );
   for (const refusal of plan.skipped)
     skipped.push({
-      path: join(root, ...refusal.entry.name.split('/')),
+      path: join(
+        root,
+        ...(refusal.entry.installName ?? refusal.entry.name).split('/'),
+      ),
       reason: refusal.reason,
     });
 
@@ -258,9 +261,14 @@ function planFor(
       throw new Error(`${path} is not a place under node_modules`);
     if (seen.has(path)) throw new Error(`${path} is claimed twice`);
     seen.add(path);
+    // The directory is where the lock puts the package, whatever the package
+    // calls itself: an aliased dependency is `string-width` at
+    // `node_modules/string-width-cjs`.
+    const installed = where.chain.at(-1)!;
     const entry: LayoutEntry = {
       id: path,
-      name: where.chain.at(-1)!,
+      name: source.name,
+      ...(installed !== source.name && { installName: installed }),
       version: source.version,
       digest: source.digest,
       direct: !source.transitive,
