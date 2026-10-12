@@ -25,6 +25,7 @@
 import {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
+  redactAddress,
   type FrozenLockOptions,
   type FrozenLockPackage,
   type FrozenLockRefusal,
@@ -96,7 +97,11 @@ export function classifyResolved(entry: {
   try {
     url = new URL(resolved);
   } catch {
-    return { problem: `resolved ${JSON.stringify(resolved)} is not a URL` };
+    // The text is not a URL, so it was never parsed: it can hold userinfo, a
+    // query and a fragment that must not reach a terminal.
+    return {
+      problem: `resolved ${JSON.stringify(redactAddress(resolved))} is not a URL`,
+    };
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:')
     return { problem: `resolved uses ${url.protocol}, not https` };

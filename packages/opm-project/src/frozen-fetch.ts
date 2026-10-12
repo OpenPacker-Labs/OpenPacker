@@ -12,7 +12,7 @@
 
 import {
   BoundedFetchTransport,
-  redactUrl,
+  redactAddress,
   type HostLookup,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -49,7 +49,7 @@ export function transportForSources(
     } catch {
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `${source} is not a URL opm can fetch`,
+        `${redactAddress(source)} is not a URL opm can fetch`,
       );
     }
     origins.add(origin);
@@ -116,15 +116,9 @@ export async function downloadArchive(
         await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
         continue;
       }
-      let where = url;
-      try {
-        where = redactUrl(new URL(url));
-      } catch {
-        // keep the raw text
-      }
       throw new OpmError(
         'FETCH_FAILED',
-        `Failed to fetch ${label} from ${where}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to fetch ${label} from ${redactAddress(url)}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );
     }
