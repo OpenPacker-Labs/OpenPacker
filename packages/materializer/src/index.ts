@@ -412,12 +412,50 @@ async function verifiedDownload(
   return bytes;
 }
 
+/** Most bytes an extended header may carry; a long path is a few hundred. */
+const MAXIMUM_PAX_HEADER_BYTES = 64 * 1024;
+
+/**
+ * The records of a pax extended header (POSIX.1-2001): `<length> <key>=<value>\n`
+ * where the length counts the whole record, its own digits and the newline
+ * included. A record that is not exactly that is a malformed archive, not
+ * something to read generously.
+ */
+function parsePaxRecords(data: Uint8Array, where: string): Map<string, string> {
+  const records = new Map<string, string>();
+  let at = 0;
+  while (at < data.byteLength) {
+    let space = at;
+    while (space < data.byteLength && data[space] !== 0x20) space += 1;
+    const digits = Buffer.from(data.subarray(at, space)).toString('latin1');
+    if (space >= data.byteLength || !/^[1-9][0-9]{0,8}$/u.test(digits))
+      throw unsafe('INVALID_PAX_HEADER', where);
+    const end = at + Number(digits);
+    // Digits, a space, at least "k=" and the newline.
+    if (end > data.byteLength || end < space + 4 || data[end - 1] !== 0x0a)
+      throw unsafe('INVALID_PAX_HEADER', where);
+    let record: string;
+    try {
+      record = utf8.decode(data.subarray(space + 1, end - 1));
+    } catch {
+      throw unsafe('INVALID_PAX_HEADER', where);
+    }
+    const equals = record.indexOf('=');
+    if (equals < 1) throw unsafe('INVALID_PAX_HEADER', where);
+    records.set(record.slice(0, equals), record.slice(equals + 1));
+    at = end;
+  }
+  return records;
+}
+
 function parseTar(
   bytes: Uint8Array,
   limits: MaterializationLimits,
 ): InspectedArchiveEntry[] {
   const entries: InspectedArchiveEntry[] = [];
   const seen = new Map<string, InspectedArchiveEntry>();
+  // The records of an extended header (`x`) apply to the one entry after it.
+  let pending: Map<string, string> | undefined;
   let offset = 0;
   let count = 0;
   while (offset + 512 <= bytes.byteLength) {
@@ -429,17 +467,40 @@ function parseTar(
     verifyTarChecksum(header);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
-    const path = validateArchivePath(
-      prefix ? `${prefix}/${name}` : name,
-      limits,
-    );
     const size = tarNumber(header.subarray(124, 136));
     const mode = tarNumber(header.subarray(100, 108));
     const type = String.fromCharCode(header[156] ?? 0);
     const dataStart = offset + 512;
     const dataEnd = dataStart + size;
     if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.byteLength)
-      throw unsafe('TRUNCATED_ARCHIVE', path);
+      throw unsafe('TRUNCATED_ARCHIVE', name);
+    if (type === 'x' || type === 'g') {
+      // A path longer than a ustar header holds is written as a pax record
+      // (npm's own tar does it); the header's own name, `PaxHeader/...`, names
+      // nothing. What a record may change is narrow: the path of the entry
+      // after it. A path for every entry is refused, and so is a size that is
+      // not the one the entry's own header gives (an entry past the 12 octal
+      // digits of a header is far beyond the limits anyway).
+      if (size > MAXIMUM_PAX_HEADER_BYTES)
+        throw unsafe('PAX_HEADER_LIMIT', `${size}`);
+      const records = parsePaxRecords(bytes.subarray(dataStart, dataEnd), name);
+      if (type === 'g') {
+        if (records.has('path') || records.has('size'))
+          throw unsafe('PAX_GLOBAL_REJECTED', name);
+      } else {
+        if (pending !== undefined) throw unsafe('INVALID_PAX_HEADER', name);
+        pending = records;
+      }
+      offset = dataStart + Math.ceil(size / 512) * 512;
+      continue;
+    }
+    if (pending?.has('size') && pending.get('size') !== String(size))
+      throw unsafe('PAX_SIZE_REJECTED', name);
+    const path = validateArchivePath(
+      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name),
+      limits,
+    );
+    pending = undefined;
     if (type === '\0' || type === '0' || type === '7') {
       const file: InspectedArchiveEntry = {
         path,
@@ -481,6 +542,11 @@ function parseTar(
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
+  if (pending !== undefined)
+    throw unsafe(
+      'INVALID_PAX_HEADER',
+      'an extended header with no entry after it',
+    );
   return entries;
 }
 
