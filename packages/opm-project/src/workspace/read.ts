@@ -22,16 +22,20 @@ const DECODER_OPTIONS = { fatal: true, ignoreBOM: true } as const;
  * size is checked before a byte is read and again after, and a file that is a
  * link, a directory, a device, larger than `maximumBytes`, or changed while it
  * was read is refused by name. Nothing reads past the bound.
+ *
+ * `open` is how the file is opened; only tests pass another, to change the
+ * file between the two times it is measured.
  */
 export async function readBoundedText(
   parent: FileHandle,
   name: string,
   maximumBytes: number,
   display: string,
+  open: typeof openChild = openChild,
 ): Promise<string | undefined> {
   let file: FileHandle;
   try {
-    file = await openChild(
+    file = await open(
       parent,
       name,
       constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,

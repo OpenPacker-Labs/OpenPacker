@@ -1,5 +1,15 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, dirsOf, npm, pnpm, refusal } from './workspace-tree.js';
+import { discoverWorkspace } from '../src/index.js';
+import {
+  cleanup,
+  dirsOf,
+  npm,
+  pnpm,
+  refusal,
+  scratch,
+} from './workspace-tree.js';
 
 afterEach(cleanup);
 
@@ -111,6 +121,52 @@ describe('refusals', () => {
       }),
     );
     expect(binary.code).toBe('WORKSPACE_MANIFEST_INVALID');
+  });
+
+  describe('text that is not UTF-8', () => {
+    // Valid JSON, and valid YAML, around two bytes no UTF-8 text holds. A
+    // lenient decoder would turn them into U+FFFD and read on, so only the
+    // strict one refuses.
+    const invalid = Buffer.from([0xff, 0xfe]);
+    const json = (head: string, tail: string) =>
+      Buffer.concat([Buffer.from(head), invalid, Buffer.from(tail)]);
+
+    it('refuses a member manifest, naming the file', async () => {
+      const root = await scratch(npm(['p/*']));
+      await mkdir(join(root, 'p/a'), { recursive: true });
+      await writeFile(
+        join(root, 'p/a/package.json'),
+        json('{"name":"a","description":"', '"}'),
+      );
+      await expect(discoverWorkspace(root)).rejects.toMatchObject({
+        code: 'WORKSPACE_MANIFEST_INVALID',
+        message: 'p/a/package.json is not valid UTF-8',
+      });
+    });
+
+    it('refuses the root manifest', async () => {
+      const root = await scratch({});
+      await writeFile(
+        join(root, 'package.json'),
+        json('{"name":"r","workspaces":["p/*"],"description":"', '"}'),
+      );
+      await expect(discoverWorkspace(root)).rejects.toMatchObject({
+        code: 'WORKSPACE_MANIFEST_INVALID',
+        message: 'package.json is not valid UTF-8',
+      });
+    });
+
+    it('refuses pnpm-workspace.yaml', async () => {
+      const root = await scratch({ 'package.json': { name: 'r' } });
+      await writeFile(
+        join(root, 'pnpm-workspace.yaml'),
+        json('packages:\n  - "p/*"\n# ', '\n'),
+      );
+      await expect(discoverWorkspace(root)).rejects.toMatchObject({
+        code: 'WORKSPACE_MANIFEST_INVALID',
+        message: 'pnpm-workspace.yaml is not valid UTF-8',
+      });
+    });
   });
 
   it('refuses a root manifest that is not strict JSON, naming it', async () => {

@@ -193,7 +193,10 @@ them fails.
     through one would otherwise be linked from a place the repository's own
     layout does not hold. Every directory is opened relative to its parent's
     handle without following, so a directory swapped for a link between the
-    listing and the open is refused too.
+    listing and the open is refused too. A test makes that swap between the two
+    calls, once for a link and once for a file, and fails when the no-follow
+    open or the directory-only open is taken out; the platform that reports the
+    open of a link as `ELOOP` (macOS) is covered by a test that raises it.
 
 ### Deliberately out of scope
 

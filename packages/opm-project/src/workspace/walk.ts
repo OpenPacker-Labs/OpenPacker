@@ -28,7 +28,23 @@ export interface WalkResult {
   readonly entriesRead: number;
 }
 
-const MAXIMUM_SKIPPED = 1000;
+/** How many links met while a `**` searched are listed; later ones are passed over unlisted. */
+export const MAXIMUM_SKIPPED_LINKS = 1000;
+
+/**
+ * The two calls the walk makes on a directory it holds open: list it, and
+ * open one of its entries. Only tests replace them, to make the tree change
+ * between the two, which is the moment a swapped entry would be followed.
+ */
+export interface WalkIo {
+  readonly list: typeof readDirChildWithTypes;
+  readonly open: typeof openChild;
+}
+
+const REAL_IO: WalkIo = {
+  list: readDirChildWithTypes,
+  open: openChild,
+};
 
 function linkRefusal(dir: string): WorkspaceError {
   return new WorkspaceError(
@@ -54,6 +70,7 @@ export async function walkMembers(
   patterns: WorkspacePatterns,
   tool: WorkspaceTool,
   limits: WorkspaceLimits,
+  io: WalkIo = REAL_IO,
 ): Promise<WalkResult> {
   const found: FoundManifest[] = [];
   const skippedLinks: string[] = [];
@@ -70,6 +87,7 @@ export async function walkMembers(
       'package.json',
       limits.maxManifestBytes,
       `${dir}/package.json`,
+      io.open,
     );
     if (text !== undefined || tool !== 'pnpm') return text;
     // pnpm also reads package.yaml and package.json5; this model reads neither,
@@ -86,7 +104,7 @@ export async function walkMembers(
 
   const visit = async (handle: FileHandle, segments: string[]) => {
     directoriesRead += 1;
-    const entries = await readDirChildWithTypes(handle);
+    const entries = await io.list(handle);
     entriesRead += entries.length;
     if (entriesRead > limits.maxDirectoryEntries)
       throw new WorkspaceError(
@@ -106,7 +124,7 @@ export async function walkMembers(
       if (link) {
         if (patterns.isExplicit(below) || patterns.isExplicitPrefix(below))
           throw linkRefusal(dir);
-        if (skippedLinks.length < MAXIMUM_SKIPPED) skippedLinks.push(dir);
+        if (skippedLinks.length < MAXIMUM_SKIPPED_LINKS) skippedLinks.push(dir);
         continue;
       }
       if (below.length > limits.maxDepth)
@@ -117,7 +135,7 @@ export async function walkMembers(
         );
       let child: FileHandle;
       try {
-        child = await openChild(
+        child = await io.open(
           handle,
           entry.name,
           constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,

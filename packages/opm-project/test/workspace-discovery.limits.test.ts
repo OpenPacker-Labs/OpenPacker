@@ -98,6 +98,20 @@ describe('links', () => {
     });
   });
 
+  it('refuses a link to a file where a pattern names a member', async () => {
+    for (const workspaces of [['p/*'], ['p/a']]) {
+      const root = await scratch(npm(workspaces, { 'notes.txt': 'x' }));
+      await link(root, 'p/a', '../notes.txt');
+      await expect(discoverWorkspace(root)).rejects.toMatchObject({
+        code: 'WORKSPACE_SYMLINK',
+        subjects: ['p/a'],
+      });
+      await expect(discoverWorkspace(root)).rejects.toThrowError(
+        /p\/a is a symbolic link/u,
+      );
+    }
+  });
+
   it('ignores a link to a file where it is not a pattern match', async () => {
     const root = await scratch(
       npm(['p/*'], { 'p/a/package.json': { name: 'a' }, 'notes.txt': 'x' }),
