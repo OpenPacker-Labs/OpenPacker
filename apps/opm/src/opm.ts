@@ -37,6 +37,7 @@ import {
   readManifestFile,
   listSystemInstallers,
   parsePackageSpec,
+  stripPurlVersion,
   planSystemInstall,
   projectPaths,
   readEnvironmentState,
@@ -105,6 +106,7 @@ const COMMANDS = new Set([
   'pack',
   'publish',
   'yank',
+  'packslip',
   'plugin',
   'auth',
   'system',
@@ -343,6 +345,10 @@ export async function runOpm(
         const { runYankCommand } = await import('./commands/yank.js');
         return await runYankCommand(args, io, cwd);
       }
+      case 'packslip': {
+        const { runPackslipCommand } = await import('./commands/packslip.js');
+        return await runPackslipCommand(args, io, cwd);
+      }
       case 'list': {
         const root = await requireOpmRoot(cwd);
         const rows = await listInstalled(root);
@@ -389,9 +395,12 @@ export async function runOpm(
         const target = args.positionals[0];
         if (!target) throw usage('opm versions requires a package or PURL');
         const ecosystem = registryEcosystem(args, target);
-        const versions = await listRegistryVersions(ecosystem, target, {
-          offline: args.options.has('offline'),
-        });
+        // The registry is asked about the package, whatever version was typed.
+        const versions = await listRegistryVersions(
+          ecosystem,
+          stripPurlVersion(browseTarget(target)),
+          { offline: args.options.has('offline') },
+        );
         if (versions.length === 0) {
           io.stdout.write('(no published versions)\n');
           return EXIT_CODES.success;
@@ -402,7 +411,7 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'resolve': {
-        const target = args.positionals[0];
+        const target = browseTarget(args.positionals[0] ?? '');
         if (!target) throw usage('opm resolve requires a package or PURL');
         // resolve works without a project, but inside one its bindings are
         // part of the resolution authority and are verified first.
@@ -677,7 +686,8 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
   return switchGeneration({ root, target: target.generationDigest });
 }
 
-function handleError(error: unknown, io: CliIo): number {
+/** Report a failure and choose the exit code that tells a script what kind it was. */
+export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.stderr.write(`${error.message}\n`);
     return EXIT_CODES.usage;
@@ -743,16 +753,31 @@ function handleError(error: unknown, io: CliIo): number {
           return EXIT_CODES.unavailable;
         case 'PACKAGE_NOT_FOUND':
         case 'ARTIFACT_NOT_FOUND':
+        case 'VERSION_NOT_FOUND':
         case 'PLUGIN_NOT_INSTALLED':
           return EXIT_CODES.notFound;
         case 'DIGEST_MISMATCH':
         case 'SIZE_MISMATCH':
+        // A signed release whose signature, signer, or signed document does
+        // not hold is a verification failure, the same as bytes that do not
+        // hash. (`INVALID_PROVIDER_METADATA` stays what it was: another
+        // registry's malformed response is not evidence of tampering.)
+        case 'SIGNATURE_VERIFICATION_FAILED':
+        case 'INVALID_PACKSLIP_METADATA':
           return EXIT_CODES.verificationFailed;
         case 'INVALID_PURL':
         case 'UNSUPPORTED_OPERATION':
+        case 'INVALID_PACKSLIP_INPUT':
           return EXIT_CODES.invalidInput;
         case 'UNRESOLVABLE':
+        // Nothing wrong with the release, but nothing in it fits this machine.
+        case 'HOST_INCOMPATIBLE':
           return EXIT_CODES.unsatisfiable;
+        // A signer that changed is a decision for a person, not a failure; an
+        // archive over the limit is a limit opm sets.
+        case 'TRUST_CHANGE_REQUIRES_APPROVAL':
+        case 'ARTIFACT_TOO_LARGE':
+          return EXIT_CODES.policyDenied;
         default:
           return EXIT_CODES.internal;
       }
@@ -854,7 +879,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-elevation' ||
     key === 'latest' ||
     key === 'native' ||
-    key === 'shared'
+    key === 'shared' ||
+    key === 'write'
   );
 }
 
@@ -1104,6 +1130,16 @@ function explicitlyGrantedEnvironment(args: Parsed) {
  * same way `opm add lodash` does — guessing npm because it is popular is how
  * you install the wrong package.
  */
+/**
+ * `packslip:jdx/hk` is shorthand for a PURL, and the browse commands speak
+ * PURLs: the registry must be asked about `pkg:packslip/github.com/jdx/hk`.
+ */
+export function browseTarget(target: string): string {
+  return target.startsWith('packslip:')
+    ? parsePackageSpec(target, { ecosystem: 'packslip' }).purl
+    : target;
+}
+
 function registryEcosystem(args: Parsed, target: string): string {
   const explicit = option(args, 'ecosystem') ?? option(args, 'e');
   if (explicit) return explicit;
@@ -1111,6 +1147,7 @@ function registryEcosystem(args: Parsed, target: string): string {
     const type = target.slice(4).split('/')[0]?.toLowerCase();
     if (type) return type;
   }
+  if (target.startsWith('packslip:')) return 'packslip';
   const ecosystems = registryEcosystems().join('|') || 'npm|cargo|…';
   throw usage(
     `Cannot tell which registry "${target}" belongs to. ` +
@@ -1135,6 +1172,19 @@ Usage:
   opm gc [--keep <n>] [--dry-run]     remove store paths no retained generation uses
   opm gc --shared [--dry-run]         remove entries of the user-level package store
                                       that no project links to
+
+Signed vendor releases (packslip — https://packslip.dev):
+  opm add packslip:github.com/jdx/hk[@version]    (or packslip:jdx/hk)
+  opm packslip verify <spec>                      who signed it; installs nothing
+  opm packslip pin <spec> [--write]               hold a keyless project to its signer
+  opm packslip approve <proposal-id>              accept one reported signer change
+  Trust lives in opm.toml, never in the lock:
+    [adapters.packslip.trust."github.com/jdx/hk"]  pin = ["ps1_…"]  (keyless)
+    [adapters.packslip.trust."example.com/tool"]   public_key = "RW…"  (key-signed)
+  A changed signer stops the resolve and prints a proposal id; nothing is
+  accepted until a person approves exactly that change.
+  OPM_PACKSLIP_GITHUB_TOKEN_ENV names the variable holding a GitHub token;
+  OPM_PACKSLIP_TRUSTED_ROOT points at a Sigstore trusted_root.json.
 
 Browse registries (no project needed):
   opm search <query|purl> [--ecosystem|-e <eco>]
