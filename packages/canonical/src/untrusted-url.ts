@@ -71,7 +71,10 @@ function networkPathStart(text: string): number {
  * scheme in front of it. A path that happens to begin with a long segment is
  * not a host and is left alone.
  */
-export function parseUntrustedUrl(value: string, base?: string | URL): URL {
+export function parseUntrustedUrl(
+  value: string | URL,
+  base?: string | URL,
+): URL {
   const text = String(value);
   if (hasOverlongHost(text)) throw new OverlongHostError();
   if (base === undefined) return new URL(text);

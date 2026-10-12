@@ -189,6 +189,13 @@ describe('parseUntrustedUrl on text that is not hostile', () => {
     expect(parseUntrustedUrl(address).href).toBe(new URL(address).href);
   });
 
+  it('takes a URL that was parsed already and gives back one that equals it', () => {
+    const parsed = new URL('https://u:p@host.example:8443/a/b?c=d#e');
+    const again = parseUntrustedUrl(parsed);
+    expect(again.href).toBe(parsed.href);
+    expect(again).not.toBe(parsed);
+  });
+
   it.each(relative)('resolves %s against %s as new URL does', (path, base) => {
     expect(parseUntrustedUrl(path, base).href).toBe(new URL(path, base).href);
     expect(parseUntrustedUrl(path, new URL(base)).href).toBe(
