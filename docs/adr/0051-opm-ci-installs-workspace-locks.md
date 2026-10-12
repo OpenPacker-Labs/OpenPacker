@@ -188,6 +188,17 @@ the system npm): it compares the set of (path, name, version, link target) that
 arborist would install with a walk of what is on disk, and looks each member's
 declared dependencies up from the member's directory.
 
+The oracle is a tool to run by hand against a real lock, and it is also replayed
+without npm: `packages/opm-project/test/frozen-install.oracle.test.ts` installs
+a fixture workspace that has what no real lock at hand has (a package inside a
+member, one inside a package inside a member, a development and an optional
+dependency of a member, an optional package no platform takes) with 10 option
+sets (`--omit`, `-w`, `--include-workspace-root`, `--workspaces`,
+`--workspaces=false`) and compares the result to the sets arborist gave,
+recorded in `test/fixtures/workspace-install-oracle.json` by
+`install-oracle.cjs --print-expected`. With the dev omission switched off for
+packages inside a member, 3 of the 10 fail.
+
 | Measured                                                                                                                                           | Result                                                                                                                                                                                                |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ts-autocode before this change                                                                                                                     | exit 3, 8 entries named (4 links, 4 members), nothing written                                                                                                                                         |

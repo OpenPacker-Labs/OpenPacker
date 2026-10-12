@@ -11,6 +11,11 @@
  *
  *   node install-oracle.cjs <projectDir> [--omit dev,optional,peer]
  *        [--workspace a,b] [--include-workspace-root] [--no-workspaces]
+ *        [--print-expected]
+ *
+ * With --print-expected nothing is compared: the expected set is printed as a
+ * JSON array and the exit status is 0. That is how the recorded sets that
+ * packages/opm-project/test/frozen-install.oracle.test.ts replays are made.
  *
  * NPM_MODULES names the node_modules directory that holds npm's packages
  * (default: the one beside the node that runs this). Exit status 0 when the
@@ -40,6 +45,7 @@ function parse(argv) {
     workspaces: [],
     includeRoot: false,
     noWorkspaces: false,
+    printExpected: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -48,6 +54,7 @@ function parse(argv) {
       out.workspaces.push(...argv[++i].split(','));
     else if (arg === '--include-workspace-root') out.includeRoot = true;
     else if (arg === '--no-workspaces') out.noWorkspaces = true;
+    else if (arg === '--print-expected') out.printExpected = true;
     else out.dir = path.resolve(arg);
   }
   return out;
@@ -191,6 +198,12 @@ async function main() {
     (node) => !trashed.has(node) && (scope === undefined || scope.has(node)),
   );
   const expected = new Set(installed.map(describe));
+  if (options.printExpected) {
+    process.stdout.write(
+      `${JSON.stringify([...expected].sort(), undefined, 2)}\n`,
+    );
+    process.exit(refused.length === 0 ? 0 : 1);
+  }
   const memberDirs = members.map((node) => node.location);
   const actual = walkInstalled(options.dir, memberDirs);
 

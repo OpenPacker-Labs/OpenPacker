@@ -1,0 +1,97 @@
+{
+  "everything": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/devtool|devtool|1.0.0|",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/anyplatform|anyplatform|1.0.0|",
+    "packages/app/node_modules/apptest|apptest|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "--omit dev": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/anyplatform|anyplatform|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "--omit optional": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/devtool|devtool|1.0.0|",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/apptest|apptest|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "--omit dev --omit optional": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "-w @fx/lib": [
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/shared|shared|1.0.0|"
+  ],
+  "-w packages/app": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/anyplatform|anyplatform|1.0.0|",
+    "packages/app/node_modules/apptest|apptest|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "-w @fx/lib --include-workspace-root": [
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/devtool|devtool|1.0.0|",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|"
+  ],
+  "--workspaces": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/anyplatform|anyplatform|1.0.0|",
+    "packages/app/node_modules/apptest|apptest|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "--workspaces=false": [
+    "node_modules/devtool|devtool|1.0.0|",
+    "node_modules/rootonly|rootonly|1.0.0|",
+    "node_modules/shared|shared|1.0.0|"
+  ],
+  "-w @fx/app --omit dev": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/leaf|leaf|1.0.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/app/node_modules/anyplatform|anyplatform|1.0.0|",
+    "packages/app/node_modules/holder/node_modules/shared|shared|3.0.0|",
+    "packages/app/node_modules/holder|holder|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ]
+}
