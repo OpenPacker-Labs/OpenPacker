@@ -18,23 +18,26 @@ configureDefaultAdapters();
  * "Unsafe archive rejected (COMPRESSED_SIZE_LIMIT)".
  */
 describe('the bounds an installed archive is extracted under', () => {
-  it('are the bounds a frozen install extracts under', () => {
-    expect(installArchiveLimits()).toEqual(
-      frozenArchiveLimits({ acceptRedundantEntries: false }),
+  it('are the bounds a frozen install extracts under, for an npm package', () => {
+    expect(installArchiveLimits('npm')).toEqual(
+      frozenArchiveLimits({ acceptRedundantEntries: true }),
     );
-    expect(installArchiveLimits().maximumCompressedBytes).toBeGreaterThan(
+    expect(installArchiveLimits('npm').maximumCompressedBytes).toBeGreaterThan(
       DEFAULT_MATERIALIZATION_LIMITS.maximumCompressedBytes,
     );
   });
 
-  it("read an npm archive as npm does, and no other ecosystem's", () => {
-    expect(installArchiveLimits('npm')).toEqual(
-      frozenArchiveLimits({ acceptRedundantEntries: true }),
-    );
-    expect(installArchiveLimits('cargo').acceptRedundantEntries).toBe(
-      undefined,
-    );
-  });
+  it.each(['cargo', 'pypi', 'nuget', 'maven', undefined])(
+    "are the materializer's own for %s: nothing about a platform build of an npm package applies",
+    (ecosystem) => {
+      expect(installArchiveLimits(ecosystem)).toEqual(
+        DEFAULT_MATERIALIZATION_LIMITS,
+      );
+      expect(installArchiveLimits(ecosystem).acceptRedundantEntries).toBe(
+        undefined,
+      );
+    },
+  );
 
   it('let a package published with ./ in its paths be installed (agent-base@7.1.4 is)', async () => {
     const made = await lockOf(
