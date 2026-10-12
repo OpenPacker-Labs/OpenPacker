@@ -53,9 +53,10 @@ export const O_DIRECTORY: number = constants.O_DIRECTORY ?? 0x0020_0000;
  * Internal to the NT backend: open whatever the name is, file or directory.
  * Statting, renaming and deleting a child do not know its kind, and asking NT
  * for one kind fails on the other (EISDIR for a directory opened as a file).
- * Not exported, so no caller can set it.
+ * Shared with the NT link code beside it, and not part of the package entry,
+ * so no caller of the package can set it.
  */
-const ANY_KIND = 0x0040_0000;
+export const ANY_KIND = 0x0040_0000;
 
 export { StableHandleError };
 
@@ -325,11 +326,11 @@ function errno(code: string, message: string): NodeJS.ErrnoException {
   return error;
 }
 
-function ntStatus(code: number): number {
+export function ntStatus(code: number): number {
   return code >>> 0;
 }
 
-const STATUS_SUCCESS = 0;
+export const STATUS_SUCCESS = 0;
 const STATUS_OBJECT_NAME_COLLISION = 0xc0000035;
 const STATUS_OBJECT_NAME_NOT_FOUND = 0xc0000034;
 const STATUS_OBJECT_PATH_NOT_FOUND = 0xc000003a;
@@ -340,7 +341,7 @@ const STATUS_FILE_IS_A_DIRECTORY = 0xc00000ba;
 const STATUS_NO_MORE_FILES = 0x80000006;
 const STATUS_ACCESS_DENIED = 0xc0000022;
 
-function throwNt(status: number, name: string): never {
+export function throwNt(status: number, name: string): never {
   const code = ntStatus(status);
   if (code === STATUS_OBJECT_NAME_COLLISION)
     throw errno('EEXIST', `EEXIST: ${name}`);
@@ -429,6 +430,10 @@ function loadNtApi() {
       'int32 NtSetInformationFile(void *FileHandle, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass)',
     ) as (...args: never[]) => number,
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    NtFsControlFile: ntdll.func(
+      'int32 NtFsControlFile(void *FileHandle, void *Event, void *ApcRoutine, void *ApcContext, _Out_ void *IoStatusBlock, uint32 FsControlCode, void *InputBuffer, uint32 InputBufferLength, _Out_ void *OutputBuffer, uint32 OutputBufferLength)',
+    ) as (...args: never[]) => number,
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
     NtQueryDirectoryFile: ntdll.func(
       'int32 NtQueryDirectoryFile(void *FileHandle, void *Event, void *ApcRoutine, void *ApcContext, _Out_ void *IoStatusBlock, void *FileInformation, uint32 Length, uint32 FileInformationClass, uint8 ReturnSingleEntry, void *FileName, uint8 RestartScan)',
     ) as (...args: never[]) => number,
@@ -447,7 +452,7 @@ function loadNtApi() {
   };
 }
 
-function nt(): ReturnType<typeof loadNtApi> {
+export function nt(): ReturnType<typeof loadNtApi> {
   cachedNt ??= loadNtApi();
   return cachedNt;
 }
@@ -465,7 +470,7 @@ const FILE_DIRECTORY_FILE = 0x00000001;
 const FILE_NON_DIRECTORY_FILE = 0x00000040;
 const FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
 const FILE_OPEN_REPARSE_POINT = 0x00200000;
-const DELETE = 0x00010000;
+export const DELETE = 0x00010000;
 const SYNCHRONIZE = 0x00100000;
 const GENERIC_READ = 0x80000000;
 const GENERIC_WRITE = 0x40000000;
@@ -479,7 +484,7 @@ const FileRenameInformation = 10;
 const FileDispositionInformation = 13;
 const FileDirectoryInformation = 1;
 
-function windowsOpenChild(
+export function windowsOpenChild(
   parent: FileHandle,
   name: string,
   flags: number,
@@ -562,10 +567,15 @@ function windowsOpenChild(
   return Promise.resolve(wrapFd(fd));
 }
 
-async function windowsRenameChild(
+/**
+ * Rename a child of `parent`. `replaceIfExists` false makes a name that is
+ * taken a collision (EEXIST) instead of being overwritten.
+ */
+export async function windowsRenameChild(
   parent: FileHandle,
   from: string,
   to: string,
+  replaceIfExists = true,
 ): Promise<void> {
   const api = nt();
   // FileRenameInformation requires DELETE access on the handle being renamed.
@@ -585,7 +595,7 @@ async function windowsRenameChild(
     // root. Struct encoding keeps the opaque koffi pointer intact.
     const info = Buffer.alloc(api.sizeofRename + nameW.length);
     api.koffi.encode(info, api.FILE_RENAME_INFORMATION, {
-      ReplaceIfExists: 1,
+      ReplaceIfExists: replaceIfExists ? 1 : 0,
       RootDirectory: parentOsHandle,
       FileNameLength: nameW.length,
     });
@@ -605,6 +615,56 @@ async function windowsRenameChild(
   } finally {
     await source.close();
   }
+}
+
+const FSCTL_GET_REPARSE_POINT = 0x000900a8;
+const STATUS_NOT_A_REPARSE_POINT = 0xc0000275;
+/**
+ * What a volume without reparse points answers: FAT and exFAT hold none, so
+ * they have nothing to refuse.
+ */
+const NO_REPARSE_SUPPORT = new Set([
+  0xc0000010, // STATUS_INVALID_DEVICE_REQUEST
+  0xc00000bb, // STATUS_NOT_SUPPORTED
+  0xc000000d, // STATUS_INVALID_PARAMETER
+]);
+/** Header (8) plus the most a reparse buffer may carry (16 KiB). */
+const REPARSE_BUFFER_BYTES = 16 * 1024 + 8;
+
+/**
+ * The reparse data of an open handle (FSCTL_GET_REPARSE_POINT), whole, or
+ * undefined when the object is not a reparse point.
+ *
+ * Any other answer is an error and is thrown: a handle that cannot say whether
+ * it is a link is not treated as one that is not.
+ */
+export function windowsReadReparse(fd: number): Buffer | undefined {
+  const api = nt();
+  const output = Buffer.alloc(REPARSE_BUFFER_BYTES);
+  const status = ntStatus(
+    api.NtFsControlFile(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      ...([
+        api.getOsFHandle(fd),
+        null,
+        null,
+        null,
+        Buffer.alloc(16),
+        FSCTL_GET_REPARSE_POINT,
+        null,
+        0,
+        output,
+        output.length,
+      ] as never[]),
+    ),
+  );
+  if (status === STATUS_NOT_A_REPARSE_POINT || NO_REPARSE_SUPPORT.has(status))
+    return undefined;
+  if (status !== STATUS_SUCCESS)
+    throw new StableHandleError(
+      `FSCTL_GET_REPARSE_POINT on fd ${fd} failed with status 0x${status.toString(16)}`,
+    );
+  return output.subarray(0, 8 + output.readUInt16LE(4));
 }
 
 async function windowsRemoveChild(
@@ -627,11 +687,15 @@ async function windowsRemoveChild(
       }
       if (dir) {
         try {
-          for (const child of await windowsReadDir(dir))
-            await windowsRemoveChild(dir, child, {
-              recursive: true,
-              force: true,
-            });
+          // A junction or a directory link is removed as the link it is. It
+          // was opened as itself, but listing it is asking the system about
+          // what it points at, and nothing it points at is this call's to delete.
+          if (windowsReadReparse(dir.fd) === undefined)
+            for (const child of await windowsReadDir(dir))
+              await windowsRemoveChild(dir, child, {
+                recursive: true,
+                force: true,
+              });
         } finally {
           await dir.close();
         }

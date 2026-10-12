@@ -61,6 +61,14 @@ jobs:
         if: runner.os == 'Windows'
         run:
           npm run test -w @openpacker/project-io -- src/handle-windows.test.ts
+      - name: Workspace-member links against the real NT API (Windows)
+        # Directory junctions made relative to the parent handle
+        # (NtCreateFile RootDirectory, FSCTL_SET_REPARSE_POINT, one rename),
+        # and the link suite the other platforms run, against NTFS.
+        if: runner.os == 'Windows'
+        run:
+          npm run test -w @openpacker/project-io --
+          src/handle-windows-link.test.ts src/handle-link.test.ts
       - run: npm run build
       - name: Smoke the CLI
         run: node apps/openpacker-cli/dist/index.js --help

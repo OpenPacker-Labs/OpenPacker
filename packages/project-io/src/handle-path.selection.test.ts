@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as entry from './index.js';
+import { symlinkChild } from './handle-link.js';
 import {
   StableHandleError,
   childBackendKind,
@@ -103,6 +104,43 @@ describe('child operations on this platform', () => {
       expect(await readdir(dir)).toEqual([]);
     });
   });
+
+  describe.skipIf(process.platform !== 'linux')(
+    'a link on a platform whose backend cannot load',
+    () => {
+      const member = '../packages/pkg';
+
+      it.each([
+        [
+          'darwin',
+          'node_modules',
+          /could not load (koffi|\/usr\/lib\/libSystem\.B\.dylib)/u,
+        ],
+        ['win32', 'C:\\project', /./u],
+      ] as const)(
+        'refuses on %s and never makes the link through /proc/self/fd',
+        async (platform, projectRoot, reason) => {
+          const parent = await open(
+            dir,
+            constants.O_RDONLY | constants.O_DIRECTORY,
+          );
+          const restore = spoofPlatform(platform);
+          try {
+            const failure = await symlinkChild(parent, 'pkg', member, {
+              directory: 'node_modules',
+              projectRoot: platform === 'win32' ? projectRoot : dir,
+            }).catch((error: Error) => error);
+            expect(failure).toBeInstanceOf(Error);
+            expect((failure as Error).message).toMatch(reason);
+          } finally {
+            restore();
+            await parent.close();
+          }
+          expect(await readdir(dir)).toEqual([]);
+        },
+      );
+    },
+  );
 
   describe.skipIf(!glibcLinux())('the test override', () => {
     it('routes Linux calls through the backend it is given, until restored', async () => {

@@ -276,7 +276,10 @@ describe('symlinkChild', () => {
       'unchanged',
     );
     expect(await readlinkChild(p.modules, 'pkg', p.site)).toBe(MEMBER);
-    expect(await readFile(p.link('pkg'), 'utf8')).toBe('now a file');
+    // A junction names directories only, so on Windows the file is not
+    // readable through it; the link itself is what this test is about.
+    if (process.platform !== 'win32')
+      expect(await readFile(p.link('pkg'), 'utf8')).toBe('now a file');
 
     await unlinkChild(p.modules, 'pkg');
     expect(await readFile(p.member, 'utf8')).toBe('now a file');
