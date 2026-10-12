@@ -31,6 +31,13 @@ describe('decoding project settings', () => {
     expect(settings.signers['example.com/tool']?.pins).toHaveLength(2);
   });
 
+  it('keys a project’s trust by its lower-cased name, whatever case it was written in', () => {
+    const settings = decodeSettings({
+      trust: { 'github.com/jdx/HK': { pin: [PIN] } },
+    });
+    expect(Object.keys(settings.signers)).toEqual(['github.com/jdx/hk']);
+  });
+
   it('reads a key-signed project with its public key and unlogged opt-in', () => {
     const key = generateTestKey();
     expect(
@@ -117,6 +124,16 @@ describe('decoding project settings', () => {
       /must be a table/u,
     ],
     ['trust that is not a table', { trust: [] }, /trust must be a table/u],
+    [
+      'two entries for one project that differ only by case',
+      {
+        trust: {
+          'github.com/jdx/hk': { pin: [PIN] },
+          'github.com/jdx/HK': { pin: [PIN] },
+        },
+      },
+      /differ only by case/u,
+    ],
     ['a numeric approval', { approvals: [1] }, /non-empty string/u],
     [
       'a string allow_incompatible_host',

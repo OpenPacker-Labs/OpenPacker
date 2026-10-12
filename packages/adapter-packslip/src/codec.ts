@@ -240,7 +240,8 @@ export class PackslipCodec implements EcosystemCodec<PackslipMetadata, never> {
       signer: resolved.verified.signer.identity,
       bundleDigest: resolved.verified.bundleDigest,
       logged: resolved.verified.logged,
-      publishedAt: statement.publishedAt,
+      // The signer's own word; not a clock (see the inspect record's `publishedAt`).
+      statedPublishedAt: statement.publishedAt,
     } as JsonValue;
     const instance: PackageInstance = {
       nodeId,

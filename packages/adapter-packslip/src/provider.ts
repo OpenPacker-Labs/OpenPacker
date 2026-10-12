@@ -47,7 +47,7 @@ import {
 } from './codec.js';
 import { basePurl, formatPackslipPurl, parsePackslipPurl } from './purl.js';
 import { encodeRecord, type PriorAttestation } from './record.js';
-import type { PackslipSettings } from './settings.js';
+import { trustKey, type PackslipSettings } from './settings.js';
 
 /**
  * The archive formats opm's materializer can unpack, best first. A release that
@@ -65,6 +65,13 @@ export const INSTALLABLE_FORMATS: readonly string[] = [
 export const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 
 const RESOLUTION_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * A resolution holds the signed bundle and, once fetched, the archive (up to
+ * `MAX_ARCHIVE_BYTES`). A long-lived host would otherwise keep every release it
+ * ever resolved, so what has expired is dropped and only the newest few kept.
+ */
+const RESOLUTION_CACHE_ENTRIES = 8;
 
 /** One verified resolution, shared by the calls opm makes about the same release. */
 interface Resolution {
@@ -89,12 +96,24 @@ export class ResolutionCache {
     const existing = this.#entries.get(key);
     if (existing !== undefined && Date.now() - existing.at < RESOLUTION_TTL_MS)
       return existing.value;
+    this.#evict();
     const value = make();
     this.#entries.set(key, { at: Date.now(), value });
     value.catch(() => {
       if (this.#entries.get(key)?.value === value) this.#entries.delete(key);
     });
     return value;
+  }
+
+  #evict(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.#entries)
+      if (now - entry.at >= RESOLUTION_TTL_MS) this.#entries.delete(key);
+    // Map iteration is insertion order: the oldest go first.
+    for (const key of this.#entries.keys()) {
+      if (this.#entries.size < RESOLUTION_CACHE_ENTRIES) break;
+      this.#entries.delete(key);
+    }
   }
 
   clear(): void {
@@ -119,8 +138,10 @@ export function asProviderError(error: Error): Error {
   if (!(error instanceof PackslipError)) return error;
   const codes: Record<PackslipError['code'], string> = {
     INVALID_INPUT: 'INVALID_PACKSLIP_INPUT',
-    INVALID_STATEMENT: 'INVALID_PROVIDER_METADATA',
-    INVALID_BUNDLE: 'INVALID_PROVIDER_METADATA',
+    // Packslip's own codes, so a malformed signed release is not reported under
+    // the shared code other registries use for a glitchy upstream response.
+    INVALID_STATEMENT: 'INVALID_PACKSLIP_METADATA',
+    INVALID_BUNDLE: 'INVALID_PACKSLIP_METADATA',
     VERIFICATION_FAILED: 'SIGNATURE_VERIFICATION_FAILED',
     SIGNER_MISMATCH: 'SIGNATURE_VERIFICATION_FAILED',
     PIN_MISMATCH: 'SIGNATURE_VERIFICATION_FAILED',
@@ -135,7 +156,7 @@ export function asProviderError(error: Error): Error {
     LIST_MISSING: 'SIGNATURE_VERIFICATION_FAILED',
     NO_RELEASE: 'VERSION_NOT_FOUND',
     NO_ARTIFACT: 'ARTIFACT_NOT_FOUND',
-    AMBIGUOUS_ARTIFACT: 'INVALID_PROVIDER_METADATA',
+    AMBIGUOUS_ARTIFACT: 'INVALID_PACKSLIP_METADATA',
     HOST_INCOMPATIBLE: 'HOST_INCOMPATIBLE',
     UNAVAILABLE: 'UPSTREAM_UNAVAILABLE',
     OFFLINE: 'OFFLINE',
@@ -153,10 +174,35 @@ async function guarded<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** A keyless identity names a workflow at a ref; policy allow-lists want the workflow. */
-function withoutRef(identity: string): string {
-  const at = identity.indexOf('@');
-  return at === -1 ? identity : identity.slice(0, at);
+/**
+ * A keyless identity names a workflow at a ref (`…/release.yml@refs/tags/v1`);
+ * policy allow-lists want the workflow. Only a trailing `@refs/…` is a ref: an
+ * email identity (`alice@example.com`) is whole, and cutting it at its `@`
+ * would let an allow-list entry for `alice` match every `alice@…`.
+ */
+export function withoutRef(identity: string): string {
+  return identity.replace(/@refs\/.*$/su, '');
+}
+
+/**
+ * `trusted-publisher` is the strongest thing a packslip can show: a CI identity
+ * bound to a repository, recorded in a transparency log, vouching for its own
+ * release. A signer with no repository behind it (an email identity), or a
+ * repackager vouching for someone else's release, is a registry-style
+ * attestation however well it was logged.
+ */
+export function trustTierFor(facts: {
+  readonly keyless: boolean;
+  readonly logged: boolean;
+  readonly repositoryId: string | undefined;
+  readonly attestedBy: 'vendor' | 'repackager';
+}): 'trusted-publisher' | 'registry-attested' {
+  return facts.keyless &&
+    facts.logged &&
+    facts.repositoryId !== undefined &&
+    facts.attestedBy === 'vendor'
+    ? 'trusted-publisher'
+    : 'registry-attested';
 }
 
 export class PackslipProvider implements CatalogProvider {
@@ -182,25 +228,27 @@ export class PackslipProvider implements CatalogProvider {
   }
 
   #signer(project: string): SignerConfig {
-    return this.options.settings.signers[project] ?? {};
+    return this.options.settings.signers[trustKey(project)] ?? {};
   }
 
   async identify(query: string): Promise<readonly PackageIdentity[]> {
-    const text = query.trim();
-    if (text.startsWith('pkg:'))
-      return [packslipIdentity(this.#codec.canonicalizePurl(text))];
-    // `packslip:github.com/jdx/hk@2.5.0`, `github.com/jdx/hk`, or `jdx/hk`.
-    const spec = text.replace(/^packslip:/u, '');
-    const at = spec.lastIndexOf('@');
-    const name = at <= 0 ? spec : spec.slice(0, at);
-    const version = at <= 0 ? undefined : spec.slice(at + 1);
-    return [
-      packslipIdentity(
-        this.#codec.canonicalizePurl(
-          formatPackslipPurl(parseProjectInput(name), version),
+    return guarded(async () => {
+      const text = query.trim();
+      if (text.startsWith('pkg:'))
+        return [packslipIdentity(this.#codec.canonicalizePurl(text))];
+      // `packslip:github.com/jdx/hk@2.5.0`, `github.com/jdx/hk`, or `jdx/hk`.
+      const spec = text.replace(/^packslip:/u, '');
+      const at = spec.lastIndexOf('@');
+      const name = at <= 0 ? spec : spec.slice(0, at);
+      const version = at <= 0 ? undefined : spec.slice(at + 1);
+      return [
+        packslipIdentity(
+          this.#codec.canonicalizePurl(
+            formatPackslipPurl(parseProjectInput(name), version),
+          ),
         ),
-      ),
-    ];
+      ];
+    });
   }
 
   async enumerate(base: string): Promise<readonly string[]> {
@@ -263,7 +311,7 @@ export class PackslipProvider implements CatalogProvider {
         ]),
       )
       .digest('hex');
-    return this.#cache.get(identity, async () => {
+    const resolution = await this.#cache.get(identity, async () => {
       const resolved = await resolveRelease({
         project: parsed.project,
         request: { spec: parsed.version ?? '', prerelease: false },
@@ -314,9 +362,13 @@ export class PackslipProvider implements CatalogProvider {
           this.options.endpoints,
         );
       }
-      this.#seen.set(exactPurl, resolved.verified.bundleDigest);
       return { resolved, artifactUrl };
     });
+    // Recorded here and not where the resolution is made: a second provider
+    // sharing the process-wide cache never makes one, and a snapshot must not
+    // depend on whether somebody else warmed it.
+    this.#seen.set(exactPurl, resolution.resolved.verified.bundleDigest);
+    return resolution;
   }
 
   async inspect(exactPurl: string): Promise<ProviderInspection> {
@@ -353,7 +405,16 @@ export class PackslipProvider implements CatalogProvider {
         body: {
           version: statement.version,
           project: statement.project,
-          publishedAt: statement.publishedAt,
+          // The time the release is proven to have existed, which is what the
+          // minimum-release-age rule measures. The statement's own
+          // `published_at` is the signer's word and could be back-dated to
+          // look old, so it is offered only as `statedPublishedAt`, which
+          // nothing treats as a clock. With no verified time there is no
+          // `publishedAt`, and policy sees a release whose age is unknown.
+          ...(verified.integratedTime !== undefined && {
+            publishedAt: verified.integratedTime,
+          }),
+          statedPublishedAt: statement.publishedAt,
           ...(resolved.candidate.tag !== undefined && {
             tag: resolved.candidate.tag,
           }),
@@ -396,14 +457,16 @@ export class PackslipProvider implements CatalogProvider {
           issuer: verified.signer.issuer,
         }),
         signedAt: verified.integratedTime ?? statement.publishedAt,
-        signedAtVerified: verified.logged,
+        signedAtVerified: verified.integratedTime !== undefined,
         // A repository-bound CI identity recorded in a transparency log is the
         // strongest thing a packslip can show; a key the project pinned is a
         // vendor attestation without a CI identity behind it.
-        trustTier:
-          keyless && verified.logged
-            ? 'trusted-publisher'
-            : 'registry-attested',
+        trustTier: trustTierFor({
+          keyless,
+          logged: verified.logged,
+          repositoryId: verified.signer.repositoryId,
+          attestedBy: resolved.memory.attestedBy,
+        }),
         // `sigstore` means Sigstore's own PKI vouched for the signer. A key
         // the project pinned is the project's trust anchor, not Sigstore's, so
         // it must not satisfy a policy that asks for Sigstore evidence.

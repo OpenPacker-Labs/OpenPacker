@@ -20,6 +20,9 @@ const GITHUB_HOSTS = new Set(
 const GITHUB_API = 'https://api.github.com';
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
+/** Per request, body included; a 64 MiB archive at a modest 0.5 MiB/s fits. */
+const REQUEST_TIMEOUT_MS = 180_000;
+
 export interface NetworkOptions {
   /** A transport to use for everything (tests, a mirror). */
   readonly transport?: HttpTransport;
@@ -87,6 +90,9 @@ export function createNetwork(options: NetworkOptions): Fetcher {
             allowedOrigins: github ? GITHUB_ORIGINS : [parsed.origin],
             destinationPolicy: 'classify-and-pin',
             maximumBytes: request.maxBytes,
+            // The limit covers the whole body, and an archive may be 64 MiB:
+            // the transport's default 30 s would cut a steady 2 MiB/s link.
+            timeoutMilliseconds: REQUEST_TIMEOUT_MS,
             ...(options.fetch !== undefined && { fetch: options.fetch }),
             ...(options.lookup !== undefined && { lookup: options.lookup }),
             // The transport attaches a bearer only to an origin it was told to

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonObject } from '@openpacker/packslip';
 import { detectHost } from '@openpacker/packslip';
 import {
@@ -8,11 +8,18 @@ import {
   buildRelease,
   fakeFetch,
   generateTestKey,
+  generateTestLog,
   githubWorld,
   type BuildOptions,
   type TestKey,
 } from '@openpacker/packslip-testkit';
-import { providerForContext, type PackslipProvider } from '../src/index.js';
+import {
+  ResolutionCache,
+  providerForContext,
+  trustTierFor,
+  withoutRef,
+  type PackslipProvider,
+} from '../src/index.js';
 
 const NOW = '2026-10-11T00:00:00.000Z';
 const PROJECT = 'github.com/acme/tool';
@@ -52,7 +59,11 @@ function trust(extra: JsonObject = {}): JsonObject {
 }
 
 function provider(
-  over: { settings?: JsonObject; prior?: JsonObject } = {},
+  over: {
+    settings?: JsonObject;
+    prior?: JsonObject;
+    trustedRoot?: string;
+  } = {},
 ): PackslipProvider {
   return providerForContext(
     {
@@ -61,7 +72,11 @@ function provider(
       settings: over.settings ?? trust(),
       ...(over.prior !== undefined && { priorAttestations: over.prior }),
     },
-    { host, lookup: async () => [{ address: '140.82.112.3', family: 4 }] },
+    {
+      host,
+      lookup: async () => [{ address: '140.82.112.3', family: 4 }],
+      ...(over.trustedRoot !== undefined && { trustedRoot: over.trustedRoot }),
+    },
   );
 }
 
@@ -238,6 +253,48 @@ describe('inspecting a release', () => {
       signer: { scheme: 'sigstore-key', identity: key.keyId },
     });
     expect(attestation?.record.bundle_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+  });
+
+  it('offers the log’s time as the release time, and the signer’s own only as a claim', async () => {
+    // The signer wrote 2020; the log signed 2026-10-10. A minimum release age is
+    // measured from what was proven, so that is the only `publishedAt` offered.
+    const log = generateTestLog();
+    const built = release('1.2.3', {
+      publishedAt: '2020-01-01T00:00:00Z',
+      logged: { log, integratedTime: new Date('2026-10-10T00:00:00Z') },
+    });
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: [{ tag: 'v1.2.3', release: built }],
+    });
+    const inspection = await provider({
+      settings: trust({ allow_unlogged: false }),
+      trustedRoot: log.trustedRoot,
+    }).inspect(`${BASE}@1.2.3`);
+    expect(inspection.record.body).toMatchObject({
+      publishedAt: '2026-10-10T00:00:00.000Z',
+      statedPublishedAt: '2020-01-01T00:00:00Z',
+    });
+    expect(inspection.attestation).toMatchObject({
+      signedAt: '2026-10-10T00:00:00.000Z',
+      signedAtVerified: true,
+      evidence: ['packslip', 'sigstore-transparency'],
+      trustTier: 'registry-attested',
+    });
+  });
+
+  it('offers no release time at all when nothing verified one', async () => {
+    const built = release('1.2.3', { publishedAt: '2020-01-01T00:00:00Z' });
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: [{ tag: 'v1.2.3', release: built }],
+    });
+    const inspection = await provider().inspect(`${BASE}@1.2.3`);
+    expect(inspection.record.body).not.toHaveProperty('publishedAt');
+    expect(inspection.record.body).toMatchObject({
+      statedPublishedAt: '2020-01-01T00:00:00Z',
+    });
+    expect(inspection.attestation?.signedAtVerified).toBe(false);
   });
 
   it('carries a list sequence into the record when a signed list was used', async () => {
@@ -584,8 +641,56 @@ describe('identifying a package', () => {
     expect(identity?.exactPurl ?? identity?.canonicalPurl).toBe(purl);
   });
 
-  it('refuses what is not a project', async () => {
-    await expect(provider().identify('hk')).rejects.toBeDefined();
+  it('refuses what is not a project, with an error code opm reports', async () => {
+    for (const query of ['hk', '', 'packslip:']) {
+      await expect(provider().identify(query)).rejects.toMatchObject({
+        code: 'INVALID_PACKSLIP_INPUT',
+      });
+    }
+  });
+});
+
+describe('what a signer’s identity is called', () => {
+  it.each([
+    [
+      'https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.5.0',
+      'https://github.com/jdx/hk/.github/workflows/release.yml',
+    ],
+    [
+      'https://gitlab.com/group/proj//.gitlab-ci.yml@refs/heads/main',
+      'https://gitlab.com/group/proj//.gitlab-ci.yml',
+    ],
+    // An email is whole. Cutting it at its `@` would let an allow-list entry
+    // for "alice" match every alice@anywhere.
+    ['alice@example.com', 'alice@example.com'],
+    [
+      'https://github.com/o/r/.github/workflows/w.yml',
+      'https://github.com/o/r/.github/workflows/w.yml',
+    ],
+  ])('drops only a trailing ref: %s', (identity, expected) => {
+    expect(withoutRef(identity)).toBe(expected);
+  });
+});
+
+describe('the trust tier', () => {
+  const strongest = {
+    keyless: true,
+    logged: true,
+    repositoryId: '922514152',
+    attestedBy: 'vendor' as const,
+  };
+
+  it('is trusted-publisher only for a logged, repository-bound CI identity vouching for its own release', () => {
+    expect(trustTierFor(strongest)).toBe('trusted-publisher');
+  });
+
+  it.each([
+    ['a key the project pinned', { keyless: false }],
+    ['an unlogged signature', { logged: false }],
+    ['an identity with no repository behind it', { repositoryId: undefined }],
+    ['a repackager vouching for it', { attestedBy: 'repackager' as const }],
+  ])('is registry-attested for %s', (_name, change) => {
+    expect(trustTierFor({ ...strongest, ...change })).toBe('registry-attested');
   });
 });
 
@@ -605,6 +710,76 @@ describe('snapshots', () => {
       providerType: 'packslip-release',
       evaluationTime: NOW,
     });
+  });
+});
+
+describe('snapshots do not depend on who warmed the cache', () => {
+  it('are the same whether the verification was made by this provider or found already made', async () => {
+    publish(['1.0.0']);
+    const first = provider();
+    await first.inspect(`${BASE}@1.0.0`);
+    // Same world, so the second provider finds the verification in the shared
+    // cache and makes none of its own.
+    const second = provider();
+    await second.inspect(`${BASE}@1.0.0`);
+    expect(await second.snapshot(NOW)).toEqual(await first.snapshot(NOW));
+  });
+});
+
+describe('the resolution cache', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // The cache never looks inside a resolution; a stand-in is enough to count makes.
+  const resolution = (n: number) => Promise.resolve({ n } as never);
+
+  it('shares one resolution per key and does not remember a failure', async () => {
+    const cache = new ResolutionCache();
+    let made = 0;
+    const make = () => {
+      made += 1;
+      return resolution(made);
+    };
+    await cache.get('a', make);
+    await cache.get('a', make);
+    expect(made).toBe(1);
+    const failing = () => {
+      made += 1;
+      return Promise.reject(new Error('down'));
+    };
+    await expect(cache.get('b', failing)).rejects.toThrow('down');
+    await expect(cache.get('b', failing)).rejects.toThrow('down');
+    expect(made).toBe(3);
+  });
+
+  it('keeps only the newest few, so a long-lived host does not hold every archive it ever fetched', async () => {
+    const cache = new ResolutionCache();
+    let made = 0;
+    const make = () => {
+      made += 1;
+      return resolution(made);
+    };
+    for (let key = 0; key < 20; key += 1) await cache.get(`k${key}`, make);
+    expect(made).toBe(20);
+    await cache.get('k19', make); // newest: still held
+    expect(made).toBe(20);
+    await cache.get('k0', make); // oldest: long gone
+    expect(made).toBe(21);
+  });
+
+  it('drops what has expired', async () => {
+    vi.useFakeTimers();
+    const cache = new ResolutionCache();
+    let made = 0;
+    const make = () => {
+      made += 1;
+      return resolution(made);
+    };
+    await cache.get('a', make);
+    vi.setSystemTime(Date.now() + 6 * 60 * 1000);
+    await cache.get('a', make);
+    expect(made).toBe(2);
   });
 });
 
@@ -749,6 +924,20 @@ describe('a real keyless release (jdx/hk 2.5.0)', () => {
       settings: { approvals: [id ?? ''] },
     }).inspect(`${HK}@2.5.0`);
     expect(approved.attestation?.record).toEqual(record);
+  });
+
+  it('applies a pin however the project name’s case was written', async () => {
+    // GitHub names are case-insensitive. A pin that was only matched exactly
+    // would be skipped without a word and the release accepted on forge trust.
+    for (const spelling of ['github.com/jdx/HK', 'github.com/Jdx/hk']) {
+      await expect(
+        hkProvider({
+          settings: {
+            trust: { [spelling]: { pin: ['ps1_kwhjac5qpc45qetfh6ppwisi6a'] } },
+          },
+        }).inspect(`${HK}@2.5.0`),
+      ).rejects.toMatchObject({ code: 'SIGNATURE_VERIFICATION_FAILED' });
+    }
   });
 
   it('refuses a signer pin that names someone else, before trusting the release', async () => {

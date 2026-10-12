@@ -30,6 +30,8 @@ export function encodeRecord(resolved: ResolvedRelease): JsonObject {
   if (memory.signer.issuer !== undefined) signer.issuer = memory.signer.issuer;
   if (memory.signer.repositoryId !== undefined)
     signer.repository_id = memory.signer.repositoryId;
+  if (memory.signer.keyHint !== undefined)
+    signer.key_hint = memory.signer.keyHint;
   if (resolved.verified.signer.fingerprint !== undefined)
     signer.fingerprint = resolved.verified.signer.fingerprint;
   const record: JsonObject = {
@@ -85,12 +87,14 @@ function decode(value: JsonValue): PriorAttestation {
     throw fail(`unknown attestation "${attestedBy}"`);
   const issuer = signerReader.optionalString('issuer');
   const repositoryId = signerReader.optionalString('repository_id');
+  const keyHint = signerReader.optionalString('key_hint');
   const signer: SignerRecord = {
     scheme,
     identity: signerReader.string('identity'),
     pinWorkflow: signerReader.optionalBoolean('pin_workflow') ?? true,
     ...(issuer !== undefined && { issuer }),
     ...(repositoryId !== undefined && { repositoryId }),
+    ...(keyHint !== undefined && { keyHint }),
   };
   const list = root.optionalObject('list');
   return {

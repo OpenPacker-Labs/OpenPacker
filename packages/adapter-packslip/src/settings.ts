@@ -107,6 +107,11 @@ function decodeSigner(project: string, value: JsonValue): SignerConfig {
   };
 }
 
+/** How a project name is keyed in `PackslipSettings.signers`. */
+export function trustKey(project: string): string {
+  return project.toLowerCase();
+}
+
 /**
  * Decode the JSON the host hands an adapter. Strict by design: unknown keys,
  * malformed fingerprints, and malformed public keys are refused here, before a
@@ -128,7 +133,16 @@ export function decodeSettings(raw: JsonObject | undefined): PackslipSettings {
     for (const [project, value] of Object.entries(trust)) {
       // The key is a project name; a typo here would trust no one, so check it.
       parseProject(project);
-      signers[project] = decodeSigner(project, value);
+      // Forge names are case-insensitive, so a pin spelled `…/HK` must govern
+      // `…/hk`: matched exactly it would be skipped without a word, and the
+      // project would fall back to the weaker forge-derived trust. Two entries
+      // that differ only by case are one project written twice.
+      const name = trustKey(project);
+      if (Object.hasOwn(signers, name))
+        throw refuse(
+          `trust has two entries for ${project} that differ only by case`,
+        );
+      signers[name] = decodeSigner(project, value);
     }
   }
   const approvals = textList(raw.approvals, 'approvals') ?? [];
