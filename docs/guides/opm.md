@@ -122,7 +122,9 @@ calls libc `openat` and its siblings through koffi (`/dev/fd/N/child` does not
 resolve there), and Windows opens children with `NtCreateFile` relative to the
 parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
 never a lexical pathname fallback. Path escapes, symlink swaps, and linked
-metadata still fail closed with `UNSAFE_PATH`.
+metadata still fail closed with `UNSAFE_PATH`. The one symlink opm makes, a
+workspace member's link in `node_modules`, goes through the same handles
+([below](#workspace-member-links)).
 
 ---
 
@@ -234,9 +236,10 @@ What `layout` writes:
   recorded. A direct requirement, and the version most packages want, sits in
   `node_modules/<name>`; a package that needs a different version of the same
   name gets it in its own `node_modules` (`a → c@1` and `b → c@2` becomes
-  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks. A
-  lock with no recorded edges (an offline lock holds only the direct set) is
-  laid out flat by name, newest first, and the version left out is reported.
+  `node_modules/c` = 2, `node_modules/a/node_modules/c` = 1). No symlinks,
+  except a workspace member's link ([below](#workspace-member-links)). A lock
+  with no recorded edges (an offline lock holds only the direct set) is laid out
+  flat by name, newest first, and the version left out is reported.
 - **Hard links, not copies.** Each file is a link to the store's, verified to be
   the same inode. If the filesystem cannot link, opm copies and says so.
 - **Executables** are small shell scripts in `node_modules/.bin` (plus `.cmd` on
@@ -247,6 +250,40 @@ What `layout` writes:
   not produced by npm, and the projection says so.
 - `node_modules/.opm-layout.json` records what opm wrote. The next layout
   removes only that; a package you installed some other way is left alone.
+
+#### Workspace member links
+
+A workspace's members are the one thing in `node_modules` that is a symlink (a
+junction on Windows). A link from a member's name to the member's own directory
+lets `packages/b` resolve `packages/a`'s live source with no install: an edit to
+`a` is seen at once. Nothing else is a symlink, and the rules are code, not
+convention ([ADR 0050](../adr/0050-workspace-member-links.md), decided
+2026-10-12):
+
+- The link lives in a `node_modules` (or a scope directory in one), is named
+  after one package, and points by a relative path at a place **inside the
+  project** that is not under `node_modules` or `.opm`. An absolute target, a
+  `..` that leaves the project, an empty or NUL-containing text, a link in
+  `.bin` and a link where a package is installed are all refused before anything
+  is written.
+- It is made through the same no-follow, handle-relative calls as every other
+  write. A name that already holds something else (a file, a directory, a link
+  to another place) is an error that names it and is not replaced; the same link
+  again changes nothing.
+- `node_modules/.opm-layout.json` lists each link (`links`: path and text). The
+  next layout removes a link only while it is exactly the one that was written,
+  so a link you made by hand, or repointed, is left and reported.
+- A tool that reads `node_modules` treats a listed link as a leaf: it reads the
+  link and not what it points at, so a member's source is never hashed or
+  counted as part of `node_modules`. A symlink that is not listed is refused as
+  it always was.
+- On Windows a link is a directory junction, which needs no privilege. It holds
+  an absolute path, so a project moved on disk needs its layout written again,
+  and a member must be a directory.
+
+The layout writer and its plan carry these links today. Reading members out of a
+lock and installing a workspace (`opm ci` still refuses a lock that has
+`link: true` entries) is not part of this.
 
 ### Installing exactly a lock (`opm ci`)
 
@@ -287,7 +324,9 @@ What it does, in order:
    the previous `node_modules` as it was. The only hosts contacted are those of
    the lock's `resolved` URLs.
 4. **Writes the lock's layout.** Each package is at the path its key names,
-   hard-linked from the store, with `.bin` shims; no symlinks.
+   hard-linked from the store, with `.bin` shims; no symlinks (a lock's
+   workspace links are refused for now, see
+   [Workspace member links](#workspace-member-links)).
 
 Which entries a machine installs follows npm: `dev`, `optional` and `peer`
 entries are dropped by `--omit`; an optional package for another `os`, `cpu` or
