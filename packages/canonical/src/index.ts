@@ -19,6 +19,17 @@ export {
   printable,
   safeEcho,
 } from './echo.js';
+export {
+  out,
+  outJson,
+  outRaw,
+  plainOutput,
+  jsonOutput,
+  report,
+  type MessageLike,
+  type Output,
+  type TextSink,
+} from './output.js';
 export { OverlongHostError, parseUntrustedUrl } from './untrusted-url.js';
 export {
   hasOverlongHost,
