@@ -2,6 +2,13 @@ import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { npmTargetPredicate } from './platform.js';
 import {
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+  aboutPackument,
+} from './packument-limits.js';
+import {
   compareNpmVersions,
   npmSatisfies,
   parseNpmRange,
@@ -35,6 +42,7 @@ import {
   type CatalogProvider,
   type Clock,
   type EcosystemCodec,
+  type HttpResponse,
   type HttpTransport,
   type LockCapture,
   type NativeCoordinate,
@@ -738,9 +746,6 @@ export interface PublishTimeEvidence {
   source: 'packument-time' | 'packument-modified' | 'full-packument';
 }
 
-/** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
-const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
-
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
   readonly capabilities: ProviderCapabilities = {
@@ -898,10 +903,13 @@ export class NpmRegistryProvider implements CatalogProvider {
       const response = await this.transport.request({
         url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
         signal,
-        maximumBytes: FULL_PACKUMENT_LIMIT,
+        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
         headers: { accept: 'application/json' },
       });
-      return json<{ time?: Record<string, string> }>(response).time;
+      return json<{ time?: Record<string, string> }>(
+        response,
+        FULL_PACKUMENT_LIMITS,
+      ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
       return undefined;
@@ -1131,17 +1139,24 @@ export class NpmRegistryProvider implements CatalogProvider {
     const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: 8 * 1024 * 1024,
-      headers: {
-        accept: 'application/vnd.npm.install-v1+json',
-        ...(!(existing?.etag === undefined) && {
-          'if-none-match': existing.etag,
-        }),
-      },
-    });
+    let response: HttpResponse;
+    try {
+      response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
+        headers: {
+          accept: 'application/vnd.npm.install-v1+json',
+          ...(!(existing?.etag === undefined) && {
+            'if-none-match': existing.etag,
+          }),
+        },
+      });
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     if (response.status === 304) {
       if (!existing)
         throw new ProviderError(
@@ -1153,13 +1168,21 @@ export class NpmRegistryProvider implements CatalogProvider {
       this.#records.set(key, revalidated);
       return revalidated;
     }
+    let body: NpmPackument;
+    try {
+      body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     const record: ProviderRecord<NpmPackument> = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
         etag: header(response, 'etag'),
       }),
-      body: json<NpmPackument>(response),
+      body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
@@ -1170,6 +1193,12 @@ export class NpmRegistryProvider implements CatalogProvider {
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
 export { npmPackageRuns, npmTargetPredicate } from './platform.js';
+export {
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+} from './packument-limits.js';
 export {
   chainOfLockPath,
   findDuplicateJsonKey,
