@@ -14,3 +14,6 @@ kimi-export-session_*.md
 .agents/skills/**
 .claude/skills/**
 .claude/agents/**
+
+# Verbatim pnpm lockfiles (ADR 0052): that pnpm wrote them is the point of the fixtures
+fixtures/locks/pnpm-v9/*.yaml

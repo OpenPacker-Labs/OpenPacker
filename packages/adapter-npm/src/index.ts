@@ -1183,3 +1183,5 @@ export {
   type LockRoot,
   type PackageLockTree,
 } from './lock-tree.js';
+
+export * from './pnpm-lock/index.js';
