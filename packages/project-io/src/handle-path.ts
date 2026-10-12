@@ -32,6 +32,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
 import { darwinProfile } from './handle-libc-profile.js';
+import { listNtDirectory } from './handle-nt-dir.js';
 import { readReparse } from './handle-nt-reparse.js';
 import {
   StableHandleError,
@@ -339,7 +340,6 @@ const STATUS_STOPPED_ON_SYMLINK = 0x8000002d;
 const STATUS_REPARSE = 0x00000104;
 const STATUS_NOT_A_DIRECTORY = 0xc0000103;
 const STATUS_FILE_IS_A_DIRECTORY = 0xc00000ba;
-const STATUS_NO_MORE_FILES = 0x80000006;
 const STATUS_ACCESS_DENIED = 0xc0000022;
 
 export function throwNt(status: number, name: string): never {
@@ -462,8 +462,6 @@ const OBJ_CASE_INSENSITIVE = 0x00000040;
 const OBJ_DONT_REPARSE = 0x00001000;
 const FILE_SHARE_ALL = 0x00000007;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
-const FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
-const FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
 const FILE_OPEN = 1;
 const FILE_CREATE = 2;
 const FILE_OPEN_IF = 3;
@@ -483,7 +481,6 @@ const FILE_DELETE_CHILD = 0x00000040;
 const FILE_READ_ATTRIBUTES = 0x00000080;
 const FileRenameInformation = 10;
 const FileDispositionInformation = 13;
-const FileDirectoryInformation = 1;
 
 export function windowsOpenChild(
   parent: FileHandle,
@@ -698,66 +695,7 @@ async function windowsReadDir(parent: FileHandle): Promise<string[]> {
 }
 
 async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
-  const api = nt();
-  const osHandle = api.getOsFHandle(parent.fd);
-  const buffer = Buffer.alloc(16 * 1024);
-  const iosb = Buffer.alloc(16);
-  const entries: Dirent[] = [];
-  let restart = 1;
-  for (;;) {
-    const status = api.NtQueryDirectoryFile(
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      ...([
-        osHandle,
-        null,
-        null,
-        null,
-        iosb,
-        buffer,
-        buffer.length,
-        FileDirectoryInformation,
-        0,
-        null,
-        restart,
-      ] as never[]),
-    );
-    restart = 0;
-    const code = ntStatus(status);
-    if (code === STATUS_NO_MORE_FILES) break;
-    if (code !== STATUS_SUCCESS) throwNt(status, '<directory>');
-    let offset = 0;
-    for (;;) {
-      const next = buffer.readUInt32LE(offset);
-      const attributes = buffer.readUInt32LE(offset + 56);
-      const nameLength = buffer.readUInt32LE(offset + 60);
-      const name = buffer.toString(
-        'utf16le',
-        offset + 64,
-        offset + 64 + nameLength,
-      );
-      if (name !== '.' && name !== '..')
-        entries.push(ntDirent(name, attributes));
-      if (next === 0) break;
-      offset += next;
-    }
-  }
-  return entries;
-}
-
-function ntDirent(name: string, attributes: number): Dirent {
-  const reparse = (attributes & FILE_ATTRIBUTE_REPARSE_POINT) !== 0;
-  const directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) !== 0;
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  return {
-    name,
-    isDirectory: () => directory && !reparse,
-    isFile: () => !directory && !reparse,
-    isSymbolicLink: () => reparse,
-    isBlockDevice: () => false,
-    isCharacterDevice: () => false,
-    isFIFO: () => false,
-    isSocket: () => false,
-  } as Dirent;
+  return listNtDirectory(nt(), parent.fd, throwNt);
 }
 
 /** Where this module was loaded from, in a form `createRequire` accepts. */
