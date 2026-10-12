@@ -59,7 +59,10 @@ function mapFailure(url: string, error: Error): PackslipError {
     error instanceof ProviderError
       ? `${error.code}: ${error.message}`
       : error.message;
-  return new PackslipError('UNAVAILABLE', `Could not fetch ${url}: ${detail}`);
+  return new PackslipError(
+    'UNAVAILABLE',
+    `Could not fetch ${echoed(url)}: ${echoed(detail)}`,
+  );
 }
 
 /**
