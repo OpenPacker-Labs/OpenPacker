@@ -7,6 +7,10 @@ export interface RunContext {
   platform: NodeJS.Platform;
   host: ChildHost;
   probe?: ((file: string) => Promise<BinProbe>) | undefined;
+  /** The Node that runs `opm`; what `opm exec node` starts. */
+  execPath?: string | undefined;
+  /** Processors available, for the default number of members run at once. */
+  parallelism?: number | undefined;
 }
 
 export function processContext(): RunContext {

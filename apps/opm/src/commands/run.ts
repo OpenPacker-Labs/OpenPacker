@@ -70,6 +70,17 @@ export async function runScriptCommand(
   context: RunContext = processContext(),
 ): Promise<number> {
   const root = await projectDirectory(request.path, cwd);
+  if (request.select !== undefined) {
+    const { runScriptInWorkspace } = await import('./run-workspace.js');
+    return await runScriptInWorkspace(
+      request,
+      request.select,
+      root,
+      io,
+      cwd,
+      context,
+    );
+  }
   const pkg = await readPackageFile(root);
   if (pkg === undefined)
     throw new RunError(
@@ -114,6 +125,17 @@ export async function runExecCommand(
   if (problem !== undefined)
     throw new RunError('USAGE', `Cannot exec "${request.bin}": ${problem}`);
   const root = await projectDirectory(request.path, cwd);
+  if (request.select !== undefined) {
+    const { runExecInWorkspace } = await import('./run-workspace.js');
+    return await runExecInWorkspace(
+      request,
+      request.select,
+      root,
+      io,
+      cwd,
+      context,
+    );
+  }
   const binDirs = binDirectories(root);
   const resolution = await resolveExecutable(request.bin, binDirs, context);
   if (resolution.found === undefined)

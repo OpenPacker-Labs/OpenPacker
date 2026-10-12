@@ -134,17 +134,31 @@ export interface ScriptRun {
   script: string;
   /** Appended to `script` and to no hook. */
   args: readonly string[];
-  /** Where the child's output goes. */
-  io: ChildIo;
+  /** Where the child's output goes; a function gets the step's name and returns its streams. */
+  io: ChildIo | ((step: string) => ChildIo);
   /** Runs each step's child. */
   start: ChildRunner;
   /** The directory `opm` was started in (`INIT_CWD`). */
   initCwd: string;
   context: RunContext;
   /** Run the children without a stdin of their own. */
-  stdin?: 'inherit' | 'ignore';
+  stdin?: 'inherit' | 'ignore' | undefined;
   /** Stop before the next step once this says so. */
   stopped?: () => boolean;
+}
+
+/** Refuse a `pre`, main or `post` script that is not a string, before any step runs. */
+export function assertStringSteps(
+  dir: string,
+  pkg: PackageFile,
+  script: string,
+): void {
+  for (const event of stepsOf(pkg, script))
+    if (typeof pkg.scripts.get(event) !== 'string')
+      throw new RunError(
+        'INVALID_MANIFEST',
+        `Script "${event}" in ${join(dir, 'package.json')} is not a string`,
+      );
 }
 
 export interface ScriptResult {
@@ -190,7 +204,8 @@ export async function runScriptSteps(
     });
     const spec: ChildSpec = { plan, cwd: dir, env, label };
     if (input.stdin !== undefined) spec.stdin = input.stdin;
-    const outcome = await input.start(spec, input.io);
+    const streams = typeof input.io === 'function' ? input.io(event) : input.io;
+    const outcome = await input.start(spec, streams);
     const status = exitStatus(outcome);
     if (status !== 0) return { status, failure: describeEnd(label, outcome) };
   }
