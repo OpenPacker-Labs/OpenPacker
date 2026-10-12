@@ -130,3 +130,13 @@ describe('a hostile document read by the Cargo adapter', () => {
     expectOneLine(await written(() => cargo.enumerate('pkg:cargo/evil')));
   });
 });
+
+describe('a hostile document read by the NuGet adapter', () => {
+  it('is one line when the service index is not JSON', async () => {
+    const nuget = adapter(
+      'nuget',
+      () => `{"version":"3.0.0","resources":[${FORGED}`,
+    );
+    expectOneLine(await written(() => nuget.enumerate('pkg:nuget/evil')));
+  });
+});
