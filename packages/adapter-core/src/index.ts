@@ -1677,6 +1677,20 @@ export class MetadataLimitError extends ProviderError {
   }
 }
 
+/**
+ * Whether an error is a refusal of the document a registry sent: too many
+ * bytes, too many values, nested too deep, or not JSON at all. Unlike an
+ * outage, it says something true about the document, so a caller that gives up
+ * on it can say why. A network failure is not one.
+ */
+export function isDocumentRefusal(error: unknown): error is ProviderError {
+  return (
+    error instanceof ProviderError &&
+    (error.code === 'UPSTREAM_RESPONSE_TOO_LARGE' ||
+      error.code === 'INVALID_PROVIDER_METADATA')
+  );
+}
+
 export interface ParsedPurl {
   type: string;
   namespace?: string | undefined;

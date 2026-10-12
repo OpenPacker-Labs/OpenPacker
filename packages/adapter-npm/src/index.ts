@@ -30,6 +30,7 @@ import {
   compareCodePoints,
   formatPurl,
   header,
+  isDocumentRefusal,
   json,
   packageNodeId,
   parsePurl,
@@ -862,7 +863,9 @@ export class NpmRegistryProvider implements CatalogProvider {
    * request at all. Otherwise the full packument's `time` for this version,
    * which is the only exact source the registry offers and the expensive one,
    * paid only for a package that changed recently. A package whose time cannot
-   * be had yields `undefined`, and the policy then says it was not provided.
+   * be had yields `undefined`, and the policy then says it was not provided. A
+   * full packument the client refuses (too large, too many values, not JSON)
+   * throws that refusal instead, so the caller can say why the time is missing.
    */
   async publishTime(
     exactPurl: string,
@@ -899,9 +902,10 @@ export class NpmRegistryProvider implements CatalogProvider {
     parsed: ReturnType<typeof parsePurl>,
     signal?: AbortSignal,
   ): Promise<Record<string, string> | undefined> {
+    const name = npmName(parsed.namespace, parsed.name);
     try {
       const response = await this.transport.request({
-        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`,
         signal,
         maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
         headers: { accept: 'application/json' },
@@ -912,6 +916,11 @@ export class NpmRegistryProvider implements CatalogProvider {
       ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      // A document refused for its size or shape is a fact about it, and the
+      // caller needs it to say why no time was had. A registry that is down or
+      // answers with an error is not: that stays "no time", as it always was.
+      if (isDocumentRefusal(error))
+        throw aboutPackument(name, error, 'full packument');
       return undefined;
     }
   }

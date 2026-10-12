@@ -147,6 +147,13 @@ export interface PolicyFacts {
    * cannot clear is judged on `publishedAt` or reported as not provided.
    */
   publishedNoLaterThan?: string;
+  /**
+   * Why no publish time was captured, when the registry's document that holds
+   * it was refused (too large, too many values, not JSON). Said beside the
+   * "not captured" it explains; absent when the registry was simply silent or
+   * unreachable.
+   */
+  publishTimeUnavailable?: string;
   /** Evaluation / decision time (ISO-8601). Defaults to now only if both age checks are off. */
   evaluationTime?: string;
   /** Captured trust tier for this candidate. */
@@ -534,9 +541,13 @@ export async function evaluatePolicy(
         status: policy.minimumReleaseAgeStrict
           ? 'policy-denied'
           : 'not-provided',
-        message: policy.minimumReleaseAgeStrict
-          ? 'minimumReleaseAge is strict but publishedAt/evaluationTime was not captured'
-          : 'publishedAt/evaluationTime not captured for minimum release age',
+        message:
+          (policy.minimumReleaseAgeStrict
+            ? 'minimumReleaseAge is strict but publishedAt/evaluationTime was not captured'
+            : 'publishedAt/evaluationTime not captured for minimum release age') +
+          (facts.publishTimeUnavailable === undefined
+            ? ''
+            : `: ${facts.publishTimeUnavailable}`),
       });
     } else {
       const published = Date.parse(facts.publishedAt);

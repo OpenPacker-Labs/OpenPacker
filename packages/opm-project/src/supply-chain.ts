@@ -5,9 +5,10 @@
  * in @openpacker/policy (evaluatePolicy) and are bound via policyDigest.
  */
 
-import type {
-  CatalogProvider,
-  ProviderInspection,
+import {
+  isDocumentRefusal,
+  type CatalogProvider,
+  type ProviderInspection,
 } from '@openpacker/adapter-core';
 import type {
   Digest,
@@ -477,6 +478,10 @@ export async function capturePublishTime(
     );
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    // A registry document the client refused (too large, too many values, not
+    // JSON) is the reason there is no time, and the policy says so beside the
+    // "not captured". An outage or an error status stays silent, as before.
+    if (isDocumentRefusal(error)) facts.publishTimeUnavailable = error.message;
     return;
   }
   if (evidence?.publishedAt !== undefined)

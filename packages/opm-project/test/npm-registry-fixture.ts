@@ -78,6 +78,8 @@ export interface FixturePackage {
   modified?: string;
   /** Makes the packument as heavy as a real one with many versions. */
   padding?: Padding;
+  /** The full document served as exactly this text, whatever it is. */
+  fullBody?: string;
 }
 
 /**
@@ -296,6 +298,13 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
+    if (!abbreviated && found.fullBody !== undefined)
+      return withUrl({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: encoder.encode(found.fullBody),
+        url: '',
+      });
     const heavy =
       found.padding !== undefined &&
       (found.padding.only ?? (abbreviated ? 'abbreviated' : 'full')) ===

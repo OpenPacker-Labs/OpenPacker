@@ -71,8 +71,9 @@ export const FULL_PACKUMENT_LIMITS: ProviderMetadataLimits = {
 export function aboutPackument(
   name: string,
   error: ProviderError,
+  document: 'packument' | 'full packument' = 'packument',
 ): ProviderError {
-  const subject = `The packument of ${name}`;
+  const subject = `The ${document} of ${name}`;
   if (error instanceof ResponseTooLargeError) return error.about(subject);
   if (error instanceof MetadataLimitError) return error.about(subject);
   if (error.code === 'INVALID_PROVIDER_METADATA')

@@ -92,6 +92,51 @@ describe(
       expect(registry.fullPackumentRequests()).toHaveLength(1);
     });
 
+    it('says why the publish time is missing when the full packument is too large', async () => {
+      // 96 MiB is the most the full document may weigh. The add cannot go on
+      // without a time, and what it said was only that one "was not captured".
+      const registry = new NpmRegistryFixture(
+        heavy({
+          modified: hoursAgo(2),
+          time: { '1.0.0': OLD },
+          padding: { bytes: 96 * 1024 * 1024 + 1, only: 'full' },
+        }),
+      );
+      await expect(lockFor(registry)).rejects.toMatchObject({
+        code: 'POLICY_INDETERMINATE',
+        message:
+          'Supply-chain policy indeterminate: supply-chain.release-age: ' +
+          'publishedAt/evaluationTime not captured for minimum release age: ' +
+          'The full packument of heavy is 100663297 bytes (96.00 MiB) and ' +
+          'exceeds the limit of 100663296 bytes (96.00 MiB)',
+      });
+    });
+
+    it('says so when the full packument is not usable', async () => {
+      const registry = new NpmRegistryFixture(
+        heavy({ modified: hoursAgo(2), fullBody: '<html>bad gateway</html>' }),
+      );
+      await expect(lockFor(registry)).rejects.toMatchObject({
+        code: 'POLICY_INDETERMINATE',
+        message: expect.stringMatching(
+          /not captured for minimum release age: The full packument of heavy is not usable: Expected a JSON value/u,
+        ),
+      });
+    });
+
+    it('adds nothing to the message when the registry simply does not serve it', async () => {
+      const registry = new NpmRegistryFixture(
+        heavy({ modified: hoursAgo(2), time: { '1.0.0': OLD } }),
+        { serveFull: false },
+      );
+      await expect(lockFor(registry)).rejects.toMatchObject({
+        code: 'POLICY_INDETERMINATE',
+        message:
+          'Supply-chain policy indeterminate: supply-chain.release-age: ' +
+          'publishedAt/evaluationTime not captured for minimum release age',
+      });
+    });
+
     it('refuses a packument over 64 MiB, naming the package and both numbers', async () => {
       const registry = new NpmRegistryFixture(
         heavy({ padding: { bytes: 64 * 1024 * 1024 + 1 } }),
