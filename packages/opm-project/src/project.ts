@@ -27,6 +27,7 @@ import {
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveTransitive } from './closure-lock.js';
+import { assertLabelIsFree } from './label-conflict.js';
 import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
 import { isExactVersion, registryTargetFor } from './registry-target.js';
@@ -284,6 +285,7 @@ export async function addPackage(input: {
   if (parsed.source !== undefined) requirement.source = parsed.source;
   else if (input.source !== undefined) requirement.source = input.source;
 
+  assertLabelIsFree(manifest, alias, requirement.purl);
   manifest.packages[alias] = requirement;
 
   const offline = input.offline ?? manifest.options.offline;
