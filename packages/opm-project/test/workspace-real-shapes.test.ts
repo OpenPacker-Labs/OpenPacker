@@ -241,6 +241,22 @@ const battery: Battery = JSON.parse(
   ),
 );
 
+/** The lists pnpm's globber answers differently from npm's and the model's reading of "**"; see the golden file's neighbour. */
+const known: { pnpmHiddenAfterGlobstar: { lists: string[][] } } = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../adapter-core/test/fixtures/workspace-glob-known-differences.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+);
+const HIDDEN_AFTER_GLOBSTAR = new Set(
+  known.pnpmHiddenAfterGlobstar.lists.map(
+    (list) => `${JSON.stringify(list)}|pnpm`,
+  ),
+);
+
 const REFUSED = new Set([
   '["/packages/*"]|pnpm',
   '["packages/*","!/packages/b"]|pnpm',
@@ -302,8 +318,12 @@ describe('patterns over real directories, against the tools', () => {
           continue;
         }
         // npm never lists the root as a workspace; the model keeps it as the project.
+        // Where pnpm's globber is the odd one out, the model selects what npm does.
+        const asNpm = tool === 'npm' || HIDDEN_AFTER_GLOBSTAR.has(key);
+        if (HIDDEN_AFTER_GLOBSTAR.has(key))
+          expect(JSON.stringify([...entry.pnpm].sort())).not.toBe(actual);
         const expected = JSON.stringify(
-          tool === 'npm' ? ['', ...entry.npm].sort() : [...entry.pnpm].sort(),
+          asNpm ? ['', ...entry.npm].sort() : [...entry.pnpm].sort(),
         );
         if (actual !== expected)
           failures.push(`${key}: expected ${expected}, found ${actual}`);

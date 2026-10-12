@@ -33,6 +33,25 @@ const battery: Battery = JSON.parse(
   ),
 );
 
+/**
+ * The pattern lists on which pnpm's globber (tinyglobby 0.2.14) is the odd one
+ * out, with the rule; the model keeps to what npm and the plain reading of
+ * "zero or more directories" give. See the ADR's list of differences.
+ */
+const known: { pnpmHiddenAfterGlobstar: { rule: string; lists: string[][] } } =
+  JSON.parse(
+    readFileSync(
+      new URL(
+        './fixtures/workspace-glob-known-differences.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+const HIDDEN_AFTER_GLOBSTAR = new Set(
+  known.pnpmHiddenAfterGlobstar.lists.map((list) => JSON.stringify(list)),
+);
+
 const REFUSED: readonly {
   patterns: string[];
   tool: WorkspaceTool | 'both';
@@ -128,11 +147,20 @@ describe('workspace patterns against the tools themselves', () => {
           });
           continue;
         }
-        it(`${label} selects what ${tool} selects`, () => {
-          expect(selected(entry.patterns, tool)).toEqual(
-            [...entry[tool]].sort(),
-          );
-        });
+        if (tool === 'pnpm' && HIDDEN_AFTER_GLOBSTAR.has(label)) {
+          it(`${label} selects what npm selects, where pnpm drops a hidden directory after **`, () => {
+            // The pinned choice: npm's answer (pnpm keeps the root, npm never lists it).
+            const chosen = selected(entry.patterns, tool);
+            expect(chosen).toEqual(['', ...entry.npm].sort());
+            // And pnpm's record really does differ, or this is not a known difference at all.
+            expect(chosen).not.toEqual([...entry.pnpm].sort());
+          });
+        } else
+          it(`${label} selects what ${tool} selects`, () => {
+            expect(selected(entry.patterns, tool)).toEqual(
+              [...entry[tool]].sort(),
+            );
+          });
         it(`${label} is reachable by descent`, () => {
           const compiled = compileWorkspacePatterns(
             entry.patterns,

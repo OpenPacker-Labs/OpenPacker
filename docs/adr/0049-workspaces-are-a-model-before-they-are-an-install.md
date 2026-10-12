@@ -107,33 +107,53 @@ the wrong thing.
 
 ### Where npm and pnpm differ, as found
 
-The patterns were put to the tools themselves (pnpm 10.28.0's `findPackages`
-over tinyglobby 0.2.14; npm 10.9.4's `@npmcli/map-workspaces` 4.0.2 over
-glob 10) on 100 pattern lists over one tree, and the model reproduces both on
-every list it accepts
-(`packages/adapter-core/test/fixtures/workspace-glob-oracle.json`).
+The patterns were put to the tools themselves on 115 pattern lists over one
+tree: pnpm 10.28.0 by running `pnpm ls -r` over a `pnpm-workspace.yaml` that
+holds them (so its `findPackages` and the tinyglobby 0.2.14 bundled in
+`pnpm.cjs`), npm 10.9.4 through `@npmcli/map-workspaces` 4.0.2 over glob 10.4.5.
+The answers are
+`packages/adapter-core/test/fixtures/workspace-glob-oracle.json`; the scripts
+that produced them, and how to run them again, are beside it in
+`workspace-oracle/`. The model reproduces each tool on every list it accepts,
+except the eight lists of the last row of the table, where it keeps npm's
+reading and a test says so; it refuses seven lists on purpose, each with a test.
 
-| Matter                         | npm                                                     | pnpm                                                | Here                                                                 |
-| ------------------------------ | ------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
-| Which file                     | `package.json` `workspaces`                             | `pnpm-workspace.yaml` (ignores `workspaces`)        | per tool                                                             |
-| The root                       | not a workspace                                         | always a project when it has a manifest             | a member (`root: true`); a pnpm pattern naming it adds nothing       |
-| `!` after the patterns it hits | order matters; a later pattern the `!` matches lifts it | applies to the whole list, whatever the order       | each tool's own, `npm` bug-for-bug (`applyNpmNegations`)             |
-| Leading `/`                    | read as the root                                        | an absolute path; selects nothing                   | npm: the root; pnpm: refused (`ESCAPES_ROOT`)                        |
-| A `.` segment mid-path         | selects nothing                                         | dropped                                             | refused in both (`PATTERN_INVALID`)                                  |
-| A nameless member              | named for its directory (`@s/b` under an `@s` parent)   | no name; addressed by path                          | per tool (`nameFromDirectory`)                                       |
-| Two members, one name          | error                                                   | allowed when their versions differ                  | error in both, naming both paths                                     |
-| Manifest files                 | `package.json`                                          | also `package.yaml`, `package.json5`                | `package.json` only; a pnpm member with only the others is refused   |
-| Symbolic links                 | followed (a `*` step resolves through one)              | followed (tinyglobby)                               | never followed: see below                                            |
-| Case                           | insensitive on macOS and Windows                        | sensitive                                           | sensitive                                                            |
-| Cycles                         | none: `-ws` runs in declaration order                   | warns, or errors with `--disallow-workspace-cycles` | both modes, required                                                 |
-| `workspace:` specifiers        | `EUNSUPPORTEDPROTOCOL`                                  | the protocol's author                               | parsed for any tool: the locks that carry them are pnpm's and Yarn's |
-| Plain range, member satisfies  | linked                                                  | linked only with `link-workspace-packages`          | `linkPolicy`                                                         |
+| Matter                         | npm                                                     | pnpm                                                                                                  | Here                                                                 |
+| ------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Which file                     | `package.json` `workspaces`                             | `pnpm-workspace.yaml` (ignores `workspaces`)                                                          | per tool                                                             |
+| The root                       | not a workspace                                         | always a project when it has a manifest                                                               | a member (`root: true`); a pnpm pattern naming it adds nothing       |
+| `!` after the patterns it hits | order matters; a later pattern the `!` matches lifts it | applies to the whole list, whatever the order                                                         | each tool's own, `npm` bug-for-bug (`applyNpmNegations`)             |
+| Leading `/`                    | read as the root                                        | an absolute path; selects nothing                                                                     | npm: the root; pnpm: refused (`ESCAPES_ROOT`)                        |
+| A `.` segment mid-path         | selects nothing                                         | dropped                                                                                               | refused in both (`PATTERN_INVALID`)                                  |
+| A nameless member              | named for its directory (`@s/b` under an `@s` parent)   | no name; addressed by path                                                                            | per tool (`nameFromDirectory`)                                       |
+| Two members, one name          | error                                                   | allowed when their versions differ                                                                    | error in both, naming both paths                                     |
+| Manifest files                 | `package.json`                                          | also `package.yaml`, `package.json5`                                                                  | `package.json` only; a pnpm member with only the others is refused   |
+| Symbolic links                 | followed (a `*` step resolves through one)              | followed (tinyglobby)                                                                                 | never followed: see below                                            |
+| Case                           | insensitive on macOS and Windows                        | sensitive                                                                                             | sensitive                                                            |
+| Cycles                         | none: `-ws` runs in declaration order                   | warns, or errors with `--disallow-workspace-cycles`                                                   | both modes, required                                                 |
+| `workspace:` specifiers        | `EUNSUPPORTEDPROTOCOL`                                  | the protocol's author                                                                                 | parsed for any tool: the locks that carry them are pnpm's and Yarn's |
+| Plain range, member satisfies  | linked                                                  | linked only with `link-workspace-packages`                                                            | `linkPolicy`                                                         |
+| A hidden name right after `**` | selected (`packages/**/.hid` selects `packages/.hid`)   | not selected when the `**` matched no directory (tinyglobby 0.2.14: `**/.*` skips a top-level `.top`) | npm's reading, kept on purpose and pinned by a test: see below       |
 
 Agreed by both, and tested: `*` and `?` never match a name that starts with ".",
 a literal "." can; `**` stands for zero or more directories (so `p/**` selects
-`p` itself when it has a manifest) and never enters one that starts with ".";
-`{a,b}` expands, nested and across "/"; `node_modules` is never visited; `!x`
-removes the member directory `x`, and `!x/**` removes it and what is below.
+`p` itself when it has a manifest, but see the last row) and never enters one
+that starts with "."; `{a,b}` expands, nested and across "/"; `node_modules` is
+never visited; `!x` removes the member directory `x`, and `!x/**` removes it and
+what is below.
+
+The last row is a quirk of the globber pnpm bundles, recorded as eight lists in
+the golden file (`workspace-glob-known-differences.json` names them). On those
+lists a segment that names a hidden directory, directly after a `**`, matches
+only when the `**` stood for at least one directory: `packages/**/.hid` does not
+select `packages/.hid`, `pkg/**/.dot` selects `pkg/a/.dot` but not `pkg/.dot`,
+and `**/.*` leaves out a top-level `.top`. The model keeps the reading both npm
+and the plain meaning of "zero or more directories" give. It is a choice, not an
+oversight: it only concerns a pattern that names a hidden directory through a
+`**`, and refusing that shape would turn away patterns npm accepts. The tests
+assert both halves, that the model selects what npm selected and that pnpm's
+recorded answer is different, so the day pnpm changes, or the model does, one of
+them fails.
 
 ### Bounds and refusals
 

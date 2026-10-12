@@ -1,7 +1,7 @@
 {
   "generatedWith": {
-    "pnpm": "pnpm 10.28.0 findPackages with tinyglobby 0.2.14, includeRoot, node_modules and bower_components ignored",
-    "npm": "npm 10.9.4 @npmcli/map-workspaces 4.0.2 with glob 10"
+    "pnpm": "pnpm 10.28.0: `pnpm ls -r --depth -1 --json` over a pnpm-workspace.yaml holding the patterns, so findPackages with the tinyglobby 0.2.14 bundled in pnpm.cjs, the root always included, node_modules and bower_components ignored",
+    "npm": "npm 10.9.4: @npmcli/map-workspaces 4.0.2 with glob 10.4.5"
   },
   "manifests": [
     "",
@@ -29,7 +29,10 @@
     "@scope/two",
     "docs/guide",
     ".github/actions/setup",
-    "deep/1/2/3/4/5/leaf"
+    "deep/1/2/3/4/5/leaf",
+    ".top",
+    "pkg/.dot",
+    "pkg/a/.dot"
   ],
   "bare": [
     "packages/empty",
@@ -1387,6 +1390,81 @@
       "patterns": ["packages/a", "!packages/a", "packages/a"],
       "pnpm": [""],
       "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/**/.hid"],
+      "pnpm": [""],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": ["packages/**/.*"],
+      "pnpm": [""],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": ["**/.*"],
+      "pnpm": ["", "packages/.hid", "pkg/.dot", "pkg/a/.dot"],
+      "npm": [".top", "packages/.hid", "pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["**/**/.*"],
+      "pnpm": ["", "packages/.hid", "pkg/.dot", "pkg/a/.dot"],
+      "npm": [".top", "packages/.hid", "pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["**/.top"],
+      "pnpm": [""],
+      "npm": [".top"]
+    },
+    {
+      "patterns": ["**/.dot"],
+      "pnpm": ["", "pkg/.dot", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": [".top"],
+      "pnpm": ["", ".top"],
+      "npm": [".top"]
+    },
+    {
+      "patterns": [".*"],
+      "pnpm": ["", ".top"],
+      "npm": [".top"]
+    },
+    {
+      "patterns": ["pkg/**/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/.*"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/a/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/*/**/.*"],
+      "pnpm": [""],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/*/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/a"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/**/b"],
+      "pnpm": ["", "packages/b"],
+      "npm": ["packages/b"]
     }
   ]
 }
