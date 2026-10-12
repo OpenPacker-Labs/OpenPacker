@@ -855,7 +855,13 @@ async function resolveTransitive(input: {
       policy: {
         allowYanked: policy.allowYanked,
         allowQuarantined: policy.allowQuarantined,
-        requiredEvidence: policy.requiredEvidence,
+        // The solver has no evidence facts, so it can only be asked for the
+        // one kind it establishes itself. Every other kind (sigstore,
+        // packslip, a pinned key) is a fact about a downloaded release, and is
+        // checked against each selected package below, before anything locks.
+        requiredEvidence: policy.requiredEvidence.filter(
+          (kind) => kind === 'receipt-signature',
+        ),
         semanticLossMaximum: policy.semanticLossMaximum,
         acceptedOverlayAuthorities: input.manifest.policy
           ?.acceptedOverlayAuthorities ?? ['publisher'],
