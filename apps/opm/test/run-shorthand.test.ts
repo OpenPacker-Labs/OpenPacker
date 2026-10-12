@@ -183,7 +183,7 @@ posix('pnpm option order: opm --filter <selector> <script>', () => {
     });
   });
 
-  it('opm -r <bin> falls back to the bin when no member has such a script', async () => {
+  it('does not try an executable when members were selected: pnpm does not either, and exec is the way to ask', async () => {
     const ws = await workspace();
     const cap = capture();
     expect(
@@ -193,13 +193,11 @@ posix('pnpm option order: opm --filter <selector> <script>', () => {
         ws.root,
         never,
       ),
-      cap.err,
-    ).toBe(0);
-    expect(report(cap.out)).toMatchObject({
-      name: '@s/b',
-      argv: ['q'],
-      event: 'exec',
-    });
+    ).toBe(4);
+    expect(cap.err).toContain(
+      'None of the 1 selected members has a "fake-tool" script',
+    );
+    expect(cap.out).toBe('');
   });
 
   it('works through the full command line, and -C names the project directory', async () => {

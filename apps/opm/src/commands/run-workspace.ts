@@ -87,15 +87,6 @@ export async function runScriptInWorkspace(
   );
   if (having.length === 0) {
     if (request.ifPresent) return 0;
-    if (request.fallbackExec === true)
-      return await runExecInWorkspace(
-        { bin: script, path: request.path, args: request.args, select },
-        select,
-        root,
-        io,
-        cwd,
-        context,
-      );
     throw new RunError(
       'NOT_FOUND',
       `None of the ${plan.members.length} selected members has a "${script}" script (${nameList(plan.members)})`,
