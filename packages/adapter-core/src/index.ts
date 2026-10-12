@@ -10,6 +10,7 @@ export {
   type NativeTarget,
 } from './host-target.js';
 export * from './workspace/index.js';
+import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 export type {
   FrozenExtraction,
@@ -2286,3 +2287,14 @@ export async function packageNodeId(input: {
   );
   return formatDigest(digest);
 }
+
+/**
+ * npm's version and range grammar for the workspace model, built from the
+ * parser above (the model takes it as a port; see `workspace/ranges.ts`).
+ */
+export const npmRangeEngine: RangeEngine = createNpmRangeEngine({
+  parseSemver,
+  parseSemverRange,
+  evaluateSemverRange,
+  compareParsedVersions,
+});

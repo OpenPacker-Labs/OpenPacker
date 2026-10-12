@@ -35,3 +35,42 @@ export {
   compileWorkspacePatterns,
   type WorkspacePatterns,
 } from './patterns.js';
+export {
+  createNpmRangeEngine,
+  isStrictVersion,
+  type RangeEngine,
+  type SemverToolkit,
+} from './ranges.js';
+export {
+  WORKSPACE_PREFIX,
+  effectiveVersion,
+  indexMembers,
+  isWorkspaceSpecifier,
+  parseWorkspaceSpec,
+  resolveRelativeDirectory,
+  resolveWorkspaceSpec,
+  type MemberIndex,
+  type SpecRange,
+  type WorkspaceSpec,
+} from './spec.js';
+export {
+  buildWorkspaceGraph,
+  type EdgeVia,
+  type GraphOptions,
+  type LinkPolicy,
+  type WorkspaceEdge,
+  type WorkspaceGraph,
+} from './graph.js';
+export {
+  RUNTIME_FIELDS,
+  dependenciesOf,
+  dependentsOf,
+  topologicalOrder,
+  type CycleMode,
+  type OrderOptions,
+  type ReachOptions,
+  type WalkOptions,
+  type WorkspaceCycle,
+  type WorkspaceOrder,
+} from './order.js';
+export { publishedDependencies, publishedSpecifier } from './publish.js';

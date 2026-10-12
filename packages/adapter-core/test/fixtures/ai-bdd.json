@@ -1,0 +1,72 @@
+{
+  "repo": "ai-bdd",
+  "tool": "pnpm",
+  "declaration": {
+    "file": "pnpm-workspace.yaml",
+    "text": "packages:\n  - packages/*\n"
+  },
+  "root": {
+    "name": "ai-bdd-monorepo",
+    "private": true,
+    "devDependencies": {
+      "@ai-bdd/cli": "workspace:*",
+      "@ai-bdd/driver-cua": "workspace:*",
+      "@ai-bdd/driver-playwright": "workspace:*",
+      "@ai-bdd/models-ai-sdk": "workspace:*",
+      "@ai-bdd/playwright-test": "workspace:*",
+      "@ai-bdd/sdk": "workspace:*",
+      "@ai-bdd/testing": "workspace:*",
+      "@ai-bdd/verify": "workspace:*"
+    }
+  },
+  "bare": [],
+  "members": {
+    "packages/cli": {
+      "name": "@ai-bdd/cli",
+      "version": "0.1.0",
+      "dependencies": { "@ai-bdd/sdk": "workspace:*" },
+      "peerDependencies": {
+        "@ai-bdd/driver-playwright": "workspace:*",
+        "@ai-bdd/models-ai-sdk": "workspace:*"
+      },
+      "peerDependenciesMeta": {
+        "@ai-bdd/driver-playwright": { "optional": true },
+        "@ai-bdd/models-ai-sdk": { "optional": true }
+      }
+    },
+    "packages/driver-cua": {
+      "name": "@ai-bdd/driver-cua",
+      "version": "0.1.0",
+      "dependencies": { "@ai-bdd/sdk": "workspace:*" }
+    },
+    "packages/driver-playwright": {
+      "name": "@ai-bdd/driver-playwright",
+      "version": "0.1.0",
+      "dependencies": { "@ai-bdd/sdk": "workspace:*" }
+    },
+    "packages/models-ai-sdk": {
+      "name": "@ai-bdd/models-ai-sdk",
+      "version": "0.1.0",
+      "dependencies": { "@ai-bdd/sdk": "workspace:*" }
+    },
+    "packages/playwright-test": {
+      "name": "@ai-bdd/playwright-test",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ai-bdd/sdk": "workspace:*",
+        "@ai-bdd/driver-playwright": "workspace:*"
+      }
+    },
+    "packages/sdk": { "name": "@ai-bdd/sdk", "version": "0.1.0" },
+    "packages/testing": {
+      "name": "@ai-bdd/testing",
+      "version": "0.1.0",
+      "dependencies": { "@ai-bdd/sdk": "workspace:*" }
+    },
+    "packages/verify": {
+      "name": "@ai-bdd/verify",
+      "version": "0.1.0",
+      "peerDependenciesMeta": { "vitest": { "optional": true } }
+    }
+  }
+}
