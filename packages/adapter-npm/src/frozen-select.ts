@@ -24,6 +24,7 @@
 
 import {
   echoed,
+  echoedValue,
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
   redactAddress,
@@ -61,7 +62,7 @@ export interface FrozenInstallPlan {
 
 /** A locked package as a message names it: its name, `@`, its version. */
 function label(entry: LockEntry): string {
-  return `${echoed(entry.packageName)}@${echoed(entry.version)}`;
+  return `${echoedValue(entry.packageName)}@${echoedValue(entry.version)}`;
 }
 
 function describeTarget(target: NativeTarget): string {
@@ -294,7 +295,7 @@ export function planFrozenPackageLock(input: {
       skip(
         dropped,
         'orphaned',
-        `only needed by ${echoed(entry.path)}, which this machine does not install`,
+        `only needed by ${echoedValue(entry.path)}, which this machine does not install`,
       );
     }
 
@@ -311,7 +312,7 @@ export function planFrozenPackageLock(input: {
     if (parent !== undefined && !installed(left, byPath.get(parent))) {
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} lives inside ${echoed(parent)}, which is not installed; the lock's flags do not match its dependency graph`,
+        reason: `${label(entry)} lives inside ${echoedValue(parent)}, which is not installed; the lock's flags do not match its dependency graph`,
       });
       continue;
     }

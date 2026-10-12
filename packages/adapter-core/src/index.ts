@@ -9,7 +9,8 @@ import {
   MetadataLimitError,
   ResponseTooLargeError,
 } from './document-refusal.js';
-export { ECHO_TEXT_LIMIT, echoed } from './echo.js';
+export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
+export { isAddress, redactText } from './redact-text.js';
 export { ProviderError } from './provider-error.js';
 export { redactAddress, shownScheme } from './redact-address.js';
 export {

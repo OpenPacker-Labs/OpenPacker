@@ -21,7 +21,7 @@
  * synthetic entries.
  */
 
-import type { NativeLockEntry } from '@openpacker/adapter-core';
+import { redactText, type NativeLockEntry } from '@openpacker/adapter-core';
 import { compareText, compareVersions } from './layout-compare.js';
 import { checkLayoutLinks, type LayoutLink } from './layout-links.js';
 
@@ -467,7 +467,8 @@ function sortEntries(entries: readonly LayoutEntry[]): LayoutEntry[] {
  * message ("member" is not a safe directory name) would look untrue.
  */
 export function quoted(text: string): string {
-  return JSON.stringify(text).replace(
+  // An address in it is shown as every address is shown, which is plain text.
+  return JSON.stringify(redactText(text)).replace(
     /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
     (character) => `\\u{${character.codePointAt(0)?.toString(16) ?? ''}}`,
   );

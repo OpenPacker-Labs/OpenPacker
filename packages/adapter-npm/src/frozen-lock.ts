@@ -12,6 +12,7 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   echoed,
+  echoedValue,
   ProviderError,
   type DetectedProject,
   type FrozenLock,
@@ -67,23 +68,25 @@ export function lockDisagreements(
     for (const name of Object.keys(declared))
       if (!(name in locked))
         problems.push(
-          `${field}.${echoed(name)} is in package.json and not in the lock`,
+          `${field}.${echoedValue(name)} is in package.json and not in the lock`,
         );
     for (const name of Object.keys(locked))
       if (!(name in declared))
         problems.push(
-          `${field}.${echoed(name)} is in the lock and no longer in package.json`,
+          `${field}.${echoedValue(name)} is in the lock and no longer in package.json`,
         );
     for (const [name, spec] of Object.entries(declared)) {
       const entry = byPath.get(`node_modules/${name}`);
       if (entry === undefined) {
         if (field === 'dependencies' || field === 'devDependencies')
-          problems.push(`${echoed(name)} (${field}) has no entry in the lock`);
+          problems.push(
+            `${echoedValue(name)} (${field}) has no entry in the lock`,
+          );
         continue;
       }
       const problem = specProblem(entry, spec);
       if (problem !== undefined)
-        problems.push(`${field}.${echoed(name)}: ${problem}`);
+        problems.push(`${field}.${echoedValue(name)}: ${problem}`);
     }
   }
   return problems;
@@ -96,7 +99,7 @@ function specProblem(entry: LockEntry, spec: string): string | undefined {
     const alias = /^npm:((?:@[^/@]+\/)?[^@/]+)(?:@(.+))?$/u.exec(range);
     if (alias === null) return undefined;
     if (alias[1] !== entry.packageName)
-      return `package.json asks for ${echoed(spec)}, the lock has ${echoed(entry.packageName)}@${echoed(entry.version)}`;
+      return `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(entry.packageName)}@${echoedValue(entry.version)}`;
     range = alias[2] ?? '*';
   }
   // Only a plain semver range can be checked against a version. A tag, a URL,
@@ -105,7 +108,7 @@ function specProblem(entry: LockEntry, spec: string): string | undefined {
   try {
     return npmSatisfies(entry.version, range)
       ? undefined
-      : `package.json asks for ${echoed(spec)}, the lock has ${echoed(entry.version)}`;
+      : `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(entry.version)}`;
   } catch {
     return undefined;
   }
@@ -120,7 +123,7 @@ function workspaceRefusals(
   for (const link of tree.links)
     refused.push({
       path: link.path,
-      reason: `a link to ${echoed(link.target || '(no target)')}; workspace members and links are not installed yet`,
+      reason: `a link to ${echoedValue(link.target || '(no target)')}; workspace members and links are not installed yet`,
     });
   const members = tree.foreign.filter(
     (entry) => !entry.path.includes('/node_modules/'),
@@ -128,7 +131,7 @@ function workspaceRefusals(
   for (const member of members)
     refused.push({
       path: member.path,
-      reason: `a workspace member${member.name === undefined ? '' : ` (${echoed(member.name)})`}; workspaces are not installed yet`,
+      reason: `a workspace member${member.name === undefined ? '' : ` (${echoedValue(member.name)})`}; workspaces are not installed yet`,
     });
   const inside = tree.foreign.length - members.length;
   if (inside > 0)

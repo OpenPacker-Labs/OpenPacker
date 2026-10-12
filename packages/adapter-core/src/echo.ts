@@ -1,4 +1,5 @@
 import { safeEcho } from '@openpacker/canonical';
+import { redactText } from './redact-text.js';
 
 /**
  * Text from a document, as a message repeats it.
@@ -24,4 +25,14 @@ export const ECHO_TEXT_LIMIT = 256;
  */
 export function echoed(text: string, limit = ECHO_TEXT_LIMIT): string {
   return safeEcho(String(text), limit);
+}
+
+/**
+ * `text` as a message may repeat a value of a lock that can be an address (a
+ * version, a name, the target of a link, the key of an entry): as `echoed`
+ * shows it, with an address in it shown by `redactAddress` (`redactText`)
+ * before it is cut, since a cut address is another address.
+ */
+export function echoedValue(text: string, limit = ECHO_TEXT_LIMIT): string {
+  return echoed(redactText(String(text)), limit);
 }

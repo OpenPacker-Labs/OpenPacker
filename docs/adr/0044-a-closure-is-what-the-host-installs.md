@@ -857,6 +857,30 @@ independent review got the same two figures.
   it 0 times now. The cost: a path whose first word holds an `@` and ends in a
   `:` (`a@b:c.tgz`) is read as the scp form and withheld.
 
+  Four more fields of a lock are printed: an entry's `version` and `name`, the
+  target of a link, and the key of an entry in `packages`. `echoed` made them
+  plain and left an address in them, so a lock whose `version` was
+  `https://user:<token>@host/x.tgz` printed
+  `p0@https://user:<token>@host/x.tgz (node_modules/p0)`, and so did a name, a
+  link target (`a link to <address>`) and a key (also in
+  `The lock path "..." is malformed`, through `quoted`). npm writes none of
+  these as an address in a lock of version 2 or 3, so only a lock made by hand
+  or by an attacker reaches it. `echoedValue` (`@openpacker/adapter-core`) reads
+  the value as a terminal would show it, then shows it as `redactText` does: a
+  value that is an address by `redactAddress`; a value with a `scheme://...` in
+  it, that address, up to the next space, by `redactAddress`; any other value as
+  it is. The cut comes last, since a cut address is another address
+  (`https://user:123` is a host and a port). `labelOf`, the lock reader's
+  refusals, `classifyResolved`'s labels and `quoted` use it. What it does not
+  find: a credential that is not next to a `scheme://` (`pkg:token@host` inside
+  a longer value), and one that holds a space inside a value that is not itself
+  an address. Fourteen hostile lock entries through the real binary
+  (`ci-lock-fields.test.ts`: version, name and key as a git source and as an
+  offline registry fetch, each with an address behind escape sequences and
+  inside other text, and two link targets) all printed a marker or a control
+  character before, and none does now; an ordinary version, name, link and key
+  are written as they were.
+
   Held by a property test and the review's scripts. A marker is put in the user
   name, in 166 forms of password (every pair of `@ ? # : / %` before, after and
   around it, digits and `/`, `/<marker>/`), in the query, the fragment and the

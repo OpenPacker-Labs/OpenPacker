@@ -11,6 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   echoed,
+  echoedValue,
   redactAddress,
   type FrozenLock,
   type FrozenLockPackage,
@@ -106,7 +107,7 @@ export async function openStore(root: string, env: NodeJS.ProcessEnv) {
 }
 
 export function labelOf(pkg: FrozenLockPackage): string {
-  return `${echoed(pkg.packageName)}@${echoed(pkg.version)} (${echoed(pkg.path)})`;
+  return `${echoedValue(pkg.packageName)}@${echoedValue(pkg.version)} (${echoedValue(pkg.path)})`;
 }
 
 /**

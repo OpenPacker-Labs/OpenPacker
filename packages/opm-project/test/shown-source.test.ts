@@ -1,6 +1,7 @@
+import { isAddress } from '@openpacker/adapter-core';
 import { describe, expect, it } from 'vitest';
 import { fetchArtifactBytes } from '../src/install.js';
-import { isAddress, shownSource } from '../src/shown-source.js';
+import { shownSource } from '../src/shown-source.js';
 
 /** Stands for a credential a source holds. */
 const CANARY = 'vtok_dummy_marker_0123456789abcdef';
