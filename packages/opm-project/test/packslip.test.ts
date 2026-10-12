@@ -24,6 +24,7 @@ import {
   defaultSupplyChainPolicyInput,
   initProject,
   installFromLock,
+  installProject,
   parseLockfile,
   parseManifest,
   parsePackageSpec,
@@ -32,6 +33,7 @@ import {
   serializeLockfile,
   syncProject,
   updateProject,
+  writeLockfile,
   writeManifestFile,
   type OpmManifest,
   type RegistryOptions,
@@ -217,6 +219,62 @@ describe('a packslip-signed tool in an opm project', () => {
     expect(await readFile(bin?.target ?? '', 'utf8')).toBe(
       '#!/bin/sh\necho tool\n',
     );
+  });
+
+  it('makes the lock stale when the trust it was resolved under changes', async () => {
+    publish(['1.0.0']);
+    const manifest = excused(parseManifest(manifestText()));
+    await project(manifest);
+    const lock = await resolveManifestToLock({
+      root,
+      manifest,
+      offline: false,
+      registryOptions: registryOptions(),
+    });
+    await writeLockfile(join(root, 'opm.lock.json'), lock);
+    // Anyone who can change who is trusted changes the manifest digest, so a
+    // frozen install refuses until the project is resolved again.
+    await writeManifestFile(join(root, 'opm.toml'), {
+      ...manifest,
+      adapterSettings: {
+        packslip: {
+          ...manifest.adapterSettings?.packslip,
+          allow_incompatible_host: true,
+        },
+      },
+    });
+    await expect(installProject({ root, offline: true })).rejects.toMatchObject(
+      {
+        code: 'INVALID_LOCK',
+        message: expect.stringContaining(
+          'not produced from the current manifest',
+        ),
+      },
+    );
+  });
+
+  it('applies an accepted-signer policy to a packslip as it would to any registry', async () => {
+    publish(['1.0.0']);
+    const base = excused(parseManifest(manifestText()));
+    const accepting = (identities: string[]): OpmManifest => ({
+      ...base,
+      policy: {
+        ...defaultSupplyChainPolicyInput(),
+        minimumReleaseAgeExclude: [BASE],
+        acceptedSignerIdentityPatterns: identities,
+      },
+    });
+    const resolveWith = (manifest: OpmManifest) =>
+      resolveManifestToLock({
+        root,
+        manifest,
+        offline: false,
+        registryOptions: registryOptions(),
+      });
+    await expect(resolveWith(accepting([key.keyId]))).resolves.toBeDefined();
+    await expect(
+      resolveWith(accepting(['SOMEONE-ELSE'])),
+    ).rejects.toMatchObject({ code: 'POLICY_DENIED' });
   });
 
   it('refuses a release when the project trusts a different key', async () => {
@@ -566,6 +624,9 @@ describe('naming a packslip tool on the command line', () => {
     ['a path that climbs', 'packslip:github.com/../hk'],
     ['an empty version', 'packslip:jdx/hk@'],
     ['characters a project name cannot have', 'packslip:github.com/jdx/h k'],
+    // Shorthand is exactly owner/repo: these name no GitHub project.
+    ['a bare word', 'packslip:mise'],
+    ['shorthand with three segments', 'packslip:a/b/c'],
   ])('refuses %s', (_label, spec) => {
     expect(() => parsePackageSpec(spec)).toThrow(
       expect.objectContaining({ code: 'INVALID_SPEC' }),

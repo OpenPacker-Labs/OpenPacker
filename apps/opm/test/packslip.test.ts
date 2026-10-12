@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
-import { initProject, parseManifest } from '@openpacker/opm-project';
+import {
+  defaultSupplyChainPolicyInput,
+  initProject,
+  parseManifest,
+  resolveManifestToLock,
+  writeLockfile,
+  writeManifestFile,
+} from '@openpacker/opm-project';
 import {
   FakeWeb,
   buildRelease,
@@ -12,7 +19,7 @@ import {
   githubWorld,
   type TestKey,
 } from '@openpacker/packslip-testkit';
-import { EXIT_CODES, handleError, runOpm } from '../src/opm.js';
+import { EXIT_CODES, browseTarget, handleError, runOpm } from '../src/opm.js';
 import { exitForError } from '../src/opmx.js';
 import { runPackslipCommand } from '../src/commands/packslip.js';
 
@@ -181,6 +188,98 @@ describe('opm packslip verify', () => {
     await expect(
       runPackslipCommand(args('frobnicate'), capture().io, root),
     ).rejects.toMatchObject({ code: 'INVALID_SPEC' });
+  });
+});
+
+describe('what verify takes from the project', () => {
+  it('honours --offline: nothing is fetched, and it says so', async () => {
+    await project();
+    let fetched = 0;
+    const counting = {
+      ...transport(),
+      fetch: ((...input: Parameters<typeof fetch>) => {
+        fetched += 1;
+        return fakeFetch(web)(...input);
+      }) as typeof fetch,
+    };
+    const options = new Map<string, string | true>([['offline', true]]);
+    await expect(
+      runPackslipCommand(
+        {
+          positionals: ['verify', 'packslip:github.com/acme/tool@1.0.0'],
+          options,
+        },
+        capture().io,
+        root,
+        counting,
+      ),
+    ).rejects.toBeDefined();
+    expect(fetched).toBe(0);
+  });
+
+  it('holds a release to the signer the lock remembers', async () => {
+    await project();
+    const manifest = parseManifest(
+      await readFile(join(root, 'opm.toml'), 'utf8'),
+    );
+    // An unlogged key has no verified release time, so the default age gate
+    // cannot pass it; excuse the tool so there is a lock to remember from.
+    const excused = {
+      ...manifest,
+      packages: { tool: { alias: 'tool', purl: `pkg:packslip/${PROJECT}` } },
+      policy: {
+        ...defaultSupplyChainPolicyInput(),
+        minimumReleaseAgeExclude: [`pkg:packslip/${PROJECT}`],
+      },
+    };
+    await writeManifestFile(join(root, 'opm.toml'), excused);
+    await writeLockfile(
+      join(root, 'opm.lock.json'),
+      await resolveManifestToLock({
+        root,
+        manifest: excused,
+        offline: false,
+        registryOptions: transport(),
+      }),
+    );
+
+    // The vendor rotates its key, and the project (as a person would) trusts it.
+    const rotated = generateTestKey();
+    web = new FakeWeb();
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: ['1.0.0', '1.1.0'].map((version) => ({
+        tag: `v${version}`,
+        release: buildRelease({
+          project: PROJECT,
+          version,
+          key: rotated,
+          baseUrl: `https://github.com/acme/tool/releases/download/v${version}`,
+          artifacts: [{}],
+        }),
+      })),
+    });
+    await writeManifestFile(join(root, 'opm.toml'), {
+      ...excused,
+      adapterSettings: {
+        packslip: {
+          trust: {
+            [PROJECT]: {
+              public_key: rotated.publicKeyFile,
+              allow_unlogged: true,
+            },
+          },
+        },
+      },
+    });
+    await expect(
+      runPackslipCommand(
+        args('verify', 'packslip:github.com/acme/tool@1.1.0'),
+        capture().io,
+        root,
+        transport(),
+      ),
+    ).rejects.toMatchObject({ code: 'TRUST_CHANGE_REQUIRES_APPROVAL' });
   });
 });
 
@@ -411,6 +510,29 @@ describe('through the real entry point', () => {
         root,
       ),
     ).toBe(EXIT_CODES.unavailable);
+  });
+
+  it.each([
+    ['packslip:jdx/hk', 'pkg:packslip/github.com/jdx/hk'],
+    [
+      'packslip:github.com/jdx/hk@2.5.0',
+      'pkg:packslip/github.com/jdx/hk@2.5.0',
+    ],
+    ['packslip:mise.jdx.dev', 'pkg:packslip/mise.jdx.dev'],
+    // Anything else is already what the registry is asked about.
+    ['pkg:packslip/github.com/jdx/hk', 'pkg:packslip/github.com/jdx/hk'],
+    ['pkg:npm/lodash', 'pkg:npm/lodash'],
+  ])('asks the registry about %s as %s, never the shorthand', (typed, purl) => {
+    // Offline the registry is refused before the target is read, so this is
+    // where a shorthand that was passed through unchanged would be caught: the
+    // registry accepts PURLs only ("PURL must start with pkg:").
+    expect(browseTarget(typed)).toBe(purl);
+  });
+
+  it('refuses a shorthand that names no project instead of passing it on', () => {
+    expect(() => browseTarget('packslip:a/b/c')).toThrow(
+      expect.objectContaining({ code: 'INVALID_SPEC' }),
+    );
   });
 
   it('knows packslip is a command and asks for its subcommand', async () => {
