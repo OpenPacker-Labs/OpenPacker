@@ -19,6 +19,8 @@ export type {
 } from './types.js';
 export { OpmError } from './types.js';
 
+export * from './workspace/index.js';
+
 export { defaultManifest, parseManifest, serializeManifest } from './toml.js';
 
 export {

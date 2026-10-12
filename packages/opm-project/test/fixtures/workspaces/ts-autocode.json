@@ -1,0 +1,30 @@
+{
+  "repo": "ts-autocode",
+  "tool": "npm",
+  "declaration": { "file": "package.json", "workspaces": ["packages/*"] },
+  "root": {
+    "name": "ts-autocode",
+    "version": "0.1.0",
+    "workspaces": ["packages/*"],
+    "dependencies": {
+      "ts-autocode-grounding": "0.1.0",
+      "ts-autocode-harness": "0.1.0",
+      "ts-autocode-rewrite": "0.1.0",
+      "ts-autocode-training": "0.1.0"
+    }
+  },
+  "bare": [],
+  "members": {
+    "packages/grounding": {
+      "name": "ts-autocode-grounding",
+      "version": "0.1.0"
+    },
+    "packages/harness": { "name": "ts-autocode-harness", "version": "0.1.0" },
+    "packages/rewrite": { "name": "ts-autocode-rewrite", "version": "0.1.0" },
+    "packages/training": {
+      "name": "ts-autocode-training",
+      "version": "0.1.0",
+      "devDependencies": { "ts-autocode-rewrite": "0.1.0" }
+    }
+  }
+}
