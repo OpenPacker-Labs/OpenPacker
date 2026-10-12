@@ -30,7 +30,8 @@ const FORGED_VERSION =
 
 type Body = string | Record<string, unknown> | unknown[];
 
-function adapter(id: string, respond: (url: string) => Body) {
+/** `null` is a document the registry does not have. */
+function adapter(id: string, respond: (url: string) => Body | null) {
   const module = defaultAdapterModules().find(
     (candidate) => candidate.id === `org.openpacker.adapter.${id}`,
   );
@@ -39,10 +40,12 @@ function adapter(id: string, respond: (url: string) => Body) {
       async request(request: HttpRequest): Promise<HttpResponse> {
         const body = respond(request.url);
         return {
-          status: 200,
+          status: body === null ? 404 : 200,
           headers: {},
           body: new TextEncoder().encode(
-            typeof body === 'string' ? body : JSON.stringify(body),
+            body === null || typeof body === 'string'
+              ? (body ?? '')
+              : JSON.stringify(body),
           ),
           url: request.url,
         };
@@ -138,5 +141,22 @@ describe('a hostile document read by the NuGet adapter', () => {
       () => `{"version":"3.0.0","resources":[${FORGED}`,
     );
     expectOneLine(await written(() => nuget.enumerate('pkg:nuget/evil')));
+  });
+});
+
+describe('a hostile document read by the Maven adapter', () => {
+  const pom = (version: string) =>
+    '<project><modelVersion>4.0.0</modelVersion><groupId>org.example</groupId>' +
+    '<artifactId>evil</artifactId><version>1.0.0</version><dependencies>' +
+    `<dependency><groupId>g</groupId><artifactId>a</artifactId><version>${version}</version>` +
+    '</dependency></dependencies></project>';
+
+  it('is one line when a dependency asks for a range that is not one', async () => {
+    const maven = adapter('maven', (url) =>
+      url.endsWith('.pom') ? pom(`[1.0${FORGED_VERSION}`) : null,
+    );
+    expectOneLine(
+      await written(() => maven.inspect('pkg:maven/org.example/evil@1.0.0')),
+    );
   });
 });

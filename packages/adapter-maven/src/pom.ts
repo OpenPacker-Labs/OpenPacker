@@ -7,7 +7,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { ProviderError } from '@openpacker/adapter-core';
+import { echoed, ProviderError } from '@openpacker/adapter-core';
 
 export interface MavenDependency {
   groupId: string;
@@ -66,7 +66,9 @@ export function parseMavenPom(xml: string): MavenPomDocument {
   } catch (error) {
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      error instanceof Error ? error.message : 'POM XML could not be parsed',
+      error instanceof Error
+        ? echoed(error.message)
+        : 'POM XML could not be parsed',
     );
   }
   const project = record(parsed)?.project;
