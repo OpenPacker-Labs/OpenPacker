@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
+  echoed,
   ProviderError,
   parsePurl,
   type InstallOptions,
@@ -69,7 +70,7 @@ function assertInstallable(value: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/#:+-]*$/u.test(value) || value.includes('..'))
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a usable Nix installable: ${value}`,
+      `Not a usable Nix installable: ${echoed(value)}`,
     );
   return value;
 }
@@ -88,12 +89,15 @@ export function installableFromPurl(value: string): string {
   try {
     parsed = parsePurl(value);
   } catch {
-    throw new ProviderError('INVALID_PURL', `Not a usable Nix PURL: ${value}`);
+    throw new ProviderError(
+      'INVALID_PURL',
+      `Not a usable Nix PURL: ${echoed(value)}`,
+    );
   }
   if (parsed.type !== 'nix')
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a nix PURL: ${value} (expected pkg:nix/...)`,
+      `Not a nix PURL: ${echoed(value)} (expected pkg:nix/...)`,
     );
   const installable = parsed.qualifiers.installable;
   if (installable !== undefined && installable !== '')
@@ -102,7 +106,7 @@ export function installableFromPurl(value: string): string {
   if (!attribute)
     throw new ProviderError(
       'INVALID_PURL',
-      `nix PURL needs a package name: ${value}`,
+      `nix PURL needs a package name: ${echoed(value)}`,
     );
   const flake = parsed.qualifiers.flake || 'nixpkgs';
   return assertInstallable(`${flake}#${attribute}`);
