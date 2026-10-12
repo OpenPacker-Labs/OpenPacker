@@ -11,9 +11,9 @@
  * is node): 8 MiB is 10.2 times its bytes, 500,000 nodes 10.7 times its nodes,
  * and the lexeme budget (five a node, so 2.5 million) 15.7 times its lexemes.
  *
- * Reading costs about 0.6 s and 55 MB per megabyte of a lock of HoBo's kind:
+ * Reading costs 0.5 to 0.8 s and about 55 MB per megabyte of a lock of HoBo's kind:
  * 7.9 MB of it (HoBo's packages and snapshots eleven times over, 450,432 nodes)
- * takes 4.0 to 5.6 s and 500 MB. Input built to cost the most per byte (blank
+ * takes 4.0 to 6.3 s and 500 MB. Input built to cost the most per byte (blank
  * lines, empty list items, comments, tiny flow entries, tiny block entries) is
  * refused at the lexeme budget after 3 to 5 s and at most 492 MB. The first
  * defaults (1,000,000 nodes, six lexemes a node) refused the worst of them

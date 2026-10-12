@@ -182,18 +182,18 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
     3.4 lexemes a node, 3.8 when Prettier or a 40-column wrap has reflowed them,
     so five leaves a third to spare. At the byte ceiling a lock of HoBo's kind
     (its packages and snapshots eleven times over: 7.9 MB, 450,432 nodes) reads
-    in 4.0 to 5.6 s at about 500 MB. Input built to cost the most per byte (8
-    MiB of blank lines, empty list items, comments, tiny flow entries, tiny
-    block entries) is refused at the lexeme budget after 2.9 to 5.1 s at 298 to
-    492 MB. **The first defaults (1,000,000 nodes, six lexemes a node) did not
-    hold the "near 9 s and 800 MB" they claimed**: the worst of the same inputs
-    took 10.8 to 11.6 s at 886 to 981 MB before they were refused (an
-    independent run: 12.6 s and 1.24 GB for empty list items). A megabyte of `[`
-    is stopped at `maxDepth` instead of costing the library's `parseDocument` 3
-    s and 916 MB, because the text is read through the lexer and parser one
-    lexeme at a time with the parser's stack watched; repeated keys are found
-    with a lookup in the map being built, and the library's own (quadratic)
-    check is off.
+    in 4.0 to 6.3 s at about 500 MB (the machine was loaded for the slower
+    runs). Input built to cost the most per byte (8 MiB of blank lines, empty
+    list items, comments, tiny flow entries, tiny block entries) is refused at
+    the lexeme budget after 2.9 to 5.1 s at 298 to 492 MB. **The first defaults
+    (1,000,000 nodes, six lexemes a node) did not hold the "near 9 s and 800 MB"
+    they claimed**: the worst of the same inputs took 10.8 to 11.6 s at 886 to
+    981 MB before they were refused (an independent run: 12.6 s and 1.24 GB for
+    empty list items). A megabyte of `[` is stopped at `maxDepth` instead of
+    costing the library's `parseDocument` 3 s and 916 MB, because the text is
+    read through the lexer and parser one lexeme at a time with the parser's
+    stack watched; repeated keys are found with a lookup in the map being built,
+    and the library's own (quadratic) check is off.
 
 ### What agrees with what
 
