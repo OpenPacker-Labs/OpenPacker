@@ -369,10 +369,12 @@ independent review got the same two figures.
   that text is made fit: at most 64 characters (214 for a package name, the most
   npm allows), terminal escape sequences removed whole, every control, format
   and separator character removed, lone surrogates too, and the original length
-  appended when it cut. A key of a title-setting escape sequence, `x`, a
-  newline, `y` and 2 MiB of `k` used to give a message as long as the key,
-  escape and newline in it. It gives `Duplicate object member: ` and `xy` and 62
-  `k`, then `… (2097170 characters) at byte N`.
+  appended when it cut, or when nothing was left to show of a text that was not
+  empty (`Duplicate object member: … (2 characters)`). A key of a title-setting
+  escape sequence, `x`, a newline, `y` and 2 MiB of `k` used to give a message
+  as long as the key, escape and newline in it. It gives
+  `Duplicate object member: ` and `xy` and 62 `k`, then
+  `… (2097170 characters) at byte N`.
 
 ### The value limit is a budget the parser stops at
 

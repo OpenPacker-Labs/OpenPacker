@@ -70,8 +70,10 @@ function isBetween(code: number, low: number, high: number): boolean {
 }
 
 /**
- * `text` as a short, plain string. When anything was cut, the result ends in
- * the length of the original, so a reader can tell a long key from a short one.
+ * `text` as a short, plain string. When anything was cut, or when nothing was
+ * left to show of a text that was not empty, the result ends in the length of
+ * the original, so a reader can tell a long key from a short one, and a key of
+ * control characters from no key at all.
  */
 export function safeEcho(text: string, limit = ECHO_LIMIT): string {
   // Nothing past SCAN_LIMIT is read, an escape sequence's tail included.
@@ -90,5 +92,7 @@ export function safeEcho(text: string, limit = ECHO_LIMIT): string {
     shown += character;
     count += 1;
   }
-  return index < text.length ? `${shown}… (${text.length} characters)` : shown;
+  if (index < text.length || (shown === '' && text !== ''))
+    return `${shown}… (${text.length} character${text.length === 1 ? '' : 's'})`;
+  return shown;
 }

@@ -145,6 +145,22 @@ describe('safeEcho', () => {
   });
 });
 
+describe('a text with nothing left to show', () => {
+  it.each([
+    ['control characters', '\u0001\u0002\u0003', '… (3 characters)'],
+    ['one control character', '\u0007', '… (1 character)'],
+    ['a colour and nothing else', `${ESC}[31m`, '… (5 characters)'],
+    ['zero-width characters', '\u200b\u200d\u2060', '… (3 characters)'],
+  ])('still says how long it was: %s', (_, text, expected) => {
+    expect(safeEcho(text)).toBe(expected);
+  });
+
+  it('leaves an empty text empty, and a text with something left unmarked', () => {
+    expect(safeEcho('')).toBe('');
+    expect(safeEcho('a\u0001')).toBe('a');
+  });
+});
+
 describe('an escape sequence at the cut', () => {
   it.each([
     ['a colour', `${ESC}[31m`],
@@ -220,6 +236,12 @@ describe('what the parser says of a duplicate member', () => {
     const message = refusal(duplicated(`${ESC}]0;pwned${BEL}x\ny${ESC}[31m`));
     expect(message).toMatch(/^Duplicate object member: xy at byte \d+$/u);
     expect(holdsForbidden(message)).toBe(false);
+  });
+
+  it('says so when the key is nothing a person could see', () => {
+    expect(refusal(duplicated('\u0001\u0002'))).toMatch(
+      /^Duplicate object member: … \(2 characters\) at byte \d+$/u,
+    );
   });
 
   it('is short whatever the length of the key', () => {
