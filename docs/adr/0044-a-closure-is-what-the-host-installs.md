@@ -222,16 +222,23 @@ popularity-ranked results of each of 38 searches (react, typescript, aws, types,
 babel and so on) and about 150 names chosen because they are heavy; 4,887
 answered. The abbreviated packument of each was measured, and the full packument
 of the 400 with the largest abbreviated one. It is a sample of what people ask
-for and not of the registry's millions of packages, and it can miss a package
-whose full document is far larger than its abbreviated one, as
+for and not of the registry's millions of packages, and it can miss a package,
+and did: `renovate` (35,436,733 bytes abbreviated and 71,910,010 full, 5,693
+versions) was not among the 4,889 names, and a second look found it. It can also
+miss a package whose full document is far larger than its abbreviated one, as
 `@material/list`'s is (3.05 MiB and 58.77 MiB), if its abbreviated one does not
-rank in the first 400. Sizes are MiB, decoded; values are counted where they
-were counted.
+rank in the first 400. The second look, made after an independent review, took
+79 more names chosen for weight and 6,516 from 54 further searches (the
+abbreviated packument of each, the full one of the 150 largest abbreviated), and
+beyond `renovate` it found nothing past 22.1 MiB abbreviated (`prisma`) or 47.9
+MiB full (`sanity`). Sizes are MiB, decoded; values are counted where they were
+counted.
 
 | package                      | abbreviated | values    | full  | values (full) | versions | published in the last 365 days |
 | ---------------------------- | ----------- | --------- | ----- | ------------- | -------- | ------------------------------ |
 | public-unscoped-test-package | 36.56       | 386,921   | 59.19 | 1,278,401     | 28,041   | 285                            |
 | @prisma/client               | 36.41       | 1,077,961 | 65.35 | 2,127,695     | 10,660   | 525                            |
+| renovate                     | 33.80       |           | 68.58 |               | 5,693    | 1,693                          |
 | @bike4mind/cli               | 26.58       |           | 51.48 |               | 7,308    | 7,308                          |
 | @wix/wix-code-types          | 25.94       | 831,901   | 72.96 | 2,655,900     | 15,118   | 71                             |
 | next                         | 24.45       | 846,076   | 29.95 | 1,070,316     | 3,986    | 580                            |
@@ -240,13 +247,15 @@ were counted.
 | typescript                   | 8.33        |           | 15.06 |               | 3,851    | 260                            |
 | vite                         | 2.23        |           | 37.18 |               | 760      | 83                             |
 
-Two abbreviated documents are past 32 MiB and two full ones past 64 MiB. The
-densest real document found holds a value per 28.8 bytes (`@wix/wix-code-types`,
-full); the others are 29 to 35 bytes a value, and the odd ones far sparser.
+Three abbreviated documents are past 32 MiB (`public-unscoped-test-package`,
+`@prisma/client` and `renovate`) and three full ones past 64 MiB
+(`@wix/wix-code-types`, `renovate` and `@prisma/client`). The densest real
+document found holds a value per 28.8 bytes (`@wix/wix-code-types`, full); the
+others are 29 to 35 bytes a value, and the odd ones far sparser.
 
 How much room that leaves is a straight line from last year, not a forecast: the
-versions published in the last 365 days, each as heavy as the year's mean in
-that document.
+versions published in the last 365 days, each counted at the size of its own
+entry in that document, taken as a year's growth.
 
 | package             | grows a year, abbreviated / full (MiB) | years until 64 MiB / until 96 MiB |
 | ------------------- | -------------------------------------- | --------------------------------- |
@@ -255,11 +264,19 @@ that document.
 | @wix/wix-code-types | 0.11 / 0.35                            | 351 / 66.7                        |
 | typescript          | 0.42 / 0.95                            | 133 / 85                          |
 | @bike4mind/cli      | 25.9 / 50.2                            | 1.4 / 0.9                         |
+| renovate            | 10.29 / 20.85                          | 2.9 / 1.3                         |
 
 `@bike4mind/cli` published all 7,308 of its versions in the last year, the
 latest four hours before it was measured. A package that publishes a version for
 every change outgrows any bound that means something, and nothing here is a
 promise for it.
+
+`renovate` was added after the rest and computed the same way, from the live
+document on 2026-10-12: 33.80 MiB abbreviated growing 10.29 MiB a year is (64 -
+33.80) / 10.29 = 2.9 years from 64 MiB, and 68.58 MiB full growing 20.85 MiB a
+year is (96 - 68.58) / 20.85 = 1.3 years from 96 MiB. It published 1,693
+versions in the last year, 1,692 of them still listed in the document. An
+independent review got the same two figures.
 
 ### Three bounds, not one
 
@@ -285,18 +302,20 @@ promise for it.
   transport and the adapter cannot drift apart). The largest abbreviated
   document found is 36.56 MiB (`public-unscoped-test-package`; `@prisma/client`,
   which people install, is 36.41 MiB), so the bound is 1.75 times that, 2.6
-  times `next` and 7.7 times `typescript`. At last year's pace there are twelve
-  to thirteen years of room for `next` and `@prisma/client` and over a century
-  for `typescript`, and a year and a half for a package that publishes a version
-  for every change (above). The revisit trigger this amendment first wrote, a
-  real document past 32 MiB, has been reached by two documents. The bound is not
-  raised: every byte of it can be a hostile document's parse cost (see "What one
-  hostile document costs") and nothing found needs more. It is below the 128 MiB
-  an artifact may weigh, so the bytes a hostile registry can make the client
-  hold for one packument are no more than for one tarball. That does not bound
-  what parsing them costs, or what a resolve keeps: see "Memory". 32 MiB was
-  rejected as below the largest real document, and 128 MiB as double the
-  envelope with nothing found that needs it.
+  times `next` and 7.7 times `typescript`. At last year's pace there are about
+  twelve years of room for `next` (11.7) and `@prisma/client` (12.6) and over a
+  century for `typescript`, and for a package that publishes a version for every
+  change or nearly so, three years or less: `renovate`, 2.9 years to the
+  abbreviated bound and 1.3 to the full one, and `@bike4mind/cli`, 1.4 and 0.9
+  (above). The revisit trigger this amendment first wrote, a real document past
+  32 MiB, has been reached by three documents. The bound is not raised: every
+  byte of it can be a hostile document's parse cost (see "What one hostile
+  document costs") and nothing found needs more. It is below the 128 MiB an
+  artifact may weigh, so the bytes a hostile registry can make the client hold
+  for one packument are no more than for one tarball. That does not bound what
+  parsing them costs, or what a resolve keeps: see "Memory". 32 MiB was rejected
+  as below the largest real document, and 128 MiB as double the envelope with
+  nothing found that needs it.
 - **A parsed document may hold one value per 16 bytes of its byte bound**
   (`metadataValueLimit`): 4,194,304 for the abbreviated packument, 6,291,456 for
   the full one. The full packument stays at 96 MiB,
@@ -573,13 +592,16 @@ archive's bound on what it expands to and is not touched here.
   scripts run for this amendment, which are not in the repository, and no test
   fails if the figures above change.
 - The full packument of `@wix/wix-code-types` is at three quarters of its bound
-  (72.96 of 96 MiB), though it grows only 0.35 MiB a year. Raising the full
+  (72.96 of 96 MiB), though it grows only 0.35 MiB a year. `renovate`'s is at 71
+  percent (68.58 MiB) and grows 20.85 MiB a year, so at last year's pace it
+  reaches 96 MiB in about 1.3 years, and its abbreviated document reaches 64 MiB
+  in about 2.9; the bounds should be revisited before then. Raising the full
   packument's bound means accepting that the heaviest 96 MiB shape costs about
   one and a half times the memory of the 64 MiB one (3,956 MiB against 2,683 MiB
   at the tops of the ranges), and for the slowest shape 1.5 to 1.9 times the
   time (91.1 to 100 s against 52.2 to 60.8 s).
 - The sample is 4,887 names and the full packument of 400 of them (above); it is
-  not the registry.
+  not the registry, and it missed `renovate`, which a second look found.
 - Parsing is the cost of a large document: the canonical parser reads 12 to 16
   MB a second, `next`'s packument takes 1.6 s, and the resolve of `next` is
   CPU-bound at 22 s.
