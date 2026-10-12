@@ -149,11 +149,19 @@ accordingly so policy can block them.
 A provider reads registry metadata under a byte bound that is applied while the
 body arrives, so a missing or understated `Content-Length` does not lift it, and
 under a bound on the values the parsed document may hold, one per 16 bytes of
-the byte bound. npm's abbreviated packument is bounded at 64 MiB and the full
-one at 96 MiB: above the largest the public registry serves (`next`, 25.6 MB and
-31.4 MB on 2026-10-12) and below the 128 MiB an artifact may weigh, so a hostile
-registry gets no more of the client's memory from a packument than from a
-tarball. A refusal names the package, the size seen and the limit. See the
+the byte bound, which the parser enforces as it builds the tree: the first value
+past the limit is refused before it is built, so a body that is dense in values
+costs what the limit allows and no more. npm's abbreviated packument is bounded
+at 64 MiB and the full one at 96 MiB, above the largest the public registry
+serves (`next`, 25.6 MB and 31.4 MB on 2026-10-12) and below the 128 MiB an
+artifact may weigh. Those are bytes held. What parsing a hostile body can cost
+is a separate and measured bound: one document of up to 64 MiB costs the client
+at most about 1.1 to 1.2 GB of peak memory and 3 to 10 seconds on a loaded 4-CPU
+machine (a body of `{},`: 1,109 MB; the heaviest document under the limit that
+was tried: 1,218 MB), where counting values after the parse cost 7.4 GB and 51 s
+for the same body. A refusal names the package, the size seen and the limit, and
+a publish time that is missing because the registry's document was refused says
+so in the policy message. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 Host installers that only advertise `install` still participate: their plans

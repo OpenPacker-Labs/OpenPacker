@@ -462,7 +462,14 @@ to 64 MiB and a full one of up to 96 MiB, counted as the body arrives. Past that
 the command stops with exit 8 and says which package, how much it had read and
 what the limit is, for example
 `The packument of x exceeds the limit of 67108864 bytes (64.00 MiB): stopped reading at 67174400 bytes (64.06 MiB)`.
-See the
+A document that is small enough but holds too many values, or is not JSON, is
+refused as
+`The packument of x is not usable: Provider metadata exceeds 4194304 values`,
+and the parser stops at the limit rather than after it. When the refused
+document is the full packument that a release-age check needed, the policy
+message says so after "not captured":
+`publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
+A registry that is simply down leaves that message as it was. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 `--offline` refuses every registry read outright, so an offline build cannot

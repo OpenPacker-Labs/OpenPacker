@@ -239,18 +239,21 @@ value and is 6 levels deep.
   largest measured, and 7.3 times `typescript`. `next` published 580 versions in
   the year to 2026-10-12 at 6.4 KB each, 3.6 MiB a year, so the bound has about
   a decade of room and still means something: a registry that sends more is not
-  serving a packument. It is also below the 128 MiB an artifact may weigh, so a
-  hostile registry is allowed no more of the client's memory by a packument than
-  it already had by a tarball. 32 MiB (1.25 times `next`) was rejected as a fit
-  to today that `next` outgrows; 128 MiB as double the envelope with nothing
-  measured that needs it.
+  serving a packument. It is also below the 128 MiB an artifact may weigh, so
+  the bytes a hostile registry can make the client hold for a packument are no
+  more than for a tarball. What parsing them can cost is a separate bound, and
+  not that one: see "The value limit is a budget the parser stops at". 32 MiB
+  (1.25 times `next`) was rejected as a fit to today that `next` outgrows; 128
+  MiB as double the envelope with nothing measured that needs it.
 - **A parsed document may hold one value per 16 bytes of its byte bound**
   (`metadataValueLimit`): 4,194,304 for the abbreviated packument, 6,291,456 for
   the full one (96 MiB, unchanged: the largest full packument measured is
   `vite`, 39 MB). The count is derived rather than chosen so that it cannot fall
   behind the bytes again, and it is above any real document (five times `next`)
   and below what a body of `[1,1,1]` would make (two bytes a value). Other
-  documents keep the 200,000 default.
+  documents keep the 200,000 default. The parser enforces it as it builds the
+  tree and refuses the first value past the limit; it never counts a finished
+  tree.
 - **The bound is enforced while the body arrives.** A `Content-Length` over the
   limit is refused without reading the body; otherwise chunks are counted as
   they come and the read is cancelled on the chunk that crosses the limit. A
@@ -273,6 +276,64 @@ value and is 6 levels deep.
   (the same buffer), so this changes how much can be answered from memory and
   not how much is held.
 
+- **A document the client refuses is the reason there is no publish time.**
+  `fetchFullTimes` swallowed every failure of the full packument, which is what
+  hid the 538,245-value problem: "not captured" is as true of a registry that is
+  down as of a document that was too large. A refusal of the document (too many
+  bytes, too many values, too deep, not JSON) now surfaces from `publishTime`,
+  named by package and document, and `capturePublishTime` keeps it on the facts
+  as `publishTimeUnavailable`; the release-age check appends it:
+  `publishedAt/evaluationTime not captured for minimum release age: The full packument of typescript is 100663297 bytes (96.00 MiB) and exceeds the limit of 100663296 bytes (96.00 MiB)`.
+  A registry that is down, or answers with an error status, leaves the message
+  as it was.
+
+### The value limit is a budget the parser stops at
+
+The first version of this amendment counted values after `json()` had built the
+tree, and said that a hostile registry was allowed no more of the client's
+memory by a packument than by a tarball, with a worst case of 1.5 GiB. Both were
+wrong, and an independent review measured it. The byte bound lets a body of 64
+MiB through, and a body that dense holds millions of values for its size: `{},`
+is three bytes and an object. Counted after the parse, the refusal came only
+after every value was built.
+
+One `json()` call on a body of exactly 64 MiB (Node 22.22.0, linux/x64; seconds
+are from a machine whose load average was 14 to 25 on 4 CPUs, so they are an
+upper bound and the memory is the figure to read):
+
+| body                                  | counted after the parse | the parser stops at the limit   | read before it stopped |
+| ------------------------------------- | ----------------------- | ------------------------------- | ---------------------- |
+| `{},` times 22.4 million (67,108,864) | 50.7 s, 7,442 MB RSS    | 2.0 to 4.4 s, 1,108 to 1,121 MB | 12.6 MB                |
+| `1,` times 33.6 million (67,108,863)  | 13.7 s, 2,556 MB RSS    | 0.7 to 1.1 s, 391 to 393 MB     | 8.4 MB                 |
+
+The parser now counts: `parseCanonicalJson` takes `maximumValues` and
+`maximumDepth` and refuses the first value past either before it is built, so
+the work is set by the limit and not by the body. The alternative, a pre-scan of
+the text for structural characters before building anything, refuses with no
+tree at all, but it is a second pass over every document including the
+legitimate ones, it needs its own copy of the string and escape grammar, and
+without tracking which container each comma belongs to it counts every object
+member twice, so it would not be the count the tree is made of. The refusal is a
+`MetadataLimitError` carrying `visited` (the limit plus the value it refused),
+`offset` and `documentLength`, which is what the tests assert rather than a
+time. Parsing a legitimate 25.6 MB packument costs the same as before (about 1.5
+s either way).
+
+What this leaves is a constant, and it is not small. A tree of 4,194,304 values
+costs about a gigabyte, because an empty object costs about 260 bytes of heap
+for three bytes of body. The heaviest accepted shape tried, 64 MiB of
+`{"aaaaaaaaaaaaaaaaaaaaaaaaaa":1},` (4.07 million values, under the limit), was
+parsed whole in 9.5 s (loaded machine) and 1,218 MB. These figures do not grow
+with the registry's body, because the byte bound refuses a larger one first. The
+refused case is equal to what the original 8 MiB bound let a body of `{},` cost
+(4.4 s, 1.1 GB, measured in the review), and no longer six times worse.
+
+The lever is the 16 bytes a value. 32 would halve the worst case and still allow
+2.5 times the values of `next`, but the two bounds would then disagree for a
+real document: one of the densest real shape (27 bytes a value) would be refused
+for its values at about 54 MiB, before the byte bound. Which trade to make is
+left to a person, and nothing here changes it.
+
 ### Not done: reading only what the walk needs
 
 Parsing less of a packument was considered and not done. The walk picks a
@@ -287,8 +348,16 @@ path every locked package takes.
 
 A hostile registry can have a resolve hold up to twelve bodies at once (the
 transport's slots), each up to 64 MiB, and up to twice that for the instant the
-chunks are joined: 0.75 GiB steady, 1.5 GiB at worst. An artifact download has
-the same shape at 128 MiB, so this is not a new kind of exposure.
+chunks are joined: 0.75 GiB steady, 1.5 GiB at worst. That is bytes, and an
+artifact download has the same shape at 128 MiB.
+
+Parsing is the other part, and is measured in the previous section: the tree of
+one document is at most about 1.1 to 1.2 GB (the densest refused body and the
+heaviest accepted one), and the parse is on the main thread, so there is one
+tree at a time. The two parts add to about 2 GB, 2.7 GB while a body is being
+joined. That is an estimate from the two measured parts, not a measurement of
+both together, and it is a constant of the limits and not of the registry: a
+larger body is refused on bytes before it is parsed.
 
 Measured on Node 22.22.0, linux/x64, live registry, in a project written by
 `opm init` with its default policy:
@@ -313,9 +382,12 @@ so the 958 MB is the collector's slack and not live data.
 
 - The other ecosystems' metadata bounds (cargo, PyPI, NuGet, Go, Maven: 8 MiB
   each) were not measured against their registries here.
-- A refusal of the full packument is still swallowed: the publish time is then
-  "not provided". The cause is no longer a size the real registry reaches, but
-  the policy message still does not say why a time was missing.
+- The value limit allows a tree of about a gigabyte by design (above). A tighter
+  limit is a change to `MINIMUM_BYTES_PER_METADATA_VALUE`, and to the tests that
+  pin 4,194,304, and was not made here.
+- The at-scale test refuses a 64 MiB body at the abbreviated limit. The full
+  packument's limit (6,291,456 values at 96 MiB) goes through the same code and
+  is exercised at small limits and by depth, not with a 96 MiB hostile body.
 - Parsing is the cost of a large document: the canonical parser reads 12 to 16
   MB a second, `next`'s packument takes 1.6 s, and the resolve of `next` is
   CPU-bound at 22 s.
