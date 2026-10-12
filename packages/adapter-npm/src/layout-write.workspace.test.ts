@@ -253,33 +253,64 @@ describe('the executables of a workspace member', () => {
     },
   );
 
-  onPosix('keep a name a package also declares', async () => {
-    const p = await project();
-    await mkdir(join(p.member, 'bin'));
-    await writeFile(join(p.member, 'bin', 'cli.js'), "console.log('member')\n");
-    const outcome = await write(
-      p,
-      [
-        await placed(
+  // The rule is the one the packages themselves have (a direct requirement
+  // keeps a contested name, then the owner whose name sorts first), and a
+  // member counts as direct: it does not always win, and the rival's name
+  // decides when both are direct.
+  describe.each([
+    ['a package nobody requires directly', 'rival', true, 'member', 'rival'],
+    [
+      'a direct package whose name sorts after the member',
+      'rival',
+      false,
+      'member',
+      'rival',
+    ],
+    [
+      'a direct package whose name sorts before the member',
+      'aaa',
+      false,
+      'aaa',
+      'member',
+    ],
+  ])(
+    'a name also declared by %s',
+    (_label, rival, transitive, keeper, loser) => {
+      onPosix('goes to the one that outranks, and says who lost', async () => {
+        const p = await project();
+        await mkdir(join(p.member, 'bin'));
+        await writeFile(
+          join(p.member, 'bin', 'cli.js'),
+          "console.log('member')\n",
+        );
+        const outcome = await write(
           p,
-          'rival',
-          'node_modules/rival',
-          '1.0.0',
-          { 'cli.js': "console.log('rival')\n" },
-          { bin: { tool: 'cli.js' } },
-        ),
-      ],
-      [withBins({ tool: 'bin/cli.js' })],
-    );
-    expect(
-      execFileSync('sh', [join(p.modules, '.bin', 'tool')], {
-        encoding: 'utf8',
-      }),
-    ).toBe('member\n');
-    expect(outcome.skipped.map((entry) => entry.reason)).toEqual([
-      'rival also declares tool; member keeps it',
-    ]);
-  });
+          [
+            {
+              ...(await placed(
+                p,
+                rival,
+                `node_modules/${rival}`,
+                '1.0.0',
+                { 'cli.js': `console.log(${JSON.stringify(rival)})\n` },
+                { bin: { tool: 'cli.js' } },
+              )),
+              transitive,
+            },
+          ],
+          [withBins({ tool: 'bin/cli.js' })],
+        );
+        expect(
+          execFileSync('sh', [join(p.modules, '.bin', 'tool')], {
+            encoding: 'utf8',
+          }),
+        ).toBe(`${keeper}\n`);
+        expect(outcome.skipped.map((entry) => entry.reason)).toEqual([
+          `${loser} also declares tool; ${keeper} keeps it`,
+        ]);
+      });
+    },
+  );
 
   it.each([
     [

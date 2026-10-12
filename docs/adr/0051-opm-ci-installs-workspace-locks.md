@@ -153,9 +153,15 @@ are not downloading:
     member's own, nor another member's. The shim addresses the member's
     directory. A script that is not there yet (a member is built after the
     install) is shimmed anyway, running under `node`; once the script exists its
-    first line decides. A name a package also declares goes to the member. An
-    unsafe name, a script outside the member, or a directory a shim cannot carry
-    is skipped, with the reason.
+    first line decides. A name that a member and a package both declare goes by
+    the rule the packages already had: a direct requirement keeps it, a member
+    counting as direct, and between two direct ones the owner whose name sorts
+    first keeps it; the other is skipped with who kept it. So a member does not
+    always win: a direct package named `aaa` outranks a member named `member`.
+    npm's own order for two bins of one name is not observed here (nothing runs
+    npm), so this is a deterministic rule and not a claim about npm. An unsafe
+    name, a script outside the member, or a directory a shim cannot carry is
+    skipped, with the reason.
 
 ### What a real lock needed on the way
 

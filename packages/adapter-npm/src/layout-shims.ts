@@ -30,7 +30,11 @@ import type { Placement } from './layout-plan.js';
 interface Candidate {
   /** Who declares it, for the message when two want one name. */
   owner: string;
-  /** A direct requirement, or a member, keeps a contested name. */
+  /**
+   * A direct requirement (a member counts as one) outranks one that is not;
+   * between two of the same kind the owner whose name sorts first keeps a
+   * contested name.
+   */
   direct: boolean;
   /** A workspace member's executable, whose script may not be built yet. */
   member: boolean;
