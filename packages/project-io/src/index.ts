@@ -342,12 +342,26 @@ export {
 export {
   collectFiles,
   collectFilesFromHandle,
+  collectTree,
+  collectTreeFromHandle,
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
   type CollectOptions,
+  type CollectTreeOptions,
+  type CollectedLink,
+  type CollectedTree,
   type MaterialiseOptions,
   type MaterialiseResult,
+  type RecordedLinks,
 } from './layout.js';
+
+export {
+  placeMemberLink,
+  readMemberLink,
+  removeEmptyScope,
+  removeMemberLink,
+  type MemberLinkState,
+} from './member-link.js';
 
 export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';

@@ -26,6 +26,11 @@ import {
 } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
+  recordedLinkText,
+  type CollectedLink,
+  type RecordedLinks,
+} from './layout-links.js';
+import {
   linkChild,
   O_DIRECTORY,
   lstatChild,
@@ -68,6 +73,23 @@ export interface CollectOptions {
   linkTolerant?: boolean;
 }
 
+export interface CollectTreeOptions extends CollectOptions {
+  /**
+   * The workspace-member links the layout's record says it wrote under the
+   * walked directory. Each is returned as a leaf (its path and text) and is
+   * never entered, followed or counted; any other link is refused.
+   */
+  memberLinks?: RecordedLinks;
+}
+
+export type { CollectedLink, RecordedLinks };
+
+/** The files under a tree, and the recorded member links met on the way. */
+export interface CollectedTree {
+  files: { path: string; contents: Uint8Array; executable: boolean }[];
+  links: CollectedLink[];
+}
+
 export interface MaterialiseResult {
   /** Files linked or copied. */
   files: number;
@@ -78,7 +100,9 @@ export interface MaterialiseResult {
 }
 
 interface TreeEntrySnapshot {
-  type: 'directory' | 'file';
+  type: 'directory' | 'file' | 'link';
+  /** The text of a recorded member link, which is compared as well as its inode. */
+  target?: string;
   dev: bigint;
   ino: bigint;
   size: bigint;
@@ -334,9 +358,10 @@ async function walk(
 async function assertTreeSnapshot(
   root: FileHandle,
   expected: ReadonlyMap<string, TreeEntrySnapshot>,
+  links?: RecordedLinks,
 ): Promise<void> {
   const actual = new Map<string, TreeEntrySnapshot>();
-  await captureTree(root, '', actual);
+  await captureTree(root, '', actual, links);
   if (actual.size !== expected.size) throw unsafe('<directory handle>');
   for (const [path, snapshot] of expected) {
     const current = actual.get(path);
@@ -349,6 +374,7 @@ async function captureTree(
   directory: FileHandle,
   at: string,
   out: Map<string, TreeEntrySnapshot>,
+  links?: RecordedLinks,
 ): Promise<void> {
   const before = await directory.stat({ bigint: true });
   for (const entry of await readDirChildWithTypes(directory)) {
@@ -356,10 +382,20 @@ async function captureTree(
     if (entry.isDirectory()) {
       const child = await openDirectoryAt(directory, entry.name);
       try {
-        await captureTree(child, path, out);
+        await captureTree(child, path, out, links);
       } finally {
         await child.close();
       }
+      continue;
+    }
+    if (entry.isSymbolicLink()) {
+      // A recorded member link is a leaf: its inode and text are compared, and
+      // what it points at is not opened.
+      const text = await recordedLinkText(directory, entry.name, at, links);
+      if (text === undefined) throw unsafe(path);
+      const info = await lstatChild(directory, entry.name);
+      if (!info.isSymbolicLink()) throw unsafe(path);
+      out.set(path, snapshot('link', info, false, text));
       continue;
     }
     if (!entry.isFile()) throw unsafe(path);
@@ -439,9 +475,11 @@ function snapshot(
   type: TreeEntrySnapshot['type'],
   info: Awaited<ReturnType<FileHandle['stat']>>,
   volatileCtime = false,
+  target?: string,
 ): TreeEntrySnapshot {
   return {
     ...(volatileCtime && { volatileCtime }),
+    ...(target !== undefined && { target }),
     type,
     dev: BigInt(info.dev),
     ino: BigInt(info.ino),
@@ -463,6 +501,7 @@ function sameSnapshot(
 ): boolean {
   return (
     expected.type === actual.type &&
+    expected.target === actual.target &&
     sameMetadata(expected, actual, expected.volatileCtime === true)
   );
 }
@@ -662,6 +701,20 @@ export async function removeTree(path: string): Promise<void> {
   }
 }
 
+/** {@link collectFiles}, accepting the member links the record names. */
+export async function collectTree(
+  root: string,
+  prefix = '',
+  options: CollectTreeOptions = {},
+): Promise<CollectedTree> {
+  const rootHandle = await openStableDirectory(root, false);
+  try {
+    return await collectTreeFromHandle(rootHandle, prefix, root, options);
+  } finally {
+    await rootHandle.close();
+  }
+}
+
 /** Every file under `root`, as archive entries with forward-slash paths. */
 export async function collectFiles(
   root: string,
@@ -675,19 +728,39 @@ export async function collectFiles(
   }
 }
 
-/** Collect a stable tree through authority the caller already retained. */
+/**
+ * Collect a stable tree through authority the caller already retained. Every
+ * link in it is refused: nothing here follows one, and a caller that expects
+ * member links asks for `collectTreeFromHandle`.
+ */
 export async function collectFilesFromHandle(
   rootHandle: FileHandle,
   prefix = '',
   displayRoot = '<directory handle>',
   options: CollectOptions = {},
 ): Promise<{ path: string; contents: Uint8Array; executable: boolean }[]> {
+  const { linkTolerant } = options;
+  return (
+    await collectTreeFromHandle(rootHandle, prefix, displayRoot, {
+      ...(linkTolerant !== undefined && { linkTolerant }),
+    })
+  ).files;
+}
+
+/** {@link collectFilesFromHandle}, accepting the member links the record names. */
+export async function collectTreeFromHandle(
+  rootHandle: FileHandle,
+  prefix = '',
+  displayRoot = '<directory handle>',
+  options: CollectTreeOptions = {},
+): Promise<CollectedTree> {
   const linkTolerant = options.linkTolerant === true;
   const out: {
     path: string;
     contents: Uint8Array;
     executable: boolean;
   }[] = [];
+  const collectedLinks: CollectedLink[] = [];
   const snapshots = new Map<string, TreeEntrySnapshot>();
   // Bytes read or being read; a tree past the limit is refused before the
   // read that would cross it, however many files are in flight.
@@ -745,9 +818,25 @@ export async function collectFilesFromHandle(
     const beforeDirectory = await directory.stat({ bigint: true });
     const entries = await readDirChildWithTypes(directory);
     const pathOf = (name: string) => (at === '' ? name : `${at}/${name}`);
-    for (const entry of entries)
-      if (!entry.isDirectory() && !entry.isFile())
-        throw unsafe(pathOf(entry.name));
+    for (const entry of entries) {
+      if (entry.isDirectory() || entry.isFile()) continue;
+      // A link is a leaf if the record names it and says the same of it; it is
+      // read, not opened, so a link to a tree or to `/` costs one readlink.
+      const text = entry.isSymbolicLink()
+        ? await recordedLinkText(directory, entry.name, at, options.memberLinks)
+        : undefined;
+      if (text === undefined) throw unsafe(pathOf(entry.name));
+      const info = await lstatChild(directory, entry.name);
+      if (!info.isSymbolicLink()) throw unsafe(pathOf(entry.name));
+      snapshots.set(pathOf(entry.name), snapshot('link', info, false, text));
+      collectedLinks.push({
+        path:
+          prefix === ''
+            ? pathOf(entry.name)
+            : `${prefix}/${pathOf(entry.name)}`,
+        target: text,
+      });
+    }
     // The files of one directory are read a few at a time: a package is
     // mostly many small files, and one at a time is all waiting on the disk.
     // The results are used in directory order, so the output is the same.
@@ -780,6 +869,7 @@ export async function collectFilesFromHandle(
         }
         continue;
       }
+      if (entry.isSymbolicLink()) continue;
       const { contents, executable, before } = read.get(entry.name)!;
       snapshots.set(path, snapshot('file', before, linkTolerant));
       out.push({
@@ -794,6 +884,16 @@ export async function collectFilesFromHandle(
     snapshots.set(at, snapshot('directory', beforeDirectory));
   };
   await walkOne(rootHandle, '');
-  await assertTreeSnapshot(rootHandle, snapshots);
-  return out;
+  await assertTreeSnapshot(rootHandle, snapshots, options.memberLinks);
+  // Directory order is not part of the answer: the links are given by path.
+  collectedLinks.sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  return { files: out, links: collectedLinks };
 }
+
+/**
+ * The no-follow walk from a root, for the sibling modules that place and read
+ * member links. Not part of the package entry.
+ */
+export { openStableDirectory as openProjectDirectory, openDirectoryAt };
