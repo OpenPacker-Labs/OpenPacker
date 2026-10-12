@@ -384,6 +384,27 @@ export class LayoutTooLargeError extends Error {
   }
 }
 
+/**
+ * The directory beside which `name` would be written whose name differs from it
+ * only by case. Two such names are one directory on a case-insensitive
+ * filesystem (the default on macOS and Windows), and the second write would
+ * replace the first without a word.
+ */
+function caseVariant(parent: Node, name: string): Node | undefined {
+  const folded = name.toLowerCase();
+  for (const [other, child] of parent.children)
+    if (other !== name && other.toLowerCase() === folded) return child;
+  return undefined;
+}
+
+function caseCollision(
+  entry: LayoutEntry,
+  name: string,
+  variant: Node,
+): string {
+  return `${entry.name}@${entry.version} would be installed as ${name}, which differs only by case from ${variant.installName} (${variant.entry!.name}@${variant.entry!.version}) in the same directory; they are one directory on a case-insensitive filesystem`;
+}
+
 /** What Node finds for `name` from the directory this package lives in. */
 function lookup(from: Node, name: string): Node | undefined {
   for (
