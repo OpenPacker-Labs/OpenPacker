@@ -236,6 +236,11 @@ recorded junction is walked as a leaf and removed as itself, is
 `handle-windows-link.read.test.ts`, which only the Windows leg of CI can run.
 Until that leg has run, nothing here is evidence about NTFS.
 
+`placeMemberLink` and its siblings also refuse, by what it is, any directory
+component on the way down that is a reparse point (`FSCTL_GET_REPARSE_POINT`
+after each `NtCreateFile`), because Windows opens a junction as itself and not
+as what it points at; they do not rely on what NT would then do inside it.
+
 The first junction made in a process is read back through
 `FSCTL_GET_REPARSE_POINT` and must be a mount point to the very path that was
 sent; if not, it is removed and the error names the call and the raw names.
