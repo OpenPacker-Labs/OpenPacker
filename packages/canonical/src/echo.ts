@@ -15,7 +15,8 @@
  * overrides that make text read other than it is written) and the line and
  * paragraph separators. What is left is plain, so it is safe wherever the
  * message goes. `plainLine` is the same without the cut, for a writer that shows
- * a whole message on a line of its own.
+ * a whole message on a line of its own, and `plainText` the same with the line
+ * feeds kept, for a writer whose messages are lists.
  */
 
 /** How many characters of the text a message may carry. */
@@ -87,16 +88,23 @@ interface Plain {
 }
 
 /**
+ * What the reading does with layout whitespace. `none`: leaves it to UNSHOWN,
+ * which removes it. `line`: a run of it is one space between two shown
+ * characters and nothing at either end. `text`: the same, except that a line
+ * break (LF, CR, or CR LF as one) is kept, as a line feed, and ends a line.
+ */
+type Layout = 'none' | 'line' | 'text';
+
+/**
  * The one reading of a text that every caller shares: escape sequences whole,
  * then every character in UNSHOWN, up to `limit` characters shown and
- * `scanLimit` characters read. With `layout`, a run of layout whitespace is one
- * space between two shown characters and nothing at either end.
+ * `scanLimit` characters read, with the layout whitespace `layout` names.
  */
 function read(
   text: string,
   limit: number,
   scanLimit: number,
-  layout: boolean,
+  layout: Layout,
 ): Plain {
   // Nothing past scanLimit is read, an escape sequence's tail included.
   const head = text.length > scanLimit ? text.slice(0, scanLimit) : text;
@@ -108,6 +116,7 @@ function read(
   let count = 0;
   let index = 0;
   let spaceDue = false;
+  let afterReturn = false;
   while (index < head.length && count < limit) {
     if (head.charCodeAt(index) === ESCAPE) {
       index = Math.max(endOfEscape(head, index), index + 1);
@@ -115,12 +124,32 @@ function read(
     }
     const character = String.fromCodePoint(head.codePointAt(index) ?? 0xfffd);
     index += character.length;
-    if (layout && LAYOUT.test(character)) {
+    if (layout === 'text' && (character === '\n' || character === '\r')) {
+      // The LF of a CR LF is the same break as the CR before it.
+      const sameBreak = character === '\n' && afterReturn;
+      afterReturn = character === '\r';
+      spaceDue = false;
+      if (!sameBreak) {
+        shown += '\n';
+        last = '\n';
+        count += 1;
+      }
+      continue;
+    }
+    if (layout !== 'none' && LAYOUT.test(character)) {
+      afterReturn = false;
       spaceDue = true;
       continue;
     }
     if (UNSHOWN.test(character)) continue;
-    if (spaceDue && last !== '' && last !== ' ' && character !== ' ') {
+    afterReturn = false;
+    if (
+      spaceDue &&
+      last !== '' &&
+      last !== ' ' &&
+      last !== '\n' &&
+      character !== ' '
+    ) {
       shown += ' ';
       count += 1;
     }
@@ -139,7 +168,7 @@ function read(
  * control characters from no key at all.
  */
 export function safeEcho(text: string, limit = ECHO_LIMIT): string {
-  const { shown, end } = read(text, limit, SCAN_LIMIT, false);
+  const { shown, end } = read(text, limit, SCAN_LIMIT, 'none');
   if (end < text.length || (shown === '' && text !== ''))
     return `${shown}… (${text.length} character${text.length === 1 ? '' : 's'})`;
   return shown;
@@ -152,5 +181,17 @@ export function safeEcho(text: string, limit = ECHO_LIMIT): string {
  * and add its own line breaks, so that the message cannot add one.
  */
 export function plainLine(text: string): string {
-  return read(text, Infinity, Infinity, true).shown;
+  return read(text, Infinity, Infinity, 'line').shown;
+}
+
+/**
+ * `text` fit for a terminal, with nothing cut and the line breaks kept: the
+ * same characters removed as `plainLine` removes, each LF, CR or CR LF one line
+ * feed, each run of the other layout (tab, VT, FF, U+2028, U+2029) one space
+ * between two shown characters on a line and none at either end of one. For a
+ * writer whose messages are lists that it must not flatten, and that still
+ * must not let a message carry anything but its own line feeds.
+ */
+export function plainText(text: string): string {
+  return read(text, Infinity, Infinity, 'text').shown;
 }
