@@ -24,6 +24,7 @@
  * values, which refused `next`, `gatsby`, `@ionic/core` and `typescript` even
  * when the bytes were let through.
  */
+import { safeEcho } from '@openpacker/canonical';
 import {
   MAXIMUM_METADATA_BYTES,
   MetadataLimitError,
@@ -64,16 +65,21 @@ export const FULL_PACKUMENT_LIMITS: ProviderMetadataLimits = {
   maximumNodes: metadataValueLimit(MAXIMUM_FULL_PACKUMENT_BYTES),
 };
 
+/** The longest an npm package name may be, scope and slash included. */
+const NPM_NAME_LIMIT = 214;
+
 /**
  * A refusal from the transport or the parser, said in terms of the package
- * that was being read. Any other refusal is returned as it came.
+ * that was being read. Any other refusal is returned as it came. The name is
+ * made safe to echo: a dependency's name comes from a registry's document, and
+ * it ends up in a message a terminal and a policy report will show.
  */
 export function aboutPackument(
   name: string,
   error: ProviderError,
   document: 'packument' | 'full packument' = 'packument',
 ): ProviderError {
-  const subject = `The ${document} of ${name}`;
+  const subject = `The ${document} of ${safeEcho(name, NPM_NAME_LIMIT)}`;
   if (error instanceof ResponseTooLargeError) return error.about(subject);
   if (error instanceof MetadataLimitError) return error.about(subject);
   if (error.code === 'INVALID_PROVIDER_METADATA')

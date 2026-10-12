@@ -197,6 +197,24 @@ describe('a refusal is said in terms of the package', () => {
     });
   });
 
+  it('says a package name from a registry as plain text', () => {
+    // A dependency's name comes out of a registry's document.
+    const renamed = aboutPackument(
+      'ev\u001b]0;pwned\u0007\u001b[31mil\nname',
+      new ResponseTooLargeError(100, 250, 'streamed', 200),
+    );
+    expect((renamed as Error).message).toBe(
+      'The packument of evilname exceeds the limit of 100 bytes (0.00 MiB): ' +
+        'stopped reading at 250 bytes (0.00 MiB)',
+    );
+    expect(
+      aboutPackument(
+        '@scope/' + 'n'.repeat(300),
+        new ProviderError('INVALID_PROVIDER_METADATA', 'x'),
+      ).message.length,
+    ).toBeLessThan(300);
+  });
+
   it('leaves any other refusal as it came', () => {
     const offline = new ProviderError('OFFLINE', 'offline');
     expect(aboutPackument('vite', offline)).toBe(offline);
