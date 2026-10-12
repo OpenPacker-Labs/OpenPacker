@@ -3,6 +3,7 @@ import {
   createFirstPartyTransport,
   firstPartyOriginPolicy,
   parseHttpsOriginList,
+  parseUntrustedUrl,
   type HttpTransport,
 } from '@openpacker/adapter-core';
 import { AptSystemProvider } from '@openpacker/adapter-apt';
@@ -95,7 +96,7 @@ function endpointFor(ecosystem: string, context: AdapterContext): string {
     process.env[`OPM_REGISTRY_${ecosystem.toUpperCase()}`]?.trim() ||
     DEFAULT_ENDPOINTS[ecosystem] ||
     '';
-  const parsed = new URL(endpoint);
+  const parsed = parseUntrustedUrl(endpoint);
   if (parsed.protocol !== 'https:' || parsed.username || parsed.password)
     throw new TypeError(
       'Registry endpoints must use HTTPS without credentials',

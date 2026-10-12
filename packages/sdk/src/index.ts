@@ -1,4 +1,8 @@
-import { canonicalBytes, parseCanonicalJson } from '@openpacker/canonical';
+import {
+  canonicalBytes,
+  parseCanonicalJson,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
 import type {
   Capabilities,
   CatalogImportRequest,
@@ -136,7 +140,9 @@ export class OpenPackerClient {
   readonly #maximumResponseBytes: number;
 
   constructor(options: PrexClientOptions = {}) {
-    this.#baseUrl = new URL(options.baseUrl ?? 'http://127.0.0.1:7337/');
+    this.#baseUrl = parseUntrustedUrl(
+      options.baseUrl ?? 'http://127.0.0.1:7337/',
+    );
     this.#fetch = options.fetch ?? globalThis.fetch;
     if (!this.#fetch)
       throw new TypeError('A standard fetch implementation is required');
@@ -391,7 +397,7 @@ export class OpenPackerClient {
     body?: unknown,
     options?: RequestOptions,
   ): Promise<ControlledResponse> {
-    const url = new URL(path.replace(/^\//u, ''), this.#baseUrl).href;
+    const url = parseUntrustedUrl(path.replace(/^\//u, ''), this.#baseUrl).href;
     const attempts = 1 + this.#retries;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const headers = new Headers(this.#headers);
@@ -415,7 +421,7 @@ export class OpenPackerClient {
         for (const [key, value] of new Headers(authentication))
           headers.set(key, value);
       if (
-        new URL(url).protocol !== 'https:' &&
+        parseUntrustedUrl(url).protocol !== 'https:' &&
         ['authorization', 'proxy-authorization', 'cookie'].some((name) =>
           headers.has(name),
         )

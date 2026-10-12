@@ -20,6 +20,7 @@ import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
   echoed,
+  parseUntrustedUrl,
   ProviderError,
   type CatalogProvider,
   type HostLookup,
@@ -107,7 +108,7 @@ export function pluginRegistryModule(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (context?.transport as HttpTransport | undefined) ?? defaults.transport;
     if (existing !== undefined) return existing;
-    const origin = new URL(endpoint).origin;
+    const origin = parseUntrustedUrl(endpoint).origin;
     const fetch = context?.fetch ?? defaults.fetch;
     return new BoundedFetchTransport({
       allowedOrigins: [origin],
@@ -260,8 +261,8 @@ export class PluginRegistryProvider implements CatalogProvider {
     this.#artifacts =
       transport ??
       new BoundedFetchTransport({
-        allowedOrigins: [new URL(this.#endpoint).origin],
-        pinnedOrigins: [new URL(this.#endpoint).origin],
+        allowedOrigins: [parseUntrustedUrl(this.#endpoint).origin],
+        pinnedOrigins: [parseUntrustedUrl(this.#endpoint).origin],
         destinationPolicy: 'classify-and-pin',
         maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
       });

@@ -25,7 +25,9 @@ import type {
 import {
   BoundedFetchTransport,
   echoed,
+  echoedValue,
   encodeUrlPathComponent,
+  parseUntrustedUrl,
   ProviderError,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -119,7 +121,7 @@ export class RegistryClient {
   readonly #paginationLimits: PaginationLimits;
 
   constructor(options: RegistryClientOptions) {
-    const url = new URL(options.baseUrl);
+    const url = parseUntrustedUrl(options.baseUrl);
     if (
       url.protocol !== 'https:' &&
       url.hostname !== 'localhost' &&
@@ -127,7 +129,7 @@ export class RegistryClient {
     )
       throw new ProviderError(
         'INVALID_PROVIDER_ENDPOINT',
-        `A registry must be https, or loopback for development: ${options.baseUrl}`,
+        `A registry must be https, or loopback for development: ${echoedValue(options.baseUrl)}`,
       );
     this.#baseUrl = url.origin + url.pathname.replace(/\/$/u, '');
     this.#transport =
@@ -306,7 +308,7 @@ export class RegistryClient {
       options.updatedSince === undefined ? 'be searched' : 'be synced from',
       options.signal,
     );
-    const url = new URL(`${this.#baseUrl}/v1/packages`);
+    const url = parseUntrustedUrl(`${this.#baseUrl}/v1/packages`);
     for (const [key, value] of [
       ['search', options.search],
       ['purlType', options.purlType],
