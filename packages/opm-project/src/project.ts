@@ -11,6 +11,7 @@ import type {
 import { OpmError } from './types.js';
 import {
   canonicalCatalogPurl,
+  canonicalPurlOrSelf,
   loadCatalogs,
   resolveSource,
   toFileUrl,
@@ -489,7 +490,7 @@ export async function installProject(input: {
   return { lock: verifiedLock, state, native };
 }
 
-function assertLockMatchesManifest(
+export function assertLockMatchesManifest(
   root: string,
   manifest: OpmManifest,
   lock: OpmLockfile,
@@ -506,7 +507,10 @@ function assertLockMatchesManifest(
         'INVALID_LOCK',
         `Lock does not contain direct manifest requirement ${alias}`,
       );
-    if (stripPurlVersion(pkg.purl) !== stripPurlVersion(requirement.purl))
+    if (
+      canonicalPurlOrSelf(stripPurlVersion(pkg.purl)) !==
+      canonicalPurlOrSelf(stripPurlVersion(requirement.purl))
+    )
       throw new OpmError(
         'INVALID_LOCK',
         `Lock package ${alias} does not match manifest PURL ${requirement.purl}`,
@@ -518,7 +522,10 @@ function assertLockMatchesManifest(
             /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(requirement.version)
           ? exactPurl(requirement.purl, requirement.version)
           : undefined;
-    if (exactRequirement !== undefined && pkg.purl !== exactRequirement)
+    if (
+      exactRequirement !== undefined &&
+      canonicalPurlOrSelf(pkg.purl) !== canonicalPurlOrSelf(exactRequirement)
+    )
       throw new OpmError(
         'INVALID_LOCK',
         `Lock package ${alias} does not match manifest version ${requirement.version}`,

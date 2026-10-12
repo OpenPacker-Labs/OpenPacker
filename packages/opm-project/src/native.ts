@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { writeFileAtomic } from '@openpacker/project-io';
 import { hasResource } from '@openpacker/adapter-host';
 import { requireAdapterRegistry } from './adapters.js';
+import { canonicalPurlOrSelf } from './catalog.js';
 import { OPM_DIR, storePathForDigest } from './paths.js';
 import {
   ecosystemFromPurl,
@@ -467,7 +468,8 @@ function lockEntriesFor(
     Object.values(manifest.packages)
       .map((requirement) => {
         try {
-          return stripPurlVersion(requirement.purl);
+          // The manifest may spell a scope's `@` literally; the lock never does.
+          return canonicalPurlOrSelf(stripPurlVersion(requirement.purl));
         } catch {
           return undefined;
         }
@@ -507,7 +509,8 @@ function lockEntriesFor(
       ...(!(root === undefined) && {
         storePath: storePathForDigest(root, pkg.digest),
       }),
-      transitive: pkg.reason === 'transitive' || !direct.has(base),
+      transitive:
+        pkg.reason === 'transitive' || !direct.has(canonicalPurlOrSelf(base)),
     });
   }
   return out.sort(
