@@ -1,9 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   go,
   makeWorkspace,
   peakOverlap,
   started,
+  steps,
   trace,
 } from './workspace-fixture.js';
 
@@ -178,6 +181,56 @@ posix('order', () => {
       log.find(([w, i]) => w === what && i === id)![2];
     expect(at('start', 'a')).toBeGreaterThanOrEqual(at('end', 'b'));
     expect(at('start', 'z')).toBeLessThanOrEqual(at('end', 'b'));
+  });
+
+  it('starts a dependent only after what it depends on has ended, whatever the limit allows', async () => {
+    // Nothing here is a clock that could pass by luck: c, b and a each record
+    // whether the file their dependency touches at its end exists when they
+    // start. A plan that dropped the edges would start all three at once (the
+    // limit is 4) and each would see "no".
+    const ws = await makeWorkspace({
+      'packages/a': {
+        name: 'a',
+        scripts: { build: steps('sleep:300', 'touch:a.done') },
+      },
+      'packages/b': {
+        name: 'b',
+        dependencies: { a: 'workspace:*' },
+        scripts: { build: steps('saw:a.done', 'sleep:300', 'touch:b.done') },
+      },
+      'packages/c': {
+        name: 'c',
+        dependencies: { b: 'workspace:*' },
+        scripts: { build: steps('saw:b.done') },
+      },
+      'packages/z': { name: 'z', scripts: { build: steps('touch:z.done') } },
+    });
+    const ran = await go(
+      'run',
+      ['build', '-r', '--workspace-concurrency=4'],
+      ws.root,
+    );
+    expect(ran.status, ran.err).toBe(0);
+    expect(await readFile(join(ws.root, 'saw-a.done'), 'utf8')).toBe('yes');
+    expect(await readFile(join(ws.root, 'saw-b.done'), 'utf8')).toBe('yes');
+  });
+
+  it('starts what a dependency waits for only after its dependents with --reverse', async () => {
+    const ws = await makeWorkspace({
+      'packages/a': {
+        name: 'a',
+        dependencies: { b: 'workspace:*' },
+        scripts: { build: steps('sleep:300', 'touch:a.done') },
+      },
+      'packages/b': { name: 'b', scripts: { build: steps('saw:a.done') } },
+    });
+    const ran = await go(
+      'run',
+      ['build', '-r', '--reverse', '--workspace-concurrency=4'],
+      ws.root,
+    );
+    expect(ran.status, ran.err).toBe(0);
+    expect(await readFile(join(ws.root, 'saw-a.done'), 'utf8')).toBe('yes');
   });
 
   it('runs the members of a dependency cycle together and says so once', async () => {

@@ -86,8 +86,11 @@ poll();
 
 /**
  * `node steps.cjs <step...>`: say:<text> writes a line, touch:<name> makes a
- * file in INIT_CWD, wait:<name> waits for one, sleep:<ms> sleeps. Two members
- * that hand a file back and forth print in an order no clock decides.
+ * file in INIT_CWD, wait:<name> waits for one, sleep:<ms> sleeps, and
+ * saw:<name> records in `saw-<name>` whether that file exists at this moment
+ * (`yes` or `no`). Two members that hand a file back and forth print in an
+ * order no clock decides, and a member that `saw` the file a dependency
+ * touches at its end proves it started after that end.
  */
 const STEPS = `
 const fs = require('node:fs');
@@ -103,6 +106,7 @@ const next = () => {
   if (kind === 'say') fs.writeSync(1, arg + '\\n');
   else if (kind === 'err') fs.writeSync(2, arg + '\\n');
   else if (kind === 'touch') fs.writeFileSync(path.join(dir, arg), '');
+  else if (kind === 'saw') fs.writeFileSync(path.join(dir, 'saw-' + arg), fs.existsSync(path.join(dir, arg)) ? 'yes' : 'no');
   else if (kind === 'sleep') return setTimeout(next, Number(arg));
   else if (kind === 'wait') {
     if (!fs.existsSync(path.join(dir, arg))) {

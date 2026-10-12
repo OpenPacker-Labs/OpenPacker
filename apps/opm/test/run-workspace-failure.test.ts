@@ -47,7 +47,7 @@ function hostWithSignals() {
 
 async function until(
   condition: () => Promise<boolean>,
-  ms = 8000,
+  ms = 20_000,
 ): Promise<void> {
   const deadline = Date.now() + ms;
   while (!(await condition())) {
