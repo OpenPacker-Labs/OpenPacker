@@ -1,7 +1,7 @@
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
-import { codecFor } from './codecs.js';
+import { codecFor, hasCodec } from './codecs.js';
 import {
   bindVerifiedArtifactBytes,
   digestOf,
@@ -86,11 +86,13 @@ export async function resolveTransitive(input: {
   // Only what came from a registry is walked through that registry. A package
   // pinned to a file, a catalog entry or a URL is not the registry's package of
   // that name, so asking the registry what it depends on would answer for a
-  // different package, and could pull its dependencies in by name.
+  // different package, and could pull its dependencies in by name. Nor is one
+  // whose adapter exports no codec: reading its releases takes the codec.
   const resolvable = input.direct.filter(
     (pkg) =>
       pkg.sourceKind === 'registry' &&
-      requireAdapterRegistry().has(pkg.ecosystem),
+      requireAdapterRegistry().has(pkg.ecosystem) &&
+      hasCodec(pkg.ecosystem),
   );
   if (resolvable.length === 0)
     return { packages: {}, dependencies: {}, aliases: {} };
