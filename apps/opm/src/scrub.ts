@@ -3,11 +3,11 @@ import { hasOverlongHost, redactUrl } from '@openpacker/adapter-core';
 /**
  * Withhold what must not reach a terminal, a log or a pasted bug report.
  *
- * Three passes, in this order: a URL keeps its origin and path and loses
- * userinfo, query and fragment, or is withheld whole as `[url]` when the URL
- * parser refuses it or its host is longer than a DNS name can be; the value
- * after a credential-shaped name is withheld; a bearer or basic token is
- * withheld.
+ * Three passes, in this order: a URL keeps its origin and path (cut at twice its
+ * length and 600 characters) and loses userinfo, query and fragment, or is
+ * withheld whole as `[url]` when the URL parser refuses it or its host is longer
+ * than a DNS name can be; the value after a credential-shaped name is withheld;
+ * a bearer or basic token is withheld.
  *
  * The text is a registry's to choose (an uncoded error carries whatever its
  * message held), so no pass may take longer than the text is long. A pass that
@@ -104,6 +104,20 @@ function urlEnd(text: string, from: number): number {
   return URL_END.exec(text)?.index ?? text.length;
 }
 
+/** The most one URL is shown at, whatever it holds. */
+const MOST_URL_CHARACTERS = 600;
+
+/**
+ * A URL as it is shown: no longer than twice the text it came from, and never
+ * more than 600 characters. The parser writes a character outside ASCII as up to
+ * nine (`日` is `%E6%97%A5`), so a URL was shown at up to nine times its length,
+ * and a mebibyte of path was nine. What is cut ends in `…`.
+ */
+function shown(out: string, match: string): string {
+  const limit = Math.min(2 * match.length, MOST_URL_CHARACTERS);
+  return out.length > limit ? `${out.slice(0, limit - 1)}…` : out;
+}
+
 function redactUrlText(match: string): string {
   // No DNS name is longer than 253 characters, and Node's URL parser takes the
   // square of the length of a host made of many non-ASCII labels (37 seconds
@@ -112,9 +126,12 @@ function redactUrlText(match: string): string {
   try {
     const url = new URL(match);
     // A URL with an opaque origin (`socks5://…`) still has a host.
-    return url.origin === 'null'
-      ? `${url.protocol}//${url.host}${url.pathname}`
-      : redactUrl(url);
+    return shown(
+      url.origin === 'null'
+        ? `${url.protocol}//${url.host}${url.pathname}`
+        : redactUrl(url),
+      match,
+    );
   } catch {
     return '[url]';
   }

@@ -11,6 +11,7 @@ import { HOSTILE, build } from './scrub-hostile.js';
 import { legacyScrub } from './scrub-legacy.js';
 import {
   expectedScrub,
+  holdsCutUrl,
   holdsOverlongHost,
   LONGEST_HOST,
 } from './scrub-oracle.js';
@@ -19,26 +20,42 @@ import { EXISTING_VECTORS } from './scrub-vectors.js';
 /**
  * `scrub` was made linear without changing what it withholds. The first version
  * is frozen in `scrub-legacy.ts`, and `scrub` gives the same text, byte for
- * byte, on every input but one class: a URL whose host, as written, is longer
- * than 253 characters is withheld as `[url]` and never reaches the URL parser
- * (`scrub-oracle.ts` says it independently and precisely). The inputs of the
- * first part hold no such URL, and are short because the first version is
- * quadratic; the second part is the class and its edge.
+ * byte, on every input but two classes (`scrub-oracle.ts` says them
+ * independently and precisely): a URL whose host, as Node's parser reads it, is
+ * longer than 253 characters is withheld as `[url]` and never reaches the URL
+ * parser; and a URL is shown at most twice its own length and 600 characters,
+ * because the parser writes a character outside ASCII as up to nine. The
+ * inputs of the first part hold few of either, and are short because the first
+ * version is quadratic; the second part is the first class and its edge.
  */
 
 const NEL = '\u0085';
 const KELVIN = '\u212a';
 const LONG_S = '\u017f';
 
-/** Fail with the input, not with a diff of two long outputs. */
+/** Whether the first version's text is expected to differ: one of the two classes. */
+function documented(input: string): boolean {
+  return holdsOverlongHost(input) || holdsCutUrl(input);
+}
+
+/**
+ * Fail with the input, not with a diff of two long outputs. `scrub` must give
+ * the oracle's text, and the oracle must give the first version's text unless the
+ * input holds a URL of one of the two classes.
+ */
 function disagreements(inputs: Iterable<string>): string[] {
   const found: string[] = [];
   for (const input of inputs) {
-    const expected = legacyScrub(input);
+    const expected = expectedScrub(input);
+    const legacy = legacyScrub(input);
     const actual = scrub(input);
     if (actual !== expected && found.length < 5)
       found.push(
-        `${JSON.stringify(input)}: first version ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
+        `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
+      );
+    if (legacy !== expected && !documented(input) && found.length < 5)
+      found.push(
+        `${JSON.stringify(input)}: first version ${JSON.stringify(legacy)}, expected ${JSON.stringify(expected)}`,
       );
   }
   return found;
@@ -131,7 +148,7 @@ describe('scrub gives the first version\u2019s text', () => {
       const { input, expected } = build(text, 16 * 1024);
       expect(scrub(input), text.name).toBe(expected);
       expect(expectedScrub(input), text.name).toBe(expected);
-      if (text.becomes === undefined)
+      if (text.becomes === undefined && text.unitBecomes === undefined)
         expect(legacyScrub(input), text.name).toBe(expected);
     }
   }, 120_000);
@@ -150,16 +167,17 @@ describe('scrub gives the first version\u2019s text', () => {
     const found: string[] = [];
     for (let count = 0; count < 300_000; count += 1) {
       const input = structured(random);
-      const expected = legacyScrub(input);
+      const legacy = legacyScrub(input);
+      const expected = expectedScrub(input);
       const actual = scrub(input);
-      if (expected !== input) changed += 1;
-      if (expectedScrub(input) !== expected && found.length < 5)
+      if (legacy !== input) changed += 1;
+      if (expected !== legacy && !documented(input) && found.length < 5)
         found.push(
           `the oracle differs from the first version on ${JSON.stringify(input)}`,
         );
       if (actual !== expected && found.length < 5)
         found.push(
-          `${JSON.stringify(input)}: first version ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
+          `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
         );
     }
     expect(found).toEqual([]);
@@ -236,9 +254,25 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
       false,
     ],
     ['no path after a host of 254', `http://${ascii(L + 1)}`, true],
-    // A [ inside the host switches the port colon off: the host runs on.
-    ['a [ inside the host, 253', `http://x[:${ascii(L - 3)}/p`, false],
-    ['a [ inside the host, 254', `http://x[:${ascii(L - 2)}/p`, true],
+    // A [ inside the host switches the port colon off: the host runs on, and
+    // Node's parser reads it past the authority, to a `#` or the end.
+    ['a [ inside the host, 253', `http://x[:${ascii(L - 3)}#p`, false],
+    ['a [ inside the host, 254', `http://x[:${ascii(L - 2)}#p`, true],
+    [
+      'a [ inside the host, then a path, 253',
+      `http://x[${ascii(L - 4)}/p`,
+      false,
+    ],
+    [
+      'a [ inside the host, then a path, 254',
+      `http://x[${ascii(L - 3)}/p`,
+      true,
+    ],
+    [
+      'a [ inside the host, then a query, over the limit',
+      `https://x[${ascii(100)}?${ascii(200)}`,
+      true,
+    ],
     ['a [ inside the host, ws, 254', `ws://u:p@x[:${ascii(L - 2)}`, true],
     [
       'a [ inside the host with ß.é. labels',
@@ -269,10 +303,11 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
     ['a file URL with no slash at all', `file:${ascii(300)}`, false],
   ])('with %s', (_, address, withheld) => {
     const text = `see ${address} end`;
-    const found = withheld ? 'see [url] end' : legacyScrub(text);
+    const found = withheld ? 'see [url] end' : expectedScrub(text);
     expect(holdsOverlongHost(text)).toBe(withheld);
-    expect(expectedScrub(text)).toBe(found);
     expect(scrub(text)).toBe(found);
+    // The oracle is the first version's text unless the URL is cut.
+    if (!withheld && !holdsCutUrl(text)) expect(found).toBe(legacyScrub(text));
   });
 
   it('does not print the userinfo or the host of one it withholds', () => {
@@ -300,9 +335,9 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
       if (holdsOverlongHost(input)) overlong += 1;
       if (expected !== legacy) {
         withheld += 1;
-        if (!holdsOverlongHost(input) && found.length < 5)
+        if (!documented(input) && found.length < 5)
           found.push(
-            `${JSON.stringify(input)}: differs without an overlong host`,
+            `${JSON.stringify(input)}: differs without an overlong host or a cut URL`,
           );
       } else kept += 1;
     }

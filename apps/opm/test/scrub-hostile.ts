@@ -35,6 +35,8 @@ export interface Hostile {
   size?: number;
   /** What `scrub` makes of the prefix and the units, where it is not themselves. */
   becomes?: string;
+  /** What `scrub` makes of each unit, where each is a URL it shows cut. */
+  unitBecomes?: string;
 }
 
 export const HOSTILE: readonly Hostile[] = [
@@ -68,6 +70,9 @@ export const HOSTILE: readonly Hostile[] = [
     against:
       'a run that ends at a URL: the scan must come out right, not only fast',
     unit: `${'a-'.repeat(4000)}://x `,
+    // The run is the URL's scheme, 8,004 characters with `://x`: it is shown at
+    // 600, the last of them the mark that it was cut.
+    unitBecomes: `${'a-'.repeat(4000).slice(0, 599)}… `,
   },
   {
     name: 'many short URLs',
@@ -184,8 +189,13 @@ export function build(
   const count = Math.floor(room / text.unit.length);
   const padding = ' '.repeat(room - count * text.unit.length);
   const body = prefix + text.unit.repeat(count) + suffix;
+  const shown =
+    text.becomes ??
+    (text.unitBecomes === undefined
+      ? body
+      : prefix + text.unitBecomes.repeat(count) + suffix);
   return {
     input: body + padding + WITNESS,
-    expected: (text.becomes ?? body) + padding + WITHHELD,
+    expected: shown + padding + WITHHELD,
   };
 }
