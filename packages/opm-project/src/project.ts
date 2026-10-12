@@ -460,6 +460,11 @@ export function assertLockMatchesManifest(
         'INVALID_LOCK',
         `Lock package ${alias} is installed as ${pkg.installName ?? 'its own name'}, and the manifest says ${requirement.installName ?? 'its own name'}`,
       );
+    if (pkg.installName !== requirement.installName)
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${alias} is installed as ${pkg.installName ?? 'its own name'}, and the manifest says ${requirement.installName ?? 'its own name'}`,
+      );
   }
   for (const [alias, pkg] of Object.entries(lock.packages))
     if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
