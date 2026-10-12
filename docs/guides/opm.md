@@ -312,6 +312,48 @@ again to re-check would cost a second transfer and compare the new bytes against
 a digest taken from the old ones, which is a weaker statement rather than a
 stronger one.
 
+### The dependency closure
+
+`opm add` locks the closure, not the request: every package an install would put
+in `node_modules`, each with the digest of the bytes that were read. For
+`pkg:npm/vitest@4.1.9` that is 44 packages, the same set and versions npm's own
+resolver produces, in about 15 seconds from cold. What is followed:
+
+- runtime dependencies, and peers that are not marked optional;
+- npm's `optionalDependencies` **where they run**. Native packages ship as one
+  optional dependency per platform (`@rolldown/binding-linux-x64-gnu`, `-musl`,
+  `darwin-arm64`, …); `os`, `cpu` and `libc` are checked against what Node
+  reports, the one that runs here is locked, and the rest are never downloaded.
+  A hard dependency that does not run here is refused;
+- never development dependencies, optional peers, or a specifier that is not a
+  registry version range (`github:…`, a URL, `npm:` alias, a dist-tag). Those
+  are not looked up as the registry's package of that name. In a `dependencies`
+  entry they fail the resolve and name the package.
+
+The set is chosen newest-first and every requirement is checked twice, once by
+the solver and once by the ecosystem's own range rules, so a lock never pairs a
+package with a version it does not accept. The engine's checker re-validates
+that every requirement is satisfied; it does not claim the set is optimal.
+
+A failure to compute the closure is an error that says why. It does not fall
+back to the direct requirement.
+
+**Limits.** A lock holds one version of a package, so a closure that needs two
+(npm and pnpm nest them) fails and names who requires what, for example
+`opm add tinybench` next to `vitest@4.1.9`. The locked platform packages are the
+ones for the machine that resolved. See
+[ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md).
+
+**Release age.** With `minimum_release_age_minutes` set, a version published
+inside the window is passed over for the previous release that satisfies the
+same range, for a dependency as for a direct requirement. The publish time comes
+from the cheapest registry evidence that settles it: the packument's `time` when
+it has one, otherwise the document's `modified` stamp when that predates the
+window (no version can be newer than the last change to the document, so nothing
+more is fetched), otherwise the full packument, only for a package changed
+inside the window. A time the registry will not give is _not provided_, which
+the default policy does not wave through.
+
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
 

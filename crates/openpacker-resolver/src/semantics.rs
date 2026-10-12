@@ -354,7 +354,49 @@ fn parse_version(value: &str, scheme: &str) -> Option<ParsedVersion> {
     })
 }
 
-fn compare_versions(left: &str, right: &str, scheme: &str) -> Option<Ordering> {
+/// Whether `version` is one this engine can order numerically under `scheme`.
+pub(crate) fn is_comparable_version(version: &str, scheme: &str) -> bool {
+    parse_version(version, scheme).is_some()
+}
+
+/// "Newer first" over two package instances of one name: a total order, so it
+/// is safe to sort with.
+///
+/// `version_sort_key` has to equal the package's version (the universe is
+/// rejected otherwise: `versionSortKey contradicts exactPurl`), so comparing it
+/// as a string puts `4.0.9` above `4.0.10` and `0.30.9` above `0.30.21`. Versions
+/// this engine can parse are ordered by version; the rest, which includes nix
+/// whose sort key is a padded rendering, keep ordering by that key. Comparable
+/// versions come first, so the two classes cannot interleave.
+pub(crate) fn newer_first(
+    left: &crate::PackageInstance,
+    right: &crate::PackageInstance,
+) -> Ordering {
+    newer_version_first(left, right)
+        .then_with(|| right.identity.exact_purl.cmp(&left.identity.exact_purl))
+}
+
+/// [`newer_first`] without the identity tie-break, for comparing versions of
+/// different packages with each other.
+pub(crate) fn newer_version_first(
+    left: &crate::PackageInstance,
+    right: &crate::PackageInstance,
+) -> Ordering {
+    let scheme = left.identity.purl_type.as_str();
+    let left_comparable = is_comparable_version(&left.normalized_version, scheme);
+    let right_comparable = is_comparable_version(&right.normalized_version, scheme);
+    match (left_comparable, right_comparable) {
+        (true, true) => {
+            compare_versions(&right.normalized_version, &left.normalized_version, scheme)
+                .unwrap_or(Ordering::Equal)
+        }
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (false, false) => right.version_sort_key.cmp(&left.version_sort_key),
+    }
+}
+
+pub(crate) fn compare_versions(left: &str, right: &str, scheme: &str) -> Option<Ordering> {
     let left = parse_version(left, scheme)?;
     let right = parse_version(right, scheme)?;
     let release = left.release.cmp(&right.release);

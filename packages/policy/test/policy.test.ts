@@ -190,6 +190,63 @@ test('minimumReleaseAge missing publish time is not-provided unless strict', asy
   expect(hard.decision).toBe('deny');
 });
 
+test('minimumReleaseAge accepts an upper bound that already clears the window', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    minimumReleaseAgeMinutes: 1440,
+  };
+  const base = {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/left-pad',
+    evaluationTime: '2026-08-04T18:00:00Z',
+  };
+  // Last changed two days ago: whatever was published, was published before.
+  const cleared = await evaluatePolicy(policy, {
+    ...base,
+    publishedNoLaterThan: '2026-08-02T18:00:00Z',
+  });
+  expect(cleared.decision).toBe('allow');
+  expect(cleared.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'supply-chain.release-age',
+        status: 'valid',
+      }),
+    ]),
+  );
+
+  // Changed six hours ago: the bound proves nothing, so this is neither
+  // allowed on it nor denied on it. Without an exact time it is not provided.
+  const unsettled = await evaluatePolicy(policy, {
+    ...base,
+    publishedNoLaterThan: '2026-08-04T12:00:00Z',
+  });
+  expect(unsettled.decision).toBe('indeterminate');
+  const strict = await evaluatePolicy(
+    { ...policy, minimumReleaseAgeStrict: true },
+    { ...base, publishedNoLaterThan: '2026-08-04T12:00:00Z' },
+  );
+  expect(strict.decision).toBe('deny');
+});
+
+test('an exact publish time outranks the bound, and a recent one still denies', async () => {
+  const policy: PolicyDocument = {
+    ...baseSupply,
+    minimumReleaseAgeMinutes: 1440,
+  };
+  const result = await evaluatePolicy(policy, {
+    evidence: [],
+    lifecycle: eligible,
+    packageId: 'pkg:npm/left-pad',
+    evaluationTime: '2026-08-04T18:00:00Z',
+    publishedAt: '2026-08-04T12:00:00Z',
+    // An old bound next to a recent exact time: the exact time decides.
+    publishedNoLaterThan: '2026-01-01T00:00:00Z',
+  });
+  expect(result.decision).toBe('deny');
+});
+
 test('minimumReleaseAge does not apply to local path sources', async () => {
   const result = await evaluatePolicy(
     { ...baseSupply, minimumReleaseAgeMinutes: 1440 },

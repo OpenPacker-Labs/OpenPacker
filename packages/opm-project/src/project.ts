@@ -21,6 +21,7 @@ import {
   listRegistryVersions,
   registryOptionsForEcosystem,
   resolveRegistryArtifact,
+  type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -81,14 +82,16 @@ import {
 import {
   applyAttestation,
   assertSupplyChainAllowed,
+  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
+  insideReleaseAge,
   lockAttestationFrom,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
   type PolicyFacts,
 } from './supply-chain.js';
-import { providerFor } from './registry.js';
+import { ProviderPool, providerFor } from './registry.js';
 import { projectNativeFormats } from './native.js';
 import { defaultManifest, parseManifest, serializeManifest } from './toml.js';
 import { discoverNpmBins } from './bins.js';
@@ -281,7 +284,6 @@ export async function addPackage(input: {
   else if (input.source !== undefined) requirement.source = input.source;
 
   manifest.packages[alias] = requirement;
-  await writeManifestFile(paths.manifest, manifest);
 
   const offline = input.offline ?? manifest.options.offline;
   const lock = await resolveManifestToLock({
@@ -293,6 +295,9 @@ export async function addPackage(input: {
     }),
     previousLock: await readPreviousLock(paths.lock),
   });
+  // Only once the requirement has resolved. A refused or unsatisfiable add
+  // used to leave it in opm.toml, where every later install tripped over it.
+  await writeManifestFile(paths.manifest, manifest);
   await writeLockfile(paths.lock, lock);
 
   // The whole lock, not just the alias that was named: a package is not
@@ -705,6 +710,16 @@ export async function resolveManifestToLock(input: {
   const { packages: catalog } = await loadCatalogs(catalogPaths);
   const lock = emptyLockfile();
   lock.manifestDigest = manifestDigest(input.manifest);
+  // One provider per ecosystem for the whole resolve: the direct requirements,
+  // the walk and the artifact steps then share what each has already read.
+  const pool = new ProviderPool((ecosystem) =>
+    registryOptionsForEcosystem(
+      ecosystem,
+      input.manifest,
+      input.registryOptions ?? {},
+      input.previousLock,
+    ),
+  );
   for (const [alias, req] of Object.entries(input.manifest.packages)) {
     const locked = await resolveRequirement({
       root: input.root,
@@ -713,6 +728,7 @@ export async function resolveManifestToLock(input: {
       offline: input.offline,
       catalog,
       manifest: input.manifest,
+      pool,
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
@@ -733,6 +749,7 @@ export async function resolveManifestToLock(input: {
     const transitive = await resolveTransitive({
       direct: Object.values(lock.packages),
       manifest: input.manifest,
+      pool,
       ...(!(input.registryOptions === undefined) && {
         registryOptions: input.registryOptions,
       }),
@@ -790,13 +807,20 @@ async function resolveTransitive(input: {
   direct: readonly LockPackage[];
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  pool: ProviderPool;
   previousLock?: OpmLockfile | undefined;
 }): Promise<{
   packages: Record<string, LockPackage>;
   dependencies: Record<string, string[]>;
 }> {
-  const resolvable = input.direct.filter((pkg) =>
-    requireAdapterRegistry().has(pkg.ecosystem),
+  // Only what came from a registry is walked through that registry. A package
+  // pinned to a file, a catalog entry or a URL is not the registry's package of
+  // that name, so asking the registry what it depends on would answer for a
+  // different package, and could pull its dependencies in by name.
+  const resolvable = input.direct.filter(
+    (pkg) =>
+      pkg.sourceKind === 'registry' &&
+      requireAdapterRegistry().has(pkg.ecosystem),
   );
   if (resolvable.length === 0) return { packages: {}, dependencies: {} };
 
@@ -804,31 +828,40 @@ async function resolveTransitive(input: {
   const evaluationTime = new Date().toISOString();
   const out: Record<string, LockPackage> = {};
   const dependencies: Record<string, string[]> = {};
+  let unresolved: { purl: string; reason: string }[] = [];
   try {
-    const optionsFor = (ecosystem: string) =>
-      registryOptionsForEcosystem(
-        ecosystem,
-        input.manifest,
-        input.registryOptions ?? {},
-        input.previousLock,
-      );
     const graph = await resolveGraph({
+      pool: input.pool,
+      candidateGate: async (exact, provider) =>
+        (await insideReleaseAge(policy, provider, exact, evaluationTime))
+          ? `published inside the ${policy.minimumReleaseAgeMinutes}-minute minimum release age`
+          : undefined,
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
         ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
           range: nativeRangeFor(pkg, input.manifest)!,
         }),
       })),
-      optionsFor,
     });
-    if (graph.packages.length === 0) return { packages: {}, dependencies: {} };
+    unresolved = graph.unresolved;
+    if (graph.packages.length === 0)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        'the registry returned nothing to resolve against',
+      );
 
     const solved = await solveGraph({
       graph,
       policy: {
         allowYanked: policy.allowYanked,
         allowQuarantined: policy.allowQuarantined,
-        requiredEvidence: policy.requiredEvidence,
+        // The solver has no evidence facts, so it can only be asked for the
+        // one kind it establishes itself. Every other kind (sigstore,
+        // packslip, a pinned key) is a fact about a downloaded release, and is
+        // checked against each selected package below, before anything locks.
+        requiredEvidence: policy.requiredEvidence.filter(
+          (kind) => kind === 'receipt-signature',
+        ),
         semanticLossMaximum: policy.semanticLossMaximum,
         acceptedOverlayAuthorities: input.manifest.policy
           ?.acceptedOverlayAuthorities ?? ['publisher'],
@@ -844,6 +877,23 @@ async function resolveTransitive(input: {
     });
 
     const directPurls = new Set(input.direct.map((pkg) => pkg.purl));
+    // Fetch every artifact at once (the pool's transport bounds how many are in
+    // flight), then take the results in solve order, so what is locked and
+    // which failure is reported do not depend on which download finished first.
+    const artifacts = new Map<string, Promise<RegistryArtifact>>();
+    for (const instance of solved.selected) {
+      const exact = instance.identity.exactPurl;
+      if (exact === undefined || directPurls.has(exact)) continue;
+      const fetching = input.pool
+        .optionsWithProvider(instance.identity.purlType)
+        .then((options) =>
+          resolveRegistryArtifact(instance.identity.purlType, exact, options),
+        );
+      // Reported where it is awaited below; this only keeps a later failure
+      // from being an unhandled rejection while an earlier one is awaited.
+      fetching.catch(() => undefined);
+      artifacts.set(exact, fetching);
+    }
     for (const instance of solved.selected) {
       const exact = instance.identity.exactPurl;
       if (exact === undefined || directPurls.has(exact)) continue;
@@ -857,11 +907,7 @@ async function resolveTransitive(input: {
       // `inspect` describes a package; the downloadable artifact and its
       // published digest come from the artifact record, which is what the
       // direct path uses too.
-      const artifact = await resolveRegistryArtifact(
-        instance.identity.purlType,
-        exact,
-        optionsFor(instance.identity.purlType),
-      );
+      const artifact = await artifacts.get(exact)!;
       // Same standard as the direct path: the digest that goes in the lock is
       // re-derived from the bytes in hand, not copied from what the provider
       // said about them.
@@ -896,6 +942,14 @@ async function resolveTransitive(input: {
         },
       );
       facts.registryId = artifact.registryId;
+      // The same publish-time evidence a direct package gets: a dependency
+      // nobody asked for by name is the one a release-age window protects.
+      await capturePublishTime(
+        facts,
+        await input.pool.provider(instance.identity.purlType),
+        exact,
+        { minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes },
+      );
       if (artifact.attestation !== undefined)
         applyAttestation(facts, artifact.attestation);
       await assertSupplyChainAllowed(policy, facts);
@@ -961,23 +1015,45 @@ async function resolveTransitive(input: {
     for (const alias of Object.keys(dependencies))
       dependencies[alias] = [...new Set(dependencies[alias])].sort();
   } catch (error) {
-    // Soft-fail at the project boundary: a transitive walk must not make a
-    // previously installable direct set unusable. Unit tests exercise the
-    // walk itself through `resolveGraph` where failures surface.
-    //
-    // A policy refusal or a digest that does not match is not that kind of
-    // failure — swallowing it would turn every mitigation below into advice.
-    if (
-      error instanceof OpmError &&
-      (error.code === 'POLICY_DENIED' ||
-        error.code === 'POLICY_INDETERMINATE' ||
-        error.code === 'DIGEST_MISMATCH' ||
-        error.code === 'SIZE_MISMATCH')
-    )
-      throw error;
-    return { packages: {}, dependencies: {} };
+    // A closure that cannot be computed is an error, not a smaller lock. This
+    // used to fall back to the direct set, which turned every failure here
+    // (a wasm build that was not there, a solve the engine refused, a
+    // dependency written as a git URL) into "Added vitest" and a lock of one
+    // package, and left the install to find out which of its dependencies were
+    // missing. The policy, digest and size refusals already propagated as they
+    // were; the rest now say what stopped the closure.
+    if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new OpmError(
+      error instanceof OpmError ? error.code : 'UNRESOLVABLE',
+      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved)}`,
+    );
   }
   return { packages: out, dependencies };
+}
+
+/** Refusals that were always errors: a mitigation must never read as advice. */
+function isClosureRefusal(error: OpmError): boolean {
+  return (
+    error.code === 'POLICY_DENIED' ||
+    error.code === 'POLICY_INDETERMINATE' ||
+    error.code === 'DIGEST_MISMATCH' ||
+    error.code === 'SIZE_MISMATCH'
+  );
+}
+
+/** The candidates the walk had to set aside, for an error that follows from it. */
+function unresolvedNote(
+  unresolved: readonly { purl: string; reason: string }[],
+): string {
+  if (unresolved.length === 0) return '';
+  const shown = unresolved
+    .slice(0, 5)
+    .map((item) => `\n  - ${item.purl}: ${item.reason}`)
+    .join('');
+  const more =
+    unresolved.length > 5 ? `\n  - and ${unresolved.length - 5} more` : '';
+  return `\nWhat the walk could not use:${shown}${more}`;
 }
 
 /** A filesystem-safe alias for a transitive package. */
@@ -1009,6 +1085,8 @@ async function resolveRequirement(input: {
   >;
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
+  /** The providers of this resolve, so a registry document is read once. */
+  pool?: ProviderPool | undefined;
   previousLock?: OpmLockfile | undefined;
 }): Promise<LockPackage> {
   const requestedPurl = canonicalCatalogPurl(input.req.purl, 'manifest');
@@ -1208,12 +1286,15 @@ async function resolveRequirement(input: {
   // has pinned where a package comes from does not start reaching the network
   // because a registry happens to publish the same name.
   if (!input.offline && requireAdapterRegistry().has(ecosystem)) {
-    const registryOptions = registryOptionsForEcosystem(
-      ecosystem,
-      input.manifest,
-      input.registryOptions ?? {},
-      input.previousLock,
-    );
+    const registryOptions =
+      input.pool === undefined
+        ? registryOptionsForEcosystem(
+            ecosystem,
+            input.manifest,
+            input.registryOptions ?? {},
+            input.previousLock,
+          )
+        : await input.pool.optionsWithProvider(ecosystem);
     const target =
       candidateExact ??
       (await (async () => {
@@ -1224,7 +1305,24 @@ async function resolveRequirement(input: {
           stripPurlVersion(requestedPurl),
           registryOptions,
         );
-        const newest = versions[versions.length - 1];
+        // Newest first, skipping a release the policy's minimum age rules out
+        // so that "add foo" lands on the previous release instead of failing
+        // on one published an hour ago. If every release is inside the window
+        // the newest is kept and the policy refuses it by name.
+        const provider = await providerFor(ecosystem, registryOptions);
+        let newest = versions[versions.length - 1];
+        for (let index = versions.length - 1; index >= 0; index -= 1)
+          if (
+            !(await insideReleaseAge(
+              policy,
+              provider,
+              versions[index]!,
+              evaluationTime,
+            ))
+          ) {
+            newest = versions[index];
+            break;
+          }
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
@@ -1275,6 +1373,7 @@ async function resolveRequirement(input: {
         evaluationTime,
         dependencyDepth: 0,
         registryId: artifact.registryId,
+        minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes,
       });
       // Prefer artifact URI for source kind when inspect did not set one.
       if (facts.sourceKind === undefined) {

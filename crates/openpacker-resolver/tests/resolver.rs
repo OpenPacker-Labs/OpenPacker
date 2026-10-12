@@ -423,6 +423,118 @@ fn unknown_objectives_and_unprovable_large_optima_fail_closed() {
 }
 
 #[test]
+fn hard_constraint_objectives_solve_small_universes_without_an_optimum_proof() {
+    let candidate = package('9', "demo", "1.0.0");
+    let mut packages = Vec::new();
+    for index in 1..=22 {
+        let mut candidate = candidate.clone();
+        let version = format!("{index}.0.0");
+        set_identity(&mut candidate, "npm", "demo", &version);
+        candidate.metadata_digest = Digest {
+            algorithm: "sha256".into(),
+            value: format!("{index:064x}"),
+        };
+        packages.push(candidate);
+    }
+    let mut hard = input(
+        packages,
+        vec![requirement(
+            "root",
+            RequirementExpression::Package {
+                purl: "pkg:npm/demo".into(),
+                vers: None,
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )],
+    );
+    hard.request.objectives = vec![
+        "satisfy-hard-constraints".into(),
+        "exclude-lifecycle-denied".into(),
+    ];
+
+    // Twenty-two candidates is a dozen past what the exhaustive oracle can
+    // enumerate. With no objective to optimize there is no optimum to prove,
+    // so the request is answered rather than refused, and the checker agrees.
+    let started = Instant::now();
+    let output = solve(&hard).unwrap();
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(output.solution.selected_node_ids.len(), 1);
+    assert!(check(&hard, &output).unwrap().valid);
+}
+
+/// `versionSortKey` has to equal the version, so as a string it puts 4.0.9
+/// above 4.0.10. "Newest" must still mean newest.
+fn versions_with_two_digit_parts() -> Vec<PackageInstance> {
+    ["4.0.9", "4.0.10", "4.0.2", "0.30.9", "0.30.21"]
+        .iter()
+        .enumerate()
+        .map(|(index, version)| {
+            let mut candidate = package('9', "demo", "1.0.0");
+            set_identity(&mut candidate, "npm", "demo", version);
+            candidate.metadata_digest = Digest {
+                algorithm: "sha256".into(),
+                value: format!("{:064x}", index + 1),
+            };
+            candidate
+        })
+        .collect()
+}
+
+fn root_for_demo() -> Requirement {
+    requirement(
+        "root",
+        RequirementExpression::Package {
+            purl: "pkg:npm/demo".into(),
+            vers: None,
+            qualifiers: BTreeMap::new(),
+        },
+        false,
+    )
+}
+
+#[test]
+fn the_newest_candidate_is_chosen_by_version_not_by_sort_key_string() {
+    let candidates = versions_with_two_digit_parts();
+    let ten = candidates
+        .iter()
+        .find(|candidate| candidate.normalized_version == "4.0.10")
+        .unwrap()
+        .node_id
+        .clone();
+    let mut hard = input(candidates, vec![root_for_demo()]);
+    hard.request.objectives = vec![
+        "satisfy-hard-constraints".into(),
+        "exclude-lifecycle-denied".into(),
+    ];
+    let output = solve(&hard).unwrap();
+    assert_eq!(output.solution.selected_node_ids, vec![ten]);
+    assert!(check(&hard, &output).unwrap().valid);
+}
+
+#[test]
+fn the_optimum_and_the_search_agree_on_which_version_is_highest() {
+    // Resolvo's pick is compared with the exhaustive oracle's for a universe
+    // this small, so the two must order versions the same way or the solve
+    // fails as "differs from bounded optimum".
+    let candidates = versions_with_two_digit_parts();
+    let ten = candidates
+        .iter()
+        .find(|candidate| candidate.normalized_version == "4.0.10")
+        .unwrap()
+        .node_id
+        .clone();
+    let optimizing = input(candidates, vec![root_for_demo()]);
+    let output = solve(&optimizing).unwrap();
+    assert_eq!(output.solution.selected_node_ids, vec![ten.clone()]);
+    assert_eq!(
+        brute_force_oracle(&optimizing).unwrap().selected_node_ids,
+        vec![ten]
+    );
+    assert!(check(&optimizing, &output).unwrap().valid);
+}
+
+#[test]
 fn exhaustive_proof_work_fails_before_enumeration() {
     let candidate = package('9', "demo", "1.0.0");
     let mut packages = Vec::new();
