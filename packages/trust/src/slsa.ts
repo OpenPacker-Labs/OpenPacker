@@ -1,5 +1,8 @@
 import type { Digest } from '@openpacker/contracts';
-import { compareCanonicalStrings } from '@openpacker/canonical';
+import {
+  compareCanonicalStrings,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
 
 export interface SlsaProvenanceV1 {
   _type: 'https://in-toto.io/Statement/v1';
@@ -42,7 +45,7 @@ export function verifySlsaProvenance(
     throw new Error('SLSA builder ID and build type are required');
   const materials = statement.predicate.buildDefinition.resolvedDependencies
     .map((material) => ({
-      uri: new URL(material.uri).toString(),
+      uri: parseUntrustedUrl(material.uri).toString(),
       ...(material.digest?.sha256 && { sha256: material.digest.sha256 }),
     }))
     .sort((left, right) => compareCanonicalStrings(left.uri, right.uri));
