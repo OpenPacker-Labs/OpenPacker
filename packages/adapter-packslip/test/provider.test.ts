@@ -713,6 +713,112 @@ describe('snapshots', () => {
   });
 });
 
+describe('a resolution is only ever reused under the settings it was made under', () => {
+  // Every case shares one world, so the second provider finds the first one's
+  // verification in the cache unless the cache key tells the settings apart.
+  it('does not let a verification made for one signer stand for another', async () => {
+    publish(['1.0.0']);
+    await provider().inspect(`${BASE}@1.0.0`);
+    const stranger = generateTestKey();
+    await expect(
+      provider({
+        settings: {
+          trust: {
+            [PROJECT]: {
+              public_key: stranger.publicKeyFile,
+              allow_unlogged: true,
+            },
+          },
+        },
+      }).inspect(`${BASE}@1.0.0`),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_VERIFICATION_FAILED' });
+  });
+
+  it('does not let an approved signer change stand for an unapproved one', async () => {
+    publish(['1.0.0']);
+    const record =
+      (await provider().inspect(`${BASE}@1.0.0`)).attestation?.record ?? {};
+    newWorld();
+    key = generateTestKey();
+    publish(['1.0.0', '1.1.0']);
+    const prior = { [BASE]: record };
+    const refused = await provider({ prior })
+      .inspect(`${BASE}@1.1.0`)
+      .then(
+        () => undefined,
+        (caught: Error) => caught,
+      );
+    const id = /proposal ([0-9a-f]{16})/u.exec(refused?.message ?? '')?.[1];
+    await provider({
+      settings: { ...trust(), approvals: [id ?? ''] },
+      prior,
+    }).inspect(`${BASE}@1.1.0`);
+    // The approval was in another provider's settings; this one has none.
+    await expect(
+      provider({ prior }).inspect(`${BASE}@1.1.0`),
+    ).rejects.toMatchObject({ code: 'TRUST_CHANGE_REQUIRES_APPROVAL' });
+  });
+
+  it('does not let a host override stand for a project that did not give one', async () => {
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: [
+        {
+          tag: 'v1.0.0',
+          release: release('1.0.0', {
+            artifacts: [
+              {
+                os: 'linux',
+                arch: 'x86_64',
+                libc: 'gnu',
+                requires: { glibc_min: '2.99' },
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    // Allowed, it installs although the host's glibc is older than the build needs...
+    await provider({
+      settings: { ...trust(), allow_incompatible_host: true },
+    }).inspect(`${BASE}@1.0.0`);
+    // ...and a project that did not allow it is still told no.
+    await expect(provider().inspect(`${BASE}@1.0.0`)).rejects.toMatchObject({
+      code: 'HOST_INCOMPATIBLE',
+    });
+  });
+});
+
+describe('a signed list the lock has already outgrown', () => {
+  it('is refused when versions are listed, not only when one is resolved', async () => {
+    const [a] = publish(['1.0.0']);
+    const signedList = (sequence: number) =>
+      buildList({
+        project: PROJECT,
+        key,
+        sequence,
+        entries: [
+          {
+            version: '1.0.0',
+            url: 'https://github.com/acme/tool/releases/download/v1.0.0/packslip.sigstore.json',
+            release: a!,
+          },
+        ],
+      });
+    const listUrl =
+      'https://raw.githubusercontent.com/acme/tool/HEAD/.well-known/packslip.json';
+    web.set(listUrl, signedList(9));
+    const record =
+      (await provider().inspect(`${BASE}@1.0.0`)).attestation?.record ?? {};
+    expect(record.list).toEqual({ sequence: 9 });
+    // A replay of an older list: the host remembers sequence 9.
+    web.set(listUrl, signedList(3));
+    await expect(
+      provider({ prior: { [BASE]: record } }).enumerate(BASE),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_VERIFICATION_FAILED' });
+  });
+});
+
 describe('snapshots do not depend on who warmed the cache', () => {
   it('are the same whether the verification was made by this provider or found already made', async () => {
     publish(['1.0.0']);

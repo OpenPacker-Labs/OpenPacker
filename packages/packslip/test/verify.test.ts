@@ -447,10 +447,25 @@ describe('malformed bundles', () => {
   });
 
   it('refuses an oversized bundle before parsing it', () => {
+    const error = refusal(() =>
+      verifyBundle({
+        bundle: Buffer.alloc(5 * 1024 * 1024, 0x20),
+        expectation,
+      }),
+    );
+    expect(error.code).toBe('INVALID_BUNDLE');
+    // Said before parsing: the same size of padding that was valid JSON would
+    // otherwise get a different, parser's complaint.
+    expect(error.message).toContain('larger than');
+  });
+
+  it('refuses a second signature: a packslip carries exactly one', () => {
+    const parsed = JSON.parse(hk.toString('utf8'));
+    parsed.dsseEnvelope.signatures.push(parsed.dsseEnvelope.signatures[0]);
     expect(
       refusal(() =>
         verifyBundle({
-          bundle: Buffer.alloc(5 * 1024 * 1024, 0x20),
+          bundle: Buffer.from(JSON.stringify(parsed)),
           expectation,
         }),
       ).code,

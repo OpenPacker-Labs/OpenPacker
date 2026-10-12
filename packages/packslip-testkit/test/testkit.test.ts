@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   FakeWeb,
@@ -84,7 +85,28 @@ describe('the packslip testkit', () => {
     });
     expect(built.archives.size).toBe(1);
     expect(built.tag).toBe('v1.2.3');
-    expect(built.bundleSha256).toMatch(/^[0-9a-f]{64}$/u);
+    expect(built.bundleSha256).toBe(
+      createHash('sha256').update(built.bundle).digest('hex'),
+    );
+    // What the statement signs for each archive is that archive's own digest
+    // and size, not merely something shaped like them.
+    const predicate = built.statement as {
+      predicate: { artifacts: { name: string; size: number }[] };
+      subject: { name: string; digest: { sha256: string } }[];
+    };
+    const [name, bytes] = [...built.archives][0] ?? [];
+    expect(name).toBeDefined();
+    expect(
+      predicate.subject.find((subject) => subject.name === name)?.digest.sha256,
+    ).toBe(
+      createHash('sha256')
+        .update(bytes ?? '')
+        .digest('hex'),
+    );
+    expect(
+      predicate.predicate.artifacts.find((artifact) => artifact.name === name)
+        ?.size,
+    ).toBe(bytes?.byteLength);
   });
 
   it('scripts GitHub and answers anything else with 404', async () => {
