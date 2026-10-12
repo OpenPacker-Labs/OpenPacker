@@ -241,6 +241,34 @@ component on the way down that is a reparse point (`FSCTL_GET_REPARSE_POINT`
 after each `NtCreateFile`), because Windows opens a junction as itself and not
 as what it points at; they do not rely on what NT would then do inside it.
 
+### How a name is recognised as a link
+
+Everything that decides whether a name is a link asks one function: the member
+link reader, the tree walkers, the comparison of a tree before and after it is
+read, and the check of what is in the way of a new link all go through
+`lstatChild`. On Linux and macOS that is `lstat` (`fstatat` with
+`AT_SYMLINK_NOFOLLOW`). On Windows it cannot be the stat of the open handle:
+libuv's `fstat` never reports a symbolic link, so a junction answers "directory"
+and a file symlink "regular file". `lstatChild` there opens the name as itself
+and asks that same handle for its reparse data (`FSCTL_GET_REPARSE_POINT`,
+`handle-nt-lstat.ts`):
+
+- a mount point (a junction) or a symbolic link is a link, and neither a
+  directory nor a file;
+- any other reparse tag (a OneDrive placeholder, a deduplicated file) is a thing
+  this package neither makes nor follows, and is neither link, file nor
+  directory, which is how a directory listing types it (`handle-nt-dir.ts`);
+- no reparse data is the plain file or directory the stat said;
+- a handle that cannot say fails the call, and is not taken for one that is not
+  a link.
+
+What is verified, and what is not: the reading of the reparse data is tested on
+every platform against stand-ins for the handle and the bytes
+(`handle-nt-lstat.test.ts`). That NTFS answers as the stand-ins do, and that a
+recorded junction is walked as a leaf and removed as itself, is
+`handle-windows-link.read.test.ts`, which only the Windows leg of CI can run.
+Until that leg has run, nothing here is evidence about NTFS.
+
 The first junction made in a process is read back through
 `FSCTL_GET_REPARSE_POINT` and must be a mount point to the very path that was
 sent; if not, it is removed and the error names the call and the raw names.
