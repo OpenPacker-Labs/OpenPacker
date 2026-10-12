@@ -11,11 +11,7 @@ import {
   tarballUrlProblem,
   urlProblem,
 } from './source.js';
-import {
-  catalogOfSpecifier,
-  isWorkspaceSpecifier,
-  patchedPackageName,
-} from './specifier.js';
+import { catalogOfSpecifier, patchedPackageName } from './specifier.js';
 
 const ref = (name: string, raw: string) =>
   parseRef(name, raw, DEFAULT_PNPM_LOCK_LIMITS, 'here');
@@ -242,10 +238,7 @@ describe('classifyVersion and semver', () => {
 });
 
 describe('specifiers', () => {
-  it('recognises the two that point inside the workspace or a catalog', () => {
-    expect(isWorkspaceSpecifier('workspace:*')).toBe(true);
-    expect(isWorkspaceSpecifier('workspace:^1.0.0')).toBe(true);
-    expect(isWorkspaceSpecifier('^1.0.0')).toBe(false);
+  it('recognises a catalog and the name of one', () => {
     expect(catalogOfSpecifier('catalog:')).toBe('default');
     expect(catalogOfSpecifier('catalog:react17')).toBe('react17');
     expect(catalogOfSpecifier('^1.0.0')).toBeUndefined();

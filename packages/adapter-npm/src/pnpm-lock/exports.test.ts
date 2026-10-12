@@ -18,7 +18,6 @@ describe('the package entry point', () => {
       'catalogOfSpecifier',
       'exoticSourcesOf',
       'formatDepPath',
-      'isWorkspaceSpecifier',
       'packageKeyOf',
       'parseDepPath',
       'parsePnpmLock',

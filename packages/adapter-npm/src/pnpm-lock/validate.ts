@@ -12,16 +12,13 @@
  * decision a frozen install makes.
  */
 
+import { isWorkspaceSpecifier } from '@openpacker/adapter-core';
 import { PnpmLockError } from './errors.js';
 import { exoticSourcesOf, type PnpmExoticSource } from './exotic.js';
 import { packageKeyOf } from './dep-path.js';
 import { compareKeys } from './order.js';
 import { redactAddresses } from './redact.js';
-import {
-  catalogOfSpecifier,
-  isWorkspaceSpecifier,
-  patchedPackageName,
-} from './specifier.js';
+import { catalogOfSpecifier, patchedPackageName } from './specifier.js';
 import type { SourceKind } from './source.js';
 import type { PnpmLock, PnpmPackage, PnpmRef } from './types.js';
 

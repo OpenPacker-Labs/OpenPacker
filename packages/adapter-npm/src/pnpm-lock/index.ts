@@ -27,11 +27,7 @@ export {
 } from './parse.js';
 export { formatDepPath, packageKeyOf, parseDepPath } from './dep-path.js';
 export { parseRef } from './ref.js';
-export {
-  catalogOfSpecifier,
-  isWorkspaceSpecifier,
-  patchedPackageName,
-} from './specifier.js';
+export { catalogOfSpecifier, patchedPackageName } from './specifier.js';
 export { exoticSourcesOf, type PnpmExoticSource } from './exotic.js';
 export {
   summarizePnpmLock,

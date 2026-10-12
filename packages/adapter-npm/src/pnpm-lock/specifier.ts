@@ -1,13 +1,11 @@
 /**
  * The `specifier` an importer records: what package.json asked for, verbatim.
- * Only the two forms that point somewhere other than a registry range are read
- * here; everything else is a range, a tag or a URL and stays text.
+ * Only the forms that point somewhere other than a registry range are read
+ * here; everything else is a range, a tag or a URL and stays text. A
+ * `workspace:` specifier is `isWorkspaceSpecifier` of `@openpacker/adapter-core`,
+ * which owns that rule (the workspace model reads the same text); it is not
+ * defined a second time here.
  */
-
-/** `workspace:*`, `workspace:^`, `workspace:../a`: a member of this workspace. */
-export function isWorkspaceSpecifier(specifier: string): boolean {
-  return specifier.startsWith('workspace:');
-}
 
 /**
  * The catalog a `catalog:` specifier names: `catalog:` is `default`,
