@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import {
-  packageNodeId,
-  type CatalogProvider,
-  type PackageInstance,
-  type ProviderInspection,
-  type ProviderRecord,
+import type {
+  CatalogProvider,
+  ProviderInspection,
+  ProviderRecord,
 } from '@openpacker/adapter-core';
-import type { AdapterModule } from '@openpacker/opm-project';
-import { HOSTILE, lines, runWith, violations } from './plain-fixture.js';
+import { DIGEST, ENDPOINT, instance, moduleOf } from './hostile-adapter.js';
+import {
+  HOSTILE,
+  expectPlain,
+  lines,
+  runWith,
+  violations,
+} from './plain-fixture.js';
 import type { Ran } from './repo-fixture.js';
 
 /**
@@ -19,48 +23,6 @@ import type { Ran } from './repo-fixture.js';
  * (what a plugin-served registry can do, since it is a program the project
  * binds), driven through `runOpm`.
  */
-const ENDPOINT = 'https://acme.registry.test';
-const DIGEST = 'a'.repeat(64);
-
-async function instance(
-  exactPurl: string,
-  version: string,
-  canonicalPurl = exactPurl.split('@')[0]!,
-): Promise<PackageInstance> {
-  // SAFETY: only the fields the commands read are filled.
-  return {
-    nodeId: await packageNodeId({
-      exactPurl,
-      nativeSemanticsVersion: 'acme-1',
-    }),
-    identity: {
-      canonicalPurl,
-      purlType: 'acme',
-      name: 'demo',
-      version: exactPurl.slice(exactPurl.indexOf('@') + 1),
-      qualifiers: {},
-      nativeCoordinates: [],
-      aliases: [],
-      sourceRefs: [],
-      publisherRefs: [],
-      externalRefs: [],
-      exactPurl,
-    },
-    nativeVersion: version,
-    normalizedVersion: version,
-    versionSortKey: version,
-    requirements: [],
-    capabilities: [],
-    conflicts: [],
-    cardinalityConstraints: [],
-    artifacts: [],
-    lifecycle: { status: 'published', eligible: true, warnings: [] },
-    sourceSnapshots: [],
-    metadataDigest: { algorithm: 'sha256', value: DIGEST },
-    nativeSemantics: { version: 'acme-1', data: {} },
-    semanticLoss: [],
-  } as PackageInstance;
-}
 
 /** Where `text` goes: the value under test. */
 type Where =
@@ -145,32 +107,13 @@ async function provider(where: Where, text: string): Promise<CatalogProvider> {
   };
 }
 
-function adapter(candidate: CatalogProvider): AdapterModule {
-  return {
-    id: 'dev.test.hostile',
-    purlTypes: ['acme'],
-    registryDefinition: () => ({
-      registryDefinitionVersion: '1',
-      registryId: ENDPOINT,
-      purlTypes: ['acme'],
-      resources: [
-        { '@id': '#metadata', '@type': 'prex.registry.package-metadata/1' },
-        { '@id': '#enumerate', '@type': 'prex.registry.enumerate-versions/1' },
-        { '@id': '#search', '@type': 'prex.registry.search/1' },
-        { '@id': '#artifact', '@type': 'prex.registry.artifact/1' },
-      ],
-    }),
-    catalog: () => candidate,
-  };
-}
-
 async function against(
   where: Where,
   text: string,
   argv: string[],
 ): Promise<Ran> {
   return runWith({}, argv, {
-    adapters: [adapter(await provider(where, text))],
+    adapters: [moduleOf({ catalog: await provider(where, text) })],
   });
 }
 
@@ -179,19 +122,6 @@ async function against(
  * characters that end a name or a version are left out, the rest stay.
  */
 const IN_A_PURL = HOSTILE.replace(/[@/?#]/gu, '');
-
-async function expectPlain(
-  go: (text: string) => Promise<Ran>,
-  hostileText = HOSTILE,
-): Promise<void> {
-  const innocent = await go('x');
-  const hostile = await go(hostileText);
-  expect(hostile.code, hostile.err).toBe(innocent.code);
-  for (const stream of ['out', 'err'] as const) {
-    expect(violations(hostile[stream])).toEqual([]);
-    expect(lines(hostile[stream])).toBe(lines(innocent[stream]));
-  }
-}
 
 describe('a registry that words what it answers', () => {
   it('is one line in the matches of opm search', async () => {

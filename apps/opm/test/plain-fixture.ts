@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { expect } from 'vitest';
 import { packTarGzip } from '@openpacker/project-io';
 import { runOpm, type RunOpmOptions } from '../src/opm.js';
 import { capture } from './capture.js';
@@ -69,6 +70,24 @@ export function violations(text: string): string[] {
 /** The number of lines in what was written, however they are broken. */
 export function lines(text: string): number {
   return text === '' ? 0 : text.replace(/\n$/u, '').split(LINE_BREAKS).length;
+}
+
+/**
+ * A command run twice, with `x` and with hostile text in the value under test,
+ * ends the same way, writes the same number of lines to each stream, and writes
+ * no forged line and no character a terminal acts on to either.
+ */
+export async function expectPlain(
+  go: (text: string) => Promise<Ran>,
+  hostileText = HOSTILE,
+): Promise<void> {
+  const innocent = await go('x');
+  const hostile = await go(hostileText);
+  expect(hostile.code, hostile.err).toBe(innocent.code);
+  for (const stream of ['out', 'err'] as const) {
+    expect(violations(hostile[stream])).toEqual([]);
+    expect(lines(hostile[stream])).toBe(lines(innocent[stream]));
+  }
 }
 
 /** Writes `files` into a fresh directory and runs `opm <argv>` there. */
