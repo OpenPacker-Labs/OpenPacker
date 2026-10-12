@@ -417,42 +417,6 @@ async function verifiedDownload(
   return bytes;
 }
 
-/** Most bytes an extended header may carry; a long path is a few hundred. */
-const MAXIMUM_PAX_HEADER_BYTES = 64 * 1024;
-
-/**
- * The records of a pax extended header (POSIX.1-2001): `<length> <key>=<value>\n`
- * where the length counts the whole record, its own digits and the newline
- * included. A record that is not exactly that is a malformed archive, not
- * something to read generously.
- */
-function parsePaxRecords(data: Uint8Array, where: string): Map<string, string> {
-  const records = new Map<string, string>();
-  let at = 0;
-  while (at < data.byteLength) {
-    let space = at;
-    while (space < data.byteLength && data[space] !== 0x20) space += 1;
-    const digits = Buffer.from(data.subarray(at, space)).toString('latin1');
-    if (space >= data.byteLength || !/^[1-9][0-9]{0,8}$/u.test(digits))
-      throw unsafe('INVALID_PAX_HEADER', where);
-    const end = at + Number(digits);
-    // Digits, a space, at least "k=" and the newline.
-    if (end > data.byteLength || end < space + 4 || data[end - 1] !== 0x0a)
-      throw unsafe('INVALID_PAX_HEADER', where);
-    let record: string;
-    try {
-      record = utf8.decode(data.subarray(space + 1, end - 1));
-    } catch {
-      throw unsafe('INVALID_PAX_HEADER', where);
-    }
-    const equals = record.indexOf('=');
-    if (equals < 1) throw unsafe('INVALID_PAX_HEADER', where);
-    records.set(record.slice(0, equals), record.slice(equals + 1));
-    at = end;
-  }
-  return records;
-}
-
 function parseTar(
   bytes: Uint8Array,
   limits: MaterializationLimits,
