@@ -13,6 +13,7 @@ import type {
   DetectedProject,
   FrozenLock,
   FrozenLockOptions,
+  NativeLayoutWorkspace,
   NativeLockEntry,
   NativeRequirement,
   PackProjectOptions,
@@ -65,6 +66,8 @@ interface PackageJson {
 export class NpmProjectFormat implements ProjectFormat {
   readonly providerId = 'org.openpacker.project.npm';
   readonly purlType = 'npm' as const;
+  /** `package.json` `workspaces` is npm's: a frozen install reads members the way npm does. */
+  readonly workspaceTool = 'npm' as const;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');
@@ -250,8 +253,12 @@ export class NpmProjectFormat implements ProjectFormat {
   async writeLayout(
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
+    options: { workspace?: NativeLayoutWorkspace } = {},
   ): Promise<ProjectionResult> {
-    const outcome = await writeNodeModules(project.root, packages);
+    const outcome = await writeNodeModules(project.root, packages, {
+      links: options.workspace?.links ?? [],
+      members: options.workspace?.members ?? [],
+    });
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],
       ...(outcome.skipped.length > 0 && { skipped: outcome.skipped }),
@@ -431,10 +438,16 @@ function layoutLoss(outcome: LayoutOutcome, layoutOnly: boolean): SemanticLoss {
     representedMeaning: `${outcome.packages} package(s) in a node_modules Node can resolve${nested}, ${
       outcome.copied ? 'copied' : 'hardlinked'
     } from the store, with ${outcome.bins} executable(s) as script shims in .bin${
-      layoutOnly ? '; there is no package.json here and none was created' : ''
-    }`,
+      outcome.memberLinks.declared > 0
+        ? `; ${outcome.memberLinks.declared} workspace member(s) linked to their own directories${
+            outcome.memberModules > 0
+              ? `, ${outcome.memberModules} with a node_modules of their own`
+              : ''
+          }`
+        : ''
+    }${layoutOnly ? '; there is no package.json here and none was created' : ''}`,
     omittedMeaning:
-      'npm was not run: no lifecycle scripts, no symlinked bin links, and a placement that is correct for the selected versions but not necessarily the one npm would choose',
+      'npm was not run: no lifecycle scripts, no symlinked bin links (a workspace member is the one symlink, or on Windows junction, there is), and a placement that is correct for the selected versions but not necessarily the one npm would choose',
     mitigation:
       'Run npm install if a package needs its install scripts, or keep native_projection at "lock".',
     blocksProfile: [],

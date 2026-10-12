@@ -108,12 +108,12 @@ export async function placeWantedLinks(
  */
 export async function assertNoUndeclaredSymlinks(
   projectRoot: string,
-  placements: readonly Pick<Placement, 'chain'>[],
+  placements: readonly Pick<Placement, 'chain' | 'base'>[],
   declared: readonly LayoutLink[],
 ): Promise<void> {
   const linked = new Set(declared.map((link) => link.path));
-  for (const { chain } of placements) {
-    const path = placePath(chain);
+  for (const { chain, base } of placements) {
+    const path = placePath(chain, base);
     if (linked.has(path)) continue;
     const info = await lstat(join(projectRoot, ...path.split('/')));
     if (info.isSymbolicLink())
