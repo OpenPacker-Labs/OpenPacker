@@ -61,9 +61,7 @@ function executableHandleArgv(
   childFd: number,
   arguments_: readonly string[],
 ): string[] {
-  const refusal = executableAuthorityRefusal();
-  if (refusal !== undefined)
-    throw new SandboxBackendError('EXECUTABLE_AUTHORITY_UNSUPPORTED', refusal);
+  assertSnapshot();
   const path = stableChildHandlePath(childFd);
   const header = Buffer.alloc(4_096);
   const bytesRead = readSync(parentFd, header, 0, header.byteLength, 0);
@@ -97,6 +95,23 @@ export class SandboxBackendError extends Error {
     this.name = 'SandboxBackendError';
     this.code = code;
   }
+}
+
+/**
+ * Refuse, by name, to run an approved executable snapshot where this host
+ * cannot (anywhere but Linux), and a descriptor that is not one when `fd` is
+ * given. The one place either refusal is raised, so every entry point says the
+ * same thing.
+ */
+export function assertSnapshot(fd?: number): void {
+  const refusal = executableAuthorityRefusal();
+  if (refusal !== undefined)
+    throw new SandboxBackendError('EXECUTABLE_AUTHORITY_UNSUPPORTED', refusal);
+  if (fd !== undefined && (!Number.isSafeInteger(fd) || fd < 0))
+    throw new SandboxBackendError(
+      'INVALID_FD_AUTHORITY',
+      'Executable authority requires a valid Linux file descriptor',
+    );
 }
 
 export type OutputLimitKind = 'stdout' | 'stderr' | 'combined';

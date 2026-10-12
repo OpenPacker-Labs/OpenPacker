@@ -8,8 +8,7 @@ import {
 import { open, type FileHandle } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { SandboxBackendError, spawnCapture } from './mock.js';
-import { executableAuthorityRefusal } from '../platform.js';
+import { SandboxBackendError, assertSnapshot, spawnCapture } from './mock.js';
 import {
   networkToolMaskFiles,
   sensitiveMaskDirectories,
@@ -219,14 +218,7 @@ export function createBwrapBackend(): SandboxBackend {
 export async function reopenExecutableAuthority(
   fd: number,
 ): Promise<FileHandle> {
-  const refusal = executableAuthorityRefusal();
-  if (refusal !== undefined)
-    throw new SandboxBackendError('EXECUTABLE_AUTHORITY_UNSUPPORTED', refusal);
-  if (!Number.isSafeInteger(fd) || fd < 0)
-    throw new SandboxBackendError(
-      'INVALID_FD_AUTHORITY',
-      'Executable authority requires a valid Linux file descriptor',
-    );
+  assertSnapshot(fd);
   return await open(`/proc/self/fd/${fd}`, constants.O_RDONLY);
 }
 

@@ -1,13 +1,14 @@
 import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
-import { createMockBackend, SandboxBackendError } from './backends/mock.js';
+import {
+  createMockBackend,
+  assertSnapshot,
+  SandboxBackendError,
+} from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
-import {
-  containmentWithdrawnNote,
-  executableAuthorityRefusal,
-} from './platform.js';
+import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
   normalizeJailPaths,
@@ -83,14 +84,7 @@ export async function runInSandbox(
   // An executable snapshot is run from its descriptor, which only Linux can
   // do. Refuse before a backend is resolved or a handle opened, with the
   // platform and what to do, rather than after a path that never resolved.
-  if (input.executableAuthority !== undefined) {
-    const refusal = executableAuthorityRefusal();
-    if (refusal !== undefined)
-      throw new SandboxBackendError(
-        'EXECUTABLE_AUTHORITY_UNSUPPORTED',
-        refusal,
-      );
-  }
+  if (input.executableAuthority !== undefined) assertSnapshot();
   const profile: SandboxProfile = input.profile ?? 'package-exec';
   const resolved = resolvePolicy(input.policy);
   const policyDigest = await digestSandboxPolicy(input.policy);
