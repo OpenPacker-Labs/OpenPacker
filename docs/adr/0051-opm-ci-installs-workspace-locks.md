@@ -72,18 +72,23 @@ are not downloading:
 
 ### The lock is held to the files it was written from
 
-5. A host that sees a format with a `workspaceTool` discovers the workspace on
-   disk first (ADR 0049's discovery: bounded, never following a link) and hands
-   it to the lock reader. **The members the lock lists and the members the
-   project declares must be the same directories, names and versions**, or the
-   install is an error that names both lists and each difference, as `npm ci`
-   refuses. Each member's `package.json` is then held to the lock's entry for it
-   as the root's is: a dependency added or dropped, a spec the locked version no
-   longer satisfies (a dependency on another member is judged against that
-   member's version), and a dependency the lock has no entry for are named.
-   Optional dependencies may be absent from a lock, as for the root. The
-   project's own dependency on a member by a plain range finds the member's link
-   (before, it found nothing).
+5. A host that sees a format with a `workspaceTool` can discover the workspace
+   on disk (ADR 0049's discovery: bounded, never following a link) and hands the
+   lock reader a function that does it. The reader asks only when there is a
+   workspace to hold the lock to, the lock listing members or `package.json`
+   declaring `workspaces`; a selection (`-w`, `--workspaces`) needs the members
+   at once. Discovery reads every manifest more strictly than `npm ci` does (a
+   version must be SemVer 2.0, a key may not repeat), and a project with no
+   workspace is installed exactly as it was before this decision. **The members
+   the lock lists and the members the project declares must be the same
+   directories, names and versions**, or the install is an error that names both
+   lists and each difference, as `npm ci` refuses. Each member's `package.json`
+   is then held to the lock's entry for it as the root's is: a dependency added
+   or dropped, a spec the locked version no longer satisfies (a dependency on
+   another member is judged against that member's version), and a dependency the
+   lock has no entry for are named. Optional dependencies may be absent from a
+   lock, as for the root. The project's own dependency on a member by a plain
+   range finds the member's link (before, it found nothing).
 6. This is checked before anything is fetched or written, after the refusals of
    3 (which are the whole answer when there are any).
 
