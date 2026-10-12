@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  contextWith,
   go,
   makeWorkspace,
   peakOverlap,
@@ -77,7 +78,8 @@ posix('opm run -r', () => {
 });
 
 posix('concurrency', () => {
-  async function wide() {
+  /** Six independent members; the ones named in `together` wait for each other to have started. */
+  async function wide(together: string[] = [], ms = 100) {
     const members: Record<
       string,
       { name: string; scripts: Record<string, string> }
@@ -85,14 +87,28 @@ posix('concurrency', () => {
     for (const id of ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'])
       members[`packages/${id}`] = {
         name: id,
-        scripts: { build: trace(id, 150) },
+        scripts: {
+          build: trace(
+            id,
+            ms,
+            0,
+            together.filter((other) => other !== id),
+          ),
+        },
       };
     return await makeWorkspace(members);
   }
 
-  it('runs at most --workspace-concurrency members at once', async () => {
-    const ws = await wide();
-    await go('run', ['build', '-r', '--workspace-concurrency=2'], ws.root);
+  it('runs at most --workspace-concurrency members at once, and that many when it can', async () => {
+    // m1 and m2 each wait for the other to have started, so they only finish
+    // if two run at once; the bound itself is read off the log.
+    const ws = await wide(['m1', 'm2']);
+    const ran = await go(
+      'run',
+      ['build', '-r', '--workspace-concurrency=2'],
+      ws.root,
+    );
+    expect(ran.status, ran.err).toBe(0);
     expect(peakOverlap(await ws.log())).toBe(2);
   });
 
@@ -102,9 +118,34 @@ posix('concurrency', () => {
     expect(peakOverlap(await ws.log())).toBe(1);
   });
 
-  it('runs everything at once with --parallel', async () => {
-    const ws = await wide();
-    await go('run', ['build', '--parallel', '-r'], ws.root);
+  it('runs everything at once with --parallel: each member waits for the other five to have started', async () => {
+    const ws = await wide(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']);
+    const ran = await go('run', ['build', '--parallel', '-r'], ws.root);
+    expect(ran.status, ran.err).toBe(0);
+    expect(started(await ws.log())).toHaveLength(6);
     expect(peakOverlap(await ws.log())).toBe(6);
+  });
+
+  it('proves the handshake: two members that wait for each other cannot run one at a time', async () => {
+    const ws = await makeWorkspace({
+      'packages/a': { name: 'a', scripts: { build: trace('a', 0, 0, ['b']) } },
+      'packages/b': { name: 'b', scripts: { build: trace('b', 0, 0, ['a']) } },
+    });
+    const ran = await go(
+      'run',
+      ['build', '-r', '--workspace-concurrency=1'],
+      ws.root,
+      contextWith({ TRACE_DEADLINE_MS: '1500' }),
+    );
+    expect(ran.status).toBe(9);
+  });
+});
+
+posix('opm run -r with no script', () => {
+  it('asks for one, with exit 2', async () => {
+    const ws = await chain();
+    const ran = await go('run', ['-r'], ws.root);
+    expect(ran.status).toBe(2);
+    expect(ran.err).toContain('Name the script to run in the selected members');
   });
 });

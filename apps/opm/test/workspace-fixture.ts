@@ -13,10 +13,20 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach } from 'vitest';
+import { afterEach, beforeAll, vi } from 'vitest';
 import { processContext, runProjectCommand } from '../src/commands/run.js';
 import type { RunContext } from '../src/commands/run-context.js';
 import { addFakeTool, capture } from './run-fixture.js';
+
+// The run commands load the workspace library on first use (ADR 0053 §18),
+// which takes half a second on a quiet machine and many times that on a busy
+// one. Load it once, before the first test's clock starts, and give a test that
+// starts several processes room to finish on a machine other work is using.
+vi.setConfig({ testTimeout: 30_000 });
+beforeAll(async () => {
+  await import('@openpacker/adapter-core');
+  await import('@openpacker/opm-project');
+}, 120_000);
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -42,27 +52,66 @@ export interface WorkspaceOptions {
   opm?: boolean;
 }
 
-/** `node trace.cjs <id> [milliseconds] [exit code]`: log start, wait, log end, exit. */
+/**
+ * `node trace.cjs <id> [milliseconds] [exit code] [--wait=ids]`: log the
+ * start, mark it with a file, wait until each id in the comma-separated list
+ * has marked its own start (so a test can prove members ran at the same time
+ * without a clock; a run that serialised them would wait out the twenty
+ * seconds and fail), hold for the milliseconds, log the end and exit.
+ */
 const TRACE = `
 const fs = require('node:fs');
 const path = require('node:path');
-const [id, wait = '0', code = '0'] = process.argv.slice(2);
-const log = path.join(process.env.INIT_CWD, 'log.txt');
+const argv = process.argv.slice(2);
+const waitFor = (argv.find((a) => a.startsWith('--wait=')) ?? '').slice(7);
+const [id, wait = '0', code = '0'] = argv.filter((a) => !a.startsWith('--wait='));
+const dir = process.env.INIT_CWD;
+const log = path.join(dir, 'log.txt');
 const note = (what) => fs.appendFileSync(log, what + ' ' + id + ' ' + Date.now() + '\\n');
 note('start');
-const finish = () => { note('end'); process.exit(Number(code)); };
+fs.writeFileSync(path.join(dir, 'started-' + id), '');
 process.on('SIGTERM', () => { note('term'); process.exit(143); });
-Number(wait) > 0 ? setTimeout(finish, Number(wait)) : finish();
+const deadline = Date.now() + Number(process.env.TRACE_DEADLINE_MS ?? 20000);
+const pending = () => waitFor.split(',').filter(Boolean).some((other) => !fs.existsSync(path.join(dir, 'started-' + other)));
+const finish = () => { note('end'); process.exit(Number(code)); };
+const poll = () => {
+  if (pending()) {
+    if (Date.now() > deadline) { note('stuck'); process.exit(9); }
+    return setTimeout(poll, 10);
+  }
+  Number(wait) > 0 ? setTimeout(finish, Number(wait)) : finish();
+};
+poll();
 `;
 
-/** `node say.cjs <text...>`: print each argument as a line, pausing between them. */
-const SAY = `
-const [pause, ...lines] = process.argv.slice(2);
-let at = 0;
+/**
+ * `node steps.cjs <step...>`: say:<text> writes a line, touch:<name> makes a
+ * file in INIT_CWD, wait:<name> waits for one, sleep:<ms> sleeps. Two members
+ * that hand a file back and forth print in an order no clock decides.
+ */
+const STEPS = `
+const fs = require('node:fs');
+const path = require('node:path');
+const dir = process.env.INIT_CWD;
+const steps = process.argv.slice(2);
+const deadline = Date.now() + 20000;
 const next = () => {
-  if (at >= lines.length) return;
-  console.log(lines[at++]);
-  setTimeout(next, Number(pause));
+  const step = steps.shift();
+  if (step === undefined) return;
+  const at = step.indexOf(':');
+  const [kind, arg] = [step.slice(0, at), step.slice(at + 1)];
+  if (kind === 'say') fs.writeSync(1, arg + '\\n');
+  else if (kind === 'err') fs.writeSync(2, arg + '\\n');
+  else if (kind === 'touch') fs.writeFileSync(path.join(dir, arg), '');
+  else if (kind === 'sleep') return setTimeout(next, Number(arg));
+  else if (kind === 'wait') {
+    if (!fs.existsSync(path.join(dir, arg))) {
+      if (Date.now() > deadline) process.exit(9);
+      steps.unshift(step);
+      return setTimeout(next, 10);
+    }
+  }
+  next();
 };
 next();
 `;
@@ -112,7 +161,7 @@ export async function makeWorkspace(
     await writeFile(join(root, dir, 'package.json'), JSON.stringify(spec));
   }
   await writeFile(join(root, 'trace.cjs'), TRACE);
-  await writeFile(join(root, 'say.cjs'), SAY);
+  await writeFile(join(root, 'steps.cjs'), STEPS);
   await writeFile(join(root, 'whoami.cjs'), WHOAMI);
   await addFakeTool(join(root, 'node_modules'));
   await chmod(join(root, 'node_modules', '.bin', 'fake-tool'), 0o755);
@@ -140,9 +189,20 @@ export async function makeWorkspace(
   };
 }
 
-/** `trace` as a script body: log member `id`, hold `ms`, exit `code`. */
-export function trace(id: string, ms = 0, code = 0): string {
-  return `node "$INIT_CWD/trace.cjs" ${id} ${ms} ${code}`;
+/** `trace` as a script body: log member `id`, wait for the members in `after` to have started, hold `ms`, exit `code`. */
+export function trace(
+  id: string,
+  ms = 0,
+  code = 0,
+  waitFor: readonly string[] = [],
+): string {
+  const wait = waitFor.length === 0 ? '' : ` --wait=${waitFor.join(',')}`;
+  return `node "$INIT_CWD/trace.cjs" ${id} ${ms} ${code}${wait}`;
+}
+
+/** `steps` as a script body: see steps.cjs. */
+export function steps(...list: string[]): string {
+  return `node "$INIT_CWD/steps.cjs" ${list.map((step) => `'${step}'`).join(' ')}`;
 }
 
 /** The ids that started, in order. */

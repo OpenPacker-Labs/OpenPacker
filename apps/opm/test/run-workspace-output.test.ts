@@ -1,20 +1,47 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { go, makeWorkspace, started, trace } from './workspace-fixture.js';
+import {
+  go,
+  makeWorkspace,
+  started,
+  steps,
+  trace,
+} from './workspace-fixture.js';
 
 const posix = describe.skipIf(process.platform === 'win32');
 
-function say(pause: number, ...lines: string[]): string {
-  return `node "$INIT_CWD/say.cjs" ${pause} ${lines.map((l) => `'${l}'`).join(' ')}`;
-}
-
-/** Two members whose lines would interleave if they were not held back. */
+/**
+ * Two members that hand files back and forth, so their lines come in the order
+ * a1 b1 a2 b2 whatever the machine is doing.
+ */
 async function talkers() {
   return await makeWorkspace({
-    'packages/a': { name: '@s/a', scripts: { talk: say(800, 'a1', 'a2') } },
+    'packages/a': {
+      name: '@s/a',
+      scripts: {
+        talk: steps(
+          'say:a1',
+          'touch:f0',
+          'wait:f1',
+          'sleep:80',
+          'say:a2',
+          'touch:f2',
+        ),
+      },
+    },
     'packages/b': {
       name: '@s/b',
-      scripts: { talk: `sleep 0.4; ${say(800, 'b1', 'b2')}` },
+      scripts: {
+        talk: steps(
+          'wait:f0',
+          'sleep:80',
+          'say:b1',
+          'touch:f1',
+          'wait:f2',
+          'sleep:80',
+          'say:b2',
+        ),
+      },
     },
   });
 }
@@ -85,12 +112,16 @@ posix('what a member prints', () => {
       ['talk', '-r', '--workspace-concurrency=2'],
       ws.root,
     );
-    expect(ran.out.split('\n').filter(Boolean)).toEqual([
-      '@s/a talk: a1',
-      '@s/a talk: a2',
-      '@s/b talk: b1',
-      '@s/b talk: b2',
-    ]);
+    expect(ran.status, ran.err).toBe(0);
+    const lines = ran.out.split('\n').filter(Boolean);
+    expect(lines).toHaveLength(4);
+    // Whichever member ends first is written first; neither is cut by the other.
+    const a = lines.filter((l) => l.startsWith('@s/a '));
+    const b = lines.filter((l) => l.startsWith('@s/b '));
+    expect(a).toEqual(['@s/a talk: a1', '@s/a talk: a2']);
+    expect(b).toEqual(['@s/b talk: b1', '@s/b talk: b2']);
+    const first = lines[0]!.startsWith('@s/a ') ? a : b;
+    expect(lines.slice(0, 2)).toEqual(first);
   });
 
   it('interleaves the lines as they arrive with --stream', async () => {
@@ -111,10 +142,12 @@ posix('what a member prints', () => {
   it('streams with --parallel, which has no use for a block', async () => {
     const ws = await talkers();
     const ran = await go('run', ['talk', '-r', '--parallel'], ws.root);
-    const lines = ran.out.split('\n').filter(Boolean);
-    expect(lines.indexOf('@s/b talk: b1')).toBeLessThan(
-      lines.indexOf('@s/a talk: a2'),
-    );
+    expect(ran.out.split('\n').filter(Boolean)).toEqual([
+      '@s/a talk: a1',
+      '@s/b talk: b1',
+      '@s/a talk: a2',
+      '@s/b talk: b2',
+    ]);
   });
 
   it('runs a lone member as opm run would: no prefix, its own stdin', async () => {

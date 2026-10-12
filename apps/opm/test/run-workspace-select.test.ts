@@ -156,15 +156,16 @@ posix('order', () => {
     expect(ids).toHaveLength(4);
   });
 
-  it('holds a member back while the member it depends on is still running', async () => {
+  it('holds a member back while the member it depends on is still running, and starts the others meanwhile', async () => {
+    // b ends only after z has started, so z must run beside b; a depends on b.
     const ws = await makeWorkspace({
       'packages/a': {
         name: 'a',
         dependencies: { b: 'workspace:*' },
-        scripts: { build: trace('a', 0) },
+        scripts: { build: trace('a') },
       },
-      'packages/b': { name: 'b', scripts: { build: trace('b', 300) } },
-      'packages/z': { name: 'z', scripts: { build: trace('z', 50) } },
+      'packages/b': { name: 'b', scripts: { build: trace('b', 0, 0, ['z']) } },
+      'packages/z': { name: 'z', scripts: { build: trace('z', 100) } },
     });
     const ran = await go(
       'run',
@@ -176,20 +177,21 @@ posix('order', () => {
     const at = (what: string, id: string) =>
       log.find(([w, i]) => w === what && i === id)![2];
     expect(at('start', 'a')).toBeGreaterThanOrEqual(at('end', 'b'));
-    expect(at('start', 'z')).toBeLessThan(at('end', 'b'));
+    expect(at('start', 'z')).toBeLessThanOrEqual(at('end', 'b'));
   });
 
   it('runs the members of a dependency cycle together and says so once', async () => {
+    // Each waits for the other to have started: they finish only if run together.
     const ws = await makeWorkspace({
       'packages/x': {
         name: 'x',
         dependencies: { y: 'workspace:*' },
-        scripts: { build: trace('x', 100) },
+        scripts: { build: trace('x', 50, 0, ['y']) },
       },
       'packages/y': {
         name: 'y',
         devDependencies: { x: 'workspace:*' },
-        scripts: { build: trace('y', 100) },
+        scripts: { build: trace('y', 50, 0, ['x']) },
       },
     });
     const ran = await go('run', ['build', '-r'], ws.root);

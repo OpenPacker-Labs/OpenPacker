@@ -115,7 +115,7 @@ posix('a failing member', () => {
     const ws = await makeWorkspace({
       'packages/fails': {
         name: 'fails',
-        scripts: { build: trace('fails', 200, 7) },
+        scripts: { build: trace('fails', 0, 7, ['slow']) },
       },
       'packages/slow': {
         name: 'slow',
