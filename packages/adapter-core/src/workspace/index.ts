@@ -74,3 +74,17 @@ export {
   type WorkspaceOrder,
 } from './order.js';
 export { publishedDependencies, publishedSpecifier } from './publish.js';
+export {
+  parseFilter,
+  starMatches,
+  type DirectoryMatch,
+  type FilterContext,
+  type FilterSelector,
+} from './filter-parse.js';
+export {
+  selectMembers,
+  selectNpmWorkspaces,
+  type NpmWorkspaceOptions,
+  type SelectOptions,
+  type Selection,
+} from './filter.js';
