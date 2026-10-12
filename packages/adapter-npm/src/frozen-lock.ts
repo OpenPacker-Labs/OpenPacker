@@ -87,6 +87,11 @@ export async function readFrozenPackageLock(
   project: DetectedProject,
   options: FrozenLockOptions,
 ): Promise<FrozenLock> {
+  if (options.architectures === 'project')
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      'opm ci --supported-architectures project: a package.json has no supportedArchitectures setting (pnpm has); name the platforms with --os, --cpu and --libc',
+    );
   const lockPath =
     project.relatedPaths?.lock ?? join(project.root, 'package-lock.json');
   const lockText = await readBounded(lockPath, MAXIMUM_LOCK_BYTES).catch(

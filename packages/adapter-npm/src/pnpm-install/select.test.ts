@@ -9,6 +9,7 @@ import {
 import { readPnpmLock } from '../pnpm-lock/index.js';
 import { buildPnpmModel } from './model.js';
 import { selectInstances, type Selection } from './select.js';
+import { LOCK, pkg } from './lock-support.js';
 import { selectTops } from './scope.js';
 
 interface OracleSelection {
@@ -105,19 +106,6 @@ describe.each(Object.keys(ORACLE))('selecting from %s', (name) => {
     expect(hash(selection)).toBe(expected['everywhere']!.listSha256);
   });
 });
-
-/** A one-importer lock written for the case, in pnpm's own shape. */
-const LOCK = (body: string) => `lockfileVersion: '9.0'
-
-settings:
-  autoInstallPeers: true
-  excludeLinksFromLockfile: false
-
-${body}
-`;
-const INTEGRITY = `sha512-${Buffer.alloc(64).toString('base64')}`;
-const pkg = (key: string, extra = '') =>
-  `  '${key}':\n    resolution: {integrity: ${INTEGRITY}}\n${extra}`;
 
 describe('what a machine leaves out, and why', () => {
   const lock = LOCK(`importers:

@@ -56,6 +56,12 @@ export interface FrozenLockOptions {
    */
   targets?: readonly NativeTarget[];
   /**
+   * `project`: the platforms are the ones the project itself names (a pnpm
+   * project's `supportedArchitectures`), widening the host's. Absent, only
+   * `targets`, else `target`. A format with no such setting refuses it.
+   */
+  architectures?: 'project';
+  /**
    * The registry a package that has no URL in its lock is fetched from (a pnpm
    * lock records an integrity and nothing else for one). The public registry
    * when absent.
@@ -177,6 +183,8 @@ export interface FrozenLock {
   lockfileVersion: number;
   /** How its archives are to be read. */
   extraction: FrozenExtraction;
+  /** The machines the install was for, when that is more than the host alone. */
+  targets?: readonly NativeTarget[];
   /** What to install, parents before the packages nested in them. */
   packages: FrozenLockPackage[];
   /** What the lock holds that this host and these options leave out. */

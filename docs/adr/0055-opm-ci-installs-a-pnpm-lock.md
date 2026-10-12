@@ -211,9 +211,20 @@ design:
        `packages/web: react is "^19.0.0" in package.json and "^18.2.0" in pnpm-lock.yaml`.
        A link's name must be the member's own name (§11).
     4. **`overrides`**: the lock's section must equal the project's
-       (`pnpm.overrides` in the root `package.json`, then `overrides` in
-       `pnpm-workspace.yaml`, which wins). A frozen install installs what the
-       lock says and applies no override, so this is a freshness check only.
+       (`resolutions`, then `pnpm.overrides` in the root `package.json`, then
+       `overrides` in `pnpm-workspace.yaml`, each winning over the one before;
+       `$name` is the root's specifier for `name`). A frozen install installs
+       what the lock says and applies no override to it, so for what is
+       installed this is a freshness check only. **For the importers it is
+       more:** pnpm applies a project's overrides to every manifest it reads
+       before it compares specifiers, so an importer that asks for
+       `ts-autocode-rewrite@0.1.0` has `workspace:*` in the lock when the root
+       overrides it, and HoBo's lock has five such specifiers (the check of 3
+       was refused on all five until it applied the overrides first). They are
+       applied as `name`, `name@range` (to a dependency that asks for exactly
+       that range, narrower than pnpm's intersection), `parent>name` (the
+       importer itself as the parent) and `-` (drops the dependency); a lock
+       written under an intersecting range is called stale where pnpm would not.
     5. **`catalogs`**: each entry the lock records must equal the one
        `pnpm-workspace.yaml` (`catalog`, `catalogs`) declares.
     6. The target: a package that does not match it (§19).

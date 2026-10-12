@@ -48,6 +48,10 @@ function describeTarget(target: NativeTarget): string {
   return `${target.os}/${target.architecture}${target.libc === undefined ? '' : `/${target.libc}`}`;
 }
 
+function describeTargets(targets: readonly NativeTarget[]): string {
+  return targets.map(describeTarget).join(' or ');
+}
+
 function describeDeclared(entry: LockEntry): string {
   return [
     entry.os && `os ${entry.os.join(',')}`,
@@ -107,6 +111,7 @@ export function planFrozenPackageLock(input: {
 }): FrozenInstallPlan {
   const { tree, options } = input;
   const { omit, target } = options;
+  const targets = options.targets ?? [target];
   const all = [...tree.entries, ...(tree.workspace?.entries ?? [])];
   const byPath = new Map(all.map((entry) => [entry.path, entry]));
   const graph = buildGraph(tree, all, byPath);
@@ -153,13 +158,13 @@ export function planFrozenPackageLock(input: {
 
   const failed: LockEntry[] = [];
   for (const entry of left) {
-    if (npmPackageRuns(entry, target)) continue;
+    if (targets.some((candidate) => npmPackageRuns(entry, candidate))) continue;
     if (entry.optional) failed.push(entry);
     else {
       left.delete(entry);
       refused.push({
         path: entry.path,
-        reason: `${entry.packageName}@${entry.version} is for ${describeDeclared(entry)}, not this machine (${describeTarget(target)}), and is not optional`,
+        reason: `${entry.packageName}@${entry.version} is for ${describeDeclared(entry)}, not this machine (${describeTargets(targets)}), and is not optional`,
       });
     }
   }
@@ -168,7 +173,7 @@ export function planFrozenPackageLock(input: {
     skip(
       entry,
       'platform',
-      `optional, and for ${describeDeclared(entry)}, not ${describeTarget(target)}`,
+      `optional, and for ${describeDeclared(entry)}, not ${describeTargets(targets)}`,
     );
   }
   for (const entry of failed)
