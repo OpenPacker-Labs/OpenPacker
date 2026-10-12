@@ -9,7 +9,11 @@ import {
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
-import { echoed, redactAddress } from '@openpacker/adapter-core';
+import {
+  echoed,
+  parseUntrustedUrl,
+  redactAddress,
+} from '@openpacker/adapter-core';
 import { shownSource } from './shown-source.js';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
 import {
@@ -369,6 +373,22 @@ export async function writeProjectState(
   await writeStableFile(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+/**
+ * A source that is an address, read once before anything else parses it: the
+ * URL parser spends most of a second on a host no DNS name could be, and the
+ * message names the address as `redactAddress` shows it, never as written.
+ */
+function assertReadableUrl(source: string, verb: string): URL {
+  try {
+    return parseUntrustedUrl(source);
+  } catch {
+    throw new OpmError(
+      'UNSAFE_SOURCE',
+      `${redactAddress(source)} is not a URL opm can ${verb}`,
+    );
+  }
+}
+
 export async function fetchArtifactBytes(
   source: string,
   offline: boolean,
@@ -412,6 +432,7 @@ export async function fetchArtifactBytes(
         `Refusing network fetch for ${redactAddress(source)} while offline`,
       );
     }
+    assertReadableUrl(source, 'fetch');
     const response = await fetch(source, {
       ...(!(options.signal === undefined) && { signal: options.signal }),
     });
@@ -449,7 +470,7 @@ export async function fetchArtifactBytes(
   // file path
   const written = options.written ?? source;
   const path = source.startsWith('file:')
-    ? fileURLToPath(source)
+    ? fileURLToPath(assertReadableUrl(source, 'read'))
     : resolve(source);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {

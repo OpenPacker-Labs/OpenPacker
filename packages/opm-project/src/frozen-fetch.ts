@@ -13,6 +13,7 @@
 import {
   BoundedFetchTransport,
   echoed,
+  parseUntrustedUrl,
   redactAddress,
   type HostLookup,
   type HttpTransport,
@@ -46,7 +47,7 @@ export function transportForSources(
   for (const source of sources) {
     let origin: string;
     try {
-      origin = new URL(source).origin;
+      origin = parseUntrustedUrl(source).origin;
     } catch {
       throw new OpmError(
         'UNSAFE_SOURCE',

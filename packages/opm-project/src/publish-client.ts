@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { canonicalDigest, parseCanonicalJson } from '@openpacker/canonical';
+import { echoedValue } from '@openpacker/adapter-core';
+import {
+  canonicalDigest,
+  parseCanonicalJson,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
 import type {
   ArtifactDescriptor,
   ArtifactLocation,
@@ -187,9 +192,12 @@ function resolveRegistry(
     );
   let parsed: URL;
   try {
-    parsed = new URL(raw);
+    parsed = parseUntrustedUrl(raw);
   } catch {
-    throw new OpmError('UNSAFE_PATH', `Invalid PREX registry URL: ${raw}`);
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `Invalid PREX registry URL: ${echoedValue(raw)}`,
+    );
   }
   if (parsed.username !== '' || parsed.password !== '')
     throw new OpmError(

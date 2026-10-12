@@ -27,6 +27,7 @@ import {
   echoedValue,
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
+  parseUntrustedUrl,
   redactAddress,
   shownScheme,
 } from '@openpacker/adapter-core';
@@ -105,7 +106,7 @@ export function classifyResolved(entry: {
     return { kind: 'path' };
   let url: URL;
   try {
-    url = new URL(resolved);
+    url = parseUntrustedUrl(resolved);
   } catch {
     // The text is not a URL, so it was never parsed: it can hold userinfo, a
     // query and a fragment that must not reach a terminal.

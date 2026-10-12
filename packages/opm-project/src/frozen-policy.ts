@@ -15,7 +15,11 @@
  * everything else the project's policy says still deny.
  */
 
-import { echoed, type FrozenLockPackage } from '@openpacker/adapter-core';
+import {
+  echoed,
+  parseUntrustedUrl,
+  type FrozenLockPackage,
+} from '@openpacker/adapter-core';
 import type { LifecycleState, PolicyInput } from '@openpacker/contracts';
 import {
   evaluatePolicy,
@@ -47,7 +51,7 @@ export function frozenFacts(
 ): PolicyFacts {
   let scheme: string | undefined;
   try {
-    scheme = new URL(pkg.source).protocol.replace(':', '');
+    scheme = parseUntrustedUrl(pkg.source).protocol.replace(':', '');
   } catch {
     scheme = undefined;
   }

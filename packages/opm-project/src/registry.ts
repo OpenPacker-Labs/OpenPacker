@@ -3,11 +3,13 @@ import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
   createFirstPartyTransport,
+  echoed,
   firstPartyOriginPolicy,
   MAXIMUM_METADATA_BYTES,
   normalizePinnedOrigin,
   parseHttpsOriginList,
   parsePurl,
+  parseUntrustedUrl,
   ProviderError,
   redactUrl,
   type CatalogProvider,
@@ -109,7 +111,7 @@ export function registryEndpoint(ecosystem: string): string {
 function safeRegistryEndpoint(endpoint: string, ecosystem: string): string {
   let parsed: URL;
   try {
-    parsed = new URL(endpoint);
+    parsed = parseUntrustedUrl(endpoint);
   } catch {
     throw new OpmError(
       'INVALID_PROVIDER_ENDPOINT',
@@ -878,7 +880,15 @@ function assertArtifactUriAllowed(
   exactPurl: string,
   options: RegistryOptions,
 ): void {
-  const uriOrigin = new URL(uri).origin;
+  let uriOrigin: string;
+  try {
+    uriOrigin = parseUntrustedUrl(uri).origin;
+  } catch {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `${echoed(exactPurl)} published a download location that is not a URL.`,
+    );
+  }
   const allowed =
     options.endpoint !== undefined
       ? firstPartyPolicy(ecosystem, options).allowedOrigins
@@ -1092,7 +1102,7 @@ async function fetchDelegatedArtifactBytes(input: {
     );
   let endpointOrigin: string;
   try {
-    endpointOrigin = new URL(input.endpoint).origin;
+    endpointOrigin = parseUntrustedUrl(input.endpoint).origin;
   } catch {
     throw new OpmError(
       'UNSAFE_PATH',
@@ -1101,7 +1111,7 @@ async function fetchDelegatedArtifactBytes(input: {
   }
   let location: URL;
   try {
-    location = new URL(input.uri);
+    location = parseUntrustedUrl(input.uri);
   } catch {
     throw new OpmError(
       'UNSAFE_PATH',
@@ -1117,7 +1127,7 @@ async function fetchDelegatedArtifactBytes(input: {
   )
     throw new OpmError(
       'UNSAFE_PATH',
-      `Refusing to fetch ${input.exactPurl} from ${redactUrl(location)}: ` +
+      `Refusing to fetch ${echoed(input.exactPurl)} from ${echoed(redactUrl(location))}: ` +
         'artifact locations must be HTTPS and carry no credentials, query, or hash.',
     );
   const envPins = parseHostFetchPinnedOrigins(

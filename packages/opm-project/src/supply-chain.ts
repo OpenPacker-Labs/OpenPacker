@@ -8,6 +8,7 @@
 import {
   echoed,
   isDocumentRefusal,
+  parseUntrustedUrl,
   type CatalogProvider,
   type ProviderAttestation,
   type ProviderInspection,
@@ -225,10 +226,9 @@ export function captureFactsFromInspection(
     facts.trustLevel = facts.sourceKind === 'registry' ? 'unsigned' : 'unknown';
   if (facts.sourceScheme === undefined && inspection.record.endpoint) {
     try {
-      facts.sourceScheme = new URL(inspection.record.endpoint).protocol.replace(
-        ':',
-        '',
-      );
+      facts.sourceScheme = parseUntrustedUrl(
+        inspection.record.endpoint,
+      ).protocol.replace(':', '');
     } catch {
       // leave absent
     }
@@ -314,7 +314,7 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
       ...(!(scheme === undefined) && { sourceScheme: scheme }),
     };
   try {
-    const url = new URL(uri);
+    const url = parseUntrustedUrl(uri);
     const protocol = url.protocol.replace(':', '');
     return { sourceKind: 'tarball', sourceScheme: protocol };
   } catch {
@@ -392,7 +392,7 @@ function lockPackageProvider(pkg: LockPackage): string {
 
 function uriScheme(uri: string): string | undefined {
   try {
-    return new URL(uri).protocol.replace(':', '');
+    return parseUntrustedUrl(uri).protocol.replace(':', '');
   } catch {
     return undefined;
   }
