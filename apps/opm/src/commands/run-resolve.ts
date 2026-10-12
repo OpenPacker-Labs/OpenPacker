@@ -8,19 +8,25 @@ import { RunError } from './run-error.js';
 import { resolveBin, type BinResolution } from './run-paths.js';
 
 /**
- * The first runnable `bin` in `binDirs`. Nothing is searched on `PATH`: a
- * program that is not in a `.bin` directory is not found.
+ * The first runnable `bin` in `binDirs`. Nothing is searched on `PATH`, with
+ * one exception: `node`, with no `node` in any `.bin`, is the Node that is
+ * running `opm`. That is not a search. It is the program `opm` already trusts
+ * and is made of, nothing the environment can substitute, and a one-line
+ * `exec node ...` is how a script calls it (ADR 0053).
  */
 export async function resolveExecutable(
   bin: string,
   binDirs: readonly string[],
   context: RunContext,
 ): Promise<BinResolution> {
-  return await resolveBin(bin, binDirs, {
+  const resolution = await resolveBin(bin, binDirs, {
     platform: context.platform,
     pathext: context.env.PATHEXT,
     probe: context.probe,
   });
+  if (resolution.found === undefined && bin === 'node')
+    return { ...resolution, found: context.execPath ?? process.execPath };
+  return resolution;
 }
 
 function describeProviders(report: BinProviderReport, bin: string): string[] {
