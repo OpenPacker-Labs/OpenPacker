@@ -136,9 +136,11 @@ design:
     placed instance and every importer is resolved on the planned tree by the
     algorithm of point 8, and any edge that does not find its target is a bug in
     the planner, not a reason to install: the install is refused with the edge
-    named. The same function is exported, and is what the tests and the
-    acceptance runs use to check a plan, and, on a tree on disk, what Node finds
-    from every importer.
+    named. The tests use the same function. The acceptance runs check a plan a
+    second time with a walk that shares none of its structure (the real ancestor
+    directories of the planned tree, and, on a tree on disk, Node's own
+    `require.resolve.paths`), against the lock read by PyYAML:
+    `packages/adapter-npm/test/pnpm-install-oracle`.
 
     One shape has no plan: packages that need each other at different versions
     (`a@1` needs `b@1`, which needs `a@2`, which needs `b@2`, which needs
@@ -171,8 +173,8 @@ design:
     `pnpm-workspace.yaml` has one importer, `.`.
 16. **Selection.** With no option every importer is installed.
     `--filter <selector>` (pnpm's grammar, ADR 0049 §7), `-w` and `--workspaces`
-    choose importers as `opm run` does (ADR 0053); the root importer is
-    installed only when it is selected or `--include-workspace-root` is given;
+    choose importers as `opm run` does (ADR 0053); the root importer is left out
+    of such a selection unless `--include-workspace-root` is given;
     `--workspaces=false` installs the root importer only and no link. What is
     installed is the selected importers, the members they link, those members'
     dependencies, and everything reachable from them through `dependencies` and
@@ -241,7 +243,8 @@ design:
     (`pnpm.supportedArchitectures` in `package.json`, or
     `supportedArchitectures` in `pnpm-workspace.yaml`) and only then: HoBo's
     adds arm64, which is 1,162 MB it does not need on the machine it is
-    installed on. Every package left out is reported with its reason.
+    installed on. Every package left out is reported with its reason, and the
+    machines are printed when there are several.
 
 ### What is refused
 
@@ -293,9 +296,47 @@ design:
 
 ## Consequences
 
-To be measured against the three repositories and recorded below, with the
-oracle (an independent reading of each lock in Python, and Node's own lookup
-paths over the tree on disk): see the acceptance section once written.
+Measured on 2026-10-12, linux-x64 (glibc 2.39), Node 22.22.0, a 4-CPU VM other
+work was using, against registry.npmjs.org through the sandbox proxy, with the
+shared store at `OPM_STORE_HOME` (about 4.8 GB, filled by earlier installs, so
+"from the store" below is a warm store). Two readings that are not this code
+check it: a Python reading of each lock with PyYAML (`model-oracle.py` for the
+selection, `dump-edges.py` for the edges) and Node's own lookup paths over the
+tree on disk (`require.resolve.paths`, `package.json` read at the place found).
+
+| Measured                                                       | Result                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the model, against PyYAML                                      | ai-bdd (393 instances, 749 edges), the HoBo cut (436, 801), the OpenSesame cut (348, 510), the hand-written exotic lock (22, 13): the counts and a digest of every edge agree                                                                                                      |
+| the selection, against a plain walk                            | four locks, linux x64, x64 and arm64, `--omit dev`, every machine: installed, platform-skipped and orphaned counts and a digest of the installed keys agree                                                                                                                        |
+| HoBo's whole lock, planned (`opm ci --plan`)                   | 792 importers, 1,851 packages in 2,564 places from 1,818 archives, 335 optional and 7 needed-only-by-those left out, 0 refusals, 1.6 s (the 792 `package.json` read and held to the lock included)                                                                                 |
+| HoBo against pnpm 10.33.4 itself                               | with `--supported-architectures project` the plan is 1,880 packages in 2,603 places from 1,847 archives; pnpm's own `node_modules/.pnpm` on this machine holds 1,880 snapshot directories of 1,847 `name@version`: **0 differences** in either direction                           |
+| every edge of HoBo's plan, resolved the way Node does          | 7,397 edges (each importer's, each installed package's; 648 more lead to platform packages this machine does not install), the lookup walking the real ancestor directories of the planned tree: **0 mismatches**                                                                  |
+| ai-bdd, `opm ci` (pnpm 10.28 lock, 9 importers, 393 snapshots) | 362 places of 353 packages; 229 from the store, 124 fetched (41.9 MB); 22.7 s; 40 optional left out; 8 members linked. `node_modules` 253,832 KB (`du -sk`, hard links counted once); the store grew by 123,120 KB                                                                 |
+| that tree, resolved by Node                                    | 780 edges over every importer and every installed package, `require.resolve.paths` and `package.json` at the place found: **0 mismatches**, 0 entries the plan does not name, 362 of 362 places hold the name and version the plan says; the same 780 on the plan alone agree      |
+| ai-bdd, run through `opm run`                                  | `typecheck` (`tsc -p tsconfig.json --noEmit` over all packages and their links) passes, 26.7 s; `test:unit` 4,908 tests pass, 1 fails: Playwright's ffmpeg is not in `/opt/pw-browsers` here (the same test fails without opm)                                                     |
+| a package in two places                                        | ai-bdd places 8 packages twice (9 extra places, `vitest@5.0.3`, `playwright-core@1.64.0`, `zod@4.6.5` among them): the second place of all of them adds **384 KB** to 26,804 KB (directories and link counts; a file of the first place has 4 links)                               |
+| HoBo, three members (`opm ci --filter`)                        | `provider-config` and `adapter-better-auth` (two `vitest@4.1.9` with different `@types/node` peers; the second links `@hobo/core`) and `ts-autocode-grounding`: 248 packages in 261 places, 53 fetched (16.8 MB), 18.2 s; `node_modules` 191,864 KB, the store grew by 68,876 KB   |
+| that tree, resolved by Node                                    | 579 edges, **0 mismatches**; the two vitest variants load the `@types/node` of their own member                                                                                                                                                                                    |
+| HoBo's scripts through `opm`                                   | `typecheck` of `provider-config` and of `adapter-better-auth` (after `opm run build` of `@hobo/core`, so through the link), 95 + 3 tests with `opm exec vitest run`. The `test` script runs `pnpm exec turbo` in its `pretest`, so it needs pnpm and is not run                    |
+| ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token) |
+| OpenSesame                                                     | refused by name for its 4 `patchedDependencies` (exit 3); its `.deepsec` lock plans (287 packages, 288 places)                                                                                                                                                                     |
+| a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                         |
+
+**HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
+`@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`
+and its bin run without the script. `esbuild --version` prints 0.28.1 (its
+platform package is found without the `postinstall` link), `buf --version`
+1.71.0, `ast-grep --version` 0.44.0 (it adds "Enable postinstall to avoid the
+per-invocation overhead." to stderr), and `protobufjs@7.6.4` parses and encodes
+a message. None needs its script to work here; `@ast-grep/cli` is slower without
+it.
+
+**What running it on the real repositories found, and is fixed.** The freshness
+check refused HoBo on five specifiers because it did not apply the root's
+overrides to the importers (§18.4); the first generated graph with packages
+needing each other at different versions exhausted an 8 GB heap in the planner
+(§12); and `FrozenLockPackage` has no way to say a pnpm package declares an
+install script, which the host now reads from the archive (§21).
 
 Costs and limits, stated so nobody finds them by surprise.
 
@@ -309,11 +350,18 @@ Costs and limits, stated so nobody finds them by surprise.
 - **A link is named for its member and lives in the project's `node_modules`.**
   A sibling the lock links under another name is refused.
 - **`--filter` installs a superset of pnpm's** (§16).
+- **A plan can be refused for a shape only symlinks hold** (§12): packages that
+  need each other at different versions. No lock here has one.
 - **`packageExtensionsChecksum` and `pnpmfileChecksum`** are not recomputed: a
   hook that changed the graph when the lock was written is not checked for
   freshness, and the lock is installed as written.
 - **`dependenciesMeta` in a manifest is not read**, so a manifest that adds
-  `injected` since the lock was written is not seen as stale.
+  `injected` since the lock was written is not seen as stale. An `overrides`
+  selector with a range applies only to a dependency that asks for exactly that
+  range (§18.4).
 - **The settings in the lock are the authority**, not `.npmrc`:
   `autoInstallPeers` decides whether peers are in the importers' specifier sets.
-- **Nothing here ran on macOS or Windows.**
+- **HoBo was planned whole and installed in part**, not installed whole (about
+  2.9 GB for linux x64 here); ts-autocode and gitlang were installed whole.
+- **Nothing here ran on macOS or Windows.** The case rule and the link creation
+  are the platform-specific parts (ADRs 0050 and 0054).

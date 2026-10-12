@@ -433,9 +433,9 @@ store: no `node_modules/.pnpm`, no symlink except a workspace member's own link.
 ```sh
 opm ci                                    # every importer, everything they need
 opm ci --filter @acme/web                 # that member, what it needs, the members it links
-opm ci --filter "@acme/web..."            # pnpm's grammar (also -w, --workspaces)
+opm ci --filter "@acme/web..."            # pnpm's grammar (-F, ./dir, globs, !name; also -w, --workspaces)
 opm ci --production                       # leave out devDependencies
-opm ci --os linux --cpu x64 --cpu arm64   # the platforms to install optional packages for
+opm ci --os linux --cpu x64 --cpu arm64   # the platforms to install optional packages for (current = this one)
 opm ci --supported-architectures project  # the project's own pnpm.supportedArchitectures
 opm ci --plan                             # read, check and plan; fetch and write nothing
 ```
@@ -475,9 +475,25 @@ only it needs, and counted by reason in the summary. The target is this machine
 alone unless `--os`, `--cpu` or `--libc` say otherwise;
 `--supported-architectures project` reads the project's own setting, which may
 add platforms (HoBo's adds arm64: 1,162 MB). No install script is run, and the
-packages that declare one are listed. If a project has both `pnpm-lock.yaml` and
-`package-lock.json`, the `packageManager` field of `package.json` chooses;
-without one the command refuses and names both files.
+packages that declare one are listed (a pnpm lock does not say, so they are
+found in the archives); the four HoBo's `allowBuilds` names work without theirs.
+If a project has both `pnpm-lock.yaml` and `package-lock.json`, the
+`packageManager` field of `package.json` chooses; without one the command
+refuses and names both files. `--omit peer` is refused: a pnpm lock writes
+resolved peers as ordinary dependencies.
+
+`--plan` reads, checks and plans, and prints what the install would do
+(packages, places, archives, what is left out and why, members and links)
+without fetching or writing; HoBo's 792 importers take 1.6 s.
+
+Measured against a lock it is installed from (ADR 0055): HoBo's plan holds the
+same 1,847 `name@version` that pnpm itself installed on the machine with
+`--supported-architectures project`, and Node's own lookup finds the package the
+lock names for all 7,397 dependency edges of the plan; a second place of a
+package that is in two (peer variants) adds only directories (384 KB for the 9
+extra places in ai-bdd). Not pnpm's layout: a tool that looks for
+`node_modules/.pnpm` finds nothing. A project script that itself runs `pnpm`
+(HoBo's `pretest`) needs pnpm; `opm exec vitest run` runs the same tests.
 
 ### `opm.toml`
 
