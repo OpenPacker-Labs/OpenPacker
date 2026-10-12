@@ -118,6 +118,11 @@ reparse point, and the absolute path inside the junction is derived from the
 project root the caller names, not read back from the handle
 (`GetFinalPathNameByHandle` stays unused, as ADR 0034 says).
 
+`placeMemberLink` and its siblings also refuse, by what it is, any directory
+component on the way down that is a reparse point (`FSCTL_GET_REPARSE_POINT`
+after each `NtCreateFile`), because Windows opens a junction as itself and not
+as what it points at; they do not rely on what NT would then do inside it.
+
 The first junction made in a process is read back through
 `FSCTL_GET_REPARSE_POINT` and must be a mount point to the very path that was
 sent; if not, it is removed and the error names the call and the raw names.
@@ -192,14 +197,14 @@ place that removes the whole directory is `opm ci`'s `removeTree`.
   each, one creating module, one writing module, one record field. A change that
   makes any rule wider changes `link-rules.ts` and its tests, which pin each
   refusal.
-- macOS and Windows run the same link suite as Linux (`handle-link.test.ts`,
-  with the conformance scenarios `links`, `linkRefusals` and `linkRaces` on
-  macOS), plus a file for what only libSystem (`handle-darwin.test.ts`) or NTFS
-  (`handle-windows-link.test.ts`) can show. **Neither has run on those systems
-  at the time of writing**: the Linux legs run the same code through
-  `/proc/self/fd` and through libc bound to glibc, and the Windows control flow
-  runs against an in-memory fake of the five NT calls. The `ci-build.yml` macOS
-  and Windows legs are the first evidence.
+- macOS and Windows run the same link suites as Linux (`handle-link*.test.ts`
+  and `member-link*.test.ts`, with the conformance scenarios `links`,
+  `linkRefusals` and `linkRaces` on macOS), plus a file for what only libSystem
+  (`handle-darwin.test.ts`) or NTFS (`handle-windows-link.test.ts`) can show.
+  **Neither has run on those systems at the time of writing**: the Linux legs
+  run the same code through `/proc/self/fd` and through libc bound to glibc, and
+  the Windows control flow runs against an in-memory fake of the five NT calls.
+  The `ci-build.yml` macOS and Windows legs are the first evidence.
 - `opm ci` still refuses a lock with `link: true` entries, and workspaces
   (`--filter`, per-member `node_modules`) are not part of this change: this
   record covers creating, recording, reading and removing the links, and the

@@ -26,6 +26,7 @@ import {
   openChild,
   readDirChild,
   removeChild,
+  windowsReadReparse,
 } from './handle-path.js';
 import { ProjectIoError } from './index.js';
 import { openProjectDirectory } from './layout.js';
@@ -88,6 +89,11 @@ async function openContainer(
       handle = next;
       if (!(await handle.stat()).isDirectory())
         throw unsafe(path, `${part} is not a directory`);
+      // Windows opens a junction as itself and not as what it points at, so
+      // that open succeeds and says "directory". A component that is a link is
+      // refused here, by what it is, whatever NT would then do inside it.
+      if (process.platform === 'win32' && windowsReadReparse(handle.fd))
+        throw unsafe(path, `${part} is a link`);
     }
     return {
       handle,
