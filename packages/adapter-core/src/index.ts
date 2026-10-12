@@ -1467,9 +1467,10 @@ async function readBoundedBody(
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > maximumBytes) {
     await response.body?.cancel();
-    throw new ProviderError(
-      'UPSTREAM_RESPONSE_TOO_LARGE',
-      `Response exceeds ${maximumBytes} bytes`,
+    throw new ResponseTooLargeError(
+      maximumBytes,
+      Number(declared),
+      'declared',
       response.status,
     );
   }
@@ -1487,9 +1488,10 @@ async function readBoundedBody(
       if (result.done) break;
       size += result.value.byteLength;
       if (size > maximumBytes)
-        throw new ProviderError(
-          'UPSTREAM_RESPONSE_TOO_LARGE',
-          `Response exceeds ${maximumBytes} bytes`,
+        throw new ResponseTooLargeError(
+          maximumBytes,
+          size,
+          'streamed',
           response.status,
         );
       chunks.push(result.value);
@@ -1550,9 +1552,10 @@ export class FixtureHttpTransport implements HttpTransport {
       request.maximumBytes !== undefined &&
       fixture.body.byteLength > request.maximumBytes
     ) {
-      throw new ProviderError(
-        'UPSTREAM_RESPONSE_TOO_LARGE',
-        `Response exceeds ${request.maximumBytes} bytes`,
+      throw new ResponseTooLargeError(
+        request.maximumBytes,
+        fixture.body.byteLength,
+        'delivered',
       );
     }
     return { ...fixture, url: 'url' in fixture ? fixture.url : request.url };
@@ -1567,6 +1570,74 @@ export class ProviderError extends Error {
   ) {
     super(message);
     this.name = 'ProviderError';
+  }
+}
+
+/**
+ * How a too-large response came to be known as too large.
+ *
+ * - `declared`: its Content-Length said so, and no body was read. The header
+ *   counts what is on the wire, so for a compressed response it is the
+ *   compressed size.
+ * - `streamed`: the body was read as it arrived and went over the limit. The
+ *   read stopped there, so the number is where it stopped and not the size of
+ *   the response, which may be far larger or not know its own length at all.
+ * - `delivered`: a transport that has the whole body at once (a fixture).
+ */
+export type TooLargeBasis = 'declared' | 'streamed' | 'delivered';
+
+const mebibytes = (bytes: number): string =>
+  `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+
+/**
+ * A response went past the bound set for it, with the numbers the bound was
+ * enforced on. The code is still `UPSTREAM_RESPONSE_TOO_LARGE`; what is new is
+ * that a caller who knows what it asked for can say so (`about`) instead of
+ * reporting "a response" that exceeded a number.
+ */
+export class ResponseTooLargeError extends ProviderError {
+  constructor(
+    readonly limitBytes: number,
+    readonly observedBytes: number,
+    readonly basis: TooLargeBasis,
+    upstreamStatus?: number,
+    readonly subject = 'Response',
+  ) {
+    super(
+      'UPSTREAM_RESPONSE_TOO_LARGE',
+      tooLargeMessage(subject, limitBytes, observedBytes, basis),
+      upstreamStatus,
+    );
+    this.name = 'ResponseTooLargeError';
+  }
+
+  /** The same refusal, naming what was being read: `The packument of vite`. */
+  about(subject: string): ResponseTooLargeError {
+    return new ResponseTooLargeError(
+      this.limitBytes,
+      this.observedBytes,
+      this.basis,
+      this.upstreamStatus,
+      subject,
+    );
+  }
+}
+
+function tooLargeMessage(
+  subject: string,
+  limit: number,
+  observed: number,
+  basis: TooLargeBasis,
+): string {
+  const bound = `${limit} bytes (${mebibytes(limit)})`;
+  const seen = `${observed} bytes (${mebibytes(observed)})`;
+  switch (basis) {
+    case 'declared':
+      return `${subject} declares ${seen} and exceeds the limit of ${bound}`;
+    case 'delivered':
+      return `${subject} is ${seen} and exceeds the limit of ${bound}`;
+    case 'streamed':
+      return `${subject} exceeds the limit of ${bound}: stopped reading at ${seen}`;
   }
 }
 
@@ -2156,13 +2227,52 @@ export function text(response: HttpResponse): string {
   return new TextDecoder('utf-8', { fatal: true }).decode(response.body);
 }
 
-export function json<T>(response: HttpResponse): T {
+/**
+ * The shape a metadata document may have once parsed. The defaults suit the
+ * small documents most registries serve; a registry whose documents are
+ * legitimately large (an npm packument lists every version ever published)
+ * states its own, derived from the byte limit it reads under.
+ */
+export interface ProviderMetadataLimits {
+  maximumDepth?: number;
+  maximumNodes?: number;
+}
+
+/**
+ * The largest metadata document any adapter reads, in bytes, and so the
+ * largest one a resolve keeps in memory to read once. An adapter's own bound
+ * may be lower; none may be higher, or the resolve stops keeping what it reads
+ * and fetches it again. Artifact downloads have their own, larger bound.
+ */
+export const MAXIMUM_METADATA_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The least a parsed metadata value may weigh, in bytes of the document it came
+ * from. A document denser than this (`[1,1,1,...]` is two bytes a value) costs
+ * far more to hold than its size says, so the number of values allowed is the
+ * byte limit divided by this, never a number of its own.
+ */
+export const MINIMUM_BYTES_PER_METADATA_VALUE = 16;
+
+/** How many values a document read under `maximumBytes` may hold. */
+export function metadataValueLimit(maximumBytes: number): number {
+  return Math.floor(maximumBytes / MINIMUM_BYTES_PER_METADATA_VALUE);
+}
+
+export function json<T>(
+  response: HttpResponse,
+  limits: ProviderMetadataLimits = {},
+): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
   try {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const value = parseCanonicalJson(text(response)) as T;
-    assertBoundedProviderMetadata(value);
+    assertBoundedProviderMetadata(
+      value,
+      limits.maximumDepth,
+      limits.maximumNodes,
+    );
     return value;
   } catch (error) {
     throw new ProviderError(
