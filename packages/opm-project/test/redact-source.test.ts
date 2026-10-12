@@ -184,6 +184,21 @@ describe('a source named in an error', () => {
       }
     });
 
+    it('is not printed when the parser reads the start of it as a port', () => {
+      // `deploy:1234/<c>@github.com` is a host, a port and a path to the parser.
+      for (const address of [
+        `git+ssh://deploy:1234/${C1}@github.com:o/r.git`,
+        `https://deploy:443/${C1}/${C2}@registry.example/a.tgz`,
+        `https://deploy:443?${C1}@registry.example/a.tgz`,
+        `git+ssh://deploy:22#${C1}@github.com:o/r.git`,
+      ]) {
+        expect(redactSource(address), address).not.toContain(
+          'vtok_dummy_marker',
+        );
+        expect(redactSource(address), address).not.toContain('deploy');
+      }
+    });
+
     it('keeps the host and the path where the address says where they are', () => {
       expect(
         redactSource(`git+ssh://deploy:${C1}/${C2}@github.com:o/r.git`),

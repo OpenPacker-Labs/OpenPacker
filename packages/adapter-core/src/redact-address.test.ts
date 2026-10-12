@@ -111,6 +111,67 @@ describe('redactAddress', () => {
     expect(redactAddress(address)).not.toContain(C);
   });
 
+  /**
+   * `user:123/rest@host` has a password `123/rest`, and the parser reads it as
+   * the host `user`, the port 123 and a path that holds the rest. No userinfo
+   * is found, so the path is where the password is, and an `@` in a path that
+   * follows something other than a `/` is where userinfo would end.
+   */
+  it.each([
+    [
+      'a password of digits and then a /, under a git scheme',
+      `git+ssh://deploy:1234/${C}@github.com:o/r.git`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'the same under https, on a default port',
+      `https://deploy:443/${C}@registry.example/a.tgz`,
+      'https://registry.example/a.tgz',
+    ],
+    [
+      'the same, with a / in the rest of the password',
+      `https://deploy:8080/a/${C}@registry.example/a.tgz`,
+      'https://registry.example/a.tgz',
+    ],
+    [
+      'the same, with a ? where the / was',
+      `https://deploy:443?${C}@registry.example/a.tgz`,
+      'https://registry.example/a.tgz',
+    ],
+    [
+      'the same, with a # where the / was',
+      `git+ssh://deploy:22#${C}@github.com:o/r.git`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'a name@version segment, which it cannot tell from that, and so costs',
+      'https://cdn.example/pkg@1.2.3/f.js',
+      'https://1.2.3/f.js',
+    ],
+  ])('takes out %s', (_, address, shown) => {
+    expect(redactAddress(address)).toBe(shown);
+    expect(redactAddress(address)).not.toContain(C);
+    expect(redactAddress(address)).not.toContain('deploy');
+  });
+
+  it.each([
+    'https://registry.npmjs.org/@types/node/-/node-1.0.0.tgz',
+    'http://localhost:4873/@scope/pkg/-/pkg-1.0.0.tgz',
+    'file:///srv/pkgs/pkg@1.0.0.tgz',
+    'git+https://github.com/o/r.git',
+  ])('leaves %s as it is', (address) => {
+    expect(redactAddress(address)).toBe(address);
+  });
+
+  it('cannot tell a password that ends in a / from a scoped package', () => {
+    // `deploy:123/@host` is a password `123/` and a host, or a host `deploy`,
+    // a port and the path of a scoped package. Nothing in it says which; a
+    // scoped package is what a lock holds, so it is shown as the second.
+    expect(redactAddress('https://deploy:123/@host/x')).toBe(
+      'https://deploy:123/@host/x',
+    );
+  });
+
   it('reads a few blob URLs one inside the next, and no more', () => {
     expect(redactAddress('blob:blob:blob:https://h/x')).toBe(
       'blob:blob:blob:https://h/x',

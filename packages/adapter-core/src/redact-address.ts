@@ -4,6 +4,8 @@ import { hasOverlongHost } from './url-host.js';
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/u;
 /** Where a query or a fragment begins. */
 const QUERY_OR_FRAGMENT = /[?#]/u;
+/** An `@` in a path that does not begin a segment: where userinfo would end. */
+const AT_IN_SEGMENT = /[^/]@/u;
 /** How many blob URLs inside one another are read, one inside the next. */
 const MOST_BLOBS = 4;
 
@@ -59,6 +61,19 @@ function render(address: string, blobs: number): string {
   // not depend on what the password holds.
   if (url.username !== '' || url.password !== '')
     return redactAddressText(address);
+  // `user:123/secret@host` has a password of digits and a `/` (or a `?` or a
+  // `#`), and the parser reads it as the host `user`, the port 123 and a path
+  // (or a query). Userinfo needs an `@` after it, and a scoped package's `@`
+  // begins a segment (`/@scope/p`), so an `@` further into a segment of the
+  // path, or anywhere in the query or fragment, of an address with a host is
+  // taken for the end of userinfo. A `name@version` segment pays for it.
+  if (
+    url.host !== '' &&
+    (AT_IN_SEGMENT.test(url.pathname) ||
+      url.search.includes('@') ||
+      url.hash.includes('@'))
+  )
+    return redactAddressText(address);
   if (url.origin !== 'null') return `${url.origin}${url.pathname}`;
   url.username = '';
   url.password = '';
@@ -81,6 +96,10 @@ function render(address: string, blobs: number): string {
  * - An address in which the parser finds userinfo is cut as text, because the
  *   parser ends userinfo at the first `/`, `?` or `#` and a password can hold
  *   any of them.
+ * - An address with a host whose path holds an `@` inside a segment, or whose
+ *   query or fragment holds an `@`, is cut as text as well: the parser may have
+ *   read a password that holds a `/`, `?` or `#` as a host, a port and the
+ *   rest. A scoped package (`/@scope/p`) is not cut.
  * - An address with an origin (`https:`) is its origin and path.
  * - A `blob:` URL is `blob:` and the address in its path, shown the same way.
  * - Any other address the parser reads is shown as it serialises it, without
