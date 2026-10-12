@@ -1,0 +1,15 @@
+{
+  "pnpmHiddenAfterGlobstar": {
+    "rule": "pnpm 10.28.0 finds members with the tinyglobby 0.2.14 bundled in pnpm.cjs. There, on the lists below, a segment that names a hidden directory (a literal such as .hid, or a wildcard that starts with a dot such as .*) directly after ** matches only when that ** stood for at least one directory: packages/**/.hid does not select packages/.hid, and **/.* does not select a top-level .top. npm 10.9.4 (glob 10) selects them, as does the plain reading of ** as zero or more directories, and so does the model, which keeps that reading. workspace-glob-oracle.json holds both answers for each list.",
+    "lists": [
+      ["packages/**/.hid"],
+      ["packages/**/.*"],
+      ["**/.*"],
+      ["**/**/.*"],
+      ["**/.top"],
+      ["pkg/**/.dot"],
+      ["pkg/**/.*"],
+      ["pkg/*/**/.*"]
+    ]
+  }
+}

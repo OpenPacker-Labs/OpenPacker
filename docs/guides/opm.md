@@ -673,14 +673,68 @@ dependency's lifecycle scripts, never fetch or install anything, and never print
 the environment. `opm run` is for your repository's commands; use `opmx` for a
 tool you have not reviewed.
 
-Not here: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
-[ADR 0042](../adr/0042-upm-v1-gaps.md)), and the `npm_config_*` and
+Not here yet: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
+the model they will be built on is described under
+[Workspaces](#workspaces-the-model) below), and the `npm_config_*` and
 `npm_execpath` variables.
 
 On Windows a script, and a bin that is a `.cmd` shim, are started through
 `cmd.exe /d /s /c` with every argument quoted and escaped for it; a real `.exe`
 is started directly. The quoting is covered by tests that run on every platform,
 and has not been run on Windows.
+
+### Workspaces (the model)
+
+`opm` can read an npm or pnpm workspace repository: which directories are
+members, which member depends on which, in what order they build, and which
+members a `--filter` selects
+([ADR 0049](../adr/0049-workspaces-are-a-model-before-they-are-an-install.md)).
+No command uses this yet; `opm ci` still refuses a workspace lock, and `opm run`
+has no `--filter`. It is a library that the commands will be built on, in
+`@openpacker/opm-project` (reading the directory) and `@openpacker/adapter-core`
+(the pure model).
+
+```ts
+import { discoverWorkspace, graphOfWorkspace } from '@openpacker/opm-project';
+import {
+  parseFilter,
+  selectMembers,
+  topologicalOrder,
+  DEFAULT_WORKSPACE_LIMITS,
+} from '@openpacker/adapter-core';
+
+const found = await discoverWorkspace('/work/repo'); // undefined: not a workspace
+const graph = graphOfWorkspace(found!); // each tool's own link policy; pass one to override
+const order = topologicalOrder(graph, { cycles: 'tolerate' });
+const limits = DEFAULT_WORKSPACE_LIMITS;
+const picked = selectMembers(graph, [
+  parseFilter('@acme/app...', { cwd: '', limits }), // the package and what it depends on
+]).selected;
+```
+
+What it reads: `pnpm-workspace.yaml` `packages:` (with `!` exclusions) when the
+root has one, otherwise `package.json` `workspaces`. The globs are `*`, `?`,
+`**` and `{a,b}`, read as the two tools read them; anything else (a character
+class, a backslash, a `..`) is refused by name. Everything is bounded (members,
+entries read, depth, file sizes), a name that is not a package name or that two
+members share is refused, and **a symbolic link is never followed**: one a
+pattern names is an error, one met while a `**` searches is passed over and
+listed.
+
+Two settings are yours to state, not the model's to guess. `linkPolicy` says
+whether a plain `^1.0.0` reaches a member that satisfies it (npm: always; pnpm
+since v9: only with `link-workspace-packages`); `cycles` says whether a cycle
+among members is an error or is tolerated and reported (pnpm warns). A
+`workspace:` specifier that names nothing, or that the model does not support,
+is an error that names the specifier and the member, and `publishedDependencies`
+gives the `^1.2.3` that `workspace:^` becomes when a package is packed. Filters
+are `pnpm --filter`'s: a name, `@scope/*`, `./dir`, `{dir/**}`, `name...`,
+`...name`, `^` and `!`; `[since]` is refused until `opm` can ask git. A
+directory is a pattern, as in pnpm 10: `./packages/a` is the member in that
+directory and nothing inside it, `./packages` is no member at all, and
+`./packages/*` or `{packages/**}` are the ones to write for several.
+`legacyDirFiltering: true` gives pnpm's `legacy-dir-filtering` instead (a
+directory and everything under it); `.npmrc` is not read, so you say which.
 
 ### `opmx`
 

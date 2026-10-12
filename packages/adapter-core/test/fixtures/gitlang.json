@@ -1,0 +1,89 @@
+{
+  "repo": "gitlang",
+  "tool": "npm",
+  "declaration": {
+    "file": "package.json",
+    "workspaces": ["packages/*", "apps/*"]
+  },
+  "root": {
+    "name": "gitlang",
+    "version": "0.0.0",
+    "private": true,
+    "workspaces": ["packages/*", "apps/*"]
+  },
+  "bare": [],
+  "members": {
+    "apps/web": {
+      "name": "@gitlang/web",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": {
+        "@gitlang/chat-render": "0.0.0",
+        "@gitlang/core-chat": "0.0.0",
+        "@gitlang/core-eval": "0.0.0",
+        "@gitlang/core-prompt": "0.0.0",
+        "@gitlang/core-vcs": "0.0.0",
+        "@gitlang/core-workspace": "0.0.0"
+      }
+    },
+    "packages/chat-render": {
+      "name": "@gitlang/chat-render",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": {
+        "@gitlang/core-prompt": "0.0.0",
+        "@gitlang/core-types": "0.0.0",
+        "@gitlang/core-vcs": "0.0.0"
+      }
+    },
+    "packages/core-chat": {
+      "name": "@gitlang/core-chat",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": {
+        "@gitlang/core-eval": "0.0.0",
+        "@gitlang/core-prompt": "0.0.0",
+        "@gitlang/core-types": "0.0.0",
+        "@gitlang/core-vcs": "0.0.0",
+        "@gitlang/core-workspace": "0.0.0"
+      }
+    },
+    "packages/core-eval": {
+      "name": "@gitlang/core-eval",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": {
+        "@gitlang/core-prompt": "0.0.0",
+        "@gitlang/core-types": "0.0.0"
+      }
+    },
+    "packages/core-prompt": {
+      "name": "@gitlang/core-prompt",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": { "@gitlang/core-types": "0.0.0" }
+    },
+    "packages/core-types": {
+      "name": "@gitlang/core-types",
+      "version": "0.0.0",
+      "private": true
+    },
+    "packages/core-vcs": {
+      "name": "@gitlang/core-vcs",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": { "@gitlang/core-types": "0.0.0" }
+    },
+    "packages/core-workspace": {
+      "name": "@gitlang/core-workspace",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": {
+        "@gitlang/core-eval": "0.0.0",
+        "@gitlang/core-prompt": "0.0.0",
+        "@gitlang/core-types": "0.0.0",
+        "@gitlang/core-vcs": "0.0.0"
+      }
+    }
+  }
+}

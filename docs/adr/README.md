@@ -49,7 +49,8 @@ Accepted decisions:
 45. [macOS child I/O uses libc `*at()` calls](0045-macos-child-io-uses-libc-at-calls.md)
 46. [A lockfile is installed, not re-resolved](0046-a-lockfile-is-installed-not-re-resolved.md)
 47. [`opm run` and `opm exec` run the user's own scripts](0047-opm-run-and-exec-run-the-users-own-scripts.md)
-48. [Workspace members are linked into node_modules, through the no-follow handle API and nowhere else](0050-workspace-member-links.md)
+48. [Workspaces are a model before they are an install](0049-workspaces-are-a-model-before-they-are-an-install.md)
+49. [Workspace members are linked into node_modules, through the no-follow handle API and nowhere else](0050-workspace-member-links.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

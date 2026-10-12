@@ -1,0 +1,1470 @@
+{
+  "generatedWith": {
+    "pnpm": "pnpm 10.28.0: `pnpm ls -r --depth -1 --json` over a pnpm-workspace.yaml holding the patterns, so findPackages with the tinyglobby 0.2.14 bundled in pnpm.cjs, the root always included, node_modules and bower_components ignored",
+    "npm": "npm 10.9.4: @npmcli/map-workspaces 4.0.2 with glob 10.4.5"
+  },
+  "manifests": [
+    "",
+    "packages/a",
+    "packages/b",
+    "packages/b/sub",
+    "packages/b/a",
+    "packages/b/c",
+    "packages/.hid",
+    "packages/c/d/e",
+    "packages/nm/node_modules/zz",
+    "packages/pack-x",
+    "packages/pack-y/inner",
+    "packages/ab",
+    "packages/a1",
+    "packages/Cap",
+    "packages/x.y",
+    "tools/x",
+    "tools/y",
+    "tools/.config/z",
+    "apps/web",
+    "apps/api",
+    "apps/web/sub",
+    "@scope/one",
+    "@scope/two",
+    "docs/guide",
+    ".github/actions/setup",
+    "deep/1/2/3/4/5/leaf",
+    ".top",
+    "pkg/.dot",
+    "pkg/a/.dot"
+  ],
+  "bare": [
+    "packages/empty",
+    "packages/c/d",
+    "docs",
+    "packages/b/sub/tests",
+    "tools/z-empty"
+  ],
+  "cases": [
+    {
+      "patterns": ["packages/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["./packages/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*/"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["/packages/*"],
+      "pnpm": [""],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**/"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["**"],
+      "pnpm": [
+        "",
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": ["*"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["*/*"],
+      "pnpm": [
+        "",
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": ["**/*"],
+      "pnpm": [
+        "",
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": ["packages/*/*"],
+      "pnpm": [
+        "",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/pack-y/inner"
+      ],
+      "npm": [
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/pack-y/inner"
+      ]
+    },
+    {
+      "patterns": ["packages/**/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/a"],
+      "pnpm": ["", "packages/a"],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/a", "packages/b"],
+      "pnpm": ["", "packages/a", "packages/b"],
+      "npm": ["packages/a", "packages/b"]
+    },
+    {
+      "patterns": ["packages/{a,b}"],
+      "pnpm": ["", "packages/a", "packages/b"],
+      "npm": ["packages/a", "packages/b"]
+    },
+    {
+      "patterns": ["packages/{a,b}/*"],
+      "pnpm": ["", "packages/b/a", "packages/b/c", "packages/b/sub"],
+      "npm": ["packages/b/a", "packages/b/c", "packages/b/sub"]
+    },
+    {
+      "patterns": ["{packages,tools}/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": ["{packages,tools}/{a,x}"],
+      "pnpm": ["", "packages/a", "tools/x"],
+      "npm": ["packages/a", "tools/x"]
+    },
+    {
+      "patterns": ["packages/{a,b/sub}"],
+      "pnpm": ["", "packages/a", "packages/b/sub"],
+      "npm": ["packages/a", "packages/b/sub"]
+    },
+    {
+      "patterns": ["packages/{a,}"],
+      "pnpm": ["", "packages/a"],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/{,b}"],
+      "pnpm": ["", "packages/b"],
+      "npm": ["packages/b"]
+    },
+    {
+      "patterns": ["packages/?"],
+      "pnpm": ["", "packages/a", "packages/b"],
+      "npm": ["packages/a", "packages/b"]
+    },
+    {
+      "patterns": ["packages/??"],
+      "pnpm": ["", "packages/a1", "packages/ab"],
+      "npm": ["packages/a1", "packages/ab"]
+    },
+    {
+      "patterns": ["packages/a?"],
+      "pnpm": ["", "packages/a1", "packages/ab"],
+      "npm": ["packages/a1", "packages/ab"]
+    },
+    {
+      "patterns": ["packages/pack-?"],
+      "pnpm": ["", "packages/pack-x"],
+      "npm": ["packages/pack-x"]
+    },
+    {
+      "patterns": ["packages/pack-*"],
+      "pnpm": ["", "packages/pack-x"],
+      "npm": ["packages/pack-x"]
+    },
+    {
+      "patterns": ["packages/*-x"],
+      "pnpm": ["", "packages/pack-x"],
+      "npm": ["packages/pack-x"]
+    },
+    {
+      "patterns": ["packages/*a*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x"
+      ]
+    },
+    {
+      "patterns": ["packages/a*"],
+      "pnpm": ["", "packages/a", "packages/a1", "packages/ab"],
+      "npm": ["packages/a", "packages/a1", "packages/ab"]
+    },
+    {
+      "patterns": ["*/a"],
+      "pnpm": ["", "packages/a"],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["*/*/*"],
+      "pnpm": [
+        "",
+        "apps/web/sub",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/pack-y/inner"
+      ],
+      "npm": [
+        "apps/web/sub",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/pack-y/inner"
+      ]
+    },
+    {
+      "patterns": ["**/e"],
+      "pnpm": ["", "packages/c/d/e"],
+      "npm": ["packages/c/d/e"]
+    },
+    {
+      "patterns": ["**/sub"],
+      "pnpm": ["", "apps/web/sub", "packages/b/sub"],
+      "npm": ["apps/web/sub", "packages/b/sub"]
+    },
+    {
+      "patterns": ["packages/**/e"],
+      "pnpm": ["", "packages/c/d/e"],
+      "npm": ["packages/c/d/e"]
+    },
+    {
+      "patterns": ["packages/**/sub"],
+      "pnpm": ["", "packages/b/sub"],
+      "npm": ["packages/b/sub"]
+    },
+    {
+      "patterns": ["packages/*/sub"],
+      "pnpm": ["", "packages/b/sub"],
+      "npm": ["packages/b/sub"]
+    },
+    {
+      "patterns": ["packages/b/**"],
+      "pnpm": [
+        "",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub"
+      ],
+      "npm": ["packages/b", "packages/b/a", "packages/b/c", "packages/b/sub"]
+    },
+    {
+      "patterns": ["packages/.hid"],
+      "pnpm": ["", "packages/.hid"],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": ["packages/.*"],
+      "pnpm": ["", "packages/.hid"],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": [".github/**"],
+      "pnpm": ["", ".github/actions/setup"],
+      "npm": [".github/actions/setup"]
+    },
+    {
+      "patterns": [".github/actions/*"],
+      "pnpm": ["", ".github/actions/setup"],
+      "npm": [".github/actions/setup"]
+    },
+    {
+      "patterns": ["**/.config/z"],
+      "pnpm": ["", "tools/.config/z"],
+      "npm": ["tools/.config/z"]
+    },
+    {
+      "patterns": ["tools/.config/*"],
+      "pnpm": ["", "tools/.config/z"],
+      "npm": ["tools/.config/z"]
+    },
+    {
+      "patterns": ["packages/*", "packages/.hid"],
+      "pnpm": [
+        "",
+        "packages/.hid",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/.hid",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!packages/a*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": ["packages/Cap", "packages/b", "packages/pack-x", "packages/x.y"]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b/**"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!**/sub"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["!packages/b", "packages/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!packages/b", "packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b/**", "packages/b/a"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b/**", "packages/b/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": [
+        "packages/**",
+        "!packages/b/**",
+        "packages/b/a",
+        "packages/b/c"
+      ],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**", "!packages/b", "!packages/b/sub"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": [
+        "packages/**",
+        "!packages/b/**",
+        "!packages/c/**",
+        "packages/b/a"
+      ],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "tools/*", "!tools/y"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!packages/*"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/*", "!*/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!**"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/*", "!!packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!./packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["./packages/*", "!./packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!/packages/b"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/*", "!packages/b/"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["apps/*", "packages/*", "tools/*"],
+      "pnpm": [
+        "",
+        "apps/api",
+        "apps/web",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "apps/api",
+        "apps/web",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": ["apps/**", "tools/*"],
+      "pnpm": [
+        "",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": ["apps/api", "apps/web", "apps/web/sub", "tools/x", "tools/y"]
+    },
+    {
+      "patterns": ["@scope/*"],
+      "pnpm": ["", "@scope/one", "@scope/two"],
+      "npm": ["@scope/one", "@scope/two"]
+    },
+    {
+      "patterns": ["@scope/one"],
+      "pnpm": ["", "@scope/one"],
+      "npm": ["@scope/one"]
+    },
+    {
+      "patterns": ["@*/*"],
+      "pnpm": ["", "@scope/one", "@scope/two"],
+      "npm": ["@scope/one", "@scope/two"]
+    },
+    {
+      "patterns": ["packages/Cap"],
+      "pnpm": ["", "packages/Cap"],
+      "npm": ["packages/Cap"]
+    },
+    {
+      "patterns": ["packages/cap"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/x.y"],
+      "pnpm": ["", "packages/x.y"],
+      "npm": ["packages/x.y"]
+    },
+    {
+      "patterns": ["packages/x.*"],
+      "pnpm": ["", "packages/x.y"],
+      "npm": ["packages/x.y"]
+    },
+    {
+      "patterns": ["packages/x?y"],
+      "pnpm": ["", "packages/x.y"],
+      "npm": ["packages/x.y"]
+    },
+    {
+      "patterns": ["packages//a"],
+      "pnpm": ["", "packages/a"],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/./a"],
+      "pnpm": ["", "packages/a"],
+      "npm": []
+    },
+    {
+      "patterns": ["./packages/./a"],
+      "pnpm": ["", "packages/a"],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/a/."],
+      "pnpm": ["", "packages/a"],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/*/."],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["deep/**"],
+      "pnpm": ["", "deep/1/2/3/4/5/leaf"],
+      "npm": ["deep/1/2/3/4/5/leaf"]
+    },
+    {
+      "patterns": ["deep/*/*/*/*/*/*"],
+      "pnpm": ["", "deep/1/2/3/4/5/leaf"],
+      "npm": ["deep/1/2/3/4/5/leaf"]
+    },
+    {
+      "patterns": ["deep/**/leaf"],
+      "pnpm": ["", "deep/1/2/3/4/5/leaf"],
+      "npm": ["deep/1/2/3/4/5/leaf"]
+    },
+    {
+      "patterns": ["docs/*"],
+      "pnpm": ["", "docs/guide"],
+      "npm": ["docs/guide"]
+    },
+    {
+      "patterns": ["docs"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["docs/**"],
+      "pnpm": ["", "docs/guide"],
+      "npm": ["docs/guide"]
+    },
+    {
+      "patterns": ["packages/empty"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/*/"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/**/node_modules/*"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/nm/node_modules/zz"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/nm/**"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/nm/*/*"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["*", "!*/b"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["**/*", "!**/node_modules/**"],
+      "pnpm": [
+        "",
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ],
+      "npm": [
+        "@scope/one",
+        "@scope/two",
+        "apps/api",
+        "apps/web",
+        "apps/web/sub",
+        "deep/1/2/3/4/5/leaf",
+        "docs/guide",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/b/a",
+        "packages/b/c",
+        "packages/b/sub",
+        "packages/c/d/e",
+        "packages/pack-x",
+        "packages/pack-y/inner",
+        "packages/x.y",
+        "tools/x",
+        "tools/y"
+      ]
+    },
+    {
+      "patterns": [],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/*", "packages/*"],
+      "pnpm": [
+        "",
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ],
+      "npm": [
+        "packages/Cap",
+        "packages/a",
+        "packages/a1",
+        "packages/ab",
+        "packages/b",
+        "packages/pack-x",
+        "packages/x.y"
+      ]
+    },
+    {
+      "patterns": ["packages/a", "!packages/a"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["!packages/a"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/a", "!packages/a", "packages/a"],
+      "pnpm": [""],
+      "npm": ["packages/a"]
+    },
+    {
+      "patterns": ["packages/**/.hid"],
+      "pnpm": [""],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": ["packages/**/.*"],
+      "pnpm": [""],
+      "npm": ["packages/.hid"]
+    },
+    {
+      "patterns": ["**/.*"],
+      "pnpm": ["", "packages/.hid", "pkg/.dot", "pkg/a/.dot"],
+      "npm": [".top", "packages/.hid", "pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["**/**/.*"],
+      "pnpm": ["", "packages/.hid", "pkg/.dot", "pkg/a/.dot"],
+      "npm": [".top", "packages/.hid", "pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["**/.top"],
+      "pnpm": [""],
+      "npm": [".top"]
+    },
+    {
+      "patterns": ["**/.dot"],
+      "pnpm": ["", "pkg/.dot", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": [".top"],
+      "pnpm": ["", ".top"],
+      "npm": [".top"]
+    },
+    {
+      "patterns": [".*"],
+      "pnpm": ["", ".top"],
+      "npm": [".top"]
+    },
+    {
+      "patterns": ["pkg/**/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/.*"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/.dot", "pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/a/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/*/**/.*"],
+      "pnpm": [""],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/*/.dot"],
+      "pnpm": ["", "pkg/a/.dot"],
+      "npm": ["pkg/a/.dot"]
+    },
+    {
+      "patterns": ["pkg/**/a"],
+      "pnpm": [""],
+      "npm": []
+    },
+    {
+      "patterns": ["packages/**/b"],
+      "pnpm": ["", "packages/b"],
+      "npm": ["packages/b"]
+    }
+  ]
+}
