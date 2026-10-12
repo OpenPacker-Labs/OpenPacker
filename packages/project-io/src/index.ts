@@ -202,6 +202,7 @@ export async function assertNamedDirectory(
     );
 }
 
+export type { BoundedListing } from './handle-support.js';
 export {
   assertHandleSegment,
   handlePathForPlatform,
@@ -212,6 +213,7 @@ export {
   mkdtempChild,
   openChild,
   readDirChild,
+  readDirChildBounded,
   readDirChildWithTypes,
   removeChild,
   renameChild,
@@ -333,3 +335,5 @@ export {
 } from './layout.js';
 
 export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';
+
+export { openStablePath, type StablePathOptions } from './stable-path.js';

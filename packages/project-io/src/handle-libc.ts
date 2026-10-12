@@ -44,6 +44,7 @@ import {
   StableHandleError,
   locateModuleFile,
   wrapFd,
+  type BoundedListing,
 } from './handle-support.js';
 
 /** One implementation of the child operations `handle-path.ts` exposes. */
@@ -65,6 +66,10 @@ export interface ChildBackend {
   lstatChild(parent: FileHandle, name: string): Promise<BigIntStats>;
   readDirChild(parent: FileHandle): Promise<string[]>;
   readDirChildWithTypes(parent: FileHandle): Promise<Dirent[]>;
+  readDirChildBounded(
+    parent: FileHandle,
+    limit: number,
+  ): Promise<BoundedListing>;
 }
 
 interface NativePointer {
@@ -397,6 +402,20 @@ interface Entry {
  * the caller; closedir() closes it.
  */
 function listEntries(api: LibcApi, dirfd: number, display: string): Entry[] {
+  return scanEntries(api, dirfd, display, Number.POSITIVE_INFINITY).entries;
+}
+
+/**
+ * `listEntries` that stops reading at the first entry past `limit`, so a
+ * directory of millions of names is never held in memory. When it stops early
+ * the entries are the ones read so far.
+ */
+function scanEntries(
+  api: LibcApi,
+  dirfd: number,
+  display: string,
+  limit: number,
+): { entries: Entry[]; exceeded: boolean } {
   const { koffi, profile } = api;
   const fd = openFd(
     api,
@@ -414,6 +433,7 @@ function listEntries(api: LibcApi, dirfd: number, display: string): Entry[] {
     throw systemError(errno, 'scandir', display);
   }
   const found: Entry[] = [];
+  let exceeded = false;
   try {
     for (;;) {
       koffi.errno(0);
@@ -427,6 +447,10 @@ function listEntries(api: LibcApi, dirfd: number, display: string): Entry[] {
         koffi.decode(record, profile.dirent.nameOffset, 'char', -1),
       );
       if (name === '.' || name === '..') continue;
+      if (found.length >= limit) {
+        exceeded = true;
+        break;
+      }
       const type = Number(
         koffi.decode(record, profile.dirent.typeOffset, 'uint8'),
       );
@@ -436,10 +460,11 @@ function listEntries(api: LibcApi, dirfd: number, display: string): Entry[] {
     api.closedir(stream);
   }
   // Node's readdir returns names in byte order; sort on the UTF-8 bytes once.
-  return found
+  const entries = found
     .map((entry) => ({ entry, key: Buffer.from(entry.name) }))
     .sort((a, b) => Buffer.compare(a.key, b.key))
     .map(({ entry }) => entry);
+  return { entries, exceeded };
 }
 
 function nodeKind(entry: Dirent): EntryKind {
@@ -491,7 +516,7 @@ function verifyDirentLayout(api: LibcApi, verified: Verified): void {
   }
 }
 
-function direntOf(name: string, kind: EntryKind): Dirent {
+export function direntOf(name: string, kind: EntryKind): Dirent {
   return {
     name,
     parentPath: '',
@@ -550,6 +575,16 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
     return listEntries(api, dirfd, display);
   }
 
+  function listBounded(
+    api: LibcApi,
+    dirfd: number,
+    display: string,
+    limit: number,
+  ): { entries: Entry[]; exceeded: boolean } {
+    verifyDirentLayout(api, verified);
+    return scanEntries(api, dirfd, display, limit);
+  }
+
   function unlink(
     api: LibcApi,
     dirfd: number,
@@ -598,22 +633,21 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
     else unlink(api, dirfd, entry.name, 0);
   }
 
-  async function entriesOf(
+  /** Give an entry the filesystem reported no type for the one lstat says. */
+  function resolved(
+    api: LibcApi,
     parent: FileHandle,
-    typed: boolean,
-  ): Promise<Entry[]> {
-    const api = native();
-    const listed = list(api, parent.fd, `fd ${parent.fd}`);
-    if (!typed) return listed;
-    const resolved: Entry[] = [];
+    listed: readonly Entry[],
+  ): Entry[] {
+    const out: Entry[] = [];
     for (const entry of listed) {
       if (entry.kind !== 'unknown') {
-        resolved.push(entry);
+        out.push(entry);
         continue;
       }
       // The filesystem gave no d_type: ask it, as Node's readdir does.
       try {
-        resolved.push({
+        out.push({
           name: entry.name,
           kind: entryKindOfMode(lstatRaw(api, parent.fd, entry.name).mode),
         });
@@ -622,7 +656,16 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
         if (!isAbsent(error as NodeJS.ErrnoException)) throw error;
       }
     }
-    return resolved;
+    return out;
+  }
+
+  async function entriesOf(
+    parent: FileHandle,
+    typed: boolean,
+  ): Promise<Entry[]> {
+    const api = native();
+    const listed = list(api, parent.fd, `fd ${parent.fd}`);
+    return typed ? resolved(api, parent, listed) : listed;
   }
 
   return {
@@ -683,6 +726,22 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
       return (await entriesOf(parent, true)).map((entry) =>
         direntOf(entry.name, entry.kind),
       );
+    },
+
+    async readDirChildBounded(parent, limit) {
+      const api = native();
+      const { entries, exceeded } = listBounded(
+        api,
+        parent.fd,
+        `fd ${parent.fd}`,
+        limit,
+      );
+      return {
+        entries: resolved(api, parent, entries).map((entry) =>
+          direntOf(entry.name, entry.kind),
+        ),
+        exceeded,
+      };
     },
   };
 }

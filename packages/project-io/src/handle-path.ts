@@ -23,6 +23,7 @@ import {
   lstat,
   mkdir,
   open,
+  opendir,
   readdir,
   rename,
   rm,
@@ -30,12 +31,17 @@ import {
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
-import { darwinProfile } from './handle-libc-profile.js';
+import {
+  createLibcAtBackend,
+  direntOf,
+  type ChildBackend,
+} from './handle-libc.js';
+import { darwinProfile, entryKindOfMode } from './handle-libc-profile.js';
 import {
   StableHandleError,
   locateModuleFile,
   wrapFd,
+  type BoundedListing,
 } from './handle-support.js';
 
 /**
@@ -298,6 +304,57 @@ export async function readDirChildWithTypes(
   const libc = libcBackend();
   if (libc !== undefined) return libc.readDirChildWithTypes(parent);
   return readdir(stableHandlePath(parent), { withFileTypes: true });
+}
+
+/**
+ * The entries of an open directory, read only until it is clear that there are
+ * more than `limit` of them.
+ *
+ * `readDirChildWithTypes` reads a directory whole, so a directory a hostile
+ * process filled with millions of names costs that much memory before any bound
+ * can be applied. This stops at the first entry past the bound: `exceeded` is
+ * then true and `entries` holds the ones read, in no particular order. A
+ * directory within the bound comes back whole, typed the way
+ * `readDirChildWithTypes` types it (an entry the filesystem gave no type for is
+ * looked at, not guessed), through the same handle on every platform.
+ */
+export async function readDirChildBounded(
+  parent: FileHandle,
+  limit: number,
+): Promise<BoundedListing> {
+  if (!Number.isSafeInteger(limit) || limit < 0)
+    throw new RangeError(`Listing bound must be a count, not ${limit}`);
+  if (process.platform === 'win32') return windowsReadDirBounded(parent, limit);
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.readDirChildBounded(parent, limit);
+  const directory = await opendir(stableHandlePath(parent));
+  const entries: Dirent[] = [];
+  try {
+    for (;;) {
+      const entry = await directory.read();
+      if (entry === null) return { entries, exceeded: false };
+      if (entries.length >= limit) return { entries, exceeded: true };
+      entries.push(await typedEntry(parent, entry));
+    }
+  } finally {
+    await directory.close().catch(() => undefined);
+  }
+}
+
+/** `entry`, or what lstat says it is when the filesystem reported no type. */
+async function typedEntry(parent: FileHandle, entry: Dirent): Promise<Dirent> {
+  if (
+    entry.isFile() ||
+    entry.isDirectory() ||
+    entry.isSymbolicLink() ||
+    entry.isBlockDevice() ||
+    entry.isCharacterDevice() ||
+    entry.isFIFO() ||
+    entry.isSocket()
+  )
+    return entry;
+  const info = await lstat(posixChild(parent, entry.name), { bigint: true });
+  return direntOf(entry.name, entryKindOfMode(info.mode));
 }
 
 export async function mkdtempChild(
@@ -675,6 +732,20 @@ async function windowsReadDir(parent: FileHandle): Promise<string[]> {
 }
 
 async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
+  return (await windowsScan(parent, Number.POSITIVE_INFINITY)).entries;
+}
+
+async function windowsReadDirBounded(
+  parent: FileHandle,
+  limit: number,
+): Promise<BoundedListing> {
+  return await windowsScan(parent, limit);
+}
+
+async function windowsScan(
+  parent: FileHandle,
+  limit: number,
+): Promise<BoundedListing> {
   const api = nt();
   const osHandle = api.getOsFHandle(parent.fd);
   const buffer = Buffer.alloc(16 * 1024);
@@ -712,13 +783,15 @@ async function windowsReadDirWithTypes(parent: FileHandle): Promise<Dirent[]> {
         offset + 64,
         offset + 64 + nameLength,
       );
-      if (name !== '.' && name !== '..')
+      if (name !== '.' && name !== '..') {
+        if (entries.length >= limit) return { entries, exceeded: true };
         entries.push(ntDirent(name, attributes));
+      }
       if (next === 0) break;
       offset += next;
     }
   }
-  return entries;
+  return { entries, exceeded: false };
 }
 
 function ntDirent(name: string, attributes: number): Dirent {
