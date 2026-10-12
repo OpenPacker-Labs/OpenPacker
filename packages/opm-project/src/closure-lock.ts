@@ -141,12 +141,19 @@ export async function resolveTransitive(input: {
     });
 
     // A direct entry keeps its manifest alias; the first, by key, when two
-    // direct entries are the same release.
+    // direct entries are the same release. The solve has one node for the
+    // release, so the others are copies of that entry's edges (below).
     const directKeys = new Map<string, string>();
+    const sameRelease = new Map<string, string[]>();
     for (const pkg of [...input.direct].sort((left, right) =>
       left.alias < right.alias ? -1 : 1,
-    ))
+    )) {
       if (!directKeys.has(pkg.purl)) directKeys.set(pkg.purl, pkg.alias);
+      sameRelease.set(pkg.purl, [
+        ...(sameRelease.get(pkg.purl) ?? []),
+        pkg.alias,
+      ]);
+    }
     const keyOfNode = allocateLockKeys({
       selected: solved.selected,
       directKeys,
@@ -303,6 +310,18 @@ export async function resolveTransitive(input: {
           left < right ? -1 : 1,
         ),
       );
+    // One release asked for under two names (`string-width` and
+    // `string-width-cjs@npm:string-width`) is two directories with one package
+    // each, and each needs what the release declares. Its edges were recorded
+    // on the first entry; the others get the same, or they would resolve
+    // whatever sits at the root, and survive no removal of the first.
+    for (const [purl, first] of directKeys)
+      for (const other of sameRelease.get(purl) ?? []) {
+        if (other === first || dependencies[first] === undefined) continue;
+        dependencies[other] = [...dependencies[first]];
+        if (aliases[first] !== undefined)
+          aliases[other] = { ...aliases[first] };
+      }
   } catch (error) {
     // A closure that cannot be computed is an error, not a smaller lock. This
     // used to fall back to the direct set, which turned every failure here

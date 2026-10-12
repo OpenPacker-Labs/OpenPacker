@@ -120,7 +120,6 @@ export {
   installProject,
   listInstalled,
   readManifestFile,
-  removePackage,
   requireOpmRoot,
   resolveManifestToLock,
   syncProject,
@@ -129,6 +128,7 @@ export {
   importNativeProject,
   type NativeImportResult,
 } from './import-native.js';
+export { removePackage } from './remove.js';
 export { updateProject } from './update.js';
 export { uninstallProject, whyPackage, writeManifestFile } from './project.js';
 export {

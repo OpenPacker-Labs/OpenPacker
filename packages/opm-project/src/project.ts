@@ -27,7 +27,7 @@ import {
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveTransitive } from './closure-lock.js';
-import { lockEdgeKeys, reachableKeys } from './lock-edges.js';
+import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
 import { isExactVersion, registryTargetFor } from './registry-target.js';
 import {
@@ -320,56 +320,6 @@ export async function addPackage(input: {
   });
 
   return { manifest, lock, state, alias, native };
-}
-
-export async function removePackage(input: {
-  root: string;
-  alias: string;
-  offline?: boolean;
-}): Promise<{
-  manifest: OpmManifest;
-  lock: OpmLockfile;
-  state: ProjectState;
-  native?: NativeProjectionReport;
-}> {
-  const paths = projectPaths(input.root);
-  const manifest = await readManifestFile(paths.manifest);
-  if (!manifest.packages[input.alias]) {
-    throw new OpmError(
-      'NOT_FOUND',
-      `Package "${input.alias}" is not in ${MANIFEST_NAME}`,
-    );
-  }
-  delete manifest.packages[input.alias];
-  await writeManifestFile(paths.manifest, manifest);
-
-  const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
-  const previousAliases = Object.keys(lock.packages);
-  const removed = lock.packages[input.alias];
-  if (removed) removed.reason = 'transitive';
-  const reachable = reachableKeys(
-    lock.packages,
-    Object.keys(manifest.packages),
-  );
-  for (const alias of previousAliases)
-    if (!reachable.has(alias)) delete lock.packages[alias];
-  lock.manifestDigest = manifestDigest(manifest);
-  await writeLockfile(paths.lock, lock);
-
-  const state = await uninstallPackages({
-    root: input.root,
-    aliases: previousAliases.filter((alias) => !lock.packages[alias]),
-  });
-
-  // Removing from opm.toml and leaving the entry in package.json would let the
-  // native tool reinstall what opm just took out.
-  const native = await projectNativeFormats({
-    root: input.root,
-    manifest,
-    lock,
-  });
-
-  return { manifest, lock, state, native };
 }
 
 export async function syncProject(input: {

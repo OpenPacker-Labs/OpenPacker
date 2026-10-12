@@ -26,6 +26,18 @@ function flatVersion(version: string): string {
   return version.replace(/[^A-Za-z0-9._-]/gu, '-').replace(/[. ]+$/u, '');
 }
 
+/** What a key is allocated for: one release in a closure. */
+export interface KeyedRelease {
+  /** What the caller knows it by; the result is keyed by this. */
+  id: string;
+  /** The package, without a version. */
+  canonicalPurl: string;
+  /** The release, with its version. */
+  exactPurl: string;
+  version: string;
+  ecosystem: string;
+}
+
 /**
  * A key for every selected package.
  *
@@ -36,41 +48,53 @@ export function allocateLockKeys(input: {
   selected: readonly PackageInstance[];
   directKeys: ReadonlyMap<string, string>;
 }): Map<string, string> {
+  return allocateKeys({
+    releases: input.selected.map((instance) => ({
+      id: instance.nodeId,
+      canonicalPurl: instance.identity.canonicalPurl,
+      exactPurl: instance.identity.exactPurl ?? '',
+      version: instance.nativeVersion,
+      ecosystem: instance.identity.purlType,
+    })),
+    directKeys: input.directKeys,
+  });
+}
+
+/** The same allocation, over releases however the caller holds them. */
+export function allocateKeys(input: {
+  releases: readonly KeyedRelease[];
+  directKeys: ReadonlyMap<string, string>;
+}): Map<string, string> {
   const keys = new Map<string, string>();
   const taken = new Set(input.directKeys.values());
   const count = new Map<string, number>();
-  for (const instance of input.selected)
+  for (const release of input.releases)
     count.set(
-      instance.identity.canonicalPurl,
-      (count.get(instance.identity.canonicalPurl) ?? 0) + 1,
+      release.canonicalPurl,
+      (count.get(release.canonicalPurl) ?? 0) + 1,
     );
-  const transitive: PackageInstance[] = [];
-  for (const instance of input.selected) {
-    const direct = input.directKeys.get(instance.identity.exactPurl ?? '');
-    if (direct !== undefined) keys.set(instance.nodeId, direct);
-    else transitive.push(instance);
+  const transitive: KeyedRelease[] = [];
+  for (const release of input.releases) {
+    const direct = input.directKeys.get(release.exactPurl);
+    if (direct !== undefined) keys.set(release.id, direct);
+    else transitive.push(release);
   }
   const ordered = [...transitive].sort((left, right) => {
-    if (left.identity.canonicalPurl !== right.identity.canonicalPurl)
-      return left.identity.canonicalPurl < right.identity.canonicalPurl
-        ? -1
-        : 1;
-    return codecFor(left.identity.purlType).compareNativeVersions(
-      left.nativeVersion,
-      right.nativeVersion,
+    if (left.canonicalPurl !== right.canonicalPurl)
+      return left.canonicalPurl < right.canonicalPurl ? -1 : 1;
+    return codecFor(left.ecosystem).compareNativeVersions(
+      left.version,
+      right.version,
     );
   });
-  for (const instance of ordered) {
-    const exact = instance.identity.exactPurl!;
-    const plain = flatLockName(exact);
-    const several = (count.get(instance.identity.canonicalPurl) ?? 1) > 1;
-    const base = several
-      ? `${plain}.${flatVersion(instance.nativeVersion)}`
-      : plain;
+  for (const release of ordered) {
+    const plain = flatLockName(release.exactPurl);
+    const several = (count.get(release.canonicalPurl) ?? 1) > 1;
+    const base = several ? `${plain}.${flatVersion(release.version)}` : plain;
     let key = base;
     for (let suffix = 2; taken.has(key); suffix += 1) key = `${base}.${suffix}`;
     taken.add(key);
-    keys.set(instance.nodeId, key);
+    keys.set(release.id, key);
   }
   return keys;
 }

@@ -149,10 +149,13 @@ describe('removing from a project that holds a package twice', () => {
     const { root, paths } = await setup();
     await removePackage({ root, alias: 'tinybench' });
     const lock = await readLockfile(paths.lock);
-    expect(Object.keys(lock!.packages).sort()).toEqual([
-      'tinybench.2.9.0',
-      'vitest',
-    ]);
+    // The name is held once now, so it is keyed as a name held once is.
+    expect(Object.keys(lock!.packages).sort()).toEqual(['tinybench', 'vitest']);
+    expect(lock!.packages.tinybench).toMatchObject({
+      purl: 'pkg:npm/tinybench@2.9.0',
+      reason: 'transitive',
+    });
+    expect(lock!.packages.vitest?.dependencies).toEqual(['tinybench']);
     // Nothing else holds the name any more, so it is no longer nested.
     expect(
       JSON.parse(
