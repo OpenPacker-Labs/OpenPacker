@@ -15,15 +15,15 @@ import { EXIT_CODES, handleError, runOpm } from '../src/opm.js';
  * What the CLI writes of an error. A message can carry text a registry chose (a
  * dependency's name, a version string, a key in its document) on its way from
  * an adapter, so the one place that writes an error makes it plain: no escape
- * sequence, no control character, no bidirectional override, and no line break
- * but the one the writer adds. A message with none of those is written as it
- * always was.
+ * sequence, no control character, no bidirectional override. The line breaks a
+ * message carries are kept (`error-lines.test.ts`), so nothing here uses one. A
+ * message with none of those is written as it always was.
  */
 
 const ESC = '\u001b';
 const BEL = '\u0007';
-/** Retitles the window, colours what follows, and breaks the line. */
-const hostile = `dep${ESC}[31m\nx${ESC}]0;pwned${BEL}`;
+/** Colours what follows, is split by a tab, and retitles the window. */
+const hostile = `dep${ESC}[31m\tx${ESC}]0;pwned${BEL}`;
 const plain = 'dep x';
 
 function capture() {
@@ -88,7 +88,7 @@ describe('an error whose message carries text from a registry', () => {
       EXIT_CODES.internal,
       `opm: internal error: failed on ${plain}\n`,
     ],
-  ])('is written as plain text on one line: %s', (_, error, code, text) => {
+  ])('is written as plain text: %s', (_, error, code, text) => {
     expect(written(error)).toEqual({ err: text, code });
   });
 

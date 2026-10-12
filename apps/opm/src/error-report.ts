@@ -1,5 +1,5 @@
 import { redactUrl } from '@openpacker/adapter-core';
-import { plainLine } from '@openpacker/canonical';
+import { plainLine, plainText } from '@openpacker/canonical';
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -12,20 +12,37 @@ import { plainLine } from '@openpacker/canonical';
  * and path and loses userinfo, query and fragment (`redactUrl`), and a value
  * that follows a credential-shaped name is withheld.
  *
- * What is printed is made plain first, once, here. A message can carry text a
- * registry chose (a dependency's name, a version, a key in its document) on its
- * way from an adapter, and `plainLine` (`@openpacker/canonical`, the one
- * definition of what a terminal must not be sent) removes escape sequences and
- * control, format and bidirectional characters and turns line breaks and tabs
- * into a space. The only line break in what is written is the one added here.
+ * What is printed is made plain first, once, here, and that is the second layer
+ * of two. A message can carry text a registry chose (a dependency's name, a
+ * version, a key in its document) on its way from an adapter. Where that is
+ * known, the adapter or the policy makes the text plain at its source
+ * (`safeEcho` in `@openpacker/canonical`: npm's dependency names, ranges and
+ * owners, the policy's publish-time bound), so that a library user gets it
+ * too. This writer does not rely on that: `plainText` (the same package, the
+ * one definition of what a terminal must not be sent) removes escape sequences
+ * and control, format and bidirectional characters, turns a tab into a space
+ * and a carriage return into a line break, and keeps the line breaks a message
+ * carries, because several of opm's own errors are lists, one entry to a line.
+ * What it cannot do is tell an entry opm wrote from a line a registry added: a
+ * message that reaches it with a line feed from a registry in it can start a
+ * line of its own, in plain text. Flattening a registry's text where it is
+ * quoted is the first layer's job, and so far only the npm adapter and the
+ * policy do it (ADR 0044).
  */
 
 /**
- * `prefix` and `message` as one line of an error report, ending in a newline.
- * The prefix is ours; the message is made plain.
+ * What an error's `message` may be when the error came from a library: its type
+ * says a string, and a foreign value need not keep to that.
  */
-export function report(prefix: string, message: string): string {
-  return `${prefix}${plainLine(message)}\n`;
+export type MessageLike = string | number | boolean | bigint | null | undefined;
+
+/**
+ * `prefix` and `message` as the lines of an error report, ending in a newline.
+ * The prefix is ours; the message is made plain and keeps its line breaks. A
+ * message that is not a string is written as `String` writes it.
+ */
+export function report(prefix: string, message: MessageLike): string {
+  return `${prefix}${plainText(String(message))}\n`;
 }
 
 /** How many `cause` links below the reported error are followed. */
@@ -247,7 +264,7 @@ export function formatFailure(
 ): string {
   if (failure.coded) return report(`${tool}: `, failure.message);
   const label = internalError ? `${tool}: internal error` : tool;
-  const lines = [`${label}: ${scrub(plainLine(failure.message))}`];
+  const lines = [`${label}: ${scrub(plainText(failure.message))}`];
   for (const [depth, cause] of failure.causes.entries())
     lines.push(`${tool}: ${'  '.repeat(depth + 1)}caused by: ${cause.text}`);
   if (failure.causes.some((cause) => cause.connectionFault)) {
