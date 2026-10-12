@@ -256,7 +256,8 @@ export async function runOpm(
                     ? `${parsed.purl}@${parsed.version}`
                     : parsed.purl
               : `pkg:${ecosystem}/${parsed.alias}${parsed.version ? `@${parsed.version}` : ''}`;
-            return runHostInstall(exact, args, io, cwd);
+            // await keeps a rejection inside runOpm's handler.
+            return await runHostInstall(exact, args, io, cwd);
           }
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
@@ -614,7 +615,8 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'system': {
-        return runSystemCommand(args, io, cwd);
+        // await keeps subcommand errors inside runOpm's handler.
+        return await runSystemCommand(args, io, cwd);
       }
       case 'plugin': {
         // await keeps subcommand errors inside runOpm's handler.
@@ -1013,7 +1015,7 @@ async function runSystemCommand(
     const purl = args.positionals[1];
     if (!purl) throw usage(`opm system ${sub} requires a PURL`);
     if (sub === 'plan') args.options.set('dry-run', true);
-    return runHostInstall(purl, args, io, cwd);
+    return await runHostInstall(purl, args, io, cwd);
   }
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
