@@ -79,9 +79,20 @@ async function readBounded(
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      // A connection that drops (or times out) mid-body is the network being
+      // unavailable, like one that never connected; it must not escape as a
+      // bare TypeError the caller cannot classify.
+      throw new PackslipError(
+        'UNAVAILABLE',
+        `The connection to ${url} failed while reading the response: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (chunk.done) break;
+    total += chunk.value.byteLength;
     if (total > maxBytes) {
       await reader.cancel();
       throw new PackslipError(
@@ -89,7 +100,7 @@ async function readBounded(
         `${url} is over the ${maxBytes} byte limit`,
       );
     }
-    chunks.push(value);
+    chunks.push(chunk.value);
   }
   return Buffer.concat(chunks);
 }

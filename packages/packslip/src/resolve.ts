@@ -60,7 +60,12 @@ export interface ResolveInput {
   readonly formats: readonly string[];
   readonly variant?: string;
   readonly fallbacks?: readonly SelectionFallback[];
-  /** Skip releases younger than this, measured from the log's integration time. */
+  /**
+   * Skip releases younger than this, measured from a time the verifier
+   * authenticated (a log entry's signed timestamp, or a timestamp authority).
+   * A release with no authenticated time cannot be shown to be old enough and
+   * is skipped like one that is too young.
+   */
   readonly minimumReleaseAgeMs?: number;
   /** Install although the host does not meet a hard requirement. */
   readonly allowIncompatibleHost?: boolean;
@@ -214,6 +219,7 @@ function memoryFrom(
       ...(signer.repositoryId !== undefined && {
         repositoryId: signer.repositoryId,
       }),
+      ...(signer.keyHint !== undefined && { keyHint: signer.keyHint }),
       pinWorkflow: statement.identity.pinWorkflow,
     },
     attestedBy: statement.attestedBy,
@@ -224,15 +230,15 @@ function memoryFrom(
   };
 }
 
-function ageMs(
-  verified: VerifiedBundle,
-  statement: ReleaseStatement,
-  now: Date,
-): number {
-  // The log's integration time is verified; `published_at` is the signer's own
-  // word and is used only when there is no log entry to ask.
-  const since = Date.parse(verified.integratedTime ?? statement.publishedAt);
-  return now.getTime() - since;
+/**
+ * How long ago the release is proven to have existed, or `undefined` when
+ * nothing verified a time. Only a time the verifier vouched for counts: the
+ * statement's `published_at` is the signer's own word, so a signer could
+ * back-date it to walk through the gate it exists to enforce.
+ */
+function ageMs(verified: VerifiedBundle, now: Date): number | undefined {
+  if (verified.integratedTime === undefined) return undefined;
+  return now.getTime() - Date.parse(verified.integratedTime);
 }
 
 /** What discovery needs: the project, who may sign for it, and how to reach the network. */
@@ -325,6 +331,7 @@ export async function resolveRelease(
     );
 
   const tooYoung: string[] = [];
+  const untimed: string[] = [];
   for (const candidate of ranking.ordered) {
     const response = await input.fetcher.get(candidate.bundleUrl, {
       maxBytes: MAX_BUNDLE_BYTES,
@@ -365,12 +372,16 @@ export async function resolveRelease(
         decision.proposal.changes.map((change) => change.message),
       );
 
-    if (
-      input.minimumReleaseAgeMs !== undefined &&
-      ageMs(verified, statement, input.now) < input.minimumReleaseAgeMs
-    ) {
-      tooYoung.push(candidate.version);
-      continue;
+    if (input.minimumReleaseAgeMs !== undefined) {
+      const age = ageMs(verified, input.now);
+      if (age === undefined) {
+        untimed.push(candidate.version);
+        continue;
+      }
+      if (age < input.minimumReleaseAgeMs) {
+        tooYoung.push(candidate.version);
+        continue;
+      }
     }
 
     const selected = selectArtifact(statement.artifacts, {
@@ -408,8 +419,16 @@ export async function resolveRelease(
       notes,
     };
   }
+  const reasons = [
+    tooYoung.length > 0
+      ? `younger than the minimum release age (${tooYoung.join(', ')})`
+      : undefined,
+    untimed.length > 0
+      ? `without a verified signing time, so their age cannot be shown (${untimed.join(', ')})`
+      : undefined,
+  ].filter((reason) => reason !== undefined);
   throw new PackslipError(
     'NO_RELEASE',
-    `Every release of ${project.name} matching "${request.spec}" is younger than the minimum release age (${tooYoung.join(', ')})`,
+    `Every release of ${project.name} matching "${request.spec}" is ${reasons.join(' or ')}`,
   );
 }

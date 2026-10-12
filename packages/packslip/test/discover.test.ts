@@ -336,6 +336,24 @@ describe('a signed list laid over GitHub’s endpoint', () => {
     await expect(run()).rejects.toMatchObject({ code: 'PROJECT_MISMATCH' });
   });
 
+  it('does not follow a rename through a list: one signed under the new name is refused for the old', async () => {
+    // A release statement can show (by repository ID) that a renamed project
+    // is the same one; a list carries no such proof, so it must name the
+    // project exactly as asked. Documented: ask for the new name.
+    setup(
+      buildList({
+        project: 'github.com/acme/renamed',
+        key,
+        sequence: 1,
+        entries: [],
+      }),
+    );
+    await expect(run()).rejects.toMatchObject({
+      code: 'PROJECT_MISMATCH',
+      message: expect.stringMatching(/acme\/renamed.*acme\/tool/u),
+    });
+  });
+
   it('refuses a list signed by someone else', async () => {
     setup(
       buildList({

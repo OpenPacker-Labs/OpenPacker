@@ -9,6 +9,7 @@ import {
   toSignedEntity,
   toTrustMaterial,
   type KeyFinderFunc,
+  type SignedEntity,
   type TrustMaterial,
 } from '@sigstore/verify';
 import { parseCanonicalJson } from '@openpacker/canonical';
@@ -88,6 +89,12 @@ export interface VerifiedSigner {
   readonly repositoryId?: string;
   /** `ps1_…` of the issuer and repository ID, when the certificate has both. */
   readonly fingerprint?: string;
+  /**
+   * The pinned key's 8-byte hint, for a key-signed bundle. The key id alone
+   * says which key; the hint is carried so continuity compares the whole
+   * key a project pinned and not only the part of it that names it.
+   */
+  readonly keyHint?: string;
 }
 
 export interface VerifiedBundle {
@@ -98,7 +105,15 @@ export interface VerifiedBundle {
   readonly bundleDigest: string;
   /** Whether a transparency-log entry was verified. */
   readonly logged: boolean;
-  /** When the log integrated the signature; absent for an unlogged bundle. */
+  /**
+   * The earliest time the signature is proven to have existed, taken only from
+   * a timestamp that was itself verified: a transparency-log entry whose signed
+   * entry timestamp covers its integration time, or an RFC 3161 timestamp from
+   * a trusted authority. Absent when nothing verified a time — an unlogged
+   * bundle, or a log entry that carries a proof but no signed timestamp, whose
+   * integration time is only JSON a forger can write. Never the signer's own
+   * `published_at`.
+   */
   readonly integratedTime?: string;
 }
 
@@ -190,12 +205,26 @@ function mapVerifierError(error: Error): PackslipError {
   );
 }
 
-function earliestIntegrated(bundle: Bundle): string | undefined {
-  const times = bundle.verificationMaterial.tlogEntries
-    .map((entry) => Number(entry.integratedTime))
-    .filter((seconds) => Number.isSafeInteger(seconds) && seconds > 0);
-  if (times.length === 0) return undefined;
-  return new Date(Math.min(...times) * 1000).toISOString();
+/**
+ * The earliest time the verifier itself vouched for. `Verifier.verify` checks
+ * every RFC 3161 timestamp and every log entry's signed entry timestamp, but
+ * only a log entry with an inclusion *promise* has an integration time that
+ * promise covers: a proof-only entry (Rekor v2) carries the time as unsigned
+ * JSON. Reading the time from the bundle instead of from what was verified
+ * would let a signer back-date a release and walk through a release-age gate.
+ */
+function authenticatedTime(entity: SignedEntity): string | undefined {
+  const millis: number[] = [];
+  for (const timestamp of entity.timestamps) {
+    if (timestamp.$case === 'timestamp-authority') {
+      millis.push(timestamp.timestamp.signingTime.getTime());
+    } else if (timestamp.tlogEntry.inclusionPromise !== undefined) {
+      millis.push(Number(timestamp.tlogEntry.integratedTime) * 1000);
+    }
+  }
+  const valid = millis.filter((ms) => Number.isSafeInteger(ms) && ms > 0);
+  if (valid.length === 0) return undefined;
+  return new Date(Math.min(...valid)).toISOString();
 }
 
 function checkKeyless(
@@ -322,11 +351,16 @@ function assertDeclaredSigner(payload: string, signer: VerifiedSigner): void {
  */
 export function verifyBundle(input: VerifyBundleInput): VerifiedBundle {
   const { expectation } = input;
+  // An empty string narrows nothing: every identity starts with it. It is
+  // treated as absent here so an empty `identity_prefix` cannot satisfy the
+  // rule that an expectation must say who may sign.
+  const present = (value: string | undefined): boolean =>
+    value !== undefined && value !== '';
   if (
     expectation.scheme === 'sigstore-oidc' &&
-    expectation.identity === undefined &&
-    expectation.identityPrefix === undefined &&
-    expectation.sourceRepository === undefined &&
+    !present(expectation.identity) &&
+    !present(expectation.identityPrefix) &&
+    !present(expectation.sourceRepository) &&
     (expectation.pins ?? []).length === 0 &&
     expectation.narrowedByForge !== true
   )
@@ -404,8 +438,10 @@ export function verifyBundle(input: VerifyBundleInput): VerifiedBundle {
     timestampThreshold: keyed ? 0 : 1,
   });
   let signed;
+  let entity: SignedEntity;
   try {
-    signed = verifier.verify(toSignedEntity(bundle));
+    entity = toSignedEntity(bundle);
+    signed = verifier.verify(entity);
   } catch (error) {
     throw mapVerifierError(
       error instanceof Error ? error : new Error(String(error)),
@@ -417,6 +453,7 @@ export function verifyBundle(input: VerifyBundleInput): VerifiedBundle {
     signer = {
       scheme: 'sigstore-key',
       identity: pinnedKey?.keyId ?? '',
+      ...(pinnedKey !== undefined && { keyHint: pinnedKey.hint }),
     };
   } else {
     const cert = leafCertificate(bundle);
@@ -431,7 +468,7 @@ export function verifyBundle(input: VerifyBundleInput): VerifiedBundle {
   }
   const payload = Buffer.from(envelope.payload).toString('utf8');
   assertDeclaredSigner(payload, signer);
-  const integratedTime = logged ? earliestIntegrated(bundle) : undefined;
+  const integratedTime = authenticatedTime(entity);
   return {
     payload,
     signer,

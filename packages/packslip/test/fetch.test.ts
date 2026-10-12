@@ -90,6 +90,19 @@ describe('the bounded fetcher against a real server', () => {
     expect(error.message).toContain('over the 1000 byte limit');
   });
 
+  it('reports a connection that drops mid-body as unavailable', async () => {
+    routes.set('/dropped', (_req, res) => {
+      res.writeHead(200, { 'transfer-encoding': 'chunked' });
+      res.write('partial');
+      setTimeout(() => res.socket?.destroy(), 10);
+    });
+    const error = await refusal(
+      local().get(`${base}/dropped`, { maxBytes: 1000 }),
+    );
+    expect(error.code).toBe('UNAVAILABLE');
+    expect(error.message).toContain('while reading the response');
+  });
+
   it('follows redirects, one hop at a time', async () => {
     routes.set('/a', (_req, res) =>
       res.writeHead(302, { location: '/b' }).end(),

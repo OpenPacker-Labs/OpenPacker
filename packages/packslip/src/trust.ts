@@ -8,6 +8,12 @@ export interface SignerRecord {
   readonly identity: string;
   readonly issuer?: string;
   readonly repositoryId?: string;
+  /**
+   * For a key-signed project, `base64(sha256(public key))`. The key id is a
+   * label written into the `.pub` file, not a function of the key, so two
+   * different keys can share one; the hint is what identifies the key itself.
+   */
+  readonly keyHint?: string;
   /** Whether the vendor holds later releases to the repository, not the workflow. */
   readonly pinWorkflow: boolean;
 }
@@ -66,7 +72,7 @@ const SCHEME_RANK: Record<SignatureScheme, number> = {
 
 function describeSigner(signer: SignerRecord): string {
   return signer.scheme === 'sigstore-key'
-    ? `key ${signer.identity}`
+    ? `key ${signer.identity}${signer.keyHint === undefined ? '' : ` (sha256 ${signer.keyHint.slice(0, 12)}…)`}`
     : `${signer.identity} (repository ${signer.repositoryId ?? 'unknown'})`;
 }
 
@@ -95,7 +101,13 @@ function signerChanges(
     return changes;
   }
   if (after.scheme === 'sigstore-key') {
-    if (before.identity !== after.identity) signerChanged('key');
+    // A lock from before the hint was recorded has none to compare; from the
+    // next accepted release on, the whole key is held and not only its label.
+    if (
+      before.identity !== after.identity ||
+      (before.keyHint !== undefined && before.keyHint !== after.keyHint)
+    )
+      signerChanged('key');
     return changes;
   }
 

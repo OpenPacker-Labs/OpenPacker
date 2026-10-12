@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTarGzip, packZip } from '@openpacker/project-io';
-import { signBundle, type TestKey } from './sign.js';
+import {
+  signBundle,
+  signLoggedBundle,
+  type TestKey,
+  type TestLog,
+} from './sign.js';
 
 /** The shape of a packslip fetch, stated here so the testkit needs no dependency on packslip. */
 export interface FetchRequest {
@@ -88,6 +93,17 @@ export interface BuildOptions {
   readonly identity?: Record<string, JsonValue>;
   readonly source?: JsonValue;
   readonly attestedBy?: string;
+  /**
+   * Record the signature in a throwaway transparency log at a given time, so
+   * the release carries a verifiable signing time. Pass `log.trustedRoot` to
+   * the verifier. Without it the bundle is unlogged.
+   */
+  readonly logged?: {
+    readonly log: TestLog;
+    readonly integratedTime: Date;
+    /** Write another time into the entry without re-signing it (a forgery). */
+    readonly claimedTime?: Date;
+  };
 }
 
 export interface BuiltRelease {
@@ -203,7 +219,16 @@ export function buildRelease(options: BuildOptions): BuiltRelease {
       }),
     },
   };
-  const bundle = signBundle(statement, options.key);
+  const bundle =
+    options.logged === undefined
+      ? signBundle(statement, options.key)
+      : signLoggedBundle(
+          statement,
+          options.key,
+          options.logged.log,
+          options.logged.integratedTime,
+          options.logged.claimedTime,
+        );
   return {
     statement,
     bundle,

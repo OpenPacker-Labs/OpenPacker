@@ -9,7 +9,11 @@ import {
   type ResolvedRelease,
   type TrustMemory,
 } from '../src/index.js';
-import { generateTestKey, type TestKey } from '@openpacker/packslip-testkit';
+import {
+  generateTestKey,
+  generateTestLog,
+  type TestKey,
+} from '@openpacker/packslip-testkit';
 import {
   FakeWeb,
   buildList,
@@ -485,40 +489,121 @@ describe('signer continuity across installs', () => {
 });
 
 describe('minimum release age', () => {
-  it('skips a release younger than the minimum and takes the next', async () => {
-    publishAll(['1.0.0', '2.0.0']);
-    // Unlogged bundles are aged from published_at, which the builder fixes at 2026-09-01.
-    const day = 24 * 3600 * 1000;
-    const resolved = await resolveRelease(
-      input({
-        now: new Date('2026-09-01T12:00:00Z'),
-        minimumReleaseAgeMs: 100 * day,
-      }),
-    ).catch((error: unknown) => error);
-    expect(resolved).toMatchObject({
-      code: 'NO_RELEASE',
-      message: expect.stringContaining('2.0.0, 1.0.0'),
-    });
-    const older = await resolveRelease(
-      input({ now: NOW, minimumReleaseAgeMs: 30 * day }),
-    );
-    expect(older.statement.version).toBe('2.0.0');
+  const HOUR = 3600 * 1000;
+  const DAY = 24 * HOUR;
+  let log: ReturnType<typeof generateTestLog>;
+
+  beforeEach(() => {
+    log = generateTestLog();
   });
 
-  it('measures the age of each candidate on its own', async () => {
-    const young = build('2.0.0', { publishedAt: '2026-10-10T00:00:00Z' });
-    const old = build('1.0.0', { publishedAt: '2026-08-01T00:00:00Z' });
+  /** A release the log recorded `ago` ms before NOW. */
+  function loggedAgo(
+    version: string,
+    ago: number,
+    over: Partial<BuildOptions> = {},
+  ) {
+    return build(version, {
+      logged: { log, integratedTime: new Date(NOW.getTime() - ago) },
+      ...over,
+    });
+  }
+
+  function publishLogged(
+    releases: ReturnType<typeof build>[],
+    versions: string[],
+  ) {
     githubWorld(web, {
       repo: 'acme/tool',
-      releases: [
-        { tag: 'v2.0.0', release: young },
-        { tag: 'v1.0.0', release: old },
-      ],
+      releases: releases.map((release, index) => ({
+        tag: `v${versions[index]}`,
+        release,
+      })),
     });
+  }
+
+  it('skips a release younger than the minimum and takes the next', async () => {
+    publishLogged(
+      [loggedAgo('2.0.0', 2 * HOUR), loggedAgo('1.0.0', 30 * DAY)],
+      ['2.0.0', '1.0.0'],
+    );
     const resolved = await resolveRelease(
-      input({ minimumReleaseAgeMs: 7 * 24 * 3600 * 1000 }),
+      input({ trustedRoot: log.trustedRoot, minimumReleaseAgeMs: 7 * DAY }),
     );
     expect(resolved.statement.version).toBe('1.0.0');
+    // Without a minimum the newest is taken, so the gate is what skipped it.
+    expect(
+      (await resolveRelease(input({ trustedRoot: log.trustedRoot }))).statement
+        .version,
+    ).toBe('2.0.0');
+  });
+
+  it('says so when every release is too young', async () => {
+    publishLogged([loggedAgo('1.0.0', 2 * HOUR)], ['1.0.0']);
+    expect(
+      await refusal(
+        resolveRelease(
+          input({ trustedRoot: log.trustedRoot, minimumReleaseAgeMs: DAY }),
+        ),
+      ),
+    ).toMatchObject({
+      code: 'NO_RELEASE',
+      message: expect.stringContaining('younger than the minimum release age'),
+    });
+  });
+
+  it('measures from the log, not from the published_at the signer wrote', async () => {
+    // The signer backdates the statement to 2020; the log says it was signed
+    // two hours ago. Believing the statement would walk through a 24h gate.
+    publishLogged(
+      [loggedAgo('1.0.0', 2 * HOUR, { publishedAt: '2020-01-01T00:00:00Z' })],
+      ['1.0.0'],
+    );
+    expect(
+      await refusal(
+        resolveRelease(
+          input({ trustedRoot: log.trustedRoot, minimumReleaseAgeMs: DAY }),
+        ),
+      ),
+    ).toMatchObject({ code: 'NO_RELEASE' });
+  });
+
+  it('does not take the log’s word from an entry whose time was rewritten', async () => {
+    publishLogged(
+      [
+        loggedAgo('1.0.0', 2 * HOUR, {
+          logged: {
+            log,
+            integratedTime: new Date(NOW.getTime() - 2 * HOUR),
+            claimedTime: new Date(NOW.getTime() - 90 * DAY),
+          },
+        }),
+      ],
+      ['1.0.0'],
+    );
+    expect(
+      await refusal(
+        resolveRelease(
+          input({ trustedRoot: log.trustedRoot, minimumReleaseAgeMs: DAY }),
+        ),
+      ),
+    ).toMatchObject({ code: 'VERIFICATION_FAILED' });
+  });
+
+  it('cannot show the age of an unlogged release, however old it says it is', async () => {
+    const unlogged = build('1.0.0', { publishedAt: '2020-01-01T00:00:00Z' });
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: [{ tag: 'v1.0.0', release: unlogged }],
+    });
+    expect(
+      await refusal(resolveRelease(input({ minimumReleaseAgeMs: DAY }))),
+    ).toMatchObject({
+      code: 'NO_RELEASE',
+      message: expect.stringContaining('without a verified signing time'),
+    });
+    // The project that asked for no minimum still gets it.
+    expect((await resolveRelease(input())).statement.version).toBe('1.0.0');
   });
 });
 

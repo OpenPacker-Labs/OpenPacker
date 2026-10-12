@@ -14,7 +14,9 @@ import {
 } from '../src/index.js';
 import {
   generateTestKey,
+  generateTestLog,
   signBundle,
+  signLoggedBundle,
   withPayload,
 } from '@openpacker/packslip-testkit';
 
@@ -279,6 +281,8 @@ describe('verifying key-signed bundles', () => {
     expect(verified.signer).toEqual({
       scheme: 'sigstore-key',
       identity: '2FFD20AC43D16194',
+      // The key itself, not only the label its file carries.
+      keyHint: 'JBODpbviKQ/hBf/um+8eZ+exjExaXX5ziTuHz2W0+PA=',
     });
     const statement = decodeReleaseStatement(
       parseCanonicalJson(verified.payload),
@@ -486,5 +490,124 @@ describe('malformed bundles', () => {
   it('rejects a pinned key that is not a minisign Ed25519 key', () => {
     for (const bad of ['', 'untrusted comment: x\n', 'AAAA', 'RWQ='])
       expect(() => parseMinisignPublicKey(bad)).toThrow(PackslipError);
+  });
+});
+
+describe('the time a signature is proven to exist', () => {
+  const statement = (keyId: string): JsonValue => ({
+    _type: 'https://in-toto.io/Statement/v1',
+    subject: [],
+    predicateType: 'https://packslip.dev/release/v1',
+    predicate: { identity: { scheme: 'sigstore-key', key_id: keyId } },
+  });
+  const key = generateTestKey();
+  const log = generateTestLog();
+  const expectation = {
+    scheme: 'sigstore-key' as const,
+    publicKey: key.publicKeyFile,
+  };
+
+  it('is the time the log signed for a logged key-signed bundle', () => {
+    const at = new Date('2026-10-01T08:30:00Z');
+    const verified = verifyBundle({
+      bundle: signLoggedBundle(statement(key.keyId), key, log, at),
+      expectation,
+      trustedRoot: log.trustedRoot,
+    });
+    expect(verified.logged).toBe(true);
+    expect(verified.integratedTime).toBe('2026-10-01T08:30:00.000Z');
+    expect(verified.signer.keyHint).toBe(key.hint);
+  });
+
+  it('refuses an entry whose time was changed after the log signed it', () => {
+    // A signer who wants a release to look old rewrites the entry's time.
+    const forged = signLoggedBundle(
+      statement(key.keyId),
+      key,
+      log,
+      new Date('2026-10-01T08:30:00Z'),
+      new Date('2020-01-01T00:00:00Z'),
+    );
+    expect(
+      refusal(() =>
+        verifyBundle({
+          bundle: forged,
+          expectation,
+          trustedRoot: log.trustedRoot,
+        }),
+      ).code,
+    ).toBe('VERIFICATION_FAILED');
+  });
+
+  it('does not trust a log the root does not name', () => {
+    const bundle = signLoggedBundle(
+      statement(key.keyId),
+      key,
+      generateTestLog(),
+      new Date('2026-10-01T08:30:00Z'),
+    );
+    expect(
+      refusal(() =>
+        verifyBundle({ bundle, expectation, trustedRoot: log.trustedRoot }),
+      ).code,
+    ).toBe('VERIFICATION_FAILED');
+  });
+
+  it('is absent for an unlogged bundle, and never the statement’s own published_at', () => {
+    const verified = verifyBundle({
+      bundle: signBundle(
+        {
+          ...(statement(key.keyId) as Record<string, JsonValue>),
+          predicate: {
+            identity: { scheme: 'sigstore-key', key_id: key.keyId },
+            published_at: '2020-01-01T00:00:00Z',
+          },
+        },
+        key,
+      ),
+      expectation,
+      allowUnlogged: true,
+    });
+    expect(verified.logged).toBe(false);
+    expect(verified.integratedTime).toBeUndefined();
+  });
+
+  it('ignores a log entry whose time no signed timestamp covers', () => {
+    // Rekor v2 entries carry a proof and no signed entry timestamp; their
+    // integration time is plain JSON a forger can write. Adding such an entry
+    // beside the honest one must not move the time the verifier reports.
+    const honest = verifyBundle({ bundle: hk, expectation: hkExpectation });
+    const bundle = JSON.parse(hk.toString('utf8'));
+    const entry = structuredClone(bundle.verificationMaterial.tlogEntries[0]);
+    delete entry.inclusionPromise;
+    entry.integratedTime = '1';
+    bundle.verificationMaterial.tlogEntries.push(entry);
+    const forged = verifyBundle({
+      bundle: Buffer.from(JSON.stringify(bundle)),
+      expectation: hkExpectation,
+    });
+    expect(forged.integratedTime).toBe(honest.integratedTime);
+  });
+});
+
+describe('an expectation must say who may sign', () => {
+  it.each([
+    ['an empty identity prefix', { identityPrefix: '' }],
+    ['an empty identity', { identity: '' }],
+    ['an empty source repository', { sourceRepository: '' }],
+    ['no fingerprints', { pins: [] }],
+  ])('refuses %s: it narrows nothing', (_name, narrowing) => {
+    expect(
+      refusal(() =>
+        verifyBundle({
+          bundle: hk,
+          expectation: {
+            scheme: 'sigstore-oidc',
+            issuer: 'https://token.actions.githubusercontent.com',
+            ...narrowing,
+          },
+        }),
+      ).code,
+    ).toBe('INVALID_INPUT');
   });
 });

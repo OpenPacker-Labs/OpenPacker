@@ -219,6 +219,56 @@ describe('key-signed projects', () => {
   });
 });
 
+describe('key-signed projects: the key, not its label', () => {
+  const keyed = (identity: string, keyHint?: string): SignerRecord => ({
+    scheme: 'sigstore-key',
+    identity,
+    pinWorkflow: true,
+    ...(keyHint !== undefined && { keyHint }),
+  });
+  const project = 'example.com/demo';
+  const withSigner = (signer: SignerRecord) => ({
+    ...memory({ project }),
+    signer,
+  });
+
+  it('refuses another key that carries the same key id', () => {
+    // The id is a label in the `.pub` file, not a function of the key: swapping
+    // in a different key under the old label must not read as "the same signer".
+    const proposal = refusal(
+      evaluateTrust(
+        project,
+        withSigner(keyed('AAAA', 'hint-of-the-old-key')),
+        withSigner(keyed('AAAA', 'hint-of-another-key')),
+      ),
+    );
+    expect(proposal.changes[0]).toMatchObject({
+      kind: 'signer-changed',
+      message: expect.stringContaining('The signer changed key'),
+    });
+    expect(proposal.changes[0]?.message).toContain('hint-of-the-');
+  });
+
+  it('accepts the same key, and a lock from before the key was recorded', () => {
+    const same = withSigner(keyed('AAAA', 'hint-of-the-old-key'));
+    expect(evaluateTrust(project, same, same).accepted).toBe(true);
+    const older = withSigner(keyed('AAAA'));
+    const decision = evaluateTrust(project, older, same);
+    expect(decision.accepted).toBe(true);
+    // ...and from here on the whole key is what is remembered.
+    if (decision.accepted)
+      expect(decision.memory.signer.keyHint).toBe('hint-of-the-old-key');
+  });
+
+  it('gives a different proposal id to a different key under one label', () => {
+    const before = withSigner(keyed('AAAA', 'one'));
+    const idOf = (hint: string) =>
+      refusal(evaluateTrust(project, before, withSigner(keyed('AAAA', hint))))
+        .id;
+    expect(idOf('two')).not.toBe(idOf('three'));
+  });
+});
+
 describe('no-downgrade', () => {
   it('flags a keyless project that moves to a long-lived key as weaker, and as a new signer', () => {
     const proposal = refusal(

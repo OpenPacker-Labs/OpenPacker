@@ -5,9 +5,11 @@ import {
   buildRelease,
   fakeFetch,
   generateTestKey,
+  generateTestLog,
   githubWorld,
   pae,
   signBundle,
+  signLoggedBundle,
   withPayload,
 } from '../src/index.js';
 
@@ -25,6 +27,36 @@ describe('the packslip testkit', () => {
     expect(Buffer.from(line ?? '', 'base64')).toHaveLength(42);
     expect(key.keyId).toMatch(/^[0-9A-F]{16}$/u);
     expect(key.hint).toMatch(/^[A-Za-z0-9+/]{43}=$/u);
+  });
+
+  it('writes a throwaway log, and a bundle it recorded with a signed time and a proof', () => {
+    const key = generateTestKey();
+    const log = generateTestLog();
+    expect(JSON.parse(log.trustedRoot).tlogs).toHaveLength(1);
+    const at = new Date('2026-10-01T08:30:00Z');
+    const [entry] = JSON.parse(
+      Buffer.from(signLoggedBundle({ a: 1 }, key, log, at)).toString(),
+    ).verificationMaterial.tlogEntries;
+    expect(entry.integratedTime).toBe(String(at.getTime() / 1000));
+    expect(entry.inclusionPromise.signedEntryTimestamp).toBeTruthy();
+    expect(entry.inclusionProof).toMatchObject({ treeSize: '1', hashes: [] });
+    // A forgery writes another time into the entry and leaves the signature alone.
+    const claimed = JSON.parse(
+      Buffer.from(
+        signLoggedBundle(
+          { a: 1 },
+          key,
+          log,
+          at,
+          new Date('2020-01-01T00:00:00Z'),
+        ),
+      ).toString(),
+    ).verificationMaterial.tlogEntries[0];
+    expect(claimed.integratedTime).toBe(
+      String(Date.parse('2020-01-01T00:00:00Z') / 1000),
+    );
+    // The log's signature is over the real time, so it cannot vouch for this one.
+    expect(claimed.inclusionPromise.signedEntryTimestamp).toBeTruthy();
   });
 
   it('signs a bundle whose payload can be swapped without touching its signature', () => {
