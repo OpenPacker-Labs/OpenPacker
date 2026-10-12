@@ -293,6 +293,20 @@ export interface PlacedEntry {
   entry: LayoutEntry;
   /** Package names from the project root down, as in {@link Placement}. */
   chain: readonly string[];
+  /** The member whose `node_modules` the chain starts in, as in {@link Placement}. */
+  base?: string;
+}
+
+function placementKey(base: string, chain: readonly string[]): string {
+  return `${base}\u0001${chain.join('\0')}`;
+}
+
+function comparePlacements(left: Placement, right: Placement): number {
+  return (
+    left.chain.length - right.chain.length ||
+    compareText(left.base ?? '', right.base ?? '') ||
+    compareText(left.chain.join('\0'), right.chain.join('\0'))
+  );
 }
 
 /** A lock whose placements cannot be laid out as written. */
@@ -328,11 +342,18 @@ export function planLayoutFromPaths(
   if (placed.length > maximumPlacements)
     throw new LayoutTooLargeError(maximumPlacements);
   const problems: string[] = [];
+  const members = new Set(options.members ?? []);
   const taken = new Map<string, LayoutEntry>();
-  for (const { entry, chain } of placed) {
-    const where = chain.join('/node_modules/');
+  for (const { entry, chain, base = '' } of placed) {
+    const where = placePath(chain, base);
     if (chain.length === 0) {
       problems.push(`${entry.id} has no place`);
+      continue;
+    }
+    if (base !== '' && !members.has(base)) {
+      problems.push(
+        `${entry.id} lives in ${base}, which is not a workspace member the layout was given`,
+      );
       continue;
     }
     const bad = chain
@@ -342,31 +363,29 @@ export function planLayoutFromPaths(
       problems.push(bad);
       continue;
     }
-    const key = chain.join('\0');
+    const key = placementKey(base, chain);
     const rival = taken.get(key);
     if (rival !== undefined) {
-      problems.push(
-        `${rival.id} and ${entry.id} both claim node_modules/${where}`,
-      );
+      problems.push(`${rival.id} and ${entry.id} both claim ${where}`);
       continue;
     }
     taken.set(key, entry);
   }
-  for (const { entry, chain } of placed) {
+  for (const { entry, chain, base = '' } of placed) {
     if (chain.length < 2) continue;
-    if (!taken.has(chain.slice(0, -1).join('\0')))
+    if (!taken.has(placementKey(base, chain.slice(0, -1))))
       problems.push(
-        `${entry.id} lives inside ${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
+        `${entry.id} lives inside ${base === '' ? '' : `${base}/node_modules/`}${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
       );
   }
   if (problems.length > 0) throw new LayoutPathsError(problems);
   const placements = placed
-    .map(({ entry, chain }) => ({ entry, chain }))
-    .sort(
-      (left, right) =>
-        left.chain.length - right.chain.length ||
-        compareText(left.chain.join('\0'), right.chain.join('\0')),
-    );
+    .map(({ entry, chain, base = '' }) => ({
+      entry,
+      chain,
+      ...(base !== '' && { base }),
+    }))
+    .sort(comparePlacements);
   return {
     placements,
     skipped: [],
