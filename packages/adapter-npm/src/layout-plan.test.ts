@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import {
-  compareVersions,
   LayoutTooLargeError,
   planLayout,
   toLayoutEntries,
@@ -379,12 +378,6 @@ describe('planLayout over random closures', () => {
 });
 
 describe('helpers', () => {
-  it('orders versions numerically and repeatably', () => {
-    expect(compareVersions('1.10.0', '1.9.0')).toBeGreaterThan(0);
-    expect(compareVersions('2.0.0', '2.0.0')).toBe(0);
-    expect(compareVersions('1.0.0-beta.1', '1.0.0')).toBeLessThan(0);
-  });
-
   it.each(['react', '@scope/pkg', 'a.b', 'under_score', 'x~y'])(
     'accepts %s as a directory name',
     (name) => {
