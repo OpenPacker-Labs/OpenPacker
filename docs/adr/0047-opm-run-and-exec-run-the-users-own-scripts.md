@@ -164,7 +164,12 @@ own repository.
     build calls `opm run` dozens of times. A test reads the import graph and
     fails if the fast path acquires a workspace import. Failures use the same
     `handleError`. `dist/opm.js` still works as an entry and still answers `run`
-    and `exec`.
+    and `exec`. `opmx-main.js` is the bin of `opmx` and runs it without asking
+    whether it is the entry: a package manager starts a bin through a link, and
+    `dist/opmx.js` decides by comparing its URL with `process.argv[1]`, which is
+    false then and ran nothing, with exit code 0. `dist/opmx.js` still works
+    started by its own path. `bins.test.ts` starts every declared bin through a
+    link.
 
 ## Consequences
 
