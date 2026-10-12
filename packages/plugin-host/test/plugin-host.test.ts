@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ProviderError } from '@openpacker/adapter-core';
 import { AdapterRegistry, type AdapterModule } from '@openpacker/adapter-host';
 import type {
   DelegatedAdapterManifest,
@@ -22,7 +23,10 @@ import {
   type RunInSandboxInput,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
-import type { DelegatedExecutableIdentity } from '@openpacker/pack-provider';
+import {
+  UNSUPPORTED_PLATFORM,
+  type DelegatedExecutableIdentity,
+} from '@openpacker/pack-provider';
 import {
   delegatedAdapterModule,
   registerInstalledPlugins,
@@ -793,6 +797,34 @@ describe('registerInstalledPlugins', () => {
       name: 'ProviderError',
       code: 'UNAVAILABLE',
     });
+  });
+
+  it('says a host that cannot snapshot an executable lacks that, not that the file is bad', async () => {
+    const root = await fixtureRoot();
+    const fixture = await installFixturePlugin(root);
+    const registry = new AdapterRegistry();
+    await registerInstalledPlugins({
+      storeRoot: fixture.storeRoot,
+      registry,
+      inspectExecutable: async (path) =>
+        fakeIdentity(path, fixture.executableDigest),
+      // What openDelegatedExecutable throws off Linux.
+      openExecutableAuthority: async () => {
+        throw new ProviderError(
+          UNSUPPORTED_PLATFORM,
+          'Delegated provider executables need Linux: macOS has neither.',
+        );
+      },
+      sandboxRun: async () => sandboxOutcome(''),
+    });
+    const caught = await registry
+      .definitionFor('acme')
+      .catch((error: unknown) => error);
+    expect(caught).toMatchObject({ code: UNSUPPORTED_PLATFORM });
+    expect(String(caught)).toMatch(
+      /Plugin dev\.example\.acme-adapter cannot run here: Delegated provider executables need Linux/u,
+    );
+    expect(String(caught)).not.toMatch(/not a stable approved file/u);
   });
 
   it('maps an unexpected sandbox run failure to PLUGIN_FAILED', async () => {
