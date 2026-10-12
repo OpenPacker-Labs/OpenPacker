@@ -28,7 +28,7 @@ export type PnpmLockReason =
   | 'duplicate-key'
   /** A value of the wrong type or in the wrong place. */
   | 'shape'
-  /** A key pnpm does not write in that place. */
+  /** A key pnpm 9 and 10 do not write in that place. */
   | 'unknown-key'
   /** `lockfileVersion` other than `'9.0'`. */
   | 'version'

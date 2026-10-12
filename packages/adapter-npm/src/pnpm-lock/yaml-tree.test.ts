@@ -175,6 +175,28 @@ describe('readYamlTree: what it refuses', () => {
     expect(reasonOf('')).toBe('yaml-syntax');
   });
 
+  it('refuses the document pnpm 11 writes ahead of the project lock, and says what it is', () => {
+    // pnpm 11.28.5 writes `---`, the lock of the config dependencies, `---`,
+    // then the project lock, when the project has config dependencies.
+    const text = [
+      '---',
+      "lockfileVersion: '9.0'",
+      'importers:',
+      '  .:',
+      '    configDependencies: {}',
+      'packages: {}',
+      'snapshots: {}',
+      '',
+      '---',
+      "lockfileVersion: '9.0'",
+      '',
+    ].join('\n');
+    const error = refusal(text);
+    expect(error.reason).toBe('yaml-syntax');
+    expect(error.message).toContain('several');
+    expect(error.message).toContain('pnpm 11');
+  });
+
   it('refuses a key listed twice, in block and flow mappings and nested', () => {
     const block = refusal('a: 1\nb: 2\na: 3\n');
     expect(block.reason).toBe('duplicate-key');

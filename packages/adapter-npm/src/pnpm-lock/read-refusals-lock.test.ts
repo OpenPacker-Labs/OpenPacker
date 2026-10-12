@@ -39,6 +39,12 @@ const REFUSALS: Case[] = [
     'unknown-key',
     '"workspaces"',
   ],
+  [
+    'a top level key only pnpm 11 writes',
+    sectionKey('untrackedPnpmfileReadPackageHook', 'true'),
+    'unknown-key',
+    'pnpm 9 and 10 do not write',
+  ],
   ['a top level list', '- a\n- b\n', 'shape', 'a mapping'],
   ['a top level string', 'lockfileVersion\n', 'shape', 'a mapping'],
   ['an empty file', '', 'yaml-syntax', 'empty'],

@@ -181,7 +181,7 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
       if (documents.length > 1)
         throw new PnpmLockError(
           'yaml-syntax',
-          'must be one YAML document, and this has several',
+          "must be one YAML document, and this has several (pnpm 11 writes the lock of the project's config dependencies as a document ahead of the project lock; this reads only the project lock)",
         );
     }
   } catch (error) {

@@ -125,7 +125,7 @@ export function asStringMap(
   return out;
 }
 
-/** Refuse a key pnpm does not write in this place. */
+/** Refuse a key pnpm 9 and 10 do not write in this place (pnpm 11 adds two: see ADR 0052). */
 export function rejectUnknown(
   map: YamlMap,
   allowed: readonly string[],
@@ -135,7 +135,7 @@ export function rejectUnknown(
     if (!allowed.includes(key))
       throw new PnpmLockError(
         'unknown-key',
-        `has the key ${JSON.stringify(key)}, which pnpm does not write here (it writes ${allowed.join(', ')})`,
+        `has the key ${JSON.stringify(key)}, which pnpm 9 and 10 do not write here (they write ${allowed.join(', ')})`,
         where,
       );
 }

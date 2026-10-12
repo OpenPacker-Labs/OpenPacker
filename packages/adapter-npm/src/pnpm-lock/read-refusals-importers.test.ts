@@ -67,6 +67,16 @@ const REFUSALS: Case[] = [
     '"specifiers"',
   ],
   [
+    'an importer key only pnpm 11 writes',
+    edit(
+      BASE,
+      '    dependencies:\n',
+      '    publishDirectory: dist\n    linkDirectory: false\n    dependencies:\n',
+    ),
+    'unknown-key',
+    '"linkDirectory"',
+  ],
+  [
     'a dependency without a specifier',
     importerEntry('      a:\n        version: 1.0.0'),
     'shape',
