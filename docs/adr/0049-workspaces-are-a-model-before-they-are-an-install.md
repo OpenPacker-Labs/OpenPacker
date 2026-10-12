@@ -258,14 +258,42 @@ Limits that remain:
 - Nothing installs from this yet. `opm ci` still refuses a workspace lock,
   `opm run` still has no `--filter`, and there are no per-member `node_modules`.
 - Ranges are read by the range parser `adapter-core` already has, which is not
-  node-semver on partial versions. Of 48 ranges put to `semver` (768
-  version/range pairs) 12 differ: `^0`, `^0.0`, `^0.0.x`, `^0.x`, `^0.x.x`,
-  `~0.x`, `~1.x`, `>0`, `<=1`, `>1.x`, `>=1 <=2 || 0.x`, and `v1` (not read as a
-  range at all). Full `x.y.z` ranges, `*`, `||`, hyphen ranges and prereleases
-  agree on every pair tried. A range that hits one is decided by the parser, not
-  by node-semver: a `workspace:` range may be refused where pnpm accepts it (or
+  node-semver on partial versions. Put to npm's own semver (7.7.2,
+  `satisfies(version, range, true)`) on 289 ranges and 23 versions, 6,647 pairs
+  (`workspace-range-oracle.json`), the engine agrees on 203 ranges and differs
+  on 86, 783 pairs, in these classes:
+  - `=` before a partial or wildcard version (16: `=1`, `=1.2`, `=1.x`): the
+    engine reads the zero-filled version, semver the whole line;
+  - `^` before a partial version whose major is 0 (5: `^0`, `^0.0`, `^0.x`,
+    `^0.0.x`, `^0.x.x`): `^0` is `=0.0.0` here and `<1.0.0` in semver;
+  - `~` before a version whose minor is a wildcard (6: `~1.x`, `~1.*`,
+    `~0.x.x`);
+  - `>` before a partial or wildcard version (19: `>1`, `>1.2`, `>0.x`) and `<=`
+    before one (16: `<=1`, `<=1.x`): the engine compares with the zero-filled
+    version, semver past the whole line (`>1` is `>=2.0.0`, `<=1` is `<2.0.0`);
+    `>*`, `>x`, `<*` and `<x` (and their `X` forms) match every release version
+    here and none in semver;
+  - a partial version with a leading `v` after any operator (16: `v1`,
+    `>=v1.2`), which the engine does not read as a range at all (`v1.2.3`
+    agrees);
+  - a hyphen range with wildcard ends (`1.x - 2.x`), not read as a range either;
+  - an operator with no version (`^`, `>=`), read as `*` here and rejected by
+    semver;
+  - the two compound ranges in the list that contain the above (`>1 <=2`,
+    `>=1 <=2 || 0.x`).
+
+  Every full `x.y.z` range, `*`, `||`, hyphen range between full versions and
+  prerelease range in the list agrees on every pair, as do a bare partial (`1`,
+  `1.x`, `0.x`), `<` and `>=` before one, and `^` and `~` before the partials
+  not named above. A range in a class is decided by the parser, not by
+  node-semver: a `workspace:` range may be refused where pnpm accepts it (or
   accepted where it refuses), and a plain range may fail to link a member npm
-  would link. Fixing it belongs to the parser, not to the workspace model.
+  would link, or link one it would not. Fixing it belongs to the parser, which
+  resolution shares, not to the workspace model;
+  `workspace-ranges.oracle.test.ts` pins the 86 and their classes, so the fix
+  fails it and sends these figures to be corrected, and so does a new
+  difference.
+
 - A member's version must be strict SemVer 2.0. node-semver also accepts
   `v1.0.0` and, loosely, `=1.0.0` and `01.0.0`; a workspace with one is refused,
   naming the file.

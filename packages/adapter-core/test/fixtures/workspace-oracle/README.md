@@ -14,6 +14,7 @@ refuses a tool whose version is not the one named below (`PINNED` in
 | ------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `workspace-glob-oracle.json`   | `oracle-glob.mjs` (`glob-battery.mjs`)     | pnpm 10.28.0 (`pnpm ls -r`, so its bundled tinyglobby 0.2.14); npm 10.9.4 (`@npmcli/map-workspaces` 4.0.2, glob 10.4.5) | `workspace-patterns.test.ts`, and `workspace-real-shapes.test.ts` in `opm-project` over real directories |
 | `workspace-filter-oracle.json` | `oracle-filter.mjs` (`filter-battery.mjs`) | pnpm 10.28.0 (`pnpm --filter=... ls`), with and without `legacy-dir-filtering`                                          | `workspace-filter.oracle.test.ts`                                                                        |
+| `workspace-range-oracle.json`  | `oracle-ranges.mjs`                        | semver 7.7.2, the copy inside npm 10.9.4 (`satisfies(version, range, true)`)                                            | `workspace-ranges.oracle.test.ts`                                                                        |
 
 `workspace-glob-known-differences.json` is not generated: it names the pattern
 lists on which pnpm's globber is the odd one out and the model deliberately is
@@ -49,7 +50,7 @@ npx prettier --write packages/adapter-core/test/fixtures/workspace-*-oracle.json
 `--check` exits 1 and says which file differs; the comparison is of the parsed
 JSON, so formatting does not matter. Run time is dominated by starting pnpm for
 every case: about a minute for `glob` (115 pattern lists), about four minutes
-for `filter` (460 selector lists).
+for `filter` (460 selector lists), instant for `ranges`.
 
 A new case is a new line in the oracle's battery file, then `--write` for that
 oracle; the replaying test picks it up with no edit, and a case on which the
