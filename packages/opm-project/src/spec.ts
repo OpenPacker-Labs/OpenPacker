@@ -131,10 +131,17 @@ function parsePackslipSpec(
       'INVALID_SPEC',
       `"${spec}" does not name a packslip project (expected packslip:<host>/<path>[@version], such as packslip:github.com/jdx/hk)`,
     );
-  const qualified =
-    !segments[0]?.includes('.') && segments.length > 1
-      ? ['github.com', ...segments]
-      : segments;
+  // `owner/repo` is GitHub shorthand: a first segment with no dot is not a host,
+  // and then there must be exactly an owner and a repository. Anything else
+  // (`a/b/c`, a lone `mise`) names no project, and is refused here rather than
+  // as a GitHub project that cannot exist.
+  const shorthand = !segments[0]?.includes('.');
+  if (shorthand && segments.length !== 2)
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${spec}" does not name a packslip project: write packslip:<owner>/<repo> for GitHub, or packslip:<host>/<path> such as packslip:github.com/jdx/hk`,
+    );
+  const qualified = shorthand ? ['github.com', ...segments] : segments;
   const purl = `pkg:packslip/${qualified.map((part) => encodeURIComponent(part)).join('/')}`;
   const last =
     qualified.length > 1 ? qualified.at(-1) : qualified[0]?.split('.')[0];

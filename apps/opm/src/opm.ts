@@ -35,6 +35,7 @@ import {
   readManifestFile,
   listSystemInstallers,
   parsePackageSpec,
+  stripPurlVersion,
   planSystemInstall,
   projectPaths,
   readEnvironmentState,
@@ -384,9 +385,12 @@ export async function runOpm(
         const target = args.positionals[0];
         if (!target) throw usage('opm versions requires a package or PURL');
         const ecosystem = registryEcosystem(args, target);
-        const versions = await listRegistryVersions(ecosystem, target, {
-          offline: args.options.has('offline'),
-        });
+        // The registry is asked about the package, whatever version was typed.
+        const versions = await listRegistryVersions(
+          ecosystem,
+          stripPurlVersion(browseTarget(target)),
+          { offline: args.options.has('offline') },
+        );
         if (versions.length === 0) {
           io.stdout.write('(no published versions)\n');
           return EXIT_CODES.success;
@@ -397,7 +401,7 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'resolve': {
-        const target = args.positionals[0];
+        const target = browseTarget(args.positionals[0] ?? '');
         if (!target) throw usage('opm resolve requires a package or PURL');
         // resolve works without a project, but inside one its bindings are
         // part of the resolution authority and are verified first.
@@ -1089,6 +1093,16 @@ function explicitlyGrantedEnvironment(args: Parsed) {
  * same way `opm add lodash` does — guessing npm because it is popular is how
  * you install the wrong package.
  */
+/**
+ * `packslip:jdx/hk` is shorthand for a PURL, and the browse commands speak
+ * PURLs: the registry must be asked about `pkg:packslip/github.com/jdx/hk`.
+ */
+export function browseTarget(target: string): string {
+  return target.startsWith('packslip:')
+    ? parsePackageSpec(target, { ecosystem: 'packslip' }).purl
+    : target;
+}
+
 function registryEcosystem(args: Parsed, target: string): string {
   const explicit = option(args, 'ecosystem') ?? option(args, 'e');
   if (explicit) return explicit;
