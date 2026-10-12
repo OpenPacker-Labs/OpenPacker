@@ -471,11 +471,11 @@ export interface ProjectFormat {
 
   /**
    * Whose workspace rules read this ecosystem's members (`package.json`
-   * `workspaces` is npm's). A host that sees one discovers the workspace on
-   * disk and hands it to `readFrozenLock`; a format without one is installed
-   * as a single project.
+   * `workspaces` is npm's); a host discovers them and hands them to
+   * `readFrozenLock`. `workspaceToolFor` decides per project, when its lock does.
    */
   readonly workspaceTool?: WorkspaceTool;
+  workspaceToolFor?(project: DetectedProject): Promise<WorkspaceTool>;
 
   /**
    * Read the native lock as a frozen install would use it: exactly the

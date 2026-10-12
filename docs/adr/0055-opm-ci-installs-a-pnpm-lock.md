@@ -140,6 +140,14 @@ design:
     acceptance runs use to check a plan, and, on a tree on disk, what Node finds
     from every importer.
 
+    One shape has no plan: packages that need each other at different versions
+    (`a@1` needs `b@1`, which needs `a@2`, which needs `b@2`, which needs
+    `a@1`), because each copy nested beside its dependent is shadowed by the one
+    above it, for ever. pnpm writes that with symlinks, which this layout does
+    not have. The planner stops at 32 directories deep and the install is
+    refused naming the instances, where without the bound it exhausted an 8 GB
+    heap on the first generated graph that had one.
+
 ### Peer-suffixed instances
 
 13. **Each is a separate instance of one registry package.** It is placed where

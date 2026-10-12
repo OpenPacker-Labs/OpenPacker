@@ -49,6 +49,18 @@ export interface FrozenWorkspaceInput {
 export interface FrozenLockOptions {
   /** The machine the install is for, in the ecosystem's own vocabulary. */
   target: NativeTarget;
+  /**
+   * Every machine whose packages are installed, `target` among them: a package
+   * is installed when it runs on any one of them (pnpm's
+   * `supportedArchitectures`). Absent, `target` alone.
+   */
+  targets?: readonly NativeTarget[];
+  /**
+   * The registry a package that has no URL in its lock is fetched from (a pnpm
+   * lock records an integrity and nothing else for one). The public registry
+   * when absent.
+   */
+  registry?: string;
   omit: ReadonlySet<FrozenOmit>;
   /**
    * Set by a host that discovered the project's workspace. A format that
@@ -89,6 +101,18 @@ export interface FrozenLockPackage {
   scope: 'runtime' | 'development' | 'optional' | 'peer';
   /** Declares an install script. Nothing here runs it. */
   hasInstallScript: boolean;
+  /**
+   * The lock does not say whether the package declares an install script (a
+   * pnpm lock keeps that elsewhere), so the host reads it from the archive it
+   * has extracted and `hasInstallScript` is only a default.
+   */
+  scriptsFromArchive?: true;
+  /**
+   * What the lock calls this package when several places hold it (a pnpm
+   * snapshot key, `react-dom@18.2.0(react@18.2.0)`): one id may have several
+   * paths, and two ids may share an archive.
+   */
+  instance?: string;
   /** The registry's deprecation message, when the lock carries one. */
   deprecated?: string;
   /**
