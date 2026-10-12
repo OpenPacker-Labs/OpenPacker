@@ -2,8 +2,9 @@
  * `package-lock.json` and `package.json` as a frozen install reads them.
  *
  * This reads the two files (no-follow, bounded), checks that the lock still
- * matches its manifest, turns workspaces into a refusal list, and hands the
- * rest to the selection in `frozen-select.ts`.
+ * matches its manifest and, in a workspace, the members on disk, lists what a
+ * workspace lock holds that cannot be installed, and hands the rest to the
+ * selection in `frozen-select.ts`.
  */
 
 import { createHash } from 'node:crypto';
@@ -15,6 +16,7 @@ import {
   type DetectedProject,
   type FrozenLock,
   type FrozenLockOptions,
+  type WorkspaceMember,
 } from '@openpacker/adapter-core';
 import { planFrozenPackageLock } from './frozen-select.js';
 import {
@@ -154,10 +156,16 @@ export async function readFrozenPackageLock(
   const refused = tree.workspace?.refused ?? [];
   if (refused.length > 0)
     return { ...common, packages: [], skipped: [], refused: [...refused] };
+  // The workspace on disk is looked at only where there is one to hold the lock
+  // to; a project with none is read as it always was.
+  const disk =
+    tree.workspace !== undefined || manifest.workspaces !== undefined
+      ? ((await options.workspace?.disk()) ?? [])
+      : [];
   const disagreements = [
-    ...workspaceDisagreements(tree, options),
+    ...workspaceDisagreements(tree, disk),
     ...lockDisagreements(tree, manifest),
-    ...memberManifestDisagreements(tree, options),
+    ...memberManifestDisagreements(tree, disk),
   ];
   if (disagreements.length > 0)
     throw new ProviderError(
@@ -170,12 +178,9 @@ export async function readFrozenPackageLock(
 /** How the members the lock lists differ from the ones the project declares. */
 function workspaceDisagreements(
   tree: ReturnType<typeof parsePackageLockText>,
-  options: FrozenLockOptions,
+  disk: readonly WorkspaceMember[],
 ): string[] {
-  const lines = memberListDisagreements(
-    tree.workspace?.members ?? [],
-    options.workspace?.disk ?? [],
-  );
+  const lines = memberListDisagreements(tree.workspace?.members ?? [], disk);
   return lines.length === 0
     ? []
     : [`the workspace members differ (${lines.join('; ')})`];
@@ -184,13 +189,11 @@ function workspaceDisagreements(
 /** Each member the lock and the disk both have, against its own `package.json`. */
 function memberManifestDisagreements(
   tree: ReturnType<typeof parsePackageLockText>,
-  options: FrozenLockOptions,
+  disk: readonly WorkspaceMember[],
 ): string[] {
-  const disk = new Map(
-    (options.workspace?.disk ?? []).map((member) => [member.dir, member]),
-  );
+  const onDisk = new Map(disk.map((member) => [member.dir, member]));
   return (tree.workspace?.members ?? []).flatMap((member) => {
-    const there = disk.get(member.dir);
+    const there = onDisk.get(member.dir);
     return there === undefined
       ? []
       : memberDisagreements(tree, member, manifestOfMember(there));

@@ -635,4 +635,27 @@ describe('a project without a workspace', () => {
       message: expect.stringMatching(/No workspaces found/u),
     });
   });
+
+  it('is never put through workspace discovery, which reads manifests more strictly than npm ci does', async () => {
+    const w = await setup();
+    delete w.root.workspaces;
+    // Not SemVer 2.0, which discovery refuses and an ordinary install never read.
+    w.root.version = '1.0';
+    w.root.dependencies = { a: '^1.0.0' };
+    w.place('node_modules/a', { name: 'a', version: '1.0.0' });
+    await w.write();
+    expect((await w.install()).installed).toBe(1);
+  });
+
+  it('is put through it once it declares a workspace', async () => {
+    const w = await setup();
+    w.root.version = '1.0';
+    await w.write();
+    await expect(w.install()).rejects.toMatchObject({
+      code: 'INVALID_MANIFEST',
+      message: expect.stringMatching(
+        /version "1\.0" is not a semantic version/u,
+      ),
+    });
+  });
 });

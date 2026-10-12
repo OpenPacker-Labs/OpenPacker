@@ -58,7 +58,7 @@ async function readLock(
 const input = (
   onDisk: Record<string, Record<string, unknown>> = members,
 ): FrozenWorkspaceInput => ({
-  disk: diskMembers(onDisk),
+  disk: async () => diskMembers(onDisk),
   scope: { kind: 'all' },
 });
 
@@ -92,10 +92,56 @@ describe('reading a workspace lock against the workspace on disk', () => {
 
   it('takes the root out of the comparison', async () => {
     const result = await readLock(lock(), {
-      disk: diskMembers({ '': { name: 'app' }, ...members }),
+      disk: async () => diskMembers({ '': { name: 'app' }, ...members }),
       scope: { kind: 'all' },
     });
     expect(result.refused).toEqual([]);
+  });
+
+  it('does not look at the workspace on disk of a project that has none', async () => {
+    let asked = 0;
+    const plain = {
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'app', dependencies: { left: '^1.0.0' } },
+        'node_modules/left': registry('left', '1.2.0'),
+      },
+    };
+    const result = await readLock(
+      plain,
+      {
+        disk: async () => {
+          asked += 1;
+          throw new Error('discovery would fail here');
+        },
+        scope: { kind: 'all' },
+      },
+      { name: 'app', dependencies: { left: '^1.0.0' } },
+    );
+    expect(result.packages.map((pkg) => pkg.path)).toEqual([
+      'node_modules/left',
+    ]);
+    expect(asked).toBe(0);
+  });
+
+  it('looks when package.json declares workspaces, though the lock lists no member', async () => {
+    let asked = 0;
+    await expect(
+      readLock(
+        { lockfileVersion: 3, packages: { '': { name: 'app' } } },
+        {
+          disk: async () => {
+            asked += 1;
+            return diskMembers({ 'packages/one': one });
+          },
+          scope: { kind: 'all' },
+        },
+        { name: 'app', workspaces: ['packages/*'] },
+      ),
+    ).rejects.toThrow(
+      /packages\/one \(one\) is a member on disk and is not in the lock/u,
+    );
+    expect(asked).toBe(1);
   });
 
   describe('refuses, naming both sides, when the members differ', () => {

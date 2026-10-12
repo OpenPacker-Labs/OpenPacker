@@ -36,10 +36,13 @@ export type FrozenWorkspaceScope =
 export interface FrozenWorkspaceInput {
   /**
    * The members found on disk by the host's discovery (root included when it
-   * has a manifest). Empty when the project declares no workspaces. The lock's
-   * own member list is compared with this one.
+   * has a manifest); empty when the project declares no workspaces. Discovery
+   * reads every member's `package.json` strictly, so it is asked for only by a
+   * project that has a workspace to compare: the adapter calls it when the lock
+   * lists members or `package.json` declares `workspaces`, and never for a
+   * project with neither, which is installed as it always was.
    */
-  disk: readonly WorkspaceMember[];
+  disk(): Promise<readonly WorkspaceMember[]>;
   scope: FrozenWorkspaceScope;
 }
 

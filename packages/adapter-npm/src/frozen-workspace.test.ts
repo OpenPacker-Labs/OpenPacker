@@ -65,7 +65,7 @@ function plan(
     options: {
       target: LINUX_X64,
       omit: new Set(omit),
-      ...(scope && { workspace: { disk: [], scope } }),
+      ...(scope && { workspace: { disk: async () => [], scope } }),
     },
   });
 }

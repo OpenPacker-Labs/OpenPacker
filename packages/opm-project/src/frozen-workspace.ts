@@ -17,7 +17,11 @@ import {
   type ProjectFormat,
 } from '@openpacker/adapter-core';
 import { OpmError } from './types.js';
-import { discoverWorkspace, graphOfWorkspace } from './workspace/index.js';
+import {
+  discoverWorkspace,
+  graphOfWorkspace,
+  type WorkspaceDiscovery,
+} from './workspace/index.js';
 
 /** What a person can ask of a workspace install. */
 export interface FrozenWorkspaceRequest {
@@ -62,9 +66,14 @@ function asksForWorkspace(request: FrozenWorkspaceRequest): boolean {
 }
 
 /**
- * Discover the project's workspace for a format that has them, and say which
- * part to install. Undefined for a format without workspaces, which refuses a
- * request for one.
+ * Say which part of the project's workspace to install, for a format that has
+ * workspaces; undefined for one without, which refuses a request for one.
+ *
+ * The workspace on disk is discovered once, and when it is first needed: at once
+ * for a selection (the members must be known to name them), and otherwise only
+ * when the adapter asks, which it does for a project that has a workspace to
+ * hold the lock to. Discovery reads every member's `package.json` strictly, so a
+ * project that declares no workspaces is never subjected to it.
  */
 export async function prepareFrozenWorkspace(
   root: string,
@@ -85,16 +94,17 @@ export async function prepareFrozenWorkspace(
       'INVALID_SPEC',
       '--workspaces=false installs no member, so it cannot be combined with --workspace or --workspaces',
     );
-  let found;
-  try {
-    found = await discoverWorkspace(root, { tool: format.workspaceTool });
-  } catch (error) {
-    throw error instanceof WorkspaceError ? workspaceFailure(error) : error;
-  }
-  const disk = found?.members ?? [];
+  const tool = format.workspaceTool;
+  let discovery: Promise<WorkspaceDiscovery | undefined> | undefined;
+  const discover = (): Promise<WorkspaceDiscovery | undefined> =>
+    (discovery ??= discoverWorkspace(root, { tool }).catch((error: Error) => {
+      throw error instanceof WorkspaceError ? workspaceFailure(error) : error;
+    }));
+  const disk = async () => (await discover())?.members ?? [];
   if (request.ignore === true) return { disk, scope: { kind: 'root' } };
   if (!selecting && request.all !== true)
     return { disk, scope: { kind: 'all' } };
+  const found = await discover();
   if (found === undefined)
     throw new OpmError(
       'INVALID_SPEC',

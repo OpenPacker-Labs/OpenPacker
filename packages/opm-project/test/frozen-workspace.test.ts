@@ -43,7 +43,7 @@ describe('prepareFrozenWorkspace', () => {
     });
     const input = await prepareFrozenWorkspace(dir, await npm());
     expect(input?.scope).toEqual({ kind: 'all' });
-    expect(input?.disk.map((m) => [m.dir, m.name])).toEqual([
+    expect((await input?.disk())?.map((m) => [m.dir, m.name])).toEqual([
       ['', 'app'],
       ['libs/three', 'three'],
       ['packages/one', '@s/one'],
@@ -54,7 +54,8 @@ describe('prepareFrozenWorkspace', () => {
   it('has nothing to read in a project that declares no workspace', async () => {
     const dir = await project({}, {});
     const input = await prepareFrozenWorkspace(dir, await npm());
-    expect(input).toEqual({ disk: [], scope: { kind: 'all' } });
+    expect(input?.scope).toEqual({ kind: 'all' });
+    expect(await input?.disk()).toEqual([]);
   });
 
   it('reads --workspace as npm does: a name, a directory, or the directory above', async () => {
@@ -148,11 +149,14 @@ describe('prepareFrozenWorkspace', () => {
       { 'packages/a': { name: 'a' }, 'packages/b': { name: 'a' } },
       { workspaces: ['packages/*'] },
     );
-    await expect(
-      prepareFrozenWorkspace(dir, await npm()),
-    ).rejects.toMatchObject({
+    // Nothing is read until the adapter asks, or a selection needs the members.
+    const input = await prepareFrozenWorkspace(dir, await npm());
+    await expect(input?.disk()).rejects.toMatchObject({
       code: 'INVALID_MANIFEST',
       message: expect.stringMatching(/Two workspace members are named "a"/u),
     });
+    await expect(
+      prepareFrozenWorkspace(dir, await npm(), { select: ['a'] }),
+    ).rejects.toMatchObject({ code: 'INVALID_MANIFEST' });
   });
 });
