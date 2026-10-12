@@ -22,7 +22,7 @@ const facts = {
     eligible: true,
     warnings: [] as string[],
   },
-  packageId: 'pkg:npm/typescript@5.9.3',
+  packageId: 'pkg:npm/example-heavy@1.0.0',
   evaluationTime: '2026-10-12T12:00:00Z',
 };
 
@@ -32,7 +32,7 @@ const releaseAge = (
   result.checks.find((check) => check.code === 'supply-chain.release-age');
 
 const why =
-  'The full packument of typescript is 100663297 bytes (96.00 MiB) and exceeds the limit of 100663296 bytes (96.00 MiB)';
+  'The full packument of example-heavy is 100663297 bytes (96.00 MiB) and exceeds the limit of 100663296 bytes (96.00 MiB)';
 
 test('a refused document is named beside "not captured"', async () => {
   const result = await evaluatePolicy(policy, {

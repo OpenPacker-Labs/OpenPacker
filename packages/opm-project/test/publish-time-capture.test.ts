@@ -16,7 +16,7 @@ import { capturePublishTime } from '../src/supply-chain.js';
 
 const facts = (): PolicyFacts => ({
   evidence: [],
-  packageId: 'pkg:npm/typescript@5.9.3',
+  packageId: 'pkg:npm/example-heavy@1.0.0',
   evaluationTime: '2026-10-12T12:00:00Z',
 });
 
@@ -30,7 +30,7 @@ const failing = (error: unknown): CatalogProvider =>
 
 const capture = async (provider: CatalogProvider, signal?: AbortSignal) => {
   const captured = facts();
-  await capturePublishTime(captured, provider, 'pkg:npm/typescript@5.9.3', {
+  await capturePublishTime(captured, provider, 'pkg:npm/example-heavy@1.0.0', {
     minimumReleaseAgeMinutes: 1440,
     ...(signal && { signal }),
   });
@@ -46,14 +46,14 @@ describe('when the registry document that holds the publish time was refused', (
         11,
         'delivered',
         200,
-        'The full packument of typescript',
+        'The full packument of example-heavy',
       ),
     ],
     [
       'not usable',
       new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        'The full packument of typescript is not usable: Expected a JSON value',
+        'The full packument of example-heavy is not usable: Expected a JSON value',
       ),
     ],
   ])('the reason is kept: %s', async (_, error) => {

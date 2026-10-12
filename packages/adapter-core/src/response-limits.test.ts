@@ -162,9 +162,9 @@ describe('a refusal says what was seen and what the limit was', () => {
   });
 
   it('can be said about what was being read, keeping its numbers', () => {
-    const renamed = streamed.about('The packument of typescript');
+    const renamed = streamed.about('The packument of example-heavy');
     expect(renamed.message).toMatch(
-      /^The packument of typescript exceeds the limit of 8388608 bytes/u,
+      /^The packument of example-heavy exceeds the limit of 8388608 bytes/u,
     );
     expect(renamed).toMatchObject({
       code: 'UPSTREAM_RESPONSE_TOO_LARGE',
