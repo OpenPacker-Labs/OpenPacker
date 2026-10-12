@@ -25,16 +25,20 @@ import { plainLine, plainText } from '@openpacker/canonical';
  * carries, because several of opm's own errors are lists, one entry to a line.
  * What it cannot do is tell an entry opm wrote from a line a registry added: a
  * message that reaches it with a line feed from a registry in it can start a
- * line of its own, in plain text. Flattening a registry's text where it is
- * quoted is the first layer's job, and every adapter that quotes a registry's
- * document does it (`echoed` in @openpacker/adapter-core: its shared parsers and
- * the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters and the
- * apt, Chocolatey, winget and Nix refusals; `safeEcho` in the OCI client and
- * the materializer, npm and the policy). Text that does not come through an
- * adapter (a plugin's, a path project-io refuses, an argument opm-project
- * repeats) reaches this writer unflattened. It also reads an unterminated `ESC ]` or `ESC P` as
- * running to the end of the message, as a terminal does, so a field that ends
- * in one drops the entries after it (ADR 0044).
+ * line of its own, in plain text. Flattening that text where it is quoted is
+ * the first layer's job, and it is done at the source for what a registry or a
+ * cloned repository sends: `echoed` in @openpacker/adapter-core (its shared
+ * parsers, the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters, the
+ * plugin store, opm-project's reading of opm.toml, opm.lock.json and the npm
+ * lock, and the apt, Chocolatey, winget and Nix refusals), `safeEcho` in the OCI
+ * client, the materializer, npm and the policy, and `plainLine` for what
+ * `opm list`, `why` and `import --native` print. Text that does not come
+ * through one of those (a plugin's, a path project-io refuses, a packer's file
+ * name, a child's own stderr) reaches this writer unflattened, safe from
+ * escapes and not from line feeds. It also reads an unterminated `ESC ]` or
+ * `ESC P` as running to the end of the message, as a terminal does, so a field
+ * that ends in one drops the entries after it (ADR 0044). The `openpacker`
+ * command line (`apps/openpacker-cli`) has no writer and is not covered.
  */
 
 /**

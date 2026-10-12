@@ -174,12 +174,21 @@ resolve ends, so a registry that makes a resolve visit many packages can make it
 hold more than one document's worth. A refusal names the package, the size seen
 and the limit, and a publish time that is missing because the registry's
 document was refused says so in the policy message; the text it repeats from the
-document is capped and made one line by the adapter that quotes it (every
-adapter that reads a registry's document does this; a registry cannot add a line
-to what opm writes), and the command line removes escape sequences and control
-characters from the errors and warnings it writes itself (a child process's own
-output is passed through), whatever worded them, and keeps the line breaks of
-the errors that are lists. See the
+document is capped and made one line by the package that quotes it (the registry
+adapters, the OCI client, the materializer, the plugin store, npm and the
+policy), so a registry cannot add a line to what opm writes. The same holds for
+the values of a cloned repository's `package.json`, `package-lock.json`,
+`opm.toml` and `opm.lock.json` in the errors that `opm ci`, `install`, `sync`,
+`list` and the commands that read them raise, and `opm list`, `why` and
+`import --native` print those values one to a line. Some text still reaches the
+command line's writer unflattened: a plugin's own output and manifest, the paths
+`project-io` refuses, the standard packers' file names, and what a host
+installer, a tool or a script writes to its own stderr. The writer removes
+escape sequences and control characters from the errors and warnings it writes
+(a child process's own output is passed through), so none reaches a terminal,
+and it keeps the line breaks, because several errors are lists, so a line feed
+in that text starts a line. `openpacker-cli` and `openpackerd` are not covered.
+See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 Host installers that only advertise `install` still participate: their plans

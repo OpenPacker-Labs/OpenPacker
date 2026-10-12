@@ -411,46 +411,108 @@ independent review got the same two figures.
   `requires_dist` entry was `dep[x`, a line feed, `opm: internal error: forged`,
   a line feed, an erase and `opm: ok installed 1 package`: `opm add` printed
   four lines and `opm resolve` six, with the failing exit code beside a line
-  that said "ok". Every adapter that quotes a registry's document therefore
+  that said "ok". Every package that quotes a registry's document therefore
   makes the text it quotes one line where it quotes it, with `safeEcho` (256
   characters; npm's dependency text has its own limits, 200 to 214): `echoed` in
   `@openpacker/adapter-core` for its shared parsers (PURL, version, range, VERS,
   identity and digest algorithm) and for adapter-pypi, adapter-cargo,
   adapter-nuget, adapter-maven, adapter-golang, the OCI provider,
-  registry-client and the four host-manager adapters (apt, Chocolatey, winget
-  and Nix, whose refusals repeat a PURL that a person or a project file names
-  and that `parsePurl` accepts with a line feed or an escape in it); `safeEcho`
-  itself in the OCI client (the registry's error body, token scope, media types
-  and digests) and the materializer (the name of an archive entry, in the fifty
-  "Unsafe archive rejected" refusals); and, from round 4, npm and the policy.
-  Against the same registry, with `cat -v`: `opm add` prints one line, and
-  `opm resolve` its three real ones. Each adapter has a unit test of its
-  messages that failed on the sources before the change, and
+  registry-client, the plugin store (`registry.ts` and the archive it unpacks:
+  the manifest's schema reasons, the executable it names, the entry names it
+  lists), adapter-host's definition version and the four host-manager adapters
+  (apt, Chocolatey, winget and Nix, whose refusals repeat a PURL that a person
+  or a project file names and that `parsePurl` accepts with a line feed or an
+  escape in it); `safeEcho` itself in the OCI client (the registry's error body,
+  token scope, media types and digests) and the materializer (the name of an
+  archive entry, in the fifty "Unsafe archive rejected" refusals); and, from
+  round 4, npm and the policy. Against the same registry, with `cat -v`:
+  `opm add` prints one line, and `opm resolve` its three real ones. A plugin
+  registry was missed by round 6 and is the same: against a registry whose entry
+  names itself with a line feed, `opm plugin add foo@1.0.0` wrote 3 lines, two
+  of them forged; it writes 1. Each package has a unit test of its messages that
+  failed on the sources before the change, and
   `apps/opm/test/error-sources.test.ts` reads a hostile document with the real
   adapter and writes the error with the real handler: it failed first for PyPI
-  (4 of 6), NuGet, Maven and OCI. For Cargo and Go it is a control, because
-  their own sites cannot be reached by a document (a Cargo coordinate and a Go
-  module path come from the caller; a Cargo target and a Go build constraint are
-  recorded as meaning lost and are not errors), so a hostile version reaches the
-  shared parser instead. The host-manager adapters have unit tests only (they
-  failed first: apt 4 of 5, Chocolatey 3 of 4, winget 4 of 5, Nix 6 of 7); I
-  found no road to those messages through the binary, because `opm resolve` and
-  `opm install` of those types stop at "does not advertise
-  prex.registry.package-metadata/1".
-- **What still relies on the writer alone.** Text that does not come from an
-  adapter's reading of a registry's or a store's document. The plugin host's
-  messages (a plugin's own stderr is appended to its errors, up to 2,048
-  characters, and a manifest's schema reasons name its fields), the plugin
-  store's, and the paths `project-io` refuses while it writes an archive. The
-  messages `opm-project` and `apps/opm` write that repeat an argument the person
-  typed or a value a project file holds (`Invalid PURL: …` in `spec.ts` is one:
-  `opm add` with a line feed in the spec prints the second line as a line of its
-  own), a source id from configuration (`adapter-host`), and the file names and
-  parser messages of the standard packers (`adapters-default`). The writer makes
-  these plain and keeps their line feeds; none of them is text a registry sends.
-  `lock-import` and `receipts` repeat a native lock's or a receipt's text and
-  are depended on by `openpackerd` and `openpacker-cli`, not by `opm`; no
-  package depends on `closure` or `ocm`. Not audited further, not changed.
+  (4 of 6), NuGet, Maven and OCI, and `apps/opm/test/error-plugin.test.ts`
+  drives `opm plugin add`. The Cargo and Go cases of `error-sources.test.ts`
+  also fail on the sources of round 5 (`8713e6d`): their own sites cannot be
+  reached by a document (a Cargo coordinate and a Go module path come from the
+  caller; a Cargo target and a Go build constraint are recorded as meaning lost
+  and are not errors), but a hostile version reaches the shared parser, which
+  was not flat either. An earlier version of this ADR called them controls; they
+  are not. The host-manager adapters have unit tests only (they failed first:
+  apt 4 of 5, Chocolatey 3 of 4, winget 4 of 5, Nix 6 of 7); I found no road to
+  those messages through the binary, because `opm resolve` and `opm install` of
+  those types stop at "does not advertise prex.registry.package-metadata/1".
+  `echoed` says a value that is not text as a template literal does
+  (`undefined`, `null`, `x` for an array), so a field a registry left out or
+  typed oddly is still the coded error it was and not an uncoded `TypeError`.
+- **A cloned repository's files reach the terminal, and these sites flatten
+  them.** The commands a person runs after `git clone` read `package.json`,
+  `package-lock.json`, `opm.toml` and `opm.lock.json`, and their values are
+  repeated in the errors those commands raise. A line feed in a value (or a
+  carriage return, which the writer reads as one) started a line of its own
+  (`opm: ok installed 1 package@1`) from a dependency name package.json named, a
+  `lockfileVersion`, a version, a name, an `os`, a link's target, a workspace
+  member's name, a dependency key that was not a string, a lock's
+  `schemaVersion`, `generatedBy`, alias and format, a manifest's purl, version,
+  layout, section name and plugin digest, and from the text of a JSON or TOML
+  syntax error. Found by putting a payload (a line feed, a line that looks like
+  opm's, a list entry and an erase) in every string, number and key of the four
+  files in four layouts and running `ci`, `import --native`, `list`, `why`,
+  `install`, `sync`, `update`, `uninstall`, `remove`, `gc`, `generations` and
+  `manifest`, reading both streams: 1,578 runs, 98 forged outputs on `3bf90c5`
+  and none now; and the files corrupted as text (the payload before, after and
+  inside them, with line feeds and with carriage returns), 252 runs, 28 on
+  `3bf90c5` (all carriage returns in `opm.toml`) and none now. `echoed` wraps
+  the untrusted part where each message is built in adapter-npm
+  (`frozen-lock.ts`, `frozen-select.ts`, `lock-tree.ts`), opm-project
+  (`frozen-*.ts`, `lock.ts`, `toml.ts`, `project.ts`, `install.ts`, `update.ts`,
+  `paths.ts`, `catalog.ts`, `spec.ts` and the smaller modules) and the closure
+  message. Where a message is a list, the separators are opm's and each entry's
+  parts are flattened: `opm ci`'s four lists, and "What the walk could not use"
+  (the PURL `echoed`, the reason `plainLine`d). The stdout of `opm list`,
+  `opm why` and `opm import --native` printed the same values with nothing
+  between them and the stream, and a raw escape sequence; they go through
+  `plainLine`, which cuts nothing (`apps/opm/src/stdout-lines.ts`,
+  `whyPackage`). `apps/opm/test/error-repo-npm.test.ts`,
+  `error-repo-opm.test.ts` and `stdout-repo.test.ts` run the commands through
+  `runOpm` with the payload and with `x` in a field and compare the lines
+  written: 14 of 15, 12 of 12 and 12 of 13 failed on `3bf90c5` (the others are
+  controls). The method reaches what the commands reach from these files in a
+  project with no installed packages. It did not drive the paths that need a
+  populated store (a successful install), the files `opm pack` reads, a catalog,
+  the state under `.opm`, or a plugin's output.
+- **What `echoed` costs.** It cuts a message's text at 256 characters (the OCI
+  error body at 1,024), saying how long it was, so a loss record's text and a
+  long PURL or URL in a message are cut: a uv.lock dependency marker of 431
+  characters gives a loss text of 339. The lock and the native payload keep the
+  full value; only the message is shorter, and the text of a `SemanticLoss`,
+  which is persisted, changes for such a lock. `safeEcho` drops a line feed
+  instead of spacing it (a multi-line registry body reads as words run
+  together), and it removes ZWNJ and ZWJ, so a name in a script that needs them
+  (`می‌خواهم`) loses them in a message.
+- **What reaches the writer raw, and what is not covered.** Some text reaches
+  the writer without an adapter or a loader having made it one line. The writer
+  removes its escape sequences and control characters, so none reaches a
+  terminal, and it keeps its line feeds, so a line feed in it starts a line.
+  These are: the plugin host's messages (a plugin's own stderr is appended to
+  its errors, up to 2,048 characters, and a manifest's schema reasons name its
+  fields; 84 interpolations, not audited), the paths `project-io` refuses while
+  it writes an archive, the file names and parser messages of the standard
+  packers (`adapters-default`) and of delegated pack providers
+  (`pack-provider`), a host installer's, a tool's and a script's own stderr,
+  passed through as it wrote it, the messages `apps/opm` builds from the
+  person's own arguments (usage errors), and the interpolations in opm-project
+  that the commands above did not reach (about 340 remain in the triage: counts,
+  line numbers, configured endpoints, environment names, project paths and the
+  state under `.opm`; I did not trace each). `lock-import` and `receipts` repeat
+  a native lock's or a receipt's text and are depended on by `openpackerd` and
+  `openpacker-cli`, not by `opm`; no package depends on `closure` or `ocm`.
+  **Not covered at all:** `apps/openpacker-cli` (its `openpacker: ${message}`
+  has no writer and no scanner, and its message can repeat what a PREX client or
+  the daemon says), `apps/openpackerd`, and anything outside the `opm` command
+  line.
 - **The writer reads an unterminated escape string as a terminal would.** An
   `ESC ]` (OSC) or `ESC P`, `ESC X`, `ESC ^`, `ESC _` with no terminator runs to
   the end of the message, so a field that ends in one drops the rest of the
@@ -510,23 +572,32 @@ independent review got the same two figures.
   the plugin store that could not be used, the paths and reasons skipped and the
   meaning lost in `add`, a host install, `manifest`, `pack` and `opm ci`, and
   `opmx`'s line naming the version it ran and the reason a run could not start
-  all use `report`. Left as written, each with its reason in a list that
-  `apps/opm/test/stderr-writers.test.ts` holds against the sources with the
-  TypeScript parser (a new writer that is neither routed nor named fails, and so
-  does a name that no longer matches a call; "routed" is that the whole
-  expression written is a call to `report` or `formatFailure`, and the scanner
-  follows aliases and destructuring of the stream, `stderr['write']`,
-  `write.bind/call/apply`, `console.error` and `console.warn`,
-  `fs.writeSync(2, …)` and `pipe(stderr)`, each held by a fixture that must be
-  caught): a child's own stderr (a host installer's, a tool's, a script's,
-  passed through as it wrote it), constant sentences around a count or an exit
-  status, the usage text of `opm auth` (the person's own argument), and the two
-  lines of the run path that name a script of the person's own `package.json` or
-  the bin the person typed (the run path loads no workspace package,
-  `run-load.test.ts`). Eleven writers were not routed before this; the
-  plugin-store one is also driven for real (a hostile `OPM_PLUGIN_HOME`), and
-  the rest are held by the list, because they need a registry or a module mock,
-  which the repository's lint rejects.
+  all use `report`. `apps/opm/test/stderr-writers.test.ts` holds this against
+  the sources with the TypeScript parser (`stderr-scan.ts`). It does not
+  recognise write calls one spelling at a time, which an independent review beat
+  22 times in 26 (a stream handed to a helper, `new Console(process.stderr)`,
+  `Reflect.apply`, `import { stderr as e }`, `fs.writeFileSync(2, …)`,
+  `io['std' + 'err']`, `console.trace`); it forbids the reference. Any property
+  or element access that names `stderr`, an identifier called `stderr`, a
+  computed key on `io` or `process`, `console` in any form, `new Console`,
+  `process.emitWarning` and a file descriptor 2 is a use; a stream that is
+  handed on, kept, bound, applied or put in a conditional is found where it is
+  first named. The one allowed form is `io.stderr.write(x)` where the whole of
+  `x` is a call to `report` or `formatFailure`, the imported writer and not a
+  function of that name declared in the same file. Every other use in `src` is
+  named in the test with the reason it may be there, and an entry that matches
+  no use fails: a child's own stderr (a host installer's, a tool's, a script's,
+  passed through as it wrote it), the process streams at the host seam of the
+  run path, constant sentences around a count or an exit status, the usage text
+  of `opm auth` (the person's own argument), and the two lines of the run path
+  that name a script of the person's own `package.json` or the bin the person
+  typed (the run path loads no workspace package, `run-load.test.ts`). The
+  scanner is held by 24 fixtures that must be caught, the review's 26 (25
+  caught, the 26th is the allowed form) and four more. It scans `apps/opm/src`
+  only: `apps/openpacker-cli` and every other package are outside it. Eleven
+  writers were not routed before this; the plugin-store one is also driven for
+  real (a hostile `OPM_PLUGIN_HOME`), and the rest are held by the list, because
+  they need a registry or a module mock, which the repository's lint rejects.
 - **A rejection that skipped the writer.** `case 'system'` in `runOpm`, the
   host-install branch of `add`, and `runSystemCommand` returned another async
   function's promise inside the `try` without `await`, so a rejected
