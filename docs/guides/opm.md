@@ -264,6 +264,7 @@ in the lock so a changed signer stops the next resolve until a person approves
 exactly that change.
 
 ```sh
+# list "packslip" in project.ecosystems first (see above), then:
 opm add packslip:jdx/hk                 # GitHub project: forge-proven signer, no config
 opm packslip verify packslip:jdx/hk     # who signed it; installs nothing
 opm packslip pin packslip:jdx/hk --write

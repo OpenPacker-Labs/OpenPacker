@@ -14,22 +14,30 @@ about opm), `@openpacker/adapter-packslip` (the PREX adapter),
 
 ```sh
 opm init
+# opm enables no ecosystem on its own: list packslip in opm.toml first,
+#   [project]
+#   ecosystems = ["npm", "cargo", "pypi", "packslip"]
 opm add packslip:jdx/hk                       # newest release; GitHub is assumed
 opm add packslip:github.com/jdx/hk@2.5.0      # an exact version
-opm add 'pkg:packslip/mise.jdx.dev'           # a vendor on its own domain
 opm install
 ```
 
-| Spec                                | Means                                           |
-| ----------------------------------- | ----------------------------------------------- |
-| `packslip:jdx/hk`                   | `github.com/jdx/hk` (two segments, none dotted) |
-| `packslip:github.com/jdx/hk@2.5.0`  | that project at that exact version              |
-| `packslip:mise.jdx.dev`             | a project hosted on its own domain              |
-| `pkg:packslip/github.com/jdx/hk`    | the same project as a PURL                      |
-| `pkg:packslip/…@1.0.0?variant=musl` | a published build variant (the only qualifier)  |
+A vendor on its own domain (`packslip:mise.jdx.dev`) cannot be added until the
+manifest says who may sign for it: its name does not identify a forge, so opm
+has nothing to derive a signer from. Add a `trust` entry first (below).
+
+| Spec                                | Means                                                               |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `packslip:jdx/hk`                   | `github.com/jdx/hk`: exactly `owner/repo`, and the owner has no dot |
+| `packslip:github.com/jdx/hk@2.5.0`  | that project at that exact version                                  |
+| `packslip:mise.jdx.dev`             | a project hosted on its own domain (needs a `trust` entry)          |
+| `pkg:packslip/github.com/jdx/hk`    | the same project as a PURL                                          |
+| `pkg:packslip/…@1.0.0?variant=musl` | a published build variant (the only qualifier)                      |
 
 The expansion to `github.com/…` happens when the spec is read, so the manifest
 and the lock always carry the full name that a trust setting is keyed by.
+`opm versions`, `opm resolve` and the other browse commands accept the same
+`packslip:` shorthand.
 
 Look before you install:
 
@@ -60,9 +68,11 @@ A resolution fails closed unless **all** of these hold:
    log entry, and its time is one the verifier vouched for (the log's signed
    timestamp, or a timestamp authority's), not the wall clock and not the
    statement's own `published_at`.
-2. The signer is who the project said — or, for a GitHub/GitLab project with no
-   configuration, a certificate for **that repository**, issued by the forge's
-   own OIDC issuer.
+2. The signer is who the project said — or, for a GitHub project with no
+   configuration, a certificate for **that repository**, issued by GitHub's own
+   OIDC issuer. (GitLab certificate identities are understood, but release
+   discovery for GitLab projects is not implemented, so they cannot be
+   installed.)
 3. The statement is for the project and version asked for, and the version
    matches the tag it was found under.
 4. The archive the statement names exists for this host, and the bytes opm
@@ -107,7 +117,7 @@ allow_incompatible_host = false
 | `pin`                           | List of signer fingerprints (`ps1_…`); the certificate must match one                |
 | `public_key`                    | Minisign Ed25519 public key for a key-signed project (exclusive of the keyless keys) |
 | `identity` / `identity_prefix`  | Exact certificate identity (the workflow URI with its ref), or a prefix of it        |
-| `issuer`                        | OIDC issuer; defaults to the forge's for GitHub and GitLab projects                  |
+| `issuer`                        | OIDC issuer; defaults to GitHub's for a GitHub project                               |
 | `source_repository`             | Repository URI the certificate must name                                             |
 | `allow_unlogged`                | Accept a key-signed bundle with no transparency-log entry                            |
 
@@ -153,8 +163,13 @@ next resolution compares against it, and stops on:
 | The vendor's attestation replaced by a repackager's | yes                          |
 | Build provenance or the log entry dropped           | yes                          |
 | The workflow pin reduced to a repository pin        | yes                          |
-| A **different repository ID** under the same name   | **no** — a different project |
+| A **different repository ID** under a GitHub name¹  | **no** — a different project |
 | A signed list older than one already seen           | **no** — rollback            |
+
+¹ For a project named by its GitHub repository, the name identifies the
+repository, so another repository ID under it is another project. A project on
+its own domain is identified by the domain, not by a repository: if its CI moves
+to a new repository that is a changed signer, and an approvable one.
 
 A stopped resolution prints a proposal id that names exactly that change:
 
@@ -168,10 +183,13 @@ opm packslip approve 7c1e0a94b2d53f68   # records the id in [adapters.packslip].
 opm update                              # accepts that change and nothing else
 ```
 
-An id approves one change. An id for another change, or a later change by the
-same signer, is not covered. `advancing` names record keys that legitimately
-differ between resolutions of the same release (a list's sequence number); a
-frozen install does not compare them, and takes the names from its own fresh
+An id approves one exact change: _from this signer to that one_. An id for
+another change, or a later change by a different signer, is not covered. The id
+names the transition, so the same transition recurring later (A→B, then B→A,
+then A→B again) is covered by the id that is still in `approvals`; remove ids
+you no longer need. `advancing` names record keys that legitimately differ
+between resolutions of the same release (a list's sequence number); a frozen
+install does not compare them, and takes the names from its own fresh
 resolution, never from the lock.
 
 For a key-signed project the lock keeps the whole key, not only the key id
@@ -186,16 +204,16 @@ on every resolution whether or not a lock exists.
 
 ## Policy facts
 
-| Fact                             | From                                                                  |
-| -------------------------------- | --------------------------------------------------------------------- |
-| `signerIdentity`                 | The certificate identity without its ref (a key id for key-signed)    |
-| `sigstoreIssuer`                 | The certificate's OIDC issuer                                         |
-| evidence `packslip`              | The statement and archive were verified                               |
-| evidence `sigstore`              | **Keyless only** — Sigstore's PKI vouched for the signer              |
-| evidence `sigstore-transparency` | The signature has a verified log entry                                |
-| trust tier                       | keyless + logged → `trusted-publisher`; otherwise `registry-attested` |
-| `publishedAt`                    | A verified time only (below); absent when none was verified           |
-| source kind                      | `registry`: the provider is the authority and the bytes are verified  |
+| Fact                             | From                                                                 |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `signerIdentity`                 | The certificate identity without its ref (a key id for key-signed)   |
+| `sigstoreIssuer`                 | The certificate's OIDC issuer                                        |
+| evidence `packslip`              | The statement and archive were verified                              |
+| evidence `sigstore`              | **Keyless only** — Sigstore's PKI vouched for the signer             |
+| evidence `sigstore-transparency` | The signature has a verified log entry                               |
+| trust tier                       | logged, repository-bound vendor attestation → `trusted-publisher`    |
+| `publishedAt`                    | A verified time only (below); absent when none was verified          |
+| source kind                      | `registry`: the provider is the authority and the bytes are verified |
 
 A key the project pinned is that project's anchor, not Sigstore's, so
 `required_evidence = ["sigstore"]` is **not** satisfied by a key-signed release.
@@ -228,27 +246,32 @@ minimum_release_age_exclude = ["pkg:packslip/example.com/tool"]
 
 ## Environment
 
-| Variable                        | Meaning                                                                          |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| `OPM_PACKSLIP_GITHUB_TOKEN_ENV` | The **name** of the variable holding a GitHub token (rate limits, private repos) |
-| `OPM_PACKSLIP_TRUSTED_ROOT`     | Path to a Sigstore `trusted_root.json` replacing the shipped one                 |
+| Variable                        | Meaning                                                               |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `OPM_PACKSLIP_GITHUB_TOKEN_ENV` | The **name** of the variable holding a GitHub token (API rate limits) |
+| `OPM_PACKSLIP_TRUSTED_ROOT`     | Path to a Sigstore `trusted_root.json` replacing the shipped one      |
 
-The token is read at request time, sent to GitHub's API origin only, and never
-stored. If a token _value_ is pasted where a name belongs, opm refuses it
-without repeating it.
+The token is read at request time, sent to `api.github.com` only, and never
+stored. It raises the API rate limit; it does not unlock private repositories,
+because release bundles and assets are fetched from `github.com`, which is not
+sent the token. The setting must be a name in capitals (`GITHUB_TOKEN`): a value
+that is not one, such as a pasted token (`ghp_…`, `github_pat_…`), is refused
+without being repeated.
 
 Network: every request gets its own transport that allows that one origin (plus
 GitHub's hosts for a GitHub project, so a download can follow its redirect to
 the CDN), resolves the name, refuses private and loopback addresses, and pins
-the connection to the address it checked.
+the connection to the address it checked. The one exception is `api.github.com`
+while a token is configured: that origin is pinned so the token can be sent, and
+pinning skips the address check, leaving TLS to vouch for the host.
 
 ## Exit codes
 
 | Code | Name                | packslip causes                                                     |
 | ---- | ------------------- | ------------------------------------------------------------------- |
 | 3    | invalid input       | Misspelled or malformed trust setting; bad spec                     |
-| 4    | not found           | No such version or no artifact for this release                     |
-| 5    | unsatisfiable       | Nothing fits this host; a hard requirement is unmet                 |
+| 4    | not found           | No such version; no artifact for this host or format                |
+| 5    | unsatisfiable       | A hard requirement of the release is unmet on this host             |
 | 6    | policy denied       | A signer change awaiting approval; archive over the 64 MiB limit    |
 | 7    | verification failed | Bad signature, wrong signer, wrong repository, digest/size mismatch |
 | 8    | unavailable         | Network failure; `--offline`                                        |
@@ -257,12 +280,17 @@ the connection to the address it checked.
 
 - **Resources** (completions, man pages, agent skills, CLI specs, SBOMs) are not
   linked into shells or agents. Files inside the archive stay in the store tree.
-  Reported as `PACKSLIP_RESOURCES_NOT_INSTALLED` (info).
+  Recorded as info-level semantic loss on the package
+  (`PACKSLIP_RESOURCES_NOT_INSTALLED`); `opm add` and `opm packslip verify` do
+  not print it.
 - **Build provenance** linked from the release is not fetched or verified. A
   packslip authenticates the release statement, not how an artifact was built.
-  Reported as `PACKSLIP_PROVENANCE_NOT_VERIFIED` (info).
-- **Archives**: `tar.gz`, `tgz`, `zip`, `tar`, at most 64 MiB. A release that
-  ships only `tar.xz`/`tar.zst`/a bare binary has no installable artifact.
+  Recorded as info-level semantic loss on the package
+  (`PACKSLIP_PROVENANCE_NOT_VERIFIED`); not printed by `opm add`.
+- **Archives**: `tar.gz`, `tgz`, `zip`, `tar`, at most 64 MiB compressed (the
+  materializer also caps the expanded size at 64 MiB, so a smaller archive can
+  still be refused at install). A release that ships only `tar.xz`/`tar.zst`/a
+  bare binary has no installable artifact.
 - **Host requirements** are detected without running anything: operating system,
   architecture, libc. Anything that would need a probe is reported as a warning
   rather than guessed.
@@ -273,8 +301,9 @@ the connection to the address it checked.
   writer, as `opm add` does: comments are not kept. Review the diff.
 - **`opmx`** has no project to read trust from, so ephemeral runs work only for
   keyless GitHub projects, which need no configuration.
-- Offline replay follows the registry rule: attestation in a lock is not policy
-  authority.
+- **Offline**: a packslip is never fetched with `--offline`. An existing lock
+  replays from the content-addressed store under the same rules as registry
+  packages, and attestation recorded in a lock is not policy authority.
 
 ## For integrators
 

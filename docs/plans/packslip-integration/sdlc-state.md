@@ -52,7 +52,11 @@ opm-project → CLI → docs.
   have broken every older locked version after the vendor's next release. Fixed
   with `advancing`.
 - Refusing a token-variable setting echoed the value, and the likeliest mistake
-  is pasting the token itself. Fixed; regression-tested.
+  is pasting the token itself. The first fix was incomplete: a real token
+  (`ghp_…`, `github_pat_…`) is a valid identifier, so it was accepted as a
+  variable _name_ and then printed by the transport's "unset" error. A name must
+  now be in capitals (a real token mixes cases) and token prefixes are refused;
+  the tests use realistic tokens.
 - Reporting `sigstore` evidence for a key the project pinned would have
   satisfied a policy that requires Sigstore's PKI. Fixed.
 - `..` passed the first draft of the `packslip:` spec segment check.
@@ -82,6 +86,15 @@ Confirmed and fixed here:
   case-insensitive. Manifest rewrites (`approve`, `pin --write`) turned
   `[sandbox.packages."pkg:npm/sharp"]` into `pkg_npm_sharp`; the key is
   preserved.
+- Docs/claims audit (fourth reviewer): the quickstart omitted that `packslip`
+  must be listed in `project.ecosystems`; `opm versions packslip:…` passed the
+  shorthand through to a registry that accepts PURLs only; the `owner/repo`
+  shorthand accepted `a/b/c`; and the guide/ADR claimed GitLab,
+  private-repository tokens, a non-approvable repository-ID change for every
+  project, "no packslip switch in opm core", vendored vectors for host
+  requirements and lists, accepted-identity lists settable from `opm.toml`, exit
+  5 for "nothing fits this host", and printed info codes. Each was either fixed
+  in code or corrected in the text.
 - Low: empty `identity_prefix` passed the "must say who may sign" guard; a
   mid-body network drop escaped unclassified; the snapshot depended on cache
   warmth; the resolution cache never evicted; the 30 s transport timeout covered
@@ -106,6 +119,21 @@ Decided not to change (recorded so nobody re-finds them as new):
   identities/issuers; version ranges in `opm.toml` are ignored. None are new.
 - `SSRF`/token-config refusals in the adapter surface as `UPSTREAM_UNAVAILABLE`
   (cause text kept).
+
+Known gaps in what the tests pin (found by mutating the code and seeing the
+suite stay green; recorded rather than hidden):
+
+- The keyless certificate's repository must match the statement's project
+  (`checkSigner`): offline fixtures cannot make a mismatching keyless pair
+  (there is no Fulcio), so only the project-name check backs it.
+- The declared-issuer cross-check in the statement, and earliest-time selection
+  across several log entries, for the same reason.
+- `opm packslip pin --write`: the merge of existing pins needs a keyless release
+  that resolves on every CI host; the `public_key` conflict check is unreachable
+  because resolution fails first.
+- `installProject` re-resolving without the previous lock (low: the
+  fresh-vs-lock comparison still catches drift).
+- The five oracle tests skip without `PACKSLIP_ORACLE_BIN`; no gate runs them.
 
 ## CI
 

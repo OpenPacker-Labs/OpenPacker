@@ -33,10 +33,13 @@ Four questions had to be settled:
 - **D1 — An ecosystem, not a registry.** A release is addressed by project name:
   `pkg:packslip/github.com/jdx/hk@2.5.0`, or `packslip:jdx/hk` on the command
   line. The adapter (`@openpacker/adapter-packslip`) implements
-  `CatalogProvider` and `EcosystemCodec` exactly as the npm adapter does; opm
-  core gains no packslip switch. The format itself — statement, selection,
-  discovery, trust rules — lives in a pure library (`@openpacker/packslip`) that
-  knows nothing about opm and can be reused.
+  `CatalogProvider` and `EcosystemCodec` exactly as the npm adapter does.
+  Resolution, verification and trust live in the adapter and the library; opm's
+  only packslip-specific code is the `packslip:` spec shorthand, the
+  `opm packslip` command, the help text, and the exit-code mapping for the new
+  failures. The format itself — statement, selection, discovery, trust rules —
+  lives in a pure library (`@openpacker/packslip`) that knows nothing about opm
+  and can be reused.
 - **D2 — Verification is Sigstore verification, offline, against a shipped
   root.** Bundles are checked with `sigstore-js` against a TUF-authenticated
   trusted root embedded in the package (its sha256 is pinned in source and
@@ -55,14 +58,18 @@ Four questions had to be settled:
   (`pin = ["ps1_…"]`), a key (`public_key`), or an identity constraint. The lock
   is a file anyone with write access can edit or delete, so it must not be the
   thing that says whom to trust. It is part of the manifest digest, so changing
-  trust makes the lock stale. With no entry, a GitHub or GitLab project is
-  trusted to the extent the forge can prove: the signing certificate must name
-  that repository. Once a release is accepted its repository ID is remembered,
-  so a rename is followed and a recreated name is not. A trust entry matches its
-  project whatever the case it was written in (forge names are case-insensitive;
-  an exactly-matched pin would be skipped in silence), and a section naming an
-  adapter that has no settings is an error rather than a setting that never
-  applies.
+  trust makes the lock stale. With no entry, a GitHub project is trusted to the
+  extent the forge can prove: the signing certificate must name that repository.
+  (GitLab certificate identities are understood, but release discovery for
+  GitLab is not implemented, so a GitLab project cannot be installed.) Once a
+  release is accepted its repository ID is remembered, so, for a project named
+  by its GitHub repository, a rename is followed and a recreated name is not. A
+  project on its own domain is identified by the domain: a new signing
+  repository there is a changed signer, and approvable. A trust entry matches
+  its project whatever the case it was written in (forge names are
+  case-insensitive; an exactly-matched pin would be skipped in silence), and a
+  section naming an adapter that has no settings is an error rather than a
+  setting that never applies.
 - **D4 — The lock remembers the signer so a change can be noticed.** Each locked
   package records an `attestation` (signer, issuer, signing time, evidence, and
   an opaque `record` the adapter reads back). On the next resolution the adapter
@@ -113,7 +120,8 @@ Four questions had to be settled:
   addresses it resolves, and pins the connection to the address it checked. A
   GitHub token is read from the variable _named_ by
   `OPM_PACKSLIP_GITHUB_TOKEN_ENV`, sent to GitHub's API origin only, and never
-  stored; a value pasted where a name belongs is refused without being repeated.
+  stored; a value pasted where a name belongs (a real token mixes cases and is
+  not a name in capitals) is refused without being repeated.
 
 ## What opm does not do with a packslip
 
@@ -150,7 +158,9 @@ Stated so nobody infers more than was verified:
 - The default manifest policy applies unchanged: release age, no-downgrade of
   trust tier, source-kind rules. Policy facts (`signerIdentity`,
   `sigstoreIssuer`, evidence, trust tier, published time) come from the verified
-  attestation, so accepted-identity and accepted-issuer lists work on packslips.
+  attestation, so a policy given accepted identities or issuers through
+  `PolicyInput` applies to packslips. (`opm.toml`'s `[policy]` has no field for
+  them yet, so that is not reachable from a manifest.)
 - Offline replay follows the registry rule: an existing lock replays from the
   content-addressed cache, and attestation recorded in a lock is not policy
   authority, so an offline install of a registry-style package is still governed
@@ -184,9 +194,10 @@ Stated so nobody infers more than was verified:
 
 Correctness is shown four ways rather than one:
 
-1. **Upstream conformance vectors**, vendored unmodified, for tag derivation,
-   artifact selection, resource selection, host requirements, signer
-   fingerprints and release-list rules.
+1. **Upstream conformance vectors**, vendored unmodified (six files: artifact
+   selection, resource selection, tag versions, statement validity, forge
+   identity, signer fingerprint). Host requirements and release-list rules are
+   covered by this repository's own tests, not by vendored vectors.
 2. **Real Rekor-logged bundles** — `jdx/hk` 2.5.0 and `packslip` 1.5.1 —
    verified offline against the shipped root.
 3. **The reference implementation as an oracle.** The same bundles and a set of
@@ -194,14 +205,16 @@ Correctness is shown four ways rather than one:
    (`PACKSLIP_ORACLE_BIN`), and opm must agree on accept/refuse and on the facts
    it reports. This is how a signer key id declared in the statement but
    different from the signing key was found and made a refusal.
-4. **Mutation checks.** Each security-relevant comparison was removed or
-   inverted in turn and the suite was required to fail: continuing past a failed
-   verification, the issuer, identity prefix, key pin, log requirement, key
-   hint, approval id, pinned repository ID, version/tag agreement, bundle digest
-   pin, withdrawn releases, list expiry and rollback, archive digest and size,
-   the statement/subject cross-check, host requirements, prerelease selection,
-   workflow-pin reduction — and, for the opm integration, evidence honesty,
-   trust tier, prior-signer lookup, manifest settings, approvals, what reaches
-   policy and the lock, the previous lock on update, strict lock and manifest
-   parsing, and exit codes. Version ordering is additionally checked against the
-   `semver` package as a property-test oracle.
+4. **Mutation checks.** Security-relevant comparisons were removed or inverted
+   in turn and the suite was required to fail. Not every comparison is covered
+   (the survivors that matter are listed in the initiative's `sdlc-state.md`);
+   those that were: continuing past a failed verification, the issuer, identity
+   prefix, key pin, log requirement, key hint, approval id, pinned repository
+   ID, version/tag agreement, bundle digest pin, withdrawn releases, list expiry
+   and rollback, archive digest and size, the statement/subject cross-check,
+   host requirements, prerelease selection, workflow-pin reduction — and, for
+   the opm integration, evidence honesty, trust tier, prior-signer lookup,
+   manifest settings, approvals, what reaches policy and the lock, the previous
+   lock on update, strict lock and manifest parsing, and exit codes. Version
+   ordering is additionally checked against the `semver` package as a
+   property-test oracle.
