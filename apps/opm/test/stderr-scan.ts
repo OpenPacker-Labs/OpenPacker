@@ -1,27 +1,54 @@
 import ts from 'typescript';
 
 /**
- * Finds what a source file writes to standard error, by the TypeScript parser.
+ * Finds every way a source file reaches a standard-error stream, by the
+ * TypeScript parser.
  *
- * It follows the ways code reaches the stream that are not `io.stderr.write(x)`:
- * an alias of the stream (`const err = io.stderr`, `const { stderr } = process`),
- * a destructured or bound `write`, `stderr['write']`, `write.call(…)`,
- * `console.error` and `console.warn`, `fs.writeSync(2, …)` and
- * `child.stdout.pipe(process.stderr)`. A write is *routed* only when the whole
- * expression it writes is a call to `report(…)` or `formatFailure(…)`; a
- * `report(…) + raw` is not.
+ * It does not recognise write calls one spelling at a time. It forbids the
+ * reference: a property or element access that names `stderr`, an identifier
+ * called `stderr` (a binding, a parameter, an import, a shorthand property), a
+ * computed key on `io` or `process`, `console` in any form and `new Console`,
+ * `process.emitWarning`, and a file descriptor 2 (`/dev/stderr`, `fd` of a
+ * stream) handed to a `fs` call. A stream passed as an argument, kept in a
+ * variable, put in an array or an object, bound, applied, called through
+ * `Reflect` or reached through a conditional is named by the property that
+ * reached it, so each of those is found where the stream is first named.
+ *
+ * One form is allowed, and recorded as *routed*: `io.stderr.write(x)` where the
+ * whole of `x` is a call to `report` or `formatFailure`, the one writer
+ * (`error-report.ts`), imported and not declared in the same file. Type
+ * declarations (`stderr: Pick<WriteStream, 'write'>`) name no stream and are not
+ * references.
  */
 
-export interface Written {
+export interface Use {
   /** The way the stream was reached. */
   how: string;
-  /** What was written, as written, on one line. */
+  /**
+   * For a write, what was written; otherwise the statement that names the
+   * stream. As written, on one line.
+   */
   argument: string;
-  /** Whether the whole of it is a call to the one writer. */
+  /** Whether it is the one allowed form. */
   routed: boolean;
 }
 
 const ROUTES = new Set(['report', 'formatFailure']);
+/** The objects a stream is reached through. */
+const STREAM_HOLDERS = /(^|\.)(io|process|host|streams?)$/u;
+/** `fs` calls that take a descriptor or a path to write to. */
+const DESCRIPTOR_CALLS = new Set([
+  'writeSync',
+  'writeFileSync',
+  'appendFileSync',
+  'write',
+  'writeFile',
+  'appendFile',
+  'createWriteStream',
+  'openSync',
+  'open',
+]);
+const STDERR_PATHS = new Set(['/dev/stderr', '/dev/fd/2', '/proc/self/fd/2']);
 
 /** Strips the wrappers that do not change what a value is. */
 function unwrap(node: ts.Expression): ts.Expression {
@@ -39,161 +66,142 @@ function unwrap(node: ts.Expression): ts.Expression {
   }
 }
 
-function nameOf(node: ts.Node): string | undefined {
-  if (ts.isIdentifier(node)) return node.text;
-  if (ts.isStringLiteralLike(node)) return node.text;
-  return undefined;
+/** Whether a node sits in a type position, which names no value. */
+function inTypePosition(node: ts.Node): boolean {
+  for (let at: ts.Node | undefined = node; at !== undefined; at = at.parent) {
+    if (ts.isTypeNode(at) || ts.isTypeAliasDeclaration(at)) return true;
+    if (ts.isInterfaceDeclaration(at)) return true;
+    if (ts.isStatement(at) || ts.isSourceFile(at)) return false;
+  }
+  return false;
 }
 
-/** The member a property or element access names, if it names one. */
-function memberOf(node: ts.Expression): string | undefined {
-  const target = unwrap(node);
-  if (ts.isPropertyAccessExpression(target)) return target.name.text;
-  if (ts.isElementAccessExpression(target))
-    return nameOf(target.argumentExpression);
-  return undefined;
+/** Whether an identifier only names a member, so it names no value itself. */
+function isMemberName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return (
+    (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+    (ts.isPropertyAssignment(parent) && parent.name === node) ||
+    (ts.isPropertySignature(parent) && parent.name === node) ||
+    (ts.isPropertyDeclaration(parent) && parent.name === node) ||
+    (ts.isMethodSignature(parent) && parent.name === node) ||
+    (ts.isQualifiedName(parent) && parent.right === node)
+  );
 }
 
-function objectOf(node: ts.Expression): ts.Expression | undefined {
-  const target = unwrap(node);
-  if (
-    ts.isPropertyAccessExpression(target) ||
-    ts.isElementAccessExpression(target)
-  )
-    return target.expression;
-  return undefined;
-}
-
-export function findStderrWrites(text: string, file = 'probe.ts'): Written[] {
+export function findStderrUses(text: string, file = 'probe.ts'): Use[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-  const streams = new Set<string>(['stderr']);
-  const writers = new Set<string>();
-
-  const isStream = (node: ts.Expression): boolean => {
-    const target = unwrap(node);
-    if (ts.isIdentifier(target)) return streams.has(target.text);
-    return memberOf(target) === 'stderr';
+  const found: Use[] = [];
+  const oneLine = (node: ts.Node): string =>
+    node.getText(source).replace(/\s+/gu, ' ');
+  const statementOf = (node: ts.Node): ts.Node => {
+    let at: ts.Node = node;
+    while (at.parent !== undefined && !ts.isStatement(at)) at = at.parent;
+    return at;
   };
-  /** `<stream>.write`, however it is spelled. */
-  const isWriteMember = (node: ts.Expression): boolean => {
-    const object = objectOf(node);
+  const note = (how: string, node: ts.Node, argument = statementOf(node)) =>
+    found.push({ how, argument: oneLine(argument), routed: false });
+
+  // `report` and `formatFailure` count only when they are the imported writer.
+  const declaredHere = new Set<string>();
+  const declared = (node: ts.Node): void => {
+    if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isVariableDeclaration(node)) &&
+      node.name !== undefined &&
+      ts.isIdentifier(node.name) &&
+      ROUTES.has(node.name.text) &&
+      !ts.isSourceFile(node)
+    )
+      declaredHere.add(node.name.text);
+    ts.forEachChild(node, declared);
+  };
+  declared(source);
+  const isRoute = (node: ts.Expression): boolean => {
+    const target = unwrap(node);
     return (
-      memberOf(node) === 'write' && object !== undefined && isStream(object)
+      ts.isCallExpression(target) &&
+      ts.isIdentifier(target.expression) &&
+      ROUTES.has(target.expression.text) &&
+      !declaredHere.has(target.expression.text)
     );
   };
-  /** A value that is the stream's write function, bound or not. */
-  const isWriteFunction = (node: ts.Expression): boolean => {
-    const target = unwrap(node);
-    if (isWriteMember(target)) return true;
-    if (ts.isIdentifier(target)) return writers.has(target.text);
-    if (ts.isCallExpression(target)) {
-      const method = memberOf(target.expression);
-      const object = objectOf(target.expression);
-      return (
-        (method === 'bind' || method === 'call' || method === 'apply') &&
-        object !== undefined &&
-        isWriteFunction(object)
-      );
-    }
-    return false;
+
+  /** `<x>.stderr.write(argument)` and the node of `<x>.stderr`. */
+  const asWrite = (
+    call: ts.CallExpression,
+  ): { stream: ts.Node; argument?: ts.Expression } | undefined => {
+    const callee = unwrap(call.expression);
+    if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'write')
+      return undefined;
+    const stream = unwrap(callee.expression);
+    if (!ts.isPropertyAccessExpression(stream) || stream.name.text !== 'stderr')
+      return undefined;
+    return {
+      stream,
+      ...(call.arguments[0] && { argument: call.arguments[0] }),
+    };
   };
 
-  // Aliases first: declarations may come after the use that needs them in the
-  // file, so settle them before looking at any call.
-  const learn = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node)) {
-      const initializer = node.initializer;
-      if (ts.isIdentifier(node.name) && initializer !== undefined) {
-        if (isStream(initializer)) streams.add(node.name.text);
-        if (isWriteFunction(initializer)) writers.add(node.name.text);
-      }
-      if (ts.isObjectBindingPattern(node.name) && initializer !== undefined) {
-        for (const element of node.name.elements) {
-          if (!ts.isIdentifier(element.name)) continue;
-          const property = element.propertyName
-            ? nameOf(element.propertyName)
-            : element.name.text;
-          if (property === 'stderr') streams.add(element.name.text);
-          if (property === 'write' && isStream(initializer))
-            writers.add(element.name.text);
+  const consumed = new Set<ts.Node>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const write = asWrite(node);
+      if (write !== undefined) {
+        consumed.add(write.stream);
+        const routed =
+          write.argument !== undefined &&
+          node.arguments.length === 1 &&
+          isRoute(write.argument);
+        found.push({
+          how: 'stream.write',
+          argument: oneLine(write.argument ?? node),
+          routed,
+        });
+      } else {
+        const callee = unwrap(node.expression);
+        const name = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : ts.isIdentifier(callee)
+            ? callee.text
+            : undefined;
+        if (name === 'emitWarning') note('emitWarning', node);
+        const first = node.arguments[0];
+        if (
+          name !== undefined &&
+          DESCRIPTOR_CALLS.has(name) &&
+          first !== undefined
+        ) {
+          const shown = first.getText(source);
+          if (shown === '2' || shown.endsWith('.fd'))
+            note(`${name}(descriptor 2)`, node);
         }
       }
     }
-    ts.forEachChild(node, learn);
-  };
-  // Twice, so an alias of an alias is settled whichever way round they sit.
-  learn(source);
-  learn(source);
-
-  const found: Written[] = [];
-  const oneLine = (node: ts.Node | undefined): string =>
-    (node?.getText(source) ?? '').replace(/\s+/gu, ' ');
-  const record = (
-    how: string,
-    argument: ts.Expression | undefined,
-    whole: ts.Node,
-  ): void => {
-    const written = argument ?? undefined;
-    const target = written === undefined ? undefined : unwrap(written);
-    const routed =
-      target !== undefined &&
-      ts.isCallExpression(target) &&
-      ts.isIdentifier(target.expression) &&
-      ROUTES.has(target.expression.text);
-    found.push({
-      how,
-      argument: oneLine(written ?? whole),
-      routed,
-    });
-  };
-
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
-      const callee = node.expression;
-      const method = memberOf(callee);
-      const object = objectOf(callee);
-      if (isWriteMember(callee))
-        record('stream.write', node.arguments[0], node);
-      else if (
-        ts.isIdentifier(unwrap(callee)) &&
-        writers.has((unwrap(callee) as ts.Identifier).text)
-      )
-        record('write function', node.arguments[0], node);
-      else if (
-        (method === 'call' || method === 'apply' || method === 'bind') &&
-        object !== undefined &&
-        isWriteFunction(object)
-      )
-        record(
-          `write.${method}`,
-          method === 'call' ? node.arguments[1] : undefined,
-          node,
-        );
-      else if (
-        object !== undefined &&
-        ts.isIdentifier(unwrap(object)) &&
-        (unwrap(object) as ts.Identifier).text === 'console' &&
-        (method === 'error' || method === 'warn')
-      )
-        record(`console.${method}`, node.arguments[0], node);
-      else if (
-        method === 'writeSync' ||
-        (ts.isIdentifier(unwrap(callee)) &&
-          (unwrap(callee) as ts.Identifier).text === 'writeSync')
-      ) {
-        const descriptor = node.arguments[0];
-        if (
-          descriptor !== undefined &&
-          (descriptor.getText(source) === '2' ||
-            descriptor.getText(source).endsWith('.fd'))
-        )
-          record('writeSync(2)', node.arguments[1], node);
-      } else if (
-        method === 'pipe' &&
-        node.arguments[0] !== undefined &&
-        isStream(node.arguments[0])
-      )
-        record('pipe into stderr', undefined, node);
+    if (ts.isNewExpression(node)) {
+      const callee = unwrap(node.expression);
+      if (ts.isIdentifier(callee) && callee.text === 'Console')
+        note('new Console', node);
+    }
+    if (ts.isPropertyAccessExpression(node) && !consumed.has(node)) {
+      if (node.name.text === 'stderr' && !inTypePosition(node))
+        note('.stderr', node);
+    }
+    if (ts.isElementAccessExpression(node) && !inTypePosition(node)) {
+      const key = node.argumentExpression;
+      const holder = oneLine(node.expression);
+      if (ts.isStringLiteralLike(key)) {
+        if (key.text === 'stderr') note("['stderr']", node);
+      } else if (!ts.isNumericLiteral(key) && STREAM_HOLDERS.test(holder))
+        note(`${holder}[computed]`, node);
+    }
+    if (ts.isStringLiteralLike(node) && STDERR_PATHS.has(node.text))
+      note(`path ${node.text}`, node);
+    if (ts.isIdentifier(node) && !isMemberName(node) && !inTypePosition(node)) {
+      if (/^stderr$/iu.test(node.text)) note('stderr binding', node);
+      else if (node.text === 'console') note('console', node);
+      else if (node.text === 'Console') note('Console', node);
     }
     ts.forEachChild(node, visit);
   };

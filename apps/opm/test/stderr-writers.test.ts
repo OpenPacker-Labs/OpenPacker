@@ -2,20 +2,23 @@
  * Everything opm writes to stderr that a registry, a lock or a plugin could
  * have chosen goes through the one writer (`report`, or `formatFailure`, which
  * is built on it). That is a property of the call sites, so it is read from the
- * sources with the TypeScript parser (`stderr-scan.ts`): each write in `src` is
- * either, as a whole, a call to one of the two, or is named below with the
- * reason it may write its argument as it is.
+ * sources with the TypeScript parser (`stderr-scan.ts`), which does not
+ * recognise write calls one spelling at a time but forbids the reference: any
+ * mention of a `stderr` stream, of `console`, of a file descriptor 2. The one
+ * allowed form is `io.stderr.write(report(...))`; every other mention in `src`
+ * is named below with the reason it may be there.
  *
- * A new writer that is neither fails here, and an entry that no longer matches
- * a write fails too, so the list cannot outlive the code it excuses. The
+ * A new reference that is neither fails here, and an entry that no longer
+ * matches a use fails too, so the list cannot outlive the code it excuses. The
  * scanner is held to the ways round the obvious spelling by fixtures that must
- * be caught.
+ * be caught. `apps/openpacker-cli` and the other packages are not scanned: this
+ * is the `opm` command line's contract.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findStderrWrites, type Written } from './stderr-scan.js';
+import { findStderrUses, type Use } from './stderr-scan.js';
 
 const src = join(dirname(fileURLToPath(import.meta.url)), '../src');
 
@@ -29,7 +32,7 @@ function sourceFiles(directory: string): string[] {
   );
 }
 
-interface Place extends Written {
+interface Place extends Use {
   file: string;
 }
 
@@ -101,10 +104,72 @@ const EXEMPT: ReadonlyArray<{
     reason:
       'the name the person typed and an exit status; the run path loads no workspace package (run-load.test.ts)',
   },
+  {
+    file: 'commands/run-child.ts',
+    starts: 'return Boolean( process.stdin.isTTY',
+    reason: 'asks whether a stream is a terminal; writes nothing',
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: 'export const processHost',
+    reason:
+      'the one place the real process streams are named, handed to the host seam',
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts:
+      "const stderr = direct(io.stderr, host.stderr) ? 'inherit' : 'pipe'",
+    reason:
+      "decides whether the child's stderr is inherited (passed through as the child wrote it) or piped",
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: 'child = host.spawn(',
+    reason: "hands the child's stderr choice to spawn",
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: "child.stderr?.setEncoding('utf8')",
+    reason: "reads the child's own stderr; writes nothing",
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: "child.stderr?.on('data'",
+    reason:
+      "forwards the script's own stderr as it wrote it (the write is named above)",
+  },
+  {
+    file: 'opm.ts',
+    starts: "throw new OpmError( 'PACK_FAILED', result.stderr",
+    reason:
+      "a packer's own captured stderr, carried in an OpmError the writer then reports",
+  },
+  {
+    file: 'opm.ts',
+    starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
+    reason:
+      "the host installer's own captured stderr (the write is named above)",
+  },
+  {
+    file: 'opm.ts',
+    starts: 'io.stderr.write(outcome.stderr)',
+    reason:
+      "the host installer's own captured stderr (the write is named above)",
+  },
+  {
+    file: 'opmx.ts',
+    starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
+    reason: "the tool's own captured stderr (the write is named above)",
+  },
+  {
+    file: 'opmx.ts',
+    starts: 'io.stderr.write(outcome.stderr)',
+    reason: "the tool's own captured stderr (the write is named above)",
+  },
 ];
 
 const places: Place[] = sourceFiles(src).flatMap((path) =>
-  findStderrWrites(readFileSync(path, 'utf8'), path).map((written) => ({
+  findStderrUses(readFileSync(path, 'utf8'), path).map((written) => ({
     ...written,
     file: relative(src, path),
   })),
@@ -153,10 +218,11 @@ describe('what opm writes to stderr', () => {
 
 describe('the scanner', () => {
   const flagged = (code: string) =>
-    findStderrWrites(code).filter((written) => !written.routed);
+    findStderrUses(code).filter((use) => !use.routed);
 
+  // The ways a stream was reached that the scanner was first written for.
   it.each([
-    ['a stream write', 'io.stderr.write(`opm: ${s}\\n`);'],
+    ['a stream write', 'io.stderr.write(`opm: ${s}\n`);'],
     ['the process stream', 'process.stderr.write(s);'],
     ['a stream behind parentheses', '(io.stderr).write(s);'],
     ['an optional chain', 'io.stderr?.write(s);'],
@@ -196,30 +262,93 @@ describe('the scanner', () => {
     expect(flagged(code).length).toBeGreaterThanOrEqual(1);
   });
 
+  // What an independent review wrote to get round it (round 6, G7): a stream
+  // handed to a helper, a console of another kind, a descriptor, a computed key.
+  it.each([
+    [
+      'Reflect.apply',
+      'Reflect.apply(process.stderr.write, process.stderr, [s]);',
+    ],
+    ['a stream by element access', "process['stderr']['write'](s);"],
+    ['a Console on the stream', 'new Console(process.stderr).error(s);'],
+    [
+      'a Console on two streams',
+      'const c = new Console(process.stdout, process.stderr); c.error(s);',
+    ],
+    [
+      'an import renamed',
+      "import { stderr as e } from 'node:process'; e.write(s);",
+    ],
+    [
+      'a stream passed to a helper',
+      'function emit(stream, text) { stream.write(text); } emit(io.stderr, s);',
+    ],
+    ['an assignment alias', 'let w; w = io.stderr; w.write(s);'],
+    ['a computed key', "const key = 'stderr'; io[key].write(s);"],
+    ['a concatenated key', "io['std' + 'err'].write(s);"],
+    ['writeFileSync to descriptor 2', 'fs.writeFileSync(2, s);'],
+    ['appendFileSync to /dev/stderr', "fs.appendFileSync('/dev/stderr', s);"],
+    ['a path to the descriptor', "const p = '/dev/fd/2'; open(p);"],
+    ['end', 'io.stderr.end(s);'],
+    ['console.error kept in a variable', 'const log = console.error; log(s);'],
+    ['console.error destructured', 'const { error } = console; error(s);'],
+    ['console.trace', 'console.trace(s);'],
+    ['console.assert', 'console.assert(false, s);'],
+    ['console.log', 'console.log(s);'],
+    ['process.emitWarning', 'process.emitWarning(s);'],
+    ['console.error.call', 'console.error.call(console, s);'],
+    ['a write in a comma expression', '(0, io.stderr.write)(s);'],
+    ['a conditional stream', '(cond ? io.stderr : io.stdout).write(s);'],
+    [
+      'a stream bound for later',
+      'const write = io.stderr.write.bind(io.stderr); [s].forEach(write);',
+    ],
+    ['a stream in an object', 'const o = { out: io.stderr }; o.out.write(s);'],
+    ['a stream in an array', '[io.stderr].forEach((x) => x.write(s));'],
+    [
+      'a stream as a default parameter',
+      'function f(out = io.stderr) { out.write(s); } f();',
+    ],
+    [
+      'a parameter named for it',
+      'function f(stderr) { stderr.write(s); } f(io.err);',
+    ],
+    ['a shorthand property', 'const o = { stderr }; o.stderr.write(s);'],
+    ['a stream read from a child', "child.stderr?.on('data', (c) => keep(c));"],
+    [
+      'a report that is a local function',
+      'function report(a, b) { return a + b; } io.stderr.write(report("opm: ", s));',
+    ],
+    ['a stream behind a cast', '(io as Streams).stderr.write(s);'],
+  ])('catches %s', (_, code) => {
+    expect(flagged(code).length).toBeGreaterThanOrEqual(1);
+  });
+
   it.each([
     ['report', "io.stderr.write(report('opm: ', x));"],
     ['report, in parentheses', "io.stderr.write((report('opm: ', x)));"],
     ['formatFailure', 'io.stderr.write(formatFailure(parseFailure(e), o));'],
     [
-      'report through an alias of the stream',
-      "const e = io.stderr; e.write(report('opm: ', x));",
+      'a report of text a registry sent',
+      'io.stderr.write(report(`opm: ${s}`));',
     ],
   ])('lets %s through, and sees it', (_, code) => {
-    const writes = findStderrWrites(code);
-    expect(writes).toHaveLength(1);
-    expect(writes[0]?.routed).toBe(true);
+    const uses = findStderrUses(code);
+    expect(uses).toHaveLength(1);
+    expect(uses[0]?.routed).toBe(true);
   });
 
   it.each([
     ['stdout', 'io.stdout.write(s);'],
-    ['console.log', 'console.log(s);'],
-    [
-      'listening to a child',
-      "child.stderr?.on('data', (chunk) => s.push(chunk));",
-    ],
     ['a write elsewhere', 'file.write(s); const { write } = file; write(s);'],
     ['writeSync to a file', 'fs.writeSync(fd, s);'],
+    [
+      'a type that names the stream',
+      'interface Io { stderr: Pick<WriteStream, "write">; }',
+    ],
+    ['a type annotation', 'let sink: { stderr: string };'],
+    ['a log that goes through the logger', 'logger.error(s);'],
   ])('does not take %s for stderr', (_, code) => {
-    expect(findStderrWrites(code)).toEqual([]);
+    expect(findStderrUses(code)).toEqual([]);
   });
 });
