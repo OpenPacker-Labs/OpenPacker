@@ -20,6 +20,7 @@ import {
   json,
   packageNodeId,
   parsePurl,
+  parseUntrustedUrl,
   ProviderError,
   providerErrorForStatus,
   rangeToConstraint,
@@ -719,7 +720,7 @@ export function parseNugetServiceIndex(bytes: Uint8Array): NugetServiceIndex {
       invalidServiceIndex(`resources[${index}].@id is invalid`);
     let url: URL;
     try {
-      url = new URL(id);
+      url = parseUntrustedUrl(id);
     } catch {
       invalidServiceIndex(`resources[${index}].@id is not a URL`);
     }
