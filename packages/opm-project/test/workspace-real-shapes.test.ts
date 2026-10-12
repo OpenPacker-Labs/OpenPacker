@@ -109,7 +109,7 @@ describe('the four real workspaces', () => {
     expect(targets(ranges)).toBe(89);
   });
 
-  it('HoBo: its dependency order puts every dependency first and finds the cycles the repository has', async () => {
+  it('HoBo: its dependency order puts every dependency first, and the repository has no cycle', async () => {
     const graph = graphOfWorkspace(await rebuild(load('hobo')));
     const order = topologicalOrder(graph, { cycles: 'tolerate' });
     expect(order.order).toHaveLength(792);

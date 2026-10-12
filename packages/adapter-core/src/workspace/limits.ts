@@ -34,9 +34,10 @@ export interface WorkspaceLimits {
 
 /**
  * HoBo, the largest workspace measured when these were set, has 792 members
- * (its lock lists 792 importers), reads about 3,000 directory entries and
- * keeps every manifest under 20 KiB. The defaults leave room above that by a
- * factor of five or more and stop a runaway long before it matters.
+ * (its lock lists 792 importers), is found by reading 23 directories and 911
+ * entries, and keeps every manifest under 20 KiB. The defaults leave room above
+ * that, by a factor of five for members and of a hundred for entries, and stop
+ * a runaway long before it matters.
  */
 export const DEFAULT_WORKSPACE_LIMITS: WorkspaceLimits = Object.freeze({
   maxMembers: 4096,
