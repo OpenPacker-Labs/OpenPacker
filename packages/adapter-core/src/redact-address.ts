@@ -1,4 +1,4 @@
-import { hasOverlongHost } from './url-host.js';
+import { hasOverlongHost } from '@openpacker/canonical';
 
 /** What stands for an address the URL parser refuses, after its scheme if it has one. */
 const WITHHELD = '[address withheld]';

@@ -18,7 +18,7 @@
  * Every other URL, and everything that is not a URL, is treated as the first
  * version treated it.
  *
- * The host is found by `packages/adapter-core/test/whatwg-host.ts`, which runs
+ * The host is found by `packages/canonical/test/whatwg-host.ts`, which runs
  * the standard's parser states over code points (and states the one place where
  * Node's parser reads a host further than the standard does). It shares nothing
  * with the code under test, which reads the same text with index arithmetic, so
@@ -26,7 +26,7 @@
  * a regular expression written from the same model as the code, and agreed with
  * it where both were wrong: a `[` in a host, and `file:`.)
  */
-import { specialHostLength } from '../../../packages/adapter-core/test/whatwg-host.js';
+import { specialHostLength } from '../../../packages/canonical/test/whatwg-host.js';
 
 export const LONGEST_HOST = 253;
 

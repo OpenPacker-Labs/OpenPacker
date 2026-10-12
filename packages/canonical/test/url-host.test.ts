@@ -3,7 +3,7 @@ import {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
   writtenHostLength,
-} from './url-host.js';
+} from '../src/url-host.js';
 
 /** 131,072 characters of non-ASCII labels: Node's parser takes a second on them. */
 const P = 'ß.é.'.repeat(32768);

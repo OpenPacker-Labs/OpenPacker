@@ -17,7 +17,7 @@ export {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
   writtenHostLength,
-} from './url-host.js';
+} from '@openpacker/canonical';
 export {
   MetadataLimitError,
   ResponseTooLargeError,

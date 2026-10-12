@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { redactAddress } from './redact-address.js';
-import { LONGEST_HOST_LENGTH } from './url-host.js';
+import { LONGEST_HOST_LENGTH } from '@openpacker/canonical';
 
 /**
  * Two checks of `redactAddress` that a change to the file could drop without

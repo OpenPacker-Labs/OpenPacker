@@ -13,6 +13,11 @@ export {
   type CanonicalParseLimits,
 } from './errors.js';
 export { ECHO_LIMIT, plainLine, plainText, safeEcho } from './echo.js';
+export {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  writtenHostLength,
+} from './url-host.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
