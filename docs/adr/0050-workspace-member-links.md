@@ -117,6 +117,14 @@ and a directory are each a `LINK_CONFLICT` that names the path and what is
 there. Two callers creating the same link both succeed; if they disagree about
 the target, one is told.
 
+| Platform | Create                                                                                                                 | Read                                                            |
+| -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Linux    | `symlink(target, /proc/self/fd/N/name)`: the directory is the magic link, the final component is created, not followed | `readlink` on the same path                                     |
+| macOS    | libc `symlinkat(target, dirfd, name)` through koffi                                                                    | libc `readlinkat(dirfd, name, buf, size)`                       |
+| Windows  | a directory junction: `NtCreateFile` with `RootDirectory`, `FSCTL_SET_REPARSE_POINT`, one rename                       | `FSCTL_GET_REPARSE_POINT` on a handle opened as the link itself |
+
+The libc symbols and their first-use check are recorded in ADR 0045.
+
 ### Removing one
 
 `unlinkChild(directory, name, expected?)` takes a link away and refuses
@@ -142,14 +150,6 @@ arriving in the scope: `rmdir` answers `ENOTEMPTY` at the moment it acts, and
 the directory and what arrived stay. (On Windows a scope that is swapped for a
 file or a junction between the walk and the removal is removed as what it has
 become, which is the same class of window.)
-
-| Platform | Create                                                                                                                 | Read                                                            |
-| -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Linux    | `symlink(target, /proc/self/fd/N/name)`: the directory is the magic link, the final component is created, not followed | `readlink` on the same path                                     |
-| macOS    | libc `symlinkat(target, dirfd, name)` through koffi                                                                    | libc `readlinkat(dirfd, name, buf, size)`                       |
-| Windows  | a directory junction: `NtCreateFile` with `RootDirectory`, `FSCTL_SET_REPARSE_POINT`, one rename                       | `FSCTL_GET_REPARSE_POINT` on a handle opened as the link itself |
-
-The libc symbols and their first-use check are recorded in ADR 0045.
 
 ### Windows, and the window that remains
 
@@ -316,14 +316,20 @@ place that removes the whole directory is `opm ci`'s `removeTree`.
   each, one creating module, one writing module, one record field. A change that
   makes any rule wider changes `link-rules.ts` and its tests, which pin each
   refusal.
-- macOS and Windows run the same link suites as Linux (`handle-link*.test.ts`
-  and `member-link*.test.ts`, with the conformance scenarios `links`,
-  `linkRefusals` and `linkRaces` on macOS), plus a file for what only libSystem
-  (`handle-darwin.test.ts`) or NTFS (`handle-windows-link.test.ts`) can show.
-  **Neither has run on those systems at the time of writing**: the Linux legs
-  run the same code through `/proc/self/fd` and through libc bound to glibc, and
-  the Windows control flow runs against an in-memory fake of the five NT calls.
-  The `ci-build.yml` macOS and Windows legs are the first evidence.
+- macOS and Windows run the same link suites as Linux (`handle-link*.test.ts`,
+  including the prefix and removal files, and `member-link*.test.ts`, with the
+  conformance scenarios `links`, `linkRefusals` and `linkRaces` on macOS), plus
+  a file for what only libSystem (`handle-darwin.test.ts`) or NTFS
+  (`handle-windows-link.test.ts` and `handle-windows-link.read.test.ts`, which
+  asserts how a junction is recognised, removed and walked, with the call and
+  the raw value in every failure message) can show. **Neither has run on those
+  systems at the time of writing**: the Linux legs run the same code through
+  `/proc/self/fd` and through libc bound to glibc, and the Windows control flow
+  runs against in-memory stand-ins for the NT calls and for an open handle
+  (`handle-nt-link.test.ts`, `handle-nt-lstat.test.ts`,
+  `handle-nt-dir.test.ts`). The `ci-build.yml` macOS and Windows legs are the
+  first evidence, and until they have run, every statement above about NTFS or
+  libSystem is a statement about the code, not about the system.
 - `opm ci` still refuses a lock with `link: true` entries, and workspaces
   (`--filter`, per-member `node_modules`) are not part of this change: this
   record covers creating, recording, reading and removing the links, and the
