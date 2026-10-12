@@ -61,6 +61,7 @@ import { asksForHelp } from './commands/run-args.js';
 import { RunError } from './commands/run-error.js';
 import { RUN_HELP } from './commands/run-help.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
+import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -227,14 +228,9 @@ export async function runOpm(
           force: args.options.has('force'),
         });
         io.stdout.write(
-          `Imported ${result.imported.length} requirement(s) from native project files into ${result.manifestPath}\n`,
+          importHeading(result.imported.length, result.manifestPath),
         );
-        for (const item of result.imported) {
-          const range = item.range !== undefined ? `@${item.range}` : '';
-          io.stdout.write(
-            `  ${item.alias}\t${item.purl}${range}\t${item.ecosystem}\n`,
-          );
-        }
+        for (const item of result.imported) io.stdout.write(importLine(item));
         io.stdout.write(
           'opm.toml is authoritative; later sync does not re-read native manifests.\n',
         );
@@ -396,16 +392,7 @@ export async function runOpm(
           io.stdout.write('(no packages)\n');
           return EXIT_CODES.success;
         }
-        for (const row of rows) {
-          const digest =
-            row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest;
-          const status = row.installed ? 'installed' : 'not-installed';
-          const bins =
-            row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
-          io.stdout.write(
-            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}\n`,
-          );
-        }
+        for (const row of rows) io.stdout.write(listLine(row));
         return EXIT_CODES.success;
       }
       case 'why': {

@@ -642,12 +642,14 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
     const req = manifest.packages[alias]!;
     const locked = lock?.packages[alias];
     return [
-      `"${alias}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${req.purl}`,
-      req.version ? `  version constraint: ${req.version}` : undefined,
-      req.source ? `  source: ${req.source}` : undefined,
+      `"${plainLine(alias)}" is a direct dependency in ${MANIFEST_NAME}`,
+      `  purl: ${plainLine(req.purl)}`,
+      req.version
+        ? `  version constraint: ${plainLine(req.version)}`
+        : undefined,
+      req.source ? `  source: ${plainLine(req.source)}` : undefined,
       locked
-        ? `  locked: ${locked.purl} (${locked.digest})`
+        ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
         : '  locked: (none)',
     ]
       .filter(Boolean)
@@ -655,7 +657,7 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
   }
   if (lock?.packages[alias]) {
     const locked = lock.packages[alias]!;
-    return `"${alias}" is in ${LOCK_NAME} as ${locked.reason} dependency\n  ${locked.purl}`;
+    return `"${plainLine(alias)}" is in ${LOCK_NAME} as ${plainLine(locked.reason)} dependency\n  ${plainLine(locked.purl)}`;
   }
   throw new OpmError('NOT_FOUND', `Unknown package "${echoed(alias)}"`);
 }
