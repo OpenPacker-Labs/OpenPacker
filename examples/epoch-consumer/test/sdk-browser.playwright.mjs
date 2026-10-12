@@ -62,8 +62,11 @@ test(
     );
     const address = server.address();
     assert.ok(address && typeof address === 'object');
-    const browser = await chromium.launch({ headless: true });
+    let browser;
     try {
+      // Inside the try: a browser that cannot start must still close the server,
+      // or the listening socket keeps this process alive after the failure.
+      browser = await chromium.launch({ headless: true });
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${address.port}/`);
       const result = await page.evaluate(async () => {
@@ -157,10 +160,13 @@ test(
       assert.equal(result.proofBytesEqual, true);
       assert.equal(result.receiptValid, true);
     } finally {
-      await browser.close();
-      await new Promise((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      try {
+        await browser?.close();
+      } finally {
+        await new Promise((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
     }
   },
 );
