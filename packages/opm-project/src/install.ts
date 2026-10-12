@@ -33,6 +33,7 @@ import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import {
   assertSafeSegment,
+  O_DIRECTORY,
   assertStoreKey,
   ensureStableDirectory,
   openStableDirectory,
@@ -753,7 +754,7 @@ export async function materializeLockPackage(input: {
           const packageHandle = await openChild(
             storeHandle,
             stagedName,
-            constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+            constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
           );
           try {
             const result = await runDeclaredLifecycleScripts({

@@ -2,6 +2,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
+import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
 import {
   canonicalProjectionDigest,
   formatDigest,
@@ -737,8 +738,6 @@ export interface BoundedFetchOptions {
   delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 }
 
-const nativeFetch: typeof fetch = globalThis.fetch;
-
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 const SENSITIVE_HEADERS = new Set([
@@ -799,11 +798,11 @@ export class BoundedFetchTransport implements HttpTransport {
       options.pinnedExtraHeaders === undefined
         ? undefined
         : new Map(options.pinnedExtraHeaders);
-    this.#fetch = options.fetch ?? globalThis.fetch;
     this.#pinProduction =
       this.#destinationPolicy === 'classify-and-pin' &&
-      options.fetch === undefined &&
-      this.#fetch === nativeFetch;
+      options.fetch === undefined;
+    this.#fetch =
+      options.fetch ?? (this.#pinProduction ? pinnedFetch : globalThis.fetch);
     this.#lookup =
       options.lookup ?? (this.#pinProduction ? defaultHostLookup : undefined);
     this.#delay = options.delay ?? abortableDelay;
@@ -841,17 +840,7 @@ export class BoundedFetchTransport implements HttpTransport {
         : AbortSignal.any([request.signal, deadline.signal]);
     let pin: { address: string; family: number } | undefined;
     const agent = this.#pinProduction
-      ? new Agent({
-          connect: {
-            lookup: (_hostname, _options, callback) => {
-              if (pin === undefined) {
-                callback(new Error('No pinned address'), '', 4);
-                return;
-              }
-              callback(null, pin.address, pin.family);
-            },
-          },
-        })
+      ? new Agent({ connect: { lookup: pinnedLookup(() => pin) } })
       : undefined;
     try {
       let url = parseProviderUrl(request.url);
@@ -1127,9 +1116,8 @@ export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
   const pinnedOrigins = new Set(
     (options.pinnedOrigins ?? []).map(normalizePinnedOrigin),
   );
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  const pinProduction =
-    options.fetch === undefined && fetchImpl === nativeFetch;
+  const pinProduction = options.fetch === undefined;
+  const fetchImpl = options.fetch ?? pinnedFetch;
   const lookup =
     options.lookup ?? (pinProduction ? defaultHostLookup : undefined);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -1147,17 +1135,7 @@ export function createPinnedFetch(options: PinnedFetchOptions): typeof fetch {
     if (resolved !== undefined) pin = resolved;
     const agent =
       pinProduction && pin !== undefined
-        ? new Agent({
-            connect: {
-              lookup: (_hostname, _options, callback) => {
-                if (pin === undefined) {
-                  callback(new Error('No pinned address'), '', 4);
-                  return;
-                }
-                callback(null, pin.address, pin.family);
-              },
-            },
-          })
+        ? new Agent({ connect: { lookup: pinnedLookup(() => pin) } })
         : undefined;
     try {
       const nextInit: RequestInit & { dispatcher?: Agent } = { ...init };

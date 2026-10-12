@@ -114,10 +114,17 @@ const COMMANDS = new Set([
   'help',
 ]);
 
+/** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
+export interface RunOpmOptions {
+  /** Network used by `plugin add`; production resolves and pins real addresses. */
+  fetch?: typeof fetch;
+}
+
 export async function runOpm(
   argv = process.argv.slice(2),
   io: CliIo = process,
   cwd = process.cwd(),
+  options: RunOpmOptions = {},
 ): Promise<number> {
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
@@ -578,7 +585,7 @@ export async function runOpm(
       }
       case 'plugin': {
         // await keeps subcommand errors inside runOpm's handler.
-        return await runPluginCommand(args, io);
+        return await runPluginCommand(args, io, options);
       }
       case 'auth': {
         const { runAuthCommand } = await import('./commands/auth.js');
@@ -858,7 +865,11 @@ function isBooleanFlag(key: string): boolean {
  *
  * Subcommands: add | remove | list
  */
-async function runPluginCommand(args: Parsed, io: CliIo): Promise<number> {
+async function runPluginCommand(
+  args: Parsed,
+  io: CliIo,
+  options: RunOpmOptions,
+): Promise<number> {
   const sub = args.positionals[0];
   if (sub === 'add') {
     const spec = args.positionals[1];
@@ -869,6 +880,7 @@ async function runPluginCommand(args: Parsed, io: CliIo): Promise<number> {
       name,
       ...(!(version === undefined) && { version }),
       ...(!(offline === undefined) && { offline }),
+      ...(!(options.fetch === undefined) && { fetch: options.fetch }),
     });
     io.stdout.write(
       installed.alreadyInstalled
