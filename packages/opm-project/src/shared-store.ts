@@ -48,6 +48,7 @@ import {
 } from '@openpacker/materializer';
 import { assertHandleSegment, StableHandleError } from '@openpacker/project-io';
 import { stableStoreTreeDigest } from './generations.js';
+import { readTreeRecord, recordTreeDigest } from './shared-store-record.js';
 import { OpmError } from './types.js';
 import {
   assertDigest,
@@ -55,10 +56,8 @@ import {
   openChild,
   openStableDirectory,
   readDirChildWithTypes,
-  readStableFile,
   removeStableTree,
   storeKeyFromDigest,
-  writeStableFile,
 } from './paths.js';
 
 import {
@@ -285,29 +284,6 @@ export async function adoptSharedEntry(
   return treeDigest === undefined ? undefined : { path, treeDigest };
 }
 
-/**
- * Write the digest an entry's tree must hash to.
- *
- * Two installs publishing the same package write the same bytes here, and the
- * second one's atomic replace finds a different inode than it wrote. Same
- * content is not a conflict; different content is.
- */
-async function recordTreeDigest(
-  sharedPath: string,
-  treeDigest: string,
-): Promise<void> {
-  const record = `${treeDigest}\n`;
-  try {
-    await writeStableFile(`${sharedPath}.tree`, record);
-  } catch (error) {
-    if (
-      !(error instanceof OpmError && error.code === 'INPUT_CHANGED') ||
-      (await readStableFile(`${sharedPath}.tree`).catch(() => '')) !== record
-    )
-      throw error;
-  }
-}
-
 /** The recorded tree digest of an entry that is there and intact, else undefined. */
 async function adoptExistingEntry(
   sharedPath: string,
@@ -340,7 +316,7 @@ async function adoptExistingEntry(
 async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   let text: string;
   try {
-    text = await readStableFile(`${sharedPath}.tree`);
+    text = await readTreeRecord(`${sharedPath}.tree`);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
