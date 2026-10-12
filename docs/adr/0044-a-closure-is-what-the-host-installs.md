@@ -735,11 +735,28 @@ independent review got the same two figures.
   as long, one git lock entry with a 1 MiB host printed 9 MiB through `opm ci`,
   four such entries 36 MiB, and the refusal of a lock lists twenty. `scrub` now
   shows a URL at most twice as long as the text it came from and at most 600
-  characters, ending in `…` where it is cut, so the whole text is at most twice
-  as long whatever the URLs are (the worst of the 60 texts: 1.99x; the one git
-  entry: 448 bytes). A URL of ordinary length is shown whole. `redactAddress`
-  shows a host and a path each at 256 characters and then how many there were.
-  The cost: the tail of a path longer than 600 characters is not shown.
+  characters, ending in `…` where it is cut (the worst of the 60 texts: 1.99x;
+  the one git entry: 448 bytes). A URL of ordinary length is shown whole.
+  `redactAddress` shows a host and a path each at 256 characters and then how
+  many there were, and a scheme of up to 32 characters (`[address withheld]` for
+  a longer one: a scheme of 1 MiB, which the URL parser takes, was printed
+  whole).
+
+  That bounded the URLs and not the text. The passes for a credential name and a
+  bearer token lengthen what they find, `token=x,` being 8 characters and
+  `token=[REDACTED],` 17, and a seeded search over 20,000 repeating units of up
+  to 14 characters (`token=日;`, `token=x,`, ...) found texts that came out
+  2.125 times as long. The last step of `scrub` now cuts the whole answer at
+  twice the length of the text, ending in `…` as a cut URL does, so "at most
+  twice as long" is true of the function and not of each pass: 61 hostile texts
+  of 1 MiB (`scrub-bound.test.ts`, with a single URL at most 600 characters in
+  the 54 that are one) and the 20,000 units are all inside it. The answer is the
+  first version's, byte for byte, but where it is cut
+  (`scrub-differential.test.ts`, which names the third class; of 400,000 seeded
+  strings 615 differ from the first version, 14 by this cut alone, and the
+  oracle explains all of them). The cost: the tail of a path longer than 600
+  characters is not shown, and a one-character value after a short name is
+  `token=[REDACT…`: the value is withheld, the word is cut.
 
 - **An address named in an error is built from the parser's components, and
   nothing else is printed.** `redactAddress` (`@openpacker/adapter-core`) shows

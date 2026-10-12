@@ -7,7 +7,8 @@ import { hasOverlongHost, redactUrl } from '@openpacker/adapter-core';
  * length and 600 characters) and loses userinfo, query and fragment, or is
  * withheld whole as `[url]` when the URL parser refuses it or its host is longer
  * than a DNS name can be; the value after a credential-shaped name is withheld;
- * a bearer or basic token is withheld.
+ * a bearer or basic token is withheld. What comes out is cut at twice the length
+ * of what went in.
  *
  * The text is a registry's to choose (an uncoded error carries whatever its
  * message held), so no pass may take longer than the text is long. A pass that
@@ -21,7 +22,23 @@ import { hasOverlongHost, redactUrl } from '@openpacker/adapter-core';
  * `scrub-linear.test.ts` bounds the time.
  */
 export function scrub(text: string): string {
-  return withholdBearers(withholdCredentials(redactUrls(text)));
+  return atMostTwice(
+    withholdBearers(withholdCredentials(redactUrls(text))),
+    text,
+  );
+}
+
+/**
+ * `shown`, cut at twice the length of the `text` it was made from, ending in `…`
+ * as a cut URL does. A URL is already shown at most twice its own length, but
+ * the other two passes lengthen their match (`token=x,` is 8 characters and
+ * `token=[REDACTED],` 17), so the whole text could come out 2.125 times as long.
+ * This is the last step, so that "at most twice as long" is a property of the
+ * function and not of each pass.
+ */
+function atMostTwice(shown: string, text: string): string {
+  const limit = 2 * text.length;
+  return shown.length > limit ? `${shown.slice(0, limit - 1)}…` : shown;
 }
 
 const CREDENTIAL =

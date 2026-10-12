@@ -1,6 +1,6 @@
 /**
  * What `scrub` must give, as an independent statement: the first version's
- * answer (`scrub-legacy.ts`) with two differences, both in how a URL is shown.
+ * answer (`scrub-legacy.ts`) with three differences, two in how a URL is shown.
  *
  * 1. A URL whose scheme is special (`file` included) and whose host, as Node's
  *    URL parser reads it, is longer than 253 characters is withheld as `[url]`
@@ -9,6 +9,10 @@
  * 2. A URL is shown at most twice as long as the text it came from, and at most
  *    600 characters: the parser writes a character outside ASCII as up to nine,
  *    and a mebibyte of path was nine mebibytes. What is cut ends in `…`.
+ *
+ * 3. The whole answer is at most twice as long as the text, and ends in `…`
+ *    where it is cut. A URL is cut already, but the other two passes lengthen
+ *    their match: `token=x,` repeated came out 2.125 times as long.
  *
  * Every other URL, and everything that is not a URL, is treated as the first
  * version treated it.
@@ -68,7 +72,14 @@ export function holdsCutUrl(text: string): boolean {
   });
 }
 
-export function expectedScrub(text: string): string {
+/** Difference 3: the answer, cut at twice the length of the text. */
+function atMostTwice(answer: string, text: string): string {
+  const limit = 2 * text.length;
+  return answer.length > limit ? `${answer.slice(0, limit - 1)}…` : answer;
+}
+
+/** The answer before difference 3. */
+function uncapped(text: string): string {
   return text
     .replace(URL_MATCH, (match) =>
       hostLength(match) > LONGEST_HOST
@@ -84,4 +95,13 @@ export function expectedScrub(text: string): string {
       /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu,
       (_match, scheme: string) => `${scheme} [REDACTED]`,
     );
+}
+
+export function expectedScrub(text: string): string {
+  return atMostTwice(uncapped(text), text);
+}
+
+/** Whether the answer for the text is cut, as a whole, at twice its length. */
+export function holdsCutAnswer(text: string): boolean {
+  return uncapped(text).length > 2 * text.length;
 }

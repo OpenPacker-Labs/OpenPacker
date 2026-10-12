@@ -82,3 +82,33 @@ describe('what is printed as a scheme', () => {
     expect(redactAddress(address)).toBe(shown);
   });
 });
+
+describe('how long a scheme is printed', () => {
+  const scheme = (length: number) => 'a'.repeat(length);
+
+  it('prints a scheme of 32 characters and withholds one of 33', () => {
+    expect(redactAddress(`${scheme(32)}://h/x`)).toBe(`${scheme(32)}://h/x`);
+    expect(redactAddress(`${scheme(33)}://h/x`)).toBe('[address withheld]');
+    expect(redactAddress(`${scheme(33)}:u:p@h:o/r`)).toBe('[address withheld]');
+    expect(redactAddress(`blob:${scheme(33)}://h/x`)).toBe(
+      'blob:[address withheld]',
+    );
+    // `git+https` and the rest of the schemes people write are far shorter.
+    expect(redactAddress('git+https://github.com/o/r.git')).toBe(
+      'git+https://github.com/o/r.git',
+    );
+  });
+
+  it.each([
+    ['an authority', (s: string) => `${s}://h/x`],
+    ['no authority', (s: string) => `${s}:o/r`],
+    ['an opaque path with an @', (s: string) => `${s}:u:p@h:o/r`],
+    ['a refused host', (s: string) => `${s}://u:p@ho st/x`],
+    ['a blob', (s: string) => `blob:${s}://h/x`],
+  ])('prints almost nothing of a scheme of 1 MiB: %s', (_, build) => {
+    const started = performance.now();
+    const shown = redactAddress(build(scheme(1 << 20)));
+    expect(shown.length).toBeLessThan(64);
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
+});

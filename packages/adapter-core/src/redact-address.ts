@@ -4,6 +4,8 @@ import { hasOverlongHost } from './url-host.js';
 const WITHHELD = '[address withheld]';
 /** What stands for an address with a host no DNS name could be, or one nested too deep. */
 const OVERLONG = '[url]';
+/** The most characters of a scheme that are printed, its colon not counted. */
+const MOST_SCHEME = 32;
 /** A scheme and its colon at the start of a text, short enough to be a scheme. */
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]{0,31}:/u;
 /** Schemes whose address is a path on this machine, where an `@` is a character. */
@@ -124,6 +126,8 @@ function render(address: string, blobs: number): string {
   } catch {
     return withheld(address);
   }
+  // The URL parser takes a scheme of any length, and a scheme is printed.
+  if (url.protocol.length > MOST_SCHEME + 1) return WITHHELD;
   if (url.protocol === 'blob:') {
     // A blob URL holds an address as its path, shown the same way.
     if (blobs >= MOST_BLOBS) return OVERLONG;
@@ -153,7 +157,8 @@ function render(address: string, blobs: number): string {
  * An address as an error may show it, for text a lock, a registry or a person
  * chose. What it prints can only be:
  *
- * - the scheme, unless it may be a user name (`shownScheme`);
+ * - the scheme, unless it may be a user name (`shownScheme`) or is longer than
+ *   32 characters, where there is no scheme but `[address withheld]`;
  * - when the URL parser accepts the address, the parser's own host (with its
  *   port) and path, taken from the URL object and not from the text, each shown
  *   at 256 characters and then how many there were. Never userinfo, query or

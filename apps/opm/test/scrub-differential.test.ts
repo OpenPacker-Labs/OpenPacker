@@ -11,6 +11,7 @@ import { HOSTILE, build } from './scrub-hostile.js';
 import { legacyScrub } from './scrub-legacy.js';
 import {
   expectedScrub,
+  holdsCutAnswer,
   holdsCutUrl,
   holdsOverlongHost,
   LONGEST_HOST,
@@ -20,28 +21,32 @@ import { EXISTING_VECTORS } from './scrub-vectors.js';
 /**
  * `scrub` was made linear without changing what it withholds. The first version
  * is frozen in `scrub-legacy.ts`, and `scrub` gives the same text, byte for
- * byte, on every input but two classes (`scrub-oracle.ts` says them
+ * byte, on every input but three classes (`scrub-oracle.ts` says them
  * independently and precisely): a URL whose host, as Node's parser reads it, is
  * longer than 253 characters is withheld as `[url]` and never reaches the URL
- * parser; and a URL is shown at most twice its own length and 600 characters,
- * because the parser writes a character outside ASCII as up to nine. The
- * inputs of the first part hold few of either, and are short because the first
- * version is quadratic; the second part is the first class and its edge.
+ * parser; a URL is shown at most twice its own length and 600 characters,
+ * because the parser writes a character outside ASCII as up to nine; and the
+ * whole answer is cut at twice the length of the text, because the passes for a
+ * credential name and a bearer token lengthen what they find. The inputs of the
+ * first part hold few of the three, and are short because the first version is
+ * quadratic; the second part is the first class and its edge.
  */
 
 const NEL = '\u0085';
 const KELVIN = '\u212a';
 const LONG_S = '\u017f';
 
-/** Whether the first version's text is expected to differ: one of the two classes. */
+/** Whether the first version's text is expected to differ: one of the three classes. */
 function documented(input: string): boolean {
-  return holdsOverlongHost(input) || holdsCutUrl(input);
+  return (
+    holdsOverlongHost(input) || holdsCutUrl(input) || holdsCutAnswer(input)
+  );
 }
 
 /**
  * Fail with the input, not with a diff of two long outputs. `scrub` must give
  * the oracle's text, and the oracle must give the first version's text unless the
- * input holds a URL of one of the two classes.
+ * input is of one of the three classes.
  */
 function disagreements(inputs: Iterable<string>): string[] {
   const found: string[] = [];
@@ -306,8 +311,9 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
     const found = withheld ? 'see [url] end' : expectedScrub(text);
     expect(holdsOverlongHost(text)).toBe(withheld);
     expect(scrub(text)).toBe(found);
-    // The oracle is the first version's text unless the URL is cut.
-    if (!withheld && !holdsCutUrl(text)) expect(found).toBe(legacyScrub(text));
+    // The oracle is the first version's text unless the URL, or the answer, is cut.
+    if (!withheld && !holdsCutUrl(text) && !holdsCutAnswer(text))
+      expect(found).toBe(legacyScrub(text));
   });
 
   it('does not print the userinfo or the host of one it withholds', () => {
