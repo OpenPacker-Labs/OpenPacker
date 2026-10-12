@@ -365,12 +365,13 @@ layout = "opm"
 
 ### Specs for `opm add`
 
-| Spec                         | Notes                                   |
-| ---------------------------- | --------------------------------------- |
-| `pkg:npm/@scope/name@1.2.3`  | Full PURL (preferred)                   |
-| `name@1.2.3 --ecosystem npm` | Bare name requires `-e` / `--ecosystem` |
-| `… --source ./pkg.tgz`       | Local artifact (offline)                |
-| `… --alias tool`             | Override local alias                    |
+| Spec                         | Notes                                    |
+| ---------------------------- | ---------------------------------------- |
+| `pkg:npm/@scope/name@1.2.3`  | Full PURL (preferred)                    |
+| `name@1.2.3 --ecosystem npm` | Bare name requires `-e` / `--ecosystem`  |
+| `… --source ./pkg.tgz`       | Local artifact (offline)                 |
+| `… --alias tool`             | Override local alias                     |
+| `dir@npm:name@^4.2.0 -e npm` | Install `name` under the directory `dir` |
 
 Bare names are **fail-closed**: `opm add lodash` errors unless you pass
 `--ecosystem`.
@@ -471,10 +472,18 @@ resolver produces, in about 15 seconds from cold. What is followed:
   `darwin-arm64`, …); `os`, `cpu` and `libc` are checked against what Node
   reports, the one that runs here is locked, and the rest are never downloaded.
   A hard dependency that does not run here is refused;
+- an `npm:` alias (`"string-width-cjs": "npm:string-width@^4.2.0"`) as the
+  package it names: the target is resolved and policy-checked as itself, its own
+  `package.json` keeps its own name, and it is installed under the alias
+  (`node_modules/string-width-cjs`). `npm:name`, `npm:@scope/name@range` and
+  `npm:name@tag` are read too; the lock records the version a tag points at;
+- not a dependency a package **bundles** (`bundleDependencies`): its copies are
+  in the package's own archive, so `pkg:npm/npm@10.9.4` is one package, as npm
+  resolves it;
 - never development dependencies, optional peers, or a specifier that is not a
-  registry version range (`github:…`, a URL, `npm:` alias, a dist-tag). Those
-  are not looked up as the registry's package of that name. In a `dependencies`
-  entry they fail the resolve and name the package.
+  registry version range or an alias (`github:…`, a URL, a plain dist-tag).
+  Those are not looked up as the registry's package of that name. In a
+  `dependencies` entry they fail the resolve and name the package.
 
 The set is chosen newest-first and every requirement is checked twice, once by
 the solver and once by the ecosystem's own range rules, so a lock never pairs a
@@ -484,11 +493,22 @@ that every requirement is satisfied; it does not claim the set is optimal.
 A failure to compute the closure is an error that says why. It does not fall
 back to the direct requirement.
 
-**Limits.** A lock holds one version of a package, so a closure that needs two
-(npm and pnpm nest them) fails and names who requires what, for example
-`opm add tinybench` next to `vitest@4.1.9`. The locked platform packages are the
-ones for the machine that resolved. See
-[ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md).
+**Several versions of one package.** A closure that needs a package at two
+versions locks both, as npm and pnpm do: `opm add tinybench` next to
+`vitest@4.1.9` keeps `tinybench@6.2.2` at the root and `tinybench@2.9.0` beside
+`vitest`. A name is held at one version whenever one release suits every
+dependent; it is held at several only where none does. The second version of a
+name is keyed `<name>.<version>` in `opm.lock.json`; an alias is an entry in the
+requiring package's `aliases`, and `opm list` shows it as `as=[…]`.
+`opm why <name>` takes a manifest alias, a lock key, a package name or an
+install name and says which package requires the entry and under what name.
+
+**Limits.** A package a required peer dependency points at must be one version:
+a closure that needs it at two fails and names who requires what, as npm's
+`ERESOLVE` does. A plain dist-tag (`"foo": "latest"`) as a dependency is
+refused. The locked platform packages are the ones for the machine that
+resolved. See [ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
+[ADR 54](../adr/0054-aliases-and-several-versions-in-the-closure.md).
 
 **Release age.** With `minimum_release_age_minutes` set, a version published
 inside the window is passed over for the previous release that satisfies the

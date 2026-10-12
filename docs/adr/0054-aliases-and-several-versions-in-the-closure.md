@@ -130,20 +130,27 @@ Approaches compared.
    sorted order. An existing lock, which has no alias and one version per name,
    reads and re-writes byte for byte, and a resolve of the same closure writes
    the same keys.
-9. **Edges.** `dependencies` is unchanged: the keys an entry requires, sorted. A
-   requirement whose install name is not the target's package name adds
-   `aliases: { "<install name>": "<key>" }` to the entry that has it (sorted by
-   install name, written after `dependencies`, absent when empty), and the key
-   is also in `dependencies`, so everything that walks `dependencies` for
-   reachability keeps working. A direct requirement installed under an alias has
+9. **Edges.** A plain edge stays in `dependencies`: the keys of the entries an
+   entry requires under their own names, sorted. A requirement installed under
+   another name than its target's package name is not there; it is
+   `aliases: { "<install name>": "<key>" }` on the entry that has it (sorted by
+   install name, written after `dependencies`, absent when empty). An entry's
+   edges are the union of the two, and every reader asks `lockEdges` /
+   `lockEdgeKeys` (`lock-edges.ts`), so reachability for `remove`, `sync`, the
+   layout and `why` sees both. A lock with no alias has no `aliases` and reads
+   as it always did. A direct requirement installed under an alias has
    `installName` on its entry. An entry's own `purl` and `version` are the
    target's: the bytes, the bins and the policy are the real package's.
-10. **A direct alias.**
+10. **A direct alias, and a direct range or tag.**
     `opm add string-width-cjs@npm:string-width@^4.2.0 -e npm` writes
     `[packages.string-width-cjs]` with `purl = "pkg:npm/string-width"`,
     `version = "^4.2.0"` and `install_name = "string-width-cjs"`, and
     `package.json` gets `"string-width-cjs": "npm:string-width@^4.2.0"`.
-    `--alias` keeps meaning the local label it always was.
+    `--alias` keeps meaning the local label it always was. A direct version that
+    is a range or a dist-tag (`^4.2.0`, `next`) is resolved against the registry
+    to the newest release inside the minimum release age, by the ecosystem's own
+    range rules (`registry-target.ts`); the lock records the exact version. A
+    bare `*` excludes prereleases, as npm's.
 
 ### The layout and everything that reads one version per name
 
@@ -158,7 +165,9 @@ Approaches compared.
     `preact`) is judged by what it resolves to, so the same name for two entries
     nests.
 12. **`opm list`, `opm why`, `opm remove`, `opm update`/`sync`, gc.**
-    - `remove` and `sync` reach through `dependencies` and `aliases` both.
+    - `remove` reaches through `dependencies` and `aliases` both; `sync` and
+      `update` re-resolve through the same walk, so an aliased direct
+      requirement keeps its install name across a range change.
     - `list` shows the key, the PURL, and `as=` the install names that differ
       from the package name.
     - `why <name>` accepts a manifest alias, a lock key, a package name or an
@@ -182,6 +191,114 @@ Approaches compared.
     would install 68 packages and their closure beside it that npm would never
     fetch.
 
+### Two things the live runs exposed
+
+14. **The engine is told only what can be installed, and its checker names a
+    witness the way the solve does.** A release with a hard requirement that no
+    candidate can meet is taken out before the solve, to a fixed point
+    (`viableCandidates`): Resolvo answered UNSAT for a release that depends on
+    another release of its own name next to one that cannot be installed, though
+    a closure existed, which a property test found. The engine's proof checker
+    picked a requirement's witness among the selected nodes in node-id string
+    order while the solve picks by universe index, so two selected releases that
+    one requirement accepts failed with
+    `proof check failed: requirement witness nodes incomplete`
+    (`crates/openpacker-resolver/src/checker.rs`; a Rust test fails before the
+    change). An unsatisfiable closure is reported as the dependents, the install
+    names and the ranges, never as the engine's JSON.
+15. **A scoped package is one package however the manifest spells it, and an
+    archive is bounded as `opm ci` bounds it.** `pkg:npm/@isaacs/cliui` (what a
+    person types) and `pkg:npm/%40isaacs/cliui` (what the lock holds) are
+    compared in their canonical form. Before, `opm install` after `opm add` of
+    any scoped package was refused as a lock that does not match its manifest,
+    and the layout took the project's own scoped dependency for a transitive
+    one. `opm add` and `opm install` extract under the bounds `opm ci` does
+    (`install-limits.ts`: 256 MiB packed, 1 GiB unpacked, a hundred thousand
+    files) and read an npm archive the way npm reads it, because the platform
+    build codex aliases is 92 MB packed and agent-base@7.1.4, which npm's own
+    closure reaches, is published with `package/./dist/index.js`.
+
 ## Consequences
 
-Filled in with measurements from the acceptance runs, below.
+All numbers are from this host (linux x64, Node 22.22.0) against the live
+registry on 2026-10-12, with the default minimum release age of 1,440 minutes,
+counted by a diagnostics-channel subscriber on undici's request events (requests
+are every HTTP request opm made; bytes are response bytes on the wire). "Before"
+is the build this change started from (`openpacker-lockci`, `b1e7ba4`).
+
+**What now works**
+
+| Command                                                                                    | Before                                                                                                                                     | After                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opm add pkg:npm/npm@10.9.4`                                                               | exit 5, `UNSATISFIABLE`, after 185 requests / 5.80 MB / 20.7 s                                                                             | one package: 2 requests / 2.98 MB / 27.4 s (26.5 s from a warm store: extracting and linking its 2,277-file archive)                                                                                    |
+| the same, as arborist sees it                                                              | n/a                                                                                                                                        | `buildIdealTree` of `npm@10.9.4` is one node, `node_modules/npm 10.9.4`; opm's lock holds `npm` and its layout `["npm"]`: **equal** (npm bundles its 68 dependencies, §13)                              |
+| `opm add pkg:npm/vitest@4.1.9`                                                             | 160 requests / 17.34 MB / 16.4 s / 44 packages                                                                                             | 160 requests / 17.34 MB / 16.1 s / 44 packages; the lock entries are identical to the old build's                                                                                                       |
+| then `opm add tinybench`                                                                   | refused: `pkg:npm/tinybench is needed at versions no single release satisfies, and a lock holds one version of a package: …`               | 161 requests / 17.37 MB / 15.8 s; 45 packages; `node_modules/tinybench` 6.2.2, `node_modules/vitest/node_modules/tinybench` 2.9.0; `vitest --version` runs                                              |
+| `opm add pkg:npm/@isaacs/cliui@8.0.2`                                                      | exit 9 after 1 request: `depends on string-width-cjs as "npm:string-width@^4.2.0", a alias specifier that is not a registry version range` | 29 requests / 172 KB / 2.7 s; 17 lock entries, 23 placed copies; `string-width-cjs` (4.2.3), `strip-ansi-cjs`, `wrap-ansi-cjs` and `@isaacs/cliui` run                                                  |
+| `opm add pkg:npm/@openai/codex@0.136.0`                                                    | installs the 4 KB wrapper and none of its six platform builds (the alias is skipped); `bin/codex.js` throws when it starts                 | 5 requests / 93.0 MB; two packages, `node_modules/@openai/codex-linux-x64` is `@openai/codex@0.136.0-linux-x64`, the five other platforms are not fetched; `codex --version` prints `codex-cli 0.136.0` |
+| `opm add pkg:npm/@bytecodealliance/jco@1.24.3`                                             | exit 9 after 1 request: the same refusal, for `componentize-js-0-19-3`                                                                     | 515 requests / 107 MB / 66.7 s; 125 lock entries; `componentize-js` 0.21.0 and, as `componentize-js-0-19-3`, 0.19.3; `jco --version` prints 1.24.3                                                      |
+| `opm add glob@10.4.5 -e npm`                                                               | exit 5, `UNSATISFIABLE`, after 20 requests; the reason is the same refusal, two lines down                                                 | 65 requests / 1.2 MB / 7.8 s; 35 lock entries; `require('glob')` and `require('string-width-cjs')` run                                                                                                  |
+| `opm add 'sw@npm:string-width@^3.0.0'`, then the range edited to `^4.2.0` and `opm update` | the spec is refused as a bare name                                                                                                         | locks 3.1.0 as `sw`; `update` locks 4.2.3, still `sw`; `require('sw')` loads `string-width@4.2.3`                                                                                                       |
+
+**Against the oracle, with nothing bundled.** One node says little about the
+solve, so npm's own 68 `dependencies` (the ranges in `npm@10.9.4`'s
+`package.json`) were resolved as 68 direct requirements by `opm sync`, and by
+`@npmcli/arborist` `buildIdealTree({ add })` with `before` equal to the
+evaluation time less 24 hours (the oracle is read-only; platform-only optional
+nodes are filtered with `npm-install-checks`):
+
+- arborist: 214 nodes. opm: 191 lock entries, 214 placed copies. The set of
+  (install name, version) is **193 on both sides, with no difference either
+  way**, alias directories included.
+- (path, version) is equal for 189 of the 214 copies. The other 25 are the same
+  releases in other places: when a package is needed at two versions, which one
+  takes the root differs (`string-width` 5.1.2 at the root in opm, 4.2.3 in
+  arborist). Both are trees Node resolves correctly; the planner's tie-break is
+  not npm's (`layout-plan.ts`, unchanged here).
+- The minimum-release-age gate set aside `ip-address@10.7.4` (published
+  2026-10-11T19:34Z) and `p-map@7.1.1` (2026-10-11T15:28Z); opm took 10.7.3 and
+  7.1.0, and so did arborist's `before`. No other package of the closure had a
+  release inside the window. The run cost 380 requests, 6.46 MB and 48.8 s,
+  extraction and layout included.
+
+**Tests that fail without the change.** Each commit of the series names the
+tests that fail on the code before it: 37 of 64 for the lock and the solve (the
+`@isaacs/cliui` closure, `vitest` next to `tinybench`, every alias form,
+`npm:name@tag`), 17 of 26 for the direct alias, 3 of 4 for `why` and the
+executables, 2 of 3 for the CLI's words, 3 of 4 for the scoped spelling, 5 of 5
+for the archive bounds, and the Rust test for the checker.
+
+**Properties.** `closure-properties.test.ts` draws registries of five packages
+with two to four versions each, plain and aliased dependencies, and ranges from
+`*` to `^3`. For every closure it checks that each installed requirement has
+exactly one edge, to a selected release of the right package that the
+ecosystem's own range accepts, under the install name it was written with; that
+nothing unreachable is selected; that a name is held at several versions only
+when no single release suits all of its edges; that a second resolve, and a
+resolve with the registry listed in the opposite order, give the same selection
+and the same edges; and that a refusal names who requires what and happens only
+when no subset of what the walk found closes (checked exhaustively up to 14
+packages). 120 registries in the suite (73 locked, 23 names at several versions,
+147 alias edges, 47 refused); a soak of 1,000 with seed 7 (608 locked, 176 names
+at several versions, 1,281 alias edges, 392 refused) found no violation. A
+differential run over 6,000 random graphs during development showed the planner
+places a graph with no alias exactly as it did before (a throwaway script, not
+kept).
+
+**Legacy locks.** `legacy-closure.opm.lock.txt` is a lock written by the build
+before this change. It parses and serializes to the same bytes, and resolving
+the same registry state with the new build writes the same bytes.
+
+**Limits**
+
+- Plain dist-tags (`"foo": "latest"`) are still refused; only an alias names a
+  package explicitly enough to resolve a tag for it.
+- A required peer dependency that is needed at versions no single release
+  satisfies keeps the old who-requires-what refusal (npm's `ERESOLVE`).
+- A plain dependency key that differs from its package name only by case is
+  placed by the package's canonical (lower-case) name.
+- Uninstalling the owner of a shared `.bin` name gives it to the first survivor
+  that ships it, by lock key, not to the one npm would pick.
+- The solution digest covers the engine's whole selection, before pruning.
+- The placement of a package needed at two versions differs from npm's in a
+  minority of copies (25 of 214 above); the resolved set is the same.
