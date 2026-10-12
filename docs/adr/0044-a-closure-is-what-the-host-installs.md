@@ -650,15 +650,21 @@ independent review got the same two figures.
   0.2 s. Two outputs changed on purpose. The first: Node's URL parser takes time
   that grows with the square of the length of the host of a special-scheme
   address when the host is many non-ASCII labels, written raw or percent-escaped
-  (`'http://'` and `'ß.é.'` 131,072 times, 524,295 characters, took 37 s; 65,536
-  characters 1.2 s). A host of ASCII or punycode labels is fast, and so is the
-  host of any other scheme than `ftp`, `http`, `https`, `ws`, `wss` and `file`,
-  which is opaque (2 to 21 ms for a mebibyte, raw or percent-escaped). No host
-  over 253 characters is a DNS name, so `hasOverlongHost`
-  (`@openpacker/adapter-core`, `url-host.ts`) is asked before the parser is:
-  `scrub` and `redactSource` print such a URL as `[url]`, `classifyResolved`
-  refuses a lock entry whose `resolved` names one, and `opm ci` of a lock with a
-  524,288-character host, which took 146 s, answers in 0.74 s.
+  (`'http://'` and `'ß.é.'` repeated, one call in a fresh Node 22.22 process on
+  4 CPUs at a load average of 6 to 8, which is not low and could not be made
+  low: 65,543 characters took 0.9 s of CPU, 131,079 took 4.4 s, 262,151 took 21
+  s and 524,295 took 95 s, 105 s of wall time; each doubling costs 4.7 to 4.9
+  times as much, and the first call is four times a later call on the same text
+  in the same process, 0.23 s at 65,543. An earlier version of this record said
+  1.2 s at 65,536 and 37 s at 524,295, which are not one curve: 64 times 1.2 s
+  is 77 s). A host of ASCII or punycode labels is fast, and so is the host of
+  any other scheme than `ftp`, `http`, `https`, `ws`, `wss` and `file`, which is
+  opaque (2 to 21 ms for a mebibyte, raw or percent-escaped). No host over 253
+  characters is a DNS name, so `hasOverlongHost` (`@openpacker/adapter-core`,
+  `url-host.ts`) is asked before the parser is: `scrub` and `redactSource` print
+  such a URL as `[url]`, `classifyResolved` refuses a lock entry whose
+  `resolved` names one, and `opm ci` of a lock with a 524,288-character host,
+  which took 146 s, answers in 0.74 s.
 
   The helper reads the host as Node's parser does, and Node's parser is the URL
   Standard's with one difference that matters here. State by state, as the
@@ -898,20 +904,21 @@ independent review got the same two figures.
   character before, and none does now; an ordinary version, name, link and key
   are written as they were.
 
-  Held by a property test and the review's scripts. A marker is put in the user
-  name, in 166 forms of password (every pair of `@ ? # : / %` before, after and
-  around it, digits and `/`, `/<marker>/`), in the query, the fragment and the
-  path, and in every position of twelve forms the parser refuses (37,364
-  addresses in all): it comes out only where the parser put it in the host or
-  the path with no `@` after the authority, and whenever an address is printed,
-  re-parsing the output gives the parser's own protocol, host and path with no
-  userinfo, query or fragment. `ci-credentials.test.ts` runs 36 lock entries
-  through `runOpm` and `source-credentials.test.ts` three source URLs. Through
-  the real binary the review's sweep of 1,290 lock entries holds 0 markers (3
-  before), its five `@`-in-query entries are clean, and none of its four spoofed
-  hosts is shown; its library sweep of 5,815,824 addresses leaves 210,528
-  outputs holding the marker (252,936 before), all of them `file:`, `link:` and
-  `blob:file:` paths, none in a remote scheme.
+  Held by a property test; the sweeps whose figures follow were run by a review
+  with scripts that are not in the repository. A marker is put in the user name,
+  in 166 forms of password (every pair of `@ ? # : / %` before, after and around
+  it, digits and `/`, `/<marker>/`), in the query, the fragment and the path,
+  and in every position of twelve forms the parser refuses (37,364 addresses in
+  all): it comes out only where the parser put it in the host or the path with
+  no `@` after the authority, and whenever an address is printed, re-parsing the
+  output gives the parser's own protocol, host and path with no userinfo, query
+  or fragment. `ci-credentials.test.ts` runs 42 lock entries through `runOpm`
+  and through the built binary, and `source-credentials.test.ts` the sources a
+  person writes. Through the real binary the review's sweep of 1,290 lock
+  entries holds 0 markers (3 before), its five `@`-in-query entries are clean,
+  and none of its four spoofed hosts is shown; its library sweep of 5,815,824
+  addresses leaves 210,528 outputs holding the marker (252,936 before), all of
+  them `file:`, `link:` and `blob:file:` paths, none in a remote scheme.
 
 - **Every writer, and the ones left as written.** `handleError` (usage, run,
   `OpmError` and coded errors), `formatFailure` (an error with no code keeps the

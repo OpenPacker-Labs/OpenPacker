@@ -81,7 +81,7 @@ export const HOSTILE: readonly Hostile[] = [
   },
   // A URL whose host no DNS name could be is withheld before the URL parser
   // reads it. Node's parser takes the square of the length of a host of many
-  // non-ASCII labels (37 s for 524,295 characters of `ß.é.`); punycode labels
+  // non-ASCII labels (95 s of CPU for 524,295 characters of `ß.é.`); punycode labels
   // and dots of ASCII are not slow, and are here so that they stay withheld.
   {
     name: 'http:// then ß.é.',

@@ -5,7 +5,8 @@
  * 1. A URL whose scheme is special (`file` included) and whose host, as Node's
  *    URL parser reads it, is longer than 253 characters is withheld as `[url]`
  *    and never reaches the URL parser, which takes the square of the host's
- *    length on a host of many non-ASCII labels (37 s for 524,295 characters).
+ *    length on a host of many non-ASCII labels (95 s of CPU for 524,295
+ *    characters).
  * 2. A URL is shown at most twice as long as the text it came from, and at most
  *    600 characters: the parser writes a character outside ASCII as up to nine,
  *    and a mebibyte of path was nine mebibytes. What is cut ends in `…`.

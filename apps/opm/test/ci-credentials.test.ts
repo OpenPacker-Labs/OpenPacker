@@ -5,14 +5,15 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runOpm } from '../src/opm.js';
 import { capture } from './capture.js';
+import { linkBins, run } from './bins-fixture.js';
 
 /**
  * `opm ci` names the entries of a lock it cannot install, and a lock's
  * `resolved` can hold a person's credentials: in userinfo, in a query, in a
  * fragment, or in a password that holds the characters that end userinfo. Each
  * address here carries its own marker, and nothing `opm ci` writes, to either
- * stream, may hold one. (The same lists are checked against the built binary
- * in the review's script.)
+ * stream, may hold one. Each list is run through `runOpm` and through the built
+ * binary, started as `bins.test.ts` starts one.
  */
 
 const marker = (index: number) =>
@@ -97,7 +98,10 @@ describe('what opm ci writes of a lock entry it cannot install', () => {
     );
   });
 
-  async function ci(sources: readonly ((c: string) => string)[]) {
+  /** A project whose lock holds one entry per source, each with its own marker. */
+  async function lock(
+    sources: readonly ((c: string) => string)[],
+  ): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), 'opm-credentials-'));
     const store = await mkdtemp(join(tmpdir(), 'opm-credentials-store-'));
     temps.push(dir, store);
@@ -124,34 +128,55 @@ describe('what opm ci writes of a lock entry it cannot install', () => {
         packages: { '': root, ...packages },
       }),
     );
+    return dir;
+  }
+
+  async function ci(sources: readonly ((c: string) => string)[]) {
+    const dir = await lock(sources);
     const cap = capture();
     const code = await runOpm(['ci', '--offline', '--path', dir], cap.io, '/');
     return { code, written: cap.out + cap.err };
   }
 
-  it.each([
-    ['listed as git or path sources', SOURCES],
-    ['listed as git sources with an @ after the authority', MORE_SOURCES],
-    ['refused by name', REFUSED],
-  ])(
-    'holds no credential of an entry %s',
-    async (_, sources) => {
-      const { code, written } = await ci(sources);
-      expect(code).toBe(3);
-      // The lock was refused for these entries, not for something else.
-      for (let index = 0; index < sources.length; index += 1)
-        expect(written, `entry p${index}`).toContain(`p${index}@1.0.0`);
-      expect(written).not.toMatch(/vtok_dummy_marker/u);
-      expect(written).not.toContain('deploy');
-    },
-    120_000,
-  );
+  /** The same, through the file `bin.opm` names, started the way a link starts it. */
+  async function ciBinary(sources: readonly ((c: string) => string)[]) {
+    const dir = await lock(sources);
+    const entry = (await linkBins({ opm: './dist/main.js' })).get('opm')!;
+    const finished = await run(entry, ['ci', '--offline', '--path', dir], '/');
+    return {
+      code: finished.status,
+      written: finished.stdout + finished.stderr,
+    };
+  }
 
-  it('does not print a user name written before a colon as a scheme', async () => {
-    const { code, written } = await ci(SCHEMELESS);
-    expect(code).toBe(3);
-    for (let index = 0; index < SCHEMELESS.length; index += 1)
-      expect(written, `entry p${index}`).toContain(`p${index}@1.0.0`);
-    expect(written.toLowerCase()).not.toContain('vtokdummymarker');
-  }, 120_000);
+  describe.each([
+    ['runOpm', ci],
+    ['the built binary', ciBinary],
+  ])('through %s', (_, through) => {
+    it.each([
+      ['listed as git or path sources', SOURCES],
+      ['listed as git sources with an @ after the authority', MORE_SOURCES],
+      ['refused by name', REFUSED],
+    ])(
+      'holds no credential of an entry %s',
+      async (_, sources) => {
+        const { code, written } = await through(sources);
+        expect(code).toBe(3);
+        // The lock was refused for these entries, not for something else.
+        for (let index = 0; index < sources.length; index += 1)
+          expect(written, `entry p${index}`).toContain(`p${index}@1.0.0`);
+        expect(written).not.toMatch(/vtok_dummy_marker/u);
+        expect(written).not.toContain('deploy');
+      },
+      120_000,
+    );
+
+    it('does not print a user name written before a colon as a scheme', async () => {
+      const { code, written } = await through(SCHEMELESS);
+      expect(code).toBe(3);
+      for (let index = 0; index < SCHEMELESS.length; index += 1)
+        expect(written, `entry p${index}`).toContain(`p${index}@1.0.0`);
+      expect(written.toLowerCase()).not.toContain('vtokdummymarker');
+    }, 120_000);
+  });
 });

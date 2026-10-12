@@ -137,8 +137,8 @@ function shown(out: string, match: string): string {
 
 function redactUrlText(match: string): string {
   // No DNS name is longer than 253 characters, and Node's URL parser takes the
-  // square of the length of a host made of many non-ASCII labels (37 seconds
-  // for 524,295 characters), so such a URL is withheld whole, unread.
+  // square of the length of a host made of many non-ASCII labels (95 seconds
+  // of CPU for 524,295 characters), so such a URL is withheld whole, unread.
   if (hasOverlongHost(match)) return '[url]';
   try {
     const url = new URL(match);

@@ -4,7 +4,8 @@
  * Node's `new URL` takes time that grows with the square of the length of the
  * host of a special-scheme address when the host is made of many non-ASCII
  * labels, raw or percent-escaped: `'http://' + 'ß.é.'` repeated to 524,295
- * characters takes 37 seconds, and 65,536 characters take 1.2 seconds. No such
+ * characters takes about 95 seconds of CPU, and 65,543 characters take 0.9
+ * seconds (ADR 0044 has the four sizes and the load they were taken at). No such
  * host can be a DNS name, which is at most 253 characters as text, so a caller
  * that reads an address out of text a registry or a lock chose asks first, and
  * does not hand the parser an address whose host is longer.
