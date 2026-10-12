@@ -9,6 +9,7 @@ import {
 } from '@openpacker/adapter-core';
 import {
   O_DIRECTORY,
+  assertHandleSegment,
   openChild,
   readDirChildWithTypes,
 } from '@openpacker/project-io';
@@ -133,6 +134,15 @@ export async function walkMembers(
           `${dir} is ${below.length} directories below the workspace root, more than the limit of ${limits.maxDepth}`,
           [dir],
         );
+      try {
+        assertHandleSegment(entry.name);
+      } catch {
+        throw new WorkspaceError(
+          'WORKSPACE_PATH_UNSAFE',
+          `${dir} has a name no directory handle can take (a backslash or a control character); rename it, or change the patterns so they do not reach it`,
+          [dir],
+        );
+      }
       let child: FileHandle;
       try {
         child = await io.open(

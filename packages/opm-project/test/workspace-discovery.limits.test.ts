@@ -124,6 +124,23 @@ describe('links', () => {
   });
 });
 
+describe('a directory name no handle can take', () => {
+  // Windows does not allow a backslash in a name; there it is a separator.
+  it.skipIf(process.platform === 'win32')(
+    'is refused as a typed workspace error that names the directory',
+    async () => {
+      const root = await scratch(
+        npm(['p/*'], { 'p/a\\b/package.json': { name: 'a' } }),
+      );
+      await expect(discoverWorkspace(root)).rejects.toMatchObject({
+        name: 'WorkspaceError',
+        code: 'WORKSPACE_PATH_UNSAFE',
+        subjects: ['p/a\\b'],
+      });
+    },
+  );
+});
+
 describe('bounds', () => {
   const many = (count: number): Files => {
     const files: Files = {};

@@ -209,7 +209,9 @@ them fails.
    always be laid out); two members with one name; a `package.json` that is not
    UTF-8 JSON, repeats a key (as the lock reader refuses), has a field of the
    wrong type or a version that is not SemVer 2.0; a manifest, root or member,
-   that is a symbolic link.
+   that is a symbolic link; a directory a pattern reaches whose name no
+   directory handle can take (a backslash or a control character), as
+   `WORKSPACE_PATH_UNSAFE` naming the directory.
 10. **A symbolic link is never followed.** A pattern that _names_ one (it is the
     member, or a directory the pattern goes through by name) is refused with the
     path; one met while a `**` searches is passed over and listed in
