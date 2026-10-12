@@ -1200,8 +1200,7 @@ function parseTomlValue(
         `Unterminated string at line ${line}`,
       );
     }
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return JSON.parse(value) as string;
+    return parseTomlString(value, line);
   }
   if (value.startsWith('[')) {
     if (!value.endsWith(']')) {
@@ -1232,8 +1231,7 @@ function parseTomlValue(
           `Array item ${index + 1} must be a string at line ${line}`,
         );
       }
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return JSON.parse(item) as string;
+      return parseTomlString(item, line);
     });
   }
   // bare identifier (rare) — treat as string
@@ -1242,6 +1240,23 @@ function parseTomlValue(
     'INVALID_MANIFEST',
     `Unsupported TOML value at line ${line}: ${echoed(raw)}`,
   );
+}
+
+/**
+ * The text a quoted TOML string holds. The reader takes the JSON escapes, so a
+ * string that JSON refuses (`"a" "b"`, `"a\q"`, a triple-quoted string) is a
+ * manifest that is refused, not an uncoded `SyntaxError` from the parser.
+ */
+function parseTomlString(quoted: string, line: number): string {
+  try {
+    // SAFETY: a JSON string literal parses to a string.
+    return JSON.parse(quoted) as string;
+  } catch {
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Invalid string at line ${line}: ${echoed(quoted)}`,
+    );
+  }
 }
 
 function tomlString(value: string): string {
