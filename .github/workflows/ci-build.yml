@@ -84,6 +84,12 @@ jobs:
         # its struct layouts and errno values against Node and Linux.
         if: runner.os == 'macOS'
         run: npm run test -w @openpacker/project-io -- src/handle-darwin.test.ts
+      - name: Workspace-member links against the real libSystem (macOS)
+        # symlinkat and readlinkat through koffi, with their first-use check
+        # against fstatat, and the whole link suite the Linux legs run through
+        # /proc/self/fd and glibc, here on libSystem with no override.
+        if: runner.os == 'macOS'
+        run: npm run test -w @openpacker/project-io -- src/handle-link.test.ts
       - name: Pack publishable packages
         # bash on every runner, and the directory first: npm does not create a
         # --pack-destination, and fails with ENOENT when it is missing.

@@ -26,6 +26,7 @@ import {
 import { constants as osConstants } from 'node:os';
 import { join, parse, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { linkRaces, linkRefusals, links } from './handle-conformance-links.js';
 import {
   lstatChild,
   mkdirChild,
@@ -714,6 +715,9 @@ export const scenarios = {
   concurrency,
   segments,
   errors,
+  links,
+  linkRefusals,
+  linkRaces,
 };
 
 export type ScenarioName = keyof typeof scenarios;
@@ -729,6 +733,9 @@ export const scenarioNames: readonly ScenarioName[] = [
   'concurrency',
   'segments',
   'errors',
+  'links',
+  'linkRefusals',
+  'linkRaces',
 ];
 
 /** The transcript of one scenario in a fresh subdirectory of `dir`. */

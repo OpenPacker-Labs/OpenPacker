@@ -65,6 +65,10 @@ export interface ChildBackend {
   lstatChild(parent: FileHandle, name: string): Promise<BigIntStats>;
   readDirChild(parent: FileHandle): Promise<string[]>;
   readDirChildWithTypes(parent: FileHandle): Promise<Dirent[]>;
+  /** `symlinkat(target, parent, name)`: the link is the new child; `target` is its text, not followed. */
+  symlinkChild(parent: FileHandle, name: string, target: string): Promise<void>;
+  /** `readlinkat(parent, name)`: the text of a link child; EINVAL when the child is not a link. */
+  readlinkChild(parent: FileHandle, name: string): Promise<string>;
 }
 
 interface NativePointer {
@@ -100,6 +104,8 @@ interface LibcApi {
   renameat(fromfd: number, from: string, tofd: number, to: string): number;
   unlinkat(dirfd: number, path: string, flags: number): number;
   fstatat(dirfd: number, path: string, out: Buffer, flags: number): number;
+  symlinkat(target: string, newdirfd: number, linkpath: string): number;
+  readlinkat(dirfd: number, path: string, out: Buffer, size: number): number;
   fdopendir(fd: number): NativePointer | null;
   readdir(stream: NativePointer): NativePointer | null;
   closedir(stream: NativePointer): number;
@@ -149,6 +155,17 @@ type FstatatCall = (
   path: string,
   out: Buffer,
   flags: number,
+) => number;
+type SymlinkatCall = (
+  target: string,
+  newdirfd: number,
+  linkpath: string,
+) => number;
+type ReadlinkatCall = (
+  dirfd: number,
+  path: string,
+  out: Buffer,
+  size: number,
 ) => number;
 type FdopendirCall = (fd: number) => NativePointer | null;
 type ReaddirCall = (stream: NativePointer) => NativePointer | null;
@@ -213,6 +230,19 @@ function bindLibc(profile: LibcAtProfile): LibcApi {
     'void *',
     'int',
   ]);
+  // symlinkat(target, newdirfd, linkpath) puts the directory between the two
+  // paths; readlinkat returns an ssize_t, which koffi gives back as a number.
+  const symlinkat = bind<SymlinkatCall>('symlinkat', 'int', [
+    'str',
+    'int',
+    'str',
+  ]);
+  const readlinkat = bind<ReadlinkatCall>('readlinkat', 'int64', [
+    'int',
+    'str',
+    'void *',
+    'uint64',
+  ]);
   const fdopendir = bind<FdopendirCall>('fdopendir', 'void *', ['int']);
   const readdir = bind<ReaddirCall>('readdir', 'void *', ['void *']);
   const closedir = bind<ClosedirCall>('closedir', 'int', ['void *']);
@@ -228,6 +258,8 @@ function bindLibc(profile: LibcAtProfile): LibcApi {
     renameat,
     unlinkat,
     fstatat,
+    symlinkat,
+    readlinkat,
     fdopendir,
     readdir,
     closedir,
@@ -320,7 +352,12 @@ const REFERENCE_DIRECTORY = '/';
 interface Verified {
   stat: boolean;
   dirent: boolean;
+  /** symlinkat, readlinkat and fstatat agreed about the first link made. */
+  link: boolean;
 }
+
+/** Bytes a link target may take; Linux and macOS PATH_MAX are 4096 and 1024. */
+const LINK_BUFFER_BYTES = 4096;
 
 function statMismatches(libc: DecodedStat, node: BigIntStats): string[] {
   const rows: [string, bigint, bigint][] = [
@@ -529,7 +566,7 @@ function directoryRefused(name: string): Error {
  */
 export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
   let bound: LibcApi | undefined;
-  const verified: Verified = { stat: false, dirent: false };
+  const verified: Verified = { stat: false, dirent: false, link: false };
   const native = (): LibcApi => (bound ??= bindLibc(profile));
 
   function lstatRaw(api: LibcApi, dirfd: number, name: string): DecodedStat {
@@ -596,6 +633,68 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
         : entry.kind;
     if (kind === 'directory') removeDirectory(api, dirfd, entry.name);
     else unlink(api, dirfd, entry.name, 0);
+  }
+
+  function readLinkText(api: LibcApi, dirfd: number, name: string): string {
+    const buffer = Buffer.alloc(LINK_BUFFER_BYTES);
+    const length = check(
+      attempt(api, () =>
+        api.readlinkat(dirfd, name, buffer, LINK_BUFFER_BYTES),
+      ),
+      'readlink',
+      name,
+    );
+    // readlinkat() does not terminate the text and does not say when it cut
+    // it short: a full buffer might be a longer target, so it is not trusted.
+    if (length >= LINK_BUFFER_BYTES)
+      throw new StableHandleError(
+        `readlinkat '${name}' filled its ${LINK_BUFFER_BYTES}-byte buffer; the target may be longer than it can be read`,
+      );
+    return buffer.toString('utf8', 0, length);
+  }
+
+  /**
+   * Refuse to trust symlinkat/readlinkat until they have agreed about a link
+   * that was just made: the text read back is the text given, and fstatat
+   * with AT_SYMLINK_NOFOLLOW sees a link of that length. A wrong argument
+   * order or flag value shows up here, naming the call and the raw bytes,
+   * not later as a link that points somewhere else.
+   */
+  function verifyLinkCalls(
+    api: LibcApi,
+    dirfd: number,
+    name: string,
+    target: string,
+  ): void {
+    if (verified.link) return;
+    const wanted = Buffer.from(target);
+    const read = Buffer.alloc(LINK_BUFFER_BYTES);
+    const length = check(
+      attempt(api, () => api.readlinkat(dirfd, name, read, LINK_BUFFER_BYTES)),
+      'readlink',
+      name,
+    );
+    const seen = lstatRaw(api, dirfd, name);
+    const problems: string[] = [];
+    if (!read.subarray(0, length).equals(wanted))
+      problems.push(
+        `readlinkat returned ${length} bytes ${read.subarray(0, length).toString('hex')} but symlinkat was given ${wanted.length} bytes ${wanted.toString('hex')}`,
+      );
+    if (entryKindOfMode(seen.mode) !== 'symlink')
+      problems.push(
+        `fstatat with AT_SYMLINK_NOFOLLOW (${api.profile.atSymlinkNoFollow}) reported mode 0o${seen.mode.toString(8)}, which is not a link`,
+      );
+    else if (seen.size !== BigInt(wanted.length))
+      problems.push(
+        `fstatat reported a link of ${seen.size} bytes, expected ${wanted.length}`,
+      );
+    if (problems.length > 0) {
+      unlink(api, dirfd, name, 0);
+      throw new StableHandleError(
+        `libc symlinkat/readlinkat "${api.profile.id}" disagree: ${problems.join('; ')}`,
+      );
+    }
+    verified.link = true;
   }
 
   async function entriesOf(
@@ -669,6 +768,25 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
           return;
         throw error;
       }
+    },
+
+    async symlinkChild(parent, name, target) {
+      if (target.includes('\0'))
+        throw new StableHandleError(
+          `symlinkat target ${JSON.stringify(target)} contains a NUL`,
+        );
+      const api = native();
+      check(
+        attempt(api, () => api.symlinkat(target, parent.fd, name)),
+        'symlink',
+        target,
+        name,
+      );
+      verifyLinkCalls(api, parent.fd, name, target);
+    },
+
+    async readlinkChild(parent, name) {
+      return readLinkText(native(), parent.fd, name);
     },
 
     async lstatChild(parent, name) {

@@ -158,7 +158,7 @@ export function useChildBackendForTesting(backend: ChildBackend): () => void {
  * The libc backend for this call, or undefined to use /proc/self/fd. The
  * platform is read at call time, as the Windows branch always has been.
  */
-function libcBackend(): ChildBackend | undefined {
+export function libcBackend(): ChildBackend | undefined {
   const kind = childBackendKind(process.platform);
   if (kind === 'nt') return undefined;
   if (testBackend !== undefined) return testBackend;

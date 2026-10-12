@@ -42,6 +42,8 @@ export function counting(inner: ChildBackend): {
       lstatChild: tick(inner.lstatChild),
       readDirChild: tick(inner.readDirChild),
       readDirChildWithTypes: tick(inner.readDirChildWithTypes),
+      symlinkChild: tick(inner.symlinkChild),
+      readlinkChild: tick(inner.readlinkChild),
     },
   };
 }

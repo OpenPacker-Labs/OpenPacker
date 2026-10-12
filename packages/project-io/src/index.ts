@@ -221,6 +221,24 @@ export {
   StableHandleError,
 } from './handle-path.js';
 
+export {
+  readlinkChild,
+  symlinkChild,
+  unlinkChild,
+  type LinkOutcome,
+  type LinkSite,
+} from './handle-link.js';
+
+export {
+  MAXIMUM_TARGET_LENGTH,
+  linkDirectoryProblem,
+  linkNameProblem,
+  linkTargetProblem,
+  memberLinkProblem,
+  splitLinkPath,
+  type LinkPlace,
+} from './link-rules.js';
+
 /** Restore a file's original line endings and trailing-newline habit. */
 export function matchFileStyle(file: TextFile, body: string): string {
   const normalized = body.replace(/\r\n/gu, '\n');

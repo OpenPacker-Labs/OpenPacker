@@ -63,6 +63,8 @@ export type LibcSymbol =
   | 'renameat'
   | 'unlinkat'
   | 'fstatat'
+  | 'symlinkat'
+  | 'readlinkat'
   | 'fdopendir'
   | 'readdir'
   | 'closedir'
@@ -189,6 +191,8 @@ function plainSymbols(): Record<LibcSymbol, readonly string[]> {
     renameat: ['renameat'],
     unlinkat: ['unlinkat'],
     fstatat: ['fstatat'],
+    symlinkat: ['symlinkat'],
+    readlinkat: ['readlinkat'],
     fdopendir: ['fdopendir'],
     readdir: ['readdir'],
     closedir: ['closedir'],
