@@ -83,7 +83,7 @@ export const FULL_PACKUMENT_LIMITS: ProviderMetadataLimits = {
 };
 
 /** The longest an npm package name may be, scope and slash included. */
-const NPM_NAME_LIMIT = 214;
+export const NPM_NAME_LIMIT = 214;
 
 /**
  * A refusal from the transport or the parser, said in terms of the package

@@ -1,4 +1,5 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import * as dependencyText from './dependency-spec.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { npmTargetPredicate } from './platform.js';
 import {
@@ -284,8 +285,7 @@ function npmRequirement(
     if (enforced)
       throw new ProviderError(
         'UNSUPPORTED_DEPENDENCY_SPEC',
-        `${owner} depends on ${name} as "${range}", a ${specKind} specifier ` +
-          `that is not a registry version range`,
+        dependencyText.unsupportedSpec(owner, name, range, specKind),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,
@@ -305,7 +305,7 @@ function npmRequirement(
           'npm',
           'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
           path,
-          `The ${specKind} specifier "${range}" is not a registry version range`,
+          dependencyText.specifierNotARange(specKind, range),
           'The package is named without a version constraint and the specifier is retained verbatim',
           'info',
         ),
@@ -353,7 +353,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${value}`,
+        `Invalid npm coordinate: ${dependencyText.echoedName(value)}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -475,6 +475,7 @@ export class NpmCodec
           );
         } catch (error) {
           if (enforced) throw error;
+          const reason = error instanceof Error ? error.message : String(error);
           // A dev-time or optional entry this codec cannot read must not stop
           // the package from being inspected. It is recorded, not dropped.
           losses.push(
@@ -482,7 +483,7 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              dependencyText.entryNotRepresentable(field, name, range, reason),
               undefined,
               'info',
             ),
