@@ -271,7 +271,12 @@ Approaches compared.
     member's `.opm-layout.json` and so what a later layout removes there, the
     `.bin` shims in each `node_modules` (the shim's relative path, and who keeps
     a contested name), and a nested package's. What the package calls itself
-    decides one thing, as in §11: what a bare `bin` string is named.
+    decides one thing, as in §11: what a bare `bin` string is named. Who keeps a
+    contested `.bin` name (a direct requirement, then the directory that sorts
+    first) is opm's own rule and not npm's: bin-links lets a local link replace
+    an earlier one (`check-bin.js` returns early unless the install is global),
+    so which package npm leaves a contested name to follows arborist's order,
+    which was not traced, and the arborist oracle compares trees, not `.bin`.
 17. **The case rule (§11) is per `node_modules` directory, and a lock-driven
     layout is refused, not skipped.** A frozen install is the lock, so a lock
     that places two names differing only by case in one directory is refused
