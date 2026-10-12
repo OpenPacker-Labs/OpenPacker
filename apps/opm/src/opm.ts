@@ -58,6 +58,9 @@ import {
   type AdapterRegistry,
   type Generation,
 } from '@openpacker/opm-project';
+import { asksForHelp } from './commands/run-args.js';
+import { RunError } from './commands/run-error.js';
+import { RUN_HELP } from './commands/run-help.js';
 import { formatFailure, parseFailure } from './error-report.js';
 
 export const EXIT_CODES = {
@@ -82,6 +85,10 @@ interface Parsed {
   positionals: string[];
   options: Map<string, string | true>;
   optionValues: Map<string, string[]>;
+  /** Raw tokens before the command name. */
+  head: string[];
+  /** Raw tokens after the command name, `--` and all (`run` and `exec`). */
+  rest: string[];
 }
 
 /** Reported as the producer of any manifest opm writes. */
@@ -96,6 +103,8 @@ const COMMANDS = new Set([
   'uninstall',
   'sync',
   'update',
+  'run',
+  'exec',
   'list',
   'why',
   'search',
@@ -129,6 +138,27 @@ export async function runOpm(
   cwd = process.cwd(),
   options: RunOpmOptions = {},
 ): Promise<number> {
+  const args = parseArgs(argv);
+  // `run` and `exec` start the person's own code and read no registry, so they
+  // load no adapter or plugin (ADR 0047): a broken plugin store cannot print
+  // into a script's stderr, and a script that calls opm 80 times pays no startup.
+  if (
+    (args.command === 'run' || args.command === 'exec') &&
+    !asksForHelp(args.command, args.rest)
+  ) {
+    try {
+      const { runProjectCommand } = await import('./commands/run.js');
+      return await runProjectCommand(
+        args.command,
+        args.head,
+        args.rest,
+        io,
+        cwd,
+      );
+    } catch (error) {
+      return handleError(error, io);
+    }
+  }
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
     const adapterRegistry = configureDefaultAdapters();
@@ -154,7 +184,6 @@ export async function runOpm(
     }
     const { applyAuthConfigForProcess } = await import('./commands/auth.js');
     await applyAuthConfigForProcess();
-    const args = parseArgs(argv);
     if (
       args.command === 'help' ||
       args.options.has('help') ||
@@ -692,6 +721,20 @@ export function handleError(error: unknown, io: CliIo): number {
     io.stderr.write(`${error.message}\n`);
     return EXIT_CODES.usage;
   }
+  if (error instanceof RunError) {
+    io.stderr.write(`opm: ${error.message}\n`);
+    switch (error.code) {
+      case 'USAGE':
+        return EXIT_CODES.usage;
+      case 'NOT_FOUND':
+        return EXIT_CODES.notFound;
+      case 'INVALID_MANIFEST':
+      case 'UNSAFE_PATH':
+        return EXIT_CODES.invalidInput;
+      case 'UNAVAILABLE':
+        return EXIT_CODES.unavailable;
+    }
+  }
   if (error instanceof OpmError) {
     io.stderr.write(`opm: ${error.message}\n`);
     switch (error.code) {
@@ -810,6 +853,7 @@ function parseArgs(argv: string[]): Parsed {
       optionValues.set(key, [...(optionValues.get(key) ?? []), value]);
   };
   let command = '';
+  let commandIndex = -1;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     if (arg === '--') {
@@ -848,10 +892,19 @@ function parseArgs(argv: string[]): Parsed {
       }
       continue;
     }
-    if (command === '') command = arg;
-    else positionals.push(arg);
+    if (command === '') {
+      command = arg;
+      commandIndex = i;
+    } else positionals.push(arg);
   }
-  return { command, positionals, options, optionValues };
+  return {
+    command,
+    positionals,
+    options,
+    optionValues,
+    head: commandIndex === -1 ? [...argv] : argv.slice(0, commandIndex),
+    rest: commandIndex === -1 ? [] : argv.slice(commandIndex + 1),
+  };
 }
 
 function shortToLong(short: string): string {
@@ -878,6 +931,7 @@ function isBooleanFlag(key: string): boolean {
     key === 'allow-network' ||
     key === 'allow-elevation' ||
     key === 'latest' ||
+    key === 'if-present' ||
     key === 'native' ||
     key === 'shared' ||
     key === 'write'
@@ -1173,6 +1227,8 @@ Usage:
   opm gc --shared [--dry-run]         remove entries of the user-level package store
                                       that no project links to
 
+${RUN_HELP}
+
 Signed vendor releases (packslip — https://packslip.dev):
   opm add packslip:github.com/jdx/hk[@version]    (or packslip:jdx/hk)
   opm packslip verify <spec>                      who signed it; installs nothing
@@ -1289,9 +1345,17 @@ Protocol/control plane: openpacker (advanced)
 `;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // Process entry: packages are kept once per machine (OPM_STORE_HOME=off opts
-  // out, an absolute path relocates it) and projects link to them.
+/**
+ * `runOpm` as the process entry runs it: packages are kept once per machine
+ * (OPM_STORE_HOME=off opts out, an absolute path relocates it) and projects
+ * link to them. `main.ts` calls this for every command it does not answer
+ * itself.
+ */
+export async function runOpmFromProcess(): Promise<number> {
   enableDefaultSharedStore();
-  process.exitCode = await runOpm();
+  return await runOpm();
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = await runOpmFromProcess();
 }
