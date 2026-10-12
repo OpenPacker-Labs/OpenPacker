@@ -1059,7 +1059,10 @@ async function runSystemCommand(
       const status = entry.availability.available
         ? `available${entry.availability.tool?.version ? ` (${entry.availability.tool.name} ${entry.availability.tool.version})` : ''}`
         : `unavailable: ${entry.availability.reason ?? 'unknown'}`;
-      out(io, `${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
+      out(
+        io,
+        `${plainLine(`${entry.id}  ${entry.purlTypes.join(',')}  ${status}`)}\n`,
+      );
     }
     return EXIT_CODES.success;
   }
@@ -1157,7 +1160,7 @@ function writeHostInstallResult(
   io: CliIo,
 ): number {
   const { plan, outcome } = result;
-  out(io, `${plan.command.join(' ')}\n`);
+  out(io, `${plainLine(plan.command.join(' '))}\n`);
   for (const loss of plan.semanticLoss)
     io.stderr.write(
       report(
@@ -1178,7 +1181,7 @@ function writeHostInstallResult(
   }
   out(
     io,
-    `Host-installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
+    `Host-installed ${plainLine(outcome.exactPurl)}${outcome.installedVersion ? ` @ ${plainLine(outcome.installedVersion)}` : ''}\n`,
   );
   return EXIT_CODES.success;
 }
