@@ -2,6 +2,8 @@ import {
   canonicalBytes,
   parseCanonicalJson,
   parseUntrustedUrl,
+  printable,
+  safeEcho,
 } from '@openpacker/canonical';
 import type {
   Capabilities,
@@ -90,6 +92,13 @@ export interface EventPage {
   nextCursor: number;
 }
 
+const MESSAGE_LIMIT = 512;
+
+/** Text a server worded, as a message repeats it: one line, plain, cut. */
+function shown(text: string | undefined, limit: number): string {
+  return safeEcho(printable(text), limit);
+}
+
 export class PrexClientError extends Error {
   constructor(
     readonly status: number,
@@ -97,10 +106,16 @@ export class PrexClientError extends Error {
     readonly rawBytes: Uint8Array,
     readonly response: Response,
   ) {
+    // A server worded `detail` and `title`, and the message goes to a terminal,
+    // a log and a report: one line, no escape or control character, cut at 512
+    // characters. The `problem` keeps the document as it was received.
     super(
-      problem?.detail ??
-        problem?.title ??
-        `PREX request failed with HTTP ${status}`,
+      shown(
+        problem?.detail ??
+          problem?.title ??
+          `PREX request failed with HTTP ${status}`,
+        MESSAGE_LIMIT,
+      ),
     );
     this.name = 'PrexClientError';
   }
@@ -108,7 +123,9 @@ export class PrexClientError extends Error {
 
 export class UnsupportedProtocolVersionError extends Error {
   constructor(readonly protocolVersion: string) {
-    super(`Unsupported PREX protocol version: ${protocolVersion}`);
+    super(
+      `Unsupported PREX protocol version: ${shown(protocolVersion, MESSAGE_LIMIT)}`,
+    );
     this.name = 'UnsupportedProtocolVersionError';
   }
 }
