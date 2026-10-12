@@ -58,6 +58,10 @@ export interface HostCall {
   special: boolean;
   /** The buffer the parser gives the host parser, exactly as written. */
   buffer: string;
+  /** Whether the host state ended with a `[` that no `]` had closed. */
+  insideBrackets: boolean;
+  /** What follows the buffer in the input, from the delimiter that ended it. */
+  rest: string;
 }
 
 /**
@@ -196,7 +200,13 @@ export function hostCall(input: string): HostCall | undefined {
       case 'host':
         if (c === ':' && !insideBrackets) {
           if (buffer === '') return undefined;
-          return { scheme, special: special(), buffer };
+          return {
+            scheme,
+            special: special(),
+            buffer,
+            insideBrackets,
+            rest: points.slice(pointer).join(''),
+          };
         }
         if (
           c === undefined ||
@@ -206,7 +216,13 @@ export function hostCall(input: string): HostCall | undefined {
           (special() && c === '\\')
         ) {
           if (special() && buffer === '') return undefined;
-          return { scheme, special: special(), buffer };
+          return {
+            scheme,
+            special: special(),
+            buffer,
+            insideBrackets,
+            rest: points.slice(pointer).join(''),
+          };
         }
         if (c === '[') insideBrackets = true;
         if (c === ']') insideBrackets = false;
@@ -245,7 +261,13 @@ export function hostCall(input: string): HostCall | undefined {
           // empty string ... set url's host to the empty string"; otherwise
           // the host parser is given the buffer.
           if (isWindowsDriveLetter(buffer) || buffer === '') return undefined;
-          return { scheme, special: true, buffer };
+          return {
+            scheme,
+            special: true,
+            buffer,
+            insideBrackets: false,
+            rest: points.slice(pointer).join(''),
+          };
         }
         buffer += c;
         break;
@@ -264,10 +286,25 @@ export function hostCall(input: string): HostCall | undefined {
  * what the host parser is given when the scheme is special. 0 for a scheme that
  * is not (its host is opaque and linear), and for anything the parser gives up
  * on before a host.
+ *
+ * One place where Node is not the Standard, found by timing it
+ * (`url-host.parser.test.ts`): when the host buffer ends inside a `[` that no
+ * `]` closed and does not begin with `[`, the Standard ends the host at the
+ * authority's end, and Node's parser reads on, past `/`, `?` and `\`, to the
+ * next `#` or the end of the input. That reading is what is returned.
  */
 export function specialHostLength(input: string): number {
   const call = hostCall(input);
-  return call !== undefined && call.special ? call.buffer.length : 0;
+  if (call === undefined || !call.special) return 0;
+  if (
+    call.scheme !== 'file' &&
+    call.insideBrackets &&
+    !call.buffer.startsWith('[')
+  ) {
+    const hash = call.rest.indexOf('#');
+    return call.buffer.length + (hash === -1 ? call.rest.length : hash);
+  }
+  return call.buffer.length;
 }
 
 /**

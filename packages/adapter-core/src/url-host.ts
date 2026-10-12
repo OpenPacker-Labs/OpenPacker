@@ -106,6 +106,15 @@ function fileHostLength(
  * to the next `/`, `\`, `?` or `#`, and its userinfo ends at the last `@`. The
  * host runs to the first `:` that is not inside brackets (a `[` switches the
  * port colon off until a `]`, wherever it stands in the host).
+ *
+ * Where Node's parser differs from the Standard, the cost is Node's. When the
+ * host ends inside an open bracket and does not begin with `[` (`x[h.test/`),
+ * the Standard ends it at the authority's end, and Node's parser reads on past
+ * `/`, `?` and `\` to the next `#` or the end of the input, and takes the
+ * square of that length on non-ASCII labels (`http://x[h.test/` followed by
+ * 128 KiB of `ß.é.`: 1.1 s; 512 KiB: 106 s). So that is the length it returns.
+ * A host that begins with `[` is refused at once and is not extended.
+ * `test/url-host.parser.test.ts` times the real parser to hold this.
  */
 function specialHostLength(
   text: string,
@@ -124,6 +133,10 @@ function specialHostLength(
     if (unit === COLON && !insideBrackets) break;
     if (unit === OPENING_BRACKET) insideBrackets = true;
     else if (unit === CLOSING_BRACKET) insideBrackets = false;
+  }
+  if (insideBrackets && text.charCodeAt(hostStart) !== OPENING_BRACKET) {
+    const hash = text.indexOf('#', stop);
+    return (hash === -1 || hash > limit ? limit : hash) - hostStart;
   }
   return stop - hostStart;
 }

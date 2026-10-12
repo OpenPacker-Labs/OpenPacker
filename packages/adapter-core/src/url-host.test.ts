@@ -169,11 +169,11 @@ describe('hosts the first reading of this helper counted short', () => {
 
   it.each([
     ['http, a [ inside', 'http://x[:', 250, ''],
-    ['https, a [ inside, a path after', 'https://x[:', 250, '/p'],
+    ['https, a [ inside, a fragment after', 'https://x[:', 250, '#p'],
     ['file, an @ at the end', 'file://', 251, '@x'],
     ['file, a colon at the start', 'file://:', 252, ''],
     ['file, a colon after a name', 'file://x:', 251, ''],
-    ['ws, userinfo before a [', 'ws://u:p@x[:', 250, '?q'],
+    ['ws, userinfo before a [', 'ws://u:p@x[:', 250, '#q'],
   ])('the edge is 253: %s', (_, before, filler, after) => {
     const at = (count: number) => `${before}${'a'.repeat(count)}${after}`;
     expect(writtenHostLength(at(filler))).toBe(LONGEST_HOST_LENGTH);
@@ -294,4 +294,50 @@ describe('the edges of the reading', () => {
       expect(hasOverlongHost(`${host(254)}${after}`)).toBe(true);
     },
   );
+});
+
+/**
+ * Node's parser is not the Standard where a host holds a `[` that is not its
+ * first character and is never closed: the Standard ends the host at the end of
+ * the authority, and Node reads on past `/`, `?` and `\` to the next `#` or the
+ * end of the input, which is where its time goes (a quadratic cost on non-ASCII
+ * labels). `test/url-host.parser.test.ts` times the real parser on these.
+ */
+describe('where Node reads a host further than the Standard does', () => {
+  it.each([
+    ['a path', 'http://x[h.test/abc', 'x[h.test/abc'],
+    ['a query', 'https://reg.example[/p?q', 'reg.example[/p?q'],
+    ['userinfo, then a backslash', 'ws://u:p@a]b[c\\tail', 'a]b[c\\tail'],
+    ['a port, which the bracket switches off', 'http://x[h:80/P', 'x[h:80/P'],
+    ['a fragment, which ends it', 'ftp://x[h.test#frag', 'x[h.test'],
+    ['a path and then a fragment', 'http://x[h.test/p#frag', 'x[h.test/p'],
+    ['no slashes', 'http:x[h.test/abc', 'x[h.test/abc'],
+    ['backslashes', 'http:\\\\x[h.test/abc', 'x[h.test/abc'],
+    ['a blob URL, to the end of its path', 'blob:http://x[h/p?q', 'x[h/p'],
+  ])('reads on past the authority: %s', (_, address, host) => {
+    expect(writtenHostLength(address)).toBe(host.length);
+  });
+
+  it.each([
+    ['a bracket that is closed', 'http://x[h]y/P', 5],
+    ['a bracket that comes first, which is refused at once', 'http://[x/P', 2],
+    ['a file host, which has no brackets', 'file://x[h/P', 3],
+    ['an opaque host', 'git+https://x[h/P', 0],
+  ])('does not read on: %s', (_, address, length) => {
+    expect(writtenHostLength(address)).toBe(length);
+  });
+
+  it('counts the tail against the limit of 253', () => {
+    const at = (count: number) => `http://x[${'a'.repeat(count)}`;
+    expect(hasOverlongHost(at(251))).toBe(false);
+    expect(hasOverlongHost(at(252))).toBe(true);
+    expect(
+      hasOverlongHost(`http://x[${'a'.repeat(100)}/${'a'.repeat(150)}`),
+    ).toBe(false);
+    expect(
+      hasOverlongHost(`http://x[${'a'.repeat(100)}/${'a'.repeat(151)}`),
+    ).toBe(true);
+    expect(hasOverlongHost(`http://x[${'a'.repeat(252)}#${P}`)).toBe(true);
+    expect(hasOverlongHost(`http://x[${'a'.repeat(250)}#${P}`)).toBe(false);
+  });
 });
