@@ -18,6 +18,7 @@ import {
   canonicalBytes,
   compareCanonicalStrings,
   parseDigest,
+  parseUntrustedUrl,
   safeEcho,
   sha256,
 } from '@openpacker/canonical';
@@ -35,6 +36,24 @@ function echoed(text: string, limit = 256): string {
   // What a registry sends is cast JSON: `String` says a missing or odd value as
   // a template literal did, where `safeEcho` would throw on it.
   return safeEcho(String(text), limit);
+}
+
+/**
+ * A URL a registry named, read through the guard: a host no DNS name could be is
+ * refused before the URL parser spends most of a second on it, and the error
+ * says what was refused without repeating any of the registry's text.
+ */
+function registryUrl(
+  value: string,
+  base: URL | string | undefined,
+  code: string,
+  what: string,
+): URL {
+  try {
+    return parseUntrustedUrl(value, base);
+  } catch {
+    throw new RegistryProtocolError(code, `${what} is not a URL`);
+  }
 }
 
 export const OCI_MEDIA_TYPES = {
@@ -519,7 +538,7 @@ function abortableRead<T>(
 }
 
 function exactHttpsOrigin(value: string, label: string): string {
-  const url = new URL(value);
+  const url = parseUntrustedUrl(value);
   if (
     url.protocol !== 'https:' ||
     url.username ||
@@ -657,7 +676,12 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
       challenge.match(new RegExp(`${name}="([^"]+)"`, 'iu'))?.[1];
     const realm = field('realm');
     if (!realm) return {};
-    const tokenUrl = new URL(realm);
+    const tokenUrl = registryUrl(
+      realm,
+      undefined,
+      'UNAUTHORIZED',
+      `The token endpoint that ${requestUrl.origin} named`,
+    );
     // The realm is chosen by the server being talked to. Over plaintext it
     // would put the issued token — and any credentials — on the wire.
     if (tokenUrl.protocol !== 'https:')
@@ -798,7 +822,7 @@ export class OciRegistryClient {
     requestTimeoutMilliseconds?: number;
     responseIdleTimeoutMilliseconds?: number;
   }) {
-    this.registry = new URL(input.registry);
+    this.registry = parseUntrustedUrl(input.registry);
     if (this.registry.protocol !== 'https:')
       throw new TypeError('Registry URL must use HTTPS');
     if (
@@ -874,7 +898,7 @@ export class OciRegistryClient {
   private readonly responseIdleTimeoutMilliseconds: number;
 
   private endpoint(path: string): URL {
-    return new URL(`/v2/${this.repository}/${path}`, this.registry);
+    return parseUntrustedUrl(`/v2/${this.repository}/${path}`, this.registry);
   }
 
   private async request(
@@ -1014,7 +1038,14 @@ export class OciRegistryClient {
             'PAGINATION_LIMIT',
             'Registry tag cursor exceeded its configured limit',
           );
-        next = match?.[1] ? new URL(match[1], this.registry) : undefined;
+        next = match?.[1]
+          ? registryUrl(
+              match[1],
+              this.registry,
+              'UNSAFE_REDIRECT',
+              'The next page of the tag listing',
+            )
+          : undefined;
         if (next && next.origin !== this.registry.origin)
           throw new RegistryProtocolError(
             'UNSAFE_REDIRECT',
@@ -1074,7 +1105,12 @@ export class OciRegistryClient {
         'INVALID_RESPONSE',
         'Registry upload response has no Location',
       );
-    let upload = new URL(location, this.registry);
+    let upload = registryUrl(
+      location,
+      this.registry,
+      'UNSAFE_REDIRECT',
+      'The upload location',
+    );
     if (descriptor.size <= this.monolithicUploadMaximumBytes) {
       const bytes = await collectStream(stream, descriptor.size, signal);
       if (bytes.byteLength !== descriptor.size)
@@ -1134,7 +1170,13 @@ export class OciRegistryClient {
         if (patched.status !== 202)
           throw await registryError(patched, this.errorBodyTimeoutMilliseconds);
         const nextLocation = patched.headers.get('location');
-        if (nextLocation) upload = new URL(nextLocation, upload);
+        if (nextLocation)
+          upload = registryUrl(
+            nextLocation,
+            upload,
+            'UNSAFE_REDIRECT',
+            'The next upload location',
+          );
       }
     } finally {
       reader.releaseLock();
@@ -1471,7 +1513,14 @@ export class OciRegistryClient {
       output.push(...index.manifests);
       const link = response.headers.get('link');
       const match = link?.match(/<([^>]+)>;\s*rel="?next"?/u);
-      next = match?.[1] ? new URL(match[1], next) : undefined;
+      next = match?.[1]
+        ? registryUrl(
+            match[1],
+            next,
+            'UNSAFE_REDIRECT',
+            'The next page of referrers',
+          )
+        : undefined;
       if (next && next.origin !== this.registry.origin)
         throw new RegistryProtocolError(
           'UNSAFE_REDIRECT',

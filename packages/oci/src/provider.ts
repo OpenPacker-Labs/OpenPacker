@@ -17,7 +17,7 @@ import type {
   PackageInstance,
   SourceSnapshot,
 } from '@openpacker/contracts';
-import { sha256 } from '@openpacker/canonical';
+import { parseUntrustedUrl, sha256 } from '@openpacker/canonical';
 import {
   BearerTokenAuthentication,
   DOCKER_MEDIA_TYPES,
@@ -59,7 +59,7 @@ export const OCI_MATERIALIZATION_LIMITS = Object.freeze({
 });
 
 function exactRegistryOrigin(value: string): string {
-  const url = new URL(value);
+  const url = parseUntrustedUrl(value);
   if (
     url.protocol !== 'https:' ||
     url.username ||
@@ -136,7 +136,7 @@ export function parseOciPurl(value: string): OciRepositoryReference {
       : `https://${repositoryUrl}`;
     let url: URL;
     try {
-      url = new URL(withScheme);
+      url = parseUntrustedUrl(withScheme);
     } catch {
       throw new ProviderError(
         'INVALID_PURL',
