@@ -28,7 +28,11 @@ import { writeFileAtomic } from '@openpacker/project-io';
 import { hasResource } from '@openpacker/adapter-host';
 import { requireAdapterRegistry } from './adapters.js';
 import { OPM_DIR, storePathForDigest } from './paths.js';
-import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
+import {
+  ecosystemFromPurl,
+  purlPackageName,
+  stripPurlVersion,
+} from './spec.js';
 import type {
   LockPackage,
   NativeProjectionLevel,
@@ -91,6 +95,9 @@ export async function writeNativeState(
     `${JSON.stringify(state, undefined, 2)}\n`,
   );
 }
+
+const compareText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
 
 const LEVEL_RANK = {
   off: 0,
@@ -189,7 +196,11 @@ export async function projectNativeFormats(input: {
         input.manifest,
         input.lock,
       );
-      const names = requirements.map((requirement) => requirement.name).sort();
+      // What the native manifest calls each requirement: the name it is
+      // installed under, which is the alias for an `npm:` alias.
+      const names = requirements
+        .map((requirement) => requirement.installName ?? requirement.name)
+        .sort();
       const retire = (previous.managed[ecosystem] ?? []).filter(
         (name) => !names.includes(name),
       );
@@ -418,6 +429,9 @@ function requirementsFor(
     out.push({
       purl: base,
       name: nativeName(base),
+      ...(!(requirement.installName === undefined) && {
+        installName: requirement.installName,
+      }),
       ...(!(rangeFor(requirement.version, locked) === undefined) && {
         range: rangeFor(requirement.version, locked)!,
       }),
@@ -480,6 +494,10 @@ function lockEntriesFor(
       ...(!(pkg.dependencies === undefined) && {
         dependencies: [...pkg.dependencies],
       }),
+      ...(!(pkg.aliases === undefined) && { aliases: { ...pkg.aliases } }),
+      ...(!(pkg.installName === undefined) && {
+        installName: pkg.installName,
+      }),
       ...(!(pkg.nativeIntegrity === undefined) && {
         nativeIntegrity: pkg.nativeIntegrity,
       }),
@@ -492,14 +510,11 @@ function lockEntriesFor(
       transitive: pkg.reason === 'transitive' || !direct.has(base),
     });
   }
-  return out.sort((left, right) =>
-    left.name === right.name
-      ? left.version < right.version
-        ? -1
-        : 1
-      : left.name < right.name
-        ? -1
-        : 1,
+  return out.sort(
+    (left, right) =>
+      compareText(left.name, right.name) ||
+      compareText(left.version, right.version) ||
+      compareText(left.alias ?? '', right.alias ?? ''),
   );
 }
 
@@ -508,17 +523,9 @@ function scopeOf(manifest: OpmManifest, pkg: LockPackage) {
 }
 
 /**
- * The name an ecosystem spells a package with, recovered from its PURL.
- *
- * PURL percent-encodes the parts that would otherwise be structural, so `@` in
- * an npm scope arrives as `%40`. Decoding per segment rather than over the
- * whole string keeps a literal `/` inside a segment from becoming a separator.
+ * The name an ecosystem spells a package with, recovered from its PURL (see
+ * `purlPackageName`; kept under this name for what already imports it).
  */
 export function nativeName(basePurl: string): string {
-  const withoutScheme = basePurl.replace(/^pkg:[A-Za-z0-9.+-]+\//u, '');
-  const withoutQualifiers = withoutScheme.split(/[?#]/u)[0] ?? withoutScheme;
-  return withoutQualifiers
-    .split('/')
-    .map((segment) => decodeURIComponent(segment))
-    .join('/');
+  return purlPackageName(basePurl);
 }

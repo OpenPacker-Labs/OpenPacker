@@ -100,6 +100,7 @@ describe('dev-time specifiers do not decide the closure', () => {
     expect(graph.unresolved).toContainEqual({
       purl: 'pkg:npm/tool@1.0.0',
       reason: expect.stringContaining('depends on fmt as "github:evil/fmt"'),
+      requiredBy: ['the project'],
     });
   });
 });
@@ -248,7 +249,9 @@ describe('platform packages: one optional dependency per platform', () => {
         graph,
         rootRequirements: [{ purl: 'pkg:npm/needs-mac' }],
       }),
-    ).rejects.toThrow(/UNSATISFIABLE/u);
+    ).rejects.toThrow(
+      /pkg:npm\/needs-mac@1\.0\.0 requires pkg:npm\/native-darwin-arm64 1\.0\.0, and no such release can be installed/u,
+    );
   });
 });
 
@@ -518,64 +521,118 @@ describe('one version per package, and what happens when that cannot hold', () =
     expect(lock.packages.shared?.purl).toBe('pkg:npm/shared@1.2.5');
   });
 
-  it('says who cannot agree when no release of the shared package suits both', async () => {
+  it('keeps both versions when no single release suits every dependent', async () => {
     // app@2 needs shared 2 and `right` cannot take it; app@1 would have agreed
-    // with it. Backing out of the newer app is a search the single-version lock
-    // does not do: it names the conflict instead of guessing which side gives.
+    // with it. The lock does not back out of the newer app: it holds both
+    // releases of shared, as npm nests them, and says which dependent uses which.
+    const lock = await lockOf(
+      [
+        {
+          name: 'root',
+          versions: {
+            '1.0.0': { dependencies: { app: '*', right: '^1' } },
+          },
+        },
+        {
+          name: 'app',
+          versions: {
+            '1.0.0': { dependencies: { shared: '^1' } },
+            '2.0.0': { dependencies: { shared: '^2' } },
+          },
+        },
+        {
+          name: 'right',
+          versions: { '1.0.0': { dependencies: { shared: '^1' } } },
+        },
+        { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
+      ],
+      { root: { alias: 'root', purl: 'pkg:npm/root', version: '1.0.0' } },
+    );
+    expect(Object.keys(lock.packages).sort()).toEqual([
+      'app',
+      'right',
+      'root',
+      'shared.1.4.0',
+      'shared.2.0.0',
+    ]);
+    expect(lock.packages.app?.purl).toBe('pkg:npm/app@2.0.0');
+    expect(lock.packages.app?.dependencies).toEqual(['shared.2.0.0']);
+    expect(lock.packages.right?.dependencies).toEqual(['shared.1.4.0']);
+    expect(lock.packages['shared.1.4.0']?.reason).toBe('transitive');
+  });
+
+  it('keeps a direct pin and the other version a dependent needs', async () => {
+    // npm would nest shared@1 under app and keep shared@2 at the top, and so
+    // does the lock: the direct requirement keeps its manifest alias, and the
+    // version `app` needs is an entry of its own.
+    const lock = await lockOf(
+      [
+        {
+          name: 'app',
+          versions: { '1.0.0': { dependencies: { shared: '^1' } } },
+        },
+        { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
+      ],
+      {
+        app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' },
+        shared: { alias: 'shared', purl: 'pkg:npm/shared', version: '2.0.0' },
+      },
+    );
+    expect(lock.packages.shared).toMatchObject({
+      purl: 'pkg:npm/shared@2.0.0',
+      reason: 'direct',
+    });
+    expect(lock.packages['shared.1.4.0']).toMatchObject({
+      purl: 'pkg:npm/shared@1.4.0',
+      reason: 'transitive',
+    });
+    expect(lock.packages.app?.dependencies).toEqual(['shared.1.4.0']);
+  });
+
+  it('still says who cannot agree when a peer dependency would need two releases', async () => {
+    // A peer has to resolve to the instance its dependent's parent sees, so it
+    // is not split across versions the way an ordinary dependency is.
     await expect(
       lockOf(
         [
           {
             name: 'root',
             versions: {
-              '1.0.0': { dependencies: { app: '*', right: '^1' } },
+              '1.0.0': { dependencies: { plugin: '^1', host: '^2' } },
             },
           },
           {
-            name: 'app',
-            versions: {
-              '1.0.0': { dependencies: { shared: '^1' } },
-              '2.0.0': { dependencies: { shared: '^2' } },
-            },
+            name: 'plugin',
+            versions: { '1.0.0': { peerDependencies: { host: '^1' } } },
           },
-          {
-            name: 'right',
-            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
-          },
-          { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
+          { name: 'host', versions: { '1.4.0': {}, '2.0.0': {} } },
         ],
         { root: { alias: 'root', purl: 'pkg:npm/root', version: '1.0.0' } },
       ),
     ).rejects.toMatchObject({
       code: 'UNRESOLVABLE',
       message: expect.stringMatching(
-        /pkg:npm\/app@2\.0\.0 requires \^2; pkg:npm\/right@1\.0\.0 requires \^1/u,
+        /pkg:npm\/host is required as a peer dependency.*pkg:npm\/plugin@1\.0\.0 requires \^1/su,
       ),
     });
   });
 
-  it('refuses, by name, a direct pin that two versions of one package would be needed for', async () => {
-    // npm would nest shared@1 under app and keep shared@2 at the top. A lock
-    // here is one entry per package name, so it cannot hold both, and it used
-    // to keep the direct one and point `app` at it without saying so.
+  it('says who required a range nothing published satisfies', async () => {
     await expect(
       lockOf(
         [
           {
             name: 'app',
-            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
+            versions: { '1.0.0': { dependencies: { shared: '^3' } } },
           },
           { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
         ],
-        {
-          app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' },
-          shared: { alias: 'shared', purl: 'pkg:npm/shared', version: '2.0.0' },
-        },
+        { app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' } },
       ),
     ).rejects.toMatchObject({
       code: 'UNRESOLVABLE',
       message: expect.stringMatching(
-        /pkg:npm\/shared is needed at versions no single release satisfies.*the direct requirement requires 2\.0\.0.*pkg:npm\/app@1\.0\.0 requires \^1/su,
+        /pkg:npm\/shared: no published version satisfies \^3 \(required by pkg:npm\/app@1\.0\.0\)/u,
       ),
     });
   });

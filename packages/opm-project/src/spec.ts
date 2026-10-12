@@ -168,3 +168,23 @@ export function stripPurlVersion(purl: string): string {
   const query = match[3] ? `?${match[3]}` : '';
   return `${base}${query}`;
 }
+
+/**
+ * The name an ecosystem spells a package with, recovered from its PURL.
+ *
+ * PURL percent-encodes the parts that would otherwise be structural, so `@` in
+ * an npm scope arrives as `%40`. Decoding per segment rather than over the
+ * whole string keeps a literal `/` inside a segment from becoming a separator.
+ * A version or qualifiers on the PURL are not part of the name.
+ */
+export function purlPackageName(purl: string): string {
+  const withoutScheme = purl.replace(/^pkg:[A-Za-z0-9.+-]+\//u, '');
+  const withoutQualifiers = withoutScheme.split(/[?#]/u)[0] ?? withoutScheme;
+  const slash = withoutQualifiers.lastIndexOf('/');
+  const at = withoutQualifiers.indexOf('@', slash + 1);
+  const body = at === -1 ? withoutQualifiers : withoutQualifiers.slice(0, at);
+  return body
+    .split('/')
+    .map((segment) => decodeURIComponent(segment))
+    .join('/');
+}

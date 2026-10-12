@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { packTarGzip } from '@openpacker/project-io';
 import {
   ProviderError,
   type HttpRequest,
@@ -42,11 +43,33 @@ export function tarball(name: string, version: string): Uint8Array {
 }
 
 const tarballs = new Map<string, Uint8Array>();
-function tarballOf(name: string, version: string): Uint8Array {
-  const key = `${name}@${version}`;
+function tarballOf(
+  name: string,
+  version: string,
+  value: FixtureVersion = {},
+): Uint8Array {
+  const key = `${name}@${version}:${JSON.stringify([value.files, value.bin])}`;
   let bytes = tarballs.get(key);
   if (bytes === undefined) {
-    bytes = tarball(name, version);
+    bytes =
+      value.files === undefined && value.bin === undefined
+        ? tarball(name, version)
+        : packTarGzip(
+            Object.entries({
+              'package.json': JSON.stringify({
+                name,
+                version,
+                main: 'index.js',
+                ...(value.bin !== undefined && { bin: value.bin }),
+              }),
+              'index.js': `module.exports = { name: ${JSON.stringify(name)}, version: ${JSON.stringify(version)} };\n`,
+              ...value.files,
+            }).map(([path, contents]) => ({
+              path: `package/${path}`,
+              contents: new TextEncoder().encode(contents),
+              executable: path === value.bin || path.startsWith('bin/'),
+            })),
+          );
     tarballs.set(key, bytes);
   }
   return bytes;
@@ -66,6 +89,12 @@ export interface FixtureVersion {
   scripts?: Record<string, string>;
   hasInstallScript?: boolean;
   deprecated?: string;
+  /** Names of dependencies the package ships inside its own archive. */
+  bundleDependencies?: string[];
+  /** Files in the archive besides package.json, which is written for it. */
+  files?: Record<string, string>;
+  /** `bin` for the package.json inside the archive. */
+  bin?: string | Record<string, string>;
 }
 
 export interface FixturePackage {
@@ -75,6 +104,8 @@ export interface FixturePackage {
   time?: Record<string, string>;
   /** Last change to the packument; defaults to the same old date. */
   modified?: string;
+  /** Dist-tags besides `latest`, which is the last version listed. */
+  distTags?: Record<string, string>;
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -90,6 +121,7 @@ const ABBREVIATED_KEYS = [
   'cpu',
   'hasInstallScript',
   'deprecated',
+  'bundleDependencies',
 ] as const;
 
 function tarballUrl(name: string, version: string): string {
@@ -97,8 +129,8 @@ function tarballUrl(name: string, version: string): string {
   return `${NPM_ORIGIN}/${name}/-/${base}-${version}.tgz`;
 }
 
-function distFor(name: string, version: string) {
-  const bytes = tarballOf(name, version);
+function distFor(name: string, version: string, value?: FixtureVersion) {
+  const bytes = tarballOf(name, version, value);
   return {
     tarball: tarballUrl(name, version),
     integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
@@ -107,7 +139,8 @@ function distFor(name: string, version: string) {
 }
 
 function fullVersion(name: string, version: string, value: FixtureVersion) {
-  return { name, version, ...value, dist: distFor(name, version) };
+  const { files: _files, bin: _bin, ...document } = value;
+  return { name, version, ...document, dist: distFor(name, version, value) };
 }
 
 function abbreviatedVersion(
@@ -118,7 +151,7 @@ function abbreviatedVersion(
   const kept: Record<string, unknown> = {};
   for (const key of ABBREVIATED_KEYS)
     if (value[key] !== undefined) kept[key] = value[key];
-  return { name, version, ...kept, dist: distFor(name, version) };
+  return { name, version, ...kept, dist: distFor(name, version, value) };
 }
 
 const json = (value: unknown): HttpResponse => ({
@@ -173,7 +206,11 @@ export class NpmRegistryFixture implements HttpTransport {
       return {
         status: 200,
         headers: { 'content-type': 'application/octet-stream' },
-        body: tarballOf(match![1]!, match![2]!),
+        body: tarballOf(
+          match![1]!,
+          match![2]!,
+          this.#packages.get(match![1]!)?.versions[match![2]!],
+        ),
         url: request.url,
       };
     }
@@ -217,7 +254,7 @@ export class NpmRegistryFixture implements HttpTransport {
     const modified = found.modified ?? OLD;
     const document = {
       name,
-      'dist-tags': { latest: newest },
+      'dist-tags': { latest: newest, ...found.distTags },
       versions,
       modified,
       ...(!abbreviated && {

@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "opm",
+  "manifestDigest": "sha256:3c911155633e25b1a0c543253ca953f1556cdbac3b15feba8c587741e3dac5ec",
+  "packages": {
+    "app": {
+      "alias": "app",
+      "purl": "pkg:npm/app@1.0.0",
+      "version": "1.0.0",
+      "digest": "sha256:49ea5d871a7254dbdaa5684a688a13c51269b3cc4a87cb713477cdf4e66601c2",
+      "size": 128,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/app/-/app-1.0.0.tgz",
+      "storeKey": "sha256-49ea5d871a7254dbdaa5684a688a13c51269b3cc4a87cb713477cdf4e66601c2",
+      "bins": [],
+      "reason": "direct",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "QhhTs1FUWvHiv5hFHIIBt1nZ3b394AKufXpNAsC5j9rOY2/KzETz9ZlVqkja1L8Xczjn09vkrwpCl8z2LohnGQ==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unsigned",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": [
+        "left",
+        "right",
+        "util"
+      ]
+    },
+    "leaf.js": {
+      "alias": "leaf.js",
+      "purl": "pkg:npm/leaf.js@0.1.0",
+      "version": "0.1.0",
+      "digest": "sha256:e4c4551fafcecc04691ef77960ca564b35e8d0a2319c5e3013c3faa1a3749472",
+      "size": 131,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/leaf.js/-/leaf.js-0.1.0.tgz",
+      "storeKey": "sha256-e4c4551fafcecc04691ef77960ca564b35e8d0a2319c5e3013c3faa1a3749472",
+      "bins": [],
+      "reason": "transitive",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "0pFLhLboAzMx8GHUbnAuibVLnJ5NWGL8jueJWUpsjiQzTgs1J7Kg/ytE6scNQBHrdQ9YOH4U0hIlb5zskgEt5g==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unknown",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": []
+    },
+    "left": {
+      "alias": "left",
+      "purl": "pkg:npm/left@1.0.0",
+      "version": "1.0.0",
+      "digest": "sha256:6d08dfcde7f9fc0f252506c6c52e898a1c6ebb499529e48a08215a44c84f7588",
+      "size": 130,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/left/-/left-1.0.0.tgz",
+      "storeKey": "sha256-6d08dfcde7f9fc0f252506c6c52e898a1c6ebb499529e48a08215a44c84f7588",
+      "bins": [],
+      "reason": "transitive",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "Et6zXs1MdEeeZEyHZNemKZRUawru7Xd8AIGUtxaOJkaNblwNhzU2nzmd6JK8beQgZqzhLWj2EakTij/waxrwRg==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unknown",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": [
+        "shared"
+      ]
+    },
+    "right": {
+      "alias": "right",
+      "purl": "pkg:npm/right@1.0.0",
+      "version": "1.0.0",
+      "digest": "sha256:6873dd15d23f0d4afb52384fffca7f4fa02a346976953b444b99b5f9835b6b1c",
+      "size": 131,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/right/-/right-1.0.0.tgz",
+      "storeKey": "sha256-6873dd15d23f0d4afb52384fffca7f4fa02a346976953b444b99b5f9835b6b1c",
+      "bins": [],
+      "reason": "transitive",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "vpAyhhUgx6Gs++ZtPS89EhpdXwhRKFUxFk7L78LjkdPnhssCd2znQz52QGBWhTeWtJlztVkhb6xm4prsMs2B6Q==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unknown",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": [
+        "leaf.js",
+        "shared"
+      ]
+    },
+    "shared": {
+      "alias": "shared",
+      "purl": "pkg:npm/shared@1.2.5",
+      "version": "1.2.5",
+      "digest": "sha256:8b22636ed5f6fb9f6eebdf52a0dc222492b48714789362de1f2c22901e4a5f09",
+      "size": 132,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/shared/-/shared-1.2.5.tgz",
+      "storeKey": "sha256-8b22636ed5f6fb9f6eebdf52a0dc222492b48714789362de1f2c22901e4a5f09",
+      "bins": [],
+      "reason": "transitive",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "NxfWyhaCqOWh/QfPnX7gTX68YyBzOpbcX+SmI6WQrOLp1OFdSUe3cNTln391TiEOgAGBWAsYVm0tFWEvKlcPpw==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unknown",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": []
+    },
+    "util": {
+      "alias": "util",
+      "purl": "pkg:npm/%40scope/util@2.0.0",
+      "version": "2.0.0",
+      "digest": "sha256:1fe155fee032a0e88ddd681e8a5d84f3c891de425552207e56fa2b573ec51f90",
+      "size": 136,
+      "format": "tar+gzip",
+      "mediaType": "application/gzip",
+      "source": "https://registry.npmjs.org/@scope/util/-/util-2.0.0.tgz",
+      "storeKey": "sha256-1fe155fee032a0e88ddd681e8a5d84f3c891de425552207e56fa2b573ec51f90",
+      "bins": [],
+      "reason": "direct",
+      "ecosystem": "npm",
+      "nativeIntegrity": {
+        "algorithm": "sha512",
+        "value": "wfm89Kwfre4RRrC0pH0etMRTWkPVaw/YoXJUMZmdFr1y/su83c3hZCdoJLhG/dCrT0iokQiqnI5SZ+Kk/+09jg==",
+        "encoding": "sri"
+      },
+      "trustLevel": "unsigned",
+      "registryId": "urn:openpacker:registry:npmjs-org",
+      "sourceKind": "registry",
+      "lifecycle": {
+        "status": "published",
+        "eligible": true,
+        "warnings": []
+      },
+      "dependencies": []
+    }
+  }
+}

@@ -17,6 +17,23 @@ import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { ProviderPool, type RegistryOptions } from './registry.js';
 import { codecFor } from './codecs.js';
 import {
+  assignEdges,
+  describeUnmet,
+  duplicatedNames,
+  explainUnsatisfiable,
+  INSTALLED_KINDS,
+  reachableSelection,
+  unifyDuplicates,
+  viableCandidates,
+  type ClosureEdge,
+} from './closure-edges.js';
+import {
+  isAliasRequirement,
+  isBundledRequirement,
+  nativeRange,
+  requirementTag,
+} from './requirement-info.js';
+import {
   detectNativeTarget,
   evaluateTargetPredicate,
   type NativeTarget,
@@ -46,16 +63,6 @@ import {
  * translated metadata; evaluation is a resolve-time decision, not a capture
  * one.
  */
-
-/**
- * Requirement kinds that belong in an install.
- *
- * `optional` is npm's `optionalDependencies`, which npm installs and tolerates
- * the failure of. Whether one belongs *here* depends on the host, so the walk
- * decides it per dependency (see `shouldFollowRequirement`); the kind is listed
- * so that an optional edge the walk made hard is read as an install edge.
- */
-const INSTALLED_KINDS = new Set(['runtime', 'peer', 'optional']);
 
 /**
  * Losses that say a package-level target predicate could not be expressed and
@@ -142,56 +149,20 @@ export interface ResolvedGraph {
   roots: string[];
   /** Packages whose candidate list hit the bound. */
   truncated: string[];
-  /** Packages reachable but not resolvable, with the reason. */
-  unresolved: { purl: string; reason: string }[];
+  /**
+   * Packages reachable but not resolvable, with the reason and, where an edge
+   * asked for them, who did.
+   */
+  unresolved: { purl: string; reason: string; requiredBy?: string[] }[];
   /** Marker-gated requirements skipped because the host marker is false. */
   skippedMarkers: { purl: string; marker: string }[];
   /** Optional dependencies left out because this host is not one they run on. */
   skippedPlatform: { purl: string; reason: string }[];
-  /** Candidates the caller's gate left out, with its reason. */
-  gated: { purl: string; reason: string }[];
+  /** Candidates the caller's gate left out, with its reason and who asked. */
+  gated: { purl: string; reason: string; requiredBy?: string[] }[];
 }
 
-/**
- * The native range a requirement expresses, in its own ecosystem's syntax.
- *
- * Ecosystems do not agree on the field name. npm stores `range`, PyPI stores
- * `specifier`, and some capture paths leave only the raw string. Reading only
- * `range` made every PyPI edge look unconstrained (or worse, dropped when
- * paired with other bugs), which is why a Python graph looked unresolved.
- */
-export function nativeRange(requirement: unknown): string | undefined {
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const value = requirement as {
-    nativeSemantics?: { data?: Record<string, unknown> };
-    raw?: unknown;
-    expression?: { vers?: unknown };
-  };
-  const data = value.nativeSemantics?.data;
-  if (data) {
-    for (const key of ['range', 'specifier'] as const) {
-      const candidate = data[key];
-      if (typeof candidate === 'string' && candidate.trim() !== '')
-        return candidate.trim();
-    }
-  }
-  if (value.raw && typeof value.raw === 'object' && !Array.isArray(value.raw)) {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const raw = value.raw as { range?: unknown; specifier?: unknown };
-    if (typeof raw.range === 'string' && raw.range.trim() !== '')
-      return raw.range.trim();
-    if (typeof raw.specifier === 'string' && raw.specifier.trim() !== '')
-      return raw.specifier.trim();
-  }
-  if (typeof value.raw === 'string' && value.raw.trim() !== '') {
-    // PEP 508: "name[extra]>=1.0; marker" → keep the specifier body.
-    const body = value.raw.split(';', 1)[0]!.trim();
-    const withoutExtras = body.replace(/\[[^\]]*]/g, '');
-    const match = /([<>=!~]=?.+)$/.exec(withoutExtras);
-    if (match) return match[1]!.trim();
-  }
-  return undefined;
-}
+export { nativeRange };
 
 /** Marker string attached to a requirement, if any. */
 export function requirementMarker(requirement: unknown): string | undefined {
@@ -421,8 +392,9 @@ function nativeSpecKind(requirement: unknown): string | undefined {
  * how PyPI encodes "required on this platform" without making every marker a
  * hard edge on every host. npm's `optionalDependencies` are followed where the
  * dependency runs (see `FollowDecision.via`). A specifier that is not a version
- * range (a git URL, a dist-tag, an alias) is never followed: reading it as the
- * registry's package of that name is how dependency confusion lands.
+ * range (a git URL, a bare dist-tag) is never followed: reading it as the
+ * registry's package of that name is how dependency confusion lands. An `npm:`
+ * alias is followed as a requirement on its target, which the adapter named.
  */
 export function shouldFollowRequirement(
   requirement: Requirement,
@@ -433,8 +405,21 @@ export function shouldFollowRequirement(
   if (!INSTALLED_KINDS.has(kind))
     return { follow: false, skipReason: `kind ${kind} is not installed` };
 
+  // A dependency the package ships inside its own archive is installed with it,
+  // and never resolved.
+  if (isBundledRequirement(requirement))
+    return {
+      follow: false,
+      skipReason: 'bundled: it ships inside the package archive',
+    };
   const specKind = nativeSpecKind(requirement);
-  if (specKind !== undefined && specKind !== 'range')
+  // An alias names its target explicitly, so a dist-tag on it is the target's
+  // tag; a bare dist-tag is not read as anything.
+  const aliasedTag =
+    specKind === 'tag' && requirementTag(requirement) !== undefined
+      ? isAliasRequirement(requirement)
+      : false;
+  if (specKind !== undefined && specKind !== 'range' && !aliasedTag)
     return {
       follow: false,
       skipReason: `specifier is a ${specKind}, not a registry version range`,
@@ -476,7 +461,12 @@ async function candidatesFor(
   provider: CatalogProvider,
 ): Promise<string[]> {
   const published = await provider.enumerate(basePurl);
-  if (range === undefined || range === '' || range === '*')
+  // `*` takes every version, except that npm's does not take a prerelease.
+  if (
+    range === undefined ||
+    range === '' ||
+    (range === '*' && ecosystem !== 'npm')
+  )
     return [...published].reverse();
 
   const codec = codecFor(ecosystem);
@@ -551,7 +541,33 @@ function withHostEvaluated(
 interface QueueItem {
   purl: string;
   range?: string;
+  /** `range` names a dist-tag of the package, which the registry resolves. */
+  tag?: boolean;
   via: 'hard' | 'optional';
+  /** Who asked for it, for a message when nothing answers. */
+  by: Set<string>;
+}
+
+/** A requirement that named a dist-tag, to be pinned once the tag is read. */
+interface TagEdge {
+  requirement: Requirement;
+  base: string;
+  ecosystem: string;
+  tag: string;
+}
+
+/** A provider that can say which version a dist-tag points at. */
+interface TagSource {
+  resolveTag(basePurl: string, tag: string): Promise<string | undefined>;
+}
+
+function canResolveTags(
+  provider: CatalogProvider,
+): provider is CatalogProvider & TagSource {
+  return (
+    'resolveTag' in provider &&
+    typeof (provider as { resolveTag?: unknown }).resolveTag === 'function'
+  );
 }
 
 /** What the registry said about one candidate version. */
@@ -567,7 +583,13 @@ type CandidateOutcome =
 /** What reading for a queue item found; the walk applies it in queue order. */
 type PreparedItem =
   | { failure: string }
-  | { candidates: string[]; bounded: boolean; found: CandidateOutcome[] };
+  | {
+      candidates: string[];
+      bounded: boolean;
+      found: CandidateOutcome[];
+      /** For a dist-tag item: the exact version the tag points at. */
+      resolvedTag?: string;
+    };
 
 /**
  * Walk from the root requirements to every package they need.
@@ -609,24 +631,40 @@ export async function resolveGraph(input: {
     new ProviderPool((ecosystem) => input.optionsFor?.(ecosystem) ?? options);
   const packages: PackageInstance[] = [];
   const truncated: string[] = [];
-  const unresolved: { purl: string; reason: string }[] = [];
+  const unresolved: ResolvedGraph['unresolved'] = [];
   const skippedMarkers: { purl: string; marker: string }[] = [];
   const skippedPlatform: { purl: string; reason: string }[] = [];
-  const gated: { purl: string; reason: string }[] = [];
+  const gated: ResolvedGraph['gated'] = [];
   const reported = new Set<string>();
   const expanded = new Set<string>();
-  const queued = new Set<string>();
+  const queued = new Map<string, QueueItem>();
   const discovered = new Set<string>();
+  /** Edges that named a dist-tag, pinned to its version once it is read. */
+  const tagEdges: TagEdge[] = [];
+  /** `base|tag` → the version the registry says the tag points at. */
+  const resolvedTags = new Map<string, string>();
+  /** An unresolved entry and the item it came from, to name who asked. */
+  const askedFor: {
+    entry: { purl: string; reason: string; requiredBy?: string[] };
+    item: QueueItem;
+  }[] = [];
+  const unresolve = (
+    item: QueueItem,
+    entry: Omit<ResolvedGraph['unresolved'][number], 'requiredBy'>,
+  ) => {
+    const recorded = { ...entry };
+    unresolved.push(recorded);
+    askedFor.push({ entry: recorded, item });
+  };
   /** Optional edges, made hard afterwards if their target was admitted. */
   const optionalEdges: {
     requirement: Requirement;
     base: string;
     ecosystem: string;
-    range?: string;
   }[] = [];
 
   const keyOf = (item: QueueItem) =>
-    `${item.purl}|${item.range ?? ''}|${item.via}`;
+    `${item.purl}|${item.tag === true ? 'tag:' : ''}${item.range ?? ''}|${item.via}`;
   // Start reading a package's metadata as soon as something asks for it, not
   // when the walk gets to it. Nothing is read that the walk would not read
   // anyway.
@@ -672,6 +710,24 @@ export async function resolveGraph(input: {
     const ecosystem = ecosystemFromPurl(item.purl);
     try {
       const provider = await pool.provider(ecosystem);
+      if (item.tag === true) {
+        if (!canResolveTags(provider))
+          return {
+            failure: `this ${ecosystem} registry cannot say which version the dist-tag "${item.range}" points at`,
+          };
+        const exact = await provider.resolveTag(item.purl, item.range!);
+        if (exact === undefined)
+          return {
+            failure: `the package has no dist-tag "${item.range}"`,
+          };
+        const found = [await outcomeOf(exact, provider)];
+        return {
+          candidates: [exact],
+          bounded: false,
+          found,
+          resolvedTag: exact.slice(exact.lastIndexOf('@') + 1),
+        };
+      }
       let candidates = await candidatesFor(
         ecosystem,
         item.purl,
@@ -695,10 +751,11 @@ export async function resolveGraph(input: {
   let queue: QueueItem[] = input.roots.map((root) => ({
     purl: stripPurlVersion(root.purl),
     via: 'hard' as const,
+    by: new Set(['the project']),
     ...(!(root.range === undefined) && { range: root.range }),
   }));
   for (const item of queue) {
-    queued.add(keyOf(item));
+    queued.set(keyOf(item), item);
     warm(item.purl);
   }
 
@@ -716,12 +773,12 @@ export async function resolveGraph(input: {
         );
       const ready = prepared[position]!;
       if ('failure' in ready) {
-        unresolved.push({ purl: item.purl, reason: ready.failure });
+        unresolve(item, { purl: item.purl, reason: ready.failure });
         continue;
       }
       const { candidates, found } = ready;
       if (candidates.length === 0) {
-        unresolved.push({
+        unresolve(item, {
           purl: item.purl,
           reason:
             item.range === undefined
@@ -731,6 +788,8 @@ export async function resolveGraph(input: {
         continue;
       }
       if (ready.bounded) truncated.push(item.purl);
+      if (ready.resolvedTag !== undefined)
+        resolvedTags.set(`${item.purl}|${item.range}`, ready.resolvedTag);
 
       let admitted = 0;
       for (const [index, candidate] of candidates.entries()) {
@@ -738,10 +797,11 @@ export async function resolveGraph(input: {
         if (outcome.kind !== 'ok') {
           if (!reported.has(candidate)) {
             reported.add(candidate);
-            (outcome.kind === 'gated' ? gated : unresolved).push({
-              purl: candidate,
-              reason: outcome.reason,
-            });
+            if (outcome.kind === 'gated') {
+              const recorded = { purl: candidate, reason: outcome.reason };
+              gated.push(recorded);
+              askedFor.push({ entry: recorded, item });
+            } else unresolve(item, { purl: candidate, reason: outcome.reason });
           }
           continue;
         }
@@ -751,7 +811,7 @@ export async function resolveGraph(input: {
           const reason = `does not run on this host (${describeTarget(host.nativeTarget)})`;
           if (item.via === 'optional')
             skippedPlatform.push({ purl: candidate, reason });
-          else unresolved.push({ purl: candidate, reason });
+          else unresolve(item, { purl: candidate, reason });
           continue;
         }
         // An optional dependency whose platform cannot be established is left
@@ -809,55 +869,79 @@ export async function resolveGraph(input: {
                 unresolved.push({
                   purl: expression.purl,
                   reason: decision.skipReason,
+                  requiredBy: [candidate],
                 });
             }
             continue;
           }
           if (!expression?.purl) continue;
           const range = nativeRange(requirement);
+          const tag = requirementTag(requirement);
           const next: QueueItem = {
             purl: stripPurlVersion(expression.purl),
             via: decision.via === 'optional' ? 'optional' : 'hard',
+            by: new Set([candidate]),
             ...(!(range === undefined) && { range }),
+            ...(!(tag === undefined) && { tag: true }),
           };
+          if (tag !== undefined)
+            tagEdges.push({
+              requirement,
+              base: next.purl,
+              ecosystem: ecosystemFromPurl(next.purl),
+              tag,
+            });
           if (next.via === 'optional')
             optionalEdges.push({
               requirement,
               base: next.purl,
               ecosystem: ecosystemFromPurl(next.purl),
-              ...(!(range === undefined) && { range }),
             });
           const key = keyOf(next);
-          if (queued.has(key)) continue;
-          queued.add(key);
+          const already = queued.get(key);
+          if (already !== undefined) {
+            already.by.add(candidate);
+            continue;
+          }
+          queued.set(key, next);
           queue.push(next);
           warm(next.purl);
         }
       }
       if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
-        unresolved.push({
+        unresolve(item, {
           purl: item.purl,
           reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
         });
     }
   }
 
+  // A dist-tag on an alias is the version the registry said it pointed at, for
+  // the solve and for every check after it. A tag the registry did not know
+  // becomes a requirement nothing satisfies, so a dependent that needs it cannot
+  // be selected, and the walk has already said so.
+  for (const edge of tagEdges)
+    pinTag(edge, resolvedTags.get(`${edge.base}|${edge.tag}`));
+
   // An optional dependency that was admitted is installed, so the edge to it
   // is a requirement of the solve. One whose every candidate was left out stays
   // optional and the solve ignores it, as npm does.
   for (const edge of optionalEdges) {
     const codec = codecFor(edge.ecosystem);
+    const range = nativeRange(edge.requirement);
     const admittedCandidate = packages.some((instance) => {
       if (instance.identity.canonicalPurl !== edge.base) return false;
-      if (edge.range === undefined) return true;
+      if (range === undefined) return true;
       try {
-        return codec.satisfies(instance.nativeVersion, edge.range);
+        return codec.satisfies(instance.nativeVersion, range);
       } catch {
         return true;
       }
     });
     if (admittedCandidate) edge.requirement.optional = false;
   }
+  for (const { entry, item } of askedFor)
+    if (item.by.size > 0) entry.requiredBy = [...item.by].sort();
 
   return {
     packages,
@@ -867,6 +951,38 @@ export async function resolveGraph(input: {
     skippedMarkers,
     skippedPlatform,
     gated,
+  };
+}
+
+/** No version of any package satisfies this. */
+const NO_VERSION = 'vers:npm/>=0.0.0|<0.0.0';
+
+/**
+ * Replace the dist-tag an alias named with the version it pointed at, or with a
+ * requirement nothing satisfies when the registry had no such tag.
+ */
+function pinTag(edge: TagEdge, version: string | undefined): void {
+  const { expression, nativeSemantics } = edge.requirement;
+  if (expression.type !== 'package') return;
+  const data =
+    nativeSemantics?.data !== null &&
+    typeof nativeSemantics?.data === 'object' &&
+    !Array.isArray(nativeSemantics.data)
+      ? nativeSemantics.data
+      : {};
+  const { specKind: _tag, ...rest } = data;
+  edge.requirement.expression = {
+    ...expression,
+    vers:
+      version === undefined ? NO_VERSION : `vers:${edge.ecosystem}/${version}`,
+  };
+  edge.requirement.nativeSemantics = {
+    version: nativeSemantics?.version ?? 'npm-v1',
+    data: {
+      ...rest,
+      range: version ?? edge.tag,
+      ...(!(version === undefined) && { resolvedFromTag: edge.tag }),
+    },
   };
 }
 
@@ -999,7 +1115,7 @@ export async function solveGraph(input: {
   >;
 }): Promise<{
   selected: PackageInstance[];
-  dependencyEdges: { fromNodeId: string; toNodeId: string }[];
+  dependencyEdges: ClosureEdge[];
   solutionDigest: string;
   proofValid: boolean;
 }> {
@@ -1062,24 +1178,54 @@ export async function solveGraph(input: {
     })),
   };
 
-  // The lock holds one version of a package. The engine does not insist on
-  // that (a package may legitimately coexist in PREX), so a requirement that
-  // takes the newest of its own range and another that takes the newest of
-  // another can leave two. When a single candidate would satisfy every selected
-  // requirement on the package, the others are withdrawn and the solve is run
-  // again; when none would, the closure needs what the lock cannot hold.
-  let packages = input.graph.packages;
-  let solved: ReturnType<typeof resolver.solve>;
-  let selected: PackageInstance[];
-  let selectedByPurl: Map<string, PackageInstance>;
+  // The engine lets a package coexist at several versions, so a selection can
+  // hold two when two dependents want different ones. Each edge is then pointed
+  // at the newest selected version its range accepts, and what no edge reaches
+  // is dropped. A name that every dependent can take one release of is made one
+  // (the lock is smaller and the tree flatter, and a closure that locked before
+  // locks the same); a name no single release suits stays at the versions it
+  // needs, unless a required peer dependency points at it (ADR 0054).
+  const isRoot = (instance: PackageInstance): boolean =>
+    input.rootRequirements.some(
+      (root) =>
+        stripPurlVersion(root.purl) === instance.identity.canonicalPurl &&
+        (root.vers === undefined ||
+          resolver.versionSatisfies(instance.nativeVersion, root.vers)),
+    );
+  const viable = viableCandidates(input.graph.packages);
+  let packages = viable.kept;
+  const kept = new Set<string>();
   for (let round = 0; ; round += 1) {
     const universe = await universeFrom({ ...input.graph, packages });
-    solved = resolver.solve({
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      request: request as never,
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      universe: universe as never,
-    });
+    let solved: ReturnType<typeof resolver.solve>;
+    try {
+      solved = resolver.solve({
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        request: request as never,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        universe: universe as never,
+      });
+    } catch (error) {
+      // The engine's refusal is a JSON document naming the project's own
+      // requirement ids; what a person needs is which edge nothing satisfies.
+      if (
+        !/^UNSATISFIABLE\b/u.test(error instanceof Error ? error.message : '')
+      )
+        throw error;
+      const causes = explainUnsatisfiable({
+        dropped: viable.dropped,
+        kept: viable.kept,
+        rootRequirements: input.rootRequirements,
+        resolver,
+      });
+      throw new OpmError(
+        'UNRESOLVABLE',
+        causes.length === 0
+          ? 'no selection of releases satisfies every requirement together'
+          : `no selection of releases satisfies every requirement: ${causes.slice(0, 5).join('; ')}${causes.length > 5 ? `; and ${causes.length - 5} more` : ''}`,
+        { cause: error },
+      );
+    }
     // The proof is checked rather than trusted: an unchecked proof is only a
     // claim, and invariant 5 makes an invalid one a hard failure.
     const checked = resolver.check(
@@ -1096,180 +1242,69 @@ export async function solveGraph(input: {
     const byNodeId = new Map(
       packages.map((instance) => [instance.nodeId, instance]),
     );
-    selected = solved.solution.selectedNodeIds
+    const chosen = solved.solution.selectedNodeIds
       .map((nodeId) => byNodeId.get(nodeId))
       .filter(
         (instance): instance is PackageInstance => instance !== undefined,
       );
-    const duplicated = new Map<string, PackageInstance[]>();
-    selectedByPurl = new Map<string, PackageInstance>();
-    for (const instance of selected) {
-      const exact = instance.identity.exactPurl;
-      if (exact === undefined)
+    for (const instance of chosen)
+      if (instance.identity.exactPurl === undefined)
         throw new OpmError(
           'UNRESOLVABLE',
           'Selected package lacks an exact PURL',
         );
-      const base = stripPurlVersion(exact);
-      const seen = selectedByPurl.get(base);
-      if (seen !== undefined)
-        duplicated.set(base, [...(duplicated.get(base) ?? [seen]), instance]);
-      else selectedByPurl.set(base, instance);
-    }
-    if (duplicated.size === 0) break;
+    const assigned = assignEdges(chosen);
+    if (assigned.unmet.length > 0)
+      throw new OpmError(
+        'UNRESOLVABLE',
+        `The closure the solver selected leaves a requirement unmet: ${describeUnmet(assigned.unmet, chosen)}`,
+      );
+    const selected = reachableSelection({
+      selected: chosen,
+      edges: assigned.edges,
+      isRoot,
+    });
+    const reached = new Set(selected.map((instance) => instance.nodeId));
+    const edges = assigned.edges.filter((edge) => reached.has(edge.fromNodeId));
+    const duplicated = duplicatedNames(selected);
+    const unifiable = [...duplicated.keys()].filter((base) => !kept.has(base));
+    const unified =
+      unifiable.length === 0
+        ? undefined
+        : unifyDuplicates({
+            packages,
+            edges,
+            duplicated,
+            rootRequirements: input.rootRequirements,
+            resolver,
+            kept,
+          });
+    if (unified === undefined || !unified.changed)
+      return {
+        selected,
+        dependencyEdges: edges.map(
+          ({ fromNodeId, toNodeId, installName, requirementId }) => ({
+            fromNodeId,
+            toNodeId,
+            installName,
+            requirementId,
+          }),
+        ),
+        solutionDigest: solved.solution.solutionDigest.value,
+        // An invalid proof never gets this far: the check above throws on it.
+        proofValid: true,
+      };
     if (round >= MAXIMUM_UNIFICATION_ROUNDS)
       throw new OpmError(
         'UNRESOLVABLE',
         `The closure still holds several versions of ${[...duplicated.keys()].join(', ')} after ${MAXIMUM_UNIFICATION_ROUNDS} attempts to unify them`,
       );
-    packages = unify({
-      packages,
-      selected,
-      duplicated,
-      rootRequirements: input.rootRequirements,
-      resolver,
-    });
+    packages = unified.packages;
   }
-  const dependencyEdges: { fromNodeId: string; toNodeId: string }[] = [];
-  for (const instance of selected)
-    for (const requirement of instance.requirements ?? []) {
-      if (
-        requirement.optional ||
-        !INSTALLED_KINDS.has(requirement.kind) ||
-        requirement.expression.type !== 'package'
-      )
-        continue;
-      const dependency = selectedByPurl.get(
-        stripPurlVersion(requirement.expression.purl),
-      );
-      if (dependency === undefined)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `Selected closure omits required package ${requirement.expression.purl}`,
-        );
-      // The solver enforced a comparison form of the range; the ecosystem's own
-      // reading of it has the last word, so a lock never pairs a package with a
-      // version it does not accept.
-      const range = nativeRange(requirement);
-      if (
-        range !== undefined &&
-        !satisfiesNative(
-          dependency.identity.purlType,
-          dependency.nativeVersion,
-          range,
-        )
-      )
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `${instance.identity.exactPurl} requires ${requirement.expression.purl} ${range}, ` +
-            `but the closure selected ${dependency.identity.exactPurl}`,
-        );
-      dependencyEdges.push({
-        fromNodeId: instance.nodeId,
-        toNodeId: dependency.nodeId,
-      });
-    }
-  return {
-    selected,
-    dependencyEdges,
-    solutionDigest: solved.solution.solutionDigest.value,
-    // An invalid proof never gets this far: the loop above throws on it.
-    proofValid: true,
-  };
 }
 
 /** Enough for a closure of ordinary shape; a loop here is a bug, not a graph. */
 const MAXIMUM_UNIFICATION_ROUNDS = 32;
-
-/**
- * Withdraw every candidate of a duplicated package but one that all of its
- * selected dependents accept, or say who cannot agree.
- *
- * The candidate is the newest one that satisfies, by the ecosystem's own reading
- * of each range, every selected requirement on the package, and the root
- * requirement on it if there is one. Nothing else about the universe changes, so
- * the next solve may still move any other package.
- */
-function unify(input: {
-  packages: PackageInstance[];
-  selected: readonly PackageInstance[];
-  duplicated: ReadonlyMap<string, PackageInstance[]>;
-  rootRequirements: readonly { purl: string; vers?: string }[];
-  resolver: Pick<EmbeddedResolver, 'versionSatisfies'>;
-}): PackageInstance[] {
-  const withdrawn = new Set<string>();
-  for (const [base, chosen] of input.duplicated) {
-    const ecosystem = chosen[0]!.identity.purlType;
-    const needs: {
-      by: string;
-      range: string;
-      accepts: (v: string) => boolean;
-    }[] = [];
-    for (const root of input.rootRequirements)
-      if (stripPurlVersion(root.purl) === base && root.vers !== undefined) {
-        const vers = root.vers;
-        needs.push({
-          by: 'the direct requirement',
-          range: vers.replace(/^vers:[^/]+\//u, ''),
-          accepts: (version) => input.resolver.versionSatisfies(version, vers),
-        });
-      }
-    for (const instance of input.selected)
-      for (const requirement of instance.requirements ?? []) {
-        if (
-          requirement.optional ||
-          !INSTALLED_KINDS.has(requirement.kind) ||
-          requirement.expression.type !== 'package' ||
-          stripPurlVersion(requirement.expression.purl) !== base
-        )
-          continue;
-        const range = nativeRange(requirement);
-        if (range !== undefined)
-          needs.push({
-            by: instance.identity.exactPurl ?? instance.nodeId,
-            range,
-            accepts: (version) => satisfiesNative(ecosystem, version, range),
-          });
-      }
-    const codec = codecFor(ecosystem);
-    const candidates = input.packages
-      .filter((item) => item.identity.canonicalPurl === base)
-      .sort((left, right) =>
-        codec.compareNativeVersions(right.nativeVersion, left.nativeVersion),
-      );
-    const agreed = candidates.find((candidate) =>
-      needs.every((need) => need.accepts(candidate.nativeVersion)),
-    );
-    if (agreed === undefined)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `${base} is needed at versions no single release satisfies, and a lock holds one version of a package: ` +
-          needs.map((need) => `${need.by} requires ${need.range}`).join('; ') +
-          `. The closure would need ${chosen
-            .map((item) => item.identity.exactPurl)
-            .join(' and ')}`,
-      );
-    for (const candidate of candidates)
-      if (candidate !== agreed) withdrawn.add(candidate.nodeId);
-  }
-  return input.packages.filter((item) => !withdrawn.has(item.nodeId));
-}
-
-/**
- * Whether `version` is inside `range` by the ecosystem's own rules. A range its
- * codec cannot read cannot be checked, which is not the same as being outside.
- */
-function satisfiesNative(
-  ecosystem: string,
-  version: string,
-  range: string,
-): boolean {
-  try {
-    return codecFor(ecosystem).satisfies(version, range);
-  } catch {
-    return true;
-  }
-}
 
 /** A `ResolutionUniverse` over everything the walk found. */
 export async function universeFrom(

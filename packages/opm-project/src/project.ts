@@ -21,11 +21,11 @@ import {
   listRegistryVersions,
   registryOptionsForEcosystem,
   resolveRegistryArtifact,
-  type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
-import { resolveGraph, solveGraph } from './resolve.js';
+import { resolveTransitive } from './closure-lock.js';
+import { lockEdgeKeys, reachableKeys } from './lock-edges.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -80,7 +80,6 @@ import {
 } from './spec.js';
 import {
   assertSupplyChainAllowed,
-  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
   insideReleaseAge,
@@ -343,16 +342,10 @@ export async function removePackage(input: {
   const previousAliases = Object.keys(lock.packages);
   const removed = lock.packages[input.alias];
   if (removed) removed.reason = 'transitive';
-  const reachable = new Set(Object.keys(manifest.packages));
-  const queue = [...reachable];
-  while (queue.length > 0) {
-    const pkg = lock.packages[queue.shift()!];
-    for (const dependency of pkg?.dependencies ?? [])
-      if (!reachable.has(dependency)) {
-        reachable.add(dependency);
-        queue.push(dependency);
-      }
-  }
+  const reachable = reachableKeys(
+    lock.packages,
+    Object.keys(manifest.packages),
+  );
   for (const alias of previousAliases)
     if (!reachable.has(alias)) delete lock.packages[alias];
   lock.manifestDigest = manifestDigest(manifest);
@@ -551,7 +544,7 @@ function assertLockMatchesManifest(
     const pkg = lock.packages[alias];
     if (!pkg)
       throw new OpmError('INVALID_LOCK', `Lock dependency ${alias} is missing`);
-    for (const dependency of pkg.dependencies ?? []) {
+    for (const dependency of lockEdgeKeys(pkg)) {
       if (!lock.packages[dependency])
         throw new OpmError(
           'INVALID_LOCK',
@@ -728,293 +721,14 @@ export async function resolveManifestToLock(input: {
       const pkg = lock.packages[alias];
       if (pkg) pkg.dependencies = dependencies;
     }
+    for (const [alias, edges] of Object.entries(transitive.aliases)) {
+      const pkg = lock.packages[alias];
+      if (pkg) pkg.aliases = edges;
+    }
   }
   for (const pkg of Object.values(lock.packages))
     sealVerifiedArtifactBinding(pkg);
   return lock;
-}
-
-/**
- * Lock entries for everything the direct set depends on.
- *
- * Failures here are deliberately not fatal at the install boundary. A registry
- * that omits a dependency, an ecosystem whose ranges this cannot yet match, a
- * graph past the bound — none of those should stop an install that previously
- * worked, so they degrade to the direct set. The walk itself no longer
- * pretends every ecosystem's range lives in a field named `range` (PyPI uses
- * `specifier`), and marker-gated edges are evaluated against the host rather
- * than dropped wholesale.
- */
-/**
- * The manifest constraint for a package, when its ecosystem can read it.
- *
- * `version` in opm.toml is whatever the user wrote, and an exact pin is not
- * always a valid range: PyPI wants `==1.0.0`, so a bare `1.0.0` fails to parse
- * and the whole closure comes back empty. Probe the codec and drop a range it
- * cannot read — candidate enumeration is bounded either way, and the solver is
- * pinned to the locked version regardless.
- */
-function nativeRangeFor(
-  pkg: LockPackage,
-  manifest: OpmManifest,
-): string | undefined {
-  const declared = manifest.packages[pkg.alias]?.version;
-  if (declared === undefined) return undefined;
-  try {
-    codecFor(pkg.ecosystem).parseNativeRange(declared);
-    return declared;
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveTransitive(input: {
-  direct: readonly LockPackage[];
-  manifest: OpmManifest;
-  registryOptions?: RegistryOptions | undefined;
-  pool: ProviderPool;
-}): Promise<{
-  packages: Record<string, LockPackage>;
-  dependencies: Record<string, string[]>;
-}> {
-  // Only what came from a registry is walked through that registry. A package
-  // pinned to a file, a catalog entry or a URL is not the registry's package of
-  // that name, so asking the registry what it depends on would answer for a
-  // different package, and could pull its dependencies in by name.
-  const resolvable = input.direct.filter(
-    (pkg) =>
-      pkg.sourceKind === 'registry' &&
-      requireAdapterRegistry().has(pkg.ecosystem),
-  );
-  if (resolvable.length === 0) return { packages: {}, dependencies: {} };
-
-  const policy = projectPolicyDocument(input.manifest);
-  const evaluationTime = new Date().toISOString();
-  const out: Record<string, LockPackage> = {};
-  const dependencies: Record<string, string[]> = {};
-  let unresolved: { purl: string; reason: string }[] = [];
-  try {
-    const graph = await resolveGraph({
-      pool: input.pool,
-      candidateGate: async (exact, provider) =>
-        (await insideReleaseAge(policy, provider, exact, evaluationTime))
-          ? `published inside the ${policy.minimumReleaseAgeMinutes}-minute minimum release age`
-          : undefined,
-      roots: resolvable.map((pkg) => ({
-        purl: stripPurlVersion(pkg.purl),
-        ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
-          range: nativeRangeFor(pkg, input.manifest)!,
-        }),
-      })),
-    });
-    unresolved = graph.unresolved;
-    if (graph.packages.length === 0)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        'the registry returned nothing to resolve against',
-      );
-
-    const solved = await solveGraph({
-      graph,
-      policy: {
-        allowYanked: policy.allowYanked,
-        allowQuarantined: policy.allowQuarantined,
-        requiredEvidence: policy.requiredEvidence,
-        semanticLossMaximum: policy.semanticLossMaximum,
-        acceptedOverlayAuthorities: input.manifest.policy
-          ?.acceptedOverlayAuthorities ?? ['publisher'],
-      },
-      // Pin each root to the version the direct pass already locked. Left
-      // unpinned, the closure can select a different release of a package the
-      // lock has already decided, and that second copy lands as a transitive
-      // entry beside the direct one.
-      rootRequirements: resolvable.map((pkg) => ({
-        purl: stripPurlVersion(pkg.purl),
-        vers: `vers:${pkg.ecosystem}/${pkg.version}`,
-      })),
-    });
-
-    const directPurls = new Set(input.direct.map((pkg) => pkg.purl));
-    // Fetch every artifact at once (the pool's transport bounds how many are in
-    // flight), then take the results in solve order, so what is locked and
-    // which failure is reported do not depend on which download finished first.
-    const artifacts = new Map<string, Promise<RegistryArtifact>>();
-    for (const instance of solved.selected) {
-      const exact = instance.identity.exactPurl;
-      if (exact === undefined || directPurls.has(exact)) continue;
-      const fetching = input.pool
-        .optionsWithProvider(instance.identity.purlType)
-        .then((options) =>
-          resolveRegistryArtifact(instance.identity.purlType, exact, options),
-        );
-      // Reported where it is awaited below; this only keeps a later failure
-      // from being an unhandled rejection while an earlier one is awaited.
-      fetching.catch(() => undefined);
-      artifacts.set(exact, fetching);
-    }
-    for (const instance of solved.selected) {
-      const exact = instance.identity.exactPurl;
-      if (exact === undefined || directPurls.has(exact)) continue;
-      const alias = aliasForPurl(exact);
-      if (out[alias] && out[alias].purl !== exact)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `Selected packages collide on lock alias ${alias}`,
-        );
-      if (out[alias]) continue;
-      // `inspect` describes a package; the downloadable artifact and its
-      // published digest come from the artifact record, which is what the
-      // direct path uses too.
-      const artifact = await artifacts.get(exact)!;
-      // Same standard as the direct path: the digest that goes in the lock is
-      // re-derived from the bytes in hand, not copied from what the provider
-      // said about them.
-      const actual = digestOf(artifact.bytes);
-      if (actual !== artifact.digest)
-        throw new OpmError(
-          'DIGEST_MISMATCH',
-          `Registry digest mismatch for ${artifact.exactPurl}: ` +
-            `the ${instance.identity.purlType} provider reported ${artifact.digest}, ` +
-            `the bytes hash to ${actual}`,
-        );
-      if (artifact.size > 0 && artifact.bytes.byteLength !== artifact.size)
-        throw new OpmError(
-          'SIZE_MISMATCH',
-          `Registry size mismatch for ${artifact.exactPurl}: ` +
-            `expected ${artifact.size} bytes, got ${artifact.bytes.byteLength}`,
-        );
-
-      // A dependency nobody asked for directly is the case blockExoticSources
-      // exists for, so it is evaluated at its real depth rather than skipped.
-      const facts = captureFactsFromSourceUri(
-        artifact.exactPurl,
-        artifact.uri,
-        {
-          evaluationTime,
-          dependencyDepth: 1,
-          fromRegistryArtifactRecord: true,
-          lifecycleScriptsExecuted: false,
-          lifecycle: instance.lifecycle,
-          semanticLoss: instance.semanticLoss,
-          sourceSnapshotDigests: instance.sourceSnapshots,
-        },
-      );
-      facts.registryId = artifact.registryId;
-      // The same publish-time evidence a direct package gets: a dependency
-      // nobody asked for by name is the one a release-age window protects.
-      await capturePublishTime(
-        facts,
-        await input.pool.provider(instance.identity.purlType),
-        exact,
-        { minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes },
-      );
-      await assertSupplyChainAllowed(policy, facts);
-
-      const transitiveIntegrity = nativeIntegrityOf(
-        instance.identity.purlType,
-        artifact.bytes,
-      );
-      const locked: LockPackage = {
-        alias,
-        purl: artifact.exactPurl,
-        version: artifact.version || instance.nativeVersion || '0.0.0',
-        digest: artifact.digest,
-        size: artifact.bytes.byteLength,
-        format: inferFormat(artifact.uri, artifact.mediaType),
-        mediaType: artifact.mediaType,
-        source: artifact.uri,
-        storeKey: storeKeyFromDigest(artifact.digest),
-        bins: binDeclarationsFromExecutables(artifact.bins),
-        reason: 'transitive',
-        ecosystem: instance.identity.purlType,
-        ...(!(transitiveIntegrity === undefined) && {
-          nativeIntegrity: transitiveIntegrity,
-        }),
-        ...lockPackageSupplyChainFields(facts),
-      };
-      bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
-      out[alias] = locked;
-    }
-
-    const aliasByNodeId = new Map<string, string>();
-    const directByPurl = new Map(
-      input.direct.map((pkg) => [pkg.purl, pkg.alias]),
-    );
-    for (const instance of solved.selected) {
-      const exact = instance.identity.exactPurl;
-      if (exact === undefined) continue;
-      const alias = directByPurl.get(exact) ?? aliasForPurl(exact);
-      const pkg =
-        input.direct.find((candidate) => candidate.alias === alias) ??
-        out[alias];
-      if (pkg === undefined || pkg.purl !== exact)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `Selected package ${exact} has no unique lock entry`,
-        );
-      aliasByNodeId.set(instance.nodeId, alias);
-      dependencies[alias] ??= [];
-    }
-    for (const edge of solved.dependencyEdges) {
-      const from = aliasByNodeId.get(edge.fromNodeId);
-      const to = aliasByNodeId.get(edge.toNodeId);
-      if (from === undefined || to === undefined)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          'Selected dependency edge has no lock entry',
-        );
-      dependencies[from]!.push(to);
-    }
-    for (const alias of Object.keys(dependencies))
-      dependencies[alias] = [...new Set(dependencies[alias])].sort();
-  } catch (error) {
-    // A closure that cannot be computed is an error, not a smaller lock. This
-    // used to fall back to the direct set, which turned every failure here
-    // (a wasm build that was not there, a solve the engine refused, a
-    // dependency written as a git URL) into "Added vitest" and a lock of one
-    // package, and left the install to find out which of its dependencies were
-    // missing. The policy, digest and size refusals already propagated as they
-    // were; the rest now say what stopped the closure.
-    if (error instanceof OpmError && isClosureRefusal(error)) throw error;
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new OpmError(
-      error instanceof OpmError ? error.code : 'UNRESOLVABLE',
-      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved)}`,
-    );
-  }
-  return { packages: out, dependencies };
-}
-
-/** Refusals that were always errors: a mitigation must never read as advice. */
-function isClosureRefusal(error: OpmError): boolean {
-  return (
-    error.code === 'POLICY_DENIED' ||
-    error.code === 'POLICY_INDETERMINATE' ||
-    error.code === 'DIGEST_MISMATCH' ||
-    error.code === 'SIZE_MISMATCH'
-  );
-}
-
-/** The candidates the walk had to set aside, for an error that follows from it. */
-function unresolvedNote(
-  unresolved: readonly { purl: string; reason: string }[],
-): string {
-  if (unresolved.length === 0) return '';
-  const shown = unresolved
-    .slice(0, 5)
-    .map((item) => `\n  - ${item.purl}: ${item.reason}`)
-    .join('');
-  const more =
-    unresolved.length > 5 ? `\n  - and ${unresolved.length - 5} more` : '';
-  return `\nWhat the walk could not use:${shown}${more}`;
-}
-
-/** A filesystem-safe alias for a transitive package. */
-function aliasForPurl(exactPurl: string): string {
-  const withoutScheme = exactPurl.slice('pkg:'.length);
-  const withoutVersion = withoutScheme.split('@')[0]!;
-  const name = withoutVersion.split('/').slice(1).join('-');
-  return (name || withoutVersion).replace(/[^A-Za-z0-9._-]/gu, '-');
 }
 
 async function resolveRequirement(input: {

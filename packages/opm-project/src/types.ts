@@ -16,6 +16,13 @@ export interface PackageRequirement {
   /** Optional bin overrides (name → relative path) */
   bins?: readonly BinDeclaration[];
   /**
+   * The name the package is installed under when it is not its own: a project
+   * that asks for `string-width` as `string-width-cjs` (`npm:` alias). Absent
+   * means the package's own name. Distinct from `alias`, which is only this
+   * project's label for the requirement.
+   */
+  installName?: string;
+  /**
    * What kind of dependency this is.
    *
    * Absent means runtime, so every existing manifest keeps its meaning. It
@@ -175,8 +182,22 @@ export interface LockPackage {
   bins: readonly BinDeclaration[];
   reason: 'direct' | 'transitive';
   ecosystem: string;
-  /** Lock aliases this package requires in the selected closure. */
+  /**
+   * Lock keys this package requires in the selected closure, each found under
+   * its own package name.
+   */
   dependencies?: readonly string[];
+  /**
+   * Lock keys this package requires under a name that is not the package's own
+   * (`npm:` aliases): install name → lock key. Absent when there are none; an
+   * entry's edges are `dependencies` and these.
+   */
+  aliases?: Readonly<Record<string, string>>;
+  /**
+   * For a direct requirement installed under a name other than its package's
+   * (`"string-width-cjs": "npm:string-width@^4.2.0"` in the project): that name.
+   */
+  installName?: string;
   /** Captured trust tier for no-downgrade on upgrade. */
   trustLevel?: TrustTier;
   /** Registry-reported publish time when captured. */
@@ -270,7 +291,10 @@ export interface OpmCatalog {
 }
 
 export interface ParsedPackageSpec {
+  /** The project's label for the requirement. */
   alias: string;
+  /** The name an npm alias installs the package under, when it is one. */
+  installName?: string;
   purl: string;
   version?: string;
   ecosystem?: string;
