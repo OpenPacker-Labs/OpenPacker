@@ -205,7 +205,7 @@ describe('opm ci', () => {
     await expect(stat(join(p.dir, 'node_modules'))).rejects.toThrow();
   });
 
-  it('refuses a workspace lock with the invalid-input exit code and the member list', async () => {
+  it('refuses a lock whose members are not the ones on disk, with the invalid-input exit code and both sides', async () => {
     const p = await project({ workspaces: ['packages/*'] });
     const lockPath = join(p.dir, 'package-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
@@ -219,7 +219,9 @@ describe('opm ci', () => {
     expect(
       await runOpm(['ci', '--path', p.dir], c.io, '/', { fetch: p.fetcher }),
     ).toBe(EXIT_CODES.invalidInput);
-    expect(c.err).toMatch(/packages\/member: a workspace member \(member\)/u);
+    expect(c.err).toMatch(
+      /the lock lists the members packages\/member; the project declares the members \(none\); packages\/member \(member\) is a member in the lock and is not on disk/u,
+    );
     expect(p.urls).toEqual([]);
   });
 

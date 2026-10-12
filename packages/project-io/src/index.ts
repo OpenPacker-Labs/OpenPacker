@@ -363,6 +363,8 @@ export type {
   RecordedLinks,
 } from './layout-links.js';
 
+export { removeBelow } from './remove-under.js';
+
 export {
   placeMemberLink,
   readMemberLink,

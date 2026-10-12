@@ -12,6 +12,8 @@ export {
 export * from './workspace/index.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+import type { NativeLayoutWorkspace } from './layout-workspace.js';
+import type { WorkspaceTool } from './workspace/members.js';
 export type {
   FrozenExtraction,
   FrozenLock,
@@ -19,9 +21,17 @@ export type {
   FrozenLockPackage,
   FrozenLockRefusal,
   FrozenLockSkip,
+  FrozenLockWorkspace,
   FrozenOmit,
   FrozenSourceKind,
+  FrozenWorkspaceInput,
+  FrozenWorkspaceScope,
 } from './frozen-lock.js';
+export type {
+  NativeLayoutLink,
+  NativeLayoutMember,
+  NativeLayoutWorkspace,
+} from './layout-workspace.js';
 import {
   canonicalProjectionDigest,
   formatDigest,
@@ -446,11 +456,26 @@ export interface ProjectFormat {
     packages: readonly NativeLockEntry[],
   ): Promise<ProjectionResult>;
 
-  /** Project the content-addressed store into the native install layout. */
+  /**
+   * Project the content-addressed store into the native install layout.
+   *
+   * `workspace` is given by a frozen install of a workspace: the members to
+   * link and shim. A package whose `layoutPath` lies under a member's directory
+   * is written in that member's own install directory.
+   */
   writeLayout?(
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
+    options?: { workspace?: NativeLayoutWorkspace },
   ): Promise<ProjectionResult>;
+
+  /**
+   * Whose workspace rules read this ecosystem's members (`package.json`
+   * `workspaces` is npm's). A host that sees one discovers the workspace on
+   * disk and hands it to `readFrozenLock`; a format without one is installed
+   * as a single project.
+   */
+  readonly workspaceTool?: WorkspaceTool;
 
   /**
    * Read the native lock as a frozen install would use it: exactly the
@@ -680,6 +705,9 @@ export interface NativeLockEntry extends NativeRequirement {
    * Where the native lock itself places this package, when the layout is to
    * follow the lock rather than be planned (npm:
    * `node_modules/a/node_modules/b`). Unique among the entries of one layout.
+   * Under a workspace member it is that member's own place
+   * (`packages/x/node_modules/a`), and the member's directory must be one the
+   * layout was given.
    */
   layoutPath?: string;
   /** True for a package no requirement named directly. */
