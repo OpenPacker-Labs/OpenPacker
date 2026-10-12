@@ -29,8 +29,8 @@ import {
   windowsReadReparse,
 } from './handle-path.js';
 import { ProjectIoError } from './index.js';
-import { openProjectDirectory } from './layout.js';
 import { linkDirectoryProblem, splitLinkPath } from './link-rules.js';
+import { openProjectDirectory } from './stable-open.js';
 
 /** What a member link's path holds. */
 export type MemberLinkState =

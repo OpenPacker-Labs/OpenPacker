@@ -344,10 +344,13 @@ export {
   collectFilesFromHandle,
   collectTree,
   collectTreeFromHandle,
+  type CollectOptions,
+} from './layout-collect.js';
+
+export {
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
-  type CollectOptions,
   type MaterialiseOptions,
   type MaterialiseResult,
 } from './layout.js';

@@ -21,7 +21,7 @@ import type { ChildBackend } from './handle-libc.js';
 import { useChildBackendForTesting } from './handle-path.js';
 import { glibcBackend, glibcLinux } from './handle-test-support.js';
 import type { RecordedLinks } from './layout-links.js';
-import { collectTree } from './layout.js';
+import { collectTree } from './layout-collect.js';
 import { placeMemberLink } from './member-link.js';
 
 const temps: string[] = [];

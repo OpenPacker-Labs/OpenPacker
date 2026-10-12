@@ -12,7 +12,7 @@
 
 import type { FileHandle } from 'node:fs/promises';
 import { readlinkChild, type LinkSite } from './handle-link.js';
-import type { CollectOptions } from './layout.js';
+import type { CollectOptions } from './layout-collect.js';
 
 /** What the layout's record says it wrote under the directory being walked. */
 export interface RecordedLinks {

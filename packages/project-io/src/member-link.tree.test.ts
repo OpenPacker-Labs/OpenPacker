@@ -22,9 +22,8 @@ import {
   collectFiles,
   collectFilesFromHandle,
   collectTree,
-  materialiseTree,
-  removeTree,
-} from './layout.js';
+} from './layout-collect.js';
+import { materialiseTree, removeTree } from './layout.js';
 import { placeMemberLink } from './member-link.js';
 import { MEMBER, cleanup, failure, project } from './member-link-support.js';
 
