@@ -1,8 +1,10 @@
 import {
   ProviderError,
+  echoedValue,
   formatPurl,
   packageNodeId,
   parsePurl,
+  parseUntrustedUrl,
   type Ecosystem,
   type EcosystemCodec,
   type LockCapture,
@@ -1126,7 +1128,7 @@ async function minimalInstanceFromLockEntry(
       severity: 'warning',
       sourceEcosystem: ecosystem,
       sourcePath: '/',
-      originalMeaning: `The native lock references ${entry.resolved}`,
+      originalMeaning: `The native lock references ${echoedValue(entry.resolved)}`,
       representedMeaning: 'No executable artifact location was imported',
       blocksProfile: [],
     });
@@ -1222,7 +1224,7 @@ async function minimalInstanceFromLockEntry(
 function httpsArtifactLocation(resolved: string | undefined) {
   if (resolved === undefined) return undefined;
   try {
-    const url = new URL(resolved);
+    const url = parseUntrustedUrl(resolved);
     if (url.protocol !== 'https:' || url.username || url.password)
       return undefined;
     return {
