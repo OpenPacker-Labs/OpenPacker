@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { EXIT_CODES, runOpm } from '../src/opm.js';
 import { capture } from './capture.js';
 
@@ -60,6 +60,23 @@ describe('a command that rejects', () => {
     expect(code).toBe(EXIT_CODES.invalidInput);
     expect(cap.err).toBe(
       'opm: Not a Debian PURL: pkg:apt/xy (expected pkg:deb/...)\n',
+    );
+  });
+});
+
+describe('a warning that is not the end of a command', () => {
+  const previous = process.env.OPM_PLUGIN_HOME;
+  afterEach(() => {
+    if (previous === undefined) delete process.env.OPM_PLUGIN_HOME;
+    else process.env.OPM_PLUGIN_HOME = previous;
+  });
+
+  it('is plain when the plugin store cannot be used', async () => {
+    process.env.OPM_PLUGIN_HOME = `relative/ev${ESC}]0;pwned${BEL}il`;
+    const cap = capture();
+    await runOpm(['help'], cap.io, process.cwd());
+    expect(cap.err).toBe(
+      'opm: plugin store unavailable (OPM_PLUGIN_HOME must be an absolute path, got "relative/evil"); continuing without plugins\n',
     );
   });
 });

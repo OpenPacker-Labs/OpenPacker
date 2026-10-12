@@ -171,14 +171,20 @@ export async function runOpm(
       });
       for (const refused of pluginRegistration.refused)
         io.stderr.write(
-          `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
+          report(
+            'opm: ',
+            `plugin ${refused.name} was not loaded: ${refused.message}`,
+          ),
         );
     } catch (error) {
       // A store-level failure (corrupt index, unsafe root) leaves every
       // plugin unregistered; their purl types stay unsupported, which is
       // the fail-closed answer, and `opm plugin` can still repair the store.
       io.stderr.write(
-        `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
+        report(
+          'opm: ',
+          `plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins`,
+        ),
       );
     }
     const { applyAuthConfigForProcess } = await import('./commands/auth.js');
@@ -529,7 +535,9 @@ export async function runOpm(
           io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
         }
         for (const loss of built.manifest.semanticLoss ?? [])
-          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+          io.stderr.write(
+            report('opm: ', `${loss.code}: ${loss.omittedMeaning ?? ''}`),
+          );
         return EXIT_CODES.success;
       }
       case 'pack': {
@@ -611,7 +619,9 @@ export async function runOpm(
           );
         }
         for (const loss of result.semanticLoss)
-          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+          io.stderr.write(
+            report('opm: ', `${loss.code}: ${loss.omittedMeaning ?? ''}`),
+          );
         return EXIT_CODES.success;
       }
       case 'system': {
@@ -1028,7 +1038,7 @@ async function runSystemCommand(
  * in version control.
  */
 function writeNativeProjection(
-  report:
+  native:
     | {
         projections: readonly {
           ecosystem: string;
@@ -1043,15 +1053,20 @@ function writeNativeProjection(
     | undefined,
   io: CliIo,
 ): void {
-  if (!report) return;
-  for (const projection of report.projections) {
+  if (!native) return;
+  for (const projection of native.projections) {
     for (const path of projection.written)
       io.stdout.write(`  updated ${path}\n`);
     for (const entry of projection.skipped ?? [])
-      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+      io.stderr.write(
+        report('opm: ', `skipped ${entry.path}: ${entry.reason}`),
+      );
     for (const loss of projection.semanticLoss)
       io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+        report(
+          'opm: ',
+          `${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}`,
+        ),
       );
   }
 }
@@ -1100,7 +1115,9 @@ function writeHostInstallResult(
   const { plan, outcome } = result;
   io.stdout.write(`${plan.command.join(' ')}\n`);
   for (const loss of plan.semanticLoss)
-    io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
+    io.stderr.write(
+      report('opm: ', `${loss.code}: ${loss.representedMeaning}`),
+    );
   if (plan.requiresElevation && !args.options.has('allow-elevation'))
     io.stderr.write(
       'opm: host install needs elevation; pass --allow-elevation to consent\n',

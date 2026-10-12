@@ -5,6 +5,7 @@ import {
   type FrozenInstallResult,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
+import { report } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -104,11 +105,14 @@ export async function runCiCommand(
   if (noScripts > shown.length)
     io.stdout.write(`  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
-    io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    io.stderr.write(report('opm: ', `skipped ${entry.path}: ${entry.reason}`));
   for (const loss of result.layout.semanticLoss)
     if (loss.severity !== 'info')
       io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+        report(
+          'opm: ',
+          `${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}`,
+        ),
       );
   return 0;
 }
