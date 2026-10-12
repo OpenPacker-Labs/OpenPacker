@@ -257,3 +257,41 @@ describe('the host of a mebibyte', () => {
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });
+
+/**
+ * Found by changing `url-host.ts` one token at a time and running these tests
+ * (`mut3.py` in the round-3 report): each row below fails one of the changes
+ * that nothing else failed.
+ */
+describe('the edges of the reading', () => {
+  it.each([
+    ['a drive letter and a colon', 'file://C:/Windows', 0],
+    ['a lower-case drive letter and a bar', 'file://c|/x', 0],
+    ['an upper-case drive letter and a bar', 'file://C|/x', 0],
+    ['a drive letter at the end of the input', 'file://z:', 0],
+    ['a letter and a colon, then more: a host', 'file://c:x/y', 3],
+    ['a digit and a colon: a host', 'file://1:/x', 2],
+    ['a letter and another mark: a host', 'file://c;/x', 2],
+    ['the character before a, which is not a letter', 'file://`:/x', 2],
+    ['the character after z, which is not a letter', 'file://{:/x', 2],
+    ['@, which only differs from a backquote by a bit', 'file://@:/x', 2],
+    ['[, which only differs from a brace by a bit', 'file://[:/x', 2],
+    ['a first character that is not a slash', 'file:x/hhhh', 0],
+    ['a second character that is not a slash', 'file:/xhhhh', 0],
+  ])('reads %s: %s', (_, address, length) => {
+    expect(writtenHostLength(address)).toBe(length);
+  });
+
+  it.each([
+    ['a ? after spaces', ' ?x'],
+    ['a # after spaces', '  #x'],
+    ['a ? after a control character', '\u0001?x'],
+  ])(
+    'does not count the spaces that end the address in a blob URL: %s',
+    (_, after) => {
+      const host = (count: number) => `blob:http://${'a'.repeat(count)}`;
+      expect(hasOverlongHost(`${host(253)}${after}`)).toBe(false);
+      expect(hasOverlongHost(`${host(254)}${after}`)).toBe(true);
+    },
+  );
+});
