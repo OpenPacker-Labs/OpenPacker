@@ -10,6 +10,7 @@ import type {
 } from './types.js';
 import { plainLine } from '@openpacker/canonical';
 import { OpmError } from './types.js';
+import { shownSource } from './shown-source.js';
 import {
   canonicalCatalogPurl,
   loadCatalogs,
@@ -673,7 +674,7 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
       req.version
         ? `  version constraint: ${plainLine(req.version)}`
         : undefined,
-      req.source ? `  source: ${plainLine(req.source)}` : undefined,
+      req.source ? `  source: ${shownSource(req.source)}` : undefined,
       locked
         ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
         : '  locked: (none)',
@@ -1112,8 +1113,9 @@ async function resolveRequirement(input: {
   // 1) Explicit source on requirement
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
+    const written = { written: input.req.source };
     const offlineBytes = input.offline
-      ? await fetchArtifactBytes(resolved, true)
+      ? await fetchArtifactBytes(resolved, true, written)
       : undefined;
     const sourceUri =
       resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
@@ -1126,7 +1128,8 @@ async function resolveRequirement(input: {
     });
     await assertSupplyChainAllowed(policy, facts);
     const bytes =
-      offlineBytes ?? (await fetchArtifactBytes(resolved, input.offline));
+      offlineBytes ??
+      (await fetchArtifactBytes(resolved, input.offline, written));
     const version =
       versionHint &&
       !versionHint.startsWith('^') &&
@@ -1248,6 +1251,7 @@ async function resolveRequirement(input: {
       );
     const bytes = await fetchArtifactBytes(source, input.offline, {
       expectedBytes: entry.size,
+      written: entry.source,
     });
     const actual = digestOf(bytes);
     if (actual !== entry.digest) {

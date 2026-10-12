@@ -10,6 +10,7 @@ import {
   type ArtifactSource,
 } from '@openpacker/artifact-model';
 import { echoed, redactAddress } from '@openpacker/adapter-core';
+import { shownSource } from './shown-source.js';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
 import {
   freezeBoundLockPackage,
@@ -375,6 +376,12 @@ export async function fetchArtifactBytes(
     expectedBytes?: number;
     maximumBytes?: number;
     signal?: AbortSignal;
+    /**
+     * What the person wrote as the source, when `source` is what opm made of it
+     * (a path against the project root): an error names what was written, as
+     * an address is named, and not the path made of it.
+     */
+    written?: string;
   } = {},
 ): Promise<Uint8Array> {
   const absoluteMaximum = 512 * 1024 * 1024;
@@ -440,6 +447,7 @@ export async function fetchArtifactBytes(
     return bytes;
   }
   // file path
+  const written = options.written ?? source;
   const path = source.startsWith('file:')
     ? fileURLToPath(source)
     : resolve(source);
@@ -453,7 +461,7 @@ export async function fetchArtifactBytes(
     if (!before.isFile())
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source is not a regular file: ${echoed(path, 1024)}`,
+        `Artifact source is not a regular file: ${shownSource(written, path)}`,
       );
     if (before.size > BigInt(limit))
       throw new OpmError(
@@ -486,7 +494,7 @@ export async function fetchArtifactBytes(
     )
       throw new OpmError(
         'INPUT_CHANGED',
-        `Artifact source changed while it was read: ${echoed(path, 1024)}`,
+        `Artifact source changed while it was read: ${shownSource(written, path)}`,
       );
     return bytes;
   } catch (error) {
@@ -494,14 +502,14 @@ export async function fetchArtifactBytes(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new OpmError(
         'NOT_FOUND',
-        `Artifact source not found: ${echoed(path, 1024)}`,
+        `Artifact source not found: ${shownSource(written, path)}`,
       );
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source must not be a symbolic link: ${echoed(path, 1024)}`,
+        `Artifact source must not be a symbolic link: ${shownSource(written, path)}`,
       );
     throw error;
   } finally {

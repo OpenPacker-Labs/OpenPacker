@@ -838,6 +838,25 @@ independent review got the same two figures.
   name and none does now (`ci-credentials.test.ts`); the sixth, a `blob:`, never
   did.
 
+  A source the person wrote is named the same way wherever opm names it.
+  `opm why` printed `source` as `opm.toml` had it, and a source read as a file
+  was named by the path made of it:
+  `git+https://user:<token>@github.com/o/r.git` is, to `resolve`, a relative
+  path, and "Artifact source not found" printed
+  `<project>/git+https:/user:<token>@github.com/o/r.git`, as `opm install`,
+  `opm sync` and `opm add --source` do. `shownSource` (`opm-project`) is the one
+  place that decides. A text that reads as an address (a scheme of two
+  characters or more, a single letter and a colon that is not a drive, or
+  `user@host:`, after the tabs and line breaks and the controls before it are
+  removed, as the URL parser does) is shown by `redactAddress`; a `file:` source
+  by its file; any other text is a path on this machine and is shown as written,
+  one line. `fetchArtifactBytes` is told what was written (`written`), because
+  what it is given is the path. The sweep of 13 cases in
+  `source-credentials.test.ts` (six shapes in `opm why`, six in `opm install`
+  and one in `opm add --source`) printed its marker 13 times before and prints
+  it 0 times now. The cost: a path whose first word holds an `@` and ends in a
+  `:` (`a@b:c.tgz`) is read as the scp form and withheld.
+
   Held by a property test and the review's scripts. A marker is put in the user
   name, in 166 forms of password (every pair of `@ ? # : / %` before, after and
   around it, digits and `/`, `/<marker>/`), in the query, the fragment and the
