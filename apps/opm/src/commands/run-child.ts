@@ -16,6 +16,15 @@
  * (a child in a group of its own would be stopped the moment it read the
  * terminal), so SIGINT is left to the terminal, and SIGTERM and SIGHUP go to
  * the child.
+ *
+ * One exception, whatever `opm` itself has: a child that is handed none of the
+ * terminal's streams (stdin ignored, both outputs piped, which is every child
+ * of a run over several members) gets a group of its own. It cannot read the
+ * terminal, so nothing stops it there, and the alternative is worse than a
+ * group: a signal to the child alone leaves what it started running with the
+ * output pipes open, `close` never comes, and `opm` waits for them. `SIGINT`
+ * is forwarded to such a child, because the terminal signals `opm`'s group and
+ * the child is no longer in it.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { constants } from 'node:os';
@@ -123,7 +132,12 @@ export function startChild(
   const direct = (stream: unknown, own: unknown) => stream === own;
   const stdout = direct(io.stdout, host.stdout) ? 'inherit' : 'pipe';
   const stderr = direct(io.stderr, host.stderr) ? 'inherit' : 'pipe';
-  const grouped = host.platform !== 'win32' && !host.hasTerminal;
+  // Handed no stream of the terminal, a child has nothing to lose by a group
+  // of its own, whether or not `opm` has a terminal.
+  const handedNoTerminal =
+    spec.stdin === 'ignore' && stdout === 'pipe' && stderr === 'pipe';
+  const grouped =
+    host.platform !== 'win32' && (handedNoTerminal || !host.hasTerminal);
   let child: ChildProcess | undefined;
 
   const outcome = new Promise<ChildOutcome>((resolve, reject) => {

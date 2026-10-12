@@ -735,10 +735,13 @@ How a run goes:
   `exec`), stdout to stdout and stderr to stderr, one block per member as each
   ends. With `--stream`, `--parallel` or one member at a time, lines come as
   they arrive. Several members get no stdin and write to pipes, not a terminal:
-  a tool that colours or animates only on a terminal does not.
+  a tool that colours or animates only on a terminal does not. A line with no
+  newline is written in pieces of at most 64 KiB, each prefixed, so a member
+  that prints one very long line cannot make `opm` hold it. Each member also has
+  a process group of its own, which a signal to `opm` reaches.
 - **Failure.** The first member to fail stops anything new from starting, the
-  running ones are sent `SIGTERM` (to their whole process group when there is no
-  terminal), and `opm` exits with that member's status after one line,
+  running ones are sent `SIGTERM` (to their whole process group, with a terminal
+  or without), and `opm` exits with that member's status after one line,
   `opm: script "build" of @acme/web exited with code 3`. A signal sent to `opm`
   reaches every running member and the exit is 128 plus the signal.
 - **Links.** A member that is a symbolic link, or sits behind one, is refused

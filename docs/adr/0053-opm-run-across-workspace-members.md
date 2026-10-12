@@ -137,7 +137,11 @@ refused by name with the reason. An unknown option stays a usage error (0047
 7. Stdin is not shared: with several members to run each gets none
    (`/dev/null`), because no terminal belongs to many programs. Their output
    goes to pipes, not a terminal, so a tool that colours or animates only on a
-   terminal does not.
+   terminal does not. A member handed none of the terminal's streams is also
+   started in a session and process group of its own, whether or not `opm` has a
+   terminal: it has no controlling terminal to open, and `opm` forwards `SIGINT`
+   to it (the terminal's `SIGINT` reaches `opm`'s group, which the member is no
+   longer in). `Ctrl-Z` stops `opm` and not the members.
 
 ### What is printed
 
@@ -167,10 +171,16 @@ refused by name with the reason. An unknown option stays a usage error (0047
 ### Failure, signals
 
 10. **The first member to fail ends the run.** Nothing new starts, the members
-    still running are sent `SIGTERM` by the rules of ADR 0047 §16 (to the whole
-    process group when there is no terminal, to the child alone when there is
-    one), `opm` waits for them to end, and the exit status is that member's,
-    unchanged: a script that exits 7 makes `opm` exit 7. One line names it:
+    still running are sent `SIGTERM` to their whole process group (§7: each has
+    one, terminal or not; ADR 0047 §16's child-alone rule is for a child that
+    shares the terminal, which a member of several never does), `opm` waits for
+    them to end, and the exit status is that member's, unchanged: a script that
+    exits 7 makes `opm` exit 7. The first version signalled the member alone
+    when `opm` had a terminal, which left what the member had started running
+    with the output pipes open, so `opm` waited for it: three members that each
+    started `sleep 8` and a fourth that failed after one second returned after
+    8.8 s under a pseudo-terminal, and return after 2.0 s now (1.5 s without a
+    terminal; measured here, Linux). One line names the failure:
     `opm: script "build" of @s/b exited with code 3`. The statuses of the
     members it stopped are not considered. A member that cannot be started is
     exit 8 and ends the run the same way.
