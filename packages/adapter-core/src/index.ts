@@ -16,6 +16,8 @@ export { redactAddress, shownScheme } from './redact-address.js';
 export {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
+  OverlongHostError,
+  parseUntrustedUrl,
   writtenHostLength,
 } from '@openpacker/canonical';
 export {

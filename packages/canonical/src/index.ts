@@ -13,6 +13,7 @@ export {
   type CanonicalParseLimits,
 } from './errors.js';
 export { ECHO_LIMIT, plainLine, plainText, safeEcho } from './echo.js';
+export { OverlongHostError, parseUntrustedUrl } from './untrusted-url.js';
 export {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
