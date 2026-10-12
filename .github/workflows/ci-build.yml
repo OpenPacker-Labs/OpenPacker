@@ -70,6 +70,8 @@ jobs:
           node "$OPM" import --native
           grep -q 'left-pad' opm.toml
       - name: Pack publishable packages
+        # bash on every runner, and the directory first: npm does not create a
+        # --pack-destination, and fails with ENOENT when it is missing.
         shell: bash
         run: |
           mkdir -p dist-artifacts
