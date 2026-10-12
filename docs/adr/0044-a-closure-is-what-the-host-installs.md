@@ -767,16 +767,17 @@ independent review got the same two figures.
   `b`). If that part of the address holds no `@`, no password was split. If it
   does, the address is withheld: `scheme:[address withheld]`. The one exception
   is the path of a scoped package's tarball,
-  `<prefix>/@scope/name/-/name-<version>.tgz`, whose one `@` begins the scope.
-  An opaque path (`github:u:pw@o/r`, `user:pw@host:o/r`) with an `@` anywhere in
-  it is withheld too. An address the parser refuses is its scheme, if the text
-  starts with one, and `[address withheld]`, with no cut of the text. `blob:` is
-  `blob:` and the same rule on the address in its path, four deep and `[url]`
-  below that, and the overlong-host check is made once, of the address as
-  written (a legal host of 42 non-ASCII characters inside a blob URL is shown,
-  as it is outside one). `file:` and `link:` addresses are paths on this
-  machine, where an `@` is a character: they are shown without query and
-  fragment.
+  `<prefix>/@scope/name/-/name-<version>.tgz`, whose one `@` begins the scope. A
+  scope is `@`, a letter or digit, and letters, digits, `_`, `~` and `-`: no
+  dot, because a host has one (`@registry.example.com`). An opaque path
+  (`github:u:pw@o/r`, `user:pw@host:o/r`) with an `@` anywhere in it is withheld
+  too. An address the parser refuses is its scheme, if the text starts with one,
+  and `[address withheld]`, with no cut of the text. `blob:` is `blob:` and the
+  same rule on the address in its path, four deep and `[url]` below that, and
+  the overlong-host check is made once, of the address as written (a legal host
+  of 42 non-ASCII characters inside a blob URL is shown, as it is outside one).
+  `file:` and `link:` addresses are paths on this machine, where an `@` is a
+  character: they are shown without query and fragment.
 
   What that costs: a scp-like source (`git+ssh://git@github.com:o/r.git`, the
   commonest git form) is `git+ssh:[address withheld]` and a relative path
@@ -786,13 +787,33 @@ independent review got the same two figures.
   `git+https://github.com/o/r.git?email=a@b.com`, a git ref
   `#semver:@scope/pkg@1`), where the first version showed the host and path; the
   fragment is never shown, so a git ref such as `#semver:^1.2.3` or `#abcdef0`
-  is lost. What it does not cover: a password that ends in a `/` and is followed
-  at once by `@scope/name/-/name-<version>.tgz` is a scoped tarball path to
-  anyone, and is shown (a test says so); an `@` in a `file:` or `link:` address;
-  and a credential that is not next to an `@` (`/api/<token>/pkg.tgz` is a
-  path). Of 4,805 `resolved` values in nine real locks, 4,590 are shown exactly
-  as written and the other 215 are relative workspace paths (`packages/x`),
-  which are `[address withheld]`; none is a registry tarball URL.
+  is lost. What it does not cover: a user name or a password that ends in a `/`
+  and is followed at once by `@scope/name/-/name-<version>.tgz` is a scoped
+  tarball path to anyone, and is shown (a test says so); an `@` in a `file:` or
+  `link:` address; and a credential that is not next to an `@`
+  (`/api/<token>/pkg.tgz` is a path). Of 4,805 `resolved` values in nine real
+  locks, 4,590 are shown exactly as written and the other 215 are relative
+  workspace paths (`packages/x`), which are `[address withheld]`; none is a
+  registry tarball URL.
+
+  The exemption was wider than a password. A credential in std-base64 written
+  raw, which holds a `/` and ends in one once in 64, and is followed by the host
+  of an unscoped registry tarball
+  (`https://<token>@registry.example.com/left-pad/-/left-pad-1.3.0.tgz`), made
+  `/@registry.example.com/left-pad/-/file` the path of a scoped tarball when the
+  scope could hold a dot. A user name alone needs no digits and was printed
+  1.58% of the time (945 and 914 of 60,000 tokens of 24 and 40 characters; the
+  password of `ci` 23 and 22 of 60,000, because the parser must read its start
+  as a port). With no dot in a scope, none of the same seeded corpora is printed
+  (`redact-address.base64.test.ts`), nor any of 3,000,000 user names of each
+  length or 23,000,000 passwords. Of 20,000,000 of those passwords, checked with
+  no allowance for the public host, three held six letters of it (`gistry`,
+  `egistr`, from `registry`) and the output was the public address itself,
+  `https://registry.example.com/...`, without any of the credential: a
+  coincidence, not a leak. The cost: a scope with a dot (`@my.org`) is
+  `https:[address withheld]` like the rest; and a host with one label and no
+  port (`@verdaccio`, `@localhost`) is still a scope to this rule, so a
+  credential that ends in a `/` and is followed by one is printed.
 
   Held by a property test and the review's scripts. A marker is put in the user
   name, in 166 forms of password (every pair of `@ ? # : / %` before, after and

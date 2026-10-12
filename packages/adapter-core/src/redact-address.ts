@@ -20,8 +20,15 @@ function capped(text: string): string {
     : `${text.slice(0, MOST_CHARACTERS)}… (${text.length} characters)`;
 }
 
-/** The scope of a scoped package: `@` and the characters npm allows in one. */
-const SCOPE = /^@[a-z0-9][a-z0-9._~-]*$/u;
+/**
+ * The scope of a scoped package: `@` and the characters npm allows in one,
+ * without the dot. A host has a dot (`@registry.example.com`), a scope that
+ * people use does not (`@types`, `@babel`), and a credential written raw that
+ * ends in a `/` and is followed by the host of an unscoped tarball
+ * (`<token>/@registry.example.com/name/-/name-1.0.0.tgz`) is the one thing the
+ * dot would let through. A scope with a dot is withheld with the rest.
+ */
+const SCOPE = /^@[a-z0-9][a-z0-9_~-]*$/u;
 
 /**
  * Whether a path is the path of a scoped package's tarball,

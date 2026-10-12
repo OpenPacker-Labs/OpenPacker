@@ -59,10 +59,11 @@ function* addresses(): Generator<string> {
         yield `${prefix}${host}${tail}#${MARKER}`;
         yield `${prefix}${host}${tail}?a=b@c#${MARKER}`;
         if (!tail.includes('@')) yield `${prefix}${host}/${MARKER}${tail}`;
-        // A password that ends in a `/`, followed by a host and a tarball path, is
-        // a scoped package's tarball path to anyone: the one case left out here,
-        // and pinned by its own test below.
-        if (tail !== '/p/-/p-1.0.0.tgz')
+        // A password that ends in a `/`, followed by a host with no dot and a
+        // tarball path, is a scoped package's tarball path to anyone: the one
+        // case left out here, and pinned by its own test below. A host with a dot
+        // is not a scope, and is in the grid.
+        if (!(tail === '/p/-/p-1.0.0.tgz' && host === 'deploy'))
           for (const password of passwords())
             yield `${prefix}deploy:${password}@${host}${tail}`;
       }
@@ -171,15 +172,17 @@ describe("what redactAddress prints is the parser's, or a fixed word", () => {
 
   it('cannot tell a password that ends in a / from the path of a scoped tarball', () => {
     // The parser reads `deploy:/<c>/` as a host, an empty port and a path, and
-    // `/<c>/@host.example/p/-/p-1.0.0.tgz` is `<prefix>/@scope/name/-/file`.
-    const address = `https://deploy:/${MARKER}/@host.example/p/-/p-1.0.0.tgz`;
+    // `/<c>/@scope/p/-/p-1.0.0.tgz` is `<prefix>/@scope/name/-/file`.
+    const address = `https://deploy:/${MARKER}/@scope/p/-/p-1.0.0.tgz`;
     expect(redactAddress(address)).toContain(MARKER);
-    // With a port in the host, or a name the file does not start with, it is not.
+    // With a port in the host, a dot in it (a host has one, a scope does not),
+    // or a name the file does not start with, it is not.
     for (const other of [
-      `https://deploy:/${MARKER}/@host.example:8443/p/-/p-1.0.0.tgz`,
-      `https://deploy:/${MARKER}/@host.example/p/-/q-1.0.0.tgz`,
-      `https://deploy:/${MARKER}/@host.example/p/-/p-1.0.0.zip`,
-      `https://deploy:/${MARKER}/@host.example/o/r.git`,
+      `https://deploy:/${MARKER}/@host.example/p/-/p-1.0.0.tgz`,
+      `https://deploy:/${MARKER}/@scope:8443/p/-/p-1.0.0.tgz`,
+      `https://deploy:/${MARKER}/@scope/p/-/q-1.0.0.tgz`,
+      `https://deploy:/${MARKER}/@scope/p/-/p-1.0.0.zip`,
+      `https://deploy:/${MARKER}/@scope/o/r.git`,
     ])
       expect(redactAddress(other)).not.toContain(MARKER);
   });
