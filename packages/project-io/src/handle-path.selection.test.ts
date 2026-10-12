@@ -58,6 +58,7 @@ describe('child operations on this platform', () => {
     lstatChild: () => Promise.reject(new Error('backend reached')),
     readDirChild: () => Promise.reject(new Error('backend reached')),
     readDirChildWithTypes: () => Promise.reject(new Error('backend reached')),
+    readDirChildBounded: () => Promise.reject(new Error('backend reached')),
     symlinkChild: () => Promise.reject(new Error('backend reached')),
     readlinkChild: () => Promise.reject(new Error('backend reached')),
     unlinkNonDirectory: () => Promise.reject(new Error('backend reached')),

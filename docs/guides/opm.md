@@ -124,7 +124,13 @@ parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
 never a lexical pathname fallback. Path escapes, symlink swaps, and linked
 metadata still fail closed with `UNSAFE_PATH`. The one symlink opm makes, a
 workspace member's link in `node_modules`, goes through the same handles
-([below](#workspace-member-links)).
+([below](#workspace-member-links)). So do the sandbox's directory grants and the
+output a delegated `opm pack` reads, so neither joins a name onto `/dev/fd/N`,
+which names nothing on macOS
+([ADR 0045](../adr/0045-macos-child-io-uses-libc-at-calls.md)). Hard-linking a
+file into `node_modules` (the `layout` level) still goes through `link(2)` on a
+`/dev/fd/N` path on macOS and has not been run there; see "Not covered" in that
+ADR.
 
 ---
 
@@ -994,7 +1000,15 @@ containment by path strings and cannot consume the stable directory-handle
 authorities every run requires, so runs there fail closed (exit 78 under
 `fail-closed`, `TREE_CONTAINMENT_UNAVAILABLE` otherwise) instead of degrading
 toward ambient execution. This is an explicit capability withdrawal, like the
-Windows metadata refusal above, not a silent downgrade.
+Windows metadata refusal above, not a silent downgrade. The refusal names the
+platform and says where containment exists (a Linux host); for a tool you have
+reviewed and installed in the project, `opm exec <bin>` runs it with your own
+authority and no jail
+([ADR 0047](../adr/0047-opm-run-and-exec-run-the-users-own-scripts.md)).
+Anything that runs an approved executable snapshot (a delegated pack provider, a
+plugin) needs Linux and is refused by name before its file is opened, because a
+descriptor has no path the kernel will execute anywhere else and a named copy
+could be swapped between the check and the run.
 
 **Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
 `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).

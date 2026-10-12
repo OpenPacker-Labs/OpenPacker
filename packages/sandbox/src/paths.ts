@@ -1,15 +1,8 @@
 import { homedir } from 'node:os';
-import {
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
-import { constants, realpathSync } from 'node:fs';
-import { open, type FileHandle } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { type FileHandle } from 'node:fs/promises';
+import { openStablePath, StableHandleError } from '@openpacker/project-io';
 
 /**
  * Credential directories masked inside native jails.
@@ -141,7 +134,15 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
   return absolute;
 }
 
-/** Open a grant through retained no-follow ancestors for bind-fd backends. */
+/**
+ * Open a grant through retained no-follow ancestors for bind-fd backends.
+ *
+ * Each ancestor is opened relative to the one before it by the call the
+ * platform has for that (a /proc/self/fd path on Linux, libc `openat` on
+ * macOS, ADR 0045), so no step re-walks a path and a swapped ancestor cannot
+ * redirect it. Joining a name onto `/dev/fd/N` is not one of them: it names
+ * nothing on macOS.
+ */
 export async function openStableJailPath(
   value: string,
   kind = 'path',
@@ -152,46 +153,16 @@ export async function openStableJailPath(
       kind,
       'stable jail grants are unavailable on this platform',
     );
-  const root = parse(absolute).root;
-  let handle = await open(
-    root,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-  );
   try {
-    const parts = relative(root, absolute).split(sep).filter(Boolean);
-    for (const [index, part] of parts.entries()) {
-      const last = index === parts.length - 1;
-      const next = await open(
-        join(stableHandlePath(handle), part),
-        constants.O_RDONLY |
-          constants.O_NOFOLLOW |
-          (last ? constants.O_NONBLOCK : constants.O_DIRECTORY),
-      );
-      const info = await next.stat();
-      if (
-        (!last && !info.isDirectory()) ||
-        (last && !info.isDirectory() && !info.isFile())
-      ) {
-        await next.close();
-        throw new JailPathError(
-          kind,
-          'grant must name a regular file or directory',
-        );
-      }
-      await handle.close();
-      handle = next;
-    }
-    return handle;
+    return await openStablePath(absolute, { allowFile: true });
   } catch (error) {
-    await handle.close().catch(() => undefined);
+    if (error instanceof StableHandleError)
+      throw new JailPathError(
+        kind,
+        `grant must name a regular file or directory, opened without following links (${error.message})`,
+      );
     throw error;
   }
-}
-
-function stableHandlePath(handle: FileHandle): string {
-  return process.platform === 'linux'
-    ? `/proc/self/fd/${handle.fd}`
-    : `/dev/fd/${handle.fd}`;
 }
 
 export function normalizeJailPaths(

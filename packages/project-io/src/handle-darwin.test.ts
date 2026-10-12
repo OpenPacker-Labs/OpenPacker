@@ -26,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectedTranscripts } from './handle-conformance.expected.js';
 import { scenarioNames, transcript } from './handle-conformance.js';
 import { readlinkChild, symlinkChild, unlinkChild } from './handle-link.js';
+import { readDirChildBounded } from './handle-bounded.js';
 import {
   childBackendKind,
   lstatChild,
@@ -35,6 +36,7 @@ import {
 } from './handle-path.js';
 import { removeTree, materialiseTree } from './layout.js';
 import { readTextFile, writeFileAtomic } from './index.js';
+import { openStablePath } from './stable-path.js';
 
 describe.skipIf(process.platform !== 'darwin')(
   'macOS handle-relative I/O through libSystem',
@@ -181,6 +183,61 @@ describe.skipIf(process.platform !== 'darwin')(
       } finally {
         await modules.close();
       }
+    });
+
+    it('stops a listing at the bound and types the entries it keeps', async () => {
+      // The bound is applied while libSystem's readdir is being walked, so a
+      // directory of millions of names is not held in memory first.
+      const here = await scratch();
+      for (const name of ['a', 'b', 'c', 'd'])
+        await writeFile(join(here, name), '');
+      await mkdir(join(here, 'e'));
+      const parent = await open(
+        here,
+        constants.O_RDONLY | constants.O_DIRECTORY,
+      );
+      try {
+        const cut = await readDirChildBounded(parent, 2);
+        expect([cut.exceeded, cut.entries.length]).toEqual([true, 2]);
+        const whole = await readDirChildBounded(parent, 5);
+        expect([whole.exceeded, whole.entries.length]).toEqual([false, 5]);
+        expect(
+          whole.entries
+            .filter((entry) => entry.isDirectory())
+            .map((e) => e.name),
+        ).toEqual(['e']);
+        expect(whole.entries.filter((entry) => entry.isFile())).toHaveLength(4);
+      } finally {
+        await parent.close();
+      }
+    });
+
+    it('opens an existing path without /dev/fd, and refuses a link in it', async () => {
+      // What the sandbox does for every bind: ancestors opened one at a time
+      // from "/" with O_NOFOLLOW, each step an openat against the one before.
+      const here = await scratch();
+      await mkdir(join(here, 'real', 'inner'), { recursive: true });
+      await writeFile(join(here, 'real', 'inner', 'file'), 'bytes');
+      await symlink(join(here, 'real'), join(here, 'alias'));
+      const folder = await openStablePath(join(here, 'real', 'inner'));
+      try {
+        expect((await folder.stat()).isDirectory()).toBe(true);
+      } finally {
+        await folder.close();
+      }
+      const file = await openStablePath(join(here, 'real', 'inner', 'file'), {
+        allowFile: true,
+      });
+      try {
+        expect((await file.stat()).size).toBe(5);
+      } finally {
+        await file.close();
+      }
+      const refused = await openStablePath(join(here, 'alias', 'inner')).then(
+        () => 'opened',
+        (error: NodeJS.ErrnoException) => error.code,
+      );
+      expect(['ELOOP', 'ENOTDIR']).toContain(refused);
     });
 
     describe.each(scenarioNames)('%s', (name) => {

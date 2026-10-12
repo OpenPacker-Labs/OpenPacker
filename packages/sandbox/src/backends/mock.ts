@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
+import { executableAuthorityRefusal } from '../platform.js';
 import type { SandboxBackend } from '../types.js';
 
 /**
@@ -60,6 +61,9 @@ function executableHandleArgv(
   childFd: number,
   arguments_: readonly string[],
 ): string[] {
+  const refusal = executableAuthorityRefusal();
+  if (refusal !== undefined)
+    throw new SandboxBackendError('EXECUTABLE_AUTHORITY_UNSUPPORTED', refusal);
   const path = stableChildHandlePath(childFd);
   const header = Buffer.alloc(4_096);
   const bytesRead = readSync(parentFd, header, 0, header.byteLength, 0);
@@ -77,8 +81,13 @@ function executableHandleArgv(
   return [...interpreter, path, ...arguments_];
 }
 
+/**
+ * The path a child finds its inherited descriptor at. Only Linux has one the
+ * kernel will execute; `executableHandleArgv` refuses every other platform
+ * before it asks, so there is no `/dev/fd/N` fallback to name.
+ */
 function stableChildHandlePath(fd: number): string {
-  return process.platform === 'linux' ? `/proc/self/fd/${fd}` : `/dev/fd/${fd}`;
+  return `/proc/self/fd/${fd}`;
 }
 
 export class SandboxBackendError extends Error {

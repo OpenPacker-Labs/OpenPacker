@@ -5,7 +5,7 @@ import {
   type SandboxPolicy,
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
-import { sandboxPolicyFromProject } from './lifecycle.js';
+import { platformNote, sandboxPolicyFromProject } from './lifecycle.js';
 import { OpmError } from './types.js';
 
 /**
@@ -63,7 +63,7 @@ export async function runSandboxedPackageProcess(input: {
   ) {
     throw new OpmError(
       'SANDBOX_UNAVAILABLE',
-      `Cannot run package process: sandbox was not enforced (backend=${outcome.backend})`,
+      `Cannot run package process: sandbox was not enforced (backend=${outcome.backend})${platformNote()}`,
     );
   }
   return outcome;
