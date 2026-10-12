@@ -10,9 +10,15 @@
  * does not hand the parser an address whose host is longer.
  *
  * Which text that is, is what the URL Standard's basic URL parser hands to its
- * host parser, found without running the parser. `test/whatwg-host.ts` runs the
- * standard's states over code points and `test/url-host.spec.test.ts` holds the
- * two readings to each other.
+ * host parser, found without running the parser, with the one place where
+ * Node's parser reads further than the Standard (see `specialHostLength`).
+ * `test/whatwg-host.ts` runs the Standard's states over code points and
+ * `test/url-host.spec.test.ts` holds the two readings to each other. They share
+ * the Standard, so they cannot show where Node differs: that is what
+ * `test/url-host.parser.test.ts` does, by timing the real `new URL` on a grid of
+ * addresses. It is a grid and not a proof: a way of writing a host that no
+ * address of it has is not covered, and Node's parser may differ on another
+ * version of Node (this was written and measured on 22.22).
  */
 
 /** The longest host name there is, in characters: 255 octets on the wire. */
