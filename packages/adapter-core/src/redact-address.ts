@@ -6,6 +6,8 @@ const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/u;
 const QUERY_OR_FRAGMENT = /[?#]/u;
 /** An `@` in a path that does not begin a segment: where userinfo would end. */
 const AT_IN_SEGMENT = /[^/]@/u;
+/** Schemes whose address is a path on this machine, where an `@` is a character. */
+const LOCAL_PATH_SCHEMES: ReadonlySet<string> = new Set(['file:', 'link:']);
 /** How many blob URLs inside one another are read, one inside the next. */
 const MOST_BLOBS = 4;
 
@@ -19,17 +21,22 @@ const MOST_BLOBS = 4;
  * it holds. The price is paid by an address that has an `@` after its host: in
  * `git+ssh://git@github.com:@scope/pkg.git` the front goes with the userinfo
  * (`git+ssh://scope/pkg.git`), and so does `git+ssh://h.example?x=a@b`
- * (`git+ssh://b`). A text with no scheme and no leading `//` has no userinfo to
- * take out.
+ * (`git+ssh://b`).
+ *
+ * A text with no scheme and no leading `//` has userinfo when a `:` stands
+ * before its last `@` (`host//user:password@h`, a password); a user name alone
+ * (`git@github.com:o/r.git`, as scp writes it) is a login name and is kept.
  */
 export function redactAddressText(text: string): string {
   const scheme = SCHEME.exec(text);
+  const lastAtSign = text.lastIndexOf('@');
   let start = -1;
   if (scheme !== null)
     start =
       scheme[0].length + (text.startsWith('//', scheme[0].length) ? 2 : 0);
   else if (text.startsWith('//')) start = 2;
-  const lastAtSign = text.lastIndexOf('@');
+  else if (lastAtSign !== -1 && text.lastIndexOf(':', lastAtSign) !== -1)
+    start = 0;
   const withoutUserinfo =
     start !== -1 && lastAtSign >= start
       ? text.slice(0, start) + text.slice(lastAtSign + 1)
@@ -49,18 +56,33 @@ function render(address: string, blobs: number): string {
     return redactAddressText(address);
   }
   // A blob URL holds an address as its path. Its `origin` would parse that
-  // address again, and is not what is shown: the address is, redacted.
+  // address again, and is not what is shown: the address is, redacted. The
+  // address is all that follows `blob:`, query and fragment included, because
+  // a password that holds a `?` puts the rest of the address there.
   if (url.protocol === 'blob:')
     return blobs >= MOST_BLOBS
       ? '[url]'
-      : `blob:${render(url.pathname, blobs + 1)}`;
+      : `blob:${render(url.href.slice('blob:'.length), blobs + 1)}`;
   // The parser found userinfo. It ends userinfo at the first `/`, `?` or `#`
-  // (`\\` too, for a special scheme), so a password that holds one of them and
+  // (`\` too, for a special scheme), so a password that holds one of them and
   // then an `@` is read as a host and a path, or a query, with the rest of the
   // password in them. The text rule, which ends userinfo at the last `@`, does
   // not depend on what the password holds.
   if (url.username !== '' || url.password !== '')
-    return redactAddressText(address);
+    return redactAddressText(url.href);
+  // No authority. Either the address is a path on this machine (`file:` and
+  // `link:`), which an `@` may be part of, or it has an opaque path or a path of
+  // slashes, which is where `user:password@host:path` and
+  // `github:user:password@owner/repo` keep the userinfo the parser did not take
+  // for one. The text rule gets the whole of it, query and fragment too: a
+  // password that holds a `?` or a `#` leaves its `@` in them.
+  if (url.host === '') {
+    if (!LOCAL_PATH_SCHEMES.has(url.protocol))
+      return redactAddressText(url.href);
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  }
   // `user:123/secret@host` has a password of digits and a `/` (or a `?` or a
   // `#`), and the parser reads it as the host `user`, the port 123 and a path
   // (or a query). Userinfo needs an `@` after it, and a scoped package's `@`
@@ -68,23 +90,15 @@ function render(address: string, blobs: number): string {
   // path, or anywhere in the query or fragment, of an address with a host is
   // taken for the end of userinfo. A `name@version` segment pays for it.
   if (
-    url.host !== '' &&
-    (AT_IN_SEGMENT.test(url.pathname) ||
-      url.search.includes('@') ||
-      url.hash.includes('@'))
+    AT_IN_SEGMENT.test(url.pathname) ||
+    url.search.includes('@') ||
+    url.hash.includes('@')
   )
-    return redactAddressText(address);
+    return redactAddressText(url.href);
   if (url.origin !== 'null') return `${url.origin}${url.pathname}`;
-  url.username = '';
-  url.password = '';
   url.search = '';
   url.hash = '';
-  // No authority and no path of slashes: the address has an opaque path, which
-  // is where `user:password@host:path` and `github:user:password@owner/repo`
-  // keep the userinfo the parser did not take for one.
-  return url.host === '' && !url.pathname.startsWith('/')
-    ? redactAddressText(url.href)
-    : url.href;
+  return url.href;
 }
 
 /**
@@ -96,17 +110,20 @@ function render(address: string, blobs: number): string {
  * - An address in which the parser finds userinfo is cut as text, because the
  *   parser ends userinfo at the first `/`, `?` or `#` and a password can hold
  *   any of them.
+ * - An address with no host (an opaque path, `scheme:/path`) is cut as text,
+ *   query and fragment included, unless its scheme is `file:` or `link:`: those
+ *   are paths on this machine, shown whole without query and fragment.
  * - An address with a host whose path holds an `@` inside a segment, or whose
  *   query or fragment holds an `@`, is cut as text as well: the parser may have
  *   read a password that holds a `/`, `?` or `#` as a host, a port and the
  *   rest. A scoped package (`/@scope/p`) is not cut.
- * - An address with an origin (`https:`) is its origin and path.
- * - A `blob:` URL is `blob:` and the address in its path, shown the same way.
- * - Any other address the parser reads is shown as it serialises it, without
- *   userinfo, query and fragment (`git+https://host/o/r.git`, `file:///srv/p`),
- *   and when it has an opaque path the userinfo that may stand in it is taken
- *   out as text.
- * - An address the parser refuses is cut as text (`redactAddressText`).
+ * - An address with an origin (`https:`) is its origin and path; any other with
+ *   a host is as the parser serialises it, without query and fragment
+ *   (`git+https://host/o/r.git`).
+ * - A `blob:` URL is `blob:` and the address after it, shown the same way.
+ * - An address the parser refuses is cut as text (`redactAddressText`). A text
+ *   with no scheme and no leading `//` (`git@github.com:o/r.git`) has no
+ *   userinfo to find and is shown with its query and fragment cut.
  */
 export function redactAddress(address: string): string {
   return render(address, 0);

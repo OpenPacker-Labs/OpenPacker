@@ -281,6 +281,74 @@ describe('a source named in an error', () => {
     },
   );
 
+  /**
+   * Whatever a password holds and wherever the address says its userinfo is,
+   * no scheme that names a remote shows it: 10 schemes, three ways to begin
+   * (`://`, `:/`, `:`), 13 shapes of userinfo (a password that holds `@ ? # : /`,
+   * a space, a newline, an escaped `@`, a user name alone), 7 hosts (one the
+   * parser refuses, one it takes for a port) and 4 queries and fragments.
+   * `file:` and `link:` are paths on this machine, which an `@` may be part of.
+   */
+  it('prints no password for any of 10,920 combinations of the parts of an address', () => {
+    const schemes = [
+      'git+https',
+      'git+ssh',
+      'git',
+      'github',
+      'gitlab',
+      'http',
+      'https',
+      'ssh',
+      'x',
+      'blob:https',
+    ];
+    const begins = ['://', ':/', ':'];
+    const userinfo = [
+      `u:${CANARY}@`,
+      `${CANARY}@`,
+      `u:p@ss${CANARY}@`,
+      `u:${CANARY}?q@`,
+      `u:${CANARY}#f@`,
+      `u:${CANARY}/q@`,
+      `u:a/${CANARY}@`,
+      `u:${CANARY}:q@`,
+      `u:%40${CANARY}@`,
+      `u:${CANARY}@x@`,
+      `${CANARY}:@`,
+      `u:${CANARY} sp@`,
+      `u:\n${CANARY}@`,
+    ];
+    const hosts = [
+      'github.com:o/r.git',
+      'example.test/o/r.git',
+      'o/r',
+      'host',
+      'ho st/p',
+      '[::1/x',
+      'h:abc/p',
+    ];
+    const tails = [
+      '',
+      `?token=${CANARY}`,
+      `#${CANARY}`,
+      `?t=${CANARY}#${CANARY}`,
+    ];
+    const leaks: string[] = [];
+    let count = 0;
+    for (const scheme of schemes)
+      for (const begin of begins)
+        for (const user of userinfo)
+          for (const host of hosts)
+            for (const tail of tails) {
+              const address = `${scheme}${begin}${user}${host}${tail}`;
+              count += 1;
+              if (redactSource(address).includes(CANARY))
+                leaks.push(JSON.stringify(address));
+            }
+    expect(leaks.slice(0, 5)).toEqual([]);
+    expect(count).toBe(10_920);
+  });
+
   it('does not parse the address in a blob URL again', () => {
     // `origin` of a blob URL parses its path: 5 seconds for this one.
     const started = performance.now();

@@ -51,6 +51,16 @@ describe('redactAddressText, for an address the URL parser does not read', () =>
       'git+ssh://h:o/r.git',
       'git+ssh://h:o/r.git',
     ],
+    [
+      'no scheme: a colon before the last @ is a password',
+      `git+https//u:${C}/q@github.com:o/r.git?t=${C}`,
+      'github.com:o/r.git',
+    ],
+    [
+      'no scheme: a user name alone before the @ is kept, as in scp',
+      'git@github.com:o/r.git?t=1',
+      'git@github.com:o/r.git',
+    ],
     ['an empty text', '', ''],
     [
       'an @ after the host, which takes the host along',
@@ -161,6 +171,57 @@ describe('redactAddress', () => {
     'git+https://github.com/o/r.git',
   ])('leaves %s as it is', (address) => {
     expect(redactAddress(address)).toBe(address);
+  });
+
+  /**
+   * The parser ends a path at a `?` or `#`, so a password that holds one and
+   * then an `@` leaves the `@` in the query or the fragment: userinfo ends at
+   * the last `@` of the address, wherever it is, when the address has no host.
+   */
+  it.each([
+    [
+      'an opaque path with a ? in the password',
+      `github:u:${C}?q@o/r`,
+      'github:o/r',
+    ],
+    ['an opaque path with a # in the password', `x:u:${C}#f@h`, 'x:h'],
+    [
+      'a scheme and no slashes, a ? in the password',
+      `git+https:u:${C}?q@github.com:o/r.git`,
+      'git+https:github.com:o/r.git',
+    ],
+    [
+      'a scheme and one slash',
+      `git+https:/u:${C}/q@github.com:o/r.git`,
+      'git+https:github.com:o/r.git',
+    ],
+    [
+      'a scheme and one slash, a space in the password',
+      `git+https:/u:${C} sp@github.com:o/r.git`,
+      'git+https:github.com:o/r.git',
+    ],
+    [
+      'a scheme and three slashes',
+      `git+ssh:///u:${C}@github.com:o/r.git`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'a blob URL whose password holds a ?',
+      `blob:https://u:${C}?q@github.com:o/r.git?t=${C}`,
+      'blob:https://github.com:o/r.git',
+    ],
+  ])('takes out %s', (_, address, shown) => {
+    expect(redactAddress(address)).toBe(shown);
+    expect(redactAddress(address)).not.toContain(C);
+  });
+
+  it.each([
+    ['file:///srv/pkgs/@s/pkg@1.0.0.tgz', 'file:///srv/pkgs/@s/pkg@1.0.0.tgz'],
+    ['file:../@scope/pkg?x=1', 'file:///@scope/pkg'],
+    ['link:../@scope/pkg', 'link:../@scope/pkg'],
+    ['link:../pkg@1.0.0?x=1#y', 'link:../pkg@1.0.0'],
+  ])('leaves the path on this machine in %s whole', (address, shown) => {
+    expect(redactAddress(address)).toBe(shown);
   });
 
   it('cannot tell a password that ends in a / from a scoped package', () => {
