@@ -56,6 +56,7 @@ import {
   type AdapterRegistry,
   type Generation,
 } from '@openpacker/opm-project';
+import { formatFailure, parseFailure } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -760,8 +761,9 @@ export function handleError(error: unknown, io: CliIo): number {
       }
     }
   }
-  const message = error instanceof Error ? error.message : String(error);
-  io.stderr.write(`opm: internal error: ${message}\n`);
+  io.stderr.write(
+    formatFailure(parseFailure(error), { tool: 'opm', internalError: true }),
+  );
   return EXIT_CODES.internal;
 }
 

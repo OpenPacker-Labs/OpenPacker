@@ -18,6 +18,7 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
+import { formatFailure, parseFailure } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -201,9 +202,7 @@ export async function runOpmx(
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
     });
   } catch (error) {
-    io.stderr.write(
-      `opmx: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    io.stderr.write(formatFailure(parseFailure(error), { tool: 'opmx' }));
     return exitForError(error);
   }
 }
