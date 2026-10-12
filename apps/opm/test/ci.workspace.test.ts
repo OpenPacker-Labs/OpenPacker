@@ -311,5 +311,6 @@ describe('opm ci in a workspace', () => {
     expect(c.out).toMatch(/--workspace\|-w <name\|dir>/u);
     expect(c.out).toMatch(/--include-workspace-root/u);
     expect(c.out).toMatch(/--workspaces\[=false\]/u);
+    expect(c.out).toMatch(/--workspaces\[=false\]\|--no-workspaces/u);
   });
 });

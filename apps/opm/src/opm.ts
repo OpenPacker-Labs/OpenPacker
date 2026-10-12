@@ -1202,7 +1202,7 @@ Usage:
   opm remove <alias>
   opm install [--offline|--online]
   opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
-         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]]
+         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
                                       install exactly what package-lock.json says;
                                       resolves nothing, runs no install script
                                       (opm install --frozen is the same).

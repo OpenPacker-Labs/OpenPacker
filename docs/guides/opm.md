@@ -720,10 +720,12 @@ dependency's lifecycle scripts, never fetch or install anything, and never print
 the environment. `opm run` is for your repository's commands; use `opmx` for a
 tool you have not reviewed.
 
-Not here yet: workspaces (`--filter`, `--workspace`, per-member `node_modules`;
-the model they will be built on is described under
-[Workspaces](#workspaces-the-model) below), and the `npm_config_*` and
-`npm_execpath` variables.
+Not here yet: running a script over a workspace's members (`--filter`,
+`--workspace`; `opm ci` already installs a workspace lock, with a `node_modules`
+for each member, see
+[Installing a workspace lock](#installing-a-workspace-lock), and the model is
+described under [Workspaces](#workspaces-the-model) below), and the
+`npm_config_*` and `npm_execpath` variables.
 
 On Windows a script, and a bin that is a `.cmd` shim, are started through
 `cmd.exe /d /s /c` with every argument quoted and escaped for it; a real `.exe`
