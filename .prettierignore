@@ -14,3 +14,8 @@ kimi-export-session_*.md
 .agents/skills/**
 .claude/skills/**
 .claude/agents/**
+
+# Vendored packslip bytes: upstream conformance vectors and real signed
+# bundles must stay byte-identical to their sources.
+packages/packslip/test/fixtures/**
+packages/packslip/src/sigstore-root.ts
