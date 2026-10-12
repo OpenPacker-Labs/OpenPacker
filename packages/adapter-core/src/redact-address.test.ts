@@ -254,6 +254,24 @@ describe('what redactAddress shows of an address it can read', () => {
     );
   });
 
+  it.each([
+    // The parser writes `/.` before a path that begins with `//` and has no
+    // host, so that it is not read back as a host.
+    ['a:/.///b', 'a:/.///b'],
+    ['npm:/x/..//u:p/q', 'npm:/.//u:p/q'],
+    ['link:/.//d:443?t@127.0.0.1:#', 'link:/.//d:443'],
+    ['x:c/b ?', 'x:c/b'],
+  ])(
+    'writes an address that has no host so that it reads back as itself: %s',
+    (address, shown) => {
+      const output = redactAddress(address);
+      expect(output).toBe(shown);
+      expect(new URL(output).pathname).toBe(
+        new URL(address).pathname.trimEnd(),
+      );
+    },
+  );
+
   it('shows at most 256 characters of a host and of a path', () => {
     const path = `/${'é'.repeat(100_000)}`;
     const shown = redactAddress(`git+https://h.example${path}`);

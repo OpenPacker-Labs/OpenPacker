@@ -80,15 +80,18 @@ function render(address: string, blobs: number): string {
     return `blob:${render(url.pathname, blobs + 1)}`;
   }
   if (url.host === '') {
-    // The scheme's `//`, if the address has an empty authority, as the parser has it.
-    const slashes = url.href.startsWith(`${url.protocol}//`) ? '//' : '';
-    if (LOCAL_PATH_SCHEMES.has(url.protocol))
-      return `${url.protocol}${slashes}${capped(url.pathname)}`;
+    const local = LOCAL_PATH_SCHEMES.has(url.protocol);
     // An opaque path is where `user:password@host:path` keeps its userinfo, and
     // a `?` or `#` in the password leaves the `@` in the query or fragment.
-    if ((url.pathname + url.search + url.hash).includes('@'))
+    if (!local && (url.pathname + url.search + url.hash).includes('@'))
       return `${url.protocol}${WITHHELD}`;
-    return `${url.protocol}${slashes}${capped(url.pathname)}`;
+    // The URL object written without its query and fragment: what comes before
+    // the path is the parser's (`//` for an empty host, and `/.` before a path
+    // that begins with `//`, so that it is not read back as a host).
+    url.search = '';
+    url.hash = '';
+    const before = url.href.slice(0, url.href.length - url.pathname.length);
+    return `${before}${capped(url.pathname)}`;
   }
   if (mayHoldUserinfo(url)) return `${url.protocol}${WITHHELD}`;
   return `${url.protocol}//${capped(url.host)}${capped(url.pathname)}`;
