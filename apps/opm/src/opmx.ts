@@ -591,9 +591,14 @@ stderr either way.
 `;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // Same user-level package store as `opm`, so a tool run once is not stored
-  // again for the next project.
+/** The `opmx` process: the user-level package store `opm` uses, then the run. */
+export async function runOpmxFromProcess(): Promise<number> {
   enableDefaultSharedStore();
-  process.exitCode = await runOpmx();
+  return await runOpmx();
+}
+
+// The `opmx` bin is `opmx-main.js`. This is false when the file is started
+// through a link, so it serves only `node dist/opmx.js` by its own path.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = await runOpmxFromProcess();
 }

@@ -7,7 +7,7 @@
   "private": true,
   "bin": {
     "opm": "./dist/main.js",
-    "opmx": "./dist/opmx.js",
+    "opmx": "./dist/opmx-main.js",
     "opkg": "./dist/main.js",
     "opkgm": "./dist/main.js"
   },
