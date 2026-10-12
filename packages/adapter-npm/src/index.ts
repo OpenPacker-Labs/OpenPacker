@@ -163,42 +163,11 @@ function npmPackagePurl(name: string): string {
   });
 }
 
-/** What the right-hand side of a dependency entry asks npm to do. */
-export type NpmDependencySpecKind =
-  | 'range'
-  | 'tag'
-  | 'alias'
-  | 'git'
-  | 'url'
-  | 'file'
-  | 'workspace';
-
-const GIT_SPEC =
-  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
-const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
-
-/**
- * Read a dependency specifier the way npm does: anything that is not a version
- * range and not a recognizable source is a dist-tag.
- */
-export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
-  const value = spec.trim();
-  if (value.startsWith('npm:')) return 'alias';
-  if (value.startsWith('workspace:')) return 'workspace';
-  if (
-    /^(?:file|link|portal):/iu.test(value) ||
-    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
-  )
-    return 'file';
-  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
-  if (/^https?:\/\//iu.test(value)) return 'url';
-  try {
-    new NpmCodec().parseNativeRange(value);
-    return 'range';
-  } catch {
-    return 'tag';
-  }
-}
+export {
+  classifyDependencySpec,
+  type NpmDependencySpecKind,
+} from './dependency-spec.js';
+import { classifyDependencySpec } from './dependency-spec.js';
 
 /**
  * The comparison form of an npm range, for the solver to enforce.
@@ -326,6 +295,67 @@ function npmRequirement(
     },
     semanticLoss: parsed.semanticLoss.map((loss) =>
       vers === undefined || parsed.vers !== undefined
+        ? loss
+        : {
+            ...loss,
+            representedMeaning:
+              'A comparison form that is a superset of the range: it also admits prereleases npm would exclude. The native range is re-checked after the solve',
+          },
+    ),
+  };
+}
+
+/**
+ * A dependency written `"installName": "npm:target@spec"`.
+ *
+ * The requirement is about the target, which is the registry package that is
+ * installed and the one every gate looks at. The install name rides in the
+ * native data, because it decides a directory and nothing else.
+ */
+function aliasRequirement(
+  dependerNodeId: string,
+  installName: string,
+  aliasSpec: string,
+  alias: NpmAlias,
+  kind: Requirement['kind'],
+  optional: boolean,
+  endpoint: string,
+  path: string,
+  dependencyField: string,
+): Requirement {
+  const parsed =
+    alias.kind === 'range'
+      ? new NpmCodec().parseNativeRange(alias.spec)
+      : undefined;
+  const vers =
+    parsed === undefined
+      ? undefined
+      : (parsed.vers ?? npmRangeVers(parsed.ast));
+  return {
+    id: `${dependerNodeId}:${kind}:${installName}`,
+    dependerNodeId,
+    expression: {
+      type: 'package',
+      purl: npmPackagePurl(alias.target),
+      ...(!(vers === undefined) && { vers }),
+    },
+    kind,
+    optional,
+    source: sourceRef('npm', endpoint),
+    authority: 'native',
+    raw: { path, range: aliasSpec },
+    nativeSemantics: {
+      version: 'npm-v1',
+      data: {
+        dependencyField,
+        range: alias.spec,
+        installName,
+        aliasSpec,
+        ...(alias.kind === 'tag' && { specKind: 'tag' }),
+      },
+    },
+    semanticLoss: (parsed?.semanticLoss ?? []).map((loss) =>
+      vers === undefined || parsed?.vers !== undefined
         ? loss
         : {
             ...loss,
@@ -481,6 +511,7 @@ export class NpmCodec
               ? asBundled(requirement, `/${field}/${name}`)
               : requirement,
           );
+          requirements.push(requirement);
         } catch (error) {
           if (enforced) throw error;
           const reason = error instanceof Error ? error.message : String(error);
