@@ -160,3 +160,21 @@ describe('a hostile document read by the Maven adapter', () => {
     );
   });
 });
+
+describe('a hostile document read by the Go module adapter', () => {
+  it('is one line when the proxy names a version that is not one', async () => {
+    const golang = adapter('golang', (url) =>
+      url.endsWith('.info')
+        ? {
+            Version: `v1.0.0${FORGED_VERSION}`,
+            Time: '2026-01-01T00:00:00Z',
+          }
+        : url.endsWith('.mod')
+          ? 'module example.com/m\n'
+          : null,
+    );
+    expectOneLine(
+      await written(() => golang.inspect('pkg:golang/example.com/m@v1.0.0')),
+    );
+  });
+});
