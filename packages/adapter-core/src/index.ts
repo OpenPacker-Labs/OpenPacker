@@ -9,6 +9,7 @@ export {
   evaluateTargetPredicate,
   type NativeTarget,
 } from './host-target.js';
+export * from './workspace/index.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 export type {
   FrozenExtraction,
