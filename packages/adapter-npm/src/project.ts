@@ -6,7 +6,6 @@
  * the rest of the toolchain disagree about what the project needs.
  */
 
-import { createHash } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
@@ -24,19 +23,17 @@ import type {
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
-import {
-  collectFiles,
-  editJsonFile,
-  packTarGzip,
-  ProjectIoError,
-  writeFileAtomic,
-} from '@openpacker/project-io';
+import { editJsonFile, writeFileAtomic } from '@openpacker/project-io';
 import { formatNpmAlias, isNpmAlias, parseNpmAlias } from './alias.js';
 import { readFrozenPackageLock } from './frozen-lock.js';
 import { layoutLoss } from './layout-loss.js';
 import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
-import { integrityLoss, packLoss, scopeLoss } from './project-losses.js';
+import { integrityLoss, scopeLoss } from './project-losses.js';
+import { packNpmProject } from './project-pack.js';
+import { purlForName } from './purl.js';
+
+export { npmPublishPaths } from './project-pack.js';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD = {
@@ -358,55 +355,8 @@ export class NpmProjectFormat implements ProjectFormat {
     project: DetectedProject,
     options: PackProjectOptions = {},
   ): Promise<PackedArtifact> {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const manifest = JSON.parse(
-      await readFile(project.manifestPath, 'utf8'),
-    ) as PackageJson;
-    const name = manifest.name ?? 'package';
-    const version = manifest.version ?? '0.0.0';
-
-    const all = await collectFiles(project.root);
-    const publishPaths = new Set(await npmPublishPaths(project));
-    const included = all.filter((file) => publishPaths.has(file.path));
-
-    // npm archives put everything under `package/`.
-    const bytes = packTarGzip(
-      included.map((file) => ({
-        path: `package/${file.path}`,
-        contents: file.contents,
-        executable: file.executable,
-      })),
-    );
-
-    const fileName = `${name.replace('@', '').replace('/', '-')}-${version}.tgz`;
-    assertPackFileName(fileName, project.manifestPath);
-    const outputPath = join(options.outputDirectory ?? project.root, fileName);
-    await writeFileAtomic(outputPath, bytes);
-
-    return {
-      path: outputPath,
-      exactPurl: `${purlForName(name)}@${version}`,
-      mediaType: 'application/vnd.npm.install-v1+json',
-      size: bytes.length,
-      digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
-      semanticLoss: [packLoss()],
-    };
+    return packNpmProject(project, options);
   }
-}
-
-function assertPackFileName(fileName: string, manifestPath: string): void {
-  if (
-    fileName === '.' ||
-    fileName === '..' ||
-    fileName.includes('/') ||
-    fileName.includes('\\') ||
-    fileName.includes('\0')
-  )
-    throw new ProjectIoError(
-      'UNSAFE_PATH',
-      manifestPath,
-      `Package metadata produced an unsafe artifact filename: ${fileName}`,
-    );
 }
 
 function scopeOfField(
@@ -424,105 +374,10 @@ function scopeOfField(
   }
 }
 
-/** `@scope/name` → `pkg:npm/%40scope/name`, per the PURL npm rules. */
-function purlForName(name: string): string {
-  if (!name.startsWith('@')) return `pkg:npm/${encodeURIComponent(name)}`;
-  const slash = name.indexOf('/');
-  if (slash === -1) return `pkg:npm/${encodeURIComponent(name)}`;
-  return `pkg:npm/%40${encodeURIComponent(name.slice(1, slash))}/${encodeURIComponent(
-    name.slice(slash + 1),
-  )}`;
-}
-
 async function manifestName(manifestPath: string): Promise<string> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     name?: string;
   };
   return parsed.name ?? 'project';
-}
-
-/** Paths npm never publishes, whatever the manifest says. */
-const NEVER_PUBLISH = new Set([
-  '.git',
-  '.npmrc',
-  'node_modules',
-  'package-lock.json',
-  '.opm',
-]);
-
-/** Paths npm always publishes, whatever `files` says. */
-const ALWAYS_PUBLISH = [
-  /^package\.json$/u,
-  /^readme(\.|$)/iu,
-  /^licen[cs]e(\.|$)/iu,
-  /^changelog(\.|$)/iu,
-];
-
-/** The exact project paths OpenPacker's npm implementation may publish. */
-export async function npmPublishPaths(
-  project: DetectedProject,
-): Promise<readonly string[]> {
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const manifest = JSON.parse(
-    await readFile(project.manifestPath, 'utf8'),
-  ) as PackageJson;
-  const ignore = await readIgnoreFile(project.root);
-  return (await listFilePaths(project.root)).filter((path) =>
-    shouldPublish(path, manifest.files, ignore),
-  );
-}
-
-async function listFilePaths(root: string): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises');
-  const paths: string[] = [];
-  const walk = async (directory: string, prefix: string): Promise<void> => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-      if (entry.isDirectory()) {
-        if (prefix === '' && NEVER_PUBLISH.has(entry.name)) continue;
-        await walk(join(directory, entry.name), path);
-      } else if (entry.isFile()) paths.push(path);
-    }
-  };
-  await walk(root, '');
-  return paths;
-}
-
-async function readIgnoreFile(root: string): Promise<string[]> {
-  const { readFile: read } = await import('node:fs/promises');
-  for (const name of ['.npmignore', '.gitignore']) {
-    try {
-      return (await read(join(root, name), 'utf8'))
-        .split(/\r?\n/u)
-        .map((line) => line.split('#')[0]!.trim())
-        .filter((line) => line !== '');
-    } catch {
-      // try the next one
-    }
-  }
-  return [];
-}
-
-function shouldPublish(
-  path: string,
-  files: readonly string[] | undefined,
-  ignore: readonly string[],
-): boolean {
-  const first = path.split('/')[0]!;
-  if (NEVER_PUBLISH.has(first)) return false;
-  if (ALWAYS_PUBLISH.some((pattern) => pattern.test(path))) return true;
-  if (files && files.length > 0)
-    return files.some(
-      (entry) =>
-        path === entry ||
-        path.startsWith(`${entry.replace(/\/$/u, '')}/`) ||
-        first === entry,
-    );
-  return !ignore.some(
-    (entry) =>
-      path === entry ||
-      first === entry.replace(/\/$/u, '') ||
-      path.startsWith(`${entry.replace(/\/$/u, '')}/`),
-  );
 }
