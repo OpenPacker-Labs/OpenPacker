@@ -29,6 +29,8 @@ import { readFrozenPackageLock } from './frozen-lock.js';
 import { layoutLoss } from './layout-loss.js';
 import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
+import { chooseProjectLock } from './lock-choice.js';
+import { readFrozenPnpmLock } from './pnpm-install/frozen.js';
 import { integrityLoss, scopeLoss } from './project-losses.js';
 import { packNpmProject } from './project-pack.js';
 import { purlForName } from './purl.js';
@@ -320,11 +322,19 @@ export class NpmProjectFormat implements ProjectFormat {
    * `package-lock.json` as `npm ci` reads it: what this machine installs, what
    * it leaves out, and what the lock holds that cannot be installed.
    */
-  readFrozenLock(
+  async readFrozenLock(
     project: DetectedProject,
     options: FrozenLockOptions,
   ): Promise<FrozenLock> {
-    return readFrozenPackageLock(project, options);
+    const choice = await chooseProjectLock(project);
+    return choice.kind === 'pnpm'
+      ? readFrozenPnpmLock(project, options, choice.path)
+      : readFrozenPackageLock(project, options);
+  }
+
+  /** A pnpm project's members are `pnpm-workspace.yaml`'s; an npm project's are `package.json`'s. */
+  async workspaceToolFor(project: DetectedProject): Promise<'npm' | 'pnpm'> {
+    return (await chooseProjectLock(project)).kind;
   }
 
   /**

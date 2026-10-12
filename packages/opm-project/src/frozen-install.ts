@@ -47,6 +47,7 @@ import {
   frozenPolicyDocument,
   listLines,
 } from './frozen-policy.js';
+import { installScriptFlags } from './frozen-scripts.js';
 import {
   frozenArchiveLimits,
   labelOf,
@@ -61,6 +62,7 @@ import {
 } from './frozen-workspace.js';
 import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
+import { registryEndpoint } from './registry.js';
 import { readManifestFile } from './project.js';
 import { projectStep, type StepOptions } from './project-step.js';
 import { holdSharedStore, type StoreHold } from './shared-store-lease.js';
@@ -83,6 +85,12 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   env?: NodeJS.ProcessEnv;
   /** The machine to install for; this one by default. */
   target?: NativeTarget;
+  /**
+   * Every machine whose optional packages are installed (pnpm's
+   * `supportedArchitectures`); a package is installed when it runs on any one.
+   * `target` alone by default.
+   */
+  targets?: readonly NativeTarget[];
   /** The time policy is evaluated at. */
   now?: () => string;
   /** Told what a killed step left and this one finished first. */
@@ -117,6 +125,19 @@ export interface FrozenInstallResult {
 
 function now(): number {
   return performance.now();
+}
+
+/** The registry a package with no URL in its lock is fetched from: the operator's, else the public one. */
+function registryFor(ecosystem: string): string | undefined {
+  try {
+    return registryEndpoint(ecosystem);
+  } catch (error) {
+    // An ecosystem with no registry endpoint is one whose locks name URLs; one
+    // whose operator named an unusable endpoint is told so.
+    if (error instanceof OpmError && error.code === 'UNSUPPORTED_ECOSYSTEM')
+      return undefined;
+    throw error;
+  }
 }
 
 /** The ecosystem project in `root` whose adapter can read its lock. */
@@ -220,11 +241,25 @@ async function installFrozenInStep(
   const manifest = await readProjectManifest(root);
   const offline = input.offline ?? manifest?.options.offline ?? false;
 
-  const workspace = await prepareFrozenWorkspace(root, format, input.workspace);
+  let workspace: Awaited<ReturnType<typeof prepareFrozenWorkspace>>;
   let lock: FrozenLock;
   try {
+    // Whose rules read the members depends on the lock the project is
+    // installed from, which the format decides (and may refuse to).
+    const tool =
+      (await format.workspaceToolFor?.(detected)) ?? format.workspaceTool;
+    workspace = await prepareFrozenWorkspace(
+      root,
+      format,
+      input.workspace,
+      tool,
+    );
+    const target = input.target ?? detectNativeTarget();
+    const registry = registryFor(ecosystem);
     lock = await format.readFrozenLock!(detected, {
-      target: input.target ?? detectNativeTarget(),
+      target,
+      ...(input.targets !== undefined && { targets: input.targets }),
+      ...(registry !== undefined && { registry }),
       omit: new Set(input.omit ?? []),
       ...(workspace !== undefined && { workspace }),
     });
@@ -283,6 +318,7 @@ async function installFrozenInStep(
     };
     const stored = await storeArchives({ lock, ...from });
     const fetched = now();
+    const declares = await installScriptFlags(lock.packages, stored.byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
       const archive = stored.byPath.get(pkg.path)!;
       return {
@@ -359,7 +395,7 @@ async function installFrozenInStep(
       shared: store.shared,
       skipped: lock.skipped,
       installScripts: lock.packages
-        .filter((pkg) => pkg.hasInstallScript)
+        .filter((pkg) => declares.get(pkg.path) === true)
         .map((pkg) => ({
           name: pkg.packageName,
           version: pkg.version,

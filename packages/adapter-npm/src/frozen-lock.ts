@@ -8,8 +8,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   echoed,
@@ -20,6 +18,11 @@ import {
   type WorkspaceMember,
 } from '@openpacker/adapter-core';
 import { assertPlaceable } from './frozen-placement.js';
+import {
+  MAXIMUM_LOCK_BYTES,
+  MAXIMUM_MANIFEST_BYTES,
+  readBounded,
+} from './frozen-read.js';
 import { planFrozenPackageLock } from './frozen-select.js';
 import {
   DEPENDENCY_FIELDS,
@@ -33,46 +36,9 @@ import { parsePackageLockText } from './lock-tree.js';
 
 export { lockDisagreements, type FrozenManifest };
 
-const MAXIMUM_LOCK_BYTES = 64 * 1024 * 1024;
-const MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
-
 type StringMap = Readonly<Record<string, string>>;
 
-async function readBounded(path: string, maximum: number): Promise<string> {
-  let handle;
-  try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch (error) {
-    // SAFETY: Node file errors carry a string `code`.
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT')
-      throw new ProviderError('NOT_FOUND', `${path} does not exist`);
-    if (code === 'ELOOP')
-      throw new ProviderError(
-        'UNSAFE_PATH',
-        `${path} is a symbolic link; a frozen install reads the file itself`,
-      );
-    throw error;
-  }
-  try {
-    const info = await handle.stat();
-    if (!info.isFile())
-      throw new ProviderError(
-        'INVALID_LOCKFILE',
-        `${path} is not a regular file`,
-      );
-    if (info.size > maximum)
-      throw new ProviderError(
-        'INVALID_LOCKFILE',
-        `${path} is ${info.size} bytes, more than the ${maximum} this reads`,
-      );
-    return await handle.readFile('utf8');
-  } finally {
-    await handle.close();
-  }
-}
-
-function readManifest(text: string, path: string): FrozenManifest {
+export function readManifest(text: string, path: string): FrozenManifest {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

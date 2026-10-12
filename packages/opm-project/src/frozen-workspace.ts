@@ -15,6 +15,7 @@ import {
   selectNpmWorkspaces,
   type FrozenWorkspaceInput,
   type ProjectFormat,
+  type WorkspaceTool,
 } from '@openpacker/adapter-core';
 import { OpmError } from './types.js';
 import {
@@ -79,8 +80,10 @@ export async function prepareFrozenWorkspace(
   root: string,
   format: ProjectFormat,
   request: FrozenWorkspaceRequest = {},
+  /** Whose rules read the members, when the project's lock decides it (a pnpm lock's are pnpm's). */
+  workspaceTool: WorkspaceTool | undefined = format.workspaceTool,
 ): Promise<FrozenWorkspaceInput | undefined> {
-  if (format.workspaceTool === undefined) {
+  if (workspaceTool === undefined) {
     if (asksForWorkspace(request))
       throw new OpmError(
         'INVALID_SPEC',
@@ -94,7 +97,7 @@ export async function prepareFrozenWorkspace(
       'INVALID_SPEC',
       '--workspaces=false installs no member, so it cannot be combined with --workspace or --workspaces',
     );
-  const tool = format.workspaceTool;
+  const tool = workspaceTool;
   let discovery: Promise<WorkspaceDiscovery | undefined> | undefined;
   const discover = (): Promise<WorkspaceDiscovery | undefined> =>
     (discovery ??= discoverWorkspace(root, { tool }).catch((error: Error) => {

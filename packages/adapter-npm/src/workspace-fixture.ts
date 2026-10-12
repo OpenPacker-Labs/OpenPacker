@@ -93,6 +93,7 @@ export function diskMembers(
         peerDependencies: list(record.peerDependencies),
         optionalPeers: new Set(),
         workspaces: undefined,
+        bin: {},
       },
     })),
     'npm',
