@@ -416,26 +416,41 @@ independent review got the same two figures.
   characters; npm's dependency text has its own limits, 200 to 214): `echoed` in
   `@openpacker/adapter-core` for its shared parsers (PURL, version, range, VERS,
   identity and digest algorithm) and for adapter-pypi, adapter-cargo,
-  adapter-nuget, adapter-maven, adapter-golang, the OCI provider and
-  registry-client; `safeEcho` itself in the OCI client (the registry's error
-  body, token scope, media types and digests) and the materializer (the name of
-  an archive entry, in the fifty "Unsafe archive rejected" refusals); and, from
-  round 4, npm and the policy. Against the same registry, with `cat -v`:
-  `opm add` prints one line, and `opm resolve` its three real ones. Each adapter
-  has a unit test of its messages that failed on the sources before the change,
-  and `apps/opm/test/error-sources.test.ts` reads a hostile document with the
-  real adapter and writes the error with the real handler: it failed first for
-  PyPI (4 of 6), NuGet, Maven and OCI. For Cargo and Go it is a control, because
+  adapter-nuget, adapter-maven, adapter-golang, the OCI provider,
+  registry-client and the four host-manager adapters (apt, Chocolatey, winget
+  and Nix, whose refusals repeat a PURL that a person or a project file names
+  and that `parsePurl` accepts with a line feed or an escape in it); `safeEcho`
+  itself in the OCI client (the registry's error body, token scope, media types
+  and digests) and the materializer (the name of an archive entry, in the fifty
+  "Unsafe archive rejected" refusals); and, from round 4, npm and the policy.
+  Against the same registry, with `cat -v`: `opm add` prints one line, and
+  `opm resolve` its three real ones. Each adapter has a unit test of its
+  messages that failed on the sources before the change, and
+  `apps/opm/test/error-sources.test.ts` reads a hostile document with the real
+  adapter and writes the error with the real handler: it failed first for PyPI
+  (4 of 6), NuGet, Maven and OCI. For Cargo and Go it is a control, because
   their own sites cannot be reached by a document (a Cargo coordinate and a Go
   module path come from the caller; a Cargo target and a Go build constraint are
   recorded as meaning lost and are not errors), so a hostile version reaches the
-  shared parser instead.
-- **What still relies on the writer alone.** Text opm does not get from an
-  adapter: the plugin host's messages (a plugin's own stderr is appended to its
-  errors, up to 2,048 characters, and a manifest's schema reasons name its
-  fields), the plugin store's, and the paths `project-io` refuses while it
-  writes an archive; the writer makes these plain and keeps their line feeds.
-  Not audited, not changed.
+  shared parser instead. The host-manager adapters have unit tests only (they
+  failed first: apt 4 of 5, Chocolatey 3 of 4, winget 4 of 5, Nix 6 of 7); I
+  found no road to those messages through the binary, because `opm resolve` and
+  `opm install` of those types stop at "does not advertise
+  prex.registry.package-metadata/1".
+- **What still relies on the writer alone.** Text that does not come from an
+  adapter's reading of a registry's or a store's document. The plugin host's
+  messages (a plugin's own stderr is appended to its errors, up to 2,048
+  characters, and a manifest's schema reasons name its fields), the plugin
+  store's, and the paths `project-io` refuses while it writes an archive. The
+  messages `opm-project` and `apps/opm` write that repeat an argument the person
+  typed or a value a project file holds (`Invalid PURL: …` in `spec.ts` is one:
+  `opm add` with a line feed in the spec prints the second line as a line of its
+  own), a source id from configuration (`adapter-host`), and the file names and
+  parser messages of the standard packers (`adapters-default`). The writer makes
+  these plain and keeps their line feeds; none of them is text a registry sends.
+  `lock-import` and `receipts` repeat a native lock's or a receipt's text and
+  are depended on by `openpackerd` and `openpacker-cli`, not by `opm`; no
+  package depends on `closure` or `ocm`. Not audited further, not changed.
 - **The writer reads an unterminated escape string as a terminal would.** An
   `ESC ]` (OSC) or `ESC P`, `ESC X`, `ESC ^`, `ESC _` with no terminator runs to
   the end of the message, so a field that ends in one drops the rest of the
