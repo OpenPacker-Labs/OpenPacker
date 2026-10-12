@@ -1,5 +1,6 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
+import { isNpmAlias, parseNpmAlias, type NpmAlias } from './alias.js';
 import { npmTargetPredicate } from './platform.js';
 import {
   compareNpmVersions,
@@ -172,42 +173,11 @@ function sriSha256(value: string | undefined): Digest | undefined {
   }
 }
 
-/** What the right-hand side of a dependency entry asks npm to do. */
-export type NpmDependencySpecKind =
-  | 'range'
-  | 'tag'
-  | 'alias'
-  | 'git'
-  | 'url'
-  | 'file'
-  | 'workspace';
-
-const GIT_SPEC =
-  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
-const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
-
-/**
- * Read a dependency specifier the way npm does: anything that is not a version
- * range and not a recognizable source is a dist-tag.
- */
-export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
-  const value = spec.trim();
-  if (value.startsWith('npm:')) return 'alias';
-  if (value.startsWith('workspace:')) return 'workspace';
-  if (
-    /^(?:file|link|portal):/iu.test(value) ||
-    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
-  )
-    return 'file';
-  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
-  if (/^https?:\/\//iu.test(value)) return 'url';
-  try {
-    new NpmCodec().parseNativeRange(value);
-    return 'range';
-  } catch {
-    return 'tag';
-  }
-}
+export {
+  classifyDependencySpec,
+  type NpmDependencySpecKind,
+} from './dependency-spec.js';
+import { classifyDependencySpec } from './dependency-spec.js';
 
 /**
  * The comparison form of an npm range, for the solver to enforce.
@@ -262,21 +232,38 @@ function npmRequirement(
   path: string,
   owner: string,
   enforced: boolean,
+  followed: boolean = enforced,
 ): Requirement {
+  const alias = isNpmAlias(range) ? parseNpmAlias(range) : undefined;
   const specKind = classifyDependencySpec(range);
   const dependencyField = path.slice(1).split('/')[0]!;
+  if (alias !== undefined && 'target' in alias && followed)
+    return aliasRequirement(
+      dependerNodeId,
+      name,
+      range,
+      alias,
+      kind,
+      optional,
+      endpoint,
+      path,
+      dependencyField,
+    );
   if (specKind !== 'range') {
     // An install walks into `dependencies` and required peers. Reading
     // "github:user/repo" as "any version of the registry package with that
     // name" would be a dependency-confusion door, so those fail here, by name.
-    // The fields an install does not walk (development, optional, optional
-    // peers) are kept as what they say, with no version constraint attached,
-    // so inspecting a package never depends on its dev-time tooling.
+    // The fields an install does not walk (development, optional peers) are
+    // kept as what they say, with no version constraint attached, so inspecting
+    // a package never depends on its dev-time tooling.
     if (enforced)
       throw new ProviderError(
         'UNSUPPORTED_DEPENDENCY_SPEC',
         `${owner} depends on ${name} as "${range}", a ${specKind} specifier ` +
-          `that is not a registry version range`,
+          `that is not a registry version range` +
+          (alias !== undefined && 'problem' in alias
+            ? ` (${alias.problem})`
+            : ''),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,
@@ -324,6 +311,67 @@ function npmRequirement(
     },
     semanticLoss: parsed.semanticLoss.map((loss) =>
       vers === undefined || parsed.vers !== undefined
+        ? loss
+        : {
+            ...loss,
+            representedMeaning:
+              'A comparison form that is a superset of the range: it also admits prereleases npm would exclude. The native range is re-checked after the solve',
+          },
+    ),
+  };
+}
+
+/**
+ * A dependency written `"installName": "npm:target@spec"`.
+ *
+ * The requirement is about the target, which is the registry package that is
+ * installed and the one every gate looks at. The install name rides in the
+ * native data, because it decides a directory and nothing else.
+ */
+function aliasRequirement(
+  dependerNodeId: string,
+  installName: string,
+  aliasSpec: string,
+  alias: NpmAlias,
+  kind: Requirement['kind'],
+  optional: boolean,
+  endpoint: string,
+  path: string,
+  dependencyField: string,
+): Requirement {
+  const parsed =
+    alias.kind === 'range'
+      ? new NpmCodec().parseNativeRange(alias.spec)
+      : undefined;
+  const vers =
+    parsed === undefined
+      ? undefined
+      : (parsed.vers ?? npmRangeVers(parsed.ast));
+  return {
+    id: `${dependerNodeId}:${kind}:${installName}`,
+    dependerNodeId,
+    expression: {
+      type: 'package',
+      purl: npmPackagePurl(alias.target),
+      ...(!(vers === undefined) && { vers }),
+    },
+    kind,
+    optional,
+    source: sourceRef('npm', endpoint),
+    authority: 'native',
+    raw: { path, range: aliasSpec },
+    nativeSemantics: {
+      version: 'npm-v1',
+      data: {
+        dependencyField,
+        range: alias.spec,
+        installName,
+        aliasSpec,
+        ...(alias.kind === 'tag' && { specKind: 'tag' }),
+      },
+    },
+    semanticLoss: (parsed?.semanticLoss ?? []).map((loss) =>
+      vers === undefined || parsed?.vers !== undefined
         ? loss
         : {
             ...loss,
@@ -450,20 +498,23 @@ export class NpmCodec
         const enforced =
           field === 'dependencies' ||
           (field === 'peerDependencies' && !optional);
+        // Optional dependencies are walked where they run, so an alias in one
+        // (the per-platform builds of a native package) is read like any other.
+        const followed = enforced || field === 'optionalDependencies';
         try {
-          requirements.push(
-            npmRequirement(
-              nodeId,
-              name,
-              range,
-              kind,
-              optional,
-              provenance.endpoint,
-              `/${field}/${name}`,
-              owner,
-              enforced,
-            ),
+          const requirement = npmRequirement(
+            nodeId,
+            name,
+            range,
+            kind,
+            optional,
+            provenance.endpoint,
+            `/${field}/${name}`,
+            owner,
+            enforced,
+            followed,
           );
+          requirements.push(requirement);
         } catch (error) {
           if (enforced) throw error;
           // A dev-time or optional entry this codec cannot read must not stop
@@ -796,6 +847,31 @@ export class NpmRegistryProvider implements CatalogProvider {
           `${this.codec.canonicalizePurl(basePurl)}@${version}`,
         ),
       );
+  }
+
+  /**
+   * The exact version a dist-tag points at, or undefined when the package has
+   * no such tag (or the tag names a version the document does not list).
+   *
+   * Read from the `dist-tags` the abbreviated packument already carries, so a
+   * tag costs no request the walk was not going to make. A tag moves, so the
+   * caller records the version, never the tag.
+   */
+  async resolveTag(
+    basePurl: string,
+    tag: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const packument = await this.packument(basePurl, signal);
+    const version = packument.body['dist-tags']?.[tag];
+    if (
+      typeof version !== 'string' ||
+      packument.body.versions[version] === undefined
+    )
+      return undefined;
+    return this.codec.canonicalizePurl(
+      `${this.codec.canonicalizePurl(basePurl)}@${version}`,
+    );
   }
 
   async inspect(
