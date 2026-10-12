@@ -60,7 +60,7 @@ import {
 import { asksForHelp } from './commands/run-args.js';
 import { RunError } from './commands/run-error.js';
 import { RUN_HELP } from './commands/run-help.js';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, report } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -463,7 +463,7 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
+          io.stderr.write(report('opm: ', `${item.purl}: ${item.reason}`));
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -718,11 +718,11 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
 
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
-    io.stderr.write(`${error.message}\n`);
+    io.stderr.write(`${report('', error.message)}\n${help()}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    io.stderr.write(report('opm: ', error.message));
     switch (error.code) {
       case 'USAGE':
         return EXIT_CODES.usage;
@@ -736,7 +736,7 @@ export function handleError(error: unknown, io: CliIo): number {
     }
   }
   if (error instanceof OpmError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    io.stderr.write(report('opm: ', error.message));
     switch (error.code) {
       case 'NOT_FOUND':
       case 'NO_PROJECT':
@@ -788,7 +788,7 @@ export function handleError(error: unknown, io: CliIo): number {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
-      io.stderr.write(`opm: ${error.message}\n`);
+      io.stderr.write(report('opm: ', error.message));
       switch (code) {
         case 'OFFLINE':
         case 'UPSTREAM_UNAVAILABLE':
@@ -828,7 +828,7 @@ class UsageError extends Error {
 }
 
 function usage(message: string): UsageError {
-  return new UsageError(`${message}\n\n${help()}`);
+  return new UsageError(message);
 }
 
 function parseArgs(argv: string[]): Parsed {

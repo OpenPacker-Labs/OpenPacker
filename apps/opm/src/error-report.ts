@@ -1,4 +1,5 @@
 import { redactUrl } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -10,7 +11,22 @@ import { redactUrl } from '@openpacker/adapter-core';
  * chain. Everything printed passes the same redaction: a URL keeps its origin
  * and path and loses userinfo, query and fragment (`redactUrl`), and a value
  * that follows a credential-shaped name is withheld.
+ *
+ * What is printed is made plain first, once, here. A message can carry text a
+ * registry chose (a dependency's name, a version, a key in its document) on its
+ * way from an adapter, and `plainLine` (`@openpacker/canonical`, the one
+ * definition of what a terminal must not be sent) removes escape sequences and
+ * control, format and bidirectional characters and turns line breaks and tabs
+ * into a space. The only line break in what is written is the one added here.
  */
+
+/**
+ * `prefix` and `message` as one line of an error report, ending in a newline.
+ * The prefix is ours; the message is made plain.
+ */
+export function report(prefix: string, message: string): string {
+  return `${prefix}${plainLine(message)}\n`;
+}
 
 /** How many `cause` links below the reported error are followed. */
 export const MAX_CAUSE_DEPTH = 3;
@@ -116,7 +132,9 @@ export function scrub(text: string): string {
 }
 
 function oneLine(text: string): string {
-  const flat = scrub(text).replace(/\s+/gu, ' ').trim();
+  // Plain before scrubbed: a credential-shaped name with a zero-width character
+  // in it must be read as the terminal would show it, or it escapes the scrub.
+  const flat = scrub(plainLine(text)).replace(/\s+/gu, ' ').trim();
   return flat.length > MAX_LINE_LENGTH
     ? `${flat.slice(0, MAX_LINE_LENGTH)}…`
     : flat;
@@ -227,9 +245,9 @@ export function formatFailure(
   failure: Failure,
   { tool, internalError = false, env = process.env }: FailureReportOptions,
 ): string {
-  if (failure.coded) return `${tool}: ${failure.message}\n`;
+  if (failure.coded) return report(`${tool}: `, failure.message);
   const label = internalError ? `${tool}: internal error` : tool;
-  const lines = [`${label}: ${scrub(failure.message)}`];
+  const lines = [`${label}: ${scrub(plainLine(failure.message))}`];
   for (const [depth, cause] of failure.causes.entries())
     lines.push(`${tool}: ${'  '.repeat(depth + 1)}caused by: ${cause.text}`);
   if (failure.causes.some((cause) => cause.connectionFault)) {
