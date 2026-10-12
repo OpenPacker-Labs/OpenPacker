@@ -370,7 +370,9 @@ later layout removes go by the directory
 name at several versions, in the project and in members, is installed where the
 lock says. Two names that differ only by case in one `node_modules` directory
 are refused, because they are one directory on macOS and Windows; each member's
-own `node_modules` is a directory of its own for that rule.
+own `node_modules` is a directory of its own for that rule, a member's link
+counts as a name in its directory, and the rule is judged on what the install
+selects (`--omit dev` leaves a dev-only package out of it).
 
 ```sh
 opm ci                              # the project, every member, everything they need

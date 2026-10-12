@@ -160,7 +160,10 @@ are not downloading:
     names that differ only by case in one `node_modules` directory (the
     project's, each member's own and each package's are separate ones) are one
     directory on a case-insensitive filesystem, so such a lock is refused,
-    naming both and the place (§17 there).
+    naming both and the place (§17 there). The rule is judged on what the
+    install selects (a dev-only `React` beside `react` is refused by `opm ci`
+    and installed by `opm ci --omit dev`), and a member's link counts as a name
+    in its directory (§17 there).
 12. **A member's own executables are shimmed in the project's `.bin`**, a shim
     and never a link, where npm links them: arborist's `#createBinLinks` links
     the bins of a link node into the `node_modules/.bin` of the directory the
