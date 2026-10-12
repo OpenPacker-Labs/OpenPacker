@@ -901,6 +901,8 @@ function shortToLong(short: string): string {
       return 'ecosystem';
     case 'h':
       return 'help';
+    case 'w':
+      return 'workspace';
     default:
       return short;
   }
@@ -923,7 +925,10 @@ function isBooleanFlag(key: string): boolean {
     key === 'native' ||
     key === 'shared' ||
     key === 'production' ||
-    key === 'frozen'
+    key === 'frozen' ||
+    key === 'workspaces' ||
+    key === 'no-workspaces' ||
+    key === 'include-workspace-root'
   );
 }
 
@@ -1197,9 +1202,16 @@ Usage:
   opm remove <alias>
   opm install [--offline|--online]
   opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
+         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]]
                                       install exactly what package-lock.json says;
                                       resolves nothing, runs no install script
-                                      (opm install --frozen is the same)
+                                      (opm install --frozen is the same).
+                                      A workspace lock links each member to its
+                                      directory and gives it its own node_modules;
+                                      -w installs only those members and what they
+                                      need (--include-workspace-root adds the root's
+                                      own dependencies), --workspaces=false only
+                                      the root's
   opm uninstall [alias]
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]

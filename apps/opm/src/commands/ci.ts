@@ -3,6 +3,7 @@ import {
   OpmError,
   installFrozen,
   type FrozenInstallResult,
+  type FrozenWorkspaceRequest,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
 import type { CommandArgs, CommandIo } from './yank.js';
@@ -40,6 +41,50 @@ function omitted(args: CiArgs): FrozenOmit[] {
   return [...kinds];
 }
 
+/** A flag npm reads as a boolean: bare, or `=true` or `=false`. */
+function booleanOption(args: CiArgs, name: string): boolean | undefined {
+  const value = args.options.get(name);
+  if (value === undefined) return undefined;
+  if (value === true || value === 'true') return true;
+  if (value === 'false') return false;
+  throw new OpmError(
+    'INVALID_SPEC',
+    `opm ci --${name} takes true or false, not ${JSON.stringify(value)}`,
+  );
+}
+
+/**
+ * `--workspace <name|dir>` (`-w`, repeatable), `--include-workspace-root`,
+ * `--workspaces` and `--workspaces=false` (or `--no-workspaces`), as `npm ci`
+ * reads them. Anything else about workspaces is refused rather than guessed.
+ */
+function workspaceRequest(args: CiArgs): FrozenWorkspaceRequest {
+  if (args.options.get('workspace') === true)
+    throw new OpmError(
+      'INVALID_SPEC',
+      'opm ci --workspace needs a member name or directory',
+    );
+  const select = (args.optionValues.get('workspace') ?? []).flatMap((item) =>
+    item.split(',').filter((part) => part !== ''),
+  );
+  const workspaces = booleanOption(args, 'workspaces');
+  const noWorkspaces = args.options.has('no-workspaces');
+  if (noWorkspaces && workspaces === true)
+    throw new OpmError(
+      'INVALID_SPEC',
+      'Pass only one of --workspaces or --no-workspaces',
+    );
+  const ignore = workspaces === false || noWorkspaces;
+  return {
+    ...(select.length > 0 && { select }),
+    ...(booleanOption(args, 'include-workspace-root') === true && {
+      includeRoot: true,
+    }),
+    ...(workspaces === true && { all: true }),
+    ...(ignore && { ignore: true }),
+  };
+}
+
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
@@ -49,6 +94,7 @@ const WHY = {
   platform: 'optional, for another platform',
   orphaned: 'needed only by those',
   bundled: "shipped inside a parent's archive",
+  workspace: 'outside the workspaces selected',
 } as const;
 
 /** How many packages were left out, and for what, in a clause. */
@@ -75,6 +121,11 @@ export async function runCiCommand(
 ): Promise<number> {
   const path = args.options.get('path');
   const root = resolve(cwd, typeof path === 'string' ? path : '.');
+  if (args.positionals.length > 0)
+    throw new OpmError(
+      'INVALID_SPEC',
+      `opm ci installs a lock and takes no package names or other arguments (got ${args.positionals.map((item) => JSON.stringify(item)).join(', ')})`,
+    );
   const offline = args.options.has('offline');
   if (offline && args.options.has('online'))
     throw new OpmError(
@@ -84,6 +135,7 @@ export async function runCiCommand(
   const result = await installFrozen({
     root,
     omit: omitted(args),
+    workspace: workspaceRequest(args),
     ...(offline && { offline: true }),
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
@@ -98,6 +150,10 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (result.workspace !== undefined)
+    io.stdout.write(
+      `  workspace: ${result.workspace.linked} of ${result.workspace.members} member${result.workspace.members === 1 ? '' : 's'} linked, not fetched; their scripts are not run\n`,
+    );
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
     io.stdout.write(`  install script not run: ${item.name}@${item.version}\n`);
