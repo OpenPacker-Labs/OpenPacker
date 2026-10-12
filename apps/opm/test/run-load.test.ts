@@ -29,8 +29,11 @@ async function staticImports(
   return found;
 }
 
-async function loadGraph(entry: string): Promise<Set<string>> {
-  const seen = new Set<string>();
+async function loadGraph(
+  entry: string,
+  files = new Set<string>(),
+): Promise<Set<string>> {
+  const seen = files;
   const external = new Set<string>();
   const queue = [entry];
   while (queue.length > 0) {
@@ -53,6 +56,29 @@ describe('what opm run and opm exec load', () => {
       expect([...(await loadGraph(join(src, entry)))]).toEqual([]);
     },
   );
+
+  it.each(['entry.ts', 'commands/run.ts', 'main.ts'])(
+    'the workspace commands are not in the load graph of %s: they are imported when a selection asks',
+    async (entry) => {
+      const files = new Set<string>();
+      await loadGraph(join(src, entry), files);
+      const names = [...files].map((file) => file.slice(src.length + 1));
+      for (const heavy of [
+        'commands/run-workspace.ts',
+        'commands/run-select.ts',
+        'commands/run-members.ts',
+        'commands/run-schedule.ts',
+        'commands/run-output.ts',
+        'commands/run-member-files.ts',
+      ])
+        expect(names, heavy).not.toContain(heavy);
+    },
+  );
+
+  it('reaches the workspace commands only through import()', async () => {
+    const text = await readFile(join(src, 'commands/run.ts'), 'utf8');
+    expect(text).toMatch(/await import\('\.\/run-workspace\.js'\)/u);
+  });
 
   it('keeps the library out of the load graph but not out of the failure path', async () => {
     const text = await readFile(join(src, 'commands/run-resolve.ts'), 'utf8');
