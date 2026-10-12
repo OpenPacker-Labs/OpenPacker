@@ -120,3 +120,30 @@ describe('a sparse-index entry that is not understood', () => {
     );
   });
 });
+
+describe('a dependency whose target is not text', () => {
+  it('keeps the cfg expression it said when the target is an array', async () => {
+    const inspection = await provider([
+      record({
+        deps: [
+          {
+            name: 'dep',
+            req: '^1',
+            features: [],
+            optional: false,
+            default_features: true,
+            target: JSON.parse('{"v":["x"]}').v,
+            kind: 'normal',
+          },
+        ],
+      }),
+    ]).inspect('pkg:cargo/evil@1.0.0');
+    const meanings: string[] = [];
+    for (const requirement of inspection.package.requirements)
+      for (const loss of requirement.semanticLoss)
+        meanings.push(loss.originalMeaning ?? '');
+    expect(meanings).toContain(
+      'Cargo cfg expression x is preserved for a native validator',
+    );
+  });
+});

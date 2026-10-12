@@ -32,7 +32,9 @@ type TokenRequestHeaders = Record<string, string>;
  * with no escape sequence or control character in it, and cuts what is long.
  */
 function echoed(text: string, limit = 256): string {
-  return safeEcho(text, limit);
+  // What a registry sends is cast JSON: `String` says a missing or odd value as
+  // a template literal did, where `safeEcho` would throw on it.
+  return safeEcho(String(text), limit);
 }
 
 export const OCI_MEDIA_TYPES = {

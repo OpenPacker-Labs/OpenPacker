@@ -14,7 +14,14 @@ import { safeEcho } from '@openpacker/canonical';
 /** Long enough for a package URL with a version and a qualifier or two. */
 export const ECHO_TEXT_LIMIT = 256;
 
-/** `text`, as a message may repeat it. */
+/**
+ * `text`, as a message may repeat it.
+ *
+ * What a document holds is cast JSON, so the field a message repeats may be
+ * missing, null, a number or an array although its type says text. A template
+ * literal says such a value as `undefined`, `null`, `5` or `x`; `String` says
+ * the same, and `safeEcho`, which reads the length of its argument, would throw.
+ */
 export function echoed(text: string, limit = ECHO_TEXT_LIMIT): string {
-  return safeEcho(text, limit);
+  return safeEcho(String(text), limit);
 }

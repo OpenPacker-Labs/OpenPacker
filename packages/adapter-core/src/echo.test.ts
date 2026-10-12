@@ -114,3 +114,23 @@ describe('what a shared parser says of the text it was given', () => {
     );
   });
 });
+
+describe('echoed, given what a document holds when it is not text', () => {
+  /** A document is cast JSON, so a field the types call text may be anything. */
+  function field(json: string): string {
+    return JSON.parse(json).v;
+  }
+
+  it.each([
+    ['a missing value', '{}', 'undefined'],
+    ['null', '{"v":null}', 'null'],
+    ['an array', '{"v":["x","y"]}', 'x,y'],
+    ['a number', '{"v":5}', '5'],
+    ['an object', '{"v":{}}', '[object Object]'],
+  ])(
+    'says %s as a template literal did, and does not throw',
+    (_, json, said) => {
+      expect(echoed(field(json))).toBe(said);
+    },
+  );
+});

@@ -86,3 +86,43 @@ describe('a package URL that is not an OCI reference', () => {
     expect(holdsControl(message)).toBe(false);
   });
 });
+
+describe('a manifest whose media type is not text', () => {
+  const MEDIA_TYPE = 'application/vnd.oci.image.manifest.v1+json';
+  /** `declared` is the JSON text of the media type the manifest states. */
+  const manifestBody = (declared: string) =>
+    `{"schemaVersion":2,"mediaType":${declared},"config":{"mediaType":` +
+    `"application/vnd.oci.image.config.v1+json","digest":"sha256:${'a'.repeat(64)}",` +
+    `"size":2},"layers":[]}`;
+
+  async function refusal(declared: string) {
+    try {
+      await client(
+        () =>
+          new Response(manifestBody(declared), {
+            status: 200,
+            headers: { 'content-type': MEDIA_TYPE },
+          }),
+      ).pullManifest('latest');
+    } catch (error) {
+      if (error instanceof Error)
+        return {
+          name: error.constructor.name,
+          code: 'code' in error ? error.code : undefined,
+          message: error.message,
+        };
+    }
+    throw new Error('nothing was thrown');
+  }
+
+  it.each([
+    ['null', 'null', 'null'],
+    ['an array', '["x"]', 'x'],
+  ])('is the coded refusal it was when it is %s', async (_, declared, said) => {
+    expect(await refusal(declared)).toEqual({
+      name: 'RegistryProtocolError',
+      code: 'UNEXPECTED_STATUS',
+      message: `Manifest declares ${said} but was served as ${MEDIA_TYPE}`,
+    });
+  });
+});
