@@ -321,3 +321,48 @@ describe('an executable name two packages declare, one of them aliased', () => {
     },
   );
 });
+
+describe('a package that is not written is reported under the name it would have had', () => {
+  it('when it is not in the store: the alias, not the package', async () => {
+    const p = await project();
+    const { storePath: _gone, ...bare } = await p.store('string-width');
+    const outcome = await p.write(
+      [{ ...bare, installName: 'string-width-cjs' }],
+      [],
+    );
+    expect(outcome.skipped).toEqual([
+      {
+        path: join(p.modules, 'string-width-cjs'),
+        reason: 'the package is not materialised in the opm store',
+      },
+    ]);
+  });
+
+  it('when the planner refuses it: the alias, not the package', async () => {
+    const p = await project();
+    const direct = async (installName: string, alias: string) => ({
+      ...(await p.store('string-width')),
+      installName,
+      alias,
+    });
+    const outcome = await p.write(
+      [
+        await direct('string-width-cjs', 'a-lower'),
+        await direct('string-width-CJS', 'b-upper'),
+      ],
+      [],
+    );
+    expect(outcome.skipped).toEqual([
+      {
+        path: join(p.modules, 'string-width-CJS'),
+        reason: expect.stringMatching(
+          /differs only by case from string-width-cjs/u,
+        ),
+      },
+    ]);
+    expect(await readdir(p.modules)).toEqual([
+      '.opm-layout.json',
+      'string-width-cjs',
+    ]);
+  });
+});
