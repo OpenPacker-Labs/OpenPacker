@@ -254,3 +254,70 @@ describe('an alias in the node_modules of the project', () => {
     ]);
   });
 });
+
+describe('an executable name two packages declare, one of them aliased', () => {
+  const cli = (who: string) => ({
+    'cli.js': `console.log(${JSON.stringify(who)})\n`,
+  });
+  const tool = { bin: { tool: 'cli.js' } };
+
+  // By their own names `alpha` sorts before `zeta`; by the directories they are
+  // in, `aa` sorts before `alpha`. The directory is what the shim names.
+  onPosix(
+    'goes by the directory, not by what the package calls itself',
+    async () => {
+      const p = await project();
+      const outcome = await write(p, [
+        await placed(p, 'zeta', 'node_modules/aa', '1.0.0', cli('zeta'), tool),
+        await placed(
+          p,
+          'alpha',
+          'node_modules/alpha',
+          '1.0.0',
+          cli('alpha'),
+          tool,
+        ),
+      ]);
+      const shim = join(p.modules, '.bin', 'tool');
+      expect(await readFile(shim, 'utf8')).toContain("'/../aa/cli.js'");
+      expect(execFileSync('sh', [shim], { encoding: 'utf8' })).toBe('zeta\n');
+      expect(outcome.skipped.map((entry) => entry.reason)).toEqual([
+        'alpha also declares tool; aa keeps it',
+      ]);
+    },
+  );
+
+  onPosix(
+    'still lets a direct requirement keep it over an aliased transitive one',
+    async () => {
+      const p = await project();
+      const aliased = await placed(
+        p,
+        'zeta',
+        'node_modules/aa',
+        '1.0.0',
+        cli('zeta'),
+        tool,
+      );
+      const outcome = await write(p, [
+        { ...aliased, transitive: true },
+        await placed(
+          p,
+          'alpha',
+          'node_modules/zzz',
+          '1.0.0',
+          cli('alpha'),
+          tool,
+        ),
+      ]);
+      expect(
+        execFileSync('sh', [join(p.modules, '.bin', 'tool')], {
+          encoding: 'utf8',
+        }),
+      ).toBe('alpha\n');
+      expect(outcome.skipped.map((entry) => entry.reason)).toEqual([
+        'aa also declares tool; zzz keeps it',
+      ]);
+    },
+  );
+});
