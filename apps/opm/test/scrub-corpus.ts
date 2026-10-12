@@ -151,3 +151,42 @@ const AFTER_A_RUN = table(
 export function longRun(random: Random): string {
   return run(random, 1500) + pick(random, AFTER_A_RUN) + structured(random);
 }
+
+const HOST_UNITS = table('a|a|ß.é.|日.|ǆ.|ς.σ.|xn--zca.|.|a.|é|-|%41|a-');
+const AUTHORITIES = table(
+  `://|://|://|://u:p@|://${'z'.repeat(400)}@|://${'z'.repeat(400)}:${'9'.repeat(300)}@`,
+);
+const ENDS = table(':8080|/p|/p?q#f|?q|#f||/|:80/p?token=x');
+
+/**
+ * A URL whose host is between 240 and 269 characters, about a DNS name's
+ * longest, of ASCII or of many non-ASCII labels, with userinfo and a port
+ * that are not part of the host and are sometimes long.
+ */
+export function longHost(random: Random): string {
+  const unit = pick(random, HOST_UNITS);
+  const length = 240 + Math.floor(random() * 30);
+  let host = '';
+  while (host.length < length) host += unit;
+  return (
+    pick(
+      random,
+      SCHEMES.filter((scheme) => scheme !== ''),
+    ) +
+    pick(random, AUTHORITIES) +
+    host.slice(0, length) +
+    pick(random, ENDS)
+  );
+}
+
+/** Structured text with one to three of those URLs in it. */
+export function withLongHosts(random: Random): string {
+  let text = structured(random);
+  for (let count = 1 + Math.floor(random() * 3); count > 0; count -= 1)
+    text +=
+      pick(random, GLUE) +
+      longHost(random) +
+      pick(random, GLUE) +
+      structured(random);
+  return text;
+}

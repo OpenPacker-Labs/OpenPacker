@@ -275,8 +275,9 @@ What it does, in order:
 
 1. **Reads the lock, refuses what it cannot install.** Links, workspace members
    (and the packages inside them), a git or path source, an entry with no
-   `resolved` or no `integrity`, and a `package.json` that no longer matches the
-   lock are each named, and nothing is installed. Exit code 3.
+   `resolved` or no `integrity`, an entry whose `resolved` names a host longer
+   than 253 characters, and a `package.json` that no longer matches the lock are
+   each named, and nothing is installed. Exit code 3.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release
@@ -949,9 +950,11 @@ opm: hint: HTTPS_PROXY is set, but Node's built-in fetch ignores proxy variables
 
 `opmx` prints the same lines without `internal error`. The exit code is
 unchanged (`9`). Everything printed is redacted: a URL keeps its origin and path
-and loses userinfo, query and fragment, and the value after a credential name
-(`token`, `authorization`, `password`, `api-key`, a bearer) is withheld. A
-failure opm named, such as `POLICY_DENIED` or `OFFLINE`, keeps its single line.
+and loses userinfo, query and fragment (one whose host is longer than 253
+characters, which no DNS name can be, is printed as `[url]`), and the value
+after a credential name (`token`, `authorization`, `password`, `api-key`, a
+bearer) is withheld. A failure opm named, such as `POLICY_DENIED` or `OFFLINE`,
+keeps its single line.
 
 The `hint:` line appears only when a cause is a connection fault
 (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, an

@@ -92,4 +92,31 @@ describe('a source named in an error', () => {
       expect(redactSource(source)).not.toContain(CANARY);
     },
   );
+
+  it.each([
+    ['an https address', 'https://', '/x.tgz?token=x'],
+    ['a git source', 'git+https://u:p@', '/o/r.git#abc'],
+    ['an address with no slashes after the scheme', 'http:', '/x'],
+    ['an address a URL parser refuses', 'git+ssh://git@', ':o/r.git?token=x'],
+  ])(
+    'shows %s with a host no DNS name could be as [url], unread',
+    (_, before, after) => {
+      const started = performance.now();
+      expect(redactSource(`${before}${'ß.é.'.repeat(16384)}${after}`)).toBe(
+        '[url]',
+      );
+      // Node's parser takes more than a second for this host.
+      expect(performance.now() - started).toBeLessThan(2000);
+    },
+  );
+
+  it('shows a host of 253 characters as it always did', () => {
+    const host = 'a'.repeat(253);
+    expect(redactSource(`git+https://u:p@${host}/o/r.git#abc`)).toBe(
+      `git+https://${host}/o/r.git`,
+    );
+    expect(redactSource(`https://u:p@${host}/o/r.tgz?x#y`)).toBe(
+      `https://${host}/o/r.tgz`,
+    );
+  });
 });

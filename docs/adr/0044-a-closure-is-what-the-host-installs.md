@@ -437,6 +437,27 @@ independent review got the same two figures.
   run). Through `report`, 1,000,000 characters of lines took 198 ms, and the
   100,000-line requirement through `handleError` 61 ms. The tests of both fail
   above 2 s.
+- **Withholding is linear, and a host no DNS name could be is not read.**
+  `scrub` (`apps/opm/src/scrub.ts`) began a scan again at every word boundary of
+  a long run: `a-` repeated to 80,000 characters took 12.3 s (13.2 s through
+  `formatFailure`), `a.` 4.6 s, and a mebibyte of `a.` 18 minutes and of
+  `a-` 40. It finds each `://` and reads its scheme backwards, and starts the
+  credential match at the name, and gives the same text byte for byte
+  (`scrub-differential.test.ts`, against the first version, frozen). A mebibyte
+  of each hostile text takes 10 to 35 ms, and 175,000 short URLs 0.1 to 0.2 s.
+  One output changed on purpose. Node's URL parser takes time that grows with
+  the square of the length of a special-scheme host of many non-ASCII labels
+  (`'http://'` and `'ß.é.'` 131,072 times, 524,295 characters, took 37 s; 65,536
+  characters 1.2 s), and no host over 253 characters is a DNS name. So
+  `hasOverlongHost` (`@openpacker/adapter-core`) is asked before the parser is:
+  `scrub` and `redactSource` print such a URL as `[url]`, and `classifyResolved`
+  refuses a lock entry whose `resolved` names one, so that `opm ci` of a lock
+  with a 524,288-character host, which took 146 s, answers as fast as it starts
+  (0.9 s). The sites that read a URL out of a registry's document (the artifact
+  location in `registry.ts`, which is the packument's `dist.tarball`, the
+  artifact origins of `firstPartyOriginPolicy`, the winget `InstallerUrl`) or
+  out of the other lock reader (`lock-import`) still hand the parser what they
+  were sent.
 - **Every writer, and the ones left as written.** `handleError` (usage, run,
   `OpmError` and coded errors), `formatFailure` (an error with no code keeps the
   line breaks of its message; its causes are one line each, and so are

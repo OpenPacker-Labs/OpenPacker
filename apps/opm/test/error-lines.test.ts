@@ -249,6 +249,36 @@ describe('the lists of opm ci, from a lock', () => {
     expect(err).not.toContain(CANARY);
   });
 
+  it.each([
+    ['an https archive', 'https://', '/b/-/b-1.0.0.tgz', 'tarball'],
+    ['a git source', 'git+https://', '/b.git#0123456789abcdef', 'git'],
+  ])(
+    'refuses %s with a host no DNS name could be, without reading it',
+    async (_, before, after) => {
+      const started = performance.now();
+      const { dir, err, code } = await ci(
+        { dependencies: { a: '1.0.0', b: '1.0.0' } },
+        {
+          'node_modules/a': registry('a'),
+          'node_modules/b': {
+            ...git,
+            resolved: `${before}${'ß.é.'.repeat(32768)}${after}`,
+          },
+        },
+        ['--offline'],
+      );
+      expect(code).toBe(EXIT_CODES.invalidInput);
+      expect(err).toBe(
+        `opm: Refusing to install ${join(dir, 'package-lock.json')}: it holds 1 entry opm ci cannot install, and installing the rest would not be installing the lock:\n` +
+          '  node_modules/b: b@1.0.0 resolved names a host longer than 253 characters, which no DNS name can be\n',
+      );
+      // Node's URL parser takes about 4 seconds for a host of this size, and
+      // reads it more than once on the way to an error.
+      expect(performance.now() - started).toBeLessThan(2000);
+    },
+    120_000,
+  );
+
   it('lists the packages missing from the store when it is offline, one to a line', async () => {
     const { err, code } = await ci(
       { dependencies: { a: '1.0.0', b: '1.0.0' } },

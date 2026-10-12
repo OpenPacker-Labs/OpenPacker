@@ -10,6 +10,11 @@ import {
 } from './document-refusal.js';
 export { ProviderError } from './provider-error.js';
 export {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  writtenHostLength,
+} from './url-host.js';
+export {
   MetadataLimitError,
   ResponseTooLargeError,
   isDocumentRefusal,

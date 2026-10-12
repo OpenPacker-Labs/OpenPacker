@@ -1,11 +1,13 @@
-import { redactUrl } from '@openpacker/adapter-core';
+import { hasOverlongHost, redactUrl } from '@openpacker/adapter-core';
 
 /**
  * Withhold what must not reach a terminal, a log or a pasted bug report.
  *
  * Three passes, in this order: a URL keeps its origin and path and loses
- * userinfo, query and fragment; the value after a credential-shaped name is
- * withheld; a bearer or basic token is withheld.
+ * userinfo, query and fragment, or is withheld whole as `[url]` when the URL
+ * parser refuses it or its host is longer than a DNS name can be; the value
+ * after a credential-shaped name is withheld; a bearer or basic token is
+ * withheld.
  *
  * The text is a registry's to choose (an uncoded error carries whatever its
  * message held), so no pass may take longer than the text is long. A pass that
@@ -103,6 +105,10 @@ function urlEnd(text: string, from: number): number {
 }
 
 function redactUrlText(match: string): string {
+  // No DNS name is longer than 253 characters, and Node's URL parser takes the
+  // square of the length of a host made of many non-ASCII labels (37 seconds
+  // for 524,295 characters), so such a URL is withheld whole, unread.
+  if (hasOverlongHost(match)) return '[url]';
   try {
     const url = new URL(match);
     // A URL with an opaque origin (`socks5://…`) still has a host.

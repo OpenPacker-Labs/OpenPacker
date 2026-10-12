@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
+  hasOverlongHost,
   redactUrl,
   type FrozenLock,
   type FrozenLockPackage,
@@ -114,9 +115,12 @@ export function labelOf(pkg: FrozenLockPackage): string {
  * is shown as its origin and path (`redactUrl`). `git+https:`, `git+ssh:`,
  * `file:` and the other schemes that have none have no origin to show, so the
  * address itself is shown, cleared. An address the URL parser refuses is cut as
- * text, and loses the same three things.
+ * text, and loses the same three things. One whose host is longer than a DNS
+ * name can be is shown as `[url]`.
  */
 export function redactSource(source: string): string {
+  // A host no DNS name could be is not handed to the URL parser (see `scrub`).
+  if (hasOverlongHost(source)) return '[url]';
   try {
     const url = new URL(source);
     if (url.origin !== 'null') return redactUrl(url);

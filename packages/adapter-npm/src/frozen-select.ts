@@ -22,13 +22,15 @@
  * host's to judge.
  */
 
-import type {
-  FrozenLockOptions,
-  FrozenLockPackage,
-  FrozenLockRefusal,
-  FrozenLockSkip,
-  FrozenSourceKind,
-  NativeTarget,
+import {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  type FrozenLockOptions,
+  type FrozenLockPackage,
+  type FrozenLockRefusal,
+  type FrozenLockSkip,
+  type FrozenSourceKind,
+  type NativeTarget,
 } from '@openpacker/adapter-core';
 import {
   resolveFromChain,
@@ -75,6 +77,12 @@ export function classifyResolved(entry: {
   const resolved = entry.resolved;
   if (resolved === undefined)
     return { problem: 'has no resolved URL, so there is nothing to fetch' };
+  // Before any parser reads it: Node's takes the square of the length of a host
+  // of many non-ASCII labels, and no DNS name is longer than 253 characters.
+  if (hasOverlongHost(resolved))
+    return {
+      problem: `resolved names a host longer than ${LONGEST_HOST_LENGTH} characters, which no DNS name can be`,
+    };
   if (
     /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:)/iu.test(resolved)
   )

@@ -1,15 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { scrub } from '../src/scrub.js';
-import { longRun, scattered, seeded, structured } from './scrub-corpus.js';
-import { legacyScrub } from './scrub-legacy.js';
+import {
+  longRun,
+  scattered,
+  seeded,
+  structured,
+  withLongHosts,
+} from './scrub-corpus.js';
 import { HOSTILE, build } from './scrub-hostile.js';
+import { legacyScrub } from './scrub-legacy.js';
+import {
+  expectedScrub,
+  holdsOverlongHost,
+  LONGEST_HOST,
+} from './scrub-oracle.js';
 import { EXISTING_VECTORS } from './scrub-vectors.js';
 
 /**
  * `scrub` was made linear without changing what it withholds. The first version
- * is frozen in `scrub-legacy.ts`; every input here must give the same text from
- * both, byte for byte. The inputs are short, because the first version is
- * quadratic, and drawn to hit what the expressions read.
+ * is frozen in `scrub-legacy.ts`, and `scrub` gives the same text, byte for
+ * byte, on every input but one class: a URL whose host, as written, is longer
+ * than 253 characters is withheld as `[url]` and never reaches the URL parser
+ * (`scrub-oracle.ts` says it independently and precisely). The inputs of the
+ * first part hold no such URL, and are short because the first version is
+ * quadratic; the second part is the class and its edge.
  */
 
 const NEL = '\u0085';
@@ -110,12 +124,15 @@ describe('scrub gives the first version\u2019s text', () => {
   }, 120_000);
 
   it('on the texts of the linear-time test, at a size the first version can do', () => {
-    // The timing test gives `expected` for a mebibyte; this checks that it is
-    // also what the first version says, on 16 KiB of each text.
+    // The timing test gives `expected` for a mebibyte; this checks it on 16 KiB
+    // of each text. The texts that are one long host are the class: the oracle
+    // gives `[url]` for them and the first version prints the URL.
     for (const text of HOSTILE) {
       const { input, expected } = build(text, 16 * 1024);
-      expect(legacyScrub(input), text.name).toBe(expected);
       expect(scrub(input), text.name).toBe(expected);
+      expect(expectedScrub(input), text.name).toBe(expected);
+      if (text.becomes === undefined)
+        expect(legacyScrub(input), text.name).toBe(expected);
     }
   }, 120_000);
 
@@ -136,6 +153,10 @@ describe('scrub gives the first version\u2019s text', () => {
       const expected = legacyScrub(input);
       const actual = scrub(input);
       if (expected !== input) changed += 1;
+      if (expectedScrub(input) !== expected && found.length < 5)
+        found.push(
+          `the oracle differs from the first version on ${JSON.stringify(input)}`,
+        );
       if (actual !== expected && found.length < 5)
         found.push(
           `${JSON.stringify(input)}: first version ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
@@ -158,5 +179,113 @@ describe('scrub gives the first version\u2019s text', () => {
     };
     expect(disagreements(inputs())).toEqual([]);
     expect(changed).toBeGreaterThan(200);
+  }, 300_000);
+});
+
+describe('scrub withholds a URL whose host no DNS name could be', () => {
+  const ascii = (length: number) => 'a'.repeat(length);
+  const labels = (length: number) => 'ß.é.'.repeat(64).slice(0, length);
+
+  it.each([
+    ['253 ASCII characters', `http://${ascii(LONGEST_HOST)}/p`, false],
+    ['254 ASCII characters', `http://${ascii(LONGEST_HOST + 1)}/p`, true],
+    [
+      '253 characters of non-ASCII labels',
+      `http://${labels(LONGEST_HOST)}/p`,
+      false,
+    ],
+    [
+      '254 characters of non-ASCII labels',
+      `http://${labels(LONGEST_HOST + 1)}/p`,
+      true,
+    ],
+    ['a host of any scheme', `x://${ascii(LONGEST_HOST + 1)}/p`, true],
+    [
+      '254 characters with a port after them',
+      `https://${ascii(LONGEST_HOST + 1)}:8443/p`,
+      true,
+    ],
+    [
+      '253 characters with a long port after them',
+      `https://${ascii(LONGEST_HOST)}:${'9'.repeat(400)}/p`,
+      false,
+    ],
+    [
+      '253 characters behind a long userinfo',
+      `https://${'u'.repeat(900)}:${'p'.repeat(900)}@${ascii(LONGEST_HOST)}/p`,
+      false,
+    ],
+    [
+      '254 characters behind a short userinfo',
+      `https://u:p@${ascii(LONGEST_HOST + 1)}/p`,
+      true,
+    ],
+    [
+      '254 characters after two @',
+      `https://a@b@${ascii(LONGEST_HOST + 1)}/p`,
+      true,
+    ],
+    [
+      '253 characters with a long path, query and fragment',
+      `https://${ascii(LONGEST_HOST)}/${'p'.repeat(900)}?${'q'.repeat(900)}#${'f'.repeat(900)}`,
+      false,
+    ],
+    [
+      '254 characters ended by a query',
+      `https://${ascii(LONGEST_HOST + 1)}?q`,
+      true,
+    ],
+    [
+      '254 characters ended by a fragment',
+      `https://${ascii(LONGEST_HOST + 1)}#f`,
+      true,
+    ],
+    [
+      'a bracketed host after a long userinfo (the URL pattern ends at the ])',
+      `https://${'u'.repeat(900)}@[::1]:80/p`,
+      false,
+    ],
+    ['no path after a host of 254', `http://${ascii(LONGEST_HOST + 1)}`, true],
+  ])('with %s', (_, address, withheld) => {
+    const text = `see ${address} end`;
+    const found = withheld ? 'see [url] end' : legacyScrub(text);
+    expect(holdsOverlongHost(text)).toBe(withheld);
+    expect(expectedScrub(text)).toBe(found);
+    expect(scrub(text)).toBe(found);
+  });
+
+  it('does not print the userinfo or the host of one it withholds', () => {
+    const secret = 'vtok_dummy_marker_0123456789abcdef';
+    const host = 'ß.é.'.repeat(80);
+    const text = `GET http://deploy:${secret}@${host}/p?token=${secret} failed`;
+    expect(scrub(text)).toBe('GET [url] failed');
+  });
+
+  it('on 40,000 strings that hold a URL with a host near the longest there is', () => {
+    const random = seeded(0x2f7c1);
+    const found: string[] = [];
+    let withheld = 0;
+    let kept = 0;
+    for (let count = 0; count < 40_000; count += 1) {
+      const input = withLongHosts(random);
+      const expected = expectedScrub(input);
+      const legacy = legacyScrub(input);
+      if (scrub(input) !== expected && found.length < 5)
+        found.push(
+          `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}`,
+        );
+      // The difference from the first version is the class, and only the class.
+      if (expected !== legacy) {
+        withheld += 1;
+        if (!holdsOverlongHost(input) && found.length < 5)
+          found.push(
+            `${JSON.stringify(input)}: differs without an overlong host`,
+          );
+      } else kept += 1;
+    }
+    expect(found).toEqual([]);
+    // Both sides of the edge are exercised.
+    expect(withheld).toBeGreaterThan(10_000);
+    expect(kept).toBeGreaterThan(5000);
   }, 300_000);
 });
