@@ -61,6 +61,17 @@ interface PackageFile {
 
 const MAX_PACKAGE_JSON_BYTES = 4 * 1024 * 1024;
 
+/**
+ * `plainLine`, for text a project's files chose: one line, with no escape or
+ * control character, nothing cut. Loaded when a message needs it, because
+ * starting a script imports nothing but Node and this directory (ADR 0047,
+ * `run-load.test.ts`); listing scripts and explaining a failure are the rare
+ * paths.
+ */
+async function plain(): Promise<(text: string) => string> {
+  return (await import('@openpacker/canonical')).plainLine;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -89,9 +100,10 @@ async function readPackageFile(root: string): Promise<PackageFile | undefined> {
   try {
     parsed = JSON.parse(text);
   } catch (error) {
+    const plainLine = await plain();
     throw new RunError(
       'INVALID_MANIFEST',
-      `${file} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${file} is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (!isRecord(parsed))
@@ -122,15 +134,20 @@ async function projectDirectory(
   return (await findProjectRoot(cwd)) ?? resolve(cwd);
 }
 
-function oneLine(command: string): string {
-  return command.replace(/\r?\n/gu, '\\n');
+/**
+ * A command on one line: a line feed shows as the two characters `\n`, and
+ * what a terminal acts on is removed.
+ */
+function oneLine(command: string, plainLine: (text: string) => string): string {
+  return plainLine(command.replace(/\r?\n/gu, '\\n'));
 }
 
-function listScripts(pkg: PackageFile, io: ChildIo): number {
+async function listScripts(pkg: PackageFile, io: ChildIo): Promise<number> {
+  const plainLine = await plain();
   let listed = 0;
   for (const [name, command] of pkg.scripts)
     if (typeof command === 'string') {
-      io.stdout.write(`${name}\t${oneLine(command)}\n`);
+      io.stdout.write(`${plainLine(name)}\t${oneLine(command, plainLine)}\n`);
       listed += 1;
     }
   if (listed === 0) io.stdout.write('(no scripts)\n');
@@ -180,12 +197,13 @@ export async function runScriptCommand(
       'NOT_FOUND',
       `No package.json in ${root}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
     );
-  if (request.script === undefined) return listScripts(pkg, io);
+  if (request.script === undefined) return await listScripts(pkg, io);
 
   const script = request.script;
   if (!pkg.scripts.has(script)) {
     if (request.ifPresent) return 0;
-    const names = [...pkg.scripts.keys()];
+    const plainLine = await plain();
+    const names = [...pkg.scripts.keys()].map((name) => plainLine(name));
     throw new RunError(
       'NOT_FOUND',
       `No script "${script}" in ${join(root, 'package.json')}` +
@@ -236,7 +254,11 @@ export async function runScriptCommand(
   return 0;
 }
 
-function describeProviders(report: BinProviderReport, bin: string): string[] {
+function describeProviders(
+  report: BinProviderReport,
+  bin: string,
+  plainLine: (text: string) => string,
+): string[] {
   if (!report.locked)
     return [
       'This is not an opm project with a lock, so there is nothing to say about which package provides it.',
@@ -250,7 +272,7 @@ function describeProviders(report: BinProviderReport, bin: string): string[] {
       provider.evidence === 'declared'
         ? 'declares it'
         : 'has that name, so it likely does';
-    return `${provider.alias} (${provider.purl}), ${provider.direct ? 'a direct requirement' : 'a dependency'}, ${how}`;
+    return `${plainLine(provider.alias)} (${plainLine(provider.purl)}), ${provider.direct ? 'a direct requirement' : 'a dependency'}, ${how}`;
   });
   const first = report.providers[0];
   const next =
@@ -288,14 +310,15 @@ export async function runExecCommand(
     // is loaded only then: a bin that is found never pays for it.
     const { findBinProviders } = await import('@openpacker/opm-project');
     const report = await findBinProviders(root, request.bin);
+    const plainLine = await plain();
     throw new RunError(
       'NOT_FOUND',
       [
         `"${request.bin}" is not in node_modules/.bin of ${root} or any parent directory; exec never fetches or searches PATH`,
         ...resolution.present.map(
-          (file) => `${file} exists but is not executable`,
+          (file) => `${plainLine(file)} exists but is not executable`,
         ),
-        ...describeProviders(report, request.bin),
+        ...describeProviders(report, request.bin, plainLine),
       ].join('\n'),
     );
   }

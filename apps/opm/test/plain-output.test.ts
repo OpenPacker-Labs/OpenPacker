@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { HOSTILE, ciProject, lines, violations } from './plain-fixture.js';
-import { type Ran } from './repo-fixture.js';
+import {
+  HOSTILE,
+  ciProject,
+  lines,
+  runWith,
+  violations,
+} from './plain-fixture.js';
+import {
+  member,
+  npmFiles,
+  opmFiles,
+  renameKey,
+  type Json,
+  type Ran,
+  type TomlSections,
+} from './repo-fixture.js';
 
 /**
  * A cloned repository's file cannot shape what opm writes, on either stream,
@@ -51,4 +65,102 @@ describe('opm ci, after it has installed', () => {
     });
     await expectPlain((text) => go(text, ['ci']));
   });
+});
+
+describe('opm run', () => {
+  const project = (edit: (scripts: Json, text: string) => void) => {
+    return (text: string, argv: string[]) => {
+      const scripts: Json = { build: 'echo build' };
+      edit(scripts, text);
+      return runWith(
+        {
+          'package.json': JSON.stringify({
+            name: 'p',
+            version: '1.0.0',
+            scripts,
+          }),
+        },
+        argv,
+      );
+    };
+  };
+
+  it('lists a script with a hostile name on one line', async () => {
+    const go = project((scripts, text) => {
+      scripts[`x${text}`] = 'echo hi';
+    });
+    const innocent = await go('x', ['run']);
+    expect(innocent.out).toContain('xx\techo hi');
+    await expectPlain((text) => go(text, ['run']));
+  });
+
+  it('lists a script with a hostile command on one line', async () => {
+    const go = project((scripts, text) => {
+      scripts.x = `echo hi${text}`;
+    });
+    await expectPlain((text) => go(text, ['run']));
+  });
+
+  it('keeps showing a command with a line feed as \\n', async () => {
+    const ran = await project((scripts) => {
+      scripts.two = 'echo a\necho b';
+    })('x', ['run']);
+    expect(ran.out).toContain('two\techo a\\necho b\n');
+  });
+
+  it('shows a tab in a name or a command as a space', async () => {
+    // The one change to text with nothing hostile in it: a tab would pass for the
+    // column between the name and the command.
+    const ran = await project((scripts) => {
+      scripts['a\tb'] = 'echo\thi';
+    })('x', ['run']);
+    expect(ran.out).toContain('a b\techo hi\n');
+  });
+
+  it('names the scripts it has, on one line, when one is not there', async () => {
+    const go = project((scripts, text) => {
+      scripts[`x${text}`] = 'echo hi';
+    });
+    await expectPlain((text) => go(text, ['run', 'missing']));
+  });
+
+  it('refuses a package.json that is not JSON in one line', async () => {
+    await expectPlain((text) =>
+      runWith({ 'package.json': `{"scripts":${text}` }, ['run']),
+    );
+  });
+});
+
+describe('opm exec, for a bin the lock declares and node_modules lacks', () => {
+  const project =
+    (edit: (lock: Json, toml: TomlSections, text: string) => void) =>
+    (text: string) =>
+      runWith(
+        {
+          ...npmFiles('plain', () => {}),
+          ...opmFiles((lock, toml) => edit(lock, toml, text)),
+        },
+        ['exec', 'ax'],
+      );
+
+  it.each<[string, (lock: Json, toml: TomlSections, text: string) => void]>([
+    [
+      'an alias',
+      (lock, _toml, text) =>
+        renameKey(member(lock, 'packages'), 'a', `a${text}`),
+    ],
+    [
+      'a purl',
+      (lock, _toml, text) => {
+        member(lock, 'packages', 'a').purl = `pkg:npm/a${text}`;
+      },
+    ],
+  ])(
+    'names the package that would provide it on one line: %s',
+    async (_, edit) => {
+      const ran = await project(edit)('x');
+      expect(ran.err).toContain('The lock would provide it through:');
+      await expectPlain(async (text) => project(edit)(text));
+    },
+  );
 });
