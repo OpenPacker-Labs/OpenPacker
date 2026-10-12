@@ -40,7 +40,10 @@ export interface ScheduleOptions {
 export interface ScheduleOutcome {
   /** Job ids in the order they started. */
   started: string[];
-  /** The first job that ended with a non-zero status, if any. */
+  /**
+   * The first job that ended with a non-zero status, if any. Not set for a job
+   * that ends after a signal reached the run: the signal is the reason.
+   */
   failed?: { id: string; result: JobResult };
   /** The first job that threw (it could not start a child, say), if it came first. */
   error?: { id: string; error: unknown };
@@ -128,10 +131,14 @@ export async function schedule(
         outcome.started.push(id);
         void (async () => await job.run(control))().then(
           (result) => {
+            // Once a signal sent to `opm` has arrived, a job that ends badly
+            // was ended by it (or by the run stopping): the run's status is
+            // the signal's, and no member is named as having failed.
             if (
               result.status !== 0 &&
               outcome.failed === undefined &&
-              outcome.error === undefined
+              outcome.error === undefined &&
+              outcome.interrupted === undefined
             ) {
               outcome.failed = { id, result };
               if (!stopping) stop('SIGTERM');

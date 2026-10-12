@@ -248,6 +248,8 @@ posix('signals', () => {
     ).toEqual(['a', 'b', 'c']);
     expect(started(log)).not.toContain('d');
     expect(ran.status).toBe(143);
+    // The members the signal ended are not reported as members that failed.
+    expect(ran.err).toBe('');
     expect(signals.listenerCount('SIGTERM')).toBe(0);
   });
 

@@ -187,9 +187,13 @@ refused by name with the reason. An unknown option stays a usage error (0047
 11. **Signals reach every running member through one subscription.** `SIGINT`,
     `SIGTERM` and `SIGHUP` sent to `opm` are forwarded to each running child by
     the same rules, nothing more starts, and the status is 128 plus the signal
-    unless a member failed first. One subscription, not one per child: a run of
-    a hundred members does not add a hundred listeners and trip Node's warning.
-    A child that ignores `SIGTERM` is waited for, as with `opm run`.
+    unless a member failed first. A member the signal ended is not named as a
+    failure: once a signal has arrived, no `opm:` line says a member was ended
+    by it (the first version printed
+    `opm: script "go" of p4 was ended by SIGTERM` for whichever member ended
+    first). One subscription, not one per child: a run of a hundred members does
+    not add a hundred listeners and trip Node's warning. A child that ignores
+    `SIGTERM` is waited for, as with `opm run`.
 
 ### Spelling
 

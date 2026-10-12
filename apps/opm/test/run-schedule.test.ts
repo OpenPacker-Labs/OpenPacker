@@ -219,6 +219,39 @@ describe('schedule', () => {
     expect(sent.sort()).toEqual(['a:SIGHUP', 'b:SIGHUP', 'c:SIGHUP']);
     expect(outcome.interrupted).toBe('SIGHUP');
     expect(outcome.started).not.toContain('d');
+    // A member ended by the signal sent to opm is not a member that failed.
+    expect(outcome.failed).toBeUndefined();
+  });
+
+  it('does not take the first job a signal ended, or any that ends after it, for the failure', async () => {
+    const g = gate();
+    const { host, signals } = testHost();
+    const done = schedule([g.job('a'), g.job('b'), g.job('c')], {
+      limit: 3,
+      host,
+    });
+    await tick();
+    signals.emit('SIGTERM');
+    g.finish('b', 143);
+    g.finish('a', 1);
+    g.finish('c', 0);
+    const outcome = await done;
+    expect(outcome.failed).toBeUndefined();
+    expect(outcome.interrupted).toBe('SIGTERM');
+  });
+
+  it('keeps a failure that came before the signal', async () => {
+    const g = gate();
+    const { host, signals } = testHost();
+    const done = schedule([g.job('a'), g.job('b')], { limit: 2, host });
+    await tick();
+    g.finish('a', 3);
+    await tick();
+    signals.emit('SIGTERM');
+    g.finish('b', 143);
+    const outcome = await done;
+    expect(outcome.failed?.id).toBe('a');
+    expect(outcome.failed?.result.status).toBe(3);
   });
 
   it('tells a child registered after the run ended to end at once', async () => {
