@@ -10,26 +10,57 @@
  * {@link GROUP_LIMIT} bytes is written out and streams from then on: memory
  * is bounded, and the ordering promise is given up only for output nobody
  * would read as a block.
+ *
+ * A line with no newline is bounded too. Minified JSON, base64 and a progress
+ * bar that only returns the carriage are one line however long they run, so a
+ * line that passes {@link LINE_LIMIT} is written as several, each with the
+ * prefix. What a member holds back is then its block (up to the group limit)
+ * and at most one unfinished line per stream.
  */
 import type { ChildIo } from './run-child.js';
 
 export const GROUP_LIMIT = 8 * 1024 * 1024;
 
+/** The longest piece of a line held back or written as one prefixed line, in UTF-16 units. */
+export const LINE_LIMIT = 64 * 1024;
+
 export type OutputMode = 'group' | 'stream';
 
 type Stream = 'stdout' | 'stderr';
 
-/** Cuts a stream of chunks into lines; the last, unfinished line waits for `end`. */
+/** Where to cut `text` at `limit`: never between the two halves of a surrogate pair. */
+function cutAt(text: string, limit: number): number {
+  const before = text.charCodeAt(limit - 1);
+  return before >= 0xd800 && before <= 0xdbff ? limit - 1 : limit;
+}
+
+/**
+ * Cuts a stream of chunks into lines; the last, unfinished line waits for
+ * `end`. A line is looked for in the new chunk only, and what waits never
+ * passes {@link LINE_LIMIT}, so the work for n bytes is n, not n squared.
+ */
 class Lines {
   private pending = '';
 
   constructor(private readonly emit: (line: string) => void) {}
 
   push(chunk: string): void {
-    const text = this.pending + chunk;
-    const parts = text.split('\n');
-    this.pending = parts.pop() ?? '';
-    for (const part of parts) this.emit(part);
+    let from = 0;
+    for (
+      let at = chunk.indexOf('\n');
+      at !== -1;
+      at = chunk.indexOf('\n', from)
+    ) {
+      this.emitLine(this.pending + chunk.slice(from, at));
+      this.pending = '';
+      from = at + 1;
+    }
+    this.pending += chunk.slice(from);
+    while (this.pending.length > LINE_LIMIT) {
+      const cut = cutAt(this.pending, LINE_LIMIT);
+      this.emit(this.pending.slice(0, cut));
+      this.pending = this.pending.slice(cut);
+    }
   }
 
   end(): void {
@@ -37,6 +68,17 @@ class Lines {
     const last = this.pending;
     this.pending = '';
     this.emit(last);
+  }
+
+  /** A finished line, written as pieces when it is longer than the limit. */
+  private emitLine(line: string): void {
+    let rest = line;
+    while (rest.length > LINE_LIMIT) {
+      const cut = cutAt(rest, LINE_LIMIT);
+      this.emit(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    this.emit(rest);
   }
 }
 

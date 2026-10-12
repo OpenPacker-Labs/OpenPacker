@@ -172,6 +172,29 @@ posix('what a member prints', () => {
     ]);
   });
 
+  it('writes a line with no newline in prefixed pieces, grouped and streamed alike', async () => {
+    const ws = await makeWorkspace({
+      'packages/a': {
+        name: 'a',
+        scripts: {
+          wide: `node -e "process.stdout.write('x'.repeat(300000)); process.stdout.write('\\nend\\n')"`,
+        },
+      },
+      'packages/b': { name: 'b', scripts: { wide: 'echo b' } },
+    });
+    for (const flag of [[], ['--stream']]) {
+      const ran = await go('run', ['wide', '-r', ...flag], ws.root);
+      expect(ran.status, ran.err).toBe(0);
+      const lines = ran.out.split('\n').filter((l) => l.startsWith('a wide: '));
+      const pieces = lines.map((l) => l.slice('a wide: '.length));
+      expect(pieces.at(-1), flag.join()).toBe('end');
+      for (const piece of pieces)
+        expect(piece.length).toBeLessThanOrEqual(64 * 1024);
+      expect(pieces.slice(0, -1).join('')).toBe('x'.repeat(300_000));
+      expect(ran.out).toContain('b wide: b\n');
+    }
+  });
+
   it('passes arguments after -- to the script of every member and to no hook', async () => {
     const ws = await makeWorkspace({
       'packages/a': {

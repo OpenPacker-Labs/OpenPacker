@@ -111,6 +111,127 @@ describe('MemberOutput, streaming', () => {
   });
 });
 
+/** The documented bound on a line held back while it has no newline (ADR 0053 section 9). */
+const LINE_BOUND = 64 * 1024;
+
+/** The text of a write without its `<label> <step>: ` prefix and newline. */
+function payload(write: string, prefix: string): string {
+  const text = write.slice(write.indexOf('|') + 1);
+  expect(text.startsWith(prefix), 'prefix').toBe(true);
+  expect(text.endsWith('\n'), 'newline').toBe(true);
+  return text.slice(prefix.length, -1);
+}
+
+describe('MemberOutput, a line with no newline', () => {
+  it('is written out in pieces once it passes the bound, so streaming never holds it whole', () => {
+    const { io, writes } = recorder();
+    const m = new MemberOutput(io, 'p', 'stream');
+    const s = m.step('t');
+    const chunk = 'x'.repeat(16 * 1024);
+    let pushed = 0;
+    let written = 0;
+    for (let i = 0; i < 256; i += 1) {
+      s.stdout.write(chunk);
+      pushed += chunk.length;
+      written = writes.reduce((n, w) => n + payload(w, 'p t: ').length, 0);
+      expect(
+        pushed - written,
+        `held after ${pushed} bytes`,
+      ).toBeLessThanOrEqual(LINE_BOUND);
+    }
+    m.finish();
+    const pieces = writes.map((w) => payload(w, 'p t: '));
+    expect(pieces.join('')).toBe(chunk.repeat(256));
+    for (const piece of pieces)
+      expect(piece.length).toBeLessThanOrEqual(LINE_BOUND);
+  });
+
+  it('is bounded when grouped as well: the group limit plus one line, not the whole line', () => {
+    const { io, writes } = recorder();
+    const limit = 1024 * 1024;
+    const m = new MemberOutput(io, 'p', 'group', limit);
+    const s = m.step('t');
+    const chunk = 'y'.repeat(32 * 1024);
+    let pushed = 0;
+    for (let i = 0; i < 256; i += 1) {
+      s.stderr.write(chunk);
+      pushed += chunk.length;
+      const written = writes.reduce(
+        (n, w) => n + payload(w, 'p t: ').length,
+        0,
+      );
+      // What is held back is the block (up to the limit, prefixes counted) and one line.
+      expect(
+        pushed - written,
+        `held after ${pushed} bytes`,
+      ).toBeLessThanOrEqual(limit + LINE_BOUND);
+    }
+    m.finish();
+    expect(writes.map((w) => payload(w, 'p t: ')).join('')).toBe(
+      chunk.repeat(256),
+    );
+  });
+
+  it('keeps the bytes of a long line in order, and a short line after it is a line of its own', () => {
+    const { io, writes } = recorder();
+    const m = new MemberOutput(io, 'p', 'stream');
+    const s = m.step('t');
+    const long = 'abcdefghij'.repeat(15_000);
+    s.stdout.write(long.slice(0, 70_000));
+    s.stdout.write(`${long.slice(70_000)}\nshort\n`);
+    m.finish();
+    const pieces = writes.map((w) => payload(w, 'p t: '));
+    expect(pieces.at(-1)).toBe('short');
+    expect(pieces.slice(0, -1).join('')).toBe(long);
+    expect(pieces.length).toBe(1 + Math.ceil(long.length / LINE_BOUND));
+  });
+
+  it('cuts every line of one large chunk, and leaves a line of exactly the bound whole', () => {
+    const { io, writes } = recorder();
+    const m = new MemberOutput(io, 'p', 'stream');
+    const s = m.step('t');
+    const exact = 'e'.repeat(LINE_BOUND);
+    s.stdout.write(`${'a'.repeat(100_000)}\n${'b'.repeat(100_000)}\n${exact}`);
+    s.stdout.write('\n');
+    m.finish();
+    const pieces = writes.map((w) => payload(w, 'p t: '));
+    for (const piece of pieces)
+      expect(piece.length).toBeLessThanOrEqual(LINE_BOUND);
+    expect(pieces.slice(0, 2).join('')).toBe(
+      'a'.repeat(100_000).slice(0, 2 * LINE_BOUND),
+    );
+    expect(pieces.at(-1)).toBe(exact);
+    expect(pieces).not.toContain('');
+  });
+
+  it('never cuts between the two halves of a character outside the BMP', () => {
+    const { io, writes } = recorder();
+    const m = new MemberOutput(io, 'p', 'stream');
+    const s = m.step('t');
+    const text = `a${'\u{1F600}'.repeat(60_000)}`;
+    s.stdout.write(text);
+    m.finish();
+    const pieces = writes.map((w) => payload(w, 'p t: '));
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const piece of pieces)
+      expect(/\p{Surrogate}/u.test(piece)).toBe(false);
+    expect(pieces.join('')).toBe(text);
+  });
+
+  it('takes a hundred megabytes of one line in well under the time a quadratic buffer needs', () => {
+    const { io } = recorder();
+    const m = new MemberOutput(io, 'p', 'stream');
+    const s = m.step('t');
+    const chunk = 'z'.repeat(64 * 1024);
+    const before = performance.now();
+    for (let i = 0; i < 1600; i += 1) s.stdout.write(chunk);
+    m.finish();
+    // 100 MiB of it. The buffer this replaced re-joined and re-split the whole
+    // held line on every chunk and needed minutes.
+    expect(performance.now() - before).toBeLessThan(20_000);
+  });
+});
+
 describe('memberLabel', () => {
   it('is the name, else the directory, else a dot for the root', () => {
     expect(memberLabel({ name: '@s/a', dir: 'packages/a' })).toBe('@s/a');

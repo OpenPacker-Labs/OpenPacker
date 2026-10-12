@@ -151,9 +151,18 @@ refused by name with the reason. An unknown option stays a usage error (0047
    held and written as one block when it ends, so blocks never interleave and a
    log reads member by member. `--stream`, `--parallel`, and a limit of one
    (where nothing can interleave) write each line as it arrives. A member that
-   holds more than 8 MiB is written out and streams from then on: memory is
-   bounded, and the block promise is given up only for output no one reads as a
-   block.
+   holds more than 8 MiB is written out and streams from then on, and a line
+   with no newline (minified JSON, base64, a progress bar that only returns the
+   carriage) is written as several prefixed lines of at most 64 KiB each rather
+   than held until it ends. What a member holds back is therefore its block (up
+   to 8 MiB) and at most 64 KiB of an unfinished line per stream, and the work
+   is linear in the output. The first version of this paragraph claimed the
+   bound while counting only finished lines: one member printing 40 MB with no
+   newline took 20.6 s and 828 MB at peak (grouped) and 22.0 s and 722 MB
+   (`--stream`) beside two members, and the same output takes 1.0 s and 131 MB
+   grouped, 0.9 s and 97 MB streamed, and 0.6 s and 84 MB from a lone member
+   (which never passes through this code). The block promise is given up only
+   for output no one reads as a block.
 
 ### Failure, signals
 
