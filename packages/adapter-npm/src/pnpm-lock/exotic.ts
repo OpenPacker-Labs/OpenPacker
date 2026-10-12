@@ -4,6 +4,7 @@
  * it can block); this only says which they are and what each one points at.
  */
 
+import { compareKeys } from './order.js';
 import type { PnpmLock } from './types.js';
 
 export type PnpmExoticSource =
@@ -94,5 +95,5 @@ export function exoticSourcesOf(lock: PnpmLock): PnpmExoticSource[] {
         break;
     }
   }
-  return out;
+  return out.sort((a, b) => compareKeys(a.key, b.key));
 }

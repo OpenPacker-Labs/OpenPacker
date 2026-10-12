@@ -5,17 +5,13 @@
  */
 
 import { PnpmLockError, at, field } from './errors.js';
+import { compareKeys } from './order.js';
 import { checkLimit, type PnpmLockLimits } from './limits.js';
 import { packageNameProblem } from './source.js';
 import type { YamlMap, YamlValue } from './yaml-tree.js';
 
 export interface ReadContext {
   readonly limits: PnpmLockLimits;
-}
-
-/** Code unit order, which no locale changes. */
-export function compareKeys(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function describe(value: YamlValue | undefined): string {

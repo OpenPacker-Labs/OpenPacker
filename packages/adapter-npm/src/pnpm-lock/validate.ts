@@ -15,6 +15,7 @@
 import { PnpmLockError } from './errors.js';
 import { exoticSourcesOf, type PnpmExoticSource } from './exotic.js';
 import { packageKeyOf } from './dep-path.js';
+import { compareKeys } from './order.js';
 import { redactAddresses } from './redact.js';
 import {
   catalogOfSpecifier,
@@ -348,10 +349,12 @@ export function validatePnpmLock(lock: PnpmLock): PnpmLockReport {
     problemCount: findings.count,
     orphanPackages: lock.packages
       .filter((pkg) => !variantsOf.has(pkg.key))
-      .map((pkg) => pkg.key),
+      .map((pkg) => pkg.key)
+      .sort(compareKeys),
     orphanSnapshots: lock.snapshots
       .filter((snapshot) => !reached.has(snapshot.key))
-      .map((snapshot) => snapshot.key),
+      .map((snapshot) => snapshot.key)
+      .sort(compareKeys),
     exoticSources: exoticSourcesOf(lock),
     links,
   };

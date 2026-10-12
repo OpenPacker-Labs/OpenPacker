@@ -1,10 +1,11 @@
 /**
  * What a lock holds, in numbers and the short lists a policy or a person wants
- * first. Every list is sorted by code unit order, so the same lock summarises to
- * the same value.
+ * first. Every list is sorted by code unit order whatever order the model's own
+ * lists are in, so the same lock summarises to the same value.
  */
 
 import { exoticSourcesOf } from './exotic.js';
+import { compareKeys } from './order.js';
 import type { PnpmLock, PnpmRef } from './types.js';
 
 export interface PnpmPlatformRestriction {
@@ -99,8 +100,8 @@ export function summarizePnpmLock(lock: PnpmLock): PnpmLockSummary {
   }
   const multiVersionNames = [...versionsByName]
     .filter(([, versions]) => versions.length > 1)
-    .map(([name, versions]) => ({ name, versions: versions.sort() }))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    .map(([name, versions]) => ({ name, versions: versions.sort(compareKeys) }))
+    .sort((a, b) => compareKeys(a.name, b.name));
 
   return {
     lockfileVersion: lock.lockfileVersion,
@@ -121,6 +122,8 @@ export function summarizePnpmLock(lock: PnpmLock): PnpmLockSummary {
     },
     exoticSources: exotic,
     multiVersionNames,
-    platformRestricted: lock.packages.flatMap((pkg) => restriction(pkg) ?? []),
+    platformRestricted: lock.packages
+      .flatMap((pkg) => restriction(pkg) ?? [])
+      .sort((a, b) => compareKeys(a.key, b.key)),
   };
 }
