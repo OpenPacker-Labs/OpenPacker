@@ -3,6 +3,14 @@ import type {
   DigestProjection,
   JsonValue,
 } from '@openpacker/contracts';
+import { ParseBudget } from './budget.js';
+import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
+
+export {
+  CanonicalJsonError,
+  CanonicalJsonLimitError,
+  type CanonicalParseLimits,
+} from './errors.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
@@ -16,50 +24,6 @@ export interface CanonicalDigestProjection {
 const DIGEST = /^sha256:([0-9a-f]{64})$/;
 const LONE_SURROGATE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
-
-export class CanonicalJsonError extends TypeError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CanonicalJsonError';
-  }
-}
-
-/**
- * What a document may hold, enforced while it is parsed. A parser that counts
- * after it has built the tree has already spent the memory the count was meant
- * to protect, so both limits stop the parse itself: the first value past the
- * limit is refused before it is built. Neither limit applies unless it is
- * given.
- */
-export interface CanonicalParseLimits {
-  /** Most values the document may hold: every scalar, array and object. */
-  readonly maximumValues?: number;
-  /** Deepest nesting allowed. The root is at depth 0. */
-  readonly maximumDepth?: number;
-}
-
-/**
- * A document went past a `CanonicalParseLimits` bound. It says how far the
- * parser got, so a caller (and a test) can see that it stopped early rather
- * than that it finished and then counted.
- */
-export class CanonicalJsonLimitError extends CanonicalJsonError {
-  constructor(
-    readonly limit: 'values' | 'depth',
-    readonly maximum: number,
-    /** Values begun when the parser stopped; the refused one is included. */
-    readonly visited: number,
-    /** Characters of the text consumed when the parser stopped. */
-    readonly offset: number,
-  ) {
-    super(
-      limit === 'values'
-        ? `JSON document exceeds ${maximum} values`
-        : `JSON document exceeds depth ${maximum}`,
-    );
-    this.name = 'CanonicalJsonLimitError';
-  }
-}
 
 export function compareCanonicalStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -126,15 +90,12 @@ export function canonicalBytes(value: JsonValue): Uint8Array {
 
 class JsonParser {
   private index = 0;
-  private visited = 0;
-  private readonly maximumValues: number;
-  private readonly maximumDepth: number;
+  private readonly budget: ParseBudget;
   constructor(
     private readonly input: string,
     limits: CanonicalParseLimits,
   ) {
-    this.maximumValues = limits.maximumValues ?? Number.POSITIVE_INFINITY;
-    this.maximumDepth = limits.maximumDepth ?? Number.POSITIVE_INFINITY;
+    this.budget = new ParseBudget(limits);
   }
 
   parse(): JsonValue {
@@ -146,21 +107,7 @@ class JsonParser {
   }
 
   private value(depth: number): JsonValue {
-    this.visited += 1;
-    if (this.visited > this.maximumValues)
-      throw new CanonicalJsonLimitError(
-        'values',
-        this.maximumValues,
-        this.visited,
-        this.index,
-      );
-    if (depth > this.maximumDepth)
-      throw new CanonicalJsonLimitError(
-        'depth',
-        this.maximumDepth,
-        this.visited,
-        this.index,
-      );
+    this.budget.begin(depth, this.index);
     this.space();
     const character = this.input[this.index];
     if (character === '{') return this.object(depth);
