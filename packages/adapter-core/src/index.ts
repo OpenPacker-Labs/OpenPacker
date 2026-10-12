@@ -3,7 +3,12 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
-import { echoed } from './echo.js';
+import {
+  LONGEST_HOST_LENGTH,
+  OverlongHostError,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
+import { echoed, echoedValue } from './echo.js';
 import { ProviderError } from './provider-error.js';
 import {
   MetadataLimitError,
@@ -1063,7 +1068,7 @@ function normalizeAllowedOrigin(value: string): string {
   )
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      `Allowed provider origin must be an HTTP(S) origin: ${value}`,
+      `Allowed provider origin must be an HTTP(S) origin: ${echoedValue(value)}`,
     );
   return url.origin;
 }
@@ -1144,13 +1149,15 @@ export function firstPartyOriginPolicy(input: {
   artifactOrigins?: readonly string[];
   extraOrigins?: readonly string[];
 }) {
-  const endpointOrigin = new URL(input.endpoint).origin;
+  const endpointOrigin = parseUntrustedUrl(input.endpoint).origin;
   const extra = input.extraOrigins ?? [];
   const allowed = input.namedOrOverride
     ? uniqueOrigins([endpointOrigin, ...extra])
     : uniqueOrigins([
         endpointOrigin,
-        ...(input.artifactOrigins ?? []).map((uri) => new URL(uri).origin),
+        ...(input.artifactOrigins ?? []).map(
+          (uri) => parseUntrustedUrl(uri).origin,
+        ),
         ...extra,
       ]);
   const pinned = input.namedOrOverride ? [endpointOrigin] : [];
@@ -1419,11 +1426,16 @@ function isLoopbackHostname(hostname: string): boolean {
 
 function parseProviderUrl(value: string, base?: URL): URL {
   try {
-    return new URL(value, base);
-  } catch {
+    return parseUntrustedUrl(value, base);
+  } catch (error) {
+    // The address is a registry's or a peer's text and the message repeats none
+    // of it. A host no DNS name could be is named as such, since it is the
+    // reason the parser was not asked.
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      'Provider URL is invalid',
+      error instanceof OverlongHostError
+        ? `Provider URL names a host longer than ${LONGEST_HOST_LENGTH} characters`
+        : 'Provider URL is invalid',
     );
   }
 }
