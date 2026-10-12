@@ -190,6 +190,10 @@ describe.skipIf(process.platform !== 'win32')(
         directory: 'node_modules/host/node_modules',
         projectRoot: p.root,
       });
+      // NT will not finish deleting a directory while another handle to it is
+      // open without delete sharing, and then reports its parent as not empty.
+      // The handle was only needed to place the junction.
+      await inner.close();
       trace('removeChild host (recursive, holds a junction)');
       await removeChild(p.modules, 'host', { recursive: true });
       expect(

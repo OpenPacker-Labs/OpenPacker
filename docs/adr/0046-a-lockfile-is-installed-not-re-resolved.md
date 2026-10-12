@@ -7,7 +7,7 @@ Date: 2026-10-11
 Accepted.
 
 Relates to: [0033](0033-native-supply-chain-capture-and-mitigation.md),
-[0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md),
+[0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md),
 [0044](0044-a-closure-is-what-the-host-installs.md).
 
 ## Context
@@ -108,7 +108,7 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    the chain its key gives; it chooses nothing and refuses, before writing
    anything, what cannot be written as written (an unsafe name, two packages
    claiming one place, a package inside a parent that is not installed).
-   Executables are the `.bin` shims of ADR 0043; no symlink is made. A tarball's
+   Executables are the `.bin` shims of ADR 0048; no symlink is made. A tarball's
    single top-level directory is stripped whatever it is called, as npm does,
    and a bare `bin` string is named by the package's own `name`, not by the
    alias it lives under.
@@ -163,7 +163,7 @@ Costs and limits, stated so nobody finds them by surprise.
 
 - **It is not fast.** A warm install of 894 packages takes about a minute on
   this machine, most of it in handle-relative I/O: every file is opened, listed
-  and stat-ed several times by the verification ADR 0043 asks for (adoption
+  and stat-ed several times by the verification ADR 0048 asks for (adoption
   re-hashes the entry; the layout checks the source and staged trees against a
   snapshot three times). This is CPU in the kernel (sys time is half of it) and
   a loaded machine makes it worse. One cheap change is in this slice (a snapshot
@@ -174,7 +174,7 @@ Costs and limits, stated so nobody finds them by surprise.
   not read. `opm.lock.json` installs (`opm install`) are unchanged and still
   evaluate policy on the facts the older lock persists.
 - **Hard links, not copies.** Editing a file under `node_modules` in place fails
-  (ADR 0043). With `OPM_STORE_HOME=off`, or a store on another device, archives
+  (ADR 0048). With `OPM_STORE_HOME=off`, or a store on another device, archives
   are extracted beside `node_modules`, linked in, and the extraction removed, so
   the files stay editable and there is still one copy.
 - **`libc` on a host with no libc to report is satisfied**, as the closure walk
