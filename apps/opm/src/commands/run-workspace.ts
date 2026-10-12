@@ -41,12 +41,14 @@ const READ_BATCH = 32;
 
 async function readPackages(
   plan: WorkspacePlan,
+  context: RunContext,
 ): Promise<Map<string, PackageFile | undefined>> {
   const packages = new Map<string, PackageFile | undefined>();
+  const readMember = context.readMember ?? readMemberPackage;
   for (let at = 0; at < plan.members.length; at += READ_BATCH) {
     const batch = plan.members.slice(at, at + READ_BATCH);
     const read = await Promise.all(
-      batch.map((member) => readMemberPackage(plan.root, member.dir)),
+      batch.map((member) => readMember(plan.root, member.dir)),
     );
     batch.forEach((member, index) => packages.set(member.dir, read[index]));
   }
@@ -81,7 +83,7 @@ export async function runScriptInWorkspace(
     cwd,
     context,
   );
-  const packages = await readPackages(plan);
+  const packages = await readPackages(plan, context);
   const having = plan.members.filter((member) =>
     packages.get(member.dir)?.scripts.has(script),
   );
@@ -158,12 +160,13 @@ export async function runExecInWorkspace(
       `"${request.bin}" is not in node_modules/.bin of ${missing.length} of the ${plan.members.length} selected members or of any parent directory (${nameList(missing)}); exec never fetches or searches PATH. Add the package that provides it and run: opm sync`,
     );
   const initCwd = resolve(cwd);
+  const readMember = context.readMember ?? readMemberPackage;
   const tasks: MemberTask[] = [];
   for (const member of plan.members) {
     // package.json only names the run in the environment; a broken or missing
     // one must not stop an executable that needs nothing from it. A link is
     // another matter: it is a refusal, here as everywhere a member is read.
-    const pkg = await readMemberPackage(plan.root, member.dir).catch(
+    const pkg = await readMember(plan.root, member.dir).catch(
       (error: unknown) => {
         if (error instanceof RunError && error.code === 'UNSAFE_PATH')
           throw error;

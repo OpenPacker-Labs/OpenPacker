@@ -1,25 +1,23 @@
-import { mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { RunContext } from '../src/commands/run-context.js';
 import { RunError } from '../src/commands/run-error.js';
 import { readMemberPackage } from '../src/commands/run-member-files.js';
-import { go, makeWorkspace } from './workspace-fixture.js';
-
-// A link that appears between discovery and the read of a member's package.json
-// can only be simulated by making the reader say so; the real reader's refusals
-// are held by run-member-files.test.ts.
-vi.mock('../src/commands/run-member-files.js', async (original) => {
-  const real =
-    await original<typeof import('../src/commands/run-member-files.js')>();
-  return { ...real, readMemberPackage: vi.fn(real.readMemberPackage) };
-});
+import { contextWith, go, makeWorkspace } from './workspace-fixture.js';
 
 const posix = describe.skipIf(process.platform === 'win32');
 
 const temps: string[] = [];
 afterEach(async () => {
-  vi.mocked(readMemberPackage).mockReset();
   await Promise.all(
     temps.splice(0).map((d) => rm(d, { recursive: true, force: true })),
   );
@@ -30,10 +28,27 @@ async function outside(): Promise<string> {
   temps.push(dir);
   await writeFile(
     join(dir, 'package.json'),
-    JSON.stringify({ name: 'evil', version: '9.9.9' }),
+    JSON.stringify({ name: 'evil', version: '9.9.9', scripts: { go: 'true' } }),
   );
   return dir;
 }
+
+/**
+ * The real reader, except that `fails` says what reading `dir` does: a link
+ * that appears after discovery can only be simulated by the reader.
+ */
+function readerFailing(dir: string, error: RunError): RunContext['readMember'] {
+  return async (root, member) => {
+    if (member === dir) throw error;
+    return await readMemberPackage(root, member);
+  };
+}
+
+const LINK = (dir: string) =>
+  new RunError(
+    'UNSAFE_PATH',
+    `${dir} is a symbolic link; workspace members are never read through one`,
+  );
 
 posix('opm exec across members and links', () => {
   it('refuses a symbolic link as a member directory, and runs no bin', async () => {
@@ -49,7 +64,6 @@ posix('opm exec across members and links', () => {
   it('refuses a symbolic link as a member package.json, and runs no bin', async () => {
     const ws = await makeWorkspace({ 'packages/ok': { name: 'ok' } });
     const target = await outside();
-    const { mkdir } = await import('node:fs/promises');
     await mkdir(join(ws.root, 'packages', 'evil'));
     await symlink(
       join(target, 'package.json'),
@@ -66,18 +80,15 @@ posix('opm exec across members and links', () => {
       'packages/a': { name: 'a' },
       'packages/b': { name: 'b' },
     });
-    const real = (await vi.importActual(
-      '../src/commands/run-member-files.js',
-    )) as typeof import('../src/commands/run-member-files.js');
-    vi.mocked(readMemberPackage).mockImplementation(async (root, dir) => {
-      if (dir === 'packages/b')
-        throw new RunError(
-          'UNSAFE_PATH',
-          `${join(root, dir)} is a symbolic link; workspace members are never read through one`,
-        );
-      return await real.readMemberPackage(root, dir);
-    });
-    const ran = await go('exec', ['-r', 'fake-tool', 'x'], ws.root);
+    const ran = await go(
+      'exec',
+      ['-r', 'fake-tool', 'x'],
+      ws.root,
+      contextWith(
+        {},
+        { readMember: readerFailing('packages/b', LINK('packages/b')) },
+      ),
+    );
     expect(ran.status).toBe(3);
     expect(ran.err).toContain('symbolic link');
     expect(ran.out).toBe('');
@@ -88,20 +99,42 @@ posix('opm exec across members and links', () => {
       'packages/a': { name: 'a' },
       'packages/b': { name: 'b' },
     });
-    const real = (await vi.importActual(
-      '../src/commands/run-member-files.js',
-    )) as typeof import('../src/commands/run-member-files.js');
-    vi.mocked(readMemberPackage).mockImplementation(async (root, dir) => {
-      if (dir === 'packages/b')
-        throw new RunError('INVALID_MANIFEST', 'package.json is not valid');
-      return await real.readMemberPackage(root, dir);
-    });
     const ran = await go(
       'exec',
       ['-r', '--workspace-concurrency=1', 'fake-tool', 'x'],
       ws.root,
+      contextWith(
+        {},
+        {
+          readMember: readerFailing(
+            'packages/b',
+            new RunError('INVALID_MANIFEST', 'package.json is not valid'),
+          ),
+        },
+      ),
     );
     expect(ran.status, ran.err).toBe(0);
     expect(ran.out.split('\n').filter(Boolean)).toHaveLength(2);
+  });
+});
+
+posix('opm run across members and a link that appears after discovery', () => {
+  it('refuses it and starts no script', async () => {
+    const ws = await makeWorkspace({
+      'packages/a': { name: 'a', scripts: { go: 'echo ran-a' } },
+      'packages/b': { name: 'b', scripts: { go: 'echo ran-b' } },
+    });
+    const ran = await go(
+      'run',
+      ['go', '-r'],
+      ws.root,
+      contextWith(
+        {},
+        { readMember: readerFailing('packages/b', LINK('packages/b')) },
+      ),
+    );
+    expect(ran.status).toBe(3);
+    expect(ran.err).toContain('symbolic link');
+    expect(ran.out).toBe('');
   });
 });
