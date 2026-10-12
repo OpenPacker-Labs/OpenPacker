@@ -9,6 +9,7 @@ import {
   exitStatus,
   processHost,
   runChild,
+  startChild,
   type ChildHost,
   type ChildSpec,
 } from '../src/commands/run-child.js';
@@ -258,5 +259,47 @@ describe.skipIf(process.platform === 'win32')('signal forwarding', () => {
     const { host, signals } = testHost(false);
     await runChild(node(['-e', '0']), capture().io, host);
     expect(signals.emit('SIGTERM')).toBe(false);
+  });
+});
+
+describe('startChild', () => {
+  it('gives a child with stdin ignored an empty input instead of the parent terminal', async () => {
+    const spec = node([
+      '-e',
+      "process.stdin.on('data', () => {}).on('end', () => console.log('eof'))",
+    ]);
+    spec.stdin = 'ignore';
+    const cap = capture();
+    const outcome = await startChild(spec, cap.io).outcome;
+    expect(outcome.code).toBe(0);
+    expect(cap.out).toBe('eof\n');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'signals one child by the same rules a signal sent to opm follows, and does not subscribe the process',
+    async () => {
+      const before = process.listenerCount('SIGTERM');
+      const { host } = testHost(false);
+      const running = startChild(
+        node(['-e', 'setInterval(() => {}, 1000)']),
+        capture().io,
+        host,
+      );
+      expect(process.listenerCount('SIGTERM')).toBe(before);
+      running.signal('SIGTERM');
+      expect((await running.outcome).signal).toBe('SIGTERM');
+      // A child that has ended is left alone.
+      running.signal('SIGTERM');
+    },
+  );
+
+  it('rejects, rather than throws, when the program cannot start', async () => {
+    const spec = node([]);
+    spec.plan.file = join(tmpdir(), 'opm-no-such-program-xyz');
+    const running = startChild(spec, capture().io);
+    await expect(running.outcome).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
+    });
+    running.signal('SIGTERM');
   });
 });
