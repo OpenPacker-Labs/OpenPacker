@@ -68,6 +68,21 @@ const REFUSED: readonly ((c: string) => string)[] = [
   (c) => `ftp://u:${c}@h/p?x=${c}#${c}`,
 ];
 
+/**
+ * `user:password@host:path` is a valid URL whose scheme is the user name, so an
+ * alphanumeric user name must not be printed as one. (The markers above hold an
+ * underscore, which is not a scheme character, and could never be one.)
+ */
+const alphanumeric = (c: string) => c.replaceAll('_', '');
+const SCHEMELESS: readonly ((c: string) => string)[] = [
+  (c) => `${alphanumeric(c)}:pw@github.com:o/r.git`,
+  (c) => `${alphanumeric(c).toUpperCase()}:x@host.example:o/r?y#z`,
+  (c) => `${alphanumeric(c)}:${alphanumeric(c)}@github.com:o/r.git`,
+  (c) => `${alphanumeric(c)}:@github.com:o/r.git`,
+  (c) => `${alphanumeric(c)}:pw@ho st:o/r`,
+  (c) => `blob:${alphanumeric(c)}:pw@github.com:o/r.git`,
+];
+
 describe('what opm ci writes of a lock entry it cannot install', () => {
   const temps: string[] = [];
   let previous: string | undefined;
@@ -131,4 +146,12 @@ describe('what opm ci writes of a lock entry it cannot install', () => {
     },
     120_000,
   );
+
+  it('does not print a user name written before a colon as a scheme', async () => {
+    const { code, written } = await ci(SCHEMELESS);
+    expect(code).toBe(3);
+    for (let index = 0; index < SCHEMELESS.length; index += 1)
+      expect(written, `entry p${index}`).toContain(`p${index}@1.0.0`);
+    expect(written.toLowerCase()).not.toContain('vtokdummymarker');
+  }, 120_000);
 });

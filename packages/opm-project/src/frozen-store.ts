@@ -114,8 +114,9 @@ export function labelOf(pkg: FrozenLockPackage): string {
  * `@openpacker/adapter-core`, which `classifyResolved` and the fetch plan use
  * for the same text): the scheme, and the host and path the URL parser read,
  * never userinfo, query or fragment, or the scheme and `[address withheld]` for
- * an address it refuses or one in which an `@` may end a password, or `[url]`
- * for a host the URL parser should not be given.
+ * an address it refuses or one in which an `@` may end a password (with no
+ * scheme where it may be a user name), or `[url]` for a host the URL parser
+ * should not be given.
  */
 export function redactSource(source: string): string {
   return redactAddress(source);

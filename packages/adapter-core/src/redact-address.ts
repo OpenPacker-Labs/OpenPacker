@@ -8,6 +8,27 @@ const OVERLONG = '[url]';
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]{0,31}:/u;
 /** Schemes whose address is a path on this machine, where an `@` is a character. */
 const LOCAL_PATH_SCHEMES: ReadonlySet<string> = new Set(['file:', 'link:']);
+/**
+ * Schemes opm reads for a source that has no `//` after them (`github:o/r`,
+ * `git+ssh:git@github.com:o/r.git`): what stands before the colon of these is a
+ * scheme and never a user name.
+ */
+const READ_SCHEMES: ReadonlySet<string> = new Set([
+  'git:',
+  'git+ssh:',
+  'git+https:',
+  'git+http:',
+  'git+file:',
+  'git+ftp:',
+  'github:',
+  'gitlab:',
+  'bitbucket:',
+  'gist:',
+  'npm:',
+  'blob:',
+  'file:',
+  'link:',
+]);
 /** How many blob URLs inside one another are read, one inside the next. */
 const MOST_BLOBS = 4;
 /** The most a host, and the most a path, is shown at. */
@@ -64,12 +85,36 @@ function mayHoldUserinfo(url: URL): boolean {
   return url.pathname.includes('@') && !isScopedTarballPath(url.pathname);
 }
 
-/** The scheme of a text that has one, in lower case, with the fixed words after it. */
+/**
+ * The scheme of a parsed address as an error may show it, or `undefined`.
+ *
+ * `user:password@host:path` is a valid URL whose scheme is the user name, and
+ * a scheme that is shown is a user name that is shown. So a scheme is shown
+ * when `//` follows it (the user name of such an address is after the slashes),
+ * when it is one opm reads, and when the rest of the address holds no `@`, so
+ * that there is no userinfo for it to belong to. Otherwise it may be a user name
+ * and nothing is shown. This is the one place that decides, for `redactAddress`
+ * and for the lock reader's own messages.
+ */
+export function shownScheme(url: URL): string | undefined {
+  if (READ_SCHEMES.has(url.protocol)) return url.protocol;
+  if (url.href.startsWith(`${url.protocol}//`)) return url.protocol;
+  const rest = url.pathname + url.search + url.hash;
+  return rest.includes('@') ? undefined : url.protocol;
+}
+
+/** The scheme of a text the parser refuses, in lower case, with the fixed words after it. */
 function withheld(address: string): string {
   let from = 0;
   while (from < address.length && address.charCodeAt(from) <= 0x20) from += 1;
-  const scheme = SCHEME.exec(address.slice(from, from + 40));
-  return scheme === null ? WITHHELD : `${scheme[0].toLowerCase()}${WITHHELD}`;
+  const head = address.slice(from, from + 40);
+  const scheme = SCHEME.exec(head);
+  if (scheme === null) return WITHHELD;
+  const shown = scheme[0].toLowerCase();
+  // `//` after the colon makes what is before it a scheme, not a user name.
+  return READ_SCHEMES.has(shown) || head.startsWith('//', scheme[0].length)
+    ? `${shown}${WITHHELD}`
+    : WITHHELD;
 }
 
 function render(address: string, blobs: number): string {
@@ -91,7 +136,7 @@ function render(address: string, blobs: number): string {
     // An opaque path is where `user:password@host:path` keeps its userinfo, and
     // a `?` or `#` in the password leaves the `@` in the query or fragment.
     if (!local && (url.pathname + url.search + url.hash).includes('@'))
-      return `${url.protocol}${WITHHELD}`;
+      return `${shownScheme(url) ?? ''}${WITHHELD}`;
     // The URL object written without its query and fragment: what comes before
     // the path is the parser's (`//` for an empty host, and `/.` before a path
     // that begins with `//`, so that it is not read back as a host).
@@ -108,7 +153,7 @@ function render(address: string, blobs: number): string {
  * An address as an error may show it, for text a lock, a registry or a person
  * chose. What it prints can only be:
  *
- * - the scheme;
+ * - the scheme, unless it may be a user name (`shownScheme`);
  * - when the URL parser accepts the address, the parser's own host (with its
  *   port) and path, taken from the URL object and not from the text, each shown
  *   at 256 characters and then how many there were. Never userinfo, query or
@@ -121,7 +166,9 @@ function render(address: string, blobs: number): string {
  * before any parser reads it), and for a `blob:` URL nested more than four deep.
  * A `blob:` URL is `blob:` and the address in its path, shown the same way.
  *
- * `[address withheld]`, after the scheme if the text has one, stands for:
+ * `[address withheld]`, after the scheme if it may be shown (`shownScheme`: one
+ * opm reads, or one that `//` follows, and for a text the parser refuses, one
+ * that the text starts with), stands for:
  *
  * - an address the parser refuses (`git@github.com:o/r.git`,
  *   `git+ssh://git@github.com:o/r.git`, `https://u:p@ho st/x`);

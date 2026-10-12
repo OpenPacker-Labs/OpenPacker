@@ -747,14 +747,14 @@ independent review got the same two figures.
   "is not a URL" problem of `classifyResolved`, the two messages of
   `frozen-fetch` that name a source, and the source a person gave to
   `opm add --source` or wrote in `opm.toml` (`fetchArtifactBytes`). It can print
-  only the scheme; when the URL parser accepts the address, the parser's own
-  host (with its port) and path, taken from the URL object and never from a
-  slice of the text, never userinfo, query or fragment; and the fixed words
-  `[url]` and `[address withheld]`. The first redactor cut text ("everything up
-  to the last `@`") and every rule added to it (the last `@`, an `@` inside a
-  path segment, an `@` in a query) moved a leak somewhere else: a query
-  `?email=a@b.com&sig=<c>` printed `b.com&sig=<c>`, a host after an `@` of the
-  path was shown as the host
+  only the scheme (unless it may be a user name, below); when the URL parser
+  accepts the address, the parser's own host (with its port) and path, taken
+  from the URL object and never from a slice of the text, never userinfo, query
+  or fragment; and the fixed words `[url]` and `[address withheld]`. The first
+  redactor cut text ("everything up to the last `@`") and every rule added to it
+  (the last `@`, an `@` inside a path segment, an `@` in a query) moved a leak
+  somewhere else: a query `?email=a@b.com&sig=<c>` printed `b.com&sig=<c>`, a
+  host after an `@` of the path was shown as the host
   (`https://evil.example/x@registry.npmjs.org/p/-/p.tgz` as
   `https://registry.npmjs.org/p/-/p.tgz`), and a password such as `/s3cret/` or
   `1234/s3cret` before the `@` printed.
@@ -771,13 +771,14 @@ independent review got the same two figures.
   scope is `@`, a letter or digit, and letters, digits, `_`, `~` and `-`: no
   dot, because a host has one (`@registry.example.com`). An opaque path
   (`github:u:pw@o/r`, `user:pw@host:o/r`) with an `@` anywhere in it is withheld
-  too. An address the parser refuses is its scheme, if the text starts with one,
-  and `[address withheld]`, with no cut of the text. `blob:` is `blob:` and the
-  same rule on the address in its path, four deep and `[url]` below that, and
-  the overlong-host check is made once, of the address as written (a legal host
-  of 42 non-ASCII characters inside a blob URL is shown, as it is outside one).
-  `file:` and `link:` addresses are paths on this machine, where an `@` is a
-  character: they are shown without query and fragment.
+  too. An address the parser refuses is its scheme, if the text starts with one
+  and the scheme may be shown, and `[address withheld]`, with no cut of the
+  text. `blob:` is `blob:` and the same rule on the address in its path, four
+  deep and `[url]` below that, and the overlong-host check is made once, of the
+  address as written (a legal host of 42 non-ASCII characters inside a blob URL
+  is shown, as it is outside one). `file:` and `link:` addresses are paths on
+  this machine, where an `@` is a character: they are shown without query and
+  fragment.
 
   What that costs: a scp-like source (`git+ssh://git@github.com:o/r.git`, the
   commonest git form) is `git+ssh:[address withheld]` and a relative path
@@ -814,6 +815,28 @@ independent review got the same two figures.
   `https:[address withheld]` like the rest; and a host with one label and no
   port (`@verdaccio`, `@localhost`) is still a scope to this rule, so a
   credential that ends in a `/` and is followed by one is printed.
+
+  A scheme is not always a scheme. `TOKEN:pw@github.com:o/r.git` is a valid URL
+  whose scheme is `token`, and `resolved uses token:, not https` and
+  `token:[address withheld]` printed the user name of a value no tool writes but
+  a person might (a 40-hex classic token that starts with a letter is a legal
+  scheme). One function decides, `shownScheme` (`@openpacker/adapter-core`), for
+  `redactAddress` and for `classifyResolved`: a scheme is shown when `//`
+  follows it (the user name of such an address is after the slashes, and
+  `ssh://git@github.com/o/r.git` is `ssh://github.com/o/r.git` as before), when
+  it is one opm reads without `//` (`github:`, `gitlab:`, `bitbucket:`, `gist:`,
+  `git:` and `git+ssh:`, `git+https:`, `git+http:`, `git+file:`, `git+ftp:`,
+  `npm:`, `blob:`, `file:`, `link:`), or when the rest of the address holds no
+  `@`, so that there is no userinfo for it to belong to. Any other scheme of a
+  text with an `@` after it is not printed: the address is `[address withheld]`,
+  and `classifyResolved` says
+  `resolved is [address withheld], not an https URL`. An address the parser
+  refuses is read the same way from its text. The cost: `user:pw@host:o/r`,
+  which was `user:[address withheld]`, loses its `user:` (it may be a name); a
+  git shorthand opm does not read (`bb:o/r#a@b`) loses its scheme too. Through
+  the real binary, five of six lock entries of this shape printed their user
+  name and none does now (`ci-credentials.test.ts`); the sixth, a `blob:`, never
+  did.
 
   Held by a property test and the review's scripts. A marker is put in the user
   name, in 166 forms of password (every pair of `@ ? # : / %` before, after and

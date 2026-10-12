@@ -27,6 +27,7 @@ import {
   hasOverlongHost,
   LONGEST_HOST_LENGTH,
   redactAddress,
+  shownScheme,
 } from '@openpacker/adapter-core';
 import type {
   FrozenLockOptions,
@@ -111,8 +112,16 @@ export function classifyResolved(entry: {
       problem: `resolved ${JSON.stringify(redactAddress(resolved))} is not a URL`,
     };
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:')
-    return { problem: `resolved uses ${url.protocol}, not https` };
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    // The scheme of `user:password@host:path` is the user name.
+    const scheme = shownScheme(url);
+    return {
+      problem:
+        scheme === undefined
+          ? `resolved is ${redactAddress(resolved)}, not an https URL`
+          : `resolved uses ${scheme}, not https`,
+    };
+  }
   if (url.username !== '' || url.password !== '')
     return { problem: 'resolved carries credentials in its URL' };
   // A registry serves `/<name>/-/<last segment>-<version>.tgz`, behind whatever

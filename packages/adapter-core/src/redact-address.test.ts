@@ -234,7 +234,7 @@ describe('what redactAddress shows of an address it can read', () => {
     ['github:o/r', 'github:o/r'],
     ['github:o/r#feature@1', 'github:[address withheld]'],
     ['github:u:pw@o/r', 'github:[address withheld]'],
-    ['user:pw@host:o/r', 'user:[address withheld]'],
+    ['user:pw@host:o/r', '[address withheld]'],
     ['git@github.com:o/r.git', '[address withheld]'],
     ['https://u:p@ho st/x', 'https:[address withheld]'],
     ['file:///srv/@s/pkg?x=1', 'file:///srv/@s/pkg'],

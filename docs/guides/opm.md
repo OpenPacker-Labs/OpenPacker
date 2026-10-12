@@ -329,7 +329,9 @@ What it does, in order:
    each named, and nothing is installed. Exit code 3. A source is named by its
    scheme, host and path, never its userinfo, query or fragment; one the URL
    parser refuses, such as the scp-like `git+ssh://git@github.com:o/r.git`, or
-   one with an `@` after its host, is named `git+ssh:[address withheld]`.
+   one with an `@` after its host, is named `git+ssh:[address withheld]`, and a
+   `user:password@host:path` that is no scheme at all, just
+   `[address withheld]`.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release

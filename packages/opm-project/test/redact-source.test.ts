@@ -237,7 +237,8 @@ describe('a source named in an error', () => {
    * An address with a scheme and no authority has an opaque path, which is where
    * userinfo stands when someone writes `user:password@host:path` or
    * `github:user:password@owner/repo`: the parser accepts it, with the user name
-   * as the scheme. An `@` anywhere in it withholds it.
+   * as the scheme. An `@` anywhere in it withholds it, and the scheme is not
+   * shown unless opm reads it, since it may be the user name.
    */
   it.each([
     [
@@ -253,7 +254,7 @@ describe('a source named in an error', () => {
     [
       'a scp-like address with a user name taken for a scheme',
       `user:${CANARY}@host:o/r`,
-      'user:[address withheld]',
+      '[address withheld]',
     ],
     [
       'a scp-like address under a git scheme and no slashes',
@@ -280,7 +281,7 @@ describe('a source named in an error', () => {
     [
       'userinfo that the path takes for a scheme',
       `blob:u:${CANARY}@h/x`,
-      'blob:u:[address withheld]',
+      'blob:[address withheld]',
     ],
     [
       'a blob in a blob',

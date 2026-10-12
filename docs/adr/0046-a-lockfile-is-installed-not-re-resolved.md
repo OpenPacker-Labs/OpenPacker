@@ -130,9 +130,10 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    characters as written (no DNS name is, and Node's URL parser can be slow on
    one), a git or path source: each is listed, up to twenty a screen, and
    nothing is installed. A source is listed by its scheme, host and path, or as
-   `scheme:[address withheld]` (ADR 0044). Workspaces are a later slice; the
-   refusal is the member list. A lock opm cannot install is not partly
-   installed.
+   `scheme:[address withheld]`, or as `[address withheld]` where what stands
+   before its first colon may be a user name (ADR 0044). Workspaces are a later
+   slice; the refusal is the member list. A lock opm cannot install is not
+   partly installed.
 
 9. **Nothing is executed.** `allow_lifecycle_scripts = false` stays the default.
    The packages that declare an install script are counted in the summary line
