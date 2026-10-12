@@ -739,9 +739,9 @@ directory and everything under it); `.npmrc` is not read, so you say which.
 ### pnpm locks (the model)
 
 `opm` can read a `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9 and 10
-write) into a typed, validated and bounded model
-([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses it yet:
-`opm ci` still reads only `package-lock.json`. It is a library in
+write; pnpm 11's additions are refused by name) into a typed, validated and
+bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses
+it yet: `opm ci` still reads only `package-lock.json`. It is a library in
 `@openpacker/adapter-npm`, beside the reader of `package-lock.json`, and it
 fetches nothing, installs nothing and decides no policy.
 
@@ -773,13 +773,16 @@ and anything that would parse two ways is refused.
 
 What it refuses, each with a reason and the path to the fault
 (`packages["a@1.0.0"].hasBin`): any other `lockfileVersion`; a key pnpm does not
-write; YAML anchors, aliases, tags and repeated keys; absolute or escaping
-paths; a package name that cannot be a directory under `node_modules`; a URL
-with a user name or password; an `integrity` that is not one canonical digest.
-Size is bounded (8 MiB, one million YAML nodes, and per-section entry counts,
-all in `PnpmLockLimits`); a larger lock is refused with the number to raise. The
+write; YAML anchors, aliases, tags, directives and repeated keys; absolute or
+escaping paths; a package name that cannot be a directory under `node_modules`;
+a URL with a user name or password (no message repeats one: the user information
+and query string of an address printed in an error become `[redacted]`); an
+`integrity` that is not one canonical digest. Size is bounded (8 MiB, 500,000
+YAML nodes, 2.5 million lexemes, and per-section entry counts, all in
+`PnpmLockLimits`); a larger lock is refused with the number to raise, and the
+worst input at the ceiling is refused in about 5 s using under 500 MB. The
 complete HoBo lock (792 importers, 2,160 packages, 2,193 snapshots) reads in
-about 0.7 s using 146 MB.
+about 0.8 s using 150 MB.
 
 ### `opmx`
 

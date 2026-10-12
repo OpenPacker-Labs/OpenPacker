@@ -5,7 +5,10 @@
  *
  * Everything keyed by a name or a path is an array sorted by that key in code
  * unit order, or a `Map` built in that order, so the same lock reads to the same
- * value whatever order the file listed things in.
+ * value whatever order the file listed things in. A list derived from a model
+ * (the summary's, the exotic sources, the orphans) sorts itself, so it does not
+ * depend on the order the model was built in; the ones that walk the model
+ * (links, problems) list in the model's order, "lock order".
  */
 
 import type { DepPath } from './dep-path.js';

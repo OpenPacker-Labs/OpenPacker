@@ -37,7 +37,9 @@ runtime resolvers) shows what a reader has to get right:
    reader that keeps one record per name loses edges; one that keeps one per key
    misses that `packages` is shared.
 2. **The key is a small grammar.** `react-dom@18.2.0(react@18.2.0)` has a suffix
-   of balanced groups, and the groups nest three deep in the real locks:
+   of balanced groups, and the groups nest up to five deep in HoBo's complete
+   lock (three in OpenSesame's, two in ai-bdd's and `.deepsec`'s). Two deep
+   looks like
    `(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))`.
    A patched package adds `(patch_hash=...)` in front; a list of peers too long
    to write (`peersSuffixMaxLength`, 1000) is replaced by 32 hex digits. The
@@ -53,7 +55,10 @@ runtime resolvers) shows what a reader has to get right:
    every key with every earlier one: 40,000 packages took 50 s with it on and 3
    s with it off. A megabyte of `[` costs its `parseDocument` 3 s and 916 MB of
    resident memory before it reports the nesting. The file is also Prettier
-   formatted in some repositories (a `resolution` broken over four lines).
+   formatted in some repositories (a `resolution` broken over four lines). A
+   mapping key of more than 1,024 characters cannot be written on one line in
+   YAML, and pnpm's writer (js-yaml) writes it as `? key` then `: value`; HoBo's
+   longest snapshot key is already 905 characters.
 5. **None of the real locks has an exotic source.** All 4,789 packages in them
    have an integrity-only resolution. Tarball, git, directory and runtime
    resolutions are known from pnpm's code and not from a file here.
@@ -111,9 +116,13 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
 
 6. **The text.** Over `maxBytes`; not UTF-8 (when given bytes); a character YAML
    forbids; an unresolved merge conflict (named as one); not YAML; more than one
-   document; a directive; an anchor, alias or tag (pnpm writes none, and an
-   alias is how a small file becomes a large one); a mapping key listed twice; a
-   mapping key that is not a string (pnpm quotes keys that look like numbers).
+   document (see Consequences: pnpm 11 writes two); a directive of any kind
+   (`%YAML`, `%TAG`, even one that changes nothing, refused where the parser
+   yields it); an anchor, alias or tag (pnpm writes none, and an alias is how a
+   small file becomes a large one); a mapping key listed twice; a mapping key
+   that is not a string (pnpm quotes keys that look like numbers); a key of more
+   than 1,024 characters written on one line (the message says it needs the
+   explicit form, which is read at any length).
 7. **The shape.** Any other `lockfileVersion` (older formats are laid out
    differently, and are refused by name rather than half-read); a key pnpm does
    not write in that place; a value of the wrong type (a number where a string
@@ -130,6 +139,16 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
    ssh, any user without a password); a git commit that is not a full hash; an
    `integrity` that is not exactly one sha1, sha256, sha384 or sha512 token
    whose canonical base64 has the digest's length (no options, no second token).
+   **No message quotes a credential.** The refusal exists so a secret stays out
+   of log lines, and a key or a value is the address itself, so every
+   `PnpmLockError` (message and `where`) and every problem the validator lists
+   passes `redactAddresses`: the user information of any address and its query
+   string become `[redacted]` (the user `git`, the host, the path and the
+   fragment stay, so the message still says which address). A dependency path is
+   redacted before it is cut for the message, and a key that starts with an
+   address is not quoted as a "name". The model keeps addresses as written (they
+   have to be fetched), a query string included; redaction is of what is
+   printed.
 10. **A key that parses two ways.** Unbalanced or empty groups, text after the
     suffix, a parenthesis inside a version, a `patch_hash` that is not first, a
     hash that is not alone. pnpm reads these as part of the version; a key two
@@ -139,30 +158,43 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
 
 11. All in `PnpmLockLimits`, each a refusal that names the number:
 
-    | Limit             |   Default | Counts                                      |
-    | ----------------- | --------: | ------------------------------------------- |
-    | `maxBytes`        |     8 MiB | the text (ten times HoBo's lock)            |
-    | `maxNodes`        | 1,000,000 | YAML scalars, mappings and sequences        |
-    | `maxDepth`        |        16 | nesting of YAML collections (real locks: 5) |
-    | `maxImporters`    |    20,000 | `importers` entries                         |
-    | `maxPackages`     |   100,000 | `packages` entries                          |
-    | `maxSnapshots`    |   200,000 | `snapshots` entries                         |
-    | `maxEntries`      |    50,000 | one other mapping or list                   |
-    | `maxKeyLength`    |     8,192 | characters in a key or a dependency path    |
-    | `maxStringLength` |    65,536 | characters in any other string              |
-    | `maxPeerDepth`    |        32 | nesting of peer groups in one path          |
-    | `maxPeerGroups`   |       512 | groups in one path, through every level     |
+    | Limit             | Default | Counts                                      |
+    | ----------------- | ------: | ------------------------------------------- |
+    | `maxBytes`        |   8 MiB | the text (10.2 times HoBo's lock)           |
+    | `maxNodes`        | 500,000 | YAML scalars, mappings and sequences        |
+    | `maxDepth`        |      16 | nesting of YAML collections (real locks: 5) |
+    | `maxImporters`    |  20,000 | `importers` entries                         |
+    | `maxPackages`     | 100,000 | `packages` entries                          |
+    | `maxSnapshots`    | 200,000 | `snapshots` entries                         |
+    | `maxEntries`      |  50,000 | one other mapping or list                   |
+    | `maxKeyLength`    |   8,192 | characters in a key or a dependency path    |
+    | `maxStringLength` |  65,536 | characters in any other string              |
+    | `maxPeerDepth`    |      32 | nesting of peer groups in one path          |
+    | `maxPeerGroups`   |     512 | groups in one path, through every level     |
 
-    They are set from measurement, with a fresh process per input: 0.74 s and 73
-    MB resident per megabyte of a realistic lock (6.5 MB took 4.8 s and 478 MB,
-    13 MB took 9.6 s and 951 MB), 90 MB per megabyte of one made of tiny entries
-    (8.3 MB took 8.8 s and 758 MB). HoBo's complete lock takes 0.7 s and 146 MB,
-    of which 77 MB is node. The first defaults (32 MiB) let a 19.7 MB input take
-    22 s and 1.7 GB; it is now refused in 1 ms at 95 MB. The text is read
-    through the library's lexer and parser one lexeme at a time with the
-    parser's stack watched, so a megabyte of `[` stops at `maxDepth` instead of
-    costing 3 s and 916 MB; repeated keys are found with a lookup in the map
-    being built and the library's own (quadratic) check is off.
+    The lexer is also held to five lexemes per node allowed (2.5 million at the
+    default): input that is mostly lexemes and hardly any nodes (blank lines,
+    comments, empty list items) costs memory the node count does not see.
+
+    They are set from measurement, a fresh process per input on a shared 4-CPU
+    machine, peak resident memory from `process.resourceUsage().maxRSS`. HoBo's
+    lock is 825,879 bytes, 46,862 YAML nodes and 159,674 lexemes; it reads in
+    0.7 to 1.1 s at 146 to 150 MB, of which 77 MB is node. The real locks cost
+    3.4 lexemes a node, 3.8 when Prettier or a 40-column wrap has reflowed them,
+    so five leaves a third to spare. At the byte ceiling a lock of HoBo's kind
+    (its packages and snapshots eleven times over: 7.9 MB, 450,432 nodes) reads
+    in 4.0 to 5.6 s at about 500 MB. Input built to cost the most per byte (8
+    MiB of blank lines, empty list items, comments, tiny flow entries, tiny
+    block entries) is refused at the lexeme budget after 2.9 to 5.1 s at 298 to
+    492 MB. **The first defaults (1,000,000 nodes, six lexemes a node) did not
+    hold the "near 9 s and 800 MB" they claimed**: the worst of the same inputs
+    took 10.8 to 11.6 s at 886 to 981 MB before they were refused (an
+    independent run: 12.6 s and 1.24 GB for empty list items). A megabyte of `[`
+    is stopped at `maxDepth` instead of costing the library's `parseDocument` 3
+    s and 916 MB, because the text is read through the lexer and parser one
+    lexeme at a time with the parser's stack watched; repeated keys are found
+    with a lookup in the map being built, and the library's own (quadratic)
+    check is off.
 
 ### What agrees with what
 
@@ -178,8 +210,11 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
     package no snapshot is a variant of, a snapshot no importer reaches), the
     **exotic sources**, and every **link**, an importer's placed on the importer
     it lands on or marked as leaving the root. Problems are counted and the
-    first thousand kept. `assertConsistentPnpmLock` is the decision a frozen
-    install makes and `readPnpmLock` is parse, validate and that decision.
+    first thousand kept, in lock order. `assertConsistentPnpmLock` is the
+    decision a frozen install makes and `readPnpmLock` is parse, validate and
+    that decision. A `workspace:` specifier is recognised by `adapter-core`'s
+    `isWorkspaceSpecifier`, the workspace model's own rule; this module does not
+    define a second one.
 13. **An exotic source is reported, never fetched.** `exoticSourcesOf` lists
     each package whose resolution is not a bare registry integrity as a
     `tarball` (URL, optional integrity), `git` (repo, commit, path), `directory`
@@ -188,7 +223,10 @@ the `package-lock.json` reader uses), a `reason`, and the path to the fault
 14. `summarizePnpmLock(lock)`: importers, packages, snapshots; dependency, link
     and alias edges, importers' and snapshots' counted apart; exotic sources by
     kind; the names `packages` holds in more than one version; the packages that
-    restrict `os`, `cpu` or `libc`. Every list is in code unit order.
+    restrict `os`, `cpu` or `libc`. Every list is in code unit order whatever
+    order the `PnpmLock` was built in (the summary, the exotic sources and the
+    orphans sort their own; links and problems are in the model's order, which
+    the reader makes code unit order).
 
 ### How it will map to the frozen install
 
@@ -232,10 +270,28 @@ This is the plan the next slice builds on; nothing below is built here.
 - The exotic forms are tested against fixtures written from pnpm's code, not
   from a lock pnpm wrote (`fixtures/locks/pnpm-v9/README.md` says so); the first
   real lock with a git or tarball dependency may differ in a way the code does
-  not show, and will be a refusal, not a misreading.
+  not show, and will be a refusal, not a misreading. The explicit long key is
+  tested against the output of the writer pnpm is built on (js-yaml 4.3.0), not
+  against a lock pnpm wrote.
+- **pnpm 11 writes things this does not read.** Read from the JavaScript bundles
+  of pnpm 10.34.7 and 11.28.5 (not run): 10.34.7 has the same key tables as
+  10.28.0, and 11.28.5 still writes `lockfileVersion: '9.0'` but adds three
+  things, each refused by name. (1) When the project has config dependencies it
+  writes the lock of those as a first YAML document (`---`, the environment
+  lock, `---`, then the project lock), so the file has two documents and is
+  refused as several. (2) A root key `untrackedPnpmfileReadPackageHook`. (3) An
+  importer key `linkDirectory: false`, written when
+  `publishConfig.linkDirectory` is false. Reading them needs a real pnpm 11 lock
+  to check against and, for the third, a decision about where an importer with a
+  `publishDirectory` is linked; none is built. pnpm 12.11.2 is a native rewrite
+  whose package carries no readable source here, so nothing is known of its
+  lock.
 - `yaml` reads about 1.3 MB/s. A lock of the default ceiling takes seconds, and
   the bound exists because of that, not despite it. A faster reader of the same
   subset is possible and was not written: the library is the audited one.
+- A multi-document lock is refused, not read. The first document of a pnpm 11
+  lock is not the project lock, and reading only the second would silently drop
+  the config dependencies, which an install may need.
 - `snapshots[].patched` is read (a boolean) although pnpm 10.28 does not write
   it, because the brief for this reader listed it; it means nothing here.
 - Not done: the mapping above; Windows (paths are the lock's own, POSIX); a lock
