@@ -9,7 +9,7 @@
 - Amends [ADR 0049](0049-workspaces-are-a-model-before-they-are-an-install.md):
   "`opm run` still has no `--filter`" is no longer true. The model is unchanged.
 - Relates:
-  [0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
+  [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
   `.bin` shims a member's `PATH` leads with),
   [0050](0050-workspace-member-links.md) (the links a member resolves its
   siblings through)

@@ -121,6 +121,10 @@ describe('unlinkChild', () => {
       directory: 'node_modules/host/node_modules',
       projectRoot: p.root,
     });
+    // Windows will not finish deleting a directory while another handle to it
+    // is open without delete sharing, and then reports its parent as not
+    // empty. The handle was only needed to place the link.
+    await inner.close();
 
     await removeChild(p.modules, 'host', { recursive: true });
 

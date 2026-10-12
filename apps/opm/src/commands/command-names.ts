@@ -25,6 +25,7 @@ export const COMMANDS: ReadonlySet<string> = new Set([
   'pack',
   'publish',
   'yank',
+  'packslip',
   'plugin',
   'auth',
   'system',

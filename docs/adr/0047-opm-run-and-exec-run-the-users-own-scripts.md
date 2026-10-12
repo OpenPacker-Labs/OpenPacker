@@ -12,7 +12,7 @@
   [ADR 0036](0036-sandboxed-installs-and-execution.md) (package execution runs
   in a jail; amended below for these two commands),
   [ADR 0042](0042-upm-v1-gaps.md) (no workspace graph),
-  [ADR 0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
+  [ADR 0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
   (the `.bin` shims)
 
 ## Context
@@ -20,7 +20,7 @@
 A project's tests, builds and checks run through `vitest`, `tsc`, `tsx` and
 `vite`, which live in `node_modules/.bin`, and are started from `package.json`
 scripts. One workspace repository calls `pnpm run` 81 times, `exec` 4 times and
-`--filter` 8 times. Since ADR 0043 `opm` writes `node_modules` and the `.bin`
+`--filter` 8 times. Since ADR 0048 `opm` writes `node_modules` and the `.bin`
 shims, but it had no command that starts a script or a bin, so none of that
 could be written in terms of `opm`. `opmx` is not it: it fetches or looks up a
 package and runs it inside the jail (ADR 0036), which is the right behaviour for
@@ -72,7 +72,7 @@ own repository.
    `.bin` entry, so `opm exec x` is a script of one line. What bounds it is how
    the bin got there: through `add`/`sync`, under the supply-chain gates of ADR
    0033, as a validated shim written without running a package script (ADR
-   0043).
+   0048).
 8. **A dependency's lifecycle scripts are never run by these commands.** `run`
    starts the scripts of the project's own `package.json` only. A name is looked
    up in that file, never in a dependency's.
