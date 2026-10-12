@@ -196,10 +196,11 @@ npm. Lifting the 8 MiB showed a second bound behind it, and a third behind that.
 
 ### What the registry serves
 
-Measured against registry.npmjs.org on 2026-10-12, decoded, over about 50
-packages chosen for their number of versions. The registry answers with
-`content-encoding: br` and no `Content-Length`; the wire size is a fifth of
-these.
+Measured against registry.npmjs.org on 2026-10-12, decoded. The registry answers
+with `content-encoding: br` and no `Content-Length`; the wire size is a fifth of
+these. This first table is the first look, about 50 packages chosen for their
+number of versions. A wider look follows it and found larger documents; the
+decisions below rest on that one.
 
 | package         | abbreviated | values  | versions | full       | values (full) |
 | --------------- | ----------- | ------- | -------- | ---------- | ------------- |
@@ -211,8 +212,54 @@ these.
 | playwright-core | 8,418,576   | 156,979 | 5,714    | 18,551,593 |               |
 | vite            | 2,333,244   | 79,105  | 760      | 38,988,699 | 128,822       |
 
-All six of the first rows are over 8 MiB. A document costs 27 to 54 bytes a
-value and is 6 levels deep.
+All six of the first rows are over 8 MiB. In this look a document costs 27 to 54
+bytes a value and is 6 levels deep.
+
+#### The largest found
+
+The wider look, the same day: 4,889 package names, which are the first 250
+popularity-ranked results of each of 38 searches (react, typescript, aws, types,
+babel and so on) and about 150 names chosen because they are heavy; 4,887
+answered. The abbreviated packument of each was measured, and the full packument
+of the 400 with the largest abbreviated one. It is a sample of what people ask
+for and not of the registry's millions of packages, and it can miss a package
+whose full document is far larger than its abbreviated one, as
+`@material/list`'s is (3.05 MiB and 58.77 MiB), if its abbreviated one does not
+rank in the first 400. Sizes are MiB, decoded; values are counted where they
+were counted.
+
+| package                      | abbreviated | values    | full  | values (full) | versions | published in the last 365 days |
+| ---------------------------- | ----------- | --------- | ----- | ------------- | -------- | ------------------------------ |
+| public-unscoped-test-package | 36.56       | 386,921   | 59.19 | 1,278,401     | 28,041   | 285                            |
+| @prisma/client               | 36.41       | 1,077,961 | 65.35 | 2,127,695     | 10,660   | 525                            |
+| @bike4mind/cli               | 26.58       |           | 51.48 |               | 7,308    | 7,308                          |
+| @wix/wix-code-types          | 25.94       | 831,901   | 72.96 | 2,655,900     | 15,118   | 71                             |
+| next                         | 24.45       | 846,076   | 29.95 | 1,070,316     | 3,986    | 580                            |
+| prisma                       | 22.13       |           | 41.94 |               | 9,365    | 619                            |
+| @material/list               | 3.05        | 42,329    | 58.77 | 189,762       | 1,698    | 0                              |
+| typescript                   | 8.33        |           | 15.06 |               | 3,851    | 260                            |
+| vite                         | 2.23        |           | 37.18 |               | 760      | 83                             |
+
+Two abbreviated documents are past 32 MiB and two full ones past 64 MiB. The
+densest real document found holds a value per 28.8 bytes (`@wix/wix-code-types`,
+full); the others are 29 to 35 bytes a value, and the odd ones far sparser.
+
+How much room that leaves is a straight line from last year, not a forecast: the
+versions published in the last 365 days, each as heavy as the year's mean in
+that document.
+
+| package             | grows a year, abbreviated / full (MiB) | years until 64 MiB / until 96 MiB |
+| ------------------- | -------------------------------------- | --------------------------------- |
+| next                | 3.37 / 4.19                            | 11.7 / 15.8                       |
+| @prisma/client      | 2.20 / 4.42                            | 12.6 / 6.9                        |
+| @wix/wix-code-types | 0.11 / 0.35                            | 351 / 66.7                        |
+| typescript          | 0.42 / 0.95                            | 133 / 85                          |
+| @bike4mind/cli      | 25.9 / 50.2                            | 1.4 / 0.9                         |
+
+`@bike4mind/cli` published all 7,308 of its versions in the last year, the
+latest four hours before it was measured. A package that publishes a version for
+every change outgrows any bound that means something, and nothing here is a
+promise for it.
 
 ### Three bounds, not one
 
@@ -235,25 +282,36 @@ value and is 6 levels deep.
 
 - **The abbreviated packument is bounded at 64 MiB**, `MAXIMUM_PACKUMENT_BYTES`
   (`MAXIMUM_METADATA_BYTES` in `@openpacker/adapter-core`, shared so the
-  transport and the adapter cannot drift apart). It is 2.6 times `next`, the
-  largest measured, and 7.3 times `typescript`. `next` published 580 versions in
-  the year to 2026-10-12 at 6.4 KB each, 3.6 MiB a year, so the bound has about
-  a decade of room and still means something: a registry that sends more is not
-  serving a packument. It is also below the 128 MiB an artifact may weigh, so
-  the bytes a hostile registry can make the client hold for a packument are no
-  more than for a tarball. What parsing them can cost is a separate bound, and
-  not that one: see "The value limit is a budget the parser stops at". 32 MiB
-  (1.25 times `next`) was rejected as a fit to today that `next` outgrows; 128
-  MiB as double the envelope with nothing measured that needs it.
+  transport and the adapter cannot drift apart). The largest abbreviated
+  document found is 36.56 MiB (`public-unscoped-test-package`; `@prisma/client`,
+  which people install, is 36.41 MiB), so the bound is 1.75 times that, 2.6
+  times `next` and 7.7 times `typescript`. At last year's pace there are twelve
+  to thirteen years of room for `next` and `@prisma/client` and over a century
+  for `typescript`, and a year and a half for a package that publishes a version
+  for every change (above). The revisit trigger this amendment first wrote, a
+  real document past 32 MiB, has been reached by two documents. The bound is not
+  raised: every byte of it can be a hostile document's parse cost (see "What one
+  hostile document costs") and nothing found needs more. It is below the 128 MiB
+  an artifact may weigh, so the bytes a hostile registry can make the client
+  hold for one packument are no more than for one tarball. That does not bound
+  what parsing them costs, or what a resolve keeps: see "Memory". 32 MiB was
+  rejected as below the largest real document, and 128 MiB as double the
+  envelope with nothing found that needs it.
 - **A parsed document may hold one value per 16 bytes of its byte bound**
   (`metadataValueLimit`): 4,194,304 for the abbreviated packument, 6,291,456 for
-  the full one (96 MiB, unchanged: the largest full packument measured is
-  `vite`, 39 MB). The count is derived rather than chosen so that it cannot fall
-  behind the bytes again, and it is above any real document (five times `next`)
-  and below what a body of `[1,1,1]` would make (two bytes a value). Other
-  documents keep the 200,000 default. The parser enforces it as it builds the
-  tree and refuses the first value past the limit; it never counts a finished
-  tree.
+  the full one. The full packument stays at 96 MiB,
+  `MAXIMUM_FULL_PACKUMENT_BYTES`. The largest found is 72.96 MiB
+  (`@wix/wix-code-types`) and then 65.35 MiB (`@prisma/client`), so 96 MiB is
+  1.31 times the largest, and 64 MiB, which would make the two bounds equal,
+  would refuse both whenever an add needs their full document: a package
+  modified within the release-age window, which for `@prisma/client`, with 525
+  versions in a year, is a matter of days. The count is derived rather than
+  chosen so that it cannot fall behind the bytes again. The most values any
+  document found holds is 1,077,961 abbreviated (`@prisma/client`) and 2,655,900
+  full (`@wix/wix-code-types`), so the limits are 3.9 and 2.4 times that, and
+  below what a body of `[1,1,1]` would make (two bytes a value). Other documents
+  keep the 200,000 default. The parser enforces it as it builds the tree and
+  refuses the first value past the limit; it never counts a finished tree.
 - **The bound is enforced while the body arrives.** A `Content-Length` over the
   limit is refused without reading the body; otherwise chunks are counted as
   they come and the read is cancelled on the chunk that crosses the limit. A
@@ -275,17 +333,27 @@ value and is 6 levels deep.
   (256 MiB). What it keeps is what the provider holds for the resolve anyway
   (the same buffer), so this changes how much can be answered from memory and
   not how much is held.
-
 - **A document the client refuses is the reason there is no publish time.**
   `fetchFullTimes` swallowed every failure of the full packument, which is what
   hid the 538,245-value problem: "not captured" is as true of a registry that is
   down as of a document that was too large. A refusal of the document (too many
-  bytes, too many values, too deep, not JSON) now surfaces from `publishTime`,
-  named by package and document, and `capturePublishTime` keeps it on the facts
-  as `publishTimeUnavailable`; the release-age check appends it:
-  `publishedAt/evaluationTime not captured for minimum release age: The full packument of typescript is 100663297 bytes (96.00 MiB) and exceeds the limit of 100663296 bytes (96.00 MiB)`.
+  bytes, too many values, too deep, not JSON, not UTF-8) now surfaces from
+  `publishTime`, named by package and document, and `capturePublishTime` keeps
+  it on the facts as `publishTimeUnavailable`; the release-age check appends it:
+  `publishedAt/evaluationTime not captured for minimum release age: The full packument of example-heavy is 100663297 bytes (96.00 MiB) and exceeds the limit of 100663296 bytes (96.00 MiB)`.
   A registry that is down, or answers with an error status, leaves the message
   as it was.
+- **What a refusal repeats from the registry's document is made plain first.**
+  The parser names the member it found twice, and a refusal names the package;
+  both are text a registry chose, and the message goes to a terminal and into
+  the policy's report. `safeEcho` (`@openpacker/canonical`) is the one place
+  that text is made fit: at most 64 characters (214 for a package name, the most
+  npm allows), terminal escape sequences removed whole, every control, format
+  and separator character removed, lone surrogates too, and the original length
+  appended when it cut. A key of a title-setting escape sequence, `x`, a
+  newline, `y` and 2 MiB of `k` used to give a message as long as the key,
+  escape and newline in it. It gives `Duplicate object member: ` and `xy` and 62
+  `k`, then `… (2097170 characters) at byte N`.
 
 ### The value limit is a budget the parser stops at
 
@@ -297,9 +365,9 @@ MiB through, and a body that dense holds millions of values for its size: `{},`
 is three bytes and an object. Counted after the parse, the refusal came only
 after every value was built.
 
-One `json()` call on a body of exactly 64 MiB (Node 22.22.0, linux/x64; seconds
-are from a machine whose load average was 14 to 25 on 4 CPUs, so they are an
-upper bound and the memory is the figure to read):
+The first measurement, one `json()` call on a body of exactly 64 MiB (Node
+22.22.0, linux/x64; seconds are from a machine whose load average was 14 to 25
+on 4 CPUs, so they are an upper bound and the memory is the figure to read):
 
 | body                                  | counted after the parse | the parser stops at the limit   | read before it stopped |
 | ------------------------------------- | ----------------------- | ------------------------------- | ---------------------- |
@@ -319,20 +387,73 @@ member twice, so it would not be the count the tree is made of. The refusal is a
 time. Parsing a legitimate 25.6 MB packument costs the same as before (about 1.5
 s either way).
 
-What this leaves is a constant, and it is not small. A tree of 4,194,304 values
-costs about a gigabyte, because an empty object costs about 260 bytes of heap
-for three bytes of body. The heaviest accepted shape tried, 64 MiB of
-`{"aaaaaaaaaaaaaaaaaaaaaaaaaa":1},` (4.07 million values, under the limit), was
-parsed whole in 9.5 s (loaded machine) and 1,218 MB. These figures do not grow
-with the registry's body, because the byte bound refuses a larger one first. The
-refused case is equal to what the original 8 MiB bound let a body of `{},` cost
-(4.4 s, 1.1 GB, measured in the review), and no longer six times worse.
+### What one hostile document costs
 
-The lever is the 16 bytes a value. 32 would halve the worst case and still allow
-2.5 times the values of `next`, but the two bounds would then disagree for a
-real document: one of the densest real shape (27 bytes a value) would be refused
-for its values at about 54 MiB, before the byte bound. Which trade to make is
-left to a person, and nothing here changes it.
+The two shapes above were the first measurement's, and they are not the worst
+there are. The cost of a tree is set by the limit and by what the values are,
+and an object is dear: 4.2 million empty objects (`{},`) cost 1.1 GB and 4.2
+million numbers (`1,`) 0.38 GB, and an object with a member in it costs more
+again.
+
+This measures eleven shapes through the real thing, not `json()` alone. A
+loopback server sends the document chunked with no `Content-Length`, as a
+registry that does not say how much is coming would, to the repository's own
+`BoundedFetchTransport` and `NpmRegistryProvider`: `enumerate` for the
+abbreviated bound, `publishTime` for the full one, which asks for the full
+packument. Every document is exactly the size of its bound. Node 22.22.0,
+linux/x64, 4 CPUs shared with other work (load average 6 to 11), so the seconds
+are probably longer than an idle machine's; the figure to read is the peak RSS
+of the client process (`maxRSS`, so the MB are mebibytes), which moves about 10
+percent from run to run. A range is the least and the most of repeated runs, two
+for the first row and three for the 12-character object; every other row is one
+run.
+
+| the document's values                                                         | 64 MiB, abbreviated (4,194,304 values)     | 96 MiB, full (6,291,456 values)         |
+| ----------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------- |
+| `{},` (3 bytes a value)                                                       | refused after 12 MiB: 2.8 to 5.2 s, 1.1 GB | refused after 18 MiB: 4.5 s, 1.6 GB     |
+| `1,` (2 bytes a value)                                                        | refused after 8 MiB: 1.2 s, 382 MB         | refused after 12 MiB: 1.5 s, 478 MB     |
+| `{"aaaaaaaaaaaaaaaaaaaaaaaaaa":1},` (the same 26-character key every time)    | accepted: 8.7 s, 1.3 GB                    | accepted: 9.5 s, 1.8 GB                 |
+| the same, each key different                                                  | accepted: 7.8 s, 1.4 GB                    | accepted: 12.7 s, 2.1 GB                |
+| the same, 20-character keys (14 bytes a value)                                | refused after 54 MiB: 5.0 s, 835 MB        | refused after 81 MiB: 7.9 s, 1.2 GB     |
+| `"<14 characters>",` (17 bytes a value)                                       | accepted: 3.3 s, 862 MB                    | accepted: 5.1 s, 1.2 GB                 |
+| `{"<26 characters, each different>":{}},` (an object in an object)            | accepted: 9.9 s, 1.8 GB                    | accepted: 16.6 s, 2.6 GB                |
+| the same, 20-character keys (14 bytes a value)                                | refused after 56 MiB: 6.0 s, 1.2 GB        | refused after 84 MiB: 9.7 s, 1.7 GB     |
+| one object of `"<12 characters, each different>":{},` members (18 bytes each) | accepted: 22.5 to 25.9 s, 2.2 to 2.4 GB    | accepted: 40.4 to 43.5 s, 3.1 to 3.7 GB |
+| the same, 7-character keys (13 bytes each)                                    | refused after 52 MiB: 52.2 s, 1.5 GB       | refused after 78 MiB: 91.1 s, 2.3 GB    |
+| the same as the 12-character one, with one `€` in the name (two bytes a char) | accepted: 23.8 s, 2.7 GB                   | accepted: 43.1 s, 3.8 GB                |
+
+A gzip response gives the same figure (the `{},` document: 4.6 s and 1,121 MB
+against 5.2 s and 1,140 MB), because the transport counts decoded bytes.
+
+Reading it:
+
+- The earlier figure here, "at most about 1.1 to 1.2 GB and 3 to 10 seconds",
+  was the cost of two shapes and is withdrawn. Of the eleven shapes the most an
+  abbreviated packument cost was 2.7 GB (the object of millions of members with
+  one `€` in it) and 52 s (the same object, refused at the limit), and the most
+  a full one cost was 3.8 GB and 91 s. These are the heaviest shapes tried, and
+  nothing here shows that no heavier one exists.
+- The worst shape is one object with millions of members, each an empty object.
+  The tree is dear and so is the time: 6 to 15 microseconds a member, growing a
+  little faster than the size (5.3 microseconds a member at 250,000 members and
+  7.9 at 2,000,000, measured separately). The parse is on the main thread, so
+  the command is stuck for that long.
+- A refusal is not cheap. It comes when the tree has the limit's worth of
+  values, wherever that is in the body, so a dense body is refused having built
+  as many values as a sparse one is accepted with: the object with 7-character
+  keys was refused after 52 s, longer than the accepted one with 12-character
+  keys. Reading less of the body is the only saving.
+- These figures are a constant of the limits and not of the registry: a larger
+  body is refused on bytes before it is parsed.
+
+The lever is the 16 bytes a value, and it is not a cheap one. 32 would halve the
+values allowed and so roughly the worst case, but it would be 1.1 times the
+densest real document found (28.8 bytes a value), so a real document would be
+refused for its values before its bytes. What would lower the cost without
+refusing a real document is a cheaper tree (the parser builds a null-prototype
+object and a `Set` for every object and calls `JSON.parse` for every string), or
+weighing objects and members in the budget instead of counting every value
+alike. Neither is done here.
 
 ### Not done: reading only what the walk needs
 
@@ -341,23 +462,34 @@ version by range, so any version may be inspected; it needs the version list,
 the dependency fields and `dist` of nearly all of them, and the abbreviated
 document has already dropped everything else. The provider also keeps the body
 it read, which is what the record's evidence refers to. A projection would save
-memory that is not the constraint (below), at the cost of a second parser on the
-path every locked package takes.
+tree memory, which the measurements above show is the largest cost of a hostile
+document, at the cost of a second parser on the path every locked package takes.
+It remains an option for lowering that cost.
 
 ### Memory
 
-A hostile registry can have a resolve hold up to twelve bodies at once (the
-transport's slots), each up to 64 MiB, and up to twice that for the instant the
-chunks are joined: 0.75 GiB steady, 1.5 GiB at worst. That is bytes, and an
-artifact download has the same shape at 128 MiB.
+Three parts, and only the first is a bound on the resolve.
 
-Parsing is the other part, and is measured in the previous section: the tree of
-one document is at most about 1.1 to 1.2 GB (the densest refused body and the
-heaviest accepted one), and the parse is on the main thread, so there is one
-tree at a time. The two parts add to about 2 GB, 2.7 GB while a body is being
-joined. That is an estimate from the two measured parts, not a measurement of
-both together, and it is a constant of the limits and not of the registry: a
-larger body is refused on bytes before it is parsed.
+1. **Bytes in flight.** A request takes one of twelve slots, and a body may be
+   as large as its request's bound: 64 MiB for an abbreviated packument, 96 MiB
+   for a full one, and up to twice that for the instant the chunks are joined.
+   By arithmetic from the bounds, not by measurement, twelve full packuments are
+   1.1 GiB, and 2.3 GiB while joined. An artifact download has the same shape at
+   128 MiB. `MemoizingTransport` keeps at most 256 MiB of abbreviated bodies,
+   and those are the buffers the provider holds anyway; a full packument asks
+   for more than the memo's ceiling and is not kept.
+2. **One parse**, in the table above: up to 2.7 GB for an abbreviated packument
+   and 3.8 GB for a full one, in the shapes tried, one at a time because the
+   parse is on the main thread.
+3. **What a resolve keeps.** The provider keeps every packument it has read, the
+   body and the tree parsed from it, until the resolve ends: the resolve never
+   asks it to forget one. One provider reading six different 12 MiB packuments
+   held, after a collection, 188, 258, 328, 398, 468 and 538 MB of heap: 70 MB
+   for each, 5.8 times its size and beside the body itself, and linear. So the
+   bound is on a document and not on a resolve, and a registry that has the walk
+   visit enough packages can make it hold as much as it likes. It could at the
+   old 8 MiB bound too; what has changed is that a document may now be eight
+   times the size. A cap on what a resolve keeps is not here.
 
 Measured on Node 22.22.0, linux/x64, live registry, in a project written by
 `opm init` with its default policy:
@@ -378,18 +510,51 @@ publish time of a package modified within the last day) and the tarball.
 `next` holds a 25.6 MB packument and finishes inside a 256 MB old-space limit,
 so the 958 MB is the collector's slack and not live data.
 
+The largest documents found, on the final build. The first two rows are the wall
+time and peak RSS of the `opm` process; the last two call `publishTime` of the
+real provider in a script, which reads the abbreviated packument first and then
+the full one:
+
+| command                                                             | wall   | peak RSS |
+| ------------------------------------------------------------------- | ------ | -------- |
+| `opm resolve pkg:npm/%40prisma/client` (36.41 MiB abbreviated)      | 9.0 s  | 525 MB   |
+| `opm resolve pkg:npm/public-unscoped-test-package` (36.56 MiB)      | 7.1 s  | 487 MB   |
+| full packument of `@wix/wix-code-types` (72.96 MiB, then 25.94 MiB) | 9.5 s  | 1,031 MB |
+| full packument of `@prisma/client` (65.35 MiB, then 36.41 MiB)      | 13.6 s | 819 MB   |
+
+Both resolves exit 0. `opm add pkg:npm/%40prisma/client` reads the same
+packument and then stops at its tarball with
+`Unsafe archive rejected (EXPANDED_SIZE_LIMIT): 67108864`, which is the
+archive's bound on what it expands to and is not touched here.
+
 ### Limits
 
 - The other ecosystems' metadata bounds (cargo, PyPI, NuGet, Go, Maven: 8 MiB
   each) were not measured against their registries here.
-- The value limit allows a tree of about a gigabyte by design (above). A tighter
-  limit is a change to `MINIMUM_BYTES_PER_METADATA_VALUE`, and to the tests that
-  pin 4,194,304, and was not made here.
-- The at-scale test refuses a 64 MiB body at the abbreviated limit. The full
-  packument's limit (6,291,456 values at 96 MiB) goes through the same code and
-  is exercised at small limits and by depth, not with a 96 MiB hostile body.
+- The value limit allows a tree of 2.7 GB and 52 s for an abbreviated packument
+  and 3.8 GB and 91 s for a full one, in the shapes tried (above). A tighter
+  limit is a change to `MINIMUM_BYTES_PER_METADATA_VALUE` and to the tests that
+  pin 4,194,304; a cheaper tree or a budget that weighs objects is a change to
+  the parser. Neither was made here.
+- A resolve keeps every packument it reads (above), so the bounds on a document
+  are not a bound on a resolve. Not changed here.
+- What the tests hold: the stop at the limit for `{},` and `1,` at exactly 64
+  MiB (`packument-hostile.test.ts`, which asserts where the parser stopped and
+  not how long it took), the same stop at small limits and by depth, and the
+  refusals and what they say. The other nine shapes, the 96 MiB bodies, the
+  two-byte case, the gzip case and the retention of a resolve were measured by
+  scripts run for this amendment, which are not in the repository, and no test
+  fails if the figures above change.
+- The full packument of `@wix/wix-code-types` is at three quarters of its bound
+  (72.96 of 96 MiB), though it grows only 0.35 MiB a year. Raising the full
+  packument's bound means accepting that the heaviest 96 MiB shape costs about
+  one and a half times the memory of the 64 MiB one, and 1.6 to 1.9 times the
+  time.
+- The sample is 4,887 names and the full packument of 400 of them (above); it is
+  not the registry.
 - Parsing is the cost of a large document: the canonical parser reads 12 to 16
   MB a second, `next`'s packument takes 1.6 s, and the resolve of `next` is
   CPU-bound at 22 s.
-- Revisit the bound when any real abbreviated packument passes 32 MiB, half of
-  it.
+- `opm add` of `@prisma/client` and `@wix/wix-code-types` stops at their
+  tarballs on the archive's expanded-size bound (64 MiB), a different limit that
+  is not changed here.

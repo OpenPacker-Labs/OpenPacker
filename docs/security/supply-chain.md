@@ -150,18 +150,24 @@ A provider reads registry metadata under a byte bound that is applied while the
 body arrives, so a missing or understated `Content-Length` does not lift it, and
 under a bound on the values the parsed document may hold, one per 16 bytes of
 the byte bound, which the parser enforces as it builds the tree: the first value
-past the limit is refused before it is built, so a body that is dense in values
-costs what the limit allows and no more. npm's abbreviated packument is bounded
-at 64 MiB and the full one at 96 MiB, above the largest the public registry
-serves (`next`, 25.6 MB and 31.4 MB on 2026-10-12) and below the 128 MiB an
-artifact may weigh. Those are bytes held. What parsing a hostile body can cost
-is a separate and measured bound: one document of up to 64 MiB costs the client
-at most about 1.1 to 1.2 GB of peak memory and 3 to 10 seconds on a loaded 4-CPU
-machine (a body of `{},`: 1,109 MB; the heaviest document under the limit that
-was tried: 1,218 MB), where counting values after the parse cost 7.4 GB and 51 s
-for the same body. A refusal names the package, the size seen and the limit, and
-a publish time that is missing because the registry's document was refused says
-so in the policy message. See the
+past the limit is refused before it is built. npm's abbreviated packument is
+bounded at 64 MiB and the full one at 96 MiB, above the largest the public
+registry serves in the 4,887 packages looked at on 2026-10-12 (36.6 MiB
+abbreviated, 73.0 MiB full) and below the 128 MiB an artifact may weigh. Those
+are bytes held, per document. What parsing a hostile body costs is separate and
+measured, through the real transport and provider on a 4-CPU machine shared with
+other work: of eleven shapes of document, the most expensive an abbreviated
+packument cost was 2.7 GB of peak memory and 52 s, and the most a full packument
+cost was 3.8 GB and 91 s, where counting values after the parse cost 7.4 GB and
+51 s for a 64 MiB body of `{},` and the parser stopping at the limit costs 1.1
+GB and 3 to 5 s for the same body. Those are the heaviest shapes tried, not a
+proven maximum. The bound is on a document and not on a resolve: the provider
+keeps every packument it has read until the resolve ends, so a registry that
+makes a resolve visit many packages can make it hold more than one document's
+worth. A refusal names the package, the size seen and the limit, and a publish
+time that is missing because the registry's document was refused says so in the
+policy message; the text it repeats from the document is capped and has its
+control characters removed. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 Host installers that only advertise `install` still participate: their plans
