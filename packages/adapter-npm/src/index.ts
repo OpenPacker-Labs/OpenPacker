@@ -1185,3 +1185,5 @@ export {
   type PackageLockTree,
 } from './lock-tree.js';
 export type { LockMember, LockMemberLink } from './lock-workspace.js';
+
+export * from './pnpm-lock/index.js';
