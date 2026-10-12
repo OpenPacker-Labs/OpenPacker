@@ -417,10 +417,67 @@ What it checks first, and refuses before anything is fetched or written:
 
 Like `npm ci`, it clears the `node_modules` of every workspace, the ones it does
 not install included. `--path` must be the workspace root: unlike npm it does
-not look upward from a member, so there is no implicit `-w`. `workspace:`
-specifiers and pnpm or yarn locks are not read by this command. A member's
+not look upward from a member, so there is no implicit `-w`. A yarn lock is not
+read by this command (a pnpm lock is: see the next section). A member's
 executable whose script is built after the install is shimmed to run under
 `node` until the script exists.
+
+#### Installing a pnpm lock
+
+A project whose lock is `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9
+and 10 write) is installed with the same command
+([ADR 0055](../adr/0055-opm-ci-installs-a-pnpm-lock.md)). The result is an
+npm-style nested `node_modules`, the tree Node resolves, and not pnpm's virtual
+store: no `node_modules/.pnpm`, no symlink except a workspace member's own link.
+
+```sh
+opm ci                                    # every importer, everything they need
+opm ci --filter @acme/web                 # that member, what it needs, the members it links
+opm ci --filter "@acme/web..."            # pnpm's grammar (also -w, --workspaces)
+opm ci --production                       # leave out devDependencies
+opm ci --os linux --cpu x64 --cpu arm64   # the platforms to install optional packages for
+opm ci --supported-architectures project  # the project's own pnpm.supportedArchitectures
+opm ci --plan                             # read, check and plan; fetch and write nothing
+```
+
+What it does differently from an npm lock, because a pnpm lock records edges and
+not places:
+
+- **It chooses the places.** Each importer's direct dependencies are in that
+  importer's own `node_modules` (the project's for the root importer).
+  Everything else goes where it is shared: in the project's `node_modules` when
+  it is the version of its name most packages want, beside its dependent when
+  another version already answers. Every edge of every importer and snapshot is
+  resolved on the plan with Node's lookup before anything is fetched, and a plan
+  in which one does not find its target is refused.
+- **A package resolved against several sets of peers**
+  (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
+  archive, fetched and extracted once, and as many places as dependents need.
+- **A workspace member is linked, not fetched**, at `node_modules/<member name>`
+  as for an npm workspace, and a member's executables are shimmed in the
+  project's `.bin`.
+
+What it checks first, and refuses before anything is fetched or written, each
+naming the importer and the dependency:
+
+- an importer's dependency whose specifier in the lock differs from its
+  `package.json` (the lock is stale), a dependency added or dropped, importers
+  that are not the project's members, an `overrides` or `catalogs` section that
+  differs from the project's;
+- `patchedDependencies` (`opm` applies no patches), a package from a git
+  repository, a directory, a `file:` archive or a runtime, a package with no
+  sha512, sha384 or sha256 integrity, an injected workspace package, a link that
+  is not named for its member, and a non-optional package that does not run on
+  the target.
+
+An optional package for another `os`, `cpu` or `libc` is left out, with whatever
+only it needs, and counted by reason in the summary. The target is this machine
+alone unless `--os`, `--cpu` or `--libc` say otherwise;
+`--supported-architectures project` reads the project's own setting, which may
+add platforms (HoBo's adds arm64: 1,162 MB). No install script is run, and the
+packages that declare one are listed. If a project has both `pnpm-lock.yaml` and
+`package-lock.json`, the `packageManager` field of `package.json` chooses;
+without one the command refuses and names both files.
 
 ### `opm.toml`
 
@@ -1142,8 +1199,8 @@ directory and everything under it); `.npmrc` is not read, so you say which.
 
 `opm` can read a `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9 and 10
 write; pnpm 11's additions are refused by name) into a typed, validated and
-bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses
-it yet: `opm ci` still reads only `package-lock.json`. It is a library in
+bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). `opm ci`
+installs it ([above](#installing-a-pnpm-lock)). The reader is a library in
 `@openpacker/adapter-npm`, beside the reader of `package-lock.json`, and it
 fetches nothing, installs nothing and decides no policy.
 
