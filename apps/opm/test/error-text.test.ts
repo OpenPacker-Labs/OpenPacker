@@ -203,8 +203,10 @@ describe('a registry document read by the real provider', () => {
 
   it('is written plainly when a version is not one', async () => {
     const error = await refused(version({ version: `1.0.0${hostile}` }));
+    // Made plain where the adapter quotes it, which removes a tab and does not
+    // space it; the writer then has nothing left to remove.
     expect(written(error)).toEqual({
-      err: `opm: Invalid version: 1.0.0${plain}\n`,
+      err: 'opm: Invalid version: 1.0.0depx\n',
       code: EXIT_CODES.internal,
     });
   });

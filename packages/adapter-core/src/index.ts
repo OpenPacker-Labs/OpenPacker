@@ -3,11 +3,13 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+import { echoed } from './echo.js';
 import { ProviderError } from './provider-error.js';
 import {
   MetadataLimitError,
   ResponseTooLargeError,
 } from './document-refusal.js';
+export { ECHO_TEXT_LIMIT, echoed } from './echo.js';
 export { ProviderError } from './provider-error.js';
 export {
   MetadataLimitError,
@@ -1590,7 +1592,7 @@ const decode = (value: string): string => {
   } catch {
     throw new ProviderError(
       'INVALID_PURL',
-      `Invalid percent encoding: ${value}`,
+      `Invalid percent encoding: ${echoed(value)}`,
     );
   }
 };
@@ -1651,10 +1653,16 @@ export function parsePurl(value: string): ParsedPurl {
   for (const pair of queryText === '' ? [] : queryText.split('&')) {
     const separator = pair.indexOf('=');
     if (separator <= 0)
-      throw new ProviderError('INVALID_PURL', `Invalid qualifier: ${pair}`);
+      throw new ProviderError(
+        'INVALID_PURL',
+        `Invalid qualifier: ${echoed(pair)}`,
+      );
     const key = decode(pair.slice(0, separator)).toLowerCase();
     if (key in qualifiers)
-      throw new ProviderError('INVALID_PURL', `Duplicate qualifier: ${key}`);
+      throw new ProviderError(
+        'INVALID_PURL',
+        `Duplicate qualifier: ${echoed(key)}`,
+      );
     qualifiers[key] = decode(pair.slice(separator + 1));
   }
   const result: ParsedPurl = { type, name: decode(namePart), qualifiers };
@@ -1673,7 +1681,7 @@ export function assertPackageIdentityMatchesRequest(
   if (!identity.exactPurl)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider returned no exact identity for ${requestedPurl}`,
+      `Provider returned no exact identity for ${echoed(requestedPurl)}`,
     );
   const requested = parsePurl(requestedPurl);
   const actual = parsePurl(identity.exactPurl);
@@ -1685,7 +1693,7 @@ export function assertPackageIdentityMatchesRequest(
   )
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider identity ${identity.exactPurl} does not match ${requestedPurl}`,
+      `Provider identity ${echoed(identity.exactPurl)} does not match ${echoed(requestedPurl)}`,
     );
 }
 
@@ -1726,7 +1734,7 @@ export function parseSemver(
   if (!match)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid version: ${value}`,
+      `Invalid version: ${echoed(value)}`,
     );
   const present = match
     .slice(1, 5)
@@ -1734,7 +1742,7 @@ export function parseSemver(
   if (present.length > maximumReleaseParts)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Too many release components: ${value}`,
+      `Too many release components: ${echoed(value)}`,
     );
   const release = present.map(Number);
   while (release.length < maximumReleaseParts) release.push(0);
@@ -1908,7 +1916,7 @@ function parseRangeToken(
   if (!operatorMatch)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Invalid range token: ${token}`,
+      `Invalid range token: ${echoed(token)}`,
     );
   const operator = operatorMatch[1] ?? '';
   const rawVersion = operatorMatch[2]!.trim();
@@ -1926,7 +1934,7 @@ function parseRangeToken(
         if (!/^\d+$/.test(part))
           throw new ProviderError(
             'INVALID_NATIVE_RANGE',
-            `Invalid partial version: ${rawVersion}`,
+            `Invalid partial version: ${echoed(rawVersion)}`,
           );
         return Number(part);
       });
@@ -2074,7 +2082,7 @@ function parseVersExpression(expression: string): RangeAst {
       if (!match?.[1] || !match[2])
         throw new ProviderError(
           'INVALID_VERS',
-          `Invalid VERS clause: ${clause}`,
+          `Invalid VERS clause: ${echoed(clause)}`,
         );
       return {
         type: 'comparison' as const,
@@ -2289,7 +2297,7 @@ export async function verifyNativeDigest(
   if (webAlgorithm === undefined)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Unsupported native digest algorithm: ${algorithm}`,
+      `Unsupported native digest algorithm: ${echoed(algorithm)}`,
     );
   const digest = new Uint8Array(
     await crypto.subtle.digest(webAlgorithm, Uint8Array.from(bytes).buffer),
