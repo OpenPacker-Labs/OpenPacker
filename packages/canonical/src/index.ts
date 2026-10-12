@@ -24,6 +24,43 @@ export class CanonicalJsonError extends TypeError {
   }
 }
 
+/**
+ * What a document may hold, enforced while it is parsed. A parser that counts
+ * after it has built the tree has already spent the memory the count was meant
+ * to protect, so both limits stop the parse itself: the first value past the
+ * limit is refused before it is built. Neither limit applies unless it is
+ * given.
+ */
+export interface CanonicalParseLimits {
+  /** Most values the document may hold: every scalar, array and object. */
+  readonly maximumValues?: number;
+  /** Deepest nesting allowed. The root is at depth 0. */
+  readonly maximumDepth?: number;
+}
+
+/**
+ * A document went past a `CanonicalParseLimits` bound. It says how far the
+ * parser got, so a caller (and a test) can see that it stopped early rather
+ * than that it finished and then counted.
+ */
+export class CanonicalJsonLimitError extends CanonicalJsonError {
+  constructor(
+    readonly limit: 'values' | 'depth',
+    readonly maximum: number,
+    /** Values begun when the parser stopped; the refused one is included. */
+    readonly visited: number,
+    /** Characters of the text consumed when the parser stopped. */
+    readonly offset: number,
+  ) {
+    super(
+      limit === 'values'
+        ? `JSON document exceeds ${maximum} values`
+        : `JSON document exceeds depth ${maximum}`,
+    );
+    this.name = 'CanonicalJsonLimitError';
+  }
+}
+
 export function compareCanonicalStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -89,21 +126,45 @@ export function canonicalBytes(value: JsonValue): Uint8Array {
 
 class JsonParser {
   private index = 0;
-  constructor(private readonly input: string) {}
+  private visited = 0;
+  private readonly maximumValues: number;
+  private readonly maximumDepth: number;
+  constructor(
+    private readonly input: string,
+    limits: CanonicalParseLimits,
+  ) {
+    this.maximumValues = limits.maximumValues ?? Number.POSITIVE_INFINITY;
+    this.maximumDepth = limits.maximumDepth ?? Number.POSITIVE_INFINITY;
+  }
 
   parse(): JsonValue {
-    const value = this.value();
+    const value = this.value(0);
     this.space();
     if (this.index !== this.input.length) this.fail('Unexpected trailing data');
     canonicalize(value);
     return value;
   }
 
-  private value(): JsonValue {
+  private value(depth: number): JsonValue {
+    this.visited += 1;
+    if (this.visited > this.maximumValues)
+      throw new CanonicalJsonLimitError(
+        'values',
+        this.maximumValues,
+        this.visited,
+        this.index,
+      );
+    if (depth > this.maximumDepth)
+      throw new CanonicalJsonLimitError(
+        'depth',
+        this.maximumDepth,
+        this.visited,
+        this.index,
+      );
     this.space();
     const character = this.input[this.index];
-    if (character === '{') return this.object();
-    if (character === '[') return this.array();
+    if (character === '{') return this.object(depth);
+    if (character === '[') return this.array(depth);
     if (character === '"') return this.string();
     if (character === 't') return this.literal('true', true);
     if (character === 'f') return this.literal('false', false);
@@ -111,7 +172,7 @@ class JsonParser {
     return this.number();
   }
 
-  private object(): { [key: string]: JsonValue } {
+  private object(depth: number): { [key: string]: JsonValue } {
     this.index += 1;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result: { [key: string]: JsonValue } = Object.create(null) as {
@@ -129,20 +190,20 @@ class JsonParser {
       keys.add(key);
       this.space();
       if (!this.take(':')) this.fail('Expected colon after object member name');
-      result[key] = this.value();
+      result[key] = this.value(depth + 1);
       this.space();
       if (this.take('}')) return result;
       if (!this.take(',')) this.fail('Expected comma between object members');
     }
   }
 
-  private array(): JsonValue[] {
+  private array(depth: number): JsonValue[] {
     this.index += 1;
     const result: JsonValue[] = [];
     this.space();
     if (this.take(']')) return result;
     while (true) {
-      result.push(this.value());
+      result.push(this.value(depth + 1));
       this.space();
       if (this.take(']')) return result;
       if (!this.take(',')) this.fail('Expected comma between array values');
@@ -213,9 +274,12 @@ class JsonParser {
   }
 }
 
-export function parseCanonicalJson<T = JsonValue>(text: string): T {
+export function parseCanonicalJson<T = JsonValue>(
+  text: string,
+  limits: CanonicalParseLimits = {},
+): T {
   // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
-  return new JsonParser(text).parse() as T;
+  return new JsonParser(text, limits).parse() as T;
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Digest> {
