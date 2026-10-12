@@ -99,7 +99,7 @@ function gitKeyVersion(resolution: {
 }
 
 /** `base/target` with `.` and `..` folded, or undefined when it climbs out of the root. */
-function joinInside(base: string, target: string): string | undefined {
+export function joinInside(base: string, target: string): string | undefined {
   const parts = base === '.' ? [] : base.split('/');
   for (const segment of target.split('/')) {
     if (segment === '' || segment === '.') continue;
