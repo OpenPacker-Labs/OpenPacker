@@ -611,6 +611,12 @@ export interface NativeRequirement {
   name: string;
   /** Native range or exact pin, in the ecosystem's own grammar. */
   range?: string;
+  /**
+   * The name the package is installed under when it is not `name`: npm's
+   * `"string-width-cjs": "npm:string-width@^4.2.0"` is `name` `string-width`
+   * installed as `string-width-cjs`. Absent means `name`.
+   */
+  installName?: string;
   scope: RequirementScope;
 }
 
@@ -652,6 +658,12 @@ export interface NativeLockEntry extends NativeRequirement {
    * which version and places by name alone.
    */
   dependencies?: readonly string[];
+  /**
+   * `alias` of every entry in this list that this package requires under a name
+   * other than the entry's own: install name → `alias`. These are edges as
+   * `dependencies` are, and are not repeated there.
+   */
+  aliases?: Readonly<Record<string, string>>;
 }
 
 /**

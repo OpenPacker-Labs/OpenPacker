@@ -35,7 +35,16 @@ export interface LayoutEntry {
   version: string;
   digest: string;
   direct: boolean;
+  /** `id` of every entry this one requires under that entry's own name. */
   dependencies: readonly string[];
+  /**
+   * The name a direct entry is installed under when it is not its own
+   * (`"string-width-cjs": "npm:string-width@^4"`). Directory names come from
+   * here, never from `name`, which is what the package calls itself.
+   */
+  installName?: string;
+  /** `id` of every entry this one requires under another name: name → id. */
+  aliases?: Readonly<Record<string, string>>;
   source: NativeLockEntry;
 }
 
@@ -76,6 +85,14 @@ interface Node {
   parent: Node | undefined;
   children: Map<string, Node>;
   chain: readonly string[];
+  /** The directory name, which is the entry's own unless it was aliased. */
+  installName: string;
+}
+
+/** One edge, as the planner follows it: the entry and the name it is found by. */
+interface Want {
+  id: string;
+  as: string;
 }
 
 /** The id a lock entry is known by when its lock did not name it. */
@@ -99,6 +116,10 @@ export function toLayoutEntries(
       digest: entry.digest,
       direct: !entry.transitive,
       dependencies: entry.dependencies ?? [],
+      ...(!(entry.installName === undefined) && {
+        installName: entry.installName,
+      }),
+      ...(!(entry.aliases === undefined) && { aliases: entry.aliases }),
       source: entry,
     });
   }
@@ -128,7 +149,11 @@ export function planLayout(
 
   const invalid = new Set<string>();
   for (const entry of entries) {
-    const problem = unsafeNameProblem(entry.name);
+    const problem =
+      unsafeNameProblem(entry.name) ??
+      (entry.installName === undefined
+        ? undefined
+        : unsafeNameProblem(entry.installName));
     if (problem !== undefined) {
       invalid.add(entry.id);
       skip(entry, problem);
@@ -137,32 +162,68 @@ export function planLayout(
   const usable = (entry: LayoutEntry | undefined): entry is LayoutEntry =>
     entry !== undefined && !invalid.has(entry.id);
 
+  // What each entry requires, and the name it finds each by. An alias name is
+  // registry-controlled input that becomes a directory, so it is held to the
+  // rule a package name is; an edge that fails is left out, with the reason.
+  const wantsOf = (entry: LayoutEntry): Want[] => {
+    const wants: Want[] = [];
+    for (const id of new Set(entry.dependencies)) {
+      const wanted = byId.get(id);
+      if (wanted !== undefined) wants.push({ id, as: wanted.name });
+    }
+    for (const [as, id] of Object.entries(entry.aliases ?? {})) {
+      const wanted = byId.get(id);
+      if (wanted === undefined) continue;
+      const problem = unsafeNameProblem(as);
+      if (problem !== undefined) {
+        skip(
+          wanted,
+          `${entry.name}@${entry.version} requires it as ${problem.replace(/^"[^"]*" /u, `"${as}" `)}`,
+        );
+        continue;
+      }
+      wants.push({ id, as });
+    }
+    return wants.sort(
+      (left, right) =>
+        compareText(left.id, right.id) || compareText(left.as, right.as),
+    );
+  };
+  const wants = new Map(entries.map((entry) => [entry.id, wantsOf(entry)]));
+
   const reachable = reachableFrom(
     entries.filter((entry) => entry.direct && usable(entry)),
     byId,
     usable,
+    wants,
   );
-  const rootChoice = chooseRootVersions(entries, reachable, usable);
+  const rootChoice = chooseRootVersions(entries, reachable, usable, wants);
 
   const root: Node = {
     entry: undefined,
     parent: undefined,
     children: new Map(),
     chain: [],
+    installName: '',
   };
   const placed: Node[] = [];
   const placedIds = new Set<string>();
   const queue: Node[] = [];
-  const place = (parent: Node, entry: LayoutEntry): Node => {
+  const place = (
+    parent: Node,
+    entry: LayoutEntry,
+    installName: string,
+  ): Node => {
     if (placed.length >= maximumPlacements)
       throw new LayoutTooLargeError(maximumPlacements);
     const node: Node = {
       entry,
       parent,
       children: new Map(),
-      chain: [...parent.chain, entry.name],
+      chain: [...parent.chain, installName],
+      installName,
     };
-    parent.children.set(entry.name, node);
+    parent.children.set(installName, node);
     placed.push(node);
     placedIds.add(entry.id);
     queue.push(node);
@@ -171,46 +232,50 @@ export function planLayout(
 
   for (const entry of sortEntries(entries.filter((e) => e.direct))) {
     if (!usable(entry)) continue;
-    const taken = root.children.get(entry.name)?.entry;
+    const name = directName(entry);
+    const taken = root.children.get(name)?.entry;
     if (taken !== undefined && !sameEntry(taken, entry)) {
       skip(
         entry,
-        `${entry.name}@${entry.version} is required directly, and so is ${taken.name}@${taken.version}; Node cannot resolve two versions of one name from the project root`,
+        entry.installName === undefined && taken.installName === undefined
+          ? `${entry.name}@${entry.version} is required directly, and so is ${taken.name}@${taken.version}; Node cannot resolve two versions of one name from the project root`
+          : `${entry.name}@${entry.version} and ${taken.name}@${taken.version} are both required directly as ${name}; Node cannot resolve two packages of one name from the project root`,
       );
       continue;
     }
-    if (taken === undefined) place(root, entry);
+    if (taken === undefined) place(root, entry, name);
   }
 
   const drain = (): void => {
     while (queue.length > 0) {
       const node = queue.shift()!;
       const dependent = node.entry!;
-      for (const id of [...dependent.dependencies].sort()) {
+      for (const { id, as } of wants.get(dependent.id) ?? []) {
         const wanted = byId.get(id);
         if (!usable(wanted)) continue;
-        const found = lookup(node, wanted.name);
+        const found = lookup(node, as);
         if (found !== undefined) {
           if (sameEntry(found.entry!, wanted)) continue;
           if (found.parent === node) {
             skip(
               wanted,
-              `${dependent.name}@${dependent.version} requires both ${found.entry!.name}@${found.entry!.version} and ${wanted.name}@${wanted.version}`,
+              `${dependent.name}@${dependent.version} requires both ${found.entry!.name}@${found.entry!.version} and ${wanted.name}@${wanted.version}${as === wanted.name ? '' : ` as ${as}`}`,
             );
             continue;
           }
           // A different version answers to this name from here: nest, so this
           // package and what it requires see the one the solve selected.
-          place(node, wanted);
+          place(node, wanted, as);
           continue;
         }
         // Nothing answers to the name between here and the root. The root is the
         // best place for the version most of the closure wants; any other
         // version stays beside its dependent.
-        const preferred = rootChoice.get(wanted.name);
+        const preferred = rootChoice.get(as);
         place(
           preferred === undefined || sameEntry(preferred, wanted) ? root : node,
           wanted,
+          as,
         );
       }
     }
@@ -231,9 +296,10 @@ export function planLayout(
     ),
   );
   for (const entry of preferredFirst(orphans, rootChoice)) {
-    const taken = root.children.get(entry.name)?.entry;
+    const name = directName(entry);
+    const taken = root.children.get(name)?.entry;
     if (taken === undefined) {
-      place(root, entry);
+      place(root, entry, name);
       // It is installed, so what it requires has to resolve too.
       drain();
     } else if (!sameEntry(taken, entry))
@@ -366,6 +432,11 @@ function lookup(from: Node, name: string): Node | undefined {
   return undefined;
 }
 
+/** The directory a direct entry takes at the root. */
+function directName(entry: LayoutEntry): string {
+  return entry.installName ?? entry.name;
+}
+
 function sameEntry(left: LayoutEntry, right: LayoutEntry): boolean {
   return (
     left.id === right.id ||
@@ -379,6 +450,7 @@ function reachableFrom(
   roots: readonly LayoutEntry[],
   byId: ReadonlyMap<string, LayoutEntry>,
   usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
+  wants: ReadonlyMap<string, readonly Want[]>,
 ): Set<string> {
   const reached = new Set<string>();
   const pending = [...roots];
@@ -386,7 +458,7 @@ function reachableFrom(
     const entry = pending.pop()!;
     if (reached.has(entry.id)) continue;
     reached.add(entry.id);
-    for (const id of entry.dependencies) {
+    for (const { id } of wants.get(entry.id) ?? []) {
       const next = byId.get(id);
       if (usable(next)) pending.push(next);
     }
@@ -395,25 +467,34 @@ function reachableFrom(
 }
 
 /**
- * Which version of each name earns the root: a direct requirement, else the
- * one the most reachable packages require, else the newest. Only a name with
- * more than one candidate needs an answer.
+ * Which entry of each install name earns the root: a direct requirement, else
+ * the one the most reachable packages require under that name, else the
+ * newest. Only a name with more than one candidate needs an answer.
  */
 function chooseRootVersions(
   entries: readonly LayoutEntry[],
   reachable: ReadonlySet<string>,
   usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
+  wants: ReadonlyMap<string, readonly Want[]>,
 ): Map<string, LayoutEntry> {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const wantedBy = new Map<string, number>();
   for (const entry of entries) {
     if (!reachable.has(entry.id)) continue;
-    for (const id of new Set(entry.dependencies))
-      wantedBy.set(id, (wantedBy.get(id) ?? 0) + 1);
+    for (const { id, as } of wants.get(entry.id) ?? []) {
+      const key = `${as}\0${id}`;
+      wantedBy.set(key, (wantedBy.get(key) ?? 0) + 1);
+    }
   }
   const byName = new Map<string, LayoutEntry[]>();
+  const offer = (name: string, entry: LayoutEntry | undefined): void => {
+    if (!usable(entry) || !reachable.has(entry.id)) return;
+    byName.set(name, [...(byName.get(name) ?? []), entry]);
+  };
   for (const entry of entries) {
-    if (!usable(entry) || !reachable.has(entry.id)) continue;
-    byName.set(entry.name, [...(byName.get(entry.name) ?? []), entry]);
+    if (entry.direct) offer(directName(entry), entry);
+    for (const { id, as } of wants.get(entry.id) ?? [])
+      if (reachable.has(entry.id)) offer(as, byId.get(id));
   }
   const choice = new Map<string, LayoutEntry>();
   for (const [name, candidates] of byName) {
@@ -422,10 +503,13 @@ function chooseRootVersions(
         candidates.findIndex((other) => sameEntry(other, candidate)) === index,
     );
     if (distinct.length < 2) continue;
+    const heldDirectly = (entry: LayoutEntry) =>
+      Number(entry.direct && directName(entry) === name);
     distinct.sort(
       (left, right) =>
-        Number(right.direct) - Number(left.direct) ||
-        (wantedBy.get(right.id) ?? 0) - (wantedBy.get(left.id) ?? 0) ||
+        heldDirectly(right) - heldDirectly(left) ||
+        (wantedBy.get(`${name}\0${right.id}`) ?? 0) -
+          (wantedBy.get(`${name}\0${left.id}`) ?? 0) ||
         compareVersions(right.version, left.version) ||
         compareText(left.id, right.id),
     );
@@ -443,8 +527,8 @@ function preferredFirst(
   // earlier one.
   return [...entries].sort(
     (left, right) =>
-      Number(rootChoice.get(right.name) === right) -
-        Number(rootChoice.get(left.name) === left) ||
+      Number(rootChoice.get(directName(right)) === right) -
+        Number(rootChoice.get(directName(left)) === left) ||
       compareVersions(right.version, left.version) ||
       compareText(left.id, right.id),
   );

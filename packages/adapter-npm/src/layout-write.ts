@@ -151,7 +151,7 @@ export async function writeNodeModules(
   const names = new Set(
     plan.placements
       .filter((place) => place.chain.length === 1)
-      .map((place) => place.entry.name),
+      .map((place) => place.chain[0]!),
   );
   await removeStale(root, previous, names, new Set(shims.root));
   // Links last: a name that was a package is gone by now, and a package that
@@ -292,7 +292,7 @@ async function writeShims(
       taken.set(bin.name, keep);
       skipped.push({
         path: join(container, '.bin', bin.name),
-        reason: `${lose.placement.entry.name} also declares ${bin.name}; ${keep.placement.entry.name} keeps it`,
+        reason: `${lose.placement.chain.at(-1)} also declares ${bin.name}; ${keep.placement.chain.at(-1)} keeps it`,
       });
     }
   }
@@ -305,7 +305,8 @@ async function writeShims(
       const interpreter = await interpreterFor(
         join(directory, ...bin.target.split('/')),
       );
-      const relative = `../${placement.entry.name}/${bin.target}`;
+      // The directory the package is in, which for an alias is not its name.
+      const relative = `../${placement.chain.at(-1)}/${bin.target}`;
       await writeFileAtomic(
         join(container, '.bin', name),
         renderPosixShim(relative, interpreter),
@@ -327,5 +328,5 @@ async function writeShims(
 function outranks(candidate: Placement, rival: Placement): boolean {
   if (candidate.entry.direct !== rival.entry.direct)
     return candidate.entry.direct;
-  return candidate.entry.name < rival.entry.name;
+  return candidate.chain.at(-1)! < rival.chain.at(-1)!;
 }
