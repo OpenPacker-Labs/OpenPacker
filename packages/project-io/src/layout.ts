@@ -27,7 +27,9 @@ import {
 import { ProjectIoError } from './index.js';
 import {
   recordedLinkText,
+  type CollectTreeOptions,
   type CollectedLink,
+  type CollectedTree,
   type RecordedLinks,
 } from './layout-links.js';
 import {
@@ -71,23 +73,6 @@ export interface CollectOptions {
    * set this for a working tree that nothing else should be touching.
    */
   linkTolerant?: boolean;
-}
-
-export interface CollectTreeOptions extends CollectOptions {
-  /**
-   * The workspace-member links the layout's record says it wrote under the
-   * walked directory. Each is returned as a leaf (its path and text) and is
-   * never entered, followed or counted; any other link is refused.
-   */
-  memberLinks?: RecordedLinks;
-}
-
-export type { CollectedLink, RecordedLinks };
-
-/** The files under a tree, and the recorded member links met on the way. */
-export interface CollectedTree {
-  files: { path: string; contents: Uint8Array; executable: boolean }[];
-  links: CollectedLink[];
 }
 
 export interface MaterialiseResult {

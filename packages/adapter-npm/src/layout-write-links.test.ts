@@ -1,113 +1,26 @@
-import { execFileSync } from 'node:child_process';
 import {
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   readlink,
   realpath,
   rm,
-  stat,
-  symlink,
   writeFile,
+  symlink,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { removeTree } from '@openpacker/project-io';
-import { LayoutLinksError, type LayoutLink } from './layout-links.js';
+import { LAYOUT_RECORD } from './layout-write.js';
 import {
-  LAYOUT_RECORD,
-  writeNodeModules,
-  type LayoutOutcome,
-} from './layout-write.js';
-import { assertNoUndeclaredSymlinks } from './layout-write-links.js';
+  MEMBER,
+  SCOPED,
+  cleanup,
+  project,
+} from './layout-write-links-support.js';
 
-const temps: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
-});
-
-/** A project with a workspace member and a place to keep extracted packages. */
-async function project() {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'npm-links-')));
-  temps.push(dir);
-  const root = join(dir, 'project');
-  const member = join(root, 'packages', 'member');
-  await mkdir(member, { recursive: true });
-  await writeFile(
-    join(member, 'package.json'),
-    '{"name":"member","version":"1.0.0","main":"index.js"}',
-  );
-  await writeFile(join(member, 'index.js'), "module.exports = 'one';\n");
-  let counter = 0;
-  const modules = join(root, 'node_modules');
-  return {
-    dir,
-    root,
-    member,
-    modules,
-    async store(
-      name: string,
-      files: Record<string, string> = {},
-      extra: Record<string, unknown> = {},
-    ): Promise<NativeLockEntry> {
-      counter += 1;
-      const storePath = join(dir, 'store', `sha256-${counter}`);
-      const all: Record<string, string> = {
-        'package.json': JSON.stringify({ name, version: '1.0.0', ...extra }),
-        'index.js': `module.exports = ${JSON.stringify(name)};\n`,
-        ...files,
-      };
-      for (const [path, contents] of Object.entries(all)) {
-        const target = join(storePath, 'package', path);
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, contents);
-      }
-      return {
-        purl: `pkg:npm/${name}`,
-        exactPurl: `pkg:npm/${name}@1.0.0`,
-        name,
-        version: '1.0.0',
-        scope: 'runtime',
-        source: `file:${storePath}`,
-        digest: `sha256:${String(counter).padStart(64, '0')}`,
-        size: 1,
-        storePath,
-        transitive: false,
-        alias: `${name}@1.0.0`,
-      };
-    },
-    write: (
-      entries: NativeLockEntry[],
-      links: readonly LayoutLink[],
-    ): Promise<LayoutOutcome> => writeNodeModules(root, entries, { links }),
-    run(script: string): string {
-      return execFileSync(process.execPath, ['-e', script], {
-        cwd: root,
-        encoding: 'utf8',
-      }).trim();
-    },
-    async record(): Promise<Record<string, unknown>> {
-      return JSON.parse(
-        await readFile(join(modules, LAYOUT_RECORD), 'utf8'),
-      ) as Record<string, unknown>;
-    },
-  };
-}
-
-const MEMBER: LayoutLink = {
-  path: 'node_modules/member',
-  target: '../packages/member',
-};
-const SCOPED: LayoutLink = {
-  path: 'node_modules/@scope/scoped',
-  target: '../../packages/member',
-};
+afterEach(cleanup);
 
 describe('writeNodeModules with workspace links', () => {
   it('leaves a link beside the packages, and Node resolves it to the member live', async () => {
@@ -381,126 +294,5 @@ describe('writeNodeModules with workspace links', () => {
     );
     await p.write([await p.store('dep')], [MEMBER]);
     expect(p.run("console.log(require('member'))")).toBe('one');
-  });
-});
-
-describe('what the writer refuses to write', () => {
-  it.each([
-    [
-      'a link in .bin',
-      { path: 'node_modules/.bin/tool', target: '../../packages/member' },
-    ],
-    ['an absolute target', { path: 'node_modules/member', target: '/etc' }],
-    [
-      'a target that leaves the project',
-      { path: 'node_modules/member', target: '../../outside' },
-    ],
-    [
-      'a link into node_modules',
-      { path: 'node_modules/member', target: '../node_modules/dep' },
-    ],
-    [
-      'a link where a package is installed',
-      { path: 'node_modules/dep', target: '../packages/member' },
-    ],
-  ])('writes nothing at all for %s', async (_label, link) => {
-    const p = await project();
-    const dep = await p.store('dep');
-
-    await expect(p.write([dep], [link])).rejects.toBeInstanceOf(
-      LayoutLinksError,
-    );
-
-    await expect(lstat(p.modules)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('refuses a package whose store holds a symlink, and leaves no symlink behind', async () => {
-    const p = await project();
-    const poisoned = await p.store('poisoned');
-    await symlink(
-      p.member,
-      join(poisoned.storePath!, 'package', 'escape'),
-      'junction',
-    );
-
-    await expect(p.write([poisoned], [MEMBER])).rejects.toMatchObject({
-      code: 'UNSAFE_PATH',
-    });
-
-    const names = await readdir(p.modules).catch(() => []);
-    for (const name of names)
-      if (name !== 'member')
-        expect((await lstat(join(p.modules, name))).isSymbolicLink()).toBe(
-          false,
-        );
-  });
-
-  it('refuses a package whose bin target is a symlink in the store, and writes no shim for it', async () => {
-    const p = await project();
-    const tool = await p.store('tool', {}, { bin: { tool: 'cli.js' } });
-    await symlink(
-      join(p.member, 'index.js'),
-      join(tool.storePath!, 'package', 'cli.js'),
-      'file',
-    );
-
-    await expect(p.write([tool], [MEMBER])).rejects.toMatchObject({
-      code: 'UNSAFE_PATH',
-    });
-
-    await expect(lstat(join(p.modules, '.bin', 'tool'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    });
-  });
-
-  it('ignores an entry of a hand-edited record that is not a member link', async () => {
-    const p = await project();
-    await p.write([await p.store('dep')], [MEMBER]);
-    const victim = join(p.root, 'victim');
-    await writeFile(victim, 'precious');
-    const record = await p.record();
-    await writeFile(
-      join(p.modules, LAYOUT_RECORD),
-      JSON.stringify({
-        ...record,
-        links: [
-          { path: 'node_modules/../victim', target: 'x' },
-          { path: '../victim', target: 'x' },
-          { path: 'node_modules/dep', target: '/etc' },
-          { path: 5, target: 'x' },
-          'node_modules/dep',
-          null,
-          MEMBER,
-        ],
-      }),
-    );
-
-    await p.write([await p.store('dep')], [MEMBER]);
-
-    expect(await readFile(victim, 'utf8')).toBe('precious');
-    expect(await readFile(join(p.modules, 'dep', 'index.js'), 'utf8')).toBe(
-      'module.exports = "dep";\n',
-    );
-    expect(await p.record()).toMatchObject({ links: [MEMBER] });
-  });
-});
-
-describe('assertNoUndeclaredSymlinks', () => {
-  it('fails on a placed package that is a symlink nobody declared, and not on a declared one', async () => {
-    const p = await project();
-    await mkdir(p.modules, { recursive: true });
-    await symlink(p.member, join(p.modules, 'sneaky'), 'junction');
-    await symlink(p.member, join(p.modules, 'member'), 'junction');
-
-    await expect(
-      assertNoUndeclaredSymlinks(p.root, [{ chain: ['sneaky'] }], []),
-    ).rejects.toMatchObject({
-      code: 'UNSAFE_PATH',
-      path: 'node_modules/sneaky',
-    });
-    await expect(
-      assertNoUndeclaredSymlinks(p.root, [{ chain: ['member'] }], [MEMBER]),
-    ).resolves.toBeUndefined();
-    expect((await stat(join(p.modules, 'sneaky'))).isDirectory()).toBe(true);
   });
 });

@@ -32,6 +32,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { createLibcAtBackend, type ChildBackend } from './handle-libc.js';
 import { darwinProfile } from './handle-libc-profile.js';
+import { readReparse } from './handle-nt-reparse.js';
 import {
   StableHandleError,
   locateModuleFile,
@@ -617,54 +618,12 @@ export async function windowsRenameChild(
   }
 }
 
-const FSCTL_GET_REPARSE_POINT = 0x000900a8;
-const STATUS_NOT_A_REPARSE_POINT = 0xc0000275;
-/**
- * What a volume without reparse points answers: FAT and exFAT hold none, so
- * they have nothing to refuse.
- */
-const NO_REPARSE_SUPPORT = new Set([
-  0xc0000010, // STATUS_INVALID_DEVICE_REQUEST
-  0xc00000bb, // STATUS_NOT_SUPPORTED
-  0xc000000d, // STATUS_INVALID_PARAMETER
-]);
-/** Header (8) plus the most a reparse buffer may carry (16 KiB). */
-const REPARSE_BUFFER_BYTES = 16 * 1024 + 8;
-
 /**
  * The reparse data of an open handle (FSCTL_GET_REPARSE_POINT), whole, or
  * undefined when the object is not a reparse point.
- *
- * Any other answer is an error and is thrown: a handle that cannot say whether
- * it is a link is not treated as one that is not.
  */
 export function windowsReadReparse(fd: number): Buffer | undefined {
-  const api = nt();
-  const output = Buffer.alloc(REPARSE_BUFFER_BYTES);
-  const status = ntStatus(
-    api.NtFsControlFile(
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      ...([
-        api.getOsFHandle(fd),
-        null,
-        null,
-        null,
-        Buffer.alloc(16),
-        FSCTL_GET_REPARSE_POINT,
-        null,
-        0,
-        output,
-        output.length,
-      ] as never[]),
-    ),
-  );
-  if (status === STATUS_NOT_A_REPARSE_POINT || NO_REPARSE_SUPPORT.has(status))
-    return undefined;
-  if (status !== STATUS_SUCCESS)
-    throw new StableHandleError(
-      `FSCTL_GET_REPARSE_POINT on fd ${fd} failed with status 0x${status.toString(16)}`,
-    );
-  return output.subarray(0, 8 + output.readUInt16LE(4));
+  return readReparse(nt(), fd);
 }
 
 async function windowsRemoveChild(

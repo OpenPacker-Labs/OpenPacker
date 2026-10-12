@@ -1,5 +1,5 @@
 /**
- * Runs the whole of handle-link.test.ts again with every POSIX child operation
+ * Runs the whole of handle-link.test.ts and handle-link.read.test.ts again with every POSIX child operation
  * routed through the libc `*at()` backend (bound to glibc), so the macOS
  * implementation of `symlinkat` and `readlinkat` has to pass what the
  * /proc/self/fd one passes.
@@ -21,6 +21,7 @@ if (glibcLinux()) {
     expect(calls()).toBeGreaterThan(100);
   });
   await import('./handle-link.test.js');
+  await import('./handle-link.read.test.js');
   it('was routed through the libc backend', () => {
     expect(calls()).toBeGreaterThan(0);
   });

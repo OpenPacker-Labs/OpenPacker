@@ -12,6 +12,7 @@
 
 import type { FileHandle } from 'node:fs/promises';
 import { readlinkChild, type LinkSite } from './handle-link.js';
+import type { CollectOptions } from './layout.js';
 
 /** What the layout's record says it wrote under the directory being walked. */
 export interface RecordedLinks {
@@ -55,4 +56,19 @@ export async function recordedLinkText(
   } catch {
     return undefined;
   }
+}
+
+export interface CollectTreeOptions extends CollectOptions {
+  /**
+   * The workspace-member links the layout's record says it wrote under the
+   * walked directory. Each is returned as a leaf (its path and text) and is
+   * never entered, followed or counted; any other link is refused.
+   */
+  memberLinks?: RecordedLinks;
+}
+
+/** The files under a tree, and the recorded member links met on the way. */
+export interface CollectedTree {
+  files: { path: string; contents: Uint8Array; executable: boolean }[];
+  links: CollectedLink[];
 }
