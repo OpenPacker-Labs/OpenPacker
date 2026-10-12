@@ -9,6 +9,7 @@ import {
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
+import { redactAddress } from '@openpacker/adapter-core';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
 import {
   freezeBoundLockPackage,
@@ -401,7 +402,7 @@ export async function fetchArtifactBytes(
     if (offline) {
       throw new OpmError(
         'OFFLINE',
-        `Refusing network fetch for ${source} while offline`,
+        `Refusing network fetch for ${redactAddress(source)} while offline`,
       );
     }
     const response = await fetch(source, {
@@ -410,7 +411,7 @@ export async function fetchArtifactBytes(
     if (!response.ok) {
       throw new OpmError(
         'FETCH_FAILED',
-        `Failed to fetch ${source}: HTTP ${response.status}`,
+        `Failed to fetch ${redactAddress(source)}: HTTP ${response.status}`,
       );
     }
     const declared = response.headers.get('content-length');
