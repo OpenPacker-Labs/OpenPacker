@@ -60,6 +60,8 @@ describe('child operations on this platform', () => {
     readDirChildWithTypes: () => Promise.reject(new Error('backend reached')),
     symlinkChild: () => Promise.reject(new Error('backend reached')),
     readlinkChild: () => Promise.reject(new Error('backend reached')),
+    unlinkNonDirectory: () => Promise.reject(new Error('backend reached')),
+    rmdirChild: () => Promise.reject(new Error('backend reached')),
   };
 
   describe.skipIf(process.platform !== 'linux')('on Linux', () => {

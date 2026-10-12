@@ -276,7 +276,9 @@ convention ([ADR 0050](../adr/0050-workspace-member-links.md), decided
   again changes nothing.
 - `node_modules/.opm-layout.json` lists each link (`links`: path and text). The
   next layout removes a link only while it is exactly the one that was written,
-  so a link you made by hand, or repointed, is left and reported.
+  so a link you made by hand, or repointed, is left and reported. (On Linux and
+  macOS a file put at that exact name in the instant between the check and the
+  removal is removed with it; a directory never is. ADR 0050 has the table.)
 - A tool that reads `node_modules` treats a listed link as a leaf: it reads the
   link and not what it points at, so a member's source is never hashed or
   counted as part of `node_modules`. A symlink that is not listed is refused as

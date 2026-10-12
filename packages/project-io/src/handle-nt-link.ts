@@ -32,11 +32,14 @@ import { type FileHandle } from 'node:fs/promises';
 import type { LinkSite } from './handle-link.js';
 import {
   ANY_KIND,
+  DELETE,
   O_DIRECTORY,
   STATUS_SUCCESS,
   nt,
   ntStatus,
   removeChild,
+  throwNt,
+  windowsDeleteOpened,
   windowsOpenChild,
   windowsReadReparse,
   windowsRenameChild,
@@ -62,8 +65,16 @@ const FSCTL_SET_REPARSE_POINT = 0x000900a4;
  * order of operations and every cleanup path can be run on any platform.
  */
 export interface NtLinkOps {
-  /** Open a child of `directory`; `flags` as for `openChild`, plus `ANY_KIND`. */
-  open(directory: FileHandle, name: string, flags: number): Promise<FileHandle>;
+  /**
+   * Open a child of `directory`; `flags` as for `openChild`, plus `ANY_KIND`,
+   * and `access` any access rights beyond reading (`DELETE`, to remove it).
+   */
+  open(
+    directory: FileHandle,
+    name: string,
+    flags: number,
+    access?: number,
+  ): Promise<FileHandle>;
   /** The reparse data of an open handle, undefined when it is not a reparse point. */
   readReparse(fd: number): Buffer | undefined;
   /** FSCTL_SET_REPARSE_POINT on an open, empty directory: the NT status. */
@@ -77,11 +88,14 @@ export interface NtLinkOps {
   ): Promise<void>;
   /** Remove a child that may not be there; never recursive. */
   remove(directory: FileHandle, name: string): Promise<void>;
+  /** Mark the object behind an open handle (opened with `DELETE`) for deletion: the NT status. */
+  deleteOpened(fd: number): number;
 }
 
 /** The operations against the real NT API. */
 export const realNtLinkOps: NtLinkOps = {
-  open: (directory, name, flags) => windowsOpenChild(directory, name, flags),
+  open: (directory, name, flags, access) =>
+    windowsOpenChild(directory, name, flags, undefined, access),
   readReparse: (fd) => windowsReadReparse(fd),
   setReparse: (fd, data) => {
     const api = nt();
@@ -106,7 +120,14 @@ export const realNtLinkOps: NtLinkOps = {
   rename: (directory, from, to, replace) =>
     windowsRenameChild(directory, from, to, replace),
   remove: (directory, name) => removeChild(directory, name, { force: true }),
+  deleteOpened: (fd) => windowsDeleteOpened(fd),
 };
+
+/** What `NtJunctions.unlink` found at the name, and did. */
+export type UnlinkResult =
+  | { kind: 'removed' }
+  | { kind: 'not-a-link' }
+  | { kind: 'other-target'; text: string };
 
 /** Node-shaped, so `symlinkChild` and its callers read it like any other platform's. */
 function ntError(code: string, syscall: string, path: string, message: string) {
@@ -124,6 +145,19 @@ function requireAbsoluteRoot(site: LinkSite): void {
     throw new StableHandleError(
       `A junction is made from an absolute project root with a drive or a share; got ${JSON.stringify(site.projectRoot)}`,
     );
+}
+
+/**
+ * The text a link would have been given: relative to the link's directory when
+ * `site` says where that is, absolute otherwise. A symbolic link someone made
+ * with a relative text keeps it as written.
+ */
+function textOf(data: ReparseData, site?: LinkSite): string {
+  if (data.relative) return data.substitute.split('\\').join('/');
+  const absolute = pathOfSubstituteName(data.substitute);
+  return site === undefined
+    ? absolute
+    : relativeTargetOf(site.projectRoot, site.directory, absolute);
 }
 
 /** Junctions made and read through one set of operations. */
@@ -168,12 +202,44 @@ export class NtJunctions {
     const data = await this.inspect(directory, name);
     if (data === undefined)
       throw ntError('EINVAL', 'readlink', name, 'invalid argument');
-    // A symbolic link someone made with a relative text keeps it as written.
-    if (data.relative) return data.substitute.split('\\').join('/');
-    const absolute = pathOfSubstituteName(data.substitute);
-    return site === undefined
-      ? absolute
-      : relativeTargetOf(site.projectRoot, site.directory, absolute);
+    return textOf(data, site);
+  }
+
+  /**
+   * Remove the junction at `name`, and nothing else. The name is opened as
+   * itself with `DELETE` access, its reparse data is read from that handle, and
+   * the object that handle holds is the one marked for deletion: a mount point
+   * or a symbolic link goes, and anything else (a file, a plain directory, some
+   * other reparse point) is `not-a-link` and is left. When `expected` is given
+   * the link's text must be exactly that, else it is `other-target` and left.
+   * Nothing is looked at by name between the look and the removal, so there is
+   * no window for the name to change in.
+   */
+  async unlink(
+    directory: FileHandle,
+    name: string,
+    expected?: { target: string; site: LinkSite },
+  ): Promise<UnlinkResult> {
+    const handle = await this.ops.open(
+      directory,
+      name,
+      constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
+      DELETE,
+    );
+    try {
+      const raw = this.ops.readReparse(handle.fd);
+      const data = raw === undefined ? undefined : decodeReparse(raw);
+      if (data === undefined) return { kind: 'not-a-link' };
+      if (expected !== undefined) {
+        const text = textOf(data, expected.site);
+        if (text !== expected.target) return { kind: 'other-target', text };
+      }
+      const status = this.ops.deleteOpened(handle.fd);
+      if (status !== STATUS_SUCCESS) throwNt(status, name);
+      return { kind: 'removed' };
+    } finally {
+      await handle.close();
+    }
   }
 
   /**
@@ -265,6 +331,14 @@ export function readJunction(
   site?: LinkSite,
 ): Promise<string> {
   return junctions.read(directory, name, site);
+}
+
+export function unlinkJunction(
+  directory: FileHandle,
+  name: string,
+  expected?: { target: string; site: LinkSite },
+): Promise<UnlinkResult> {
+  return junctions.unlink(directory, name, expected);
 }
 
 export function createJunction(

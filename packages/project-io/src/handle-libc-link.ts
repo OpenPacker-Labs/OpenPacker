@@ -1,5 +1,6 @@
 /**
- * Workspace-member links through `symlinkat` and `readlinkat`.
+ * Workspace-member links through `symlinkat` and `readlinkat`, and the two
+ * removals that cannot take more than a link or an empty directory.
  *
  * The first link made is read back with `readlinkat` and `fstatat`
  * (`AT_SYMLINK_NOFOLLOW`) and must agree with the bytes given: a wrong argument
@@ -97,4 +98,38 @@ function verifyLinkCalls(
     );
   }
   verified.link = true;
+}
+
+/**
+ * `unlinkat(dirfd, name, 0)`: a file or a link goes, and a directory is refused
+ * by the system itself (EISDIR on Linux, EPERM on macOS), whatever the name has
+ * become since anyone looked at it.
+ */
+export function removeNonDirectory(
+  api: LibcApi,
+  dirfd: number,
+  name: string,
+): void {
+  check(
+    attempt(api, () => api.unlinkat(dirfd, name, 0)),
+    'unlink',
+    name,
+  );
+}
+
+/**
+ * `unlinkat(dirfd, name, AT_REMOVEDIR)`: a directory goes only if it is empty
+ * when the system looks (ENOTEMPTY otherwise), and anything that is not a
+ * directory is refused (ENOTDIR). The emptiness is not looked at first.
+ */
+export function removeEmptyDirectory(
+  api: LibcApi,
+  dirfd: number,
+  name: string,
+): void {
+  check(
+    attempt(api, () => api.unlinkat(dirfd, name, api.profile.atRemoveDir)),
+    'rmdir',
+    name,
+  );
 }

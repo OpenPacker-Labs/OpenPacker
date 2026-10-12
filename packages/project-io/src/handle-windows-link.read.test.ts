@@ -16,7 +16,7 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { symlinkChild } from './handle-link.js';
+import { symlinkChild, unlinkChild } from './handle-link.js';
 import {
   MEMBER,
   cleanup,
@@ -25,7 +25,12 @@ import {
 } from './handle-windows-link-support.js';
 import { lstatChild } from './handle-path.js';
 import { collectFiles, collectTree } from './layout-collect.js';
-import { readMemberLink, removeMemberLink } from './member-link.js';
+import {
+  placeMemberLink,
+  readMemberLink,
+  removeEmptyScope,
+  removeMemberLink,
+} from './member-link.js';
 
 afterEach(cleanup);
 
@@ -122,6 +127,86 @@ describe.skipIf(process.platform !== 'win32')(
         await readFile(join(p.member, 'sentinel'), 'utf8'),
         'sentinel in the member after removeMemberLink removed the junction',
       ).toBe('keep');
+    });
+
+    it('unlinkChild deletes the junction it read, only with the expected text, and leaves a plain directory', async () => {
+      const p = await project();
+      await writeFile(join(p.member, 'sentinel'), 'keep');
+      await mkdir(p.link('folder'));
+      await writeFile(join(p.link('folder'), 'precious'), 'x');
+      await symlinkChild(p.modules, 'pkg', MEMBER, p.site);
+
+      trace('unlinkChild pkg expecting another text');
+      const other = await unlinkChild(p.modules, 'pkg', {
+        target: '../packages/other',
+        site: p.site,
+      }).catch((error: NodeJS.ErrnoException) => error);
+      trace('unlinkChild folder (a plain directory)');
+      const plain = await unlinkChild(p.modules, 'folder').catch(
+        (error: NodeJS.ErrnoException) => error,
+      );
+
+      expect(
+        (other as { code?: string }).code,
+        'code of unlinkChild(node_modules, pkg) expecting ../packages/other over a junction to ../packages/pkg',
+      ).toBe('LINK_CONFLICT');
+      expect(
+        (plain as { code?: string }).code,
+        'code of unlinkChild(node_modules, folder) on a plain directory (its reparse data is read from the handle that would delete it)',
+      ).toBe('NOT_A_LINK');
+      expect(
+        (await lstat(p.link('pkg'))).isSymbolicLink(),
+        'lstat(node_modules\\pkg).isSymbolicLink() after the refused removals',
+      ).toBe(true);
+      expect(
+        await readFile(join(p.link('folder'), 'precious'), 'utf8'),
+        'precious in the plain directory unlinkChild was refused over',
+      ).toBe('x');
+
+      trace('unlinkChild pkg expecting its own text');
+      await unlinkChild(p.modules, 'pkg', { target: MEMBER, site: p.site });
+      await expect(
+        lstat(p.link('pkg')),
+        'lstat(node_modules\\pkg) after unlinkChild with the expected text',
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(
+        await readFile(join(p.member, 'sentinel'), 'utf8'),
+        'sentinel in the member after unlinkChild deleted the junction',
+      ).toBe('keep');
+    });
+
+    it('removeEmptyScope removes an empty scope directory and keeps one that holds something', async () => {
+      const p = await project();
+      await placeMemberLink(
+        p.root,
+        'node_modules/@gone/pkg',
+        '../../packages/pkg',
+      );
+      await placeMemberLink(
+        p.root,
+        'node_modules/@stays/pkg',
+        '../../packages/pkg',
+      );
+      await removeMemberLink(
+        p.root,
+        'node_modules/@gone/pkg',
+        '../../packages/pkg',
+      );
+
+      trace('removeEmptyScope @gone (empty) and @stays (holds a junction)');
+      const gone = await removeEmptyScope(p.root, 'node_modules/@gone');
+      const stays = await removeEmptyScope(p.root, 'node_modules/@stays');
+
+      expect(
+        [gone, stays],
+        'removeEmptyScope of an emptied scope directory and of one that still holds a junction (STATUS_DIRECTORY_NOT_EMPTY must read as ENOTEMPTY)',
+      ).toEqual([true, false]);
+      expect(
+        (
+          await lstat(join(p.root, 'node_modules', '@stays', 'pkg'))
+        ).isSymbolicLink(),
+        'lstat(node_modules\\@stays\\pkg).isSymbolicLink() after the refused removal',
+      ).toBe(true);
     });
 
     it('collectTree walks a recorded junction as a leaf and never lists the member', async () => {

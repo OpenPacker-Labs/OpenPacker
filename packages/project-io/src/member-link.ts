@@ -18,12 +18,8 @@ import {
   type LinkOutcome,
   type LinkSite,
 } from './handle-link.js';
-import {
-  lstatChild,
-  mkdirChild,
-  readDirChild,
-  removeChild,
-} from './handle-path.js';
+import { lstatChild, mkdirChild } from './handle-path.js';
+import { rmdirChild } from './handle-remove.js';
 import { ProjectIoError } from './index.js';
 import { linkDirectoryProblem, splitLinkPath } from './link-rules.js';
 import { openProjectDirectory, stepPlainDirectory } from './stable-open.js';
@@ -136,28 +132,28 @@ export async function readMemberLink(
  * Remove the member link at `path` if it is a link with exactly the text the
  * layout's record says it wrote. Anything else there (a link somebody
  * repointed, a file, a directory) is `kept`: only what was written is removed.
+ *
+ * The path is walked once, and the text is compared where the link is removed
+ * (`unlinkChild`), not in a look beforehand.
  */
 export async function removeMemberLink(
   projectRoot: string,
   path: string,
   recordedTarget: string,
 ): Promise<'removed' | 'absent' | 'kept'> {
-  const state = await readMemberLink(projectRoot, path);
-  if (state.kind === 'absent') return 'absent';
-  if (state.kind !== 'link' || state.target !== recordedTarget) return 'kept';
   const container = await openContainer(projectRoot, path, false);
   if (container === undefined) return 'absent';
-  const { handle, name } = container;
+  const { handle, site, name } = container;
   try {
-    await unlinkChild(handle, name);
+    await unlinkChild(handle, name, { target: recordedTarget, site });
     return 'removed';
   } catch (error) {
     // SAFETY: the operations above throw Error values with an optional errno code.
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return 'absent';
-    // Swapped for something that is not a link between the look and the
-    // removal: it is not what was written, so it stays.
-    if (code === 'NOT_A_LINK') return 'kept';
+    // Not a link, or a link to something else than was written: not what opm
+    // wrote, so it stays.
+    if (code === 'NOT_A_LINK' || code === 'LINK_CONFLICT') return 'kept';
     throw error;
   } finally {
     await handle.close();
@@ -168,6 +164,10 @@ export async function removeMemberLink(
  * Remove the scope directory at `scopePath` (`node_modules/@scope`) if nothing
  * is in it, as the last link of a scope is taken away. A scope with anything in
  * it is left; so is a path that is not a scope directory.
+ *
+ * Nothing is listed first. The removal is `rmdir`, which the system refuses
+ * (ENOTEMPTY) at the moment it acts if anything is in the directory, so a file
+ * that arrives after a look at it can no longer be deleted along with it.
  */
 export async function removeEmptyScope(
   projectRoot: string,
@@ -177,14 +177,6 @@ export async function removeEmptyScope(
   const scope = scopePath.slice(cut + 1);
   if (cut <= 0 || !scope.startsWith('@') || linkDirectoryProblem(scopePath))
     throw unsafe(scopePath, 'not a scope directory of a node_modules');
-  const container = await openContainer(projectRoot, `${scopePath}/x`, false);
-  if (container === undefined) return false;
-  const { handle } = container;
-  try {
-    if ((await readDirChild(handle)).length > 0) return false;
-  } finally {
-    await handle.close();
-  }
   const parent = await openContainer(
     projectRoot,
     `${scopePath.slice(0, cut)}/x`,
@@ -192,8 +184,15 @@ export async function removeEmptyScope(
   );
   if (parent === undefined) return false;
   try {
-    await removeChild(parent.handle, scope, { recursive: true, force: true });
+    await rmdirChild(parent.handle, scope);
     return true;
+  } catch (error) {
+    // SAFETY: the operations above throw Error values with an optional errno code.
+    const code = (error as NodeJS.ErrnoException).code;
+    // Something in it, nothing there any more, or no longer a directory.
+    if (code === 'ENOTEMPTY' || code === 'EEXIST') return false;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    throw error;
   } finally {
     await parent.handle.close();
   }

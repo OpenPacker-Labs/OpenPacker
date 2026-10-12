@@ -62,6 +62,8 @@ function recording(after?: (operation: string, name: string) => Promise<void>) {
       await note('readlink', name);
       return text;
     },
+    unlinkNonDirectory: inner.unlinkNonDirectory,
+    rmdirChild: inner.rmdirChild,
   };
   return { backend, calls };
 }

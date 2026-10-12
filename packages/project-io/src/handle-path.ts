@@ -120,7 +120,7 @@ export function assertHandleSegment(name: string): string {
   return name;
 }
 
-function posixChild(parent: FileHandle, name: string): string {
+export function posixChild(parent: FileHandle, name: string): string {
   return join(stableHandlePath(parent), assertHandleSegment(name));
 }
 
@@ -339,6 +339,7 @@ const STATUS_REPARSE = 0x00000104;
 const STATUS_NOT_A_DIRECTORY = 0xc0000103;
 const STATUS_FILE_IS_A_DIRECTORY = 0xc00000ba;
 const STATUS_ACCESS_DENIED = 0xc0000022;
+const STATUS_DIRECTORY_NOT_EMPTY = 0xc0000101;
 
 export function throwNt(status: number, name: string): never {
   const code = ntStatus(status);
@@ -356,6 +357,8 @@ export function throwNt(status: number, name: string): never {
   if (code === STATUS_FILE_IS_A_DIRECTORY)
     throw errno('EISDIR', `EISDIR: ${name}`);
   if (code === STATUS_ACCESS_DENIED) throw errno('EACCES', `EACCES: ${name}`);
+  if (code === STATUS_DIRECTORY_NOT_EMPTY)
+    throw errno('ENOTEMPTY', `ENOTEMPTY: ${name}`);
   throw new StableHandleError(
     `NtCreateFile failed for ${name} with status 0x${code.toString(16)}`,
   );
@@ -621,7 +624,30 @@ export function windowsReadReparse(fd: number): Buffer | undefined {
   return readReparse(nt(), fd);
 }
 
-async function windowsRemoveChild(
+/**
+ * Mark the object behind an open handle (opened with `DELETE` access) for
+ * deletion, and say what NT answered. The object that goes is the one the
+ * handle holds, whatever its name has become.
+ */
+export function windowsDeleteOpened(fd: number): number {
+  const api = nt();
+  const info = Buffer.alloc(1);
+  info.writeUInt8(1, 0);
+  return ntStatus(
+    api.NtSetInformationFile(
+      // SAFETY: The surrounding boundary establishes the asserted domain contract.
+      ...([
+        api.getOsFHandle(fd),
+        Buffer.alloc(16),
+        info,
+        1,
+        FileDispositionInformation,
+      ] as never[]),
+    ),
+  );
+}
+
+export async function windowsRemoveChild(
   parent: FileHandle,
   name: string,
   options: { recursive?: boolean; force?: boolean },
@@ -664,16 +690,8 @@ async function windowsRemoveChild(
       DELETE,
     );
     try {
-      const api = nt();
-      const osHandle = api.getOsFHandle(handle.fd);
-      const info = Buffer.alloc(1);
-      info.writeUInt8(1, 0);
-      const iosb = Buffer.alloc(16);
-      const status = api.NtSetInformationFile(
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        ...([osHandle, iosb, info, 1, FileDispositionInformation] as never[]),
-      );
-      if (ntStatus(status) !== STATUS_SUCCESS) throwNt(status, name);
+      const status = windowsDeleteOpened(handle.fd);
+      if (status !== STATUS_SUCCESS) throwNt(status, name);
     } finally {
       await handle.close();
     }

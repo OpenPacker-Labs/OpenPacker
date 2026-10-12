@@ -30,7 +30,12 @@ import {
   type LibcApi,
 } from './handle-libc-api.js';
 import { direntOf, listEntries, type Entry } from './handle-libc-list.js';
-import { makeLink, readLinkText } from './handle-libc-link.js';
+import {
+  makeLink,
+  readLinkText,
+  removeEmptyDirectory,
+  removeNonDirectory,
+} from './handle-libc-link.js';
 import {
   bigIntStatsFrom,
   entryKindOfMode,
@@ -70,6 +75,10 @@ export interface ChildBackend {
   symlinkChild(parent: FileHandle, name: string, target: string): Promise<void>;
   /** `readlinkat(parent, name)`: the text of a link child; EINVAL when the child is not a link. */
   readlinkChild(parent: FileHandle, name: string): Promise<string>;
+  /** `unlinkat(parent, name, 0)`: a file or a link goes, a directory is refused by the system. */
+  unlinkNonDirectory(parent: FileHandle, name: string): Promise<void>;
+  /** `unlinkat(parent, name, AT_REMOVEDIR)`: an empty directory goes; ENOTEMPTY otherwise. */
+  rmdirChild(parent: FileHandle, name: string): Promise<void>;
 }
 
 /** Where this module was loaded from, in a form `createRequire` accepts. */
@@ -257,6 +266,14 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
 
     async readlinkChild(parent, name) {
       return readLinkText(native(), parent.fd, name);
+    },
+
+    async unlinkNonDirectory(parent, name) {
+      removeNonDirectory(native(), parent.fd, name);
+    },
+
+    async rmdirChild(parent, name) {
+      removeEmptyDirectory(native(), parent.fd, name);
     },
 
     async lstatChild(parent, name) {

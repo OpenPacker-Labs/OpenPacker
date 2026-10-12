@@ -115,8 +115,33 @@ An existing entry is replaced only if it is already a link to exactly this
 target, and then nothing happens (`unchanged`). A link to another target, a file
 and a directory are each a `LINK_CONFLICT` that names the path and what is
 there. Two callers creating the same link both succeed; if they disagree about
-the target, one is told. `unlinkChild` removes a link and refuses (`NOT_A_LINK`)
-anything else, so it cannot delete a file or a directory.
+the target, one is told.
+
+### Removing one
+
+`unlinkChild(directory, name, expected?)` takes a link away and refuses
+(`NOT_A_LINK`) anything else; given `expected` (the text the layout's record
+says was written) it also refuses a link that says something else
+(`LINK_CONFLICT`). `removeMemberLink` walks to the link once, and `unlinkChild`
+makes the comparison where it removes, so the text is not compared in one walk
+and removed in another. `removeEmptyScope` is a single `rmdir` (`rmdirChild`):
+nothing is listed first.
+
+What that guarantees depends on the platform, and it is not "cannot delete a
+file or a directory" in general:
+
+| Platform     | What decides                                                                                                                                                                                                                 | The window                                                                                                                                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows      | The name is opened as itself with `DELETE`, its reparse data is read from that handle, and the object that handle holds is the one deleted (`NtJunctions.unlink`).                                                           | None for the name: nothing the name becomes can be deleted. A plain directory or file, and a reparse point that is not a mount point or a symbolic link, is `NOT_A_LINK`.                                                                          |
+| Linux, macOS | The text is read (`readlink`, which is also the proof it is a link, and the comparison with `expected`), then `unlink` (`unlinkat` with no flags) is called. The system refuses a directory (`EISDIR`, or `EPERM` on macOS). | Between the read and the `unlink`, somebody with write access to the directory can put a regular file or a different link at the name, and it is removed. A directory in its place is refused and kept, with what is in it. Nothing can undo that. |
+
+The actor in that window needs write access to `node_modules`, and what is lost
+is something they put at that exact name an instant before; they could have
+removed it themselves. `removeEmptyScope` has no window of its own for a file
+arriving in the scope: `rmdir` answers `ENOTEMPTY` at the moment it acts, and
+the directory and what arrived stay. (On Windows a scope that is swapped for a
+file or a junction between the walk and the removal is removed as what it has
+become, which is the same class of window.)
 
 | Platform | Create                                                                                                                 | Read                                                            |
 | -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -234,8 +259,9 @@ leaves a link it did not know it wrote. What the record lists is all opm
 removes:
 
 - a link no longer wanted, or wanted with another target, is removed only while
-  it is exactly the link the record says was written; a link someone repointed,
-  or replaced by a file or a directory, is left and listed under `skipped`;
+  it is exactly the link the record says was written, as "Removing one" above
+  states it; a link someone repointed, or replaced by a file or a directory, is
+  left and listed under `skipped`;
 - a name that held a package opm wrote may become a link, and a link may become
   a package, in which case the package replaces it without following it;
 - an entry of a hand-edited record that is not a valid member link is ignored,

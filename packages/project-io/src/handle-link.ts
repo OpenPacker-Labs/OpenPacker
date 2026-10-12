@@ -24,7 +24,6 @@ import {
   assertHandleSegment,
   libcBackend,
   lstatChild,
-  removeChild,
   stableHandlePath,
 } from './handle-path.js';
 import { ProjectIoError } from './index.js';
@@ -33,7 +32,12 @@ import {
   linkNameProblem,
   linkTargetProblem,
 } from './link-rules.js';
-import { createJunction, readJunction } from './handle-nt-link.js';
+import {
+  createJunction,
+  readJunction,
+  unlinkJunction,
+} from './handle-nt-link.js';
+import { unlinkNonDirectory } from './handle-remove.js';
 import { linkOnTheWayTo } from './link-prefix.js';
 
 /** Where a link sits, which the rules and a Windows junction both need. */
@@ -195,28 +199,85 @@ export async function symlinkChild(
   throw conflict(site, name, 'kept changing while its link was being made');
 }
 
+/** What a link must still be for `unlinkChild` to take it away. */
+export interface LinkExpectation {
+  /** The text the link was made with. */
+  target: string;
+  /** Where its directory sits, which a Windows junction needs to give its text back relative. */
+  site: LinkSite;
+}
+
+function notALink(name: string): ProjectIoError {
+  return new ProjectIoError(
+    'NOT_A_LINK',
+    name,
+    `${name} is not a link, so it is not unlinked`,
+  );
+}
+
+function changed(
+  expected: LinkExpectation,
+  name: string,
+  text: string,
+): ProjectIoError {
+  return conflict(
+    expected.site,
+    name,
+    `is a link to ${JSON.stringify(text)}, not the ${JSON.stringify(expected.target)} it was expected to be; it is not removed`,
+  );
+}
+
 /**
- * Remove the link `name` without following it. A name that is not a link is
- * `NOT_A_LINK` and is left alone: this cannot delete a file or a directory.
- * ENOENT when there is nothing there.
+ * Remove the link `name` without following it, and nothing else: a name that
+ * is not a link is `NOT_A_LINK` and is left, ENOENT when there is nothing there.
+ * With `expected`, a link whose text is anything else is a `LINK_CONFLICT` and
+ * is left too.
+ *
+ * What is guaranteed differs by platform, and ADR 0050 says why.
+ *
+ * - Windows: exact. The name is opened as itself, its reparse data read and the
+ *   object that handle holds is the one deleted (`NtJunctions.unlink`), so
+ *   nothing the name becomes in between can be removed.
+ * - Linux and macOS: the text is read (that is the proof it is a link, and the
+ *   comparison with `expected`), then `unlink` is called, which the system
+ *   refuses for a directory whatever the name has become. A regular file or a
+ *   different link put there by somebody with write access to the directory in
+ *   the instant between the two calls is removed; nothing can undo that, and
+ *   nobody who could do it needed opm to remove their own file.
  */
 export async function unlinkChild(
   directory: FileHandle,
   name: string,
+  expected?: LinkExpectation,
 ): Promise<void> {
   assertHandleSegment(name);
-  // Only a proof that the name is a link; the text is not used.
+  if (platformIsWindows()) {
+    const result = await unlinkJunction(directory, name, expected);
+    if (result.kind === 'not-a-link') throw notALink(name);
+    if (result.kind === 'other-target' && expected !== undefined)
+      throw changed(expected, name, result.text);
+    return;
+  }
+  let text: string;
   try {
-    await readlinkChild(directory, name);
+    text = await readlinkChild(directory, name);
   } catch (error) {
     // SAFETY: the operations above throw Error values with an optional errno code.
     if ((error as NodeJS.ErrnoException).code === 'EINVAL')
-      throw new ProjectIoError(
-        'NOT_A_LINK',
-        name,
-        `${name} is not a link, so it is not unlinked`,
-      );
+      throw notALink(name);
     throw error;
   }
-  await removeChild(directory, name, { recursive: false, force: false });
+  if (expected !== undefined && text !== expected.target)
+    throw changed(expected, name, text);
+  try {
+    await unlinkNonDirectory(directory, name);
+  } catch (error) {
+    // SAFETY: the operations above throw Error values with an optional errno code.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'EISDIR' && code !== 'EPERM') throw error;
+    // The system refused a directory that took the link's place since it was
+    // read. (EPERM is also what a link it may not remove answers.)
+    if ((await lstatChild(directory, name)).isSymbolicLink()) throw error;
+    throw notALink(name);
+  }
 }

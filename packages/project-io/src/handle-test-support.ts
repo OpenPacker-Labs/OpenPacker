@@ -44,6 +44,8 @@ export function counting(inner: ChildBackend): {
       readDirChildWithTypes: tick(inner.readDirChildWithTypes),
       symlinkChild: tick(inner.symlinkChild),
       readlinkChild: tick(inner.readlinkChild),
+      unlinkNonDirectory: tick(inner.unlinkNonDirectory),
+      rmdirChild: tick(inner.rmdirChild),
     },
   };
 }

@@ -34,6 +34,10 @@ class FakeDirectory implements NtLinkOps {
   setStatus = 0;
   /** Answer reads with a substitute name two bytes short. */
   skewReadBack = false;
+  /** The status the next delete of an open handle is answered with. */
+  deleteStatus = 0;
+  /** Names whose object was deleted through an open handle, with the fd that did it. */
+  readonly deleted: [string, number][] = [];
   private readonly opened = new Map<number, string>();
   private nextFd = 100;
 
@@ -41,6 +45,7 @@ class FakeDirectory implements NtLinkOps {
     _directory: FileHandle,
     name: string,
     flags: number,
+    access?: number,
   ): Promise<FileHandle> {
     const create = (flags & constants.O_CREAT) !== 0;
     if (create && this.entries.has(name))
@@ -51,7 +56,9 @@ class FakeDirectory implements NtLinkOps {
     this.nextFd += 1;
     const fd = this.nextFd;
     this.opened.set(fd, name);
-    this.log.push(`open ${name}${create ? ' (create)' : ''} as ${fd}`);
+    this.log.push(
+      `open ${name}${create ? ' (create)' : ''}${access === undefined ? '' : ` with access 0x${access.toString(16)}`} as ${fd}`,
+    );
     const handle: Pick<FileHandle, 'fd' | 'close'> = {
       fd,
       close: () => {
@@ -99,6 +106,16 @@ class FakeDirectory implements NtLinkOps {
     this.log.push(`remove ${name}`);
     this.entries.delete(name);
     return Promise.resolve();
+  }
+
+  /** NT deletes the object a handle holds, whatever its name has become since. */
+  deleteOpened(fd: number): number {
+    this.log.push(`delete ${fd}`);
+    if (this.deleteStatus !== 0) return this.deleteStatus;
+    const name = this.opened.get(fd) ?? '';
+    this.deleted.push([name, fd]);
+    this.entries.delete(name);
+    return 0;
   }
 }
 
@@ -222,5 +239,90 @@ describe('NtJunctions.read', () => {
       { code: 'ENOENT' },
     );
     expect(await junctions.inspect(PARENT, 'plain')).toBeUndefined();
+  });
+});
+
+describe('NtJunctions.unlink', () => {
+  const DELETE = 0x10000;
+
+  async function made(name = 'pkg'): Promise<void> {
+    await junctions.create(PARENT, name, '../../packages/pkg', SITE);
+    directory.log.length = 0;
+    directory.closed.length = 0;
+  }
+
+  it('opens the name as itself with DELETE, reads its reparse data from that handle, deletes that handle, and closes it once', async () => {
+    await made();
+
+    expect(await junctions.unlink(PARENT, 'pkg')).toEqual({ kind: 'removed' });
+
+    expect(directory.log).toEqual([
+      `open pkg with access 0x${DELETE.toString(16)} as 103`,
+      'delete 103',
+      'close 103',
+    ]);
+    expect(
+      directory.deleted,
+      'names deleted, with the fd that deleted them',
+    ).toEqual([['pkg', 103]]);
+    expect(directory.entries.has('pkg')).toBe(false);
+  });
+
+  it('removes a junction whose text is the expected one', async () => {
+    await made();
+
+    expect(
+      await junctions.unlink(PARENT, 'pkg', {
+        target: '../../packages/pkg',
+        site: SITE,
+      }),
+    ).toEqual({ kind: 'removed' });
+    expect(directory.entries.has('pkg')).toBe(false);
+  });
+
+  it('leaves a junction whose text is another, and says what it is', async () => {
+    await made();
+
+    expect(
+      await junctions.unlink(PARENT, 'pkg', {
+        target: '../../packages/other',
+        site: SITE,
+      }),
+    ).toEqual({ kind: 'other-target', text: '../../packages/pkg' });
+    expect(directory.entries.has('pkg')).toBe(true);
+    expect(directory.log.some((line) => line.startsWith('delete'))).toBe(false);
+    expect(directory.closed).toEqual([103]);
+  });
+
+  it('leaves a plain directory or file, and a reparse point of some other kind', async () => {
+    directory.entries.set('plain', {});
+    const cloud = Buffer.alloc(16);
+    cloud.writeUInt32LE(0x9000601a, 0);
+    cloud.writeUInt16LE(8, 4);
+    directory.entries.set('placeholder', { reparse: cloud });
+
+    expect(await junctions.unlink(PARENT, 'plain')).toEqual({
+      kind: 'not-a-link',
+    });
+    expect(await junctions.unlink(PARENT, 'placeholder')).toEqual({
+      kind: 'not-a-link',
+    });
+
+    expect([...directory.entries.keys()]).toEqual(['plain', 'placeholder']);
+    expect(directory.log.some((line) => line.startsWith('delete'))).toBe(false);
+  });
+
+  it('says ENOENT for nothing, and turns a refusal by NT into an error that keeps the junction', async () => {
+    await made();
+
+    await expect(junctions.unlink(PARENT, 'missing')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    directory.deleteStatus = 0xc0000022;
+    await expect(junctions.unlink(PARENT, 'pkg')).rejects.toMatchObject({
+      code: 'EACCES',
+    });
+    expect(directory.entries.has('pkg')).toBe(true);
+    expect(directory.closed.length).toBe(new Set(directory.closed).size);
   });
 });
