@@ -24,11 +24,11 @@ import type { SemanticLoss } from '@openpacker/contracts';
 import {
   collectFiles,
   editJsonFile,
-  materialiseTree,
   packTarGzip,
   ProjectIoError,
   writeFileAtomic,
 } from '@openpacker/project-io';
+import { writeNodeModules, type LayoutOutcome } from './layout-write.js';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD = {
@@ -234,10 +234,12 @@ export class NpmProjectFormat implements ProjectFormat {
   /**
    * Materialise `node_modules/` from the opm store.
    *
-   * A flat layout — every package at `node_modules/<name>` — which is what
-   * Node's resolution algorithm reads and what npm itself produces when there
-   * are no version conflicts. opm's lock holds one version per package, so a
-   * flat layout is exactly representable; there is no nesting to invent.
+   * A tree Node resolves to the version the solve selected for every
+   * dependency edge: hoisted to the root where that is unambiguous, nested in
+   * the dependent's own `node_modules` where two versions of one name are
+   * needed (`layout-plan.ts`). Files are hard links to the store's, so a
+   * package's bytes exist once on disk; executables are script shims, because
+   * the layout never creates a symlink.
    *
    * This is emphatically not `npm install`. It states so in its loss rather
    * than letting a project believe npm's own steps ran.
@@ -246,34 +248,28 @@ export class NpmProjectFormat implements ProjectFormat {
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
   ): Promise<ProjectionResult> {
-    const root = join(project.root, 'node_modules');
-    const written: string[] = [];
-    const skipped: { path: string; reason: string }[] = [];
-    let copied = false;
-
-    for (const entry of packages) {
-      if (!entry.storePath) {
-        skipped.push({
-          path: join(root, entry.name),
-          reason: 'the package is not materialised in the opm store',
-        });
-        continue;
-      }
-      // npm tarballs wrap their contents in a `package/` directory, which the
-      // opm store preserves; node_modules wants what is inside it.
-      const source = (await pathExists(join(entry.storePath, 'package')))
-        ? join(entry.storePath, 'package')
-        : entry.storePath;
-      const destination = join(root, ...entry.name.split('/'));
-      const result = await materialiseTree(source, destination, root);
-      copied ||= result.copied;
-      written.push(destination);
-    }
-
+    const outcome = await writeNodeModules(project.root, packages);
     return {
-      written,
-      ...(skipped.length > 0 && { skipped }),
-      semanticLoss: written.length > 0 ? [layoutLoss(root, copied)] : [],
+      written: outcome.packages > 0 ? [outcome.root] : [],
+      ...(outcome.skipped.length > 0 && { skipped: outcome.skipped }),
+      semanticLoss:
+        outcome.packages > 0
+          ? [layoutLoss(outcome, project.metadata?.layoutOnly === true)]
+          : [],
+    };
+  }
+
+  /**
+   * `node_modules` does not need a `package.json` beside it, so a plain opm
+   * project can have one. Only the layout is written there: opm does not
+   * create a manifest the person never asked for.
+   */
+  async detectLayout(root: string): Promise<DetectedProject | undefined> {
+    return {
+      root,
+      manifestPath: join(root, 'package.json'),
+      relatedPaths: { lock: join(root, 'package-lock.json') },
+      metadata: { layoutOnly: true },
     };
   }
 
@@ -406,28 +402,25 @@ function integrityLoss(entry: NativeLockEntry): SemanticLoss {
   };
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function layoutLoss(root: string, copied: boolean): SemanticLoss {
+function layoutLoss(outcome: LayoutOutcome, layoutOnly: boolean): SemanticLoss {
+  const nested =
+    outcome.nested > 0
+      ? `, ${outcome.nested} nested to keep conflicting versions apart`
+      : '';
   return {
     code: 'NATIVE_LAYOUT_NOT_TOOL_EQUIVALENT',
     severity: 'info',
     sourceEcosystem: 'npm',
-    sourcePath: root,
+    sourcePath: outcome.root,
     originalMeaning:
       'node_modules was materialised from the digest-verified opm store',
-    representedMeaning: `A flat node_modules Node can resolve, ${
-      copied ? 'copied' : 'hardlinked'
-    } from the store`,
+    representedMeaning: `${outcome.packages} package(s) in a node_modules Node can resolve${nested}, ${
+      outcome.copied ? 'copied' : 'hardlinked'
+    } from the store, with ${outcome.bins} executable(s) as script shims in .bin${
+      layoutOnly ? '; there is no package.json here and none was created' : ''
+    }`,
     omittedMeaning:
-      'npm was not run: no lifecycle scripts, no bin links npm would have made, and no npm-specific hoisting',
+      'npm was not run: no lifecycle scripts, no symlinked bin links, and a placement that is correct for the selected versions but not necessarily the one npm would choose',
     mitigation:
       'Run npm install if a package needs its install scripts, or keep native_projection at "lock".',
     blocksProfile: [],

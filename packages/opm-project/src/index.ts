@@ -160,10 +160,17 @@ export {
 } from './generations.js';
 
 export {
-  sharedStoreRoot,
-  materializeThroughSharedStore,
+  enableDefaultSharedStore,
   isolateProjectStoreFromSharedLinks,
+  materializeThroughSharedStore,
+  sharedStoreRoot,
+  usableSharedRoot,
 } from './shared-store.js';
+export {
+  collectSharedStore,
+  type SharedStoreCollection,
+} from './shared-store-gc.js';
+export { defaultSharedStoreHome } from './paths.js';
 
 export {
   publishPackedArtifact,

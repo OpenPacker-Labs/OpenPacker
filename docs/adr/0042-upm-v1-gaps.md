@@ -7,6 +7,11 @@ Date: 2026-08-20
 Accepted. Implementation is eight exclusive-ownership swarms documented in
 [`docs/plans/upm-v1-gaps/swarm-instruction.md`](../plans/upm-v1-gaps/swarm-instruction.md).
 
+Amended by
+[ADR 0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md):
+the shared store of decision 3 is on by default for the `opm` and `opmx` process
+entries (still environment-only, no toml key; `OPM_STORE_HOME=off` opts out).
+
 Relates to: [0020](0020-control-plane-not-supersession.md),
 [0022](0022-opm-package-manager-surface.md),
 [0032](0032-wit-adapters-and-registry-definition.md),

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
+import { homedir } from 'node:os';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import {
   basename,
@@ -67,22 +68,58 @@ export function projectPaths(root: string): ProjectPaths {
   };
 }
 
+/** Values of `OPM_STORE_HOME` that mean "no shared store". */
+const SHARED_STORE_OFF = new Set(['off', 'none', 'false', '0']);
+
 /**
- * Absolute `OPM_STORE_HOME` when set. Unset/blank means the shared CAS is off.
- * Relative values fail closed: a cwd-relative store would silently follow the
- * caller.
+ * What `OPM_STORE_HOME` says about the shared package store.
+ *
+ * - unset or blank: nothing is said, so the process default applies;
+ * - `off` (also `none`, `false`, `0`): no shared store at all;
+ * - an absolute path: that directory, whatever the process default is.
+ *
+ * Relative values fail closed. A cwd-relative store would silently follow the
+ * caller, and a shared root is exactly the place that must not.
+ */
+export function sharedStoreSetting(
+  env: NodeJS.ProcessEnv = process.env,
+): { kind: 'default' } | { kind: 'off' } | { kind: 'path'; root: string } {
+  const value = env.OPM_STORE_HOME?.trim();
+  if (!value) return { kind: 'default' };
+  if (SHARED_STORE_OFF.has(value.toLowerCase())) return { kind: 'off' };
+  if (!isAbsolute(value))
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `OPM_STORE_HOME must be an absolute path (or "off"), got "${value}"`,
+    );
+  return { kind: 'path', root: value };
+}
+
+/**
+ * Absolute `OPM_STORE_HOME` when one is named. Unset, blank and `off` all mean
+ * "no explicit shared store"; whether a process-wide default applies is
+ * decided by `sharedStoreRoot` in `shared-store.ts`.
  */
 export function sharedStoreHome(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const value = env.OPM_STORE_HOME?.trim();
-  if (!value) return undefined;
-  if (!isAbsolute(value))
-    throw new OpmError(
-      'UNSAFE_PATH',
-      `OPM_STORE_HOME must be an absolute path, got "${value}"`,
-    );
-  return value;
+  const setting = sharedStoreSetting(env);
+  return setting.kind === 'path' ? setting.root : undefined;
+}
+
+/**
+ * The user-level shared store a process uses when `OPM_STORE_HOME` says
+ * nothing: `$XDG_CACHE_HOME/openpacker/store`, else `~/.cache/openpacker/store`
+ * — beside the `opmx` tool cache (`…/openpacker/x`). A relative
+ * `XDG_CACHE_HOME` is ignored, as the XDG specification requires.
+ */
+export function defaultSharedStoreHome(
+  env: NodeJS.ProcessEnv = process.env,
+  home: () => string = homedir,
+): string {
+  const xdg = env.XDG_CACHE_HOME?.trim();
+  const base = xdg && isAbsolute(xdg) ? xdg : join(home(), '.cache');
+  return join(base, 'openpacker', 'store');
 }
 
 /**

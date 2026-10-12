@@ -434,6 +434,18 @@ export interface ProjectFormat {
   ): Promise<ProjectionResult>;
 
   /**
+   * Where `writeLayout` can write when `root` holds no native manifest.
+   *
+   * `detect` answers "is this a project of this kind", and most layouts are
+   * only meaningful for one. An install layout, though, does not read the
+   * manifest: `node_modules` is the same whether or not a `package.json` sits
+   * beside it. A format that can write its layout from the lock alone returns
+   * the place to write it here, and opm then projects the layout and nothing
+   * else — it never invents a manifest the person did not ask for.
+   */
+  detectLayout?(root: string): Promise<DetectedProject | undefined>;
+
+  /**
    * Build the archive this ecosystem publishes — an npm `.tgz`, a NuGet
    * `.nupkg`. Advertised via `prex.registry.package-build/1`.
    */
@@ -633,6 +645,19 @@ export interface NativeLockEntry extends NativeRequirement {
   storePath?: string;
   /** True for a package no requirement named directly. */
   transitive: boolean;
+  /**
+   * The lock's own name for this entry. Unique within one list, and the value
+   * `dependencies` of the other entries refer to. A closure can hold two
+   * versions of one native name, so `name` alone cannot identify an entry.
+   */
+  alias?: string;
+  /**
+   * `alias` of every entry in this list that this package requires, as the
+   * solve selected them. Absent when the lock recorded no edges (an offline
+   * lock holds only the direct set); a layout then cannot know who needs
+   * which version and places by name alone.
+   */
+  dependencies?: readonly string[];
 }
 
 /**

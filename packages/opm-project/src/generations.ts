@@ -140,7 +140,13 @@ const sha256 = (text: string): string =>
   `sha256:${createHash('sha256').update(text).digest('hex')}`;
 
 async function storeTreeDigestFromHandle(handle: FileHandle): Promise<string> {
-  return treeDigest(await collectFilesFromHandle(handle));
+  // Store files are hard-linked into projects, and another project doing so
+  // while this one hashes must not read as the tree changing under it.
+  return treeDigest(
+    await collectFilesFromHandle(handle, '', '<directory handle>', {
+      linkTolerant: true,
+    }),
+  );
 }
 
 function treeDigest(

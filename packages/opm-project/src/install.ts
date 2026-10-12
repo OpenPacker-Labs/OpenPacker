@@ -27,7 +27,7 @@ import { recordGeneration, stableStoreTreeDigest } from './generations.js';
 import {
   isolateProjectStoreFromSharedLinks,
   materializeThroughSharedStore,
-  sharedStoreRoot,
+  usableSharedRoot,
 } from './shared-store.js';
 import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
@@ -42,7 +42,6 @@ import {
   projectPaths,
   openChild,
   readStableFile,
-  readStableFileBytes,
   readStableFileBytesAt,
   revalidateStableDirectory,
   removeChild,
@@ -696,27 +695,27 @@ export async function materializeLockPackage(input: {
     let lifecycleScriptsExecuted = false;
     let sandboxOutcomes: SandboxOutcome[] = [];
     let treeDigest: string;
+    let viaShared = false;
+    let adoptedTreeDigest: string | undefined;
     try {
-      const sharedRoot = sharedStoreRoot();
+      // The user-level store, when one is on and usable for this project:
+      // the files already exist there (or are put there once), and this
+      // project's tree is links to them.
+      const sharedRoot = await usableSharedRoot(stagedPath);
       if (sharedRoot !== undefined) {
         if (bytes !== undefined) await loadVerifiedBytes();
-        await materializeThroughSharedStore({
+        const adopted = await materializeThroughSharedStore({
           digest: pkg.digest,
           projectStorePath: stagedPath,
           bytes: bytes !== undefined ? bytes : loadVerifiedBytes,
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
+          sharedRoot,
         });
-        if (bytes === undefined) {
-          try {
-            bytes = await readStableFileBytes(
-              join(sharedRoot, `${storeKeyFromDigest(pkg.digest)}.artifact`),
-            );
-          } catch (error) {
-            // SAFETY: The surrounding boundary establishes the asserted domain contract.
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          }
-        }
+        viaShared = true;
+        adoptedTreeDigest = adopted.treeDigest;
+        // No byte moved: the shared entry was already there.
+        if (bytes === undefined) cached = true;
       } else {
         bytes = await loadVerifiedBytes();
         const descriptor = await descriptorForBytes({
@@ -749,8 +748,7 @@ export async function materializeLockPackage(input: {
           hasLifecycleScripts(declared) &&
           lifecycleScriptsAllowed(policy, pkg.purl)
         ) {
-          if (sharedRoot !== undefined)
-            await isolateProjectStoreFromSharedLinks(stagedPath);
+          if (viaShared) await isolateProjectStoreFromSharedLinks(stagedPath);
           const packageHandle = await openChild(
             storeHandle,
             stagedName,
@@ -771,7 +769,12 @@ export async function materializeLockPackage(input: {
           }
         }
       }
-      treeDigest = await stableStoreTreeDigest(stagedPath);
+      // A tree just linked from a verified shared entry, and not touched since,
+      // already has its digest; anything else is hashed.
+      treeDigest =
+        adoptedTreeDigest !== undefined && !lifecycleScriptsExecuted
+          ? adoptedTreeDigest
+          : await stableStoreTreeDigest(stagedPath);
       await revalidateStableDirectory(paths.store, storeHandle);
 
       const backupName = `.${basename(storePath)}.replace-${randomUUID()}`;
@@ -819,7 +822,9 @@ export async function materializeLockPackage(input: {
       }).catch(() => undefined);
     }
     await revalidateStableDirectory(paths.store, storeHandle);
-    if (bytes !== undefined && (!cached || force))
+    // The tarball is kept only where the tree is not: a project that adopted
+    // its files from the shared store has no second copy of them to maintain.
+    if (bytes !== undefined && (!cached || force) && !viaShared)
       await writeStableFileAt(
         storeHandle,
         basename(archivePath),

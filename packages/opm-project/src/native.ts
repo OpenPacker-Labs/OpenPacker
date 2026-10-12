@@ -154,7 +154,23 @@ export async function projectNativeFormats(input: {
       continue;
     }
 
-    const detected = await format.detect(input.root);
+    const levels = await registry.projectionLevels(ecosystem);
+    let detected = await format.detect(input.root);
+    // An install layout is written from the lock and the store alone, so a
+    // project with no native manifest can still have one — at the layout
+    // level, and only the layout: opm never invents a manifest or a lockfile
+    // the person did not ask for.
+    let layoutOnly = false;
+    if (
+      !detected &&
+      LEVEL_RANK[level] >= LEVEL_RANK.layout &&
+      levels.layout &&
+      format.writeLayout &&
+      format.detectLayout
+    ) {
+      detected = await format.detectLayout(input.root);
+      layoutOnly = detected !== undefined;
+    }
     if (!detected) {
       unprojected.push({
         ecosystem,
@@ -163,24 +179,40 @@ export async function projectNativeFormats(input: {
       continue;
     }
 
-    const levels = await registry.projectionLevels(ecosystem);
     const written: string[] = [];
     const skipped: { path: string; reason: string }[] = [];
     const semanticLoss: SemanticLoss[] = [];
 
-    const requirements = requirementsFor(ecosystem, input.manifest, input.lock);
-    const names = requirements.map((requirement) => requirement.name).sort();
-    const retire = (previous.managed[ecosystem] ?? []).filter(
-      (name) => !names.includes(name),
-    );
-    const manifestResult = await format.writeManifest(detected, requirements, {
-      retire,
-    });
-    collect(manifestResult, written, skipped, semanticLoss);
-    managed[ecosystem] = names;
-    stateChanged = true;
+    if (!layoutOnly) {
+      const requirements = requirementsFor(
+        ecosystem,
+        input.manifest,
+        input.lock,
+      );
+      const names = requirements.map((requirement) => requirement.name).sort();
+      const retire = (previous.managed[ecosystem] ?? []).filter(
+        (name) => !names.includes(name),
+      );
+      const manifestResult = await format.writeManifest(
+        detected,
+        requirements,
+        { retire },
+      );
+      collect(manifestResult, written, skipped, semanticLoss);
+      managed[ecosystem] = names;
+      stateChanged = true;
+    } else if (!(ecosystem in managed)) {
+      // Nothing was written to a manifest, but the layout is opm's: remember
+      // the ecosystem so removing its last package still clears node_modules.
+      managed[ecosystem] = [];
+      stateChanged = true;
+    }
 
-    if (LEVEL_RANK[level] >= LEVEL_RANK.lock && format.writeLockfile) {
+    if (
+      !layoutOnly &&
+      LEVEL_RANK[level] >= LEVEL_RANK.lock &&
+      format.writeLockfile
+    ) {
       if (!levels.lock)
         skipped.push({
           path: detected.manifestPath,
@@ -442,6 +474,12 @@ function lockEntriesFor(
       source: pkg.source,
       digest: pkg.digest,
       size: pkg.size,
+      // The lock's own name and the edges the solve selected: a layout needs
+      // them to keep two versions of one package apart.
+      alias: pkg.alias,
+      ...(!(pkg.dependencies === undefined) && {
+        dependencies: [...pkg.dependencies],
+      }),
       ...(!(pkg.nativeIntegrity === undefined) && {
         nativeIntegrity: pkg.nativeIntegrity,
       }),

@@ -115,6 +115,7 @@ export async function readTextFile(path: string): Promise<TextFile> {
 export async function writeFileAtomic(
   path: string,
   contents: string | Uint8Array,
+  options: { mode?: number } = {},
 ): Promise<void> {
   const directory = resolve(dirname(path));
   const name = basename(path);
@@ -133,6 +134,9 @@ export async function writeFileAtomic(
     );
     try {
       await file.writeFile(contents);
+      // O_CREAT applies the mode through the umask; an executable shim must
+      // keep its bits whatever the umask is.
+      if (options.mode !== undefined) await file.chmod(options.mode);
       await file.sync();
     } finally {
       await file.close();
@@ -201,6 +205,7 @@ export async function assertNamedDirectory(
 export {
   assertHandleSegment,
   handlePathForPlatform,
+  linkChild,
   O_DIRECTORY,
   lstatChild,
   mkdirChild,
@@ -322,6 +327,8 @@ export {
   materialiseTree,
   removeTree,
   supportsStableTreeLayout,
+  type CollectOptions,
+  type MaterialiseOptions,
   type MaterialiseResult,
 } from './layout.js';
 
