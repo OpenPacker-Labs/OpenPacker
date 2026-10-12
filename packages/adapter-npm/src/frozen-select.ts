@@ -22,7 +22,12 @@
  * host's to judge.
  */
 
-import { echoed } from '@openpacker/adapter-core';
+import {
+  echoed,
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  redactAddress,
+} from '@openpacker/adapter-core';
 import type {
   FrozenLockOptions,
   FrozenLockPackage,
@@ -81,6 +86,12 @@ export function classifyResolved(entry: {
   const resolved = entry.resolved;
   if (resolved === undefined)
     return { problem: 'has no resolved URL, so there is nothing to fetch' };
+  // Before any parser reads it: Node's takes the square of the length of a host
+  // of many non-ASCII labels, and no DNS name is longer than 253 characters.
+  if (hasOverlongHost(resolved))
+    return {
+      problem: `resolved names a host longer than ${LONGEST_HOST_LENGTH} characters, which no DNS name can be`,
+    };
   if (
     /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:)/iu.test(resolved)
   )
@@ -94,7 +105,11 @@ export function classifyResolved(entry: {
   try {
     url = new URL(resolved);
   } catch {
-    return { problem: `resolved ${JSON.stringify(resolved)} is not a URL` };
+    // The text is not a URL, so it was never parsed: it can hold userinfo, a
+    // query and a fragment that must not reach a terminal.
+    return {
+      problem: `resolved ${JSON.stringify(redactAddress(resolved))} is not a URL`,
+    };
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:')
     return { problem: `resolved uses ${url.protocol}, not https` };

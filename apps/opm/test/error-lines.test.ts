@@ -17,6 +17,8 @@ import { capture } from './capture.js';
 
 const ESC = '\u001b';
 const BEL = '\u0007';
+/** Stands for a credential a lock holds in an address. */
+const CANARY = 'vtok_dummy_marker_0123456789abcdef';
 
 function written(error: unknown): { err: string; code: number } {
   const cap = capture();
@@ -194,10 +196,90 @@ describe('the lists of opm ci, from a lock', () => {
       { 'node_modules/a': registry('a'), 'node_modules/b': git },
     );
     expect(code).toBe(EXIT_CODES.invalidInput);
-    expect(err).toMatch(
-      /^opm: opm ci installs from archives with a pinned digest, and cannot install 1 package from a git or path source yet:\n {2}b@1\.0\.0 \(node_modules\/b\): [^\n]*\n$/u,
+    expect(err).toBe(
+      'opm: opm ci installs from archives with a pinned digest, and cannot install 1 package from a git or path source yet:\n' +
+        '  b@1.0.0 (node_modules/b): git+https://example.test/b.git\n',
     );
   });
+
+  it('shows a git source with its scheme, host and path, and without its credentials', async () => {
+    const { err } = await ci(
+      {
+        dependencies: {
+          a: '1.0.0',
+          b: 'git+https://example.test/b.git',
+          c: 'git+ssh://git@github.com/o/c.git',
+        },
+      },
+      {
+        'node_modules/a': registry('a'),
+        'node_modules/b': {
+          ...git,
+          resolved: `git+https://deploy:${CANARY}@example.test:8443/b.git?token=${CANARY}#0123456789abcdef`,
+        },
+        'node_modules/c': {
+          ...git,
+          resolved: 'git+ssh://git@github.com/o/c.git#0123456789abcdef',
+        },
+      },
+    );
+    expect(err).toBe(
+      'opm: opm ci installs from archives with a pinned digest, and cannot install 2 packages from a git or path source yet:\n' +
+        '  b@1.0.0 (node_modules/b): git+https://example.test:8443/b.git\n' +
+        '  c@1.0.0 (node_modules/c): git+ssh://github.com/o/c.git\n',
+    );
+    expect(err).not.toContain(CANARY);
+  });
+
+  it('shows a git source a URL parser refuses as its scheme and a fixed word', async () => {
+    const { err } = await ci(
+      { dependencies: { a: '1.0.0', c: 'git+ssh://git@github.com:o/c.git' } },
+      {
+        'node_modules/a': registry('a'),
+        'node_modules/c': {
+          ...git,
+          resolved: `git+ssh://git@github.com:o/c.git?token=${CANARY}#frag-${CANARY}`,
+        },
+      },
+    );
+    expect(err).toBe(
+      'opm: opm ci installs from archives with a pinned digest, and cannot install 1 package from a git or path source yet:\n' +
+        '  c@1.0.0 (node_modules/c): git+ssh:[address withheld]\n',
+    );
+    expect(err).not.toContain(CANARY);
+  });
+
+  it.each([
+    ['an https archive', 'https://', '/b/-/b-1.0.0.tgz'],
+    ['an https archive with a [ inside its host', 'https://x[:', '/b.tgz'],
+    ['a file address with an @ in its host', 'file://', '@x'],
+    ['a file address with a colon in its host', 'file://x:', ''],
+  ])(
+    'refuses %s, whose host no DNS name could be, without reading it',
+    async (_, before, after) => {
+      const started = performance.now();
+      const { dir, err, code } = await ci(
+        { dependencies: { a: '1.0.0', b: '1.0.0' } },
+        {
+          'node_modules/a': registry('a'),
+          'node_modules/b': {
+            ...git,
+            resolved: `${before}${'ß.é.'.repeat(32768)}${after}`,
+          },
+        },
+        ['--offline'],
+      );
+      expect(code).toBe(EXIT_CODES.invalidInput);
+      expect(err).toBe(
+        `opm: Refusing to install ${join(dir, 'package-lock.json')}: it holds 1 entry opm ci cannot install, and installing the rest would not be installing the lock:\n` +
+          '  node_modules/b: b@1.0.0 resolved names a host longer than 253 characters, which no DNS name can be\n',
+      );
+      // Node's URL parser takes about 4 seconds for a host of this size, and
+      // reads it more than once on the way to an error.
+      expect(performance.now() - started).toBeLessThan(2000);
+    },
+    120_000,
+  );
 
   it('lists the packages missing from the store when it is offline, one to a line', async () => {
     const { err, code } = await ci(

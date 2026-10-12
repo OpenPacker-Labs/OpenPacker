@@ -1,5 +1,7 @@
-import { redactUrl } from '@openpacker/adapter-core';
 import { plainLine, plainText } from '@openpacker/canonical';
+import { scrub } from './scrub.js';
+
+export { scrub };
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -9,7 +11,7 @@ import { plainLine, plainText } from '@openpacker/canonical';
  * `error.cause`. Printing only the message left a person with nothing to act
  * on, so an error that carries no code of its own is printed with its cause
  * chain. Everything printed passes the same redaction: a URL keeps its origin
- * and path and loses userinfo, query and fragment (`redactUrl`), and a value
+ * and path and loses userinfo, query and fragment (`scrub`), and a value
  * that follows a credential-shaped name is withheld.
  *
  * What is printed is made plain first, once, here, and that is the second layer
@@ -136,31 +138,6 @@ function fieldsOf(value: unknown): ErrorFields | undefined {
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
-}
-
-/** Withhold what must not reach a terminal, a log or a pasted bug report. */
-export function scrub(text: string): string {
-  return text
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>)\]]+/giu, (match) => {
-      try {
-        const url = new URL(match);
-        // A URL with an opaque origin (`socks5://…`) still has a host.
-        return url.origin === 'null'
-          ? `${url.protocol}//${url.host}${url.pathname}`
-          : redactUrl(url);
-      } catch {
-        return '[url]';
-      }
-    })
-    .replace(
-      /\b([\w-]*(?:authorization|token|secret|password|passwd|api[_-]?key))(\s*[:=]\s*)(?:(?:Bearer|Basic)\s+)?[^\s,;'")\]]+/giu,
-      (_match, name: string, separator: string) =>
-        `${name}${separator}[REDACTED]`,
-    )
-    .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu,
-      (_match, scheme: string) => `${scheme} [REDACTED]`,
-    );
 }
 
 function oneLine(text: string): string {

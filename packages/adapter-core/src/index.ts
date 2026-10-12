@@ -11,6 +11,12 @@ import {
 } from './document-refusal.js';
 export { ECHO_TEXT_LIMIT, echoed } from './echo.js';
 export { ProviderError } from './provider-error.js';
+export { redactAddress } from './redact-address.js';
+export {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  writtenHostLength,
+} from './url-host.js';
 export {
   MetadataLimitError,
   ResponseTooLargeError,

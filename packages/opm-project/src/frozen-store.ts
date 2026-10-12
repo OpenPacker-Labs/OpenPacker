@@ -11,7 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   echoed,
-  redactUrl,
+  redactAddress,
   type FrozenLock,
   type FrozenLockPackage,
 } from '@openpacker/adapter-core';
@@ -109,12 +109,16 @@ export function labelOf(pkg: FrozenLockPackage): string {
   return `${echoed(pkg.packageName)}@${echoed(pkg.version)} (${echoed(pkg.path)})`;
 }
 
+/**
+ * A lock entry's source as an error may show it (`redactAddress` in
+ * `@openpacker/adapter-core`, which `classifyResolved` and the fetch plan use
+ * for the same text): the scheme, and the host and path the URL parser read,
+ * never userinfo, query or fragment, or the scheme and `[address withheld]` for
+ * an address it refuses or one in which an `@` may end a password, or `[url]`
+ * for a host the URL parser should not be given.
+ */
 export function redactSource(source: string): string {
-  try {
-    return redactUrl(new URL(source));
-  } catch {
-    return source.replace(/\/\/[^/@]*@/u, '//');
-  }
+  return redactAddress(source);
 }
 
 /**

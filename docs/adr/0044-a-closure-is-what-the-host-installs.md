@@ -639,6 +639,176 @@ independent review got the same two figures.
   MiB of RSS and took 2.1 s, and one of 64 MiB took 2.2 GiB and 13 to 15 s in
   the review's runs. Nothing opm builds is that long: the adapters cut what they
   quote and a document's size is bounded by the limits above.
+- **Withholding is linear, and a host no DNS name could be is not handed to the
+  URL parser.** `scrub` (`apps/opm/src/scrub.ts`) began a scan again at every
+  word boundary of a long run: `a-` repeated to 80,000 characters took 12.3 s
+  (13.2 s through `formatFailure`), `a.` 4.6 s, and a mebibyte of `a.` 18
+  minutes and of `a-` 40. It finds each `://` and reads its scheme backwards,
+  and starts the credential match at the name, and gives the same text byte for
+  byte (`scrub-differential.test.ts`, against the first version, frozen). A
+  mebibyte of each hostile text takes 10 to 35 ms, and 175,000 short URLs 0.1 to
+  0.2 s. Two outputs changed on purpose. The first: Node's URL parser takes time
+  that grows with the square of the length of the host of a special-scheme
+  address when the host is many non-ASCII labels, written raw or percent-escaped
+  (`'http://'` and `'ß.é.'` 131,072 times, 524,295 characters, took 37 s; 65,536
+  characters 1.2 s). A host of ASCII or punycode labels is fast, and so is the
+  host of any other scheme than `ftp`, `http`, `https`, `ws`, `wss` and `file`,
+  which is opaque (2 to 21 ms for a mebibyte, raw or percent-escaped). No host
+  over 253 characters is a DNS name, so `hasOverlongHost`
+  (`@openpacker/adapter-core`, `url-host.ts`) is asked before the parser is:
+  `scrub` and `redactSource` print such a URL as `[url]`, `classifyResolved`
+  refuses a lock entry whose `resolved` names one, and `opm ci` of a lock with a
+  524,288-character host, which took 146 s, answers in 0.74 s.
+
+  The helper reads the host as Node's parser does, and Node's parser is the URL
+  Standard's with one difference that matters here. State by state, as the
+  Standard has it: leading and trailing C0 controls and spaces are stripped and
+  tabs and newlines removed; after a special scheme the slashes and backslashes
+  are skipped, however many there are; the authority ends at `/`, `\`, `?` or
+  `#` and its userinfo at the LAST `@`; the host ends at the first `:` that is
+  not inside brackets, and a `[` anywhere in it switches the port colon off
+  until a `]`; a `file:` host is the whole authority, with no userinfo and no
+  port, and a drive letter is no host; a `blob:` URL is read at the address in
+  its path, which its `origin` parses again. The difference, found by timing the
+  parser and not by reading the Standard: when the host ends inside a `[` that
+  no `]` closed and does not begin with `[`, Node reads it on, past `/`, `?` and
+  `\`, to the next `#` or the end of the input (`http://x[h.test/` and 128 KiB
+  of `ß.é.`: 1.1 s; 512 KiB: 106 s), so the helper counts that tail as host. The
+  first version of the helper took the host to end at the first `:`, read
+  `file:` as it reads `http:`, and read every scheme as a special one; the
+  second followed the Standard and missed the tail (28 of the 13,457 forms of
+  the third review's grid, and 9 of them over 300 ms at 64 KiB).
+
+  What holds the reading, and what it cannot show. `test/whatwg-host.ts` runs
+  the Standard's states over code points, states the one difference, and where
+  Node's `new URL` accepts one of 400,000 generated addresses and leaves its
+  host as written (42,664 of them) the two agree on the host. The helper equals
+  that reading on every string of nine delimiters up to five long after 11
+  schemes and two edge forms (1,461,460), on 600,000 random strings and on the
+  families that were counted short at six sizes. Because both are written from
+  the Standard, neither can show where Node differs;
+  `test/url-host.parser.test.ts` times the real `new URL` on 7,758 addresses (12
+  spellings of scheme, two slash forms, 14 hosts with stray brackets and
+  userinfo, 14 delimiters, 32 KiB of `ß.é.`, a seeded sample of the product, and
+  the review's forms also with 96 KiB of percent-escaped labels) and requires
+  every one the helper lets through to take under 25 ms (the shapes it found
+  take 60 ms at this size). It runs in 2 s. Measured outside the test: 5,670
+  forms of an enumeration of this author's (9 schemes, 12 slash forms, 52
+  structures, edges) at 64 KiB of raw `ß.é.`, 192 KiB of percent-escaped labels,
+  and 1 MiB of ASCII and of punycode labels; the third review's 13,457 forms at
+  32 KiB of raw `ß.é.` and at 96 KiB of percent-escaped labels (3,578 over 25 ms
+  in each, 5,309 withheld, none that took over 25 ms let through; the slowest
+  let through 6.4 and 8.7 ms) and at 1 MiB of ASCII (none over 25 ms let
+  through; the slowest 16 ms); and 150,000 random delimiter strings at 16 KiB (6
+  not withheld, none of the stray-bracket class, each linear and under 0.2 ms).
+  Fifty-six changes of one token each to the helper: 50 are failed by a test
+  (one by a loop that never ends), and the six that are not give the same
+  answers as the helper on all of the above.
+
+  What it withholds that the parser reads fast, so that this is not mistaken for
+  a measurement of slowness: any special-scheme host over 253 characters as
+  written, whatever it is made of (at 1 MiB of ASCII the parser accepted 1,236
+  of the 2,986 withheld forms and refused the rest); a bracketed host the parser
+  refuses in under a millisecond; an unclosed `[` followed by a long tail the
+  parser would refuse anyway; and a host written over 253 characters that is
+  shorter once its percent-escapes are decoded (`%61` a hundred times is a name
+  of 100 characters written in 300). What it stopped withholding: a scheme the
+  parser reads in linear time (`git+https://`, `x://`, `socks5://`, `blob:` with
+  a path that is no address), and a `file:` address whose host is empty or is
+  not there. The price of printing them is the second change.
+
+  The limits, all of them. The grid is a grid: a way of writing a host that no
+  address of it has is not covered, and the 16 other alphabets of the second
+  review were not re-run on the third review's forms. It was written and
+  measured on Node 22.22 on Linux; another Node (another ada) may read hosts
+  differently in either direction, and `url-host.parser.test.ts` is where that
+  shows. The sites that read a URL out of a registry's document (the artifact
+  location in `registry.ts`, which is the packument's `dist.tarball`, the
+  artifact origins of `firstPartyOriginPolicy`, the winget `InstallerUrl`) or
+  out of the other lock reader (`lock-import`) still hand the parser what they
+  were sent.
+
+- **A URL is shown cut.** The second change of `scrub`: the URL parser writes a
+  character outside ASCII as up to nine (`日` is `%E6%97%A5`), so a URL was
+  shown at up to nine times its length. A mebibyte of path, or of a non-special
+  host, was 9 MiB; 18 of 60 hostile texts of 1 MiB came out more than four times
+  as long, one git lock entry with a 1 MiB host printed 9 MiB through `opm ci`,
+  four such entries 36 MiB, and the refusal of a lock lists twenty. `scrub` now
+  shows a URL at most twice as long as the text it came from and at most 600
+  characters, ending in `…` where it is cut, so the whole text is at most twice
+  as long whatever the URLs are (the worst of the 60 texts: 1.99x; the one git
+  entry: 448 bytes). A URL of ordinary length is shown whole. `redactAddress`
+  shows a host and a path each at 256 characters and then how many there were.
+  The cost: the tail of a path longer than 600 characters is not shown.
+
+- **An address named in an error is built from the parser's components, and
+  nothing else is printed.** `redactAddress` (`@openpacker/adapter-core`) shows
+  the git and path sources `opm ci` lists (`redactSource`), the address in the
+  "is not a URL" problem of `classifyResolved`, the two messages of
+  `frozen-fetch` that name a source, and the source a person gave to
+  `opm add --source` or wrote in `opm.toml` (`fetchArtifactBytes`). It can print
+  only the scheme; when the URL parser accepts the address, the parser's own
+  host (with its port) and path, taken from the URL object and never from a
+  slice of the text, never userinfo, query or fragment; and the fixed words
+  `[url]` and `[address withheld]`. The first redactor cut text ("everything up
+  to the last `@`") and every rule added to it (the last `@`, an `@` inside a
+  path segment, an `@` in a query) moved a leak somewhere else: a query
+  `?email=a@b.com&sig=<c>` printed `b.com&sig=<c>`, a host after an `@` of the
+  path was shown as the host
+  (`https://evil.example/x@registry.npmjs.org/p/-/p.tgz` as
+  `https://registry.npmjs.org/p/-/p.tgz`), and a password such as `/s3cret/` or
+  `1234/s3cret` before the `@` printed.
+
+  Where the parser accepts an address and an `@` comes after its authority, that
+  `@` may be where userinfo ends: a password that holds a `/`, `?` or `#` ends
+  the parser's authority there, and the `@` that ends the password is then in
+  the path, the query or the fragment (`deploy:123/secret@host` is a host, a
+  port 123 and a path; `deploy:a@b?c@host` is a user, a password `a` and a host
+  `b`). If that part of the address holds no `@`, no password was split. If it
+  does, the address is withheld: `scheme:[address withheld]`. The one exception
+  is the path of a scoped package's tarball,
+  `<prefix>/@scope/name/-/name-<version>.tgz`, whose one `@` begins the scope.
+  An opaque path (`github:u:pw@o/r`, `user:pw@host:o/r`) with an `@` anywhere in
+  it is withheld too. An address the parser refuses is its scheme, if the text
+  starts with one, and `[address withheld]`, with no cut of the text. `blob:` is
+  `blob:` and the same rule on the address in its path, four deep and `[url]`
+  below that, and the overlong-host check is made once, of the address as
+  written (a legal host of 42 non-ASCII characters inside a blob URL is shown,
+  as it is outside one). `file:` and `link:` addresses are paths on this
+  machine, where an `@` is a character: they are shown without query and
+  fragment.
+
+  What that costs: a scp-like source (`git+ssh://git@github.com:o/r.git`, the
+  commonest git form) is `git+ssh:[address withheld]` and a relative path
+  (`../pkg`) is `[address withheld]`; an address with an `@` in its query,
+  fragment or a path that is not a scoped tarball is withheld whole
+  (`https://cdn.example/pkg@1.2.3/f.js`,
+  `git+https://github.com/o/r.git?email=a@b.com`, a git ref
+  `#semver:@scope/pkg@1`), where the first version showed the host and path; the
+  fragment is never shown, so a git ref such as `#semver:^1.2.3` or `#abcdef0`
+  is lost. What it does not cover: a password that ends in a `/` and is followed
+  at once by `@scope/name/-/name-<version>.tgz` is a scoped tarball path to
+  anyone, and is shown (a test says so); an `@` in a `file:` or `link:` address;
+  and a credential that is not next to an `@` (`/api/<token>/pkg.tgz` is a
+  path). Of 4,805 `resolved` values in nine real locks, 4,590 are shown exactly
+  as written and the other 215 are relative workspace paths (`packages/x`),
+  which are `[address withheld]`; none is a registry tarball URL.
+
+  Held by a property test and the review's scripts. A marker is put in the user
+  name, in 166 forms of password (every pair of `@ ? # : / %` before, after and
+  around it, digits and `/`, `/<marker>/`), in the query, the fragment and the
+  path, and in every position of twelve forms the parser refuses (37,364
+  addresses in all): it comes out only where the parser put it in the host or
+  the path with no `@` after the authority, and whenever an address is printed,
+  re-parsing the output gives the parser's own protocol, host and path with no
+  userinfo, query or fragment. `ci-credentials.test.ts` runs 36 lock entries
+  through `runOpm` and `source-credentials.test.ts` three source URLs. Through
+  the real binary the review's sweep of 1,290 lock entries holds 0 markers (3
+  before), its five `@`-in-query entries are clean, and none of its four spoofed
+  hosts is shown; its library sweep of 5,815,824 addresses leaves 210,528
+  outputs holding the marker (252,936 before), all of them `file:`, `link:` and
+  `blob:file:` paths, none in a remote scheme.
+
 - **Every writer, and the ones left as written.** `handleError` (usage, run,
   `OpmError` and coded errors), `formatFailure` (an error with no code keeps the
   line breaks of its message; its causes are one line each, and so are
