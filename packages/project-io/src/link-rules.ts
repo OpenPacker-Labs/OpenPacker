@@ -25,7 +25,25 @@ import { posix } from 'node:path';
 export const MAXIMUM_TARGET_LENGTH = 1024;
 
 /** A path segment no member may live under, so a link never names a package or opm's own state. */
-const FORBIDDEN_TARGET_SEGMENTS = new Set(['node_modules', '.opm']);
+const FORBIDDEN_TARGET_SEGMENTS = ['node_modules', '.opm'];
+
+/**
+ * What a path segment names on a volume that does not tell some spellings
+ * apart. The default volumes of macOS and Windows ignore case, and Windows also
+ * drops trailing dots and spaces and a `:stream` suffix, so `NODE_MODULES`,
+ * `node_modules.` and `node_modules::$INDEX_ALLOCATION` are `node_modules`. It
+ * is applied on every platform, because a project is copied between systems.
+ */
+function sameDirectoryKey(segment: string): string {
+  return (segment.split(':')[0] ?? '').replace(/[. ]+$/u, '').toLowerCase();
+}
+
+/**
+ * A Windows 8.3 short name: a tilde and digits ending the base name, then an
+ * optional extension. It can name any directory, `node_modules` included, and
+ * it is not a name this rule can compare, so it is refused where it can occur.
+ */
+const SHORT_NAME = /~[0-9]+(?:\.[^.]*)?$/u;
 
 const PACKAGE_BODY = /^[A-Za-z0-9._~+-]+$/u;
 
@@ -42,7 +60,7 @@ export function linkNameProblem(name: string): string | undefined {
     return `${JSON.stringify(name)} is a scope: a link is named after a package, inside its scope directory`;
   if (
     name.startsWith('.') ||
-    name === 'node_modules' ||
+    sameDirectoryKey(name) === 'node_modules' ||
     !PACKAGE_BODY.test(name)
   )
     return `${JSON.stringify(name)} is not a safe package directory name`;
@@ -54,7 +72,7 @@ function scopeProblem(segment: string): string | undefined {
   if (
     body === '' ||
     body.startsWith('.') ||
-    body === 'node_modules' ||
+    sameDirectoryKey(body) === 'node_modules' ||
     !PACKAGE_BODY.test(body)
   )
     return `${JSON.stringify(segment)} is not a safe scope directory name`;
@@ -103,11 +121,15 @@ export function linkDirectoryProblem(directory: string): string | undefined {
  * Relative, in normal form (so comparing two targets is comparing two strings),
  * and resolving to a place strictly inside the project root that is neither
  * `node_modules` nor opm's own state: the member's directory, not a registry
- * package and not the project itself.
+ * package and not the project itself. A segment is compared as the volume would
+ * (see `sameDirectoryKey`), and on Windows a segment that looks like an 8.3
+ * short name is refused, since it can name anything. `platform` is the one the
+ * link is made on, and is a parameter so that both rules can be tested anywhere.
  */
 export function linkTargetProblem(
   directory: string,
   target: string,
+  platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   const shown = JSON.stringify(target);
   if (target === '') return 'a link target is empty';
@@ -126,11 +148,20 @@ export function linkTargetProblem(
     return `the link target ${shown} leaves the project root from ${directory}`;
   if (resolved === '.')
     return `the link target ${shown} is the project root itself`;
-  const forbidden = resolved
-    .split('/')
-    .find((segment) => FORBIDDEN_TARGET_SEGMENTS.has(segment));
-  if (forbidden !== undefined)
-    return `the link target ${shown} resolves to ${resolved}, which is inside ${forbidden}; only a workspace member's own directory may be linked`;
+  for (const segment of resolved.split('/')) {
+    const forbidden = FORBIDDEN_TARGET_SEGMENTS.find(
+      (name) => name === sameDirectoryKey(segment),
+    );
+    if (forbidden !== undefined) {
+      const spelling =
+        segment === forbidden
+          ? ''
+          : ` (spelled ${JSON.stringify(segment)}, which is the same directory on a volume that ignores case)`;
+      return `the link target ${shown} resolves to ${resolved}, which is inside ${forbidden}${spelling}; only a workspace member's own directory may be linked`;
+    }
+    if (platform === 'win32' && SHORT_NAME.test(segment))
+      return `the link target ${shown} resolves to ${resolved}, whose segment ${JSON.stringify(segment)} looks like a Windows 8.3 short name, which can name any directory, node_modules and .opm included; write the long name`;
+  }
   return undefined;
 }
 
@@ -160,8 +191,9 @@ export function splitLinkPath(path: string): LinkPlace | { problem: string } {
 export function memberLinkProblem(
   path: string,
   target: string,
+  platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   const place = splitLinkPath(path);
   if ('problem' in place) return place.problem;
-  return linkTargetProblem(place.directory, target);
+  return linkTargetProblem(place.directory, target, platform);
 }

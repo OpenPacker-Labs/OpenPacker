@@ -28,6 +28,11 @@ describe('linkNameProblem', () => {
     ['a b', 'a space'],
     ['@scope', 'a scope, which is a directory and not a package'],
     ['é', 'a non-ASCII letter'],
+    [
+      'NODE_MODULES',
+      'node_modules in capitals, the same directory on a volume that ignores case',
+    ],
+    ['Node_Modules', 'node_modules in mixed case'],
   ])('refuses %j (%s)', (name) => {
     expect(linkNameProblem(name)).toEqual(expect.any(String));
   });
@@ -64,6 +69,8 @@ describe('linkDirectoryProblem', () => {
     'node_modules/@/x',
     'node_modules/@.x',
     'node_modules/@s/@t',
+    'node_modules/@NODE_MODULES',
+    'node_modules/NODE_MODULES/node_modules',
   ])('refuses %j', (directory) => {
     expect(linkDirectoryProblem(directory)).toEqual(expect.any(String));
   });
@@ -129,6 +136,71 @@ describe('linkTargetProblem', () => {
     expect(linkTargetProblem(directory, '../../a/../b')).toContain(
       'expected "../../b"',
     );
+  });
+});
+
+describe('linkTargetProblem and the names a volume gives the same directory', () => {
+  const directory = 'node_modules/@scope';
+  const platforms = ['linux', 'darwin', 'win32'] as const;
+
+  it.each([
+    ['../../NODE_MODULES/left-pad', 'capitals'],
+    ['../../Node_Modules/left-pad', 'mixed case'],
+    ['../../a/NODE_MODULES/b', 'inside a package, in capitals'],
+    ['../../.OPM/store', '.opm in capitals'],
+    ['../../.Opm/store/x', '.opm in mixed case'],
+    ['../../node_modules./left-pad', 'a trailing dot, which Windows drops'],
+    ['../../node_modules /left-pad', 'a trailing space, which Windows drops'],
+    [
+      '../../node_modules::$INDEX_ALLOCATION/x',
+      'a stream name, which Windows drops',
+    ],
+    ['../../.opm./store', '.opm with a trailing dot'],
+  ])('refuses %j (%s) on every platform', (target) => {
+    for (const platform of platforms)
+      expect(
+        linkTargetProblem(directory, target, platform),
+        `linkTargetProblem(${JSON.stringify(directory)}, ${JSON.stringify(target)}, ${JSON.stringify(platform)})`,
+      ).toEqual(expect.any(String));
+  });
+
+  it('says which spelling it refused, and keeps the message for the exact one', () => {
+    expect(linkTargetProblem(directory, '../../NODE_MODULES/x')).toBe(
+      'the link target "../../NODE_MODULES/x" resolves to NODE_MODULES/x, which is inside node_modules (spelled "NODE_MODULES", which is the same directory on a volume that ignores case); only a workspace member\'s own directory may be linked',
+    );
+    expect(linkTargetProblem(directory, '../../node_modules/x')).toBe(
+      'the link target "../../node_modules/x" resolves to node_modules/x, which is inside node_modules; only a workspace member\'s own directory may be linked',
+    );
+  });
+
+  it.each([
+    ['../../NODE_M~1/left-pad', "node_modules' short name"],
+    ['../../OPM~1/store', 'the short name of .opm'],
+    ['../../PACKAG~1/member', 'a short name for any directory'],
+    ['../../packages/member~12', 'a short name with two digits'],
+    ['../../packages/MEMBER~1.JS', 'a short name with an extension'],
+  ])('refuses %j (%s) on Windows only', (target) => {
+    expect(
+      linkTargetProblem(directory, target, 'win32'),
+      `linkTargetProblem(${JSON.stringify(directory)}, ${JSON.stringify(target)}, "win32")`,
+    ).toContain('8.3 short name');
+    for (const platform of ['linux', 'darwin'] as const)
+      expect(
+        linkTargetProblem(directory, target, platform),
+        `linkTargetProblem(${JSON.stringify(directory)}, ${JSON.stringify(target)}, ${JSON.stringify(platform)})`,
+      ).toBeUndefined();
+  });
+
+  it('uses the platform it runs on when none is given, and memberLinkProblem passes it on', () => {
+    expect(linkTargetProblem(directory, '../../PACKAG~1/x')).toBe(
+      linkTargetProblem(directory, '../../PACKAG~1/x', process.platform),
+    );
+    expect(
+      memberLinkProblem('node_modules/@scope/pkg', '../../PACKAG~1/x', 'win32'),
+    ).toContain('8.3 short name');
+    expect(
+      memberLinkProblem('node_modules/@scope/pkg', '../../PACKAG~1/x', 'linux'),
+    ).toBeUndefined();
   });
 });
 

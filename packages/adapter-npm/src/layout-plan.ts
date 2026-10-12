@@ -475,7 +475,7 @@ export function unsafeNameProblem(name: string): string | undefined {
     if (
       body === '' ||
       body.startsWith('.') ||
-      body === 'node_modules' ||
+      body.toLowerCase() === 'node_modules' ||
       !/^[A-Za-z0-9._~+-]+$/u.test(body)
     )
       return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
