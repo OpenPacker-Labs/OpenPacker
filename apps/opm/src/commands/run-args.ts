@@ -40,14 +40,23 @@ export interface ExecRequest {
 /** The spellings of the project directory: opm's own, pnpm's `-C`/`--dir` and npm's `--prefix`. */
 const PATH_FLAGS = ['--path', '--dir', '--prefix'] as const;
 
-/** Options opm owns must come after the command: before it they are not seen. */
+/**
+ * Options opm owns must come after the command: before it they are not seen,
+ * and an option dropped without a word is worse than one refused. The process
+ * entry moves the pnpm and npm spellings behind the command itself
+ * (`run-route.ts`); what reaches here is the rest.
+ */
 function refuseOptionsBeforeCommand(head: readonly string[]): void {
-  const misplaced = head.find(
-    (token) =>
-      token === '--path' ||
-      token.startsWith('--path=') ||
-      token === '--if-present',
-  );
+  const misplaced = head.find((token) => {
+    const name = token.split('=')[0] ?? token;
+    return (
+      name === '--path' ||
+      name === '--if-present' ||
+      PATH_FLAGS.some((flag) => flag === name) ||
+      name === '-C' ||
+      selectionArity(token) > 0
+    );
+  });
   if (misplaced !== undefined)
     throw usage(`Put ${misplaced.split('=')[0]} after the command name`);
 }
