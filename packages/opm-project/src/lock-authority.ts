@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import { canonicalize } from '@openpacker/canonical';
 import type { LockPackage } from './types.js';
 import { OpmError } from './types.js';
@@ -34,7 +35,7 @@ export function lockPackageBinding(pkg: LockPackage): string {
     if (!LOCK_PACKAGE_FIELDS.has(key) || !('value' in descriptor))
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package has unsafe field ${key}`,
+        `Lock package has unsafe field ${echoed(key)}`,
       );
   const projected: Record<string, unknown> = {};
   for (const key of LOCK_PACKAGE_FIELDS) {
@@ -85,7 +86,10 @@ function clonePlainData(
   if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
   if (typeof value === 'object' && value !== null) {
     if (seen.has(value))
-      throw new OpmError('INVALID_LOCK', `Lock package ${path} is cyclic`);
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${echoed(path)} is cyclic`,
+      );
     seen.add(value);
   }
   if (Array.isArray(value))
@@ -95,7 +99,7 @@ function clonePlainData(
   if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0)
     throw new OpmError(
       'INVALID_LOCK',
-      `Lock package ${path} is not plain data`,
+      `Lock package ${echoed(path)} is not plain data`,
     );
   const cloned: Record<string, PlainData> = {};
   for (const [key, descriptor] of Object.entries(
@@ -104,7 +108,7 @@ function clonePlainData(
     if (!('value' in descriptor))
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${path}.${key} is an accessor`,
+        `Lock package ${echoed(path)}.${echoed(key)} is an accessor`,
       );
     if (descriptor.value !== undefined)
       cloned[key] = clonePlainData(descriptor.value, `${path}.${key}`, seen);

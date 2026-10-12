@@ -116,25 +116,37 @@ function opmLockEntry(): Json {
   };
 }
 
+/** What `opm.toml` holds, section by section. */
+export interface TomlSections {
+  project: Json;
+  options: Json;
+  a: Json;
+  /** The plugin binding `dev.example.acme`, when the project has one. */
+  plugin?: Json;
+}
+
 /** `opm.toml` and `opm.lock.json` of a project `opm list`, `install` and `sync` read. */
 export function opmFiles(
-  edit: (lock: Json, toml: { project: Json; options: Json; a: Json }) => void,
+  edit: (lock: Json, toml: TomlSections) => void,
+  options: { plugin?: boolean } = {},
 ) {
   const lock: Json = {
     schemaVersion: 1,
     generatedBy: 'opm',
     packages: { a: opmLockEntry() },
   };
-  const toml = {
-    project: { name: 'demo', ecosystems: ['npm'] } as Json,
-    options: { offline: true, layout: 'opm' } as Json,
-    a: { purl: 'pkg:npm/a', version: '1.0.0' } as Json,
+  const toml: TomlSections = {
+    project: { name: 'demo', ecosystems: ['npm'] },
+    options: { offline: true, layout: 'opm' },
+    a: { purl: 'pkg:npm/a', version: '1.0.0' },
+    ...(options.plugin && {
+      plugin: { store_digest: `sha256:${'c'.repeat(64)}` },
+    }),
   };
   edit(lock, toml);
-  const value = (v: Json[string]) => JSON.stringify(v);
   const section = (name: string, fields: Json) =>
     `[${name}]\n${Object.entries(fields)
-      .map(([k, v]) => `${k} = ${value(v)}`)
+      .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
       .join('\n')}\n`;
   return {
     'opm.lock.json': `${JSON.stringify(lock, null, 2)}\n`,
@@ -142,6 +154,9 @@ export function opmFiles(
       section('project', toml.project),
       section('options', toml.options),
       section('packages.a', toml.a),
+      ...(toml.plugin
+        ? [section('plugins.dev.example.acme', toml.plugin)]
+        : []),
     ].join('\n'),
   };
 }

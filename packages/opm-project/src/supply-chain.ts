@@ -6,6 +6,7 @@
  */
 
 import {
+  echoed,
   isDocumentRefusal,
   type CatalogProvider,
   type ProviderInspection,
@@ -365,7 +366,7 @@ function lockPackageProvider(pkg: LockPackage): string {
   if (pkg.ecosystem !== provider)
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${pkg.alias}" ecosystem does not match its PURL`,
+      `Package "${echoed(pkg.alias)}" ecosystem does not match its PURL`,
     );
   return provider;
 }
