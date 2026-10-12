@@ -666,7 +666,12 @@ export function detectLockFormat(
     try {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const parsed = parseStrictJson(text) as Record<string, unknown>;
-      if (parsed.lockfileVersion === 3 && parsed.packages)
+      // npm 7 and 8 write lockfileVersion 2, which carries the same `packages`
+      // map beside the legacy `dependencies` one; 9 and later write 3.
+      if (
+        (parsed.lockfileVersion === 3 || parsed.lockfileVersion === 2) &&
+        parsed.packages
+      )
         return 'package-lock';
       if (parsed.version !== undefined && parsed.targets) return 'nuget-assets';
       if (

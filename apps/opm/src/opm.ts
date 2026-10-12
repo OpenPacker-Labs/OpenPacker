@@ -100,6 +100,7 @@ const COMMANDS = new Set([
   'add',
   'remove',
   'install',
+  'ci',
   'uninstall',
   'sync',
   'update',
@@ -300,7 +301,16 @@ export async function runOpm(
         io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
+      case 'ci': {
+        const { runCiCommand } = await import('./commands/ci.js');
+        return await runCiCommand(args, io, cwd, options);
+      }
       case 'install': {
+        // `--frozen` is `opm ci`: install exactly what the lock says.
+        if (args.options.has('frozen')) {
+          const { runCiCommand } = await import('./commands/ci.js');
+          return await runCiCommand(args, io, cwd, options);
+        }
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
         await registerBoundPlugins(root, adapterRegistry);
@@ -746,6 +756,7 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_SPEC':
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
+      case 'UNSUPPORTED_LOCK':
       case 'INVALID_CATALOG':
       case 'INVALID_PLUGIN_SPEC':
       case 'INVALID_PLUGIN_MANIFEST':
@@ -760,6 +771,8 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'SIZE_MISMATCH':
       case 'UNSAFE_PATH':
       case 'UNSAFE_BIN':
+      case 'UNSAFE_SOURCE':
+      case 'SIZE_LIMIT':
       case 'INVALID_DIGEST':
         return EXIT_CODES.verificationFailed;
       case 'OFFLINE':
@@ -934,6 +947,8 @@ function isBooleanFlag(key: string): boolean {
     key === 'if-present' ||
     key === 'native' ||
     key === 'shared' ||
+    key === 'production' ||
+    key === 'frozen' ||
     key === 'write'
   );
 }
@@ -1218,6 +1233,10 @@ Usage:
   opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
   opm remove <alias>
   opm install [--offline|--online]
+  opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
+                                      install exactly what package-lock.json says;
+                                      resolves nothing, runs no install script
+                                      (opm install --frozen is the same)
   opm uninstall [alias]
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]

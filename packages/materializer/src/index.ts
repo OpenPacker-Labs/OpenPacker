@@ -26,6 +26,17 @@ export interface MaterializationLimits {
   maximumMemoryBytes: number;
   maximumPathBytes: number;
   maximumDepth: number;
+  /**
+   * Accept an archive that spells one path two ways, which npm's own extractor
+   * does: a `.` segment names the directory it is in (`package/./dist/index.js`
+   * is `package/dist/index.js`), and a file listed twice with the same bytes
+   * and the same mode is one file whichever copy is written first. Off by
+   * default, and the exploit corpus keeps rejecting both: an ecosystem whose
+   * published packages carry them (agent-base@7.1.4 does) asks for it by name.
+   * Differing content at one path, `..`, and an empty segment are refused
+   * either way.
+   */
+  acceptRedundantEntries?: boolean;
 }
 
 export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
@@ -79,9 +90,11 @@ export function validateArchivePath(
   const value = input.replaceAll('\\', '/');
   if (value.startsWith('/')) throw unsafe('ABSOLUTE_PATH', input);
   const path = value.endsWith('/') ? value.slice(0, -1) : value;
-  const parts = path.split('/');
+  const tolerant = limits.acceptRedundantEntries === true;
+  const parts = path.split('/').filter((part) => !tolerant || part !== '.');
   if (
     path === '' ||
+    parts.length === 0 ||
     parts.some((part) => part === '' || part === '.' || part === '..')
   )
     throw unsafe('PATH_TRAVERSAL', input);
@@ -404,6 +417,7 @@ function parseTar(
   limits: MaterializationLimits,
 ): InspectedArchiveEntry[] {
   const entries: InspectedArchiveEntry[] = [];
+  const seen = new Map<string, InspectedArchiveEntry>();
   let offset = 0;
   let count = 0;
   while (offset + 512 <= bytes.byteLength) {
@@ -427,12 +441,25 @@ function parseTar(
     if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.byteLength)
       throw unsafe('TRUNCATED_ARCHIVE', path);
     if (type === '\0' || type === '0' || type === '7') {
-      entries.push({
+      const file: InspectedArchiveEntry = {
         path,
         type: 'file',
         mode: mode & 0o111 ? 0o755 : 0o644,
         data: bytes.slice(dataStart, dataEnd),
-      });
+      };
+      // See `acceptRedundantEntries`: only a repeat of the very same file is
+      // dropped; any other repeat is still a duplicate, refused below.
+      const earlier = seen.get(path);
+      if (
+        limits.acceptRedundantEntries === true &&
+        earlier !== undefined &&
+        sameFile(earlier, file)
+      ) {
+        offset = dataStart + Math.ceil(size / 512) * 512;
+        continue;
+      }
+      seen.set(path, file);
+      entries.push(file);
     } else if (type === '5') {
       entries.push({
         path,
@@ -455,6 +482,18 @@ function parseTar(
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
   return entries;
+}
+
+function sameFile(
+  left: InspectedArchiveEntry,
+  right: InspectedArchiveEntry,
+): boolean {
+  return (
+    left.type === 'file' &&
+    right.type === 'file' &&
+    left.mode === right.mode &&
+    Buffer.from(left.data).equals(right.data)
+  );
 }
 
 async function parseZip(
@@ -676,9 +715,15 @@ function assertMemoryBudget(
 }
 
 function validateLimits(limits: MaterializationLimits): void {
-  for (const [key, value] of Object.entries(limits))
+  for (const [key, value] of Object.entries(limits)) {
+    if (key === 'acceptRedundantEntries') {
+      if (typeof value !== 'boolean')
+        throw new RangeError(`${key} must be true or false`);
+      continue;
+    }
     if (!Number.isSafeInteger(value) || value <= 0)
       throw new RangeError(`${key} must be a positive safe integer`);
+  }
 }
 
 function tarText(bytes: Uint8Array): string {

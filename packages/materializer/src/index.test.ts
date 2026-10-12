@@ -254,6 +254,103 @@ describe('safe materialization', () => {
     expect(() => validateArchivePath(path)).toThrow();
   });
 
+  describe("an ecosystem that asks for its own extractor's tolerance", () => {
+    const npm = {
+      ...DEFAULT_MATERIALIZATION_LIMITS,
+      acceptRedundantEntries: true,
+    };
+
+    it.each([
+      ['package/./dist/index.js', 'package/dist/index.js'],
+      ['./package.json', 'package.json'],
+      ['a/./b/', 'a/b'],
+      ['a/b/.', 'a/b'],
+    ])('reads the `.` in %s as the directory it is in', (path, expected) => {
+      expect(validateArchivePath(path, npm)).toBe(expected);
+    });
+
+    it.each([
+      '.',
+      './',
+      './.',
+      '././',
+      'a/./../b',
+      './../x',
+      'a//b',
+      'a/././/b',
+    ])('still rejects %s', (path) => {
+      expect(() => validateArchivePath(path, npm)).toThrow(/PATH_TRAVERSAL/u);
+    });
+
+    it('keeps one of two entries that are the same file, as agent-base@7.1.4 ships', async () => {
+      const entries = await inspectArchive(
+        tar([
+          { name: 'package/./dist/index.js', data: 'same' },
+          { name: 'package/dist/index.js', data: 'same' },
+          { name: 'package/package.json', data: '{}' },
+        ]),
+        'tar',
+        npm,
+      );
+      expect(entries.map((entry) => entry.path)).toEqual([
+        'package/dist/index.js',
+        'package/package.json',
+      ]);
+    });
+
+    it('still refuses two entries at one path that differ in content or mode', async () => {
+      for (const second of [
+        { name: 'package/x', data: 'different' },
+        { name: 'package/x', data: 'same', mode: 0o755 },
+      ])
+        await expect(
+          inspectArchive(
+            tar([{ name: 'package/x', data: 'same' }, second]),
+            'tar',
+            npm,
+          ),
+        ).rejects.toMatchObject({ code: 'DUPLICATE_PATH' });
+    });
+
+    it('does not let a repeated file stand in for a directory of the same name', async () => {
+      await expect(
+        inspectArchive(
+          tar([
+            { name: 'package/x', data: 'same' },
+            { name: 'package/x/', type: '5' },
+          ]),
+          'tar',
+          npm,
+        ),
+      ).rejects.toMatchObject({ code: 'DUPLICATE_PATH' });
+    });
+
+    it('is not on unless asked for', async () => {
+      expect(() => validateArchivePath('package/./x')).toThrow(
+        /PATH_TRAVERSAL/u,
+      );
+      await expect(
+        inspectArchive(
+          tar([
+            { name: 'package/x', data: 'same' },
+            { name: 'package/x', data: 'same' },
+          ]),
+          'tar',
+        ),
+      ).rejects.toMatchObject({ code: 'DUPLICATE_PATH' });
+    });
+
+    it('is a switch and nothing else', async () => {
+      await expect(
+        inspectArchive(tar([{ name: 'x', data: 'y' }]), 'tar', {
+          ...DEFAULT_MATERIALIZATION_LIMITS,
+          // @ts-expect-error a flag, not a number
+          acceptRedundantEntries: 1,
+        }),
+      ).rejects.toThrow(/must be true or false/u);
+    });
+  });
+
   it.each([
     { type: '2', code: 'SYMLINK_REJECTED' },
     { type: '1', code: 'HARDLINK_REJECTED' },

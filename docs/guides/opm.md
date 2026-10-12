@@ -248,6 +248,59 @@ What `layout` writes:
 - `node_modules/.opm-layout.json` records what opm wrote. The next layout
   removes only that; a package you installed some other way is left alone.
 
+### Installing exactly a lock (`opm ci`)
+
+`opm ci` installs a committed `package-lock.json` (lockfileVersion 2 or 3, no
+workspaces) the way `npm ci` does, without npm and without an `opm.toml`.
+`opm install --frozen` is the same command. It reads `package.json` and the
+lock, resolves nothing, and replaces `node_modules` with the tree the lock
+describes ([ADR 0046](../adr/0046-a-lockfile-is-installed-not-re-resolved.md)).
+
+```sh
+opm ci                       # the project in the current directory
+opm ci --path ./app          # another directory
+opm ci --production          # leave out dev dependencies (--omit dev)
+opm ci --omit optional       # also: peer
+opm ci --offline             # the shared store only; names what is missing
+```
+
+```text
+Installed 894 packages into /app/node_modules (845 from the store, 0 fetched, 0.0 MB) in 55.0 s; 10 declare install scripts, which opm does not run
+  left out: 145 optional, for another platform
+  install script not run: esbuild@0.28.2
+  ...
+```
+
+What it does, in order:
+
+1. **Reads the lock, refuses what it cannot install.** Links, workspace members
+   (and the packages inside them), a git or path source, an entry with no
+   `resolved` or no `integrity`, and a `package.json` that no longer matches the
+   lock are each named, and nothing is installed. Exit code 3.
+2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
+   when there is one, the default otherwise. Every package is judged before any
+   is fetched, and one error lists those refused (exit 6). The minimum release
+   age does not apply to a version the lock already pinned; a source kind the
+   policy blocks does.
+3. **Takes each archive from the store or from the lock's URL**, and checks it
+   against the lock's `integrity` before using it. A mismatch exits 7 and leaves
+   the previous `node_modules` as it was. The only hosts contacted are those of
+   the lock's `resolved` URLs.
+4. **Writes the lock's layout.** Each package is at the path its key names,
+   hard-linked from the store, with `.bin` shims; no symlinks.
+
+Which entries a machine installs follows npm: `dev`, `optional` and `peer`
+entries are dropped by `--omit`; an optional package for another `os`, `cpu` or
+`libc` is not installed, nor is anything only it needs; a package that is not
+optional and does not run here is an error. The packages that declare an install
+script are counted and listed, and none is run.
+
+Measured on a lock of 1,039 entries (894 installed here), against npm's own
+reader of the same lock: no difference in which package is installed at which
+path. Cold, with an empty store, it takes about two minutes; with the store
+populated, about one; a second project adds 1.6% of the first
+([measurements](../adr/0046-a-lockfile-is-installed-not-re-resolved.md#consequences)).
+
 ### `opm.toml`
 
 ```toml
@@ -446,6 +499,7 @@ their verifier evidence can be independently replayed.
 | `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                           |
 | `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                               |
 | `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                         |
+| `opm ci` / `opm install --frozen`        | Install exactly what a committed `package-lock.json` says into `node_modules`: no resolving, no scripts ([below](#installing-exactly-a-lock-opm-ci))              |
 | `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                               |
 | `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                    |
 | `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`. |

@@ -3,6 +3,23 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+export {
+  detectLibc,
+  detectNativeTarget,
+  evaluateTargetPredicate,
+  type NativeTarget,
+} from './host-target.js';
+import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+export type {
+  FrozenExtraction,
+  FrozenLock,
+  FrozenLockOptions,
+  FrozenLockPackage,
+  FrozenLockRefusal,
+  FrozenLockSkip,
+  FrozenOmit,
+  FrozenSourceKind,
+} from './frozen-lock.js';
 import {
   canonicalProjectionDigest,
   formatDigest,
@@ -434,6 +451,20 @@ export interface ProjectFormat {
   ): Promise<ProjectionResult>;
 
   /**
+   * Read the native lock as a frozen install would use it: exactly the
+   * packages it pins for this machine, nothing resolved.
+   *
+   * Reads, and never writes. Anything the lock holds that cannot be installed
+   * as it stands (a workspace member, a package with no integrity) comes back
+   * in `refused` rather than being skipped, because a frozen install that
+   * leaves out what the lock names has not installed the lock.
+   */
+  readFrozenLock?(
+    project: DetectedProject,
+    options: FrozenLockOptions,
+  ): Promise<FrozenLock>;
+
+  /**
    * Where `writeLayout` can write when `root` holds no native manifest.
    *
    * `detect` answers "is this a project of this kind", and most layouts are
@@ -643,6 +674,12 @@ export interface NativeLockEntry extends NativeRequirement {
   nativeIntegrity?: { algorithm: string; value: string; encoding: string };
   /** Absolute path of the extracted tree in the opm store, when materialised. */
   storePath?: string;
+  /**
+   * Where the native lock itself places this package, when the layout is to
+   * follow the lock rather than be planned (npm:
+   * `node_modules/a/node_modules/b`). Unique among the entries of one layout.
+   */
+  layoutPath?: string;
   /** True for a package no requirement named directly. */
   transitive: boolean;
   /**
