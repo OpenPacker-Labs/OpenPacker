@@ -1,0 +1,54 @@
+{
+  "ai-bdd.pnpm-lock.yaml": {
+    "sha256": "82f5cb6c6e7711856a203cf1e94a1bad007f2f19ec761591530de461ea9875fd",
+    "instances": 393,
+    "tops": 9,
+    "instanceEdges": 749,
+    "optionalEdges": 67,
+    "snapshotAliasEdges": 0,
+    "snapshotLinks": 0,
+    "topEdges": 40,
+    "topLinks": 17,
+    "optionalInstances": 46,
+    "edgesSha256": "6f3397ef9c66cf968152e5945e066558d8024e90225dc9ba5d1eec7727904200"
+  },
+  "hobo.cut.pnpm-lock.yaml": {
+    "sha256": "6913f45498095f6466358d6301ae5cff2385234ba1f676e4bfb2c1cd7b2541ae",
+    "instances": 436,
+    "tops": 9,
+    "instanceEdges": 801,
+    "optionalEdges": 121,
+    "snapshotAliasEdges": 6,
+    "snapshotLinks": 0,
+    "topEdges": 25,
+    "topLinks": 2,
+    "optionalInstances": 96,
+    "edgesSha256": "a94061be852024388d26f24b56d8c6253c92fac09503e1892d57f35bf1048ee4"
+  },
+  "opensesame.cut.pnpm-lock.yaml": {
+    "sha256": "ac90e56886fdfa88f758bdc408d329e1af0f102f935168d92321fbad63cb29e5",
+    "instances": 348,
+    "tops": 7,
+    "instanceEdges": 510,
+    "optionalEdges": 121,
+    "snapshotAliasEdges": 3,
+    "snapshotLinks": 0,
+    "topEdges": 25,
+    "topLinks": 4,
+    "optionalInstances": 108,
+    "edgesSha256": "fb1fe7372a51d0eed2736fc3f129fa0f2da53853ae9f7dd779991281d13aed71"
+  },
+  "exotic.pnpm-lock.yaml": {
+    "sha256": "e7186b506d5a687bfd648576a83df4df7587c3769d7600a6e5b476f6c85dc0b3",
+    "instances": 22,
+    "tops": 3,
+    "instanceEdges": 13,
+    "optionalEdges": 1,
+    "snapshotAliasEdges": 0,
+    "snapshotLinks": 0,
+    "topEdges": 17,
+    "topLinks": 1,
+    "optionalInstances": 1,
+    "edgesSha256": "091d1e3755fd68a16fde593eebf8b06c2abee3fbd63fc7b9ae47f52bd9999da2"
+  }
+}
