@@ -126,7 +126,11 @@ before it.
 
 7. **A closure that cannot be computed is an error.** Failures no longer fall
    back to the direct set. Only what came from a registry is walked through that
-   registry. The policy, digest and size refusals propagated before and still
+   registry, and only where the ecosystem's adapter exports a codec: choosing
+   among releases and reading what they require takes the ecosystem's own
+   version grammar, so a package served by a delegated adapter plugin, which
+   exports none, is locked as the direct entry it is and its dependencies are
+   not walked. The policy, digest and size refusals propagated before and still
    do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
