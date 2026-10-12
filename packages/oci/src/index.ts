@@ -18,11 +18,22 @@ import {
   canonicalBytes,
   compareCanonicalStrings,
   parseDigest,
+  safeEcho,
   sha256,
 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, JsonValue } from '@openpacker/contracts';
 
 type TokenRequestHeaders = Record<string, string>;
+
+/**
+ * Text from a registry, as an error repeats it. A registry's media type, digest,
+ * scope or error body is its own to word, and what writes the error cannot tell
+ * a line opm wrote from a line the registry added: `safeEcho` makes it one line
+ * with no escape sequence or control character in it, and cuts what is long.
+ */
+function echoed(text: string, limit = 256): string {
+  return safeEcho(text, limit);
+}
 
 export const OCI_MEDIA_TYPES = {
   manifest: 'application/vnd.oci.image.manifest.v1+json',
@@ -658,7 +669,7 @@ export class BearerTokenAuthentication implements RegistryAuthentication {
     if (challengedScope !== undefined && challengedScope !== scope)
       throw new RegistryProtocolError(
         'UNAUTHORIZED',
-        `Registry ${requestUrl.origin} requested token scope ${challengedScope} instead of ${scope}`,
+        `Registry ${requestUrl.origin} requested token scope ${echoed(challengedScope)} instead of ${echoed(scope)}`,
       );
     tokenUrl.searchParams.set('scope', scope);
 
@@ -1228,7 +1239,7 @@ export class OciRegistryClient {
         await response.body.cancel();
         throw new RegistryProtocolError(
           'INVALID_RANGE_RESPONSE',
-          `Registry returned invalid Content-Range ${JSON.stringify(contentRange)}`,
+          `Registry returned invalid Content-Range ${echoed(JSON.stringify(contentRange))}`,
         );
       }
       const contentLength = response.headers.get('content-length');
@@ -1239,7 +1250,7 @@ export class OciRegistryClient {
         await response.body.cancel();
         throw new RegistryProtocolError(
           'INVALID_RANGE_RESPONSE',
-          `Registry returned invalid Content-Length ${JSON.stringify(contentLength)}`,
+          `Registry returned invalid Content-Length ${echoed(JSON.stringify(contentLength))}`,
         );
       }
       return exactLengthStream(response.body, expectedRangeLength!);
@@ -1378,7 +1389,7 @@ export class OciRegistryClient {
     )
       throw new RegistryProtocolError(
         'UNEXPECTED_STATUS',
-        `Manifest declares ${manifest.mediaType} but was served as ${descriptor.mediaType}`,
+        `Manifest declares ${echoed(manifest.mediaType)} but was served as ${echoed(descriptor.mediaType)}`,
       );
     const effective = { ...manifest, mediaType: descriptor.mediaType };
     // An index names platform manifests rather than layers, so the image
@@ -1484,7 +1495,7 @@ export class OciRegistryClient {
       )
         throw new RegistryProtocolError(
           'INVALID_RESPONSE',
-          `Referrers index descriptor does not match ${descriptor.digest}`,
+          `Referrers index descriptor does not match ${echoed(descriptor.digest)}`,
         );
       if (
         !manifest.subject ||
@@ -1494,7 +1505,7 @@ export class OciRegistryClient {
       )
         throw new RegistryProtocolError(
           'INVALID_RESPONSE',
-          `Referrer ${descriptor.digest} does not bind the requested subject`,
+          `Referrer ${echoed(descriptor.digest)} does not bind the requested subject`,
         );
       if (
         (artifactType !== undefined &&
@@ -1504,7 +1515,7 @@ export class OciRegistryClient {
       )
         throw new RegistryProtocolError(
           'INVALID_RESPONSE',
-          `Referrer ${descriptor.digest} does not bind the requested artifact type`,
+          `Referrer ${echoed(descriptor.digest)} does not bind the requested artifact type`,
         );
     }
     return output.sort((left, right) =>
@@ -1673,7 +1684,7 @@ async function registryError(
   }
   return new RegistryProtocolError(
     'REGISTRY_ERROR',
-    `Registry returned HTTP ${response.status}: ${new TextDecoder().decode(body).slice(0, 1024)}`,
+    `Registry returned HTTP ${response.status}: ${echoed(new TextDecoder().decode(body).slice(0, 1024), 1024)}`,
   );
 }
 

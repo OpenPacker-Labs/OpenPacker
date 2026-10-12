@@ -178,3 +178,27 @@ describe('a hostile document read by the Go module adapter', () => {
     );
   });
 });
+
+describe('a hostile response from an OCI registry', () => {
+  function registry(body: string) {
+    const module = defaultAdapterModules().find(
+      (candidate) => candidate.id === 'org.openpacker.adapter.oci',
+    );
+    const catalog = module?.catalog?.({
+      now: () => '2026-10-12T00:00:00Z',
+      // SAFETY: a stand-in for the network, which answers what the test says.
+      fetch: (async () => new Response(body, { status: 400 })) as typeof fetch,
+    });
+    if (catalog === undefined) throw new Error('no oci adapter');
+    return catalog;
+  }
+
+  it('is one line when the registry words its refusal', async () => {
+    const oci = registry(`denied${FORGED}`);
+    expectOneLine(
+      await written(() =>
+        oci.inspect(`pkg:oci/library/alpine@sha256:${'a'.repeat(64)}`),
+      ),
+    );
+  });
+});
