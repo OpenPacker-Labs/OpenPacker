@@ -522,6 +522,11 @@ name is keyed `<name>.<version>` in `opm.lock.json`; an alias is an entry in the
 requiring package's `aliases`, and `opm list` shows it as `as=[…]`.
 `opm why <name>` takes a manifest alias, a lock key, a package name or an
 install name and says which package requires the entry and under what name.
+`opm remove` leaves the keys a fresh resolve would write (a name left at one
+version is keyed by its name again), so `opm install` still accepts the lock. A
+label in `opm.toml` names one package: `opm add is-number@npm:is-odd` over an
+`is-number` that is another package is refused, and says to remove it or to use
+`--alias`.
 
 **Limits.** A package a required peer dependency points at must be one version:
 a closure that needs it at two fails and names who requires what, as npm's

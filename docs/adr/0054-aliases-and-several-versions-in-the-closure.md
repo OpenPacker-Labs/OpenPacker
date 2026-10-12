@@ -5,7 +5,7 @@
 - Amends [ADR 0044](0044-a-closure-is-what-the-host-installs.md) §1 (an `npm:`
   alias was refused) and §4 ("a lock holds one version of a package")
 - Relates:
-  [0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
+  [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
   layout nests; it now also places by install name),
   [0046](0046-a-lockfile-is-installed-not-re-resolved.md) (a frozen install
   already installs both shapes, because an npm lock records a path per package),
@@ -80,12 +80,12 @@ errors in npm.
 
 Approaches compared.
 
-| Approach                                                                                            | What it asks of the engine                                   | Why not / why                                                                                                                                                                                                                    |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A. One variable per (package, requirer scope), as npm's placement does                              | A universe node per (version, scope); a scope per dependent  | The universe grows with the number of dependents, not versions, and a requirement's meaning would depend on where its dependent lands, which the solve is what decides. The checker could not re-validate it as a plain closure. |
-| B. Nested solving: solve a subtree under each conflicting dependent                                 | One solve per conflict, each with its own universe and proof | Several proofs to digest and bind to one lock, and conflicts inside a nested solve recurse. The cost is paid in the common case (a diamond) for the benefit of the rare one.                                                     |
-| C. One solve over all candidates with coexistence, edges assigned after it, split only where forced | The request it already gets (`allow_multiple` is on)         | **Chosen.** One proof, one universe, nothing new for the engine or the checker; the edge assignment is a deterministic function of the selection and is checked by the ecosystem's own range rules, as ADR 0044 §3.              |
-| D. Keep forcing one version (status quo)                                                            | n/a                                                          | A closure npm installs is refused.                                                                                                                                                                                               |
+| Approach                                                                                            | What it asks of the engine                                   | Why not / why                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A. One variable per (package, requirer scope), as npm's placement does                              | A universe node per (version, scope); a scope per dependent  | The universe grows with the number of dependents, not versions, and a requirement's meaning would depend on where its dependent lands, which the solve is what decides. The checker could not re-validate it as a plain closure.                                |
+| B. Nested solving: solve a subtree under each conflicting dependent                                 | One solve per conflict, each with its own universe and proof | Several proofs to digest and bind to one lock, and conflicts inside a nested solve recurse. The cost is paid in the common case (a diamond) for the benefit of the rare one.                                                                                    |
+| C. One solve over all candidates with coexistence, edges assigned after it, split only where forced | The request it already gets (`allow_multiple` is on)         | **Chosen.** One proof, one universe, no new request for the engine; the checker had to name a witness in the solve's order (§14); the edge assignment is a deterministic function of the selection, checked by the ecosystem's own range rules, as ADR 0044 §3. |
+| D. Keep forcing one version (status quo)                                                            | n/a                                                          | A closure npm installs is refused.                                                                                                                                                                                                                              |
 
 4. **The request is unchanged** (`satisfy-hard-constraints`,
    `exclude-lifecycle-denied`). The engine's oracle objective still is not asked
@@ -96,6 +96,14 @@ Approaches compared.
      **newest selected version the ecosystem's own range accepts** (so a package
      that two dependents can share is shared, and a dependent is never left on
      an older release than another that suits it);
+   - an edge the selection leaves unmet by the ecosystem's own rule is narrowed
+     and solved again, not refused: the solver reads a range as a comparison,
+     which admits a prerelease npm's rule leaves out (`^7.0.0-0` is
+     `>=7.0.0-0 <8.0.0-0` to npm and `>=7.0.0-0|<8.0.0` to the solver, which
+     admits `8.0.0-rc.6`; `*` admits every prerelease). The next solve is given
+     that edge as the exact list of the candidates the ecosystem accepts
+     (`closure-tighten.ts`), so only the edge that was wrong changes and a
+     closure that locked before is solved as it was;
    - what no assigned edge and no direct requirement reaches is dropped (the
      engine may select a version for an edge that a newer selected version also
      suits);
@@ -121,7 +129,7 @@ Approaches compared.
 ### The lock
 
 8. **Keys.** An entry is still keyed by an `alias` that is a safe path segment
-   (ADR 0043's rule). A direct entry keeps its manifest alias. A transitive
+   (ADR 0048's rule). A direct entry keeps its manifest alias. A transitive
    entry keeps the key it has always had, the package name with `/` and other
    characters outside `[A-Za-z0-9._-]` as `-`, **when its name is selected
    once**. A name selected at several versions has no plain key: each transitive
@@ -129,7 +137,14 @@ Approaches compared.
    its alias, and a collision with any other key takes a numeric suffix, in
    sorted order. An existing lock, which has no alias and one version per name,
    reads and re-writes byte for byte, and a resolve of the same closure writes
-   the same keys.
+   the same keys. A key says whether its name is held once or at several
+   versions, so a change that leaves a name at one version, or makes it two,
+   changes the key of the copy that was there: `opm remove` gives each
+   dependency the key a resolve would (`lock-rekey.ts`, the same allocator) and
+   moves its installed record and link to it, and `opm add` uninstalls what was
+   installed under a key the new lock does not have. `opm install` compares the
+   lock with a fresh resolve, so a lock whose keys a resolve would not write
+   would be refused.
 9. **Edges.** A plain edge stays in `dependencies`: the keys of the entries an
    entry requires under their own names, sorted. A requirement installed under
    another name than its target's package name is not there; it is
@@ -139,8 +154,13 @@ Approaches compared.
    `lockEdgeKeys` (`lock-edges.ts`), so reachability for `remove`, `sync`, the
    layout and `why` sees both. A lock with no alias has no `aliases` and reads
    as it always did. A direct requirement installed under an alias has
-   `installName` on its entry. An entry's own `purl` and `version` are the
-   target's: the bytes, the bins and the policy are the real package's.
+   `installName` on its entry. The solve has one node for a release, so when a
+   release is asked for directly under two names (a plain `string-width` and
+   `string-width-cjs@npm:string-width`) every one of those direct entries
+   records the release's edges, not only the first by label: each is a directory
+   with a package in it and needs what the release declares. An entry's own
+   `purl` and `version` are the target's: the bytes, the bins and the policy are
+   the real package's.
 10. **A direct alias, and a direct range or tag.**
     `opm add string-width-cjs@npm:string-width@^4.2.0 -e npm` writes
     `[packages.string-width-cjs]` with `purl = "pkg:npm/string-width"`,
@@ -150,7 +170,11 @@ Approaches compared.
     is a range or a dist-tag (`^4.2.0`, `next`) is resolved against the registry
     to the newest release inside the minimum release age, by the ecosystem's own
     range rules (`registry-target.ts`); the lock records the exact version. A
-    bare `*` excludes prereleases, as npm's.
+    bare `*` excludes prereleases, as npm's. A label that already names another
+    package is refused (`opm add is-number@npm:is-odd` over a direct
+    `is-number`): adding under the label of the same package is an update, and
+    under another's would replace a requirement nobody mentioned, so the add
+    says to remove it first or to give the new one another label with `--alias`.
 
 ### The layout and everything that reads one version per name
 
@@ -161,13 +185,21 @@ Approaches compared.
     shim's relative path. A package's bare `bin` string is named by its own
     `package.json` `name`, not by the directory (ADR 0046 §6, which the frozen
     path already did). Two install names of one version are two directories, as
-    in npm. An install name that shadows another package's name (`react` for
-    `preact`) is judged by what it resolves to, so the same name for two entries
-    nests.
+    in npm. Two names that differ only by case are one directory on a
+    case-insensitive filesystem (the default on macOS and Windows), where the
+    second write would replace the first: the second goes beside its dependent
+    instead of at the root, and a package that fits nowhere is skipped with the
+    reason. A package under its own name is placed before one under an alias, so
+    the alias gives way. (Nothing here was run on macOS or Windows; this is the
+    planner's output on Linux.) An install name that shadows another package's
+    name (`react` for `preact`) is judged by what it resolves to, so the same
+    name for two entries nests.
 12. **`opm list`, `opm why`, `opm remove`, `opm update`/`sync`, gc.**
-    - `remove` reaches through `dependencies` and `aliases` both; `sync` and
-      `update` re-resolve through the same walk, so an aliased direct
-      requirement keeps its install name across a range change.
+    - `remove` reaches through `dependencies` and `aliases` both, drops the
+      install name of a direct requirement that stays only as a dependency, and
+      re-keys what it leaves (§8); `sync` and `update` re-resolve through the
+      same walk, so an aliased direct requirement keeps its install name across
+      a range change.
     - `list` shows the key, the PURL, and `as=` the install names that differ
       from the package name.
     - `why <name>` accepts a manifest alias, a lock key, a package name or an
@@ -212,11 +244,13 @@ Approaches compared.
     compared in their canonical form. Before, `opm install` after `opm add` of
     any scoped package was refused as a lock that does not match its manifest,
     and the layout took the project's own scoped dependency for a transitive
-    one. `opm add` and `opm install` extract under the bounds `opm ci` does
-    (`install-limits.ts`: 256 MiB packed, 1 GiB unpacked, a hundred thousand
-    files) and read an npm archive the way npm reads it, because the platform
-    build codex aliases is 92 MB packed and agent-base@7.1.4, which npm's own
-    closure reaches, is published with `package/./dist/index.js`.
+    one. `opm add` and `opm install` extract an npm archive under the bounds
+    `opm ci` does (`install-limits.ts`: 256 MiB packed, 1 GiB unpacked, a
+    hundred thousand files; an archive of another ecosystem keeps the
+    materializer's own bounds, since `opm ci` reads npm locks only) and read it
+    the way npm reads it, because the platform build codex aliases is 92 MB
+    packed and agent-base@7.1.4, which npm's own closure reaches, is published
+    with `package/./dist/index.js`.
 
 ## Consequences
 
@@ -266,24 +300,57 @@ tests that fail on the code before it: 37 of 64 for the lock and the solve (the
 `@isaacs/cliui` closure, `vitest` next to `tinybench`, every alias form,
 `npm:name@tag`), 17 of 26 for the direct alias, 3 of 4 for `why` and the
 executables, 2 of 3 for the CLI's words, 3 of 4 for the scoped spelling, 5 of 5
-for the archive bounds, and the Rust test for the checker.
+for the archive bounds, and the Rust test for the checker. The review of the
+series added, each with the failure text on the code before it in its commit: 5
+of 5 for one release asked for under two names, 4 of 16 for the keys a removal
+leaves, 3 of 3 for a prerelease the solver admits (and a counterexample from the
+property test), 5 of 5 rows for the bounds of other ecosystems, 3 of 4 for names
+that differ only by case, 1 of 4 for a label that names another package, 1 of 1
+for what `opm add` leaves installed under a key the lock dropped.
 
 **Properties.** `closure-properties.test.ts` draws registries of five packages
-with two to four versions each, plain and aliased dependencies, and ranges from
-`*` to `^3`. For every closure it checks that each installed requirement has
-exactly one edge, to a selected release of the right package that the
-ecosystem's own range accepts, under the install name it was written with; that
-nothing unreachable is selected; that a name is held at several versions only
-when no single release suits all of its edges; that a second resolve, and a
-resolve with the registry listed in the opposite order, give the same selection
-and the same edges; and that a refusal names who requires what and happens only
-when no subset of what the walk found closes (checked exhaustively up to 14
-packages). 120 registries in the suite (73 locked, 23 names at several versions,
-147 alias edges, 47 refused); a soak of 1,000 with seed 7 (608 locked, 176 names
-at several versions, 1,281 alias edges, 392 refused) found no violation. A
-differential run over 6,000 random graphs during development showed the planner
-places a graph with no alias exactly as it did before (a throwaway script, not
-kept).
+with two to four versions each, plain and aliased dependencies, prereleases, and
+ranges from `*` to `^3` and `^2.0.0-0`. For every closure it checks that each
+dependency the registry gives a selected release has exactly one edge, to a
+selected release of the right package that the ecosystem's own range accepts,
+under the install name it was written with, and no edge the registry did not
+give; that nothing unreachable is selected; that a name is held at several
+versions only when no single release that can be installed suits all of its
+edges; that a second resolve, and a resolve with the registry listed in the
+opposite order, give the same selection and the same edges; and that a refusal
+happens only when no subset of what the walk found closes (checked exhaustively
+up to 14 packages). The oracle does not share code with what it checks: which
+versions each range accepts is written out by hand for the ranges the generator
+draws, and the expected edges are read from the generated registry, not from the
+requirements the walk produced. 120 registries in the suite (36 locked, 8 names
+at several versions, 64 alias edges, 84 refused); soaks of 1,000 on the merged
+tree found no violation: seed 7 (345 locked, 78 names at several versions, 617
+alias edges, 655 refused), seed 424242 (345 locked, 84, 632, 655; an earlier run
+of this seed stopped at run 733 on an oracle that counted a release no closure
+can contain, which is why the oracle now drops those) and seed 5 (338 locked,
+84, 624, 662). A differential run over 6,000 random graphs during development
+showed the planner places a graph with no alias exactly as it did before (a
+throwaway script, not kept).
+
+**Measured again after the review**, on the merged tree against the live
+registry (Node 22.22.0, default policy), with the build the series started from
+run in the same hour for the packages it could install:
+
+| Command                                        | Build before the series            | This tree                                                                                                   |
+| ---------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `opm add pkg:npm/vitest@4.1.9`                 | 167 requests / 18,027,275 B / 12 s | 167 requests / 18,027,584 B / 13 s; 44 packages in both                                                     |
+| then `opm add tinybench`                       | refused                            | 168 requests / 18,051,897 B / 14 s; `opm remove tinybench`, then `opm install`, then `vitest --version` run |
+| `opm add pkg:npm/npm@10.9.4`                   | `UNSATISFIABLE`                    | 2 requests / 2,982,864 B / 14 s; 1 lock entry                                                               |
+| `opm add pkg:npm/@isaacs/cliui@8.0.2`          | refused                            | 29 requests / 172,570 B / 4 s; 17 lock entries                                                              |
+| `opm add glob@10.4.5 -e npm`                   | `UNSATISFIABLE`                    | 65 requests / 1,228,490 B / 17 s; 35 lock entries                                                           |
+| `opm add pkg:npm/@openai/codex@0.136.0`        | the wrapper only                   | 5 requests / 92,972,385 B / 7 s; `codex --version` prints `codex-cli 0.136.0`                               |
+| `opm add pkg:npm/@bytecodealliance/jco@1.24.3` | refused                            | 515 requests / 107,215,983 B / 38 s; 125 lock entries; `jco --version` prints 1.24.3                        |
+| `opm add babel-jest@29.7.0`                    | refused (a lock holds one version) | 356 requests / 11,087,858 B / 50 s; 139 lock entries                                                        |
+| `opm add jest@29.7.0`                          | refused (a lock holds one version) | 588 requests / 18,153,893 B / 80 s; 265 lock entries; `jest --version` prints 29.7.0                        |
+
+The vitest figures of the first table (160 requests, 17.34 MB) were the
+registry's that day; the registry published since, and both builds now make 167.
+The two builds still cost the same.
 
 **Legacy locks.** `legacy-closure.opm.lock.txt` is a lock written by the build
 before this change. It parses and serializes to the same bytes, and resolving
@@ -302,3 +369,13 @@ the same registry state with the new build writes the same bytes.
 - The solution digest covers the engine's whole selection, before pruning.
 - The placement of a package needed at two versions differs from npm's in a
   minority of copies (25 of 214 above); the resolved set is the same.
+- A name that a required peer dependency points at is still never split, so
+  `webpack@5.97.1`, whose `ajv` is needed at two releases by peers, is refused
+  with who requires what. Splitting a peer set, as npm does, would need the
+  solve to know which instance a dependent's parent sees; this record does not.
+- A direct requirement that `opm remove` leaves in the lock only because
+  something depends on it keeps the supply-chain facts captured while it was
+  direct (a trust tier of `unsigned` where a resolve reads a dependency's as
+  `unknown`); the lock is otherwise what a resolve writes. It was not checked on
+  the build before the series.
+- The case rule (§11) was exercised on Linux only.
