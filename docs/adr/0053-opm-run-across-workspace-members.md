@@ -128,7 +128,9 @@ refused by name with the reason. An unknown option stays a usage error (0047
    directory, not where `opm` was started). `PATH` leads with the member's own
    `node_modules/.bin`, then each parent's up to the filesystem root, then the
    inherited `PATH`: ADR 0047 §11's rule, applied to the member, so the
-   workspace root's `.bin` is on it. The four names are the member's:
+   workspace root's `.bin` is on it. (The rule goes past the workspace root on
+   purpose: it is npm's, and stopping there would give a member a shorter `PATH`
+   than the root's own scripts have.) The four names are the member's:
    `npm_lifecycle_event`, `npm_package_name`, `npm_package_version`; `INIT_CWD`
    is still where the first `opm` was started. `pre<name>` and `post<name>` run
    around the member's script in npm's order, and a failing hook ends that

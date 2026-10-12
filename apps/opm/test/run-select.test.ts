@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RUN_HELP } from '../src/commands/run-help.js';
 import {
   planWorkspace,
   workspaceConcurrency,
@@ -40,6 +41,11 @@ describe('workspaceConcurrency', () => {
     expect(workspaceConcurrency(0, 8, 4)).toBe(8);
     expect(workspaceConcurrency(-1, 8, 4)).toBe(7);
     expect(workspaceConcurrency(-20, 8, 4)).toBe(1);
+  });
+
+  it('is described by --help as the rule it is: 0 is every processor, not unbounded', () => {
+    expect(RUN_HELP).toContain('0 every processor, -n that many fewer');
+    expect(RUN_HELP).not.toMatch(/; 0 all/u);
   });
 });
 

@@ -22,7 +22,7 @@ the command: opm --filter a run build, opm run build --filter a):
   -r, --recursive           every member, dependencies first (the root only with --include-workspace-root)
   -w, --workspace <name|dir>, --workspaces    npm's: directory order, one at a time
   --workspace-root          the workspace root alone
-  --workspace-concurrency <n>   members at once (default min(4, processors); 0 all, -n all but n)
+  --workspace-concurrency <n>   members at once (default min(4, processors); 0 every processor, -n that many fewer)
   --parallel                every member at once, streamed, no order
   --no-sort, --reverse, --stream, -C/--dir/--prefix <dir>
   A member without the script is skipped; none having it exits 4. Several members
