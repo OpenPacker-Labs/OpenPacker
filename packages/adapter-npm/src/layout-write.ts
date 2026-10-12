@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import {
   materialiseTree,
+  memberLinkProblem,
   removeTree,
   writeFileAtomic,
 } from '@openpacker/project-io';
@@ -22,6 +23,12 @@ import {
   renderPosixShim,
   type PackageBin,
 } from './layout-bins.js';
+import type { LayoutLink } from './layout-links.js';
+import { placePath } from './layout-links.js';
+import {
+  assertNoUndeclaredSymlinks,
+  writeMemberLinks,
+} from './layout-write-links.js';
 import { chainOfLockPath } from './lock-tree.js';
 import {
   planLayout,
@@ -42,6 +49,11 @@ interface LayoutRecord {
   packages: string[];
   /** File names under node_modules/.bin. */
   bins: string[];
+  /**
+   * The workspace-member links written, by place and text. Absent when there
+   * were none, so a layout with no links is recorded exactly as it always was.
+   */
+  links?: LayoutLink[];
 }
 
 export interface LayoutOutcome {
@@ -51,7 +63,22 @@ export interface LayoutOutcome {
   linked: number;
   copied: boolean;
   bins: number;
+  /** The workspace-member links of the layout, and what writing it did to them. */
+  memberLinks: {
+    declared: number;
+    created: number;
+    unchanged: number;
+    removed: number;
+  };
   skipped: { path: string; reason: string }[];
+}
+
+export interface LayoutWriteOptions {
+  /**
+   * The workspace-member links to leave in `node_modules`. Checked against the
+   * packages here (`checkLayoutLinks`), whatever the caller already checked.
+   */
+  links?: readonly LayoutLink[];
 }
 
 const BIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._~+-]*$/u;
@@ -62,6 +89,7 @@ const PARALLEL_PACKAGES = 4;
 export async function writeNodeModules(
   projectRoot: string,
   entries: readonly NativeLockEntry[],
+  options: LayoutWriteOptions = {},
 ): Promise<LayoutOutcome> {
   const root = join(projectRoot, 'node_modules');
   const skipped: { path: string; reason: string }[] = [];
@@ -73,7 +101,7 @@ export async function writeNodeModules(
     });
     return false;
   });
-  const plan = planFor(storable);
+  const plan = planFor(storable, options.links ?? []);
   for (const refusal of plan.skipped)
     skipped.push({
       path: join(root, ...refusal.entry.name.split('/')),
@@ -87,6 +115,12 @@ export async function writeNodeModules(
     linked: 0,
     copied: false,
     bins: 0,
+    memberLinks: {
+      declared: plan.links.length,
+      created: 0,
+      unchanged: 0,
+      removed: 0,
+    },
     skipped,
   };
 
@@ -134,7 +168,24 @@ export async function writeNodeModules(
       .map((place) => place.entry.name),
   );
   await removeStale(root, previous, names, new Set(shims.root));
-  if (plan.placements.length > 0 || previous.packages.length > 0)
+  // Links last: a name that was a package is gone by now, and a package that
+  // takes the place of an old link has already replaced it.
+  const links = await writeMemberLinks(
+    projectRoot,
+    plan.links,
+    previous.links ?? [],
+    new Set(plan.placements.map((place) => placePath(place.chain))),
+  );
+  const { kept, ...counts } = links;
+  outcome.memberLinks = { declared: plan.links.length, ...counts };
+  skipped.push(...kept);
+  await assertNoUndeclaredSymlinks(projectRoot, plan.placements, plan.links);
+  if (
+    plan.placements.length > 0 ||
+    previous.packages.length > 0 ||
+    plan.links.length > 0 ||
+    (previous.links?.length ?? 0) > 0
+  )
     await writeFileAtomic(
       join(root, LAYOUT_RECORD),
       `${JSON.stringify(
@@ -142,6 +193,9 @@ export async function writeNodeModules(
           layoutVersion: 1,
           packages: [...names].sort(),
           bins: [...shims.root].sort(),
+          ...(plan.links.length > 0 && {
+            links: plan.links.map(({ path, target }) => ({ path, target })),
+          }),
         } satisfies LayoutRecord,
         undefined,
         2,
@@ -157,9 +211,13 @@ export async function writeNodeModules(
  * layout is exactly that. An opm lock names none, and the placement is derived
  * from the edges it records. Half of each would be a layout nobody chose.
  */
-function planFor(entries: readonly NativeLockEntry[]): LayoutPlan {
+function planFor(
+  entries: readonly NativeLockEntry[],
+  links: readonly LayoutLink[],
+): LayoutPlan {
   const withPath = entries.filter((entry) => entry.layoutPath !== undefined);
-  if (withPath.length === 0) return planLayout(toLayoutEntries(entries));
+  if (withPath.length === 0)
+    return planLayout(toLayoutEntries(entries), { links });
   if (withPath.length !== entries.length)
     throw new Error(
       'Either every package of a layout names its place in the lock, or none does',
@@ -183,7 +241,7 @@ function planFor(entries: readonly NativeLockEntry[]): LayoutPlan {
     };
     return { entry, chain };
   });
-  return planLayoutFromPaths(placed);
+  return planLayoutFromPaths(placed, { links });
 }
 
 /**
@@ -311,10 +369,29 @@ async function readRecord(root: string): Promise<LayoutRecord> {
       layoutVersion: 1,
       packages: strings(parsed.packages),
       bins: strings(parsed.bins),
+      links: recordedLinks(parsed.links),
     };
   } catch {
     return empty;
   }
+}
+
+/**
+ * The links a record lists, each checked against the member-link rules: a
+ * hand-edited record must not turn into a path, or into a link that could not
+ * have been written.
+ */
+function recordedLinks(value: unknown): LayoutLink[] {
+  if (!Array.isArray(value)) return [];
+  const links: LayoutLink[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== 'object' || item === null) continue;
+    const { path, target } = item as { path?: unknown; target?: unknown };
+    if (typeof path !== 'string' || typeof target !== 'string') continue;
+    if (memberLinkProblem(path, target) === undefined)
+      links.push({ path, target });
+  }
+  return links;
 }
 
 /**
