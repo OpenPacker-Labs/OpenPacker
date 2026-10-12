@@ -8,6 +8,7 @@
 | [OCI, ORAS, and OCM](oci-oras-ocm.md)                             | Unchanged native bytes, OCI referrers, registry transfer, and component mapping      |
 | [OpenPacker overlays](overlays.md)                                | Provenance-bound cross-ecosystem facts                                               |
 | [mise backend](mise.md)                                           | PREX enumeration and verified isolated tool installation                             |
+| [packslip](packslip.md)                                           | Signed vendor releases: Sigstore-verified, signer remembered, trust in `opm.toml`    |
 | [Epoch consumption](epoch.md)                                     | Janus-owned downstream boundary and canonical-byte preservation                      |
 
 Product framing for how integrations fit the control plane:

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   createFirstPartyTransport,
   firstPartyOriginPolicy,
@@ -23,6 +24,12 @@ import {
   MavenRepositoryProvider,
 } from '@openpacker/adapter-maven';
 import { NixCodec, NixStoreProvider } from '@openpacker/adapter-nix';
+import {
+  PackslipCodec,
+  providerForContext as packslipProviderFor,
+  type PackslipContext,
+  type PackslipEnvironment,
+} from '@openpacker/adapter-packslip';
 import {
   NpmCodec,
   NpmProjectFormat,
@@ -134,6 +141,31 @@ function transportFor(
     extraOrigins: extraOriginsFor(ecosystem),
     ...(context.fetch && { fetch: context.fetch }),
   });
+}
+
+/**
+ * What the operator says about packslip outside any project: a Sigstore trusted
+ * root to use instead of the one opm ships, and the *name* of the variable that
+ * holds a GitHub token. Releases are found through the project name, so there
+ * is no registry endpoint here for `OPM_REGISTRY_*` to override.
+ */
+function packslipEnvironment(): PackslipEnvironment {
+  const trustedRoot = process.env.OPM_PACKSLIP_TRUSTED_ROOT?.trim();
+  const githubTokenEnv = process.env.OPM_PACKSLIP_GITHUB_TOKEN_ENV?.trim();
+  return {
+    ...(trustedRoot && { trustedRoot: readTrustedRoot(trustedRoot) }),
+    ...(githubTokenEnv && { githubTokenEnv }),
+  };
+}
+
+function readTrustedRoot(path: string): string {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new TypeError(
+      `OPM_PACKSLIP_TRUSTED_ROOT could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function clock(context: AdapterContext) {
@@ -471,6 +503,50 @@ export function defaultAdapterModules(): AdapterModule[] {
       codec: () => new NixCodec(),
       installer: () => new NixStoreProvider(),
       packer: nixPacker,
+    },
+    {
+      id: 'org.openpacker.adapter.packslip',
+      purlTypes: ['packslip'],
+      // Vendor releases are found by project name on GitHub or the vendor's own
+      // domain, so there is no one registry endpoint to name. Only what the
+      // provider exports is advertised: it reads signed release metadata and
+      // hands back the verified archive, nothing is installed by a host tool.
+      registryDefinition: () => ({
+        registryDefinitionVersion: '1' as const,
+        registryId: 'urn:openpacker:registry:packslip',
+        displayName: 'packslip signed releases',
+        purlTypes: ['packslip'],
+        protocol: { native: 'packslip-release-v1', transport: ['https'] },
+        resources: [
+          {
+            '@id': 'https://packslip.dev/release/v1',
+            '@type': [
+              'prex.registry.package-metadata/1',
+              'prex.registry.enumerate-versions/1',
+              'prex.registry.artifact/1',
+            ] as const,
+            comment:
+              'Releases are discovered per project from GitHub or the vendor domain and verified against the Sigstore bundle the vendor signed.',
+          },
+        ],
+        features: {
+          offlineReplay: false,
+          signedMetadata: true,
+          installSideEffects: 'project-store' as const,
+          reversibility: 'project-generation' as const,
+          requiresElevation: 'never' as const,
+        },
+      }),
+      codec: () => new PackslipCodec(),
+      catalog: (context) =>
+        packslipProviderFor(
+          // SAFETY: a host that sets a transport hands over an HttpTransport.
+          context as PackslipContext,
+          {
+            ...packslipEnvironment(),
+            ...(context.lookup !== undefined && { lookup: context.lookup }),
+          },
+        ),
     },
     {
       id: 'org.openpacker.adapter.apt',

@@ -4,7 +4,7 @@
 - Date: 2026-10-12
 - Amends [ADR 0046](0046-a-lockfile-is-installed-not-re-resolved.md) §8 (the
   refusal of workspace members and links) and the limit that repeated it;
-  [ADR 0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
+  [ADR 0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
   (a member's `node_modules`)
 - Relates: [0049](0049-workspaces-are-a-model-before-they-are-an-install.md)
   (the model whose discovery this uses), [0050](0050-workspace-member-links.md)

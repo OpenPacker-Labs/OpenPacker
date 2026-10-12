@@ -562,6 +562,7 @@ describe('openpackerd', () => {
       'nix',
       'npm',
       'nuget',
+      'packslip',
       'pypi',
     ]);
     const normalized = await app.inject({

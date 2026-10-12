@@ -8,7 +8,7 @@
   workspace lock using this discovery.)
 - Relates: [0034](0034-opm-projects-into-native-project-formats.md) (the native
   workspace files stay the person's),
-  [0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
+  [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
   layout the members will be linked into),
   [0046](0046-a-lockfile-is-installed-not-re-resolved.md) (a workspace lock is
   refused today), [0047](0047-opm-run-and-exec-run-the-users-own-scripts.md)

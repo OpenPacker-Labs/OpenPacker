@@ -34,6 +34,7 @@
     "@openpacker/adapter-nix": "0.1.0",
     "@openpacker/adapter-npm": "0.1.0",
     "@openpacker/adapter-nuget": "0.1.0",
+    "@openpacker/adapter-packslip": "0.1.0",
     "@openpacker/adapter-pypi": "0.1.0",
     "@openpacker/adapter-winget": "0.1.0",
     "@openpacker/oci": "0.1.0",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@openpacker/materializer": "0.1.0",
+    "@openpacker/packslip-testkit": "0.1.0",
     "@types/node": "24.2.1"
   }
 }

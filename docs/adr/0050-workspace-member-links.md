@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-12
 - Amends
-  [ADR 0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
+  [ADR 0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
   ("No symlinks"), [ADR 0045](0045-macos-child-io-uses-libc-at-calls.md) (the
   libc symbols) and [ADR 0034](0034-opm-projects-into-native-project-formats.md)
   (the Windows handle-relative creation)
@@ -20,7 +20,7 @@ A workspace repository lists its own packages in the root `package.json` and
 expects each to resolve the others' live source from `node_modules`: editing
 `packages/a/src` is seen by `packages/b` without an install. A lock records this
 as a `link: true` entry whose key is `node_modules/<member name>` and whose
-`resolved` is the member's directory. ADR 0043 gave `node_modules` no symlinks,
+`resolved` is the member's directory. ADR 0048 gave `node_modules` no symlinks,
 so that a path inside it is never an alias for a path outside it, and `opm ci`
 refuses such a lock for that reason (ADR 0046).
 
@@ -306,7 +306,7 @@ something else, is refused exactly as it was before this decision.
 every link.
 
 Nothing else in the repository walks a project's `node_modules`: `opm gc` and
-`opm gc --shared` read store entries (a symlink in one is refused, ADR 0043),
+`opm gc --shared` read store entries (a symlink in one is refused, ADR 0048),
 and `pack` leaves `node_modules` out. That was checked by searching every
 non-test source file under `packages` and `apps` for `node_modules`; the one
 place that removes the whole directory is `opm ci`'s `removeTree`.
