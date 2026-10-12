@@ -5,10 +5,12 @@
  * in @openpacker/policy (evaluatePolicy) and are bound via policyDigest.
  */
 
-import type {
-  CatalogProvider,
-  ProviderAttestation,
-  ProviderInspection,
+import {
+  echoed,
+  isDocumentRefusal,
+  type CatalogProvider,
+  type ProviderAttestation,
+  type ProviderInspection,
 } from '@openpacker/adapter-core';
 import type {
   Digest,
@@ -383,7 +385,7 @@ function lockPackageProvider(pkg: LockPackage): string {
   if (pkg.ecosystem !== provider)
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${pkg.alias}" ecosystem does not match its PURL`,
+      `Package "${echoed(pkg.alias)}" ecosystem does not match its PURL`,
     );
   return provider;
 }
@@ -496,6 +498,10 @@ export async function capturePublishTime(
     );
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    // A registry document the client refused (too large, too many values, not
+    // JSON) is the reason there is no time, and the policy says so beside the
+    // "not captured". An outage or an error status stays silent, as before.
+    if (isDocumentRefusal(error)) facts.publishTimeUnavailable = error.message;
     return;
   }
   if (evidence?.publishedAt !== undefined)

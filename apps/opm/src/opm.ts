@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { plainLine } from '@openpacker/canonical';
 import {
   registerInstalledPlugins,
   verifyPluginBindings,
@@ -61,7 +62,8 @@ import {
 import { asksForHelp } from './commands/run-args.js';
 import { RunError } from './commands/run-error.js';
 import { RUN_HELP } from './commands/run-help.js';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, report } from './error-report.js';
+import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -173,14 +175,20 @@ export async function runOpm(
       });
       for (const refused of pluginRegistration.refused)
         io.stderr.write(
-          `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
+          report(
+            'opm: ',
+            `plugin ${refused.name} was not loaded: ${refused.message}`,
+          ),
         );
     } catch (error) {
       // A store-level failure (corrupt index, unsafe root) leaves every
       // plugin unregistered; their purl types stay unsupported, which is
       // the fail-closed answer, and `opm plugin` can still repair the store.
       io.stderr.write(
-        `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
+        report(
+          'opm: ',
+          `plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins`,
+        ),
       );
     }
     const { applyAuthConfigForProcess } = await import('./commands/auth.js');
@@ -223,14 +231,9 @@ export async function runOpm(
           force: args.options.has('force'),
         });
         io.stdout.write(
-          `Imported ${result.imported.length} requirement(s) from native project files into ${result.manifestPath}\n`,
+          importHeading(result.imported.length, result.manifestPath),
         );
-        for (const item of result.imported) {
-          const range = item.range !== undefined ? `@${item.range}` : '';
-          io.stdout.write(
-            `  ${item.alias}\t${item.purl}${range}\t${item.ecosystem}\n`,
-          );
-        }
+        for (const item of result.imported) io.stdout.write(importLine(item));
         io.stdout.write(
           'opm.toml is authoritative; later sync does not re-read native manifests.\n',
         );
@@ -258,7 +261,8 @@ export async function runOpm(
                     ? `${parsed.purl}@${parsed.version}`
                     : parsed.purl
               : `pkg:${ecosystem}/${parsed.alias}${parsed.version ? `@${parsed.version}` : ''}`;
-            return runHostInstall(exact, args, io, cwd);
+            // await keeps a rejection inside runOpm's handler.
+            return await runHostInstall(exact, args, io, cwd);
           }
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
@@ -395,16 +399,7 @@ export async function runOpm(
           io.stdout.write('(no packages)\n');
           return EXIT_CODES.success;
         }
-        for (const row of rows) {
-          const digest =
-            row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest;
-          const status = row.installed ? 'installed' : 'not-installed';
-          const bins =
-            row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
-          io.stdout.write(
-            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}\n`,
-          );
-        }
+        for (const row of rows) io.stdout.write(listLine(row));
         return EXIT_CODES.success;
       }
       case 'why': {
@@ -472,7 +467,12 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
+          io.stderr.write(
+            report(
+              'opm: ',
+              `${plainLine(item.purl)}: ${plainLine(item.reason)}`,
+            ),
+          );
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -537,7 +537,12 @@ export async function runOpm(
           io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
         }
         for (const loss of built.manifest.semanticLoss ?? [])
-          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+          io.stderr.write(
+            report(
+              'opm: ',
+              `${plainLine(loss.code)}: ${plainLine(loss.omittedMeaning ?? '')}`,
+            ),
+          );
         return EXIT_CODES.success;
       }
       case 'pack': {
@@ -619,11 +624,17 @@ export async function runOpm(
           );
         }
         for (const loss of result.semanticLoss)
-          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
+          io.stderr.write(
+            report(
+              'opm: ',
+              `${plainLine(loss.code)}: ${plainLine(loss.omittedMeaning ?? '')}`,
+            ),
+          );
         return EXIT_CODES.success;
       }
       case 'system': {
-        return runSystemCommand(args, io, cwd);
+        // await keeps subcommand errors inside runOpm's handler.
+        return await runSystemCommand(args, io, cwd);
       }
       case 'plugin': {
         // await keeps subcommand errors inside runOpm's handler.
@@ -728,11 +739,12 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
 /** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
-    io.stderr.write(`${error.message}\n`);
+    io.stderr.write(report('', error.message));
+    io.stderr.write(`\n${help()}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    io.stderr.write(report('opm: ', error.message));
     switch (error.code) {
       case 'USAGE':
         return EXIT_CODES.usage;
@@ -746,7 +758,7 @@ export function handleError(error: unknown, io: CliIo): number {
     }
   }
   if (error instanceof OpmError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    io.stderr.write(report('opm: ', error.message));
     switch (error.code) {
       case 'NOT_FOUND':
       case 'NO_PROJECT':
@@ -798,7 +810,7 @@ export function handleError(error: unknown, io: CliIo): number {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
-      io.stderr.write(`opm: ${error.message}\n`);
+      io.stderr.write(report('opm: ', error.message));
       switch (code) {
         case 'OFFLINE':
         case 'UPSTREAM_UNAVAILABLE':
@@ -853,7 +865,7 @@ class UsageError extends Error {
 }
 
 function usage(message: string): UsageError {
-  return new UsageError(`${message}\n\n${help()}`);
+  return new UsageError(message);
 }
 
 function parseArgs(argv: string[]): Parsed {
@@ -1039,7 +1051,7 @@ async function runSystemCommand(
     const purl = args.positionals[1];
     if (!purl) throw usage(`opm system ${sub} requires a PURL`);
     if (sub === 'plan') args.options.set('dry-run', true);
-    return runHostInstall(purl, args, io, cwd);
+    return await runHostInstall(purl, args, io, cwd);
   }
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
@@ -1052,7 +1064,7 @@ async function runSystemCommand(
  * in version control.
  */
 function writeNativeProjection(
-  report:
+  native:
     | {
         projections: readonly {
           ecosystem: string;
@@ -1067,15 +1079,23 @@ function writeNativeProjection(
     | undefined,
   io: CliIo,
 ): void {
-  if (!report) return;
-  for (const projection of report.projections) {
+  if (!native) return;
+  for (const projection of native.projections) {
     for (const path of projection.written)
       io.stdout.write(`  updated ${path}\n`);
     for (const entry of projection.skipped ?? [])
-      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+      io.stderr.write(
+        report(
+          'opm: ',
+          `skipped ${plainLine(entry.path)}: ${plainLine(entry.reason)}`,
+        ),
+      );
     for (const loss of projection.semanticLoss)
       io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+        report(
+          'opm: ',
+          `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
+        ),
       );
   }
 }
@@ -1124,7 +1144,12 @@ function writeHostInstallResult(
   const { plan, outcome } = result;
   io.stdout.write(`${plan.command.join(' ')}\n`);
   for (const loss of plan.semanticLoss)
-    io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(loss.code)}: ${plainLine(String(loss.representedMeaning))}`,
+      ),
+    );
   if (plan.requiresElevation && !args.options.has('allow-elevation'))
     io.stderr.write(
       'opm: host install needs elevation; pass --allow-elevation to consent\n',

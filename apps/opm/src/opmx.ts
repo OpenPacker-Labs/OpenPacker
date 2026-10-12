@@ -19,7 +19,7 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, report } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -108,7 +108,7 @@ export async function runOpmx(
       // Say which version actually ran. An unpinned ephemeral run resolves to
       // whatever is newest, so it is a different thing tomorrow.
       io.stderr.write(
-        `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
+        report('opmx: ', `${tool.exactPurl}${tool.cached ? ' (cached)' : ''}`),
       );
       return await spawnDeclared(
         bin,
@@ -414,7 +414,12 @@ async function spawnProcess(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
     io.stderr.write(
-      `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
+      report(
+        'opmx: ',
+        missing && missingHint
+          ? `${missingHint} (${command} not found)`
+          : message,
+      ),
     );
     return missing && missingHint
       ? EXIT_CODES.unavailable

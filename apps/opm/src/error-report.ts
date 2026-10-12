@@ -1,4 +1,5 @@
 import { redactUrl } from '@openpacker/adapter-core';
+import { plainLine, plainText } from '@openpacker/canonical';
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -10,7 +11,54 @@ import { redactUrl } from '@openpacker/adapter-core';
  * chain. Everything printed passes the same redaction: a URL keeps its origin
  * and path and loses userinfo, query and fragment (`redactUrl`), and a value
  * that follows a credential-shaped name is withheld.
+ *
+ * What is printed is made plain first, once, here, and that is the second layer
+ * of two. A message can carry text a registry chose (a dependency's name, a
+ * version, a key in its document) on its way from an adapter. Where that is
+ * known, the adapter or the policy makes the text plain at its source
+ * (`safeEcho` in `@openpacker/canonical`: npm's dependency names, ranges and
+ * owners, the policy's publish-time bound), so that a library user gets it
+ * too. This writer does not rely on that: `plainText` (the same package, the
+ * one definition of what a terminal must not be sent) removes escape sequences
+ * and control, format and bidirectional characters, turns a tab into a space
+ * and a carriage return into a line break, and keeps the line breaks a message
+ * carries, because several of opm's own errors are lists, one entry to a line.
+ * What it cannot do is tell an entry opm wrote from a line a registry added: a
+ * message that reaches it with a line feed from a registry in it can start a
+ * line of its own, in plain text. Flattening that text where it is quoted is
+ * the first layer's job, and it is done at the source for what a registry or a
+ * cloned repository sends: `echoed` in @openpacker/adapter-core (its shared
+ * parsers, the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters, the
+ * plugin store, opm-project's reading of opm.toml, opm.lock.json and the npm
+ * lock, and the apt, Chocolatey, winget and Nix refusals), `safeEcho` in the OCI
+ * client, the materializer, npm and the policy, and `plainLine`, at the line
+ * that quotes it, for what `opm list`, `why`, `import --native`, `run`, `exec`
+ * and a successful `opm ci` print and for the lost meaning `manifest`, `pack`
+ * and `ci` report. Nothing checks stdout: a new line there that repeats a
+ * value from a repository must be made plain by whoever writes it. Text that
+ * does not come through one of those (a plugin's, a path project-io refuses, a
+ * packer's file name, a child's own stderr) reaches this writer unflattened,
+ * safe from escapes and not from line feeds. It also reads an unterminated
+ * `ESC ]` or `ESC P` as running to the end of the message, as a terminal does,
+ * so a field that ends in one drops the entries after it (ADR 0044). The
+ * `openpacker` command line (`apps/openpacker-cli`) has no writer and is not
+ * covered.
  */
+
+/**
+ * What an error's `message` may be when the error came from a library: its type
+ * says a string, and a foreign value need not keep to that.
+ */
+export type MessageLike = string | number | boolean | bigint | null | undefined;
+
+/**
+ * `prefix` and `message` as the lines of an error report, ending in a newline.
+ * The prefix is ours; the message is made plain and keeps its line breaks. A
+ * message that is not a string is written as `String` writes it.
+ */
+export function report(prefix: string, message: MessageLike): string {
+  return `${prefix}${plainText(String(message))}\n`;
+}
 
 /** How many `cause` links below the reported error are followed. */
 export const MAX_CAUSE_DEPTH = 3;
@@ -116,7 +164,9 @@ export function scrub(text: string): string {
 }
 
 function oneLine(text: string): string {
-  const flat = scrub(text).replace(/\s+/gu, ' ').trim();
+  // Plain before scrubbed: a credential-shaped name with a zero-width character
+  // in it must be read as the terminal would show it, or it escapes the scrub.
+  const flat = scrub(plainLine(text)).replace(/\s+/gu, ' ').trim();
   return flat.length > MAX_LINE_LENGTH
     ? `${flat.slice(0, MAX_LINE_LENGTH)}…`
     : flat;
@@ -227,9 +277,9 @@ export function formatFailure(
   failure: Failure,
   { tool, internalError = false, env = process.env }: FailureReportOptions,
 ): string {
-  if (failure.coded) return `${tool}: ${failure.message}\n`;
+  if (failure.coded) return report(`${tool}: `, failure.message);
   const label = internalError ? `${tool}: internal error` : tool;
-  const lines = [`${label}: ${scrub(failure.message)}`];
+  const lines = [`${label}: ${scrub(plainText(failure.message))}`];
   for (const [depth, cause] of failure.causes.entries())
     lines.push(`${tool}: ${'  '.repeat(depth + 1)}caused by: ${cause.text}`);
   if (failure.causes.some((cause) => cause.connectionFault)) {

@@ -12,6 +12,7 @@ import {
   resolve,
   sep,
 } from 'node:path';
+import { echoed } from '@openpacker/adapter-core';
 import {
   O_DIRECTORY,
   handlePathForPlatform,
@@ -90,7 +91,7 @@ export function sharedStoreSetting(
   if (!isAbsolute(value))
     throw new OpmError(
       'UNSAFE_PATH',
-      `OPM_STORE_HOME must be an absolute path (or "off"), got "${value}"`,
+      `OPM_STORE_HOME must be an absolute path (or "off"), got "${echoed(value)}"`,
     );
   return { kind: 'path', root: value };
 }
@@ -136,7 +137,7 @@ export function assertSafeSegment(value: string, kind: string): string {
   if (!SAFE_SEGMENT.test(value) || value === '.' || value === '..') {
     throw new OpmError(
       'UNSAFE_PATH',
-      `Invalid ${kind} "${value}" (must match ${SAFE_SEGMENT})`,
+      `Invalid ${kind} "${echoed(value)}" (must match ${SAFE_SEGMENT})`,
     );
   }
   // Enforced on every platform. A store and a bin directory are portable
@@ -145,13 +146,13 @@ export function assertSafeSegment(value: string, kind: string): string {
   if (WINDOWS_DEVICE.test(value))
     throw new OpmError(
       'UNSAFE_PATH',
-      `Invalid ${kind} "${value}": that is a reserved Windows device name`,
+      `Invalid ${kind} "${echoed(value)}": that is a reserved Windows device name`,
     );
   if (WINDOWS_TRAILING.test(value))
     throw new OpmError(
       'UNSAFE_PATH',
-      `Invalid ${kind} "${value}": a trailing dot or space is stripped on Windows, ` +
-        `so this would collide with "${value.replace(/[ .]+$/u, '')}"`,
+      `Invalid ${kind} "${echoed(value)}": a trailing dot or space is stripped on Windows, ` +
+        `so this would collide with "${echoed(value.replace(/[ .]+$/u, ''))}"`,
     );
   return value;
 }
@@ -170,7 +171,7 @@ export function assertContainedRelativePath(
   if (isAbsolute(value)) {
     throw new OpmError(
       'UNSAFE_PATH',
-      `Invalid ${kind} "${value}": must be a relative path contained in the project`,
+      `Invalid ${kind} "${echoed(value)}": must be a relative path contained in the project`,
     );
   }
   const segments = value.split('/');
@@ -182,7 +183,7 @@ export function assertDigest(digest: string): string {
   if (!DIGEST.test(digest)) {
     throw new OpmError(
       'INVALID_DIGEST',
-      `Invalid digest "${digest}" (expected sha256:<64 hex>)`,
+      `Invalid digest "${echoed(digest)}" (expected sha256:<64 hex>)`,
     );
   }
   return digest;
@@ -198,7 +199,7 @@ export function assertStoreKey(storeKey: string, digest?: string): string {
   if (!STORE_KEY.test(storeKey)) {
     throw new OpmError(
       'UNSAFE_PATH',
-      `Invalid storeKey "${storeKey}" (expected sha256-<64 hex>)`,
+      `Invalid storeKey "${echoed(storeKey)}" (expected sha256-<64 hex>)`,
     );
   }
   if (digest !== undefined) {
@@ -206,7 +207,7 @@ export function assertStoreKey(storeKey: string, digest?: string): string {
     if (storeKey !== expected) {
       throw new OpmError(
         'UNSAFE_PATH',
-        `storeKey "${storeKey}" does not match digest ${digest}`,
+        `storeKey "${echoed(storeKey)}" does not match digest ${echoed(digest)}`,
       );
     }
   }
@@ -220,7 +221,7 @@ export function resolveContained(root: string, ...parts: string[]): string {
   if (target !== base && !target.startsWith(base + sep)) {
     throw new OpmError(
       'UNSAFE_PATH',
-      `Path escapes containment root: ${parts.join('/')}`,
+      `Path escapes containment root: ${echoed(parts.join('/'))}`,
     );
   }
   return target;

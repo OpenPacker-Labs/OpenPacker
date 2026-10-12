@@ -8,6 +8,7 @@ import type {
   ParsedPackageSpec,
   ProjectState,
 } from './types.js';
+import { plainLine } from '@openpacker/canonical';
 import { OpmError } from './types.js';
 import {
   canonicalCatalogPurl,
@@ -40,6 +41,7 @@ import {
 } from './system.js';
 import {
   assertPackageIdentityMatchesRequest,
+  echoed,
   type InstallOutcome,
   type InstallPlan,
 } from '@openpacker/adapter-core';
@@ -337,7 +339,7 @@ export async function removePackage(input: {
   if (!manifest.packages[input.alias]) {
     throw new OpmError(
       'NOT_FOUND',
-      `Package "${input.alias}" is not in ${MANIFEST_NAME}`,
+      `Package "${echoed(input.alias)}" is not in ${MANIFEST_NAME}`,
     );
   }
   delete manifest.packages[input.alias];
@@ -514,12 +516,12 @@ function assertLockMatchesManifest(
     if (!pkg || pkg.reason !== 'direct')
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock does not contain direct manifest requirement ${alias}`,
+        `Lock does not contain direct manifest requirement ${echoed(alias)}`,
       );
     if (stripPurlVersion(pkg.purl) !== stripPurlVersion(requirement.purl))
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match manifest PURL ${requirement.purl}`,
+        `Lock package ${echoed(alias)} does not match manifest PURL ${echoed(requirement.purl)}`,
       );
     const exactRequirement =
       stripPurlVersion(requirement.purl) !== requirement.purl
@@ -531,7 +533,7 @@ function assertLockMatchesManifest(
     if (exactRequirement !== undefined && pkg.purl !== exactRequirement)
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match manifest version ${requirement.version}`,
+        `Lock package ${echoed(alias)} does not match manifest version ${echoed(String(requirement.version))}`,
       );
     if (
       requirement.source !== undefined &&
@@ -540,14 +542,14 @@ function assertLockMatchesManifest(
     )
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match its manifest source`,
+        `Lock package ${echoed(alias)} does not match its manifest source`,
       );
   }
   for (const [alias, pkg] of Object.entries(lock.packages))
     if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock contains undeclared direct package ${alias}`,
+        `Lock contains undeclared direct package ${echoed(alias)}`,
       );
 
   const reachable = new Set(Object.keys(manifest.packages));
@@ -556,12 +558,15 @@ function assertLockMatchesManifest(
     const alias = queue.shift()!;
     const pkg = lock.packages[alias];
     if (!pkg)
-      throw new OpmError('INVALID_LOCK', `Lock dependency ${alias} is missing`);
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock dependency ${echoed(alias)} is missing`,
+      );
     for (const dependency of pkg.dependencies ?? []) {
       if (!lock.packages[dependency])
         throw new OpmError(
           'INVALID_LOCK',
-          `Lock dependency ${alias} -> ${dependency} is missing`,
+          `Lock dependency ${echoed(alias)} -> ${echoed(dependency)} is missing`,
         );
       if (!reachable.has(dependency)) {
         reachable.add(dependency);
@@ -573,7 +578,7 @@ function assertLockMatchesManifest(
     if (!reachable.has(alias))
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock contains package ${alias} outside the manifest dependency closure`,
+        `Lock contains package ${echoed(alias)} outside the manifest dependency closure`,
       );
 }
 
@@ -663,12 +668,14 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
     const req = manifest.packages[alias]!;
     const locked = lock?.packages[alias];
     return [
-      `"${alias}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${req.purl}`,
-      req.version ? `  version constraint: ${req.version}` : undefined,
-      req.source ? `  source: ${req.source}` : undefined,
+      `"${plainLine(alias)}" is a direct dependency in ${MANIFEST_NAME}`,
+      `  purl: ${plainLine(req.purl)}`,
+      req.version
+        ? `  version constraint: ${plainLine(req.version)}`
+        : undefined,
+      req.source ? `  source: ${plainLine(req.source)}` : undefined,
       locked
-        ? `  locked: ${locked.purl} (${locked.digest})`
+        ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
         : '  locked: (none)',
     ]
       .filter(Boolean)
@@ -676,9 +683,9 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
   }
   if (lock?.packages[alias]) {
     const locked = lock.packages[alias]!;
-    return `"${alias}" is in ${LOCK_NAME} as ${locked.reason} dependency\n  ${locked.purl}`;
+    return `"${plainLine(alias)}" is in ${LOCK_NAME} as ${plainLine(locked.reason)} dependency\n  ${plainLine(locked.purl)}`;
   }
-  throw new OpmError('NOT_FOUND', `Unknown package "${alias}"`);
+  throw new OpmError('NOT_FOUND', `Unknown package "${echoed(alias)}"`);
 }
 
 export async function resolveManifestToLock(input: {
@@ -901,7 +908,7 @@ async function resolveTransitive(input: {
       if (out[alias] && out[alias].purl !== exact)
         throw new OpmError(
           'UNRESOLVABLE',
-          `Selected packages collide on lock alias ${alias}`,
+          `Selected packages collide on lock alias ${echoed(alias)}`,
         );
       if (out[alias]) continue;
       // `inspect` describes a package; the downloadable artifact and its
@@ -915,14 +922,14 @@ async function resolveTransitive(input: {
       if (actual !== artifact.digest)
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `Registry digest mismatch for ${artifact.exactPurl}: ` +
-            `the ${instance.identity.purlType} provider reported ${artifact.digest}, ` +
+          `Registry digest mismatch for ${echoed(artifact.exactPurl)}: ` +
+            `the ${echoed(instance.identity.purlType)} provider reported ${echoed(artifact.digest)}, ` +
             `the bytes hash to ${actual}`,
         );
       if (artifact.size > 0 && artifact.bytes.byteLength !== artifact.size)
         throw new OpmError(
           'SIZE_MISMATCH',
-          `Registry size mismatch for ${artifact.exactPurl}: ` +
+          `Registry size mismatch for ${echoed(artifact.exactPurl)}: ` +
             `expected ${artifact.size} bytes, got ${artifact.bytes.byteLength}`,
         );
 
@@ -997,7 +1004,7 @@ async function resolveTransitive(input: {
       if (pkg === undefined || pkg.purl !== exact)
         throw new OpmError(
           'UNRESOLVABLE',
-          `Selected package ${exact} has no unique lock entry`,
+          `Selected package ${echoed(exact)} has no unique lock entry`,
         );
       aliasByNodeId.set(instance.nodeId, alias);
       dependencies[alias] ??= [];
@@ -1026,7 +1033,7 @@ async function resolveTransitive(input: {
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',
-      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved)}`,
+      `Cannot lock the dependency closure of ${resolvable.map((pkg) => echoed(pkg.purl)).join(', ')}: ${reason}${unresolvedNote(unresolved)}`,
     );
   }
   return { packages: out, dependencies };
@@ -1049,7 +1056,7 @@ function unresolvedNote(
   if (unresolved.length === 0) return '';
   const shown = unresolved
     .slice(0, 5)
-    .map((item) => `\n  - ${item.purl}: ${item.reason}`)
+    .map((item) => `\n  - ${echoed(item.purl)}: ${plainLine(item.reason)}`)
     .join('');
   const more =
     unresolved.length > 5 ? `\n  - and ${unresolved.length - 5} more` : '';
@@ -1246,7 +1253,7 @@ async function resolveRequirement(input: {
     if (actual !== entry.digest) {
       throw new OpmError(
         'DIGEST_MISMATCH',
-        `Catalog digest mismatch for ${entry.purl}: expected ${entry.digest}, got ${actual}`,
+        `Catalog digest mismatch for ${echoed(entry.purl)}: expected ${echoed(entry.digest)}, got ${actual}`,
       );
     }
     let bins = input.req.bins
@@ -1326,7 +1333,7 @@ async function resolveRequirement(input: {
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
-            `The ${ecosystem} registry published no versions of ${input.req.purl}.`,
+            `The ${ecosystem} registry published no versions of ${echoed(input.req.purl)}.`,
           );
         return newest;
       })());
@@ -1344,13 +1351,13 @@ async function resolveRequirement(input: {
     if (actual !== artifact.digest)
       throw new OpmError(
         'DIGEST_MISMATCH',
-        `Registry digest mismatch for ${artifact.exactPurl}: ` +
-          `the ${ecosystem} provider reported ${artifact.digest}, the bytes hash to ${actual}`,
+        `Registry digest mismatch for ${echoed(artifact.exactPurl)}: ` +
+          `the ${ecosystem} provider reported ${echoed(artifact.digest)}, the bytes hash to ${actual}`,
       );
     if (artifact.size > 0 && bytes.byteLength !== artifact.size)
       throw new OpmError(
         'SIZE_MISMATCH',
-        `Registry size mismatch for ${artifact.exactPurl}: ` +
+        `Registry size mismatch for ${echoed(artifact.exactPurl)}: ` +
           `expected ${artifact.size} bytes, got ${bytes.byteLength}`,
       );
 
@@ -1448,7 +1455,7 @@ async function resolveRequirement(input: {
 
   throw new OpmError(
     'UNRESOLVABLE',
-    `Cannot resolve "${input.alias}" (${input.req.purl}${versionHint ? `@${versionHint}` : ''}). ` +
+    `Cannot resolve "${echoed(input.alias)}" (${echoed(input.req.purl)}${versionHint ? `@${echoed(versionHint)}` : ''}). ` +
       `Provide source = "file:..." in ${MANIFEST_NAME}, pass --source, or add a catalog entry ` +
       `(${CATALOG_NAME} / OPM_CATALOG). Offline catalogs are required when offline.`,
   );

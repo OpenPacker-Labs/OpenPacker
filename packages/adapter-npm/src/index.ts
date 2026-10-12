@@ -1,6 +1,14 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import * as dependencyText from './dependency-spec.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { npmTargetPredicate } from './platform.js';
+import {
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+  aboutPackument,
+} from './packument-limits.js';
 import {
   compareNpmVersions,
   npmSatisfies,
@@ -23,6 +31,7 @@ import {
   compareCodePoints,
   formatPurl,
   header,
+  isDocumentRefusal,
   json,
   packageNodeId,
   parsePurl,
@@ -35,6 +44,7 @@ import {
   type CatalogProvider,
   type Clock,
   type EcosystemCodec,
+  type HttpResponse,
   type HttpTransport,
   type LockCapture,
   type NativeCoordinate,
@@ -275,8 +285,7 @@ function npmRequirement(
     if (enforced)
       throw new ProviderError(
         'UNSUPPORTED_DEPENDENCY_SPEC',
-        `${owner} depends on ${name} as "${range}", a ${specKind} specifier ` +
-          `that is not a registry version range`,
+        dependencyText.unsupportedSpec(owner, name, range, specKind),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,
@@ -296,7 +305,7 @@ function npmRequirement(
           'npm',
           'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
           path,
-          `The ${specKind} specifier "${range}" is not a registry version range`,
+          dependencyText.specifierNotARange(specKind, range),
           'The package is named without a version constraint and the specifier is retained verbatim',
           'info',
         ),
@@ -344,7 +353,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${value}`,
+        `Invalid npm coordinate: ${dependencyText.echoedName(value)}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -466,6 +475,7 @@ export class NpmCodec
           );
         } catch (error) {
           if (enforced) throw error;
+          const reason = error instanceof Error ? error.message : String(error);
           // A dev-time or optional entry this codec cannot read must not stop
           // the package from being inspected. It is recorded, not dropped.
           losses.push(
@@ -473,7 +483,7 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              dependencyText.entryNotRepresentable(field, name, range, reason),
               undefined,
               'info',
             ),
@@ -738,9 +748,6 @@ export interface PublishTimeEvidence {
   source: 'packument-time' | 'packument-modified' | 'full-packument';
 }
 
-/** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
-const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
-
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
   readonly capabilities: ProviderCapabilities = {
@@ -857,7 +864,9 @@ export class NpmRegistryProvider implements CatalogProvider {
    * request at all. Otherwise the full packument's `time` for this version,
    * which is the only exact source the registry offers and the expensive one,
    * paid only for a package that changed recently. A package whose time cannot
-   * be had yields `undefined`, and the policy then says it was not provided.
+   * be had yields `undefined`, and the policy then says it was not provided. A
+   * full packument the client refuses (too large, too many values, not JSON)
+   * throws that refusal instead, so the caller can say why the time is missing.
    */
   async publishTime(
     exactPurl: string,
@@ -894,16 +903,25 @@ export class NpmRegistryProvider implements CatalogProvider {
     parsed: ReturnType<typeof parsePurl>,
     signal?: AbortSignal,
   ): Promise<Record<string, string> | undefined> {
+    const name = npmName(parsed.namespace, parsed.name);
     try {
       const response = await this.transport.request({
-        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`,
         signal,
-        maximumBytes: FULL_PACKUMENT_LIMIT,
+        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
         headers: { accept: 'application/json' },
       });
-      return json<{ time?: Record<string, string> }>(response).time;
+      return json<{ time?: Record<string, string> }>(
+        response,
+        FULL_PACKUMENT_LIMITS,
+      ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      // A document refused for its size or shape is a fact about it, and the
+      // caller needs it to say why no time was had. A registry that is down or
+      // answers with an error is not: that stays "no time", as it always was.
+      if (isDocumentRefusal(error))
+        throw aboutPackument(name, error, 'full packument');
       return undefined;
     }
   }
@@ -1131,17 +1149,24 @@ export class NpmRegistryProvider implements CatalogProvider {
     const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: 8 * 1024 * 1024,
-      headers: {
-        accept: 'application/vnd.npm.install-v1+json',
-        ...(!(existing?.etag === undefined) && {
-          'if-none-match': existing.etag,
-        }),
-      },
-    });
+    let response: HttpResponse;
+    try {
+      response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
+        headers: {
+          accept: 'application/vnd.npm.install-v1+json',
+          ...(!(existing?.etag === undefined) && {
+            'if-none-match': existing.etag,
+          }),
+        },
+      });
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     if (response.status === 304) {
       if (!existing)
         throw new ProviderError(
@@ -1153,13 +1178,21 @@ export class NpmRegistryProvider implements CatalogProvider {
       this.#records.set(key, revalidated);
       return revalidated;
     }
+    let body: NpmPackument;
+    try {
+      body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     const record: ProviderRecord<NpmPackument> = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
         etag: header(response, 'etag'),
       }),
-      body: json<NpmPackument>(response),
+      body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
@@ -1170,6 +1203,12 @@ export class NpmRegistryProvider implements CatalogProvider {
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
 export { npmPackageRuns, npmTargetPredicate } from './platform.js';
+export {
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+} from './packument-limits.js';
 export {
   chainOfLockPath,
   findDuplicateJsonKey,

@@ -26,6 +26,7 @@ import type {
   ProjectionResult,
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
+import { echoed } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   applySpanEdits,
@@ -342,7 +343,7 @@ function assertPackFileName(fileName: string, manifestPath: string): void {
     throw new ProjectIoError(
       'UNSAFE_PATH',
       manifestPath,
-      `Package metadata produced an unsafe artifact filename: ${fileName}`,
+      `Package metadata produced an unsafe artifact filename: ${echoed(fileName)}`,
     );
 }
 
@@ -351,7 +352,7 @@ function assertFrameworkSegment(framework: string, manifestPath: string): void {
     throw new ProjectIoError(
       'UNSAFE_PATH',
       manifestPath,
-      `TargetFramework is not a safe path segment: ${framework}`,
+      `TargetFramework is not a safe path segment: ${echoed(framework)}`,
     );
 }
 
@@ -596,9 +597,7 @@ function assertParses(path: string, text: string): void {
     throw new ProjectIoError(
       'INVALID_XML',
       path,
-      `Editing ${path} produced XML that does not parse: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Editing ${path} produced XML that does not parse: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
 }

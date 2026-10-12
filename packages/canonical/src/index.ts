@@ -3,6 +3,16 @@ import type {
   DigestProjection,
   JsonValue,
 } from '@openpacker/contracts';
+import { ParseBudget } from './budget.js';
+import { safeEcho } from './echo.js';
+import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
+
+export {
+  CanonicalJsonError,
+  CanonicalJsonLimitError,
+  type CanonicalParseLimits,
+} from './errors.js';
+export { ECHO_LIMIT, plainLine, plainText, safeEcho } from './echo.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
@@ -16,13 +26,6 @@ export interface CanonicalDigestProjection {
 const DIGEST = /^sha256:([0-9a-f]{64})$/;
 const LONE_SURROGATE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
-
-export class CanonicalJsonError extends TypeError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CanonicalJsonError';
-  }
-}
 
 export function compareCanonicalStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -89,21 +92,28 @@ export function canonicalBytes(value: JsonValue): Uint8Array {
 
 class JsonParser {
   private index = 0;
-  constructor(private readonly input: string) {}
+  private readonly budget: ParseBudget;
+  constructor(
+    private readonly input: string,
+    limits: CanonicalParseLimits,
+  ) {
+    this.budget = new ParseBudget(limits);
+  }
 
   parse(): JsonValue {
-    const value = this.value();
+    const value = this.value(0);
     this.space();
     if (this.index !== this.input.length) this.fail('Unexpected trailing data');
     canonicalize(value);
     return value;
   }
 
-  private value(): JsonValue {
+  private value(depth: number): JsonValue {
+    this.budget.begin(depth, this.index);
     this.space();
     const character = this.input[this.index];
-    if (character === '{') return this.object();
-    if (character === '[') return this.array();
+    if (character === '{') return this.object(depth);
+    if (character === '[') return this.array(depth);
     if (character === '"') return this.string();
     if (character === 't') return this.literal('true', true);
     if (character === 'f') return this.literal('false', false);
@@ -111,7 +121,7 @@ class JsonParser {
     return this.number();
   }
 
-  private object(): { [key: string]: JsonValue } {
+  private object(depth: number): { [key: string]: JsonValue } {
     this.index += 1;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result: { [key: string]: JsonValue } = Object.create(null) as {
@@ -125,24 +135,24 @@ class JsonParser {
       if (this.input[this.index] !== '"')
         this.fail('Object member name must be a string');
       const key = this.string();
-      if (keys.has(key)) this.fail(`Duplicate object member: ${key}`);
+      if (keys.has(key)) this.fail(`Duplicate object member: ${safeEcho(key)}`);
       keys.add(key);
       this.space();
       if (!this.take(':')) this.fail('Expected colon after object member name');
-      result[key] = this.value();
+      result[key] = this.value(depth + 1);
       this.space();
       if (this.take('}')) return result;
       if (!this.take(',')) this.fail('Expected comma between object members');
     }
   }
 
-  private array(): JsonValue[] {
+  private array(depth: number): JsonValue[] {
     this.index += 1;
     const result: JsonValue[] = [];
     this.space();
     if (this.take(']')) return result;
     while (true) {
-      result.push(this.value());
+      result.push(this.value(depth + 1));
       this.space();
       if (this.take(']')) return result;
       if (!this.take(',')) this.fail('Expected comma between array values');
@@ -213,9 +223,12 @@ class JsonParser {
   }
 }
 
-export function parseCanonicalJson<T = JsonValue>(text: string): T {
+export function parseCanonicalJson<T = JsonValue>(
+  text: string,
+  limits: CanonicalParseLimits = {},
+): T {
   // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
-  return new JsonParser(text).parse() as T;
+  return new JsonParser(text, limits).parse() as T;
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Digest> {

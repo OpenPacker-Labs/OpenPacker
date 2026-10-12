@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import type { ParsedPackageSpec } from './types.js';
 import { OpmError } from './types.js';
 
@@ -33,11 +34,14 @@ export function parsePackageSpec(
   if (!ecosystem) {
     throw new OpmError(
       'AMBIGUOUS_SPEC',
-      `Bare package name "${trimmed}" requires --ecosystem <purl-type> or a full pkg: PURL`,
+      `Bare package name "${echoed(trimmed)}" requires --ecosystem <purl-type> or a full pkg: PURL`,
     );
   }
   if (!PURL_TYPE.test(ecosystem)) {
-    throw new OpmError('INVALID_SPEC', `Unknown ecosystem "${ecosystem}"`);
+    throw new OpmError(
+      'INVALID_SPEC',
+      `Unknown ecosystem "${echoed(ecosystem)}"`,
+    );
   }
 
   const at = splitNameVersion(trimmed);
@@ -66,7 +70,7 @@ function parsePurlSpec(
     /^pkg:([A-Za-z0-9.-]+)\/(.+?)(?:@([^?#]+))?(?:\?([^#]*))?(?:#.*)?$/,
   );
   if (!match) {
-    throw new OpmError('INVALID_SPEC', `Invalid PURL: ${purl}`);
+    throw new OpmError('INVALID_SPEC', `Invalid PURL: ${echoed(purl)}`);
   }
   const ecosystem = match[1] ?? '';
   const namePart = match[2] ?? '';
@@ -74,7 +78,7 @@ function parsePurlSpec(
   if (options.ecosystem && options.ecosystem !== ecosystem) {
     throw new OpmError(
       'INVALID_SPEC',
-      `PURL ecosystem "${ecosystem}" does not match --ecosystem ${options.ecosystem}`,
+      `PURL ecosystem "${echoed(ecosystem)}" does not match --ecosystem ${echoed(options.ecosystem)}`,
     );
   }
   const decodedName = decodeURIComponent(namePart);
@@ -204,7 +208,10 @@ export function aliasFromNativeName(name: string): string {
 export function ecosystemFromPurl(purl: string): string {
   const match = purl.match(/^pkg:([A-Za-z0-9.-]+)\//);
   if (!match?.[1]) {
-    throw new OpmError('INVALID_SPEC', `Cannot read ecosystem from ${purl}`);
+    throw new OpmError(
+      'INVALID_SPEC',
+      `Cannot read ecosystem from ${echoed(purl)}`,
+    );
   }
   return match[1];
 }

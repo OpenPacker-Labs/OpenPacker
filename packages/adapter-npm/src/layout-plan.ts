@@ -460,6 +460,20 @@ function sortEntries(entries: readonly LayoutEntry[]): LayoutEntry[] {
 }
 
 /**
+ * `text` as JSON, with every character a terminal would not show written out
+ * (`\u{200b}`). JSON leaves the controls from DEL up, the format characters and
+ * U+2028 as they are, and what writes an error removes them, so a name with a
+ * zero-width character in it would read as the plain name beside it and the
+ * message ("member" is not a safe directory name) would look untrue.
+ */
+export function quoted(text: string): string {
+  return JSON.stringify(text).replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
+    (character) => `\\u{${character.codePointAt(0)?.toString(16) ?? ''}}`,
+  );
+}
+
+/**
  * Why a registry-supplied name is not a safe directory name, or undefined.
  *
  * A name becomes a path under a recursive delete, and a leading dot would let a
@@ -469,7 +483,7 @@ export function unsafeNameProblem(name: string): string | undefined {
   const segments = name.split('/');
   const scoped = name.startsWith('@');
   if (segments.length !== (scoped ? 2 : 1))
-    return `${JSON.stringify(name)} is not an npm package name`;
+    return `${quoted(name)} is not an npm package name`;
   for (const [index, segment] of segments.entries()) {
     const body = scoped && index === 0 ? segment.slice(1) : segment;
     if (
@@ -478,7 +492,7 @@ export function unsafeNameProblem(name: string): string | undefined {
       body.toLowerCase() === 'node_modules' ||
       !/^[A-Za-z0-9._~+-]+$/u.test(body)
     )
-      return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
+      return `${quoted(name)} is not a safe directory name for node_modules`;
   }
   return undefined;
 }

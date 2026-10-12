@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import {
   ProviderError,
+  ResponseTooLargeError,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -75,6 +76,24 @@ export interface FixturePackage {
   time?: Record<string, string>;
   /** Last change to the packument; defaults to the same old date. */
   modified?: string;
+  /** Makes the packument as heavy as a real one with many versions. */
+  padding?: Padding;
+  /** The full document served as exactly this text, whatever it is. */
+  fullBody?: string;
+}
+
+/**
+ * What `typescript` (8.7 MB, 260,520 values) and `next` (25.6 MB, 846,076) have
+ * that a fixture does not: weight. The packument is served with a member the
+ * walk never reads, so its size and value count are what a real one's are.
+ */
+export interface Padding {
+  /** Serialized size of the packument, exactly. */
+  bytes?: number;
+  /** At least this many values (empty arrays) in the packument. */
+  values?: number;
+  /** Which document is heavy; the abbreviated one is read first and always. */
+  only?: 'abbreviated' | 'full';
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -128,6 +147,36 @@ const json = (value: unknown): HttpResponse => ({
   url: '',
 });
 
+const encoder = new TextEncoder();
+
+function padded(
+  document: Record<string, unknown>,
+  padding: Padding,
+): HttpResponse {
+  const empties =
+    padding.values === undefined
+      ? undefined
+      : Array.from({ length: padding.values }, () => []);
+  const make = (fill: number) =>
+    encoder.encode(
+      JSON.stringify({
+        ...document,
+        ...(empties && { 'x-values': empties }),
+        ...(padding.bytes !== undefined && { 'x-padding': 'x'.repeat(fill) }),
+      }),
+    );
+  const body =
+    padding.bytes === undefined
+      ? make(0)
+      : make(padding.bytes - make(0).length);
+  return {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body,
+    url: '',
+  };
+}
+
 export interface RecordedRequest {
   url: string;
   accept: string | undefined;
@@ -162,7 +211,23 @@ export class NpmRegistryFixture implements HttpTransport {
     );
   }
 
+  /** Like a real transport, refuses a body past the bound the request set. */
   async request(request: HttpRequest): Promise<HttpResponse> {
+    const response = await this.answer(request);
+    if (
+      request.maximumBytes !== undefined &&
+      response.body.byteLength > request.maximumBytes
+    )
+      throw new ResponseTooLargeError(
+        request.maximumBytes,
+        response.body.byteLength,
+        'delivered',
+        response.status,
+      );
+    return response;
+  }
+
+  private async answer(request: HttpRequest): Promise<HttpResponse> {
     const accept = request.headers?.accept;
     this.requests.push({ url: request.url, accept });
     if (request.url.endsWith('.tgz')) {
@@ -233,7 +298,18 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
-    return withUrl(json(document));
+    if (!abbreviated && found.fullBody !== undefined)
+      return withUrl({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: encoder.encode(found.fullBody),
+        url: '',
+      });
+    const heavy =
+      found.padding !== undefined &&
+      (found.padding.only ?? (abbreviated ? 'abbreviated' : 'full')) ===
+        (abbreviated ? 'abbreviated' : 'full');
+    return withUrl(heavy ? padded(document, found.padding!) : json(document));
   }
 }
 
