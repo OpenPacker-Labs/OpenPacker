@@ -64,9 +64,7 @@ function workspaceRequest(args: CiArgs): FrozenWorkspaceRequest {
       'INVALID_SPEC',
       'opm ci --workspace needs a member name or directory',
     );
-  const select = (args.optionValues.get('workspace') ?? []).flatMap((item) =>
-    item.split(',').filter((part) => part !== ''),
-  );
+  const select = args.optionValues.get('workspace') ?? [];
   const workspaces = booleanOption(args, 'workspaces');
   const noWorkspaces = args.options.has('no-workspaces');
   if (noWorkspaces && workspaces === true)
