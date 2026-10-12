@@ -482,7 +482,50 @@ independent review got the same two figures.
   controls). The method reaches what the commands reach from these files in a
   project with no installed packages. It did not drive the paths that need a
   populated store (a successful install), the files `opm pack` reads, a catalog,
-  the state under `.opm`, or a plugin's output.
+  the state under `.opm`, or a plugin's output; the next entry is what an
+  independent review found on the first of those and on the commands that read
+  these files and are not an install.
+- **The success output, `opm run`, `opm exec` and the loss reports read the same
+  files, and four places still repeated them raw.** (1) A successful `opm ci`
+  wrote `install script not run: <name>@<version>` from the lock's `name` and
+  `version`, and the `skipped` and meaning-lost lines from the lock. (2)
+  `opm run` listed a script's name and command from `package.json` on stdout,
+  repeated the names in the "no script" error and the syntax message of a
+  `package.json` that is not JSON. (3) `opm exec <bin>` named the lock's alias
+  and PURL as the package that would provide the bin. (4) `opm manifest`,
+  `opm pack`, `opm import --native` and a host install wrote each lost meaning
+  as `report('opm: ', code + text)`: the text `opm manifest` writes repeats the
+  lock's `ecosystem`, and the text `opm pack` writes names the environment files
+  it left out by their paths in the tree
+  (`NORMALIZED_SENSITIVE_FILES_EXCLUDED`), so a file named
+  `.env.<line feed>opm: ok installed 1 package@1` printed that line (the
+  review's fuzz ran `pack` with `--dry-run` and did not reach it). A line feed
+  in any of them started a line, and the success and listing lines went to
+  stdout, which the writer does not guard. Each is `plainLine` at the site that
+  builds the text (`commands/ci.ts`, `commands/run.ts`, `opm.ts`); `run.ts`
+  reaches it through a dynamic `import()` on the paths that need it, because
+  starting a script imports nothing but Node and its own directory (ADR 0047,
+  `run-load.test.ts`). `noProjectLoss` in opm-project is unchanged: the
+  persisted loss keeps its whole text, and the commands that print it flatten
+  it. `oneLine` still shows a line feed in a command as the two characters `\n`,
+  and now also removes what a terminal acts on; a tab in a script's name or
+  command is shown as a space, which is the one change to text with nothing
+  hostile in it. `apps/opm/test/plain-output.test.ts` runs the commands through
+  `runOpm` with the payload and with `x` in a field and holds both streams to
+  the same number of lines, none of which starts like one of opm's, and to no
+  escape, C1, bidirectional, carriage-return or other control character. Of its
+  14 tests, 13 fail on `a3891a9` (12 forge a line or write a raw escape
+  sequence; one is the tab shown as a space) and all pass now; the 14th, a
+  command with a line feed, is a control that passes on both. The review's fuzz
+  of the successful `opm ci` flagged 6 runs of 828 on `a3891a9` and 0 now; its
+  five real-binary reproductions print a forged line or an escape sequence on
+  `a3891a9` and none now; and its broad sweep (19 commands, five layouts,
+  payload in every string, key and type, and the files corrupted as text;
+  102,058 runs) flagged 49 runs on `a3891a9` and 11 now, which are the script's
+  own output (8 runs of `opm run build` under the escape payload) and the JSON
+  document `opm manifest` prints on stdout (3), both in the known limits below.
+  Outputs for text with nothing hostile in it (`x` in each field, 2,975 outputs
+  of 13 commands, timestamps masked) are identical on both trees.
 - **What `echoed` costs.** It cuts a message's text at 256 characters (the OCI
   error body at 1,024), saying how long it was, so a loss record's text and a
   long PURL or URL in a message are cut: a uv.lock dependency marker of 431
@@ -504,15 +547,46 @@ independent review got the same two figures.
   (`pack-provider`), a host installer's, a tool's and a script's own stderr,
   passed through as it wrote it, the messages `apps/opm` builds from the
   person's own arguments (usage errors), and the interpolations in opm-project
-  that the commands above did not reach (about 340 remain in the triage: counts,
-  line numbers, configured endpoints, environment names, project paths and the
-  state under `.opm`; I did not trace each). `lock-import` and `receipts` repeat
-  a native lock's or a receipt's text and are depended on by `openpackerd` and
-  `openpacker-cli`, not by `opm`; no package depends on `closure` or `ocm`.
-  **Not covered at all:** `apps/openpacker-cli` (its `openpacker: ${message}`
-  has no writer and no scanner, and its message can repeat what a PREX client or
-  the daemon says), `apps/openpackerd`, and anything outside the `opm` command
-  line.
+  that the commands above did not reach (339 interpolations in opm-project, 338
+  raw, are untriaged: counts, line numbers, configured endpoints, environment
+  names, project paths, the state under `.opm`, and values read from `opm.toml`
+  and `opm.lock.json`, as in `noProjectLoss`, whose text repeats the lock's
+  ecosystem; the commands above reach some of them and I did not trace each).
+  `lock-import` and `receipts` repeat a native lock's or a receipt's text and
+  are depended on by `openpackerd` and `openpacker-cli`, not by `opm`; no
+  package depends on `closure` or `ocm`. **Not covered at all:**
+  `apps/openpacker-cli` (its `openpacker: ${message}` has no writer and no
+  scanner, and its message can repeat what a PREX client or the daemon says),
+  `apps/openpackerd`, and anything outside the `opm` command line.
+- **Known limits of what is claimed above.**
+  - There is no gate on stdout. `stderr-writers.test.ts` holds stderr, and the
+    writer keeps line feeds, so a new line on stdout, or a new error that
+    repeats a value from a cloned repository, forges a line until someone wraps
+    it in `plainLine` or `echoed`. The four findings above were this.
+  - A script's own output passes through raw by design, and so do the shell's
+    own lines that echo the script's text (`sh: 1: ...: not found`) and a
+    child's stderr.
+  - `opm manifest` writes a JSON document on stdout. JSON escapes the escape
+    character and the line feed, and a bidirectional or C1 character inside one
+    of its strings is the document's content; its stderr is held to the rule.
+  - `lock-import` repeats a key of `pnpm-lock.yaml` raw. Only `openpacker-cli`
+    and `openpackerd` reach it, so it is outside this amendment.
+  - A document of the wrong JSON type can still reach an uncoded `TypeError`:
+    `"schemaVersion": {}` in `opm.lock.json` gives `opm: internal error: ...`,
+    as it does on `a3891a9` and did on `8713e6d`. That is a message with no
+    code, not a forged line.
+  - The values `opm search`, `versions`, `info` and `resolve` print come from a
+    registry. They are written as the registry adapters returned them, and
+    stdout does not flatten them again; the fuzz was offline and did not reach
+    them.
+  - What the fuzz did not reach: online resolution and the closure message,
+    `opm pack` of a real project beyond the environment-file case (the fuzz ran
+    `--dry-run`), `opmx`, `publish` and `yank`, `auth.json`, an installed
+    plugin's own output, and the Maven, Go, OCI and host-manager adapters
+    through the binary (unit tests only). The report lines of a native
+    projection, of `opm resolve` and of a host install, and the names `opm exec`
+    finds in `node_modules/.bin`, are made plain at the line but no test drives
+    them with hostile text.
 - **The writer reads an unterminated escape string as a terminal would.** An
   `ESC ]` (OSC) or `ESC P`, `ESC X`, `ESC ^`, `ESC _` with no terminator runs to
   the end of the message, so a field that ends in one drops the rest of the

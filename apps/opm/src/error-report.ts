@@ -31,14 +31,18 @@ import { plainLine, plainText } from '@openpacker/canonical';
  * parsers, the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters, the
  * plugin store, opm-project's reading of opm.toml, opm.lock.json and the npm
  * lock, and the apt, Chocolatey, winget and Nix refusals), `safeEcho` in the OCI
- * client, the materializer, npm and the policy, and `plainLine` for what
- * `opm list`, `why` and `import --native` print. Text that does not come
- * through one of those (a plugin's, a path project-io refuses, a packer's file
- * name, a child's own stderr) reaches this writer unflattened, safe from
- * escapes and not from line feeds. It also reads an unterminated `ESC ]` or
- * `ESC P` as running to the end of the message, as a terminal does, so a field
- * that ends in one drops the entries after it (ADR 0044). The `openpacker`
- * command line (`apps/openpacker-cli`) has no writer and is not covered.
+ * client, the materializer, npm and the policy, and `plainLine`, at the line
+ * that quotes it, for what `opm list`, `why`, `import --native`, `run`, `exec`
+ * and a successful `opm ci` print and for the lost meaning `manifest`, `pack`
+ * and `ci` report. Nothing checks stdout: a new line there that repeats a
+ * value from a repository must be made plain by whoever writes it. Text that
+ * does not come through one of those (a plugin's, a path project-io refuses, a
+ * packer's file name, a child's own stderr) reaches this writer unflattened,
+ * safe from escapes and not from line feeds. It also reads an unterminated
+ * `ESC ]` or `ESC P` as running to the end of the message, as a terminal does,
+ * so a field that ends in one drops the entries after it (ADR 0044). The
+ * `openpacker` command line (`apps/openpacker-cli`) has no writer and is not
+ * covered.
  */
 
 /**

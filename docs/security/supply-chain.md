@@ -178,10 +178,16 @@ document is capped and made one line by the package that quotes it (the registry
 adapters, the OCI client, the materializer, the plugin store, npm and the
 policy), so a registry cannot add a line to what opm writes. The same holds for
 the values of a cloned repository's `package.json`, `package-lock.json`,
-`opm.toml` and `opm.lock.json` in the errors that `opm ci`, `install`, `sync`,
-`list` and the commands that read them raise, and `opm list`, `why` and
-`import --native` print those values one to a line. Some text still reaches the
-command line's writer unflattened: a plugin's own output and manifest, the paths
+`opm.toml` and `opm.lock.json` in what `opm ci` (after it has installed too),
+`install`, `sync`, `add`, `remove`, `uninstall`, `update`, `list`, `why`,
+`import --native`, `pack`, `manifest`, `gc`, `generations`, `rollback`,
+`resolve`, `run` and `exec` write on either stream: each value is on one line of
+its own, with no escape or control character, and `opm list`, `why`,
+`import --native`, `run` and `exec` print those values that way on stdout. The
+other commands (`search`, `versions`, `info`, `shell`, `env`, `system`,
+`plugin`, `auth`, `publish`, `yank`, `opmx`) were not driven with such files,
+and the ADR lists what else is not claimed. Some text still reaches the command
+line's writer unflattened: a plugin's own output and manifest, the paths
 `project-io` refuses, the standard packers' file names, and what a host
 installer, a tool or a script writes to its own stderr. The writer removes
 escape sequences and control characters from the errors and warnings it writes
