@@ -29,7 +29,6 @@ import {
   listRegistryVersions,
   registryOptionsForEcosystem,
   resolveRegistryArtifact,
-  type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -95,7 +94,6 @@ import {
 import {
   applyAttestation,
   assertSupplyChainAllowed,
-  capturePublishTime,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
   lockAttestationFrom,

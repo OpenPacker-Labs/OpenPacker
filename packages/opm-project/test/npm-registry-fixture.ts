@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { packTarGzip } from '@openpacker/project-io';
 import {
   ProviderError,
   ResponseTooLargeError,
