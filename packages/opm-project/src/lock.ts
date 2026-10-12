@@ -1,7 +1,13 @@
 import { parseCanonicalJson } from '@openpacker/canonical';
+import type { JsonValue } from '@openpacker/contracts';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import { readStableFile, writeStableFile } from './paths.js';
-import type { BinDeclaration, LockPackage, OpmLockfile } from './types.js';
+import type {
+  BinDeclaration,
+  LockAttestation,
+  LockPackage,
+  OpmLockfile,
+} from './types.js';
 import { OpmError } from './types.js';
 
 const LIFECYCLE_STATUSES = new Set([
@@ -48,6 +54,41 @@ export function serializeLockfile(lock: OpmLockfile): string {
     null,
     2,
   )}\n`;
+}
+
+/**
+ * A lock reduced to what a fresh resolution of the same manifest must
+ * reproduce.
+ *
+ * Attestation state that advances by itself — a signed list's sequence rises
+ * with every release the vendor publishes — differs between resolutions
+ * without the release changing, so it is left out. Which keys advance is taken
+ * from `reference`, the fresh resolution, never from the lock under
+ * verification: an edited lock cannot excuse its own differences.
+ */
+export function reproducibleLockForm(
+  lock: OpmLockfile,
+  reference: OpmLockfile,
+): JsonValue {
+  const packages = Object.fromEntries(
+    Object.entries(lock.packages).map(([alias, pkg]) => {
+      if (pkg.attestation === undefined) return [alias, pkg];
+      const skipped = new Set(
+        reference.packages[alias]?.attestation?.advancing ?? [],
+      );
+      const record = Object.fromEntries(
+        Object.entries(pkg.attestation.record).filter(
+          ([key]) => !skipped.has(key),
+        ),
+      );
+      // The list of advancing keys is the provider's description of its own
+      // record, not a fact about the release, so it is not compared either.
+      const { advancing: _described, ...attestation } = pkg.attestation;
+      return [alias, { ...pkg, attestation: { ...attestation, record } }];
+    }),
+  );
+  // SAFETY: serializeLockfile writes JSON.
+  return JSON.parse(serializeLockfile({ ...lock, packages })) as JsonValue;
 }
 
 export function parseLockfile(text: string): OpmLockfile {
@@ -227,6 +268,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
       'INVALID_LOCK',
       `Package "${alias}" has invalid nativeIntegrity`,
     );
+  const attestation = parseAttestation(alias, pkg.attestation);
   if (
     pkg.dependencies !== undefined &&
     (!Array.isArray(pkg.dependencies) ||
@@ -265,6 +307,81 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     ...(isNativeIntegrity(pkg.nativeIntegrity) && {
       nativeIntegrity: pkg.nativeIntegrity,
     }),
+    ...(attestation !== undefined && { attestation }),
+  };
+}
+
+const ATTESTATION_KEYS = new Set([
+  'kind',
+  'signerIdentity',
+  'issuer',
+  'signedAt',
+  'signedAtVerified',
+  'evidence',
+  'record',
+  'advancing',
+]);
+
+/**
+ * Read a package's recorded signature evidence, refusing anything that is not
+ * exactly the shape opm writes. The lock is committed and reviewed, and a field
+ * nobody expects is either a typo or an attempt to say more than was verified.
+ */
+function parseAttestation(
+  alias: string,
+  value: unknown,
+): LockAttestation | undefined {
+  if (value === undefined) return undefined;
+  const invalid = (why: string): OpmError =>
+    new OpmError(
+      'INVALID_LOCK',
+      `Package "${alias}" has invalid attestation: ${why}`,
+    );
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw invalid('it must be an object');
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const attestation = value as Record<string, unknown>;
+  for (const key of Object.keys(attestation))
+    if (!ATTESTATION_KEYS.has(key)) throw invalid(`unknown field ${key}`);
+  const text = (key: string): string => {
+    const field = attestation[key];
+    if (typeof field !== 'string' || field === '')
+      throw invalid(`${key} must be a non-empty string`);
+    return field;
+  };
+  const { issuer, signedAtVerified, evidence, record, advancing } = attestation;
+  if (issuer !== undefined && (typeof issuer !== 'string' || issuer === ''))
+    throw invalid('issuer must be a non-empty string');
+  if (typeof signedAtVerified !== 'boolean')
+    throw invalid('signedAtVerified must be a boolean');
+  if (
+    !Array.isArray(evidence) ||
+    evidence.some((item) => typeof item !== 'string' || item === '')
+  )
+    throw invalid('evidence must be a list of non-empty strings');
+  if (typeof record !== 'object' || record === null || Array.isArray(record))
+    throw invalid('record must be an object');
+  if (
+    advancing !== undefined &&
+    (!Array.isArray(advancing) ||
+      advancing.some((key) => typeof key !== 'string' || key === ''))
+  )
+    throw invalid('advancing must be a list of non-empty strings');
+  const signedAt = text('signedAt');
+  if (Number.isNaN(Date.parse(signedAt)))
+    throw invalid('signedAt must be a timestamp');
+  return {
+    kind: text('kind'),
+    signerIdentity: text('signerIdentity'),
+    ...(issuer !== undefined && { issuer }),
+    signedAt,
+    signedAtVerified,
+    // SAFETY: checked above to be a list of strings.
+    evidence: [...(evidence as string[])],
+    // SAFETY: the lock is parsed from JSON, so an object here holds only JSON.
+    record: record as LockAttestation['record'],
+    // SAFETY: checked above to be a list of strings.
+    ...(advancing !== undefined && { advancing: [...(advancing as string[])] }),
   };
 }
 

@@ -3,11 +3,10 @@
 - Status: Accepted
 - Date: 2026-10-12
 - Relates: [0030](0030-build-versus-buy-for-primitives.md) (a mature YAML
-  parser, not our own),
-  [0043](0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
+  parser, not our own), [0046](0046-a-lockfile-is-installed-not-re-resolved.md)
+  (the frozen install this feeds, and the policy facts it reads from a lock),
+  [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
   layout a snapshot's edges will be placed into),
-  [0046](0046-a-lockfile-is-installed-not-re-resolved.md) (the frozen install
-  this feeds, and the policy facts it reads from a lock),
   [0049](0049-workspaces-are-a-model-before-they-are-an-install.md) (the members
   an importer is), [0050](0050-workspace-member-links.md) (the link a `link:`
   edge becomes, and the warning that a lock's paths are untrusted input)
@@ -242,7 +241,7 @@ This is the plan the next slice builds on; nothing below is built here.
 16. **A snapshot is a placement, not a name.** Its edges name the snapshot each
     dependency resolves to, so the layout puts the two variants of one
     `name@version` where Node resolves each one's peers to what the lock says
-    (ADR 0043), and merges nothing. `packages` is shared: one fetch and one
+    (ADR 0048), and merges nothing. `packages` is shared: one fetch and one
     proof per `name@version`.
 17. **The facts policy reads come from the lock.** The integrity is the proof
     (ADR 0046 §5); a registry package's URL is derived from the name, version

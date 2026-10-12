@@ -194,6 +194,49 @@ export interface ProviderExecutable {
   entry?: string | undefined;
 }
 
+/**
+ * Signature evidence a provider established for a release before returning it.
+ *
+ * Most registries vouch for an artifact only by publishing its digest. A
+ * provider whose releases are signed — a packslip, a Sigstore bundle — has
+ * more to say: who signed, when, and what a person must approve if that
+ * changes. The host puts the first three into the policy engine's facts and
+ * keeps `record` in the lock so a later resolution can notice a change.
+ *
+ * The provider verified this itself, before returning the inspection. The host
+ * does not re-verify it and the lock does not make it authoritative: it is
+ * evidence of what was checked, re-derived from the signed bytes whenever the
+ * release is resolved again.
+ */
+export interface ProviderAttestation {
+  /** Which scheme produced the evidence, such as `packslip`. */
+  readonly kind: string;
+  /** Who vouched for the artifact, in the form accepted-identity policy matches. */
+  readonly signerIdentity: string;
+  /** The OIDC issuer behind a keyless identity, when there is one. */
+  readonly issuer?: string;
+  /** When the signature was made. */
+  readonly signedAt: string;
+  /** Whether a transparency log vouches for `signedAt` rather than the signer. */
+  readonly signedAtVerified: boolean;
+  /** The strength of the signer, as the policy engine's trust tiers name it. */
+  readonly trustTier: 'trusted-publisher' | 'provenance' | 'registry-attested';
+  /** Evidence types the provider verified (`sigstore`, `sigstore-transparency`). */
+  readonly evidence: readonly string[];
+  /**
+   * What the lock keeps. JSON only, and opaque to the host: the provider reads
+   * it back as `AdapterContext.priorAttestations` on the next resolution.
+   */
+  readonly record: { readonly [key: string]: JsonValue };
+  /**
+   * Names of top-level `record` keys that move forward by themselves, such as
+   * a signed list's sequence number. They stay in the lock so a later
+   * resolution cannot go backwards, but a fresh resolution of the same release
+   * legitimately differs in them, so a frozen install does not compare them.
+   */
+  readonly advancing?: readonly string[];
+}
+
 export interface ProviderInspection {
   package: PackageInstance;
   record: ProviderRecord;
@@ -203,6 +246,8 @@ export interface ProviderInspection {
    * use.
    */
   executables?: readonly ProviderExecutable[];
+  /** Signature evidence the provider verified for this release, if any. */
+  attestation?: ProviderAttestation;
   warnings: readonly ProviderWarning[];
 }
 

@@ -1,6 +1,8 @@
+import type { JsonValue } from '@openpacker/contracts';
 import type {
   CatalogProvider,
   EcosystemCodec,
+  HostLookup,
   InstallerProvider,
   PackagePacker,
   ProjectFormat,
@@ -97,7 +99,26 @@ export interface AdapterContext {
   endpoint?: string;
   transport?: unknown;
   fetch?: typeof fetch;
+  /**
+   * How hostnames are resolved before a request that must not reach a private
+   * address. Production resolves through DNS; tests inject answers.
+   */
+  lookup?: HostLookup;
   now?: () => string;
+  /**
+   * What the project configured for this ecosystem, as plain JSON the adapter
+   * decodes itself: trust anchors, approved changes, mirrors. The host does not
+   * interpret it, so a new ecosystem needs no new host code to be configured.
+   */
+  settings?: { readonly [key: string]: JsonValue };
+  /**
+   * What the project's lock already records about packages from this
+   * ecosystem, keyed by the package's versionless PURL. It is how a provider
+   * notices that a signer changed since the last release was accepted. It is
+   * evidence for drift detection only: an edited lock can weaken it, which is
+   * why trust anchors live in `settings`, not here.
+   */
+  priorAttestations?: { readonly [basePurl: string]: JsonValue };
 }
 
 export interface AdapterModule {
