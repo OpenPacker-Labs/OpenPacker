@@ -95,6 +95,10 @@ function read(
   // Nothing past scanLimit is read, an escape sequence's tail included.
   const head = text.length > scanLimit ? text.slice(0, scanLimit) : text;
   let shown = '';
+  // The last character appended, kept apart: asking `shown` flattens a string
+  // that is still being built, once per character, and a text of tens of
+  // thousands of line breaks took seconds.
+  let last = '';
   let count = 0;
   let index = 0;
   let spaceDue = false;
@@ -110,12 +114,13 @@ function read(
       continue;
     }
     if (UNSHOWN.test(character)) continue;
-    if (spaceDue && shown !== '' && character !== ' ' && !shown.endsWith(' ')) {
+    if (spaceDue && last !== '' && last !== ' ' && character !== ' ') {
       shown += ' ';
       count += 1;
     }
     spaceDue = false;
     shown += character;
+    last = character;
     count += 1;
   }
   return { shown, end: index };

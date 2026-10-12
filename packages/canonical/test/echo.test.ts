@@ -280,6 +280,36 @@ describe('plainLine', () => {
   });
 });
 
+describe('plainLine on a large text', () => {
+  // A message can be as long as a registry makes it, and it is written once, in
+  // full. The time is for a loaded machine: a linear reading takes tens of
+  // milliseconds for these, the quadratic one it replaced took 5.7 s for the
+  // first at 320,000 characters.
+  const BOUND_MS = 2000;
+  const SIZES = [320_000, 1_048_576] as const;
+
+  it.each([
+    ['a word to a line', 'line\n', 'line '],
+    ['a character, a space and a break', 'a \n', 'a '],
+    ['a character and a tab', 'a\t', 'a '],
+    ['a word and a CRLF', 'line\r\n', 'line '],
+    ['ordinary text', 'abcd', 'abcd'],
+  ])('is linear: %s', (_, unit, joined) => {
+    for (const size of SIZES) {
+      const count = Math.ceil(size / unit.length);
+      const text = unit.repeat(count);
+      const start = performance.now();
+      const shown = plainLine(text);
+      const milliseconds = performance.now() - start;
+      expect(milliseconds).toBeLessThan(BOUND_MS);
+      // Every unit but the last is followed by its separator, and layout at the
+      // end is dropped; a unit that ends in a shown space keeps it.
+      const last = unit.endsWith(' \n') ? joined : joined.trimEnd();
+      expect(shown).toBe(joined.repeat(count - 1) + last);
+    }
+  });
+});
+
 describe('what the parser says of a duplicate member', () => {
   const duplicated = (key: string) =>
     `{"a":1,${JSON.stringify(key)}:1,${JSON.stringify(key)}:2}`;
