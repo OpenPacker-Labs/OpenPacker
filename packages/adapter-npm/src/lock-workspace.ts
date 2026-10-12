@@ -277,8 +277,14 @@ export function readLockWorkspace(
 
   const links: LockMemberLink[] = [];
   const linked = new Set<string>();
-  // A member whose link was refused is named in that refusal already.
+  // A member whose link was refused is named in that refusal already: it is
+  // the member of the link's name, or the one the link points at.
   const answered = new Set<string>();
+  const byName = new Map(members.map((member) => [member.name, member]));
+  const answerFor = (name: string): void => {
+    const owner = byName.get(name);
+    if (owner !== undefined) answered.add(owner.dir);
+  };
   for (const link of input.links) {
     if (link.chain.length !== 1) {
       refused.push({
@@ -290,6 +296,7 @@ export function readLockWorkspace(
     const name = link.chain[0]!;
     const problem = targetProblem(link.target);
     if (problem !== undefined) {
+      answerFor(name);
       refused.push({
         path: link.path,
         reason: `a link that ${problem}; only a workspace member may be linked`,
@@ -298,6 +305,7 @@ export function readLockWorkspace(
     }
     const member = byDir.get(link.target);
     if (member === undefined) {
+      answerFor(name);
       refused.push({
         path: link.path,
         reason: `a link to ${link.target}, which is not a workspace member (${selects}); only a workspace member may be linked`,
@@ -306,6 +314,7 @@ export function readLockWorkspace(
     }
     if (member.name !== name) {
       answered.add(member.dir);
+      answerFor(name);
       refused.push({
         path: link.path,
         reason: `a link named ${name} to the member ${member.name} (${member.dir}); a member is linked under its own name only`,

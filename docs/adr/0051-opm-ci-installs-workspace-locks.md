@@ -64,7 +64,10 @@ are not downloading:
    and a package **bundled in a member**: a member is a directory, so there is
    no archive to take a bundled copy from. Two members with one name, a member
    with no link of its own, and patterns that cannot be read are errors, not
-   refusals: the lock contradicts itself.
+   refusals: the lock contradicts itself. A member's **own** link that is the
+   offender (`node_modules/one` with `resolved: "../../.."`, or pointing at a
+   directory no pattern selects) is a refusal that names that link; "has no
+   link" is said only when the lock holds no link of that name at all.
 
 4. Nothing nested is linked. npm writes only root-level links for workspaces; a
    link inside a package or a member (what a `file:` dependency on a member

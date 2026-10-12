@@ -204,3 +204,107 @@ describe('what the lock may ask for', () => {
     );
   });
 });
+
+describe("a member's own link is the thing the lock gets wrong", () => {
+  // The link npm writes for `one` is `node_modules/one`; the lock below
+  // replaces it, so the refusal has to name that link and no other.
+  const lockWith = (target: string) =>
+    workspaceLock({
+      members: { 'packages/one': member('one') },
+      packages: {
+        'node_modules/one': link(target),
+        'vendor/one': { name: 'one', version: '1.0.0' },
+      },
+    });
+
+  it.each([
+    ['leaves the project root', '../../outside', /leaves the project root/u],
+    ['leaves it by one more step', '../../..', /leaves the project root/u],
+    ['is `..`', '..', /leaves the project root/u],
+    ['is an absolute path', '/etc', /an absolute path/u],
+    ['is a drive path', 'C:/x', /an absolute path/u],
+    ['is the project itself', '.', /the project root itself/u],
+    ['is empty', '', /has no target/u],
+    ['is not in normal form', './packages/one', /not in normal form/u],
+    ['ends in a slash', 'packages/one/', /not in normal form/u],
+    ['doubles a slash', 'packages//one', /not in normal form/u],
+    ['has a backslash', 'packages\\one', /not a path inside the project/u],
+    ['has a NUL', 'packages/one\0', /not a path inside the project/u],
+    [
+      'is a directory no pattern selects',
+      'vendor/one',
+      /not a workspace member/u,
+    ],
+    ['is the name of a layout directory', '.opm/x', /not a workspace member/u],
+    ['is under node_modules', 'node_modules/two', /not a workspace member/u],
+    ['is a glob', 'packages/*', /not a workspace member/u],
+  ])('names it when its target %s', (_label, target, reason) => {
+    const tree = treeOf(lockWith(target));
+    expect(tree.workspace?.links).toEqual([]);
+    expect(
+      tree.workspace?.refused.filter(
+        (entry) => entry.path === 'node_modules/one',
+      ),
+    ).toEqual([
+      {
+        path: 'node_modules/one',
+        reason: expect.stringMatching(reason),
+      },
+    ]);
+  });
+
+  it('does not point the link at the member that has its name when its target is elsewhere', () => {
+    const tree = treeOf(lockWith('vendor/one'));
+    // The member `one` exists and is called `one`; the lock pointing its link
+    // at another directory does not make that directory `one`, and the link is
+    // not quietly repointed at packages/one.
+    expect(tree.workspace?.members.map((m) => m.dir)).toEqual(['packages/one']);
+    expect(tree.workspace?.links).toEqual([]);
+    expect(
+      tree.workspace?.refused.some(
+        (entry) =>
+          entry.path === 'node_modules/one' &&
+          /a link to vendor\/one, which is not a workspace member/u.test(
+            entry.reason,
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it('names a link for one member that points at another member', () => {
+    const tree = treeOf(
+      workspaceLock({
+        members: {
+          'packages/one': member('one'),
+          'packages/two': member('two'),
+        },
+        packages: { 'node_modules/one': link('packages/two') },
+      }),
+    );
+    expect(tree.workspace?.links.map((l) => l.path)).toEqual([
+      'node_modules/two',
+    ]);
+    expect(
+      tree.workspace?.refused.map((entry) => [entry.path, entry.reason]),
+    ).toEqual([
+      [
+        'node_modules/one',
+        expect.stringMatching(
+          /a link named one to the member two \(packages\/two\)/u,
+        ),
+      ],
+    ]);
+  });
+
+  it('still says a member has no link when the lock has no link of that name at all', () => {
+    expect(() =>
+      treeOf(
+        workspaceLock({
+          members: { 'packages/one': member('one') },
+          linked: { 'packages/one': null },
+          packages: { 'node_modules/evil': link('../../outside') },
+        }),
+      ),
+    ).toThrow(/member one \(packages\/one\) has no node_modules\/one link/u);
+  });
+});

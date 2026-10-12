@@ -36,6 +36,31 @@ describe('installFrozen refuses, before it fetches or writes anything', () => {
     );
   });
 
+  it("a member's own link that points outside the project", async () => {
+    const w = await standard((x) =>
+      x.raw('node_modules/one', { resolved: '../../outside', link: true }),
+    );
+    await w.write();
+    await refused(
+      w,
+      'UNSUPPORTED_LOCK',
+      /node_modules\/one: a link that points at \.\.\/\.\.\/outside, which leaves the project root/u,
+    );
+  });
+
+  it("a member's own link that points at a directory no pattern selects", async () => {
+    const w = await standard((x) => {
+      x.raw('node_modules/one', { resolved: 'vendor/one', link: true });
+      x.raw('vendor/one', { name: 'one', version: '1.0.0' });
+    });
+    await w.write();
+    await refused(
+      w,
+      'UNSUPPORTED_LOCK',
+      /node_modules\/one: a link to vendor\/one, which is not a workspace member/u,
+    );
+  });
+
   it('a link to a directory the workspaces do not select', async () => {
     const w = await standard((x) => {
       x.raw('node_modules/vendored', {

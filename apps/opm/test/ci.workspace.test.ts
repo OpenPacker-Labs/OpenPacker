@@ -287,6 +287,22 @@ describe('opm ci in a workspace', () => {
       );
       expect(p.urls).toEqual([]);
     });
+
+    it("a member's own link that leaves the project, by the link's name", async () => {
+      const p = await workspace((lock) => {
+        (lock.packages as Record<string, unknown>)['node_modules/web'] = {
+          resolved: '../../..',
+          link: true,
+        };
+      });
+      const { code, err } = await ci(p);
+      expect(code).toBe(EXIT_CODES.invalidInput);
+      expect(err).toMatch(
+        /node_modules\/web: a link that points at \.\.\/\.\.\/\.\., which leaves the project root/u,
+      );
+      expect(err).not.toMatch(/has no node_modules\/web link/u);
+      expect(p.urls).toEqual([]);
+    });
   });
 
   it('is described in the help', async () => {
