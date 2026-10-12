@@ -184,9 +184,15 @@ export function planLayout(
       }
       wants.push({ id, as });
     }
+    // A package under its own name before one under an alias, so that when
+    // two names differ only by case it is the alias that gives way.
+    const aliased = (want: Want): number =>
+      Number(want.as !== byId.get(want.id)?.name);
     return wants.sort(
       (left, right) =>
-        compareText(left.id, right.id) || compareText(left.as, right.as),
+        aliased(left) - aliased(right) ||
+        compareText(left.id, right.id) ||
+        compareText(left.as, right.as),
     );
   };
   const wants = new Map(entries.map((entry) => [entry.id, wantsOf(entry)]));
@@ -243,6 +249,11 @@ export function planLayout(
       );
       continue;
     }
+    const variant = caseVariant(root, name);
+    if (variant !== undefined) {
+      skip(entry, caseCollision(entry, name, variant));
+      continue;
+    }
     if (taken === undefined) place(root, entry, name);
   }
 
@@ -265,18 +276,29 @@ export function planLayout(
           }
           // A different version answers to this name from here: nest, so this
           // package and what it requires see the one the solve selected.
+          const variant = caseVariant(node, as);
+          if (variant !== undefined) {
+            skip(wanted, caseCollision(wanted, as, variant));
+            continue;
+          }
           place(node, wanted, as);
           continue;
         }
         // Nothing answers to the name between here and the root. The root is the
         // best place for the version most of the closure wants; any other
-        // version stays beside its dependent.
+        // version stays beside its dependent. A directory whose name differs
+        // only by case from one already there would be the same directory on a
+        // case-insensitive filesystem, so it goes beside its dependent instead.
         const preferred = rootChoice.get(as);
-        place(
-          preferred === undefined || sameEntry(preferred, wanted) ? root : node,
-          wanted,
-          as,
-        );
+        const home =
+          preferred === undefined || sameEntry(preferred, wanted) ? root : node;
+        const where = caseVariant(home, as) === undefined ? home : node;
+        const variant = caseVariant(where, as);
+        if (variant !== undefined) {
+          skip(wanted, caseCollision(wanted, as, variant));
+          continue;
+        }
+        place(where, wanted, as);
       }
     }
   };
@@ -298,7 +320,9 @@ export function planLayout(
   for (const entry of preferredFirst(orphans, rootChoice)) {
     const name = directName(entry);
     const taken = root.children.get(name)?.entry;
-    if (taken === undefined) {
+    const variant = caseVariant(root, name);
+    if (variant !== undefined) skip(entry, caseCollision(entry, name, variant));
+    else if (taken === undefined) {
       place(root, entry, name);
       // It is installed, so what it requires has to resolve too.
       drain();
@@ -417,6 +441,27 @@ export class LayoutTooLargeError extends Error {
     );
     this.name = 'LayoutTooLargeError';
   }
+}
+
+/**
+ * The directory beside which `name` would be written whose name differs from it
+ * only by case. Two such names are one directory on a case-insensitive
+ * filesystem (the default on macOS and Windows), and the second write would
+ * replace the first without a word.
+ */
+function caseVariant(parent: Node, name: string): Node | undefined {
+  const folded = name.toLowerCase();
+  for (const [other, child] of parent.children)
+    if (other !== name && other.toLowerCase() === folded) return child;
+  return undefined;
+}
+
+function caseCollision(
+  entry: LayoutEntry,
+  name: string,
+  variant: Node,
+): string {
+  return `${entry.name}@${entry.version} would be installed as ${name}, which differs only by case from ${variant.installName} (${variant.entry!.name}@${variant.entry!.version}) in the same directory; they are one directory on a case-insensitive filesystem`;
 }
 
 /** What Node finds for `name` from the directory this package lives in. */
