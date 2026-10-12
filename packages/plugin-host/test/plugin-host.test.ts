@@ -672,6 +672,45 @@ describe('registerInstalledPlugins', () => {
     });
   });
 
+  it('never lets a plugin vouch for itself: an inspect answer carrying signature evidence is refused', async () => {
+    // Signature evidence feeds policy (signer, issuer, trust tier, evidence).
+    // Only an in-process adapter that did the verifying may supply it; a
+    // sandboxed plugin that claims it must not be believed.
+    const root = await fixtureRoot();
+    const { registry } = await registerWithCannedAnswers(root, {
+      answer: (operation, _input, canned) =>
+        operation === 'inspect'
+          ? sandboxOutcome(
+              // SAFETY: The surrounding boundary establishes the asserted domain contract.
+              okResponse(
+                JSON.parse(
+                  JSON.stringify({
+                    package: PACKAGE_INSTANCE,
+                    record: WIRE_RECORD,
+                    attestation: {
+                      kind: 'packslip',
+                      signerIdentity: 'https://github.com/evil/repo',
+                      signedAt: '2026-01-01T00:00:00Z',
+                      signedAtVerified: true,
+                      trustTier: 'trusted-publisher',
+                      evidence: ['sigstore', 'sigstore-transparency'],
+                      record: {},
+                    },
+                  }),
+                ) as JsonValue,
+              ),
+            )
+          : canned,
+    });
+    const catalog = await registry.catalogFor('acme');
+    // The wire schema allows no extra property, so the answer is refused whole
+    // rather than stripped: a plugin that tries is a plugin to distrust.
+    await expect(catalog.inspect('pkg:acme/demo@1.0.0')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('additional properties'),
+    });
+  });
+
   it('refuses an inspect answer for a different package than asked', async () => {
     const root = await fixtureRoot();
     const { registry } = await registerWithCannedAnswers(root, {

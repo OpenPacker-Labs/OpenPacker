@@ -120,6 +120,7 @@ npm run demo               # offline demo of the production path, fixtures only
 | Canonical package URLs across ecosystems              | `openpacker normalize`                                 |
 | Deterministic cross-ecosystem solve + proof           | `openpacker solve` / `npm run demo`                    |
 | Tool binary install via mise                          | [docs/integrations/mise.md](docs/integrations/mise.md) |
+| Install a vendor's tool from its signed release       | [packslip guide](docs/integrations/packslip.md)        |
 
 ---
 

@@ -7,6 +7,7 @@
 
 import type {
   CatalogProvider,
+  ProviderAttestation,
   ProviderInspection,
 } from '@openpacker/adapter-core';
 import type {
@@ -27,7 +28,12 @@ import {
   type TrustTier,
 } from '@openpacker/policy';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
-import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
+import type {
+  LockAttestation,
+  LockPackage,
+  OpmLockfile,
+  OpmManifest,
+} from './types.js';
 import { OpmError } from './types.js';
 import { assertPlainLockPackageData } from './lock-authority.js';
 
@@ -118,6 +124,8 @@ export function captureFactsFromInspection(
   if (options.registryId !== undefined) facts.registryId = options.registryId;
   if (options.priorTrustLevel !== undefined)
     facts.priorTrustLevel = options.priorTrustLevel;
+  if (inspection.attestation !== undefined)
+    applyAttestation(facts, inspection.attestation);
 
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const body = inspection.record.body as Record<string, unknown> | undefined;
@@ -186,6 +194,17 @@ export function captureFactsFromInspection(
       }
     }
   }
+
+  // A release the provider verified a signature for says when it was published
+  // inside the signed document, so unlike a registry's own timestamp it can be
+  // believed. Only an attested record gets to set it this way.
+  if (
+    inspection.attestation !== undefined &&
+    body &&
+    typeof body.publishedAt === 'string' &&
+    body.publishedAt.length > 0
+  )
+    facts.publishedAt = body.publishedAt;
 
   // An explicit source overrides whatever the packument's dist pointed at, so
   // it lands before the trust default below — otherwise a git source inherits
@@ -554,6 +573,46 @@ export async function captureFactsFromCatalog(
     ...(!(options.signal === undefined) && { signal: options.signal }),
   });
   return { inspection, facts };
+}
+
+/**
+ * Put what a provider verified about a release's signature into the facts
+ * policy evaluates: who signed, under which issuer, how strong that is, and
+ * which kinds of evidence were checked.
+ *
+ * The provider did the verifying before it returned the inspection; this only
+ * records the result, so a package with no attestation gets none of it.
+ */
+export function applyAttestation(
+  facts: PolicyFacts,
+  attestation: ProviderAttestation,
+): void {
+  facts.signerIdentity = attestation.signerIdentity;
+  if (attestation.issuer !== undefined)
+    facts.sigstoreIssuer = attestation.issuer;
+  facts.trustLevel = attestation.trustTier;
+  for (const type of attestation.evidence)
+    if (!facts.evidence.some((item) => item.type === type))
+      facts.evidence.push({ type, status: 'valid' });
+}
+
+/** What the lock keeps of a provider's attestation. */
+export function lockAttestationFrom(
+  attestation: ProviderAttestation,
+): LockAttestation {
+  return {
+    kind: attestation.kind,
+    signerIdentity: attestation.signerIdentity,
+    ...(attestation.issuer !== undefined && { issuer: attestation.issuer }),
+    signedAt: attestation.signedAt,
+    signedAtVerified: attestation.signedAtVerified,
+    evidence: [...attestation.evidence],
+    record: attestation.record,
+    ...(attestation.advancing !== undefined &&
+      attestation.advancing.length > 0 && {
+        advancing: [...attestation.advancing],
+      }),
+  };
 }
 
 /** Merge captured facts onto a lock package for persistence. */
