@@ -12,7 +12,8 @@
   layout the members will be linked into),
   [0046](0046-a-lockfile-is-installed-not-re-resolved.md) (a workspace lock is
   refused today), [0047](0047-opm-run-and-exec-run-the-users-own-scripts.md)
-  (`--filter` is not there yet)
+  (`--filter` is not there yet; it is, since
+  [ADR 0053](0053-opm-run-across-workspace-members.md))
 
 ## Context
 
@@ -261,8 +262,10 @@ Limits that remain:
 
 - Nothing installed from this when it was written: `opm ci` refused a workspace
   lock, `opm run` had no `--filter`, and there were no per-member
-  `node_modules`. `opm ci` installs a workspace lock as of ADR 0051; `opm run`
-  still has no `--filter`.
+  `node_modules`. `opm ci` installs a workspace lock as of
+  [ADR 0051](0051-opm-ci-installs-workspace-locks.md), and `opm run` and
+  `opm exec` take `--filter` since
+  [ADR 0053](0053-opm-run-across-workspace-members.md).
 - Ranges are read by the range parser `adapter-core` already has, which is not
   node-semver on partial versions. Put to npm's own semver (7.7.2,
   `satisfies(version, range, true)`) on 289 ranges and 23 versions, 6,647 pairs

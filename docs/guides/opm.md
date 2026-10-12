@@ -597,8 +597,9 @@ their verifier evidence can be independently replayed.
 | `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`.                                                                  |
 | `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                                                                                       |
 | `opm why <alias>`                        | Why a package is present                                                                                                                                                                                                           |
-| `opm run [script] [-- args]`             | Run a `package.json` script (pre/post hooks, exit code passed through). Not sandboxed.                                                                                                                                             |
-| `opm exec <bin> [-- args]`               | Run an executable from `node_modules/.bin`. Never fetches, never searches PATH. Not sandboxed.                                                                                                                                     |
+| `opm run [script] [options] [-- args]`   | Run a `package.json` script, or with `--filter`/`-r`/`-w` in workspace members ([below](#across-the-members-of-a-workspace)). Not sandboxed.                                                                                       |
+| `opm exec [options] <bin> [-- args]`     | Run an executable from `node_modules/.bin`, in the project or in members. Never fetches, never searches PATH (`node` aside). Not sandboxed.                                                                                        |
+| `opm <script\|bin> [args]`               | A word that is no command: the project script of that name, else the bin (`opm typecheck`, `opm --filter a build`).                                                                                                                |
 | `opm search <query>`                     | Candidate packages in a registry                                                                                                                                                                                                   |
 | `opm versions <purl>`                    | Every published version, oldest first                                                                                                                                                                                              |
 | `opm info <exact-purl>`                  | Digest, size, media type, download URL                                                                                                                                                                                             |
@@ -740,17 +741,201 @@ dependency's lifecycle scripts, never fetch or install anything, and never print
 the environment. `opm run` is for your repository's commands; use `opmx` for a
 tool you have not reviewed.
 
-Not here yet: running a script over a workspace's members (`--filter`,
-`--workspace`; `opm ci` already installs a workspace lock, with a `node_modules`
-for each member, see
-[Installing a workspace lock](#installing-a-workspace-lock), and the model is
-described under [Workspaces](#workspaces-the-model) below), and the
-`npm_config_*` and `npm_execpath` variables.
+Not here yet: the `npm_config_*` and `npm_execpath` variables.
 
 On Windows a script, and a bin that is a `.cmd` shim, are started through
 `cmd.exe /d /s /c` with every argument quoted and escaped for it; a real `.exe`
 is started directly. The quoting is covered by tests that run on every platform,
 and has not been run on Windows.
+
+### Across the members of a workspace
+
+In a workspace repository the same two commands run in the members, with the
+options of pnpm and npm
+([ADR 0053](../adr/0053-opm-run-across-workspace-members.md); the members and
+their order are [the model](#workspaces-the-model) below). The repository root
+is the project directory above; name another with `--path`.
+
+```sh
+opm run build -r                         # every member that has "build", dependencies first
+opm run build --filter '@acme/app...'    # @acme/app and what it depends on
+opm run test --filter '...^@acme/core'   # what depends on @acme/core, not @acme/core
+opm run build --filter './packages/*' --filter '!@acme/docs'
+opm run dev -r --parallel                # every member at once, streamed, no order
+opm run build -w @acme/web               # npm's -w: a name or a directory
+opm run build --workspaces               # npm's: every member, directory order, one at a time
+opm exec --filter @acme/web tsc -- -b    # the bin, run in that member's directory
+opm -r exec vitest run                   # pnpm's order works for run and exec: options before the command
+```
+
+| Option                          | Meaning                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--filter <selector>`, `-F`     | pnpm's selectors (name or `*` pattern, `./dir`, `{glob}`, `name...`, `...name`, `^`, `!`); repeatable. `[since]` is refused.    |
+| `-r`, `--recursive`             | Every member. The root is left out of `-r` and `--filter` unless `--include-workspace-root`, as pnpm does.                      |
+| `-w <name\|dir>`, `--workspace` | npm's: the member of that name or directory, or the members one level below a directory.                                        |
+| `--workspaces`, `-ws`           | npm's: every member.                                                                                                            |
+| `--workspace-root`              | The root alone.                                                                                                                 |
+| `--workspace-concurrency <n>`   | Members at once. Default `min(4, processors)` (npm's `-w` and `--workspaces`: 1). `0` is every processor, `-n` that many fewer. |
+| `--parallel`                    | Every member at once, no order, streamed.                                                                                       |
+| `--no-sort`, `--reverse`        | Directory order; dependents first.                                                                                              |
+| `--stream`                      | Write each line as it arrives instead of a block per member.                                                                    |
+| `--if-present`                  | Succeed when no member has the script.                                                                                          |
+| `-C`, `--dir`, `--prefix <dir>` | Other spellings of `--path`.                                                                                                    |
+
+How a run goes:
+
+- **Members.** A member without the script is skipped; when none has it the run
+  is exit 4 (exit 0 with `--if-present`). A selector that matches nothing is
+  exit 4, one `opm` cannot read exit 2. `-r` and `--filter` start a member as
+  soon as the selected members it depends on have ended, never more than the
+  limit at once; `-w` and `--workspaces` run in directory order. The members of
+  a dependency cycle run together, with one `opm: warning:` line.
+- **Each member** runs in its own directory, with its own `node_modules/.bin`
+  (then each parent's) on `PATH` and its own `npm_package_name`,
+  `npm_package_version` and `npm_lifecycle_event`; `INIT_CWD` is still where you
+  started. `pre` and `post` hooks run per member, in npm's order. Arguments
+  after `--` go to every member's script. `exec` runs the bin in the member's
+  directory, resolved in every member before any starts.
+- **Output.** One member to run: exactly as `opm run` runs it, no prefix.
+  Several: every line is prefixed `@acme/web build: ` (the member's name, its
+  directory when it has none, then the step: `prebuild`, `build`, or the bin for
+  `exec`), stdout to stdout and stderr to stderr, one block per member as each
+  ends. With `--stream`, `--parallel` or one member at a time, lines come as
+  they arrive. Several members get no stdin and write to pipes, not a terminal:
+  a tool that colours or animates only on a terminal does not. A line with no
+  newline is written in pieces of at most 64 KiB, each prefixed, so a member
+  that prints one very long line cannot make `opm` hold it. Each member also has
+  a process group of its own, which a signal to `opm` reaches.
+- **Failure.** The first member to fail stops anything new from starting, the
+  running ones are sent `SIGTERM` (to their whole process group, with a terminal
+  or without), and `opm` exits with that member's status after one line,
+  `opm: script "build" of @acme/web exited with code 3`. A signal sent to `opm`
+  reaches every running member and the exit is 128 plus the signal.
+- **Links.** A member that is a symbolic link, or sits behind one, is refused
+  and its script never runs; `opm` never reads a workspace through a link.
+
+A directory that is no workspace is exit 2. The cost is a library load: about
+480 ms more than a plain `opm run`, and about 450 ms to find, select and order
+the 791 members of HoBo (measured on 4 shared CPUs).
+
+Differences from pnpm that matter when moving a script:
+
+- The member's name prefixes the output where pnpm prints its directory, and
+  `opm` prints no `build$ command` header and no `Done`.
+- `opm run build --watch` is a usage error where pnpm hands `--watch` to the
+  script: write `-- --watch`. After a script word (`opm build --watch`)
+  everything does go to the script.
+- No member having the script is exit 4; pnpm exits 0 with a message.
+- `--no-bail`, `--filter-prod`, `--resume-from`, `--report-summary`,
+  `--reporter`, `--loglevel`, `--test-pattern` and `exec -c` are refused by
+  name, not ignored.
+- `-w` is npm's (a name); pnpm's root is `--workspace-root`. `opm -w run x` says
+  so.
+- With members selected, `opm --filter a word` is a script only; pnpm does the
+  same, and `opm --filter a exec word` starts a bin.
+- `opm exec node` starts the Node that runs `opm`; every other name has to be in
+  a `.bin` directory.
+
+### Moving pnpm and npm command lines
+
+Every `pnpm`, `npm` and `npx` command line in the `package.json` scripts, GitHub
+workflows, shell scripts and git hooks, Dockerfiles, devcontainer and
+spawn-style calls of five repositories was counted: 482 lines in 34 forms (HoBo,
+ai-bdd, ts-autocode, gitlang and OpenSesame at the commits in
+`apps/opm/test/fixtures/workspace-run-forms.json`; HoBo's vendored `external/`
+is left out, and three matches inside printed text are dropped). **382 of them
+(79%) are `run`, `exec` or a script word and run under `opm` with the program
+name changed**; the 27 `npx` and `dlx` lines are answered with a pointer to
+`opm exec` and `opmx`; the other 73 are `install`, `ci`, `publish` and version
+queries, which are other commands. None is refused. `run-forms.test.ts` reads
+every form below the way the process entry does.
+
+To move a command line, change `pnpm` or `npm` to `opm`. Two things differ: a
+word that is also an `opm` command (`list`, `install`, `add`, `update`,
+`remove`, `init`, `info`) is the command, so a script with such a name is
+`opm run list`; and `npm test`, `npm start` and `npm stop` are just script words
+here.
+
+**Run, exec and script words (supported)**
+
+| Form                                              | Lines | Where                            | `opm`                                            |
+| ------------------------------------------------- | ----: | -------------------------------- | ------------------------------------------------ |
+| `pnpm run <script>`                               |    96 | HoBo 93, OpenSesame 3            | `opm run <script>`                               |
+| `pnpm <script or bin>`                            |    55 | ai-bdd 12, OpenSesame 43         | `opm <script or bin>`                            |
+| `pnpm --filter <selector> <script or bin>`        |    52 | HoBo 3, OpenSesame 49            | `opm --filter <selector> <script or bin>`        |
+| `npm run <script>`                                |    43 | HoBo 21, ts-a 18, gitlang 4      | `opm run <script>`                               |
+| `pnpm exec <bin> <args>`                          |    40 | HoBo 20, ai-bdd 5, OpenSesame 15 | `opm exec <bin> <args>`                          |
+| `pnpm --filter <selector> exec <bin> <args>`      |    25 | HoBo 3, ai-bdd 4, OpenSesame 18  | `opm --filter <selector> exec <bin> <args>`      |
+| `pnpm --filter <selector> test`                   |    16 | HoBo 6, OpenSesame 10            | `opm --filter <selector> test`                   |
+| `pnpm <script or bin> <args>`                     |    14 | HoBo 3, ai-bdd 3, OpenSesame 8   | `opm <script or bin> <args>`                     |
+| `npm run <script> -w <name\|dir>`                 |     8 | gitlang 8                        | `opm run <script> -w <name\|dir>`                |
+| `pnpm --filter <selector> run <script>`           |     6 | HoBo 6                           | `opm --filter <selector> run <script>`           |
+| `pnpm --filter <selector> run <script> -- <args>` |     4 | HoBo 4                           | `opm --filter <selector> run <script> -- <args>` |
+| `pnpm --dir <dir> exec <bin> <args>`              |     4 | HoBo 3, OpenSesame 1             | `opm --dir <dir> exec <bin> <args>`              |
+| `pnpm --filter <selector> <script or bin> <args>` |     4 | OpenSesame 4                     | `opm --filter <selector> <script or bin> <args>` |
+| `npm run <script> -w <name\|dir> -- <args>`       |     3 | gitlang 3                        | `opm run <script> -w <name\|dir> -- <args>`      |
+| `pnpm run <script> -- <args>`                     |     2 | HoBo 2                           | `opm run <script> -- <args>`                     |
+| `pnpm test`                                       |     2 | OpenSesame 2                     | `opm test`                                       |
+| `pnpm --silent run <script>`                      |     1 | HoBo 1                           | `opm --silent run <script>`                      |
+| `pnpm --prefix <dir> test`                        |     1 | HoBo 1                           | `opm --prefix <dir> test`                        |
+| `pnpm <script or bin> -- <args>`                  |     1 | HoBo 1                           | `opm <script or bin> -- <args>`                  |
+| `pnpm --prefix <dir> run <script>`                |     1 | HoBo 1                           | `opm --prefix <dir> run <script>`                |
+| `pnpm --filter <selector> -r run <script>`        |     1 | ai-bdd 1                         | `opm --filter <selector> -r run <script>`        |
+| `pnpm --silent <script or bin> -- <args>`         |     1 | OpenSesame 1                     | `opm --silent <script or bin> -- <args>`         |
+| `pnpm --workspace-root exec <bin> <args>`         |     1 | OpenSesame 1                     | `opm --workspace-root exec <bin> <args>`         |
+| `pnpm --filter <selector> start`                  |     1 | OpenSesame 1                     | `opm --filter <selector> start`                  |
+
+**npx and dlx (answered with a pointer)**
+
+| Form                                            | Lines | Where                  | `opm`                                                                          |
+| ----------------------------------------------- | ----: | ---------------------- | ------------------------------------------------------------------------------ |
+| `npx <bin or package> <args>`                   |    26 | HoBo 13, OpenSesame 13 | `opm exec <bin> (an installed bin), or opmx <package> (fetched and sandboxed)` |
+| `pnpm --package <package> dlx <command> <args>` |     1 | OpenSesame 1           | `opmx <package> (fetched and sandboxed)`                                       |
+
+**Other commands (outside this change)**
+
+| Form                             | Lines | Where                             | `opm`                   |
+| -------------------------------- | ----: | --------------------------------- | ----------------------- |
+| `pnpm install`                   |    59 | HoBo 29, ai-bdd 13, OpenSesame 17 | `opm ci / opm install`  |
+| `npm install <flags> <packages>` |     5 | OpenSesame 5                      | `opm install / opm add` |
+| `npm install <flags>`            |     2 | HoBo 2                            | `opm install / opm add` |
+| `pnpm --version`                 |     2 | HoBo 1, OpenSesame 1              | `—`                     |
+| `npm ci`                         |     2 | ts-a 2                            | `opm ci`                |
+| `npm install`                    |     1 | HoBo 1                            | `opm install / opm add` |
+| `pnpm -v`                        |     1 | OpenSesame 1                      | `—`                     |
+| `pnpm publish`                   |     1 | OpenSesame 1                      | `opm publish`           |
+
+**Defined by the tools, not used by these repositories**
+
+| Form                                                      | `opm`                                                             |
+| --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm -C <dir> run <script>`                              | `opm -C packages/a run build`                                     |
+| `pnpm -r run <script>`                                    | `opm -r run build`                                                |
+| `pnpm -r --workspace-concurrency=<n> run <script>`        | `opm -r --workspace-concurrency=2 run build`                      |
+| `pnpm -r --parallel run <script>`                         | `opm -r --parallel run build`                                     |
+| `pnpm -r --stream run <script>`                           | `opm -r --stream run build`                                       |
+| `pnpm -r --no-sort run <script>`                          | `opm -r --no-sort run build`                                      |
+| `pnpm -r --reverse run <script>`                          | `opm -r --reverse run build`                                      |
+| `pnpm -r run <script> --if-present`                       | `opm -r run build --if-present`                                   |
+| `pnpm -r exec <bin> <args>`                               | `opm -r exec tsc -b`                                              |
+| `pnpm --workspace-root run <script>`                      | `opm --workspace-root run build`                                  |
+| `npm run <script> --workspaces`                           | `opm run build --workspaces`                                      |
+| `npm run <script> -ws`                                    | `opm run build -ws`                                               |
+| `npm run <script> --workspace=<name>`                     | `opm run build --workspace=a`                                     |
+| `npm run <script> --workspaces --if-present`              | `opm run build --workspaces --if-present`                         |
+| `npm run <script> --workspaces --include-workspace-root`  | `opm run build --workspaces --include-workspace-root`             |
+| `npm run <script> --if-present`                           | `opm run build --if-present`                                      |
+| `npm --workspace=<name> run <script>`                     | `opm --workspace=a run build`                                     |
+| `npm exec -w <name> -- <bin>`                             | `opm exec -w a -- tsc`                                            |
+| `pnpm -w run <script>`                                    | refused (exit 2): --workspace-root for the root                   |
+| `pnpm -r run <script> --no-bail`                          | refused (exit 2): --no-bail is not supported                      |
+| `pnpm --filter-prod <selector> run <script>`              | refused (exit 2): --filter-prod is not supported                  |
+| `pnpm --filter "[origin/main]" run <script>`              | refused (exit 2): git history                                     |
+| `pnpm exec -c "<line>"`                                   | refused (exit 2): never a shell line                              |
+| `pnpm -r run <script> --resume-from <package>`            | refused (exit 2): --resume-from is not supported                  |
+| `pnpm run <script> --watch (a script option with no --)`  | refused (exit 2): arguments for the script go after --            |
+| `pnpm --filter <selector> run <script>, nothing selected` | refused (exit 4): No workspace member matches the filter "nobody" |
+| `pnpm dlx <package>`                                      | refused (exit 2): opmx <package>                                  |
 
 ### Workspaces (the model)
 
@@ -759,8 +944,9 @@ members, which member depends on which, in what order they build, and which
 members a `--filter` selects
 ([ADR 0049](../adr/0049-workspaces-are-a-model-before-they-are-an-install.md)).
 `opm ci` uses it to hold a workspace lock to the members on disk and to read
-`-w`; `opm run` has no `--filter` yet. It is a library that the commands are
-built on, in `@openpacker/opm-project` (reading the directory) and
+`-w`; `opm run` and `opm exec` use it for `--filter`, `-r` and `-w`
+([above](#across-the-members-of-a-workspace)). It is a library that the commands
+are built on, in `@openpacker/opm-project` (reading the directory) and
 `@openpacker/adapter-core` (the pure model).
 
 ```ts

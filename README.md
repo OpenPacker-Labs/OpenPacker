@@ -68,6 +68,7 @@ node ../../apps/opm/dist/opmx.js demo-tool --version
 | `opm list` / `opm why`  | Inspect the project graph                  |
 | `opm run [script]`      | Run a `package.json` script (unsandboxed)  |
 | `opm exec <bin>`        | Run a `node_modules/.bin` executable       |
+| `opm -r run <script>`   | Run it in workspace members (`--filter`)   |
 | `opmx <bin\|pkg>`       | Execute an installed binary                |
 
 Project layout:
