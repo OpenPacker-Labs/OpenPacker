@@ -8,6 +8,7 @@ import {
   canonicalProjectionDigest,
   compareCanonicalStrings,
   formatDigest,
+  parseUntrustedUrl,
 } from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS } from '@openpacker/contracts';
 import type {
@@ -1102,7 +1103,7 @@ function findArtifact(
 
 function sourceScheme(uri: string): string | undefined {
   try {
-    return new URL(uri).protocol.replace(/:$/u, '');
+    return parseUntrustedUrl(uri).protocol.replace(/:$/u, '');
   } catch {
     return undefined;
   }

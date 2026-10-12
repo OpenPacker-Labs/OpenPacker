@@ -19,6 +19,7 @@ import {
   formatDigest,
   parseCanonicalJson,
   parseDigest,
+  parseUntrustedUrl,
 } from '@openpacker/canonical';
 import { validateContract } from '@openpacker/conformance';
 import type {
@@ -744,6 +745,19 @@ function parseTarget(value: string): JsonValue {
   return { os, architecture };
 }
 
+/**
+ * The address a provider gave for an artifact, read through the guard: a host no
+ * DNS name could be is refused without the URL parser spending most of a second
+ * on it, and the address is not repeated.
+ */
+function providerLocation(uri: string): URL {
+  try {
+    return parseUntrustedUrl(uri);
+  } catch {
+    throw new InputError('Provider artifact location is not a URL');
+  }
+}
+
 function locationSource(
   descriptor: ArtifactDescriptor,
   offline: boolean,
@@ -762,7 +776,9 @@ function locationSource(
       signal?.throwIfAborted();
       if (location.transport === 'file') {
         const root = await realpath(process.cwd());
-        const artifact = await realpath(fileURLToPath(location.uri));
+        const artifact = await realpath(
+          fileURLToPath(providerLocation(location.uri)),
+        );
         const fromRoot = relative(root, artifact);
         if (
           fromRoot === '..' ||
@@ -776,7 +792,7 @@ function locationSource(
           );
         return streamFromBytes(await readFile(artifact));
       }
-      const url = new URL(location.uri);
+      const url = providerLocation(location.uri);
       if (url.protocol !== 'https:' || url.username || url.password)
         throw new InputError(
           'Provider artifact locations must use credential-free HTTPS',
@@ -872,7 +888,7 @@ function archiveFormat(descriptor: ArtifactDescriptor): ArchiveFormat {
  */
 function isLoopback(value: string): boolean {
   try {
-    const { hostname } = new URL(value);
+    const { hostname } = parseUntrustedUrl(value);
     if (hostname === 'localhost') return true;
     const host =
       hostname.startsWith('[') && hostname.endsWith(']')
