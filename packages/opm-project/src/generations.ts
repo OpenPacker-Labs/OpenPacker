@@ -242,7 +242,7 @@ export async function readStoreReferences(
     if (parsed.referencesVersion !== '1')
       throw new OpmError(
         'INVALID_INPUT',
-        `Unsupported store reference version: ${String(parsed.referencesVersion)}`,
+        `Unsupported store reference version: ${echoed(String(parsed.referencesVersion))}`,
       );
     return { referencesVersion: '1', edges: parsed.edges ?? {} };
   } catch (error) {
