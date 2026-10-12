@@ -1,6 +1,7 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias, type NpmAlias } from './alias.js';
+import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
 import {
   compareNpmVersions,
@@ -57,6 +58,13 @@ export interface NpmVersionMetadata {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   devDependencies?: Record<string, string>;
+  /**
+   * Names of dependencies that ship inside this package's own archive. The
+   * abbreviated packument carries them as an array; `true` (every dependency)
+   * and the `bundledDependencies` spelling are read from the full document.
+   */
+  bundleDependencies?: string[] | boolean;
+  bundledDependencies?: string[] | boolean;
   engines?: Record<string, string>;
   os?: string[];
   cpu?: string[];
@@ -486,6 +494,7 @@ export class NpmCodec
     ];
     const losses: SemanticLoss[] = [];
     const owner = `${metadata.name}@${metadata.version}`;
+    const bundled = bundledDependencyNames(metadata);
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(
         ([left], [right]) => compareCodePoints(left, right),
@@ -495,12 +504,19 @@ export class NpmCodec
           (field === 'peerDependencies' &&
             metadata.peerDependenciesMeta?.[name]?.optional === true);
         // What an install walks into: runtime dependencies and required peers.
+        // A dependency this package ships inside its own archive is not walked
+        // into, whatever it says, because it is never resolved.
+        const bundledHere =
+          (field === 'dependencies' || field === 'optionalDependencies') &&
+          bundled.has(name);
         const enforced =
-          field === 'dependencies' ||
-          (field === 'peerDependencies' && !optional);
+          !bundledHere &&
+          (field === 'dependencies' ||
+            (field === 'peerDependencies' && !optional));
         // Optional dependencies are walked where they run, so an alias in one
         // (the per-platform builds of a native package) is read like any other.
-        const followed = enforced || field === 'optionalDependencies';
+        const followed =
+          !bundledHere && (enforced || field === 'optionalDependencies');
         try {
           const requirement = npmRequirement(
             nodeId,
@@ -514,7 +530,11 @@ export class NpmCodec
             enforced,
             followed,
           );
-          requirements.push(requirement);
+          requirements.push(
+            bundledHere
+              ? asBundled(requirement, `/${field}/${name}`)
+              : requirement,
+          );
         } catch (error) {
           if (enforced) throw error;
           // A dev-time or optional entry this codec cannot read must not stop
