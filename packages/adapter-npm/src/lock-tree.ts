@@ -16,7 +16,7 @@
  */
 
 import { ProviderError } from '@openpacker/adapter-core';
-import { unsafeNameProblem } from './layout-plan.js';
+import { quoted, unsafeNameProblem } from './layout-plan.js';
 
 /** Most entries a lock may hold; the layout planner's own ceiling. */
 export const MAXIMUM_LOCK_ENTRIES = 50_000;
@@ -115,22 +115,22 @@ export function chainOfLockPath(path: string): string[] | undefined {
   let at = 0;
   while (at < segments.length) {
     if (segments[at] !== 'node_modules')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+      throw invalid(`The lock path ${quoted(path)} is malformed`);
     at += 1;
     let name = segments[at];
     if (name === undefined || name === '')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+      throw invalid(`The lock path ${quoted(path)} is malformed`);
     at += 1;
     if (name.startsWith('@')) {
       const second = segments[at];
       if (second === undefined || second === '')
-        throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+        throw invalid(`The lock path ${quoted(path)} is malformed`);
       name = `${name}/${second}`;
       at += 1;
     }
     const problem = unsafeNameProblem(name);
     if (problem !== undefined)
-      throw invalid(`The lock path ${JSON.stringify(path)}: ${problem}`);
+      throw invalid(`The lock path ${quoted(path)}: ${problem}`);
     chain.push(name);
   }
   return chain;
@@ -274,8 +274,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
   const foreign: LockForeignEntry[] = [];
   for (const path of keys.sort()) {
     const record = packages[path];
-    const where =
-      path === '' ? 'packages[""]' : `packages[${JSON.stringify(path)}]`;
+    const where = path === '' ? 'packages[""]' : `packages[${quoted(path)}]`;
     if (!isRecord(record)) throw invalid(`${where} must be an object`);
     if (path === '') {
       root = readRoot(record, where);
@@ -292,7 +291,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
         )
     )
       throw invalid(
-        `The lock path ${JSON.stringify(path)} is not a relative path inside the project`,
+        `The lock path ${quoted(path)} is not a relative path inside the project`,
       );
     const chain = chainOfLockPath(path);
     if (chain === undefined) {
@@ -402,7 +401,7 @@ export function parsePackageLockText(text: string): PackageLockTree {
   const duplicate = findDuplicateJsonKey(text);
   if (duplicate !== undefined)
     throw invalid(
-      `package-lock.json lists the key ${JSON.stringify(duplicate)} twice in one object`,
+      `package-lock.json lists the key ${quoted(duplicate)} twice in one object`,
     );
   let parsed: unknown;
   try {
