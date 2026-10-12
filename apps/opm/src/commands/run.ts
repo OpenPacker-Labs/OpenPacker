@@ -72,6 +72,15 @@ async function plain(): Promise<(text: string) => string> {
   return (await import('@openpacker/canonical')).plainLine;
 }
 
+/**
+ * A path quoted in a message. A directory a cloned repository holds may be named
+ * with a line feed or an escape, and a message that is a list keeps its own line
+ * feeds, so what it quotes is made one plain line where it is quoted.
+ */
+async function quoted(path: string): Promise<string> {
+  return (await plain())(path);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -87,7 +96,7 @@ async function readPackageFile(root: string): Promise<PackageFile | undefined> {
     if ((await stat(file)).size > MAX_PACKAGE_JSON_BYTES)
       throw new RunError(
         'INVALID_MANIFEST',
-        `${file} is larger than ${MAX_PACKAGE_JSON_BYTES} bytes`,
+        `${await quoted(file)} is larger than ${MAX_PACKAGE_JSON_BYTES} bytes`,
       );
     text = await readFile(file, 'utf8');
   } catch (error) {
@@ -103,17 +112,20 @@ async function readPackageFile(root: string): Promise<PackageFile | undefined> {
     const plainLine = await plain();
     throw new RunError(
       'INVALID_MANIFEST',
-      `${file} is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
+      `${plainLine(file)} is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (!isRecord(parsed))
-    throw new RunError('INVALID_MANIFEST', `${file} is not a JSON object`);
+    throw new RunError(
+      'INVALID_MANIFEST',
+      `${await quoted(file)} is not a JSON object`,
+    );
   const scripts = new Map<string, unknown>();
   if (parsed.scripts !== undefined) {
     if (!isRecord(parsed.scripts))
       throw new RunError(
         'INVALID_MANIFEST',
-        `"scripts" in ${file} is not an object`,
+        `"scripts" in ${await quoted(file)} is not an object`,
       );
     for (const [name, command] of Object.entries(parsed.scripts))
       scripts.set(name, command);
@@ -197,7 +209,7 @@ export async function runScriptCommand(
   if (pkg === undefined)
     throw new RunError(
       'NOT_FOUND',
-      `No package.json in ${root}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
+      `No package.json in ${await quoted(root)}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
     );
   if (request.script === undefined) return await listScripts(pkg, io);
 
@@ -208,7 +220,7 @@ export async function runScriptCommand(
     const names = [...pkg.scripts.keys()].map((name) => plainLine(name));
     throw new RunError(
       'NOT_FOUND',
-      `No script "${script}" in ${join(root, 'package.json')}` +
+      `No script "${script}" in ${plainLine(join(root, 'package.json'))}` +
         (names.length === 0
           ? ' (it has no scripts)'
           : `; it has: ${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}`),
@@ -224,7 +236,7 @@ export async function runScriptCommand(
     if (typeof command !== 'string')
       throw new RunError(
         'INVALID_MANIFEST',
-        `Script "${event}" in ${join(root, 'package.json')} is not a string`,
+        `Script "${event}" in ${await quoted(join(root, 'package.json'))} is not a string`,
       );
     const env = scriptEnvironment({
       base: context.env,
@@ -316,7 +328,7 @@ export async function runExecCommand(
     throw new RunError(
       'NOT_FOUND',
       [
-        `"${request.bin}" is not in node_modules/.bin of ${root} or any parent directory; exec never fetches or searches PATH`,
+        `"${request.bin}" is not in node_modules/.bin of ${plainLine(root)} or any parent directory; exec never fetches or searches PATH`,
         ...resolution.present.map(
           (file) => `${plainLine(file)} exists but is not executable`,
         ),
