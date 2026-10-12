@@ -84,6 +84,17 @@ jobs:
         # its struct layouts and errno values against Node and Linux.
         if: runner.os == 'macOS'
         run: npm run test -w @openpacker/project-io -- src/handle-darwin.test.ts
+      - name: Sandbox grants and pack output against the real libSystem (macOS)
+        # The grants a sandboxed run opens, and the output a delegated pack
+        # reads, are handle-relative: libc openat through koffi, never a name
+        # joined onto /dev/fd/N, which names nothing on macOS (ADR 0045). This
+        # runs both on the host that shows it; the same code runs on Linux
+        # against glibc. It also checks that what cannot run on macOS (an
+        # executable snapshot, a containment backend) is refused by name.
+        if: runner.os == 'macOS'
+        run: |
+          npm run test -w @openpacker/sandbox -- src/sandbox.darwin.test.ts
+          npm run test -w @openpacker/pack-provider -- src/pack.darwin.test.ts
       - name: Pack publishable packages
         # bash on every runner, and the directory first: npm does not create a
         # --pack-destination, and fails with ENOENT when it is missing.
