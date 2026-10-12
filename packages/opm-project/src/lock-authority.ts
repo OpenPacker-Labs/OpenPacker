@@ -107,6 +107,13 @@ function clonePlainData(
         'INVALID_LOCK',
         `Lock package ${path}.${key} is an accessor`,
       );
+    // `cloned['__proto__'] = …` would set the clone's prototype and drop the
+    // key from what is bound; no lock field is named that.
+    if (key === '__proto__')
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock package ${path} has a "__proto__" key`,
+      );
     if (descriptor.value !== undefined)
       cloned[key] = clonePlainData(descriptor.value, `${path}.${key}`, seen);
   }

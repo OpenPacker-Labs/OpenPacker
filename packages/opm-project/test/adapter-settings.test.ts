@@ -14,6 +14,7 @@ import {
   type OpmLockfile,
   type OpmManifest,
 } from '../src/index.js';
+import { assertPlainLockPackageData } from '../src/lock-authority.js';
 
 const PROJECT = 'github.com/jdx/hk';
 
@@ -116,6 +117,80 @@ describe('adapter settings in opm.toml', () => {
         adapterSettings: { packslip: { list: [1, 2] } },
       }),
     ).toThrow(expect.objectContaining({ code: 'INVALID_MANIFEST' }));
+  });
+});
+
+describe('adapter settings cannot reach past themselves', () => {
+  const manifestWith = (section: string) =>
+    `[project]\nname = "x"\necosystems = []\n\n${section}\n`;
+  const clean = () => {
+    expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
+    expect(Object.hasOwn(Object.prototype, 'isAdmin')).toBe(false);
+    expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+  };
+
+  it.each([
+    [
+      '__proto__ as a trust entry',
+      '[adapters.packslip.trust."__proto__"]\nisAdmin = true',
+    ],
+    ['__proto__ as a setting', '[adapters.packslip]\n__proto__ = ["x"]'],
+    [
+      'constructor as an ecosystem',
+      '[adapters.constructor.prototype."k"]\nisAdmin = true',
+    ],
+    [
+      'constructor as a bare ecosystem',
+      '[adapters.constructor]\npolluted = "yes"',
+    ],
+  ])('refuses %s, and leaves Object.prototype alone', (_label, section) => {
+    expect(() => parseManifest(manifestWith(section))).toThrow(
+      expect.objectContaining({ code: 'INVALID_MANIFEST' }),
+    );
+    clean();
+  });
+
+  it('treats constructor and prototype as the ordinary names they are in a table', () => {
+    const manifest = parseManifest(
+      manifestWith(
+        '[adapters.packslip.constructor."k"]\nisAdmin = true\n\n[adapters.packslip]\nprototype = "p"',
+      ),
+    );
+    const settings = manifest.adapterSettings?.packslip;
+    expect(Object.hasOwn(settings ?? {}, 'constructor')).toBe(true);
+    expect(settings?.prototype).toBe('p');
+    clean();
+  });
+
+  it('refuses a misspelled ecosystem, which would otherwise drop a pin without a word', () => {
+    expect(() =>
+      parseManifest(
+        manifestWith(
+          '[adapters.packslp.trust."github.com/jdx/hk"]\npin = ["ps1_snirenkjwr7m5ozgcufameodnm"]',
+        ),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'INVALID_MANIFEST',
+        message: expect.stringContaining('packslp'),
+      }),
+    );
+  });
+});
+
+describe('what a lock package may carry', () => {
+  it('refuses a "__proto__" key, which no field is named', () => {
+    const lock = parseLockfile(
+      lockWith({
+        ...ATTESTATION,
+        record: JSON.parse('{"__proto__": {"x": 1}}'),
+      }),
+    );
+    const pkg = lock.packages.hk;
+    if (pkg === undefined) throw new Error('expected a package');
+    expect(() => assertPlainLockPackageData(pkg)).toThrow(
+      expect.objectContaining({ code: 'INVALID_LOCK' }),
+    );
   });
 });
 

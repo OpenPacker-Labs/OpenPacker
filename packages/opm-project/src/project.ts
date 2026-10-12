@@ -589,10 +589,10 @@ async function readPreviousLock(
 ): Promise<OpmLockfile | undefined> {
   try {
     return await readLockfile(path);
-  } catch (error) {
-    if (error instanceof OpmError && error.code === 'INVALID_LOCK')
-      return undefined;
-    throw error;
+  } catch {
+    // Damaged, oversized, a symlink, unreadable: each is "no history". The
+    // lock is about to be rewritten, and it was never allowed to block that.
+    return undefined;
   }
 }
 

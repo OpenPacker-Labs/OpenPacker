@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -7,11 +15,13 @@ import {
   buildRelease,
   fakeFetch,
   generateTestKey,
+  generateTestLog,
   githubWorld,
   type BuildOptions,
   type TestKey,
 } from '@openpacker/packslip-testkit';
 import {
+  defaultSupplyChainPolicyInput,
   initProject,
   installFromLock,
   parseLockfile,
@@ -20,6 +30,7 @@ import {
   readLockfile,
   resolveManifestToLock,
   serializeLockfile,
+  syncProject,
   updateProject,
   writeManifestFile,
   type OpmManifest,
@@ -90,6 +101,20 @@ layout = "opm"
 `;
 }
 
+/**
+ * The default policy, except that this tool is excused from the release-age
+ * gate. An unlogged, key-signed release has no time anyone verified (the
+ * statement's `published_at` is the signer's own word), so the gate cannot pass
+ * it; a project that trusts such a vendor says so, exactly like this.
+ */
+const excused = (manifest: OpmManifest): OpmManifest => ({
+  ...manifest,
+  policy: {
+    ...defaultSupplyChainPolicyInput(),
+    minimumReleaseAgeExclude: [BASE],
+  },
+});
+
 const registryOptions = (): RegistryOptions => ({
   fetch: network,
   lookup,
@@ -117,7 +142,7 @@ afterEach(async () => {
 describe('a packslip-signed tool in an opm project', () => {
   it('is resolved, verified and locked with what was checked', async () => {
     publish(['1.0.0']);
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     const lock = await resolveManifestToLock({
       root,
       manifest,
@@ -138,9 +163,10 @@ describe('a packslip-signed tool in an opm project', () => {
       registryId: 'urn:openpacker:registry:packslip',
       sourceKind: 'registry',
       trustLevel: 'registry-attested',
-      publishedAt: '2026-09-01T00:00:00Z',
       bins: [{ name: 'tool', path: 'tool/bin/tool', interpreter: 'native' }],
     });
+    // The signed `published_at` is the signer's word, so it is not a clock.
+    expect(locked?.publishedAt).toBeUndefined();
     expect(locked?.attestation).toMatchObject({
       kind: 'packslip',
       signerIdentity: key.keyId,
@@ -159,7 +185,7 @@ describe('a packslip-signed tool in an opm project', () => {
     publish(['1.0.0']);
     const lock = await resolveManifestToLock({
       root,
-      manifest: parseManifest(manifestText()),
+      manifest: excused(parseManifest(manifestText())),
       offline: false,
       registryOptions: registryOptions(),
     });
@@ -171,7 +197,7 @@ describe('a packslip-signed tool in an opm project', () => {
 
   it('installs the verified archive and its native executable', async () => {
     publish(['1.0.0']);
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     await project(manifest);
     const lock = await resolveManifestToLock({
       root,
@@ -196,7 +222,7 @@ describe('a packslip-signed tool in an opm project', () => {
   it('refuses a release when the project trusts a different key', async () => {
     publish(['1.0.0']);
     const other = generateTestKey();
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     manifest.adapterSettings = {
       packslip: {
         trust: {
@@ -219,7 +245,7 @@ describe('a packslip-signed tool in an opm project', () => {
 
   it('refuses a misspelled trust setting instead of trusting no one quietly', async () => {
     publish(['1.0.0']);
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     manifest.adapterSettings = {
       packslip: { trust: { [PROJECT]: { public_keys: key.publicKeyFile } } },
     };
@@ -236,9 +262,10 @@ describe('a packslip-signed tool in an opm project', () => {
     });
   });
 
-  it('is held to the default policy: a release that is too new waits', async () => {
-    // Published a moment before "now": the default 24h release-age gate holds.
-    publish(['1.0.0'], { publishedAt: new Date().toISOString() });
+  it('has no verified time when nothing logged it, so the default release-age gate cannot pass it', async () => {
+    // However old it says it is: the date is the signer's own word, and a
+    // stolen key would write whatever date suits it.
+    publish(['1.0.0'], { publishedAt: '2020-01-01T00:00:00Z' });
     await expect(
       resolveManifestToLock({
         root,
@@ -246,12 +273,69 @@ describe('a packslip-signed tool in an opm project', () => {
         offline: false,
         registryOptions: registryOptions(),
       }),
-    ).rejects.toMatchObject({ code: expect.stringMatching(/^POLICY_/u) });
+    ).rejects.toMatchObject({ code: 'POLICY_INDETERMINATE' });
+  });
+
+  describe('with a transparency log whose time is verified', () => {
+    const HOUR = 3600 * 1000;
+    let trustedRootPath: string | undefined;
+    const previous = process.env.OPM_PACKSLIP_TRUSTED_ROOT;
+
+    // Policy evaluates against the real clock, so "too new" is relative to it.
+    async function publishLogged(
+      integratedTime: Date,
+      over: Partial<BuildOptions> = {},
+    ): Promise<void> {
+      const log = generateTestLog();
+      trustedRootPath = join(root, 'trusted_root.json');
+      await writeFile(trustedRootPath, log.trustedRoot);
+      process.env.OPM_PACKSLIP_TRUSTED_ROOT = trustedRootPath;
+      publish(['1.0.0'], {
+        logged: { log, integratedTime },
+        // Backdated by the signer, as a stolen key would.
+        publishedAt: '2020-01-01T00:00:00Z',
+        ...over,
+      });
+    }
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env.OPM_PACKSLIP_TRUSTED_ROOT;
+      else process.env.OPM_PACKSLIP_TRUSTED_ROOT = previous;
+    });
+
+    const resolveIt = () =>
+      resolveManifestToLock({
+        root,
+        manifest: parseManifest(manifestText()),
+        offline: false,
+        registryOptions: registryOptions(),
+      });
+
+    it('holds a release that is too new, whatever date the signer gave it', async () => {
+      await publishLogged(new Date(Date.now() - 2 * HOUR));
+      await expect(resolveIt()).rejects.toMatchObject({
+        code: expect.stringMatching(/^POLICY_/u),
+        message: expect.stringContaining('Release age 120m'),
+      });
+    });
+
+    it('lets an old enough release through, aged from the log', async () => {
+      await publishLogged(new Date('2026-10-08T00:00:00Z'));
+      const lock = await resolveIt();
+      expect(lock.packages.tool).toMatchObject({
+        publishedAt: '2026-10-08T00:00:00.000Z',
+        attestation: {
+          signedAt: '2026-10-08T00:00:00.000Z',
+          signedAtVerified: true,
+          evidence: ['packslip', 'sigstore-transparency'],
+        },
+      });
+    });
   });
 
   it('does not let a pinned key stand in for Sigstore evidence a policy asks for', async () => {
     publish(['1.0.0']);
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     await expect(
       resolveManifestToLock({
         root,
@@ -298,7 +382,7 @@ describe('remembering who signed', () => {
   /** A project locked at 1.0.0, the only release there is. */
   async function lockedProject(): Promise<void> {
     publish(['1.0.0']);
-    const manifest = parseManifest(manifestText());
+    const manifest = excused(parseManifest(manifestText()));
     await project(manifest);
     const lock = await resolveManifestToLock({
       root,
@@ -317,11 +401,13 @@ describe('remembering who signed', () => {
     publish(['1.0.0', '1.1.0']);
     await writeManifestFile(
       join(root, 'opm.toml'),
-      parseManifest(
-        manifestText(
-          approvals.length === 0
-            ? ''
-            : `approvals = [${approvals.map((id) => `"${id}"`).join(', ')}]`,
+      excused(
+        parseManifest(
+          manifestText(
+            approvals.length === 0
+              ? ''
+              : `approvals = [${approvals.map((id) => `"${id}"`).join(', ')}]`,
+          ),
         ),
       ),
     );
@@ -384,18 +470,46 @@ describe('remembering who signed', () => {
     });
   });
 
-  it('is not fooled by deleting the lock: the manifest, not the lock, says who to trust', async () => {
+  it('forgets history when the lock is deleted, and nothing else: the manifest still says who is trusted', async () => {
     await lockedProject();
     const rotated = generateTestKey();
     await release110(rotated);
     await rm(join(root, 'opm.lock.json'));
-    // With no history there is nothing to compare — but the manifest still
-    // trusts only the configured key, so only that signer is accepted.
+    // With no history there is nothing to compare, so the change of signer goes
+    // unnoticed: that is what the lock's memory was for, and it is gone.
     const result = await update();
     expect(result.lock.packages.tool?.attestation?.signerIdentity).toBe(
       rotated.keyId,
     );
+    // The anchor is not in the lock. A key the manifest does not name is
+    // refused with the lock or without it.
+    await rm(join(root, 'opm.lock.json'));
+    key = generateTestKey();
+    newWorld();
+    publish(['1.0.0', '1.1.0']);
+    expect(await failure(update())).toMatchObject({
+      code: 'SIGNATURE_VERIFICATION_FAILED',
+    });
   });
+});
+
+describe('a lock that cannot be read', () => {
+  it.skipIf(process.platform === 'win32')(
+    'is no history, and does not stop the project from being synced',
+    async () => {
+      await initProject({ root, name: 'demo' });
+      await writeFile(join(root, 'elsewhere.json'), '{}');
+      await rm(join(root, 'opm.lock.json'), { force: true });
+      // A symlink where the lock should be is refused by the lock reader. The
+      // lock is about to be rewritten, and it was never allowed to block that.
+      await symlink('elsewhere.json', join(root, 'opm.lock.json'));
+      const result = await syncProject({ root, offline: true });
+      expect(result.lock.packages).toEqual({});
+      expect((await lstat(join(root, 'opm.lock.json'))).isSymbolicLink()).toBe(
+        false,
+      );
+    },
+  );
 });
 
 describe('naming a packslip tool on the command line', () => {

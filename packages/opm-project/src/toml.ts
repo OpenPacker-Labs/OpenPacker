@@ -263,7 +263,7 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push('');
     for (const id of Object.keys(p.sandboxPackageGrants ?? {}).sort()) {
       const grant = p.sandboxPackageGrants![id]!;
-      lines.push(`[sandbox.packages.${escapeKey(id)}]`);
+      lines.push(`[sandbox.packages.${packageGrantKey(id)}]`);
       if (grant.network !== undefined)
         lines.push(`network = ${grant.network ? 'true' : 'false'}`);
       if (grant.write?.length)
@@ -320,7 +320,13 @@ export function parseManifest(text: string): OpmManifest {
     }
   >();
   let adapterTarget: AdapterTarget | undefined;
-  const adapterSettings: Record<string, Record<string, JsonValue>> = {};
+  // Null-prototype all the way down: a setting is named by the manifest's
+  // author, and `__proto__` must be one more key and never a way to reach
+  // `Object.prototype`.
+  const adapterSettings: Record<
+    string,
+    Record<string, JsonValue>
+  > = Object.create(null);
   const policyScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasPolicy = false;
@@ -473,6 +479,11 @@ export function parseManifest(text: string): OpmManifest {
           `Adapter setting outside [adapters.<ecosystem>] at line ${i + 1}`,
         );
       const table = adapterTableFor(adapterSettings, adapterTarget, i + 1);
+      if (key === '__proto__')
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `"__proto__" is not a valid adapter setting name at line ${i + 1}`,
+        );
       if (Object.hasOwn(table, key))
         throw new OpmError(
           'INVALID_MANIFEST',
@@ -783,6 +794,14 @@ interface AdapterTarget {
 const ADAPTER_ECOSYSTEM = /^[a-z][a-z0-9-]*$/u;
 const ADAPTER_TABLE = /^[a-z][a-z0-9_]*$/u;
 
+/**
+ * The adapters that read `[adapters.<ecosystem>]`. A section naming any other
+ * ecosystem would be silently ignored, and an ignored `pin` is a project that
+ * trusts whoever signs; so a misspelled ecosystem is an error here, not a
+ * setting that never applies. An adapter that gains settings is added.
+ */
+const ADAPTER_SETTINGS_ECOSYSTEMS: ReadonlySet<string> = new Set(['packslip']);
+
 function parseAdapterHeader(name: string, line: number): AdapterTarget {
   const rest = name.slice('adapters.'.length);
   const quoted = /^([^.]+)\.([^.]+)\.("(?:[^"\\]|\\.)*")$/u.exec(rest);
@@ -793,6 +812,11 @@ function parseAdapterHeader(name: string, line: number): AdapterTarget {
     throw new OpmError(
       'INVALID_MANIFEST',
       `Unsupported TOML section [${name}] at line ${line}`,
+    );
+  if (!ADAPTER_SETTINGS_ECOSYSTEMS.has(ecosystem))
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `[${name}] at line ${line} names "${ecosystem}", which has no settings; adapters with settings: ${[...ADAPTER_SETTINGS_ECOSYSTEMS].join(', ')}`,
     );
   if (table === undefined || entry === undefined) return { ecosystem };
   if (!ADAPTER_TABLE.test(table))
@@ -806,7 +830,7 @@ function parseAdapterHeader(name: string, line: number): AdapterTarget {
   } catch {
     key = undefined;
   }
-  if (typeof key !== 'string' || key === '')
+  if (typeof key !== 'string' || key === '' || key === '__proto__')
     throw new OpmError(
       'INVALID_MANIFEST',
       `Invalid adapter entry key in [${name}] at line ${line}`,
@@ -820,15 +844,27 @@ function adapterTableFor(
   target: AdapterTarget,
   line: number,
 ): Record<string, JsonValue> {
-  const root = (settings[target.ecosystem] ??= {});
+  // `??=` on a plain object would hand back an inherited member for a name
+  // like `constructor`; every slot is looked up as an own property and every
+  // table created without a prototype.
+  if (!Object.hasOwn(settings, target.ecosystem))
+    settings[target.ecosystem] = Object.create(null) as Record<
+      string,
+      JsonValue
+    >;
+  const root = settings[target.ecosystem] as Record<string, JsonValue>;
   if (target.table === undefined || target.entry === undefined) return root;
-  const tables = (root[target.table] ??= {});
+  if (!Object.hasOwn(root, target.table))
+    root[target.table] = Object.create(null) as Record<string, JsonValue>;
+  const tables = root[target.table];
   if (typeof tables !== 'object' || tables === null || Array.isArray(tables))
     throw new OpmError(
       'INVALID_MANIFEST',
       `Adapter setting "${target.table}" is both a value and a table at line ${line}`,
     );
-  const entry = (tables[target.entry] ??= {});
+  if (!Object.hasOwn(tables, target.entry))
+    tables[target.entry] = Object.create(null) as Record<string, JsonValue>;
+  const entry = tables[target.entry];
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
     throw new OpmError(
       'INVALID_MANIFEST',
@@ -1210,6 +1246,25 @@ function tomlString(value: string): string {
 
 function tomlStringArray(values: readonly string[]): string {
   return `[${values.map((v) => tomlString(v)).join(', ')}]`;
+}
+
+/**
+ * A package id as the parser reads it back: bare when it can be, otherwise
+ * quoted (`"pkg:npm/sharp"`). Rewriting the manifest must never change which
+ * package a grant is for; a sanitized key silently moved a network grant to a
+ * package that does not exist.
+ */
+function packageGrantKey(id: string): string {
+  if (/^[A-Za-z0-9_-]+$/u.test(id)) return id;
+  const unquotable = [...id].some(
+    (char) => char === '"' || char === '\\' || char.charCodeAt(0) < 0x20,
+  );
+  if (unquotable)
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Package id ${JSON.stringify(id)} cannot be written as a [sandbox.packages] key`,
+    );
+  return `"${id}"`;
 }
 
 function escapeKey(key: string): string {
