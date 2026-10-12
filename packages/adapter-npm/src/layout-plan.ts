@@ -23,9 +23,24 @@
 
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { compareText, compareVersions } from './layout-compare.js';
+import {
+  chooseRootVersions,
+  directName,
+  preferredFirst,
+  reachableFrom,
+  sameEntry,
+  sortEntries,
+  wantsOf,
+} from './layout-choice.js';
+import {
+  caseCollision,
+  caseVariant,
+  unsafeNameProblem,
+} from './layout-names.js';
 import { checkLayoutLinks, type LayoutLink } from './layout-links.js';
 
 export { compareVersions };
+export { unsafeNameProblem };
 
 /** One package the plan places. */
 export interface LayoutEntry {
@@ -87,12 +102,6 @@ interface Node {
   chain: readonly string[];
   /** The directory name, which is the entry's own unless it was aliased. */
   installName: string;
-}
-
-/** One edge, as the planner follows it: the entry and the name it is found by. */
-interface Want {
-  id: string;
-  as: string;
 }
 
 /** The id a lock entry is known by when its lock did not name it. */
@@ -162,40 +171,9 @@ export function planLayout(
   const usable = (entry: LayoutEntry | undefined): entry is LayoutEntry =>
     entry !== undefined && !invalid.has(entry.id);
 
-  // What each entry requires, and the name it finds each by. An alias name is
-  // registry-controlled input that becomes a directory, so it is held to the
-  // rule a package name is; an edge that fails is left out, with the reason.
-  const wantsOf = (entry: LayoutEntry): Want[] => {
-    const wants: Want[] = [];
-    for (const id of new Set(entry.dependencies)) {
-      const wanted = byId.get(id);
-      if (wanted !== undefined) wants.push({ id, as: wanted.name });
-    }
-    for (const [as, id] of Object.entries(entry.aliases ?? {})) {
-      const wanted = byId.get(id);
-      if (wanted === undefined) continue;
-      const problem = unsafeNameProblem(as);
-      if (problem !== undefined) {
-        skip(
-          wanted,
-          `${entry.name}@${entry.version} requires it as ${problem.replace(/^"[^"]*" /u, `"${as}" `)}`,
-        );
-        continue;
-      }
-      wants.push({ id, as });
-    }
-    // A package under its own name before one under an alias, so that when
-    // two names differ only by case it is the alias that gives way.
-    const aliased = (want: Want): number =>
-      Number(want.as !== byId.get(want.id)?.name);
-    return wants.sort(
-      (left, right) =>
-        aliased(left) - aliased(right) ||
-        compareText(left.id, right.id) ||
-        compareText(left.as, right.as),
-    );
-  };
-  const wants = new Map(entries.map((entry) => [entry.id, wantsOf(entry)]));
+  const wants = new Map(
+    entries.map((entry) => [entry.id, wantsOf(entry, byId, skip)]),
+  );
 
   const reachable = reachableFrom(
     entries.filter((entry) => entry.direct && usable(entry)),
@@ -443,27 +421,6 @@ export class LayoutTooLargeError extends Error {
   }
 }
 
-/**
- * The directory beside which `name` would be written whose name differs from it
- * only by case. Two such names are one directory on a case-insensitive
- * filesystem (the default on macOS and Windows), and the second write would
- * replace the first without a word.
- */
-function caseVariant(parent: Node, name: string): Node | undefined {
-  const folded = name.toLowerCase();
-  for (const [other, child] of parent.children)
-    if (other !== name && other.toLowerCase() === folded) return child;
-  return undefined;
-}
-
-function caseCollision(
-  entry: LayoutEntry,
-  name: string,
-  variant: Node,
-): string {
-  return `${entry.name}@${entry.version} would be installed as ${name}, which differs only by case from ${variant.installName} (${variant.entry!.name}@${variant.entry!.version}) in the same directory; they are one directory on a case-insensitive filesystem`;
-}
-
 /** What Node finds for `name` from the directory this package lives in. */
 function lookup(from: Node, name: string): Node | undefined {
   for (
@@ -473,141 +430,6 @@ function lookup(from: Node, name: string): Node | undefined {
   ) {
     const hit = current.children.get(name);
     if (hit !== undefined) return hit;
-  }
-  return undefined;
-}
-
-/** The directory a direct entry takes at the root. */
-function directName(entry: LayoutEntry): string {
-  return entry.installName ?? entry.name;
-}
-
-function sameEntry(left: LayoutEntry, right: LayoutEntry): boolean {
-  return (
-    left.id === right.id ||
-    (left.name === right.name &&
-      left.version === right.version &&
-      left.digest === right.digest)
-  );
-}
-
-function reachableFrom(
-  roots: readonly LayoutEntry[],
-  byId: ReadonlyMap<string, LayoutEntry>,
-  usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
-  wants: ReadonlyMap<string, readonly Want[]>,
-): Set<string> {
-  const reached = new Set<string>();
-  const pending = [...roots];
-  while (pending.length > 0) {
-    const entry = pending.pop()!;
-    if (reached.has(entry.id)) continue;
-    reached.add(entry.id);
-    for (const { id } of wants.get(entry.id) ?? []) {
-      const next = byId.get(id);
-      if (usable(next)) pending.push(next);
-    }
-  }
-  return reached;
-}
-
-/**
- * Which entry of each install name earns the root: a direct requirement, else
- * the one the most reachable packages require under that name, else the
- * newest. Only a name with more than one candidate needs an answer.
- */
-function chooseRootVersions(
-  entries: readonly LayoutEntry[],
-  reachable: ReadonlySet<string>,
-  usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
-  wants: ReadonlyMap<string, readonly Want[]>,
-): Map<string, LayoutEntry> {
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const wantedBy = new Map<string, number>();
-  for (const entry of entries) {
-    if (!reachable.has(entry.id)) continue;
-    for (const { id, as } of wants.get(entry.id) ?? []) {
-      const key = `${as}\0${id}`;
-      wantedBy.set(key, (wantedBy.get(key) ?? 0) + 1);
-    }
-  }
-  const byName = new Map<string, LayoutEntry[]>();
-  const offer = (name: string, entry: LayoutEntry | undefined): void => {
-    if (!usable(entry) || !reachable.has(entry.id)) return;
-    byName.set(name, [...(byName.get(name) ?? []), entry]);
-  };
-  for (const entry of entries) {
-    if (entry.direct) offer(directName(entry), entry);
-    for (const { id, as } of wants.get(entry.id) ?? [])
-      if (reachable.has(entry.id)) offer(as, byId.get(id));
-  }
-  const choice = new Map<string, LayoutEntry>();
-  for (const [name, candidates] of byName) {
-    const distinct = candidates.filter(
-      (candidate, index) =>
-        candidates.findIndex((other) => sameEntry(other, candidate)) === index,
-    );
-    if (distinct.length < 2) continue;
-    const heldDirectly = (entry: LayoutEntry) =>
-      Number(entry.direct && directName(entry) === name);
-    distinct.sort(
-      (left, right) =>
-        heldDirectly(right) - heldDirectly(left) ||
-        (wantedBy.get(`${name}\0${right.id}`) ?? 0) -
-          (wantedBy.get(`${name}\0${left.id}`) ?? 0) ||
-        compareVersions(right.version, left.version) ||
-        compareText(left.id, right.id),
-    );
-    choice.set(name, distinct[0]!);
-  }
-  return choice;
-}
-
-function preferredFirst(
-  entries: readonly LayoutEntry[],
-  rootChoice: ReadonlyMap<string, LayoutEntry>,
-): LayoutEntry[] {
-  // With nothing known about who needs what, the newest version of a name wins
-  // the root: the same answer a flat layout gave when a later entry replaced an
-  // earlier one.
-  return [...entries].sort(
-    (left, right) =>
-      Number(rootChoice.get(directName(right)) === right) -
-        Number(rootChoice.get(directName(left)) === left) ||
-      compareVersions(right.version, left.version) ||
-      compareText(left.id, right.id),
-  );
-}
-
-function sortEntries(entries: readonly LayoutEntry[]): LayoutEntry[] {
-  return [...entries].sort(
-    (left, right) =>
-      compareText(left.name, right.name) ||
-      compareVersions(left.version, right.version) ||
-      compareText(left.id, right.id),
-  );
-}
-
-/**
- * Why a registry-supplied name is not a safe directory name, or undefined.
- *
- * A name becomes a path under a recursive delete, and a leading dot would let a
- * package replace `.bin`, so this is stricter than the registry's own rules.
- */
-export function unsafeNameProblem(name: string): string | undefined {
-  const segments = name.split('/');
-  const scoped = name.startsWith('@');
-  if (segments.length !== (scoped ? 2 : 1))
-    return `${JSON.stringify(name)} is not an npm package name`;
-  for (const [index, segment] of segments.entries()) {
-    const body = scoped && index === 0 ? segment.slice(1) : segment;
-    if (
-      body === '' ||
-      body.startsWith('.') ||
-      body.toLowerCase() === 'node_modules' ||
-      !/^[A-Za-z0-9._~+-]+$/u.test(body)
-    )
-      return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
   }
   return undefined;
 }

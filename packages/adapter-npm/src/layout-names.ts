@@ -1,0 +1,61 @@
+/**
+ * What a directory in `node_modules` may be called.
+ *
+ * A name comes from a registry (a package's own, or the key an alias is written
+ * under), becomes a path under a recursive delete, and has to name one
+ * directory on the filesystems it is written to.
+ */
+
+/**
+ * Why a registry-supplied name is not a safe directory name, or undefined.
+ *
+ * A name becomes a path under a recursive delete, and a leading dot would let a
+ * package replace `.bin`, so this is stricter than the registry's own rules.
+ */
+export function unsafeNameProblem(name: string): string | undefined {
+  const segments = name.split('/');
+  const scoped = name.startsWith('@');
+  if (segments.length !== (scoped ? 2 : 1))
+    return `${JSON.stringify(name)} is not an npm package name`;
+  for (const [index, segment] of segments.entries()) {
+    const body = scoped && index === 0 ? segment.slice(1) : segment;
+    if (
+      body === '' ||
+      body.startsWith('.') ||
+      body.toLowerCase() === 'node_modules' ||
+      !/^[A-Za-z0-9._~+-]+$/u.test(body)
+    )
+      return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
+  }
+  return undefined;
+}
+
+/** What the case check needs to know of a placed package. */
+interface Placed {
+  installName: string;
+  entry: { name: string; version: string } | undefined;
+}
+
+/**
+ * The directory beside which `name` would be written whose name differs from it
+ * only by case. Two such names are one directory on a case-insensitive
+ * filesystem (the default on macOS and Windows), and the second write would
+ * replace the first without a word.
+ */
+export function caseVariant<T extends Placed>(
+  parent: { children: ReadonlyMap<string, T> },
+  name: string,
+): T | undefined {
+  const folded = name.toLowerCase();
+  for (const [other, child] of parent.children)
+    if (other !== name && other.toLowerCase() === folded) return child;
+  return undefined;
+}
+
+export function caseCollision(
+  entry: { name: string; version: string },
+  name: string,
+  variant: Placed,
+): string {
+  return `${entry.name}@${entry.version} would be installed as ${name}, which differs only by case from ${variant.installName} (${variant.entry!.name}@${variant.entry!.version}) in the same directory; they are one directory on a case-insensitive filesystem`;
+}
