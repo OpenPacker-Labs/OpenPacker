@@ -369,10 +369,10 @@ The first measurement, one `json()` call on a body of exactly 64 MiB (Node
 22.22.0, linux/x64; seconds are from a machine whose load average was 14 to 25
 on 4 CPUs, so they are an upper bound and the memory is the figure to read):
 
-| body                                  | counted after the parse | the parser stops at the limit   | read before it stopped |
-| ------------------------------------- | ----------------------- | ------------------------------- | ---------------------- |
-| `{},` times 22.4 million (67,108,864) | 50.7 s, 7,442 MB RSS    | 2.0 to 4.4 s, 1,108 to 1,121 MB | 12.6 MB                |
-| `1,` times 33.6 million (67,108,863)  | 13.7 s, 2,556 MB RSS    | 0.7 to 1.1 s, 391 to 393 MB     | 8.4 MB                 |
+| body                                  | counted after the parse | the parser stops at the limit    | read before it stopped |
+| ------------------------------------- | ----------------------- | -------------------------------- | ---------------------- |
+| `{},` times 22.4 million (67,108,864) | 50.7 s, 7,442 MiB RSS   | 2.0 to 4.4 s, 1,108 to 1,121 MiB | 12.0 MiB               |
+| `1,` times 33.6 million (67,108,863)  | 13.7 s, 2,556 MiB RSS   | 0.7 to 1.1 s, 391 to 393 MiB     | 8.0 MiB                |
 
 The parser now counts: `parseCanonicalJson` takes `maximumValues` and
 `maximumDepth` and refuses the first value past either before it is built, so
@@ -391,48 +391,70 @@ s either way).
 
 The two shapes above were the first measurement's, and they are not the worst
 there are. The cost of a tree is set by the limit and by what the values are,
-and an object is dear: 4.2 million empty objects (`{},`) cost 1.1 GB and 4.2
-million numbers (`1,`) 0.38 GB, and an object with a member in it costs more
-again.
+and an object is dear: 4.2 million empty objects (`{},`) cost 1,085 to 1,140 MiB
+and 4.2 million numbers (`1,`) 382 MiB, and an object with a member in it costs
+more again.
 
-This measures eleven shapes through the real thing, not `json()` alone. A
+This measures fifteen shapes through the real thing, not `json()` alone. A
 loopback server sends the document chunked with no `Content-Length`, as a
 registry that does not say how much is coming would, to the repository's own
 `BoundedFetchTransport` and `NpmRegistryProvider`: `enumerate` for the
 abbreviated bound, `publishTime` for the full one, which asks for the full
 packument. Every document is exactly the size of its bound. Node 22.22.0,
-linux/x64, 4 CPUs shared with other work (load average 6 to 11), so the seconds
-are probably longer than an idle machine's; the figure to read is the peak RSS
-of the client process (`maxRSS`, so the MB are mebibytes), which moves about 10
-percent from run to run. A range is the least and the most of repeated runs, two
-for the first row and three for the 12-character object; every other row is one
-run.
+linux/x64, 4 CPUs shared with other work (load average 2.4 to 11), so the
+seconds are probably longer than an idle machine's. The figure to read is the
+peak RSS of the client process (`maxRSS`), in MiB (1 MiB is 1,048,576 bytes and
+1 GiB is 1,024 MiB), and it moves about 10 percent from run to run.
 
-| the document's values                                                         | 64 MiB, abbreviated (4,194,304 values)     | 96 MiB, full (6,291,456 values)         |
-| ----------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------- |
-| `{},` (3 bytes a value)                                                       | refused after 12 MiB: 2.8 to 5.2 s, 1.1 GB | refused after 18 MiB: 4.5 s, 1.6 GB     |
-| `1,` (2 bytes a value)                                                        | refused after 8 MiB: 1.2 s, 382 MB         | refused after 12 MiB: 1.5 s, 478 MB     |
-| `{"aaaaaaaaaaaaaaaaaaaaaaaaaa":1},` (the same 26-character key every time)    | accepted: 8.7 s, 1.3 GB                    | accepted: 9.5 s, 1.8 GB                 |
-| the same, each key different                                                  | accepted: 7.8 s, 1.4 GB                    | accepted: 12.7 s, 2.1 GB                |
-| the same, 20-character keys (14 bytes a value)                                | refused after 54 MiB: 5.0 s, 835 MB        | refused after 81 MiB: 7.9 s, 1.2 GB     |
-| `"<14 characters>",` (17 bytes a value)                                       | accepted: 3.3 s, 862 MB                    | accepted: 5.1 s, 1.2 GB                 |
-| `{"<26 characters, each different>":{}},` (an object in an object)            | accepted: 9.9 s, 1.8 GB                    | accepted: 16.6 s, 2.6 GB                |
-| the same, 20-character keys (14 bytes a value)                                | refused after 56 MiB: 6.0 s, 1.2 GB        | refused after 84 MiB: 9.7 s, 1.7 GB     |
-| one object of `"<12 characters, each different>":{},` members (18 bytes each) | accepted: 22.5 to 25.9 s, 2.2 to 2.4 GB    | accepted: 40.4 to 43.5 s, 3.1 to 3.7 GB |
-| the same, 7-character keys (13 bytes each)                                    | refused after 52 MiB: 52.2 s, 1.5 GB       | refused after 78 MiB: 91.1 s, 2.3 GB    |
-| the same as the 12-character one, with one `€` in the name (two bytes a char) | accepted: 23.8 s, 2.7 GB                   | accepted: 43.1 s, 3.8 GB                |
+Two sets of runs make up the table: the fix's own, and an independent review's,
+which wrote its own harness, re-ran the heaviest shapes and added four. A range
+is the least and the most of the runs made of that shape in both sets, for the
+time and for the memory separately: the slowest run is not the run that held the
+most. The number of runs is in brackets where there was more than one.
 
-A gzip response gives the same figure (the `{},` document: 4.6 s and 1,121 MB
-against 5.2 s and 1,140 MB), because the transport counts decoded bytes.
+| the document's values                                                         | 64 MiB, abbreviated (4,194,304 values)                            | 96 MiB, full (6,291,456 values)                                  |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `{},` (3 bytes a value)                                                       | refused after 12 MiB: 2.8 to 8.5 s, 1,085 to 1,140 MiB (5 runs)   | refused after 18 MiB: 4.5 s, 1,578 MiB                           |
+| `1,` (2 bytes a value)                                                        | refused after 8 MiB: 1.2 s, 382 MiB                               | refused after 12 MiB: 1.5 s, 478 MiB                             |
+| `{"aaaaaaaaaaaaaaaaaaaaaaaaaa":1},` (the same 26-character key every time)    | accepted: 8.7 s, 1,336 MiB                                        | accepted: 9.5 s, 1,831 MiB                                       |
+| the same, each key different                                                  | accepted: 7.8 s, 1,449 MiB                                        | accepted: 12.7 s, 2,051 MiB                                      |
+| the same, 20-character keys (14 bytes a value)                                | refused after 54 MiB: 5.0 s, 835 MiB                              | refused after 81 MiB: 7.9 s, 1,183 MiB                           |
+| `"<14 characters>",` (17 bytes a value)                                       | accepted: 3.3 s, 862 MiB                                          | accepted: 5.1 s, 1,227 MiB                                       |
+| `{"<26 characters, each different>":{}},` (an object in an object)            | accepted: 9.9 s, 1,782 MiB                                        | accepted: 16.6 s, 2,594 MiB                                      |
+| the same, 20-character keys (14 bytes a value)                                | refused after 56 MiB: 6.0 s, 1,214 MiB                            | refused after 84 MiB: 9.7 s, 1,741 MiB                           |
+| an array of `[]`                                                              | accepted: 19.1 s, 1,555 MiB                                       | not tried                                                        |
+| one object of `"<10 characters, each different>":{},` members (16 bytes each) | refused at the end of the body: 17.8 s, 1,628 MiB                 | refused at the end of the body: 43.2 s, 2,646 MiB                |
+| one object of `"<12 characters, each different>":{},` members (18 bytes each) | accepted: 22.5 to 28.9 s, 2,169 to 2,655 MiB (4 runs)             | accepted: 40.4 to 43.5 s, 3,149 to 3,653 MiB (3 runs)            |
+| the same, with one `€` in the name                                            | accepted: 23.8 to 30.4 s, 2,394 to 2,683 MiB (3 runs)             | accepted: 37.1 to 44.1 s, 3,807 to 3,956 MiB (3 runs)            |
+| the same, with 7-character keys (13 bytes each)                               | refused after 52 MiB: 52.2 to 60.6 s, 1,412 to 1,484 MiB (3 runs) | refused after 78 MiB: 91.1 to 100 s, 2,244 to 2,347 MiB (3 runs) |
+| the 7-character one, with one `€` in the name                                 | refused after 52 MiB: 60.8 s, 1,547 MiB                           | not tried                                                        |
+| an object with 11 characters and a `€` in each key                            | accepted: 26.0 s, 2,631 MiB                                       | accepted: 48.0 s, 3,851 MiB                                      |
+
+A gzip response gives the same figure (the `{},` document: 4.6 s and 1,121 MiB
+against 5.2 s and 1,140 MiB), because the transport counts decoded bytes.
+
+What the heaviest of them cost, by bound. Within a cell the time and the memory
+are of one shape; the two cells of a row are two different shapes:
+
+| bound               | the most memory                                                                                               | the longest                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 64 MiB, abbreviated | 2,169 to 2,683 MiB (2.1 to 2.6 GiB) in 22.5 to 30.4 s: one object of 12-character keys, with or without a `€` | 52.2 to 60.8 s at 1,412 to 1,547 MiB (1.4 to 1.5 GiB): one object of 7-character keys, with or without a `€` |
+| 96 MiB, full        | 3,149 to 3,956 MiB (3.1 to 3.9 GiB) in 37.1 to 44.1 s: the same object                                        | 91.1 to 100 s at 2,244 to 2,347 MiB (2.2 to 2.3 GiB): the same 7-character object                            |
 
 Reading it:
 
 - The earlier figure here, "at most about 1.1 to 1.2 GB and 3 to 10 seconds",
-  was the cost of two shapes and is withdrawn. Of the eleven shapes the most an
-  abbreviated packument cost was 2.7 GB (the object of millions of members with
-  one `€` in it) and 52 s (the same object, refused at the limit), and the most
-  a full one cost was 3.8 GB and 91 s. These are the heaviest shapes tried, and
-  nothing here shows that no heavier one exists.
+  was the cost of two shapes and is withdrawn. So is its first replacement,
+  which gave one number for each bound (2.7 GB and 52 s, 3.8 GB and 91 s): the
+  review's three runs of the 96 MiB `€` shapes (3,851, 3,894 and 3,956 MiB) were
+  all above the 3,807 MiB first measured for the 12-character one, and each pair
+  put the time of one shape beside the memory of another. These are the heaviest
+  shapes tried, over the runs made, and nothing here shows that no heavier one
+  exists.
+- The `€` was first thought to make the 12-character object dearer, from a
+  single run (2,683 MiB against 2,169 to 2,432 MiB for the object without it).
+  The review's runs overlap (2,655 MiB without it, 2,676 and 2,394 MiB with it),
+  so the explanation is not shown and is dropped.
 - The worst shape is one object with millions of members, each an empty object.
   The tree is dear and so is the time: 6 to 15 microseconds a member, growing a
   little faster than the size (5.3 microseconds a member at 250,000 members and
@@ -441,8 +463,9 @@ Reading it:
 - A refusal is not cheap. It comes when the tree has the limit's worth of
   values, wherever that is in the body, so a dense body is refused having built
   as many values as a sparse one is accepted with: the object with 7-character
-  keys was refused after 52 s, longer than the accepted one with 12-character
-  keys. Reading less of the body is the only saving.
+  keys was refused after 52.2 to 60.8 s, longer than the accepted one with
+  12-character keys (22.5 to 30.4 s). Reading less of the body is the only
+  saving.
 - These figures are a constant of the limits and not of the registry: a larger
   body is refused on bytes before it is parsed.
 
@@ -478,9 +501,10 @@ Three parts, and only the first is a bound on the resolve.
    128 MiB. `MemoizingTransport` keeps at most 256 MiB of abbreviated bodies,
    and those are the buffers the provider holds anyway; a full packument asks
    for more than the memo's ceiling and is not kept.
-2. **One parse**, in the table above: up to 2.7 GB for an abbreviated packument
-   and 3.8 GB for a full one, in the shapes tried, one at a time because the
-   parse is on the main thread.
+2. **One parse**, in the tables above: 2,169 to 2,683 MiB (2.1 to 2.6 GiB) for
+   an abbreviated packument and 3,149 to 3,956 MiB (3.1 to 3.9 GiB) for a full
+   one, in the shapes tried, one at a time because the parse is on the main
+   thread.
 3. **What a resolve keeps.** The provider keeps every packument it has read, the
    body and the tree parsed from it, until the resolve ends: the resolve never
    asks it to forget one. One provider reading six different 12 MiB packuments
@@ -531,8 +555,11 @@ archive's bound on what it expands to and is not touched here.
 
 - The other ecosystems' metadata bounds (cargo, PyPI, NuGet, Go, Maven: 8 MiB
   each) were not measured against their registries here.
-- The value limit allows a tree of 2.7 GB and 52 s for an abbreviated packument
-  and 3.8 GB and 91 s for a full one, in the shapes tried (above). A tighter
+- The value limit allows a tree that costs, in the shapes tried (above), 2,169
+  to 2,683 MiB (2.1 to 2.6 GiB) in 22.5 to 30.4 s for an abbreviated packument,
+  or 1,412 to 1,547 MiB (1.4 to 1.5 GiB) in 52.2 to 60.8 s in the slowest shape;
+  and 3,149 to 3,956 MiB (3.1 to 3.9 GiB) in 37.1 to 44.1 s for a full one, or
+  2,244 to 2,347 MiB (2.2 to 2.3 GiB) in 91.1 to 100 s in the slowest. A tighter
   limit is a change to `MINIMUM_BYTES_PER_METADATA_VALUE` and to the tests that
   pin 4,194,304; a cheaper tree or a budget that weighs objects is a change to
   the parser. Neither was made here.
@@ -548,8 +575,9 @@ archive's bound on what it expands to and is not touched here.
 - The full packument of `@wix/wix-code-types` is at three quarters of its bound
   (72.96 of 96 MiB), though it grows only 0.35 MiB a year. Raising the full
   packument's bound means accepting that the heaviest 96 MiB shape costs about
-  one and a half times the memory of the 64 MiB one, and 1.6 to 1.9 times the
-  time.
+  one and a half times the memory of the 64 MiB one (3,956 MiB against 2,683 MiB
+  at the tops of the ranges), and for the slowest shape 1.5 to 1.9 times the
+  time (91.1 to 100 s against 52.2 to 60.8 s).
 - The sample is 4,887 names and the full packument of 400 of them (above); it is
   not the registry.
 - Parsing is the cost of a large document: the canonical parser reads 12 to 16
