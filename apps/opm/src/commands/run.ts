@@ -63,6 +63,22 @@ function listScripts(pkg: PackageFile, io: ChildIo): number {
   return 0;
 }
 
+/** `opm <word>` with no script of that name: the executable of that name, as pnpm does. */
+async function execInstead(
+  request: RunRequest,
+  bin: string,
+  io: ChildIo,
+  cwd: string,
+  context: RunContext,
+): Promise<number> {
+  return await runExecCommand(
+    { bin, path: request.path, args: request.args },
+    io,
+    cwd,
+    context,
+  );
+}
+
 export async function runScriptCommand(
   request: RunRequest,
   io: ChildIo,
@@ -82,6 +98,8 @@ export async function runScriptCommand(
     );
   }
   const pkg = await readPackageFile(root);
+  if (pkg === undefined && request.script !== undefined && request.fallbackExec)
+    return await execInstead(request, request.script, io, cwd, context);
   if (pkg === undefined)
     throw new RunError(
       'NOT_FOUND',
@@ -92,6 +110,8 @@ export async function runScriptCommand(
   const script = request.script;
   if (!pkg.scripts.has(script)) {
     if (request.ifPresent) return 0;
+    if (request.fallbackExec)
+      return await execInstead(request, script, io, cwd, context);
     const names = [...pkg.scripts.keys()];
     throw new RunError(
       'NOT_FOUND',
@@ -180,8 +200,11 @@ export async function runProjectCommand(
   io: ChildIo,
   cwd: string,
   context: RunContext = processContext(),
+  fallbackExec = false,
 ): Promise<number> {
-  return command === 'run'
-    ? await runScriptCommand(parseRunRequest(head, rest), io, cwd, context)
-    : await runExecCommand(parseExecRequest(head, rest), io, cwd, context);
+  if (command === 'exec')
+    return await runExecCommand(parseExecRequest(head, rest), io, cwd, context);
+  const request = parseRunRequest(head, rest);
+  request.fallbackExec = fallbackExec;
+  return await runScriptCommand(request, io, cwd, context);
 }

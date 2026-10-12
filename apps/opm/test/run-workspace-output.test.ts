@@ -11,10 +11,10 @@ function say(pause: number, ...lines: string[]): string {
 /** Two members whose lines would interleave if they were not held back. */
 async function talkers() {
   return await makeWorkspace({
-    'packages/a': { name: '@s/a', scripts: { talk: say(150, 'a1', 'a2') } },
+    'packages/a': { name: '@s/a', scripts: { talk: say(800, 'a1', 'a2') } },
     'packages/b': {
       name: '@s/b',
-      scripts: { talk: `sleep 0.1; ${say(150, 'b1', 'b2')}` },
+      scripts: { talk: `sleep 0.4; ${say(800, 'b1', 'b2')}` },
     },
   });
 }
