@@ -21,6 +21,7 @@ export type {
   FrozenSourceKind,
 } from './frozen-lock.js';
 import {
+  CanonicalJsonLimitError,
   canonicalProjectionDigest,
   formatDigest,
   parseCanonicalJson,
@@ -1641,6 +1642,41 @@ function tooLargeMessage(
   }
 }
 
+/**
+ * A metadata document held more values, or nested deeper, than the adapter
+ * reads. The parser stops at the first value past the limit, and this says how
+ * far it had got: `visited` values begun (the refused one included) in `offset`
+ * of `documentLength` characters. A refusal that stopped at the limit has
+ * built at most `maximum` values, however large the document claimed to be.
+ */
+export class MetadataLimitError extends ProviderError {
+  constructor(
+    readonly limit: 'values' | 'depth',
+    readonly maximum: number,
+    readonly visited: number,
+    readonly offset: number,
+    readonly documentLength: number,
+    message = limit === 'values'
+      ? `Provider metadata exceeds ${maximum} values`
+      : `Provider metadata exceeds depth ${maximum}`,
+  ) {
+    super('INVALID_PROVIDER_METADATA', message);
+    this.name = 'MetadataLimitError';
+  }
+
+  /** The same refusal, naming what was being read: `The packument of vite`. */
+  about(subject: string): MetadataLimitError {
+    return new MetadataLimitError(
+      this.limit,
+      this.maximum,
+      this.visited,
+      this.offset,
+      this.documentLength,
+      `${subject} is not usable: ${this.message}`,
+    );
+  }
+}
+
 export interface ParsedPurl {
   type: string;
   namespace?: string | undefined;
@@ -2227,6 +2263,10 @@ export function text(response: HttpResponse): string {
   return new TextDecoder('utf-8', { fatal: true }).decode(response.body);
 }
 
+/** How deep, and how many values, a metadata document may hold by default. */
+const DEFAULT_MAXIMUM_DEPTH = 64;
+const DEFAULT_MAXIMUM_VALUES = 200_000;
+
 /**
  * The shape a metadata document may have once parsed. The defaults suit the
  * small documents most registries serve; a registry whose documents are
@@ -2265,16 +2305,24 @@ export function json<T>(
 ): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
+  const document = text(response);
   try {
+    // The limits stop the parse itself: counting values after the tree is built
+    // spends the memory the limit exists to protect.
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const value = parseCanonicalJson(text(response)) as T;
-    assertBoundedProviderMetadata(
-      value,
-      limits.maximumDepth,
-      limits.maximumNodes,
-    );
-    return value;
+    return parseCanonicalJson(document, {
+      maximumValues: limits.maximumNodes ?? DEFAULT_MAXIMUM_VALUES,
+      maximumDepth: limits.maximumDepth ?? DEFAULT_MAXIMUM_DEPTH,
+    }) as T;
   } catch (error) {
+    if (error instanceof CanonicalJsonLimitError)
+      throw new MetadataLimitError(
+        error.limit,
+        error.maximum,
+        error.visited,
+        error.offset,
+        document.length,
+      );
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
       error instanceof Error ? error.message : 'Invalid JSON',
@@ -2284,8 +2332,8 @@ export function json<T>(
 
 export function assertBoundedProviderMetadata(
   value: unknown,
-  maximumDepth = 64,
-  maximumNodes = 200_000,
+  maximumDepth = DEFAULT_MAXIMUM_DEPTH,
+  maximumNodes = DEFAULT_MAXIMUM_VALUES,
 ): void {
   const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
   let nodes = 0;

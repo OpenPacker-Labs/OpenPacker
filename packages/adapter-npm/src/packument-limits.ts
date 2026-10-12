@@ -26,6 +26,7 @@
  */
 import {
   MAXIMUM_METADATA_BYTES,
+  MetadataLimitError,
   ProviderError,
   ResponseTooLargeError,
   metadataValueLimit,
@@ -71,12 +72,13 @@ export function aboutPackument(
   name: string,
   error: ProviderError,
 ): ProviderError {
-  if (error instanceof ResponseTooLargeError)
-    return error.about(`The packument of ${name}`);
+  const subject = `The packument of ${name}`;
+  if (error instanceof ResponseTooLargeError) return error.about(subject);
+  if (error instanceof MetadataLimitError) return error.about(subject);
   if (error.code === 'INVALID_PROVIDER_METADATA')
     return new ProviderError(
       error.code,
-      `The packument of ${name} is not usable: ${error.message}`,
+      `${subject} is not usable: ${error.message}`,
       error.upstreamStatus,
     );
   return error;
