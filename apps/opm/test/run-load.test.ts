@@ -55,7 +55,7 @@ describe('what opm run and opm exec load', () => {
   );
 
   it('keeps the library out of the load graph but not out of the failure path', async () => {
-    const text = await readFile(join(src, 'commands/run.ts'), 'utf8');
+    const text = await readFile(join(src, 'commands/run-resolve.ts'), 'utf8');
     expect(text).toMatch(/await import\('@openpacker\/opm-project'\)/u);
   });
 });

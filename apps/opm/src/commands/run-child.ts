@@ -69,6 +69,12 @@ export interface ChildSpec {
   env: Record<string, string>;
   /** Names the command in errors; never the environment. */
   label: string;
+  /**
+   * What the child reads. `inherit` (the default) is `opm`'s own stdin;
+   * `ignore` is for a run that starts several children at once, where none of
+   * them can own the terminal.
+   */
+  stdin?: 'inherit' | 'ignore';
 }
 
 export interface ChildOutcome {
@@ -77,8 +83,25 @@ export interface ChildOutcome {
   signal: NodeJS.Signals | undefined;
 }
 
+/** A started child: how it ends, and how to send it a signal. */
+export interface RunningChild {
+  /** Settles when the child has ended; rejects with `UNAVAILABLE` if it never started. */
+  readonly outcome: Promise<ChildOutcome>;
+  /**
+   * Send a signal by the rules a signal sent to `opm` follows: to the child's
+   * whole group when it has one, to the child alone when a terminal owns the
+   * group (and then never `SIGINT`, which the terminal already delivered). A
+   * child that has ended is left alone.
+   */
+  signal(signal: NodeJS.Signals): void;
+}
+
 /** Signals a person or a supervisor sends to stop `opm`. */
-const FORWARDED: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+export const FORWARDED: readonly NodeJS.Signals[] = [
+  'SIGINT',
+  'SIGTERM',
+  'SIGHUP',
+];
 
 /** The shell's number for how a child ended: its status, or 128 + signal. */
 export function exitStatus(outcome: ChildOutcome): number {
@@ -87,23 +110,28 @@ export function exitStatus(outcome: ChildOutcome): number {
   return 128 + (number ?? 0);
 }
 
-export async function runChild(
+/**
+ * Start a child and return at once. The caller owns the signals: a single run
+ * subscribes the process to them ({@link runChild}), a run of many children
+ * subscribes once and fans each signal out.
+ */
+export function startChild(
   spec: ChildSpec,
   io: ChildIo,
   host: ChildHost = processHost,
-): Promise<ChildOutcome> {
+): RunningChild {
   const direct = (stream: unknown, own: unknown) => stream === own;
   const stdout = direct(io.stdout, host.stdout) ? 'inherit' : 'pipe';
   const stderr = direct(io.stderr, host.stderr) ? 'inherit' : 'pipe';
   const grouped = host.platform !== 'win32' && !host.hasTerminal;
+  let child: ChildProcess | undefined;
 
-  return await new Promise<ChildOutcome>((resolve, reject) => {
-    let child: ChildProcess;
+  const outcome = new Promise<ChildOutcome>((resolve, reject) => {
     try {
       child = host.spawn(spec.plan.file, spec.plan.args, {
         cwd: spec.cwd,
         env: spec.env,
-        stdio: ['inherit', stdout, stderr],
+        stdio: [spec.stdin ?? 'inherit', stdout, stderr],
         detached: grouped,
         windowsHide: true,
         windowsVerbatimArguments: spec.plan.windowsVerbatimArguments,
@@ -116,33 +144,48 @@ export async function runChild(
     child.stderr?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => io.stdout.write(chunk));
     child.stderr?.on('data', (chunk: string) => io.stderr.write(chunk));
-
-    const deliver = (signal: NodeJS.Signals) => {
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      // The terminal has already sent SIGINT to the child's group, and sending
-      // it again would turn "stop gracefully" into "stop now" for tools that
-      // read a second one that way. A grouped child has no terminal to do so.
-      if (signal === 'SIGINT' && !grouped) return;
-      try {
-        if (grouped && child.pid !== undefined) host.kill(-child.pid, signal);
-        else child.kill(signal);
-      } catch {
-        // The child ended between the check and the signal.
-      }
-    };
-    const release = FORWARDED.map((signal) =>
-      host.onSignal(signal, () => deliver(signal)),
-    );
-
     child.once('error', (error) => {
-      for (const stop of release) stop();
       reject(spawnFailure(spec, error));
     });
     child.once('close', (code, signal) => {
-      for (const stop of release) stop();
       resolve({ code: code ?? undefined, signal: signal ?? undefined });
     });
   });
+
+  const signal = (name: NodeJS.Signals) => {
+    if (child === undefined) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    // The terminal has already sent SIGINT to the child's group, and sending
+    // it again would turn "stop gracefully" into "stop now" for tools that
+    // read a second one that way. A grouped child has no terminal to do so.
+    if (name === 'SIGINT' && !grouped) return;
+    try {
+      if (grouped && child.pid !== undefined) host.kill(-child.pid, name);
+      else child.kill(name);
+    } catch {
+      // The child ended between the check and the signal.
+    }
+  };
+  return { outcome, signal };
+}
+
+/** Run a child to its end, forwarding the signals sent to `opm` meanwhile. */
+export async function runChild(
+  spec: ChildSpec,
+  io: ChildIo,
+  host: ChildHost = processHost,
+): Promise<ChildOutcome> {
+  const running = startChild(spec, io, host);
+  const release = FORWARDED.map((name) =>
+    host.onSignal(name, () => {
+      running.signal(name);
+    }),
+  );
+  try {
+    return await running.outcome;
+  } finally {
+    for (const stop of release) stop();
+  }
 }
 
 function spawnFailure(spec: ChildSpec, error: unknown): RunError {
