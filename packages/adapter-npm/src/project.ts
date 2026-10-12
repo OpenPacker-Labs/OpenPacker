@@ -30,7 +30,9 @@ import {
   ProjectIoError,
   writeFileAtomic,
 } from '@openpacker/project-io';
+import { formatNpmAlias, isNpmAlias, parseNpmAlias } from './alias.js';
 import { readFrozenPackageLock } from './frozen-lock.js';
+import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules, type LayoutOutcome } from './layout-write.js';
 
 /** Where each scope lives in package.json. */
@@ -91,6 +93,23 @@ export class NpmProjectFormat implements ProjectFormat {
     for (const field of DEPENDENCY_FIELDS) {
       const scope = scopeOfField(field);
       for (const [name, range] of Object.entries(parsed[field] ?? {})) {
+        // `"string-width-cjs": "npm:string-width@^4.2.0"` asks for string-width,
+        // installed as string-width-cjs; reading it as the registry's package of
+        // the key's name would be a different package.
+        const alias =
+          typeof range === 'string' && isNpmAlias(range)
+            ? parseNpmAlias(range)
+            : undefined;
+        if (alias !== undefined && 'target' in alias) {
+          out.push({
+            purl: purlForName(alias.target),
+            name: alias.target,
+            installName: name,
+            ...(alias.spec !== '*' && { range: alias.spec }),
+            scope,
+          });
+          continue;
+        }
         out.push({
           purl: purlForName(name),
           name,
@@ -117,11 +136,15 @@ export class NpmProjectFormat implements ProjectFormat {
         semanticLoss.push(scopeLoss(requirement));
         continue;
       }
-      managed.set(requirement.name, {
+      managed.set(requirement.installName ?? requirement.name, {
         field,
         // npm accepts `*` for "any version". Writing an empty string produces
-        // a manifest npm rejects, so absence becomes the range npm spells.
-        range: requirement.range ?? '*',
+        // a manifest npm rejects, so absence becomes the range npm spells. An
+        // alias is written as npm writes one: the key is the install name.
+        range:
+          requirement.installName === undefined
+            ? (requirement.range ?? '*')
+            : formatNpmAlias(requirement.name, requirement.range),
       });
     }
 
@@ -185,18 +208,9 @@ export class NpmProjectFormat implements ProjectFormat {
 
     const semanticLoss: SemanticLoss[] = [];
     const entries: Record<string, unknown> = {};
-    for (const entry of packages) {
-      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'sri') {
+    for (const entry of packages)
+      if (!entry.nativeIntegrity || entry.nativeIntegrity.encoding !== 'sri')
         semanticLoss.push(integrityLoss(entry));
-        continue;
-      }
-      entries[`node_modules/${entry.name}`] = {
-        version: entry.version,
-        resolved: entry.source,
-        integrity: `${entry.nativeIntegrity.algorithm}-${entry.nativeIntegrity.value}`,
-        ...(entry.scope === 'development' && { dev: true }),
-      };
-    }
     if (semanticLoss.length > 0)
       // Partial lockfiles are how a build silently installs something nobody
       // pinned. All or nothing.
@@ -210,6 +224,35 @@ export class NpmProjectFormat implements ProjectFormat {
         ],
         semanticLoss,
       };
+    // Where Node would find each package: a name selected at two versions, or
+    // installed under an alias, is not at `node_modules/<name>`.
+    const plan = planLayout(toLayoutEntries(packages));
+    if (plan.skipped.length > 0)
+      return {
+        written: [],
+        skipped: [
+          {
+            path: lockPath,
+            reason: `the closure cannot be laid out as npm would: ${plan.skipped
+              .slice(0, 3)
+              .map((item) => item.reason)
+              .join('; ')}`,
+          },
+        ],
+        semanticLoss: [],
+      };
+    for (const { entry, chain } of plan.placements) {
+      const source = entry.source;
+      const integrity = source.nativeIntegrity!;
+      entries[`node_modules/${chain.join('/node_modules/')}`] = {
+        // A package installed under another name says what it is.
+        ...(chain.at(-1) !== entry.name && { name: entry.name }),
+        version: entry.version,
+        resolved: source.source,
+        integrity: `${integrity.algorithm}-${integrity.value}`,
+        ...(source.scope === 'development' && { dev: true }),
+      };
+    }
 
     const name = await manifestName(project.manifestPath);
     const body = {
@@ -224,7 +267,12 @@ export class NpmProjectFormat implements ProjectFormat {
               .filter(
                 (entry) => !entry.transitive && entry.scope !== 'development',
               )
-              .map((entry) => [entry.name, entry.range ?? entry.version]),
+              .map((entry) => [
+                entry.installName ?? entry.name,
+                entry.installName === undefined
+                  ? (entry.range ?? entry.version)
+                  : formatNpmAlias(entry.name, entry.range ?? entry.version),
+              ]),
           ),
         },
         ...entries,

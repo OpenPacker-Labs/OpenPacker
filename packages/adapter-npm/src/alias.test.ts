@@ -182,6 +182,20 @@ describe('an alias in a dependency entry', () => {
     },
   );
 
+  it.each([['../escape'], ['node_modules'], ['.bin'], ['a/b/c']])(
+    'refuses an alias key that cannot be a directory (%j)',
+    async (key) => {
+      await expect(
+        translate({ dependencies: { [key]: 'npm:string-width@^4' } }),
+      ).rejects.toMatchObject({
+        code: 'UNSUPPORTED_DEPENDENCY_SPEC',
+        message: expect.stringMatching(
+          /not (?:an npm package name|a safe directory name)/u,
+        ),
+      });
+    },
+  );
+
   it('keeps an alias it cannot read in optionalDependencies as a note, not a failure', async () => {
     const { instance } = await translate({
       optionalDependencies: { bar: 'npm:foo@github:user/foo' },

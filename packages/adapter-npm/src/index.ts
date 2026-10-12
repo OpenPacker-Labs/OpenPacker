@@ -1,6 +1,7 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias, type NpmAlias } from './alias.js';
+import { unsafeNameProblem } from './layout-plan.js';
 import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
 import {
@@ -243,9 +244,22 @@ function npmRequirement(
   followed: boolean = enforced,
 ): Requirement {
   const alias = isNpmAlias(range) ? parseNpmAlias(range) : undefined;
+  // The key an alias is written under becomes a directory, and it is chosen by
+  // whoever published the package: it is held to the rule a package name is.
+  const aliasProblem =
+    alias === undefined
+      ? undefined
+      : 'problem' in alias
+        ? alias.problem
+        : unsafeNameProblem(name);
   const specKind = classifyDependencySpec(range);
   const dependencyField = path.slice(1).split('/')[0]!;
-  if (alias !== undefined && 'target' in alias && followed)
+  if (
+    alias !== undefined &&
+    'target' in alias &&
+    followed &&
+    aliasProblem === undefined
+  )
     return aliasRequirement(
       dependerNodeId,
       name,
@@ -269,9 +283,7 @@ function npmRequirement(
         'UNSUPPORTED_DEPENDENCY_SPEC',
         `${owner} depends on ${name} as "${range}", a ${specKind} specifier ` +
           `that is not a registry version range` +
-          (alias !== undefined && 'problem' in alias
-            ? ` (${alias.problem})`
-            : ''),
+          (aliasProblem === undefined ? '' : ` (${aliasProblem})`),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,
