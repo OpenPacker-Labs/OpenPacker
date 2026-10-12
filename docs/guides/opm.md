@@ -736,6 +736,51 @@ directory and nothing inside it, `./packages` is no member at all, and
 `legacyDirFiltering: true` gives pnpm's `legacy-dir-filtering` instead (a
 directory and everything under it); `.npmrc` is not read, so you say which.
 
+### pnpm locks (the model)
+
+`opm` can read a `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9 and 10
+write) into a typed, validated and bounded model
+([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses it yet:
+`opm ci` still reads only `package-lock.json`. It is a library in
+`@openpacker/adapter-npm`, beside the reader of `package-lock.json`, and it
+fetches nothing, installs nothing and decides no policy.
+
+```ts
+import { readFile } from 'node:fs/promises';
+import {
+  DEFAULT_PNPM_LOCK_LIMITS,
+  parseDepPath,
+  readPnpmLock,
+  summarizePnpmLock,
+} from '@openpacker/adapter-npm';
+
+// Refuses a lock that disagrees with itself; the report lists the rest.
+const { lock, report } = readPnpmLock(await readFile('pnpm-lock.yaml'));
+const facts = summarizePnpmLock(lock); // importers, packages, snapshots, link and alias edges, ...
+report.exoticSources; // tarballs, git repositories, directories, runtimes: for the policy
+report.orphanSnapshots; // snapshots no importer reaches
+parseDepPath('react-dom@18.2.0(react@18.2.0)', DEFAULT_PNPM_LOCK_LIMITS, '')
+  .peers;
+```
+
+What it reads: `importers` (each dependency as a specifier and a reference to a
+snapshot or a `link:`), `packages` (where the bytes come from, and what the
+package claims about `os`, `cpu`, `libc` and `engines`), `snapshots` (the edges,
+one per set of peers a package was resolved against), and the settings,
+overrides, catalogs, patches and checksums. A snapshot key such as
+`@scope/a@1.0.0(b@2.0.0(c@3.0.0))(d@4.0.0)` is parsed the way pnpm splits it,
+and anything that would parse two ways is refused.
+
+What it refuses, each with a reason and the path to the fault
+(`packages["a@1.0.0"].hasBin`): any other `lockfileVersion`; a key pnpm does not
+write; YAML anchors, aliases, tags and repeated keys; absolute or escaping
+paths; a package name that cannot be a directory under `node_modules`; a URL
+with a user name or password; an `integrity` that is not one canonical digest.
+Size is bounded (8 MiB, one million YAML nodes, and per-section entry counts,
+all in `PnpmLockLimits`); a larger lock is refused with the number to raise. The
+complete HoBo lock (792 importers, 2,160 packages, 2,193 snapshots) reads in
+about 0.7 s using 146 MB.
+
 ### `opmx`
 
 ```sh

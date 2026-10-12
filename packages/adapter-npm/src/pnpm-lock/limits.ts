@@ -21,7 +21,7 @@ export interface PnpmLockLimits {
   readonly maxBytes: number;
   /** YAML nodes: scalars, mappings and sequences, keys included. */
   readonly maxNodes: number;
-  /** Nesting of YAML collections. pnpm writes at most 8. */
+  /** Nesting of YAML collections: real locks nest 5, a runtime's variants 8. */
   readonly maxDepth: number;
   /** Entries under `importers`. */
   readonly maxImporters: number;
