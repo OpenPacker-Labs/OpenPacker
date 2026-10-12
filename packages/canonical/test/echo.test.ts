@@ -251,7 +251,6 @@ describe('plainLine', () => {
     ['LF', 'a\nb'],
     ['CRLF', 'a\r\nb'],
     ['CR', 'a\rb'],
-    ['NEL', 'a\u0085b'],
     ['line separator', 'a\u2028b'],
     ['paragraph separator', 'a\u2029b'],
     ['tab', 'a\tb'],
@@ -264,6 +263,29 @@ describe('plainLine', () => {
       expect(plainLine(text)).toBe('a b');
     },
   );
+
+  it('removes NEL like the other C1 controls, and does not space it', () => {
+    // The secret scrubber is built on `\s`, which does not match NEL. A NEL
+    // turned into a space would split a URL or a name the scrubber used to
+    // read whole, and let what follows through unredacted.
+    expect(plainLine('a\u0085b')).toBe('ab');
+    expect(plainLine('a \u0085b')).toBe('a b');
+  });
+
+  it('spaces only what the scrubber reads as white space', () => {
+    // Every character that makes plainLine put a space between two letters is
+    // one that `\s` matches. Layout is a few characters of the basic plane.
+    const spaced: string[] = [];
+    for (let code = 0; code <= 0xffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      const character = String.fromCharCode(code);
+      if (plainLine(`a${character}b`) === 'a b' && character !== ' ') {
+        expect(character).toMatch(/\s/u);
+        spaced.push(code.toString(16));
+      }
+    }
+    expect(spaced).toEqual(['9', 'a', 'b', 'c', 'd', '2028', '2029']);
+  });
 
   it('keeps no break at either end, and adds no space beside one', () => {
     expect(plainLine('\nabc\n')).toBe('abc');

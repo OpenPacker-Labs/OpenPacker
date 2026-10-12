@@ -131,6 +131,31 @@ describe('an error whose message carries text from a registry', () => {
   });
 });
 
+describe('a secret that a NEL would split or separate', () => {
+  // NEL (U+0085) is a C1 control. The scrubber reads white space as `\\s`, which
+  // does not match it, so it is removed with the other controls and not spaced:
+  // a space would end the URL, or split the name, that the scrubber has to read.
+  const NEL = '\u0085';
+
+  it.each([
+    [
+      'a URL with a password after the scheme',
+      `see https://${NEL}u:CANARY@h/p now`,
+      'see https://h/p now',
+    ],
+    [
+      'a name with the separator after a NEL',
+      `password${NEL}=hunter2`,
+      'password=[REDACTED]',
+    ],
+    ['a name split by a NEL', `pass${NEL}word=hunter2`, 'password=[REDACTED]'],
+  ])('is withheld: %s', (_, message, expected) => {
+    expect(written(new Error(message)).err).toBe(
+      `opm: internal error: ${expected}\n`,
+    );
+  });
+});
+
 describe('a registry document read by the real provider', () => {
   function provider(document: unknown) {
     const npm = defaultAdapterModules().find(

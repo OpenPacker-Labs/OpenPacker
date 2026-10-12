@@ -70,8 +70,14 @@ function isBetween(code: number, low: number, high: number): boolean {
   return code >= low && code <= high;
 }
 
-/** Layout whitespace, which `plainLine` turns into one space. */
-const LAYOUT = /[\t\n\v\f\r\u0085\u2028\u2029]/u;
+/**
+ * Layout whitespace, which `plainLine` turns into one space. It is the
+ * characters JavaScript's `\s` matches among those removed otherwise, and no
+ * others: the secret scrubber reads white space as `\s`, so a character spaced
+ * here that `\s` does not match (NEL, U+0085, is one) would split a URL or a
+ * name the scrubber used to read whole. NEL is removed like any C1 control.
+ */
+const LAYOUT = /[\t\n\v\f\r\u2028\u2029]/u;
 
 interface Plain {
   /** What can be shown of the text read. */
