@@ -265,3 +265,21 @@ describe('opm ci --os --cpu --libc --supported-architectures', () => {
     expect(p.urls).toEqual([]);
   });
 });
+
+describe('opm ci --help', () => {
+  it('lists the options of a pnpm install and says which lock it reads', async () => {
+    const c = capture();
+    expect(await runOpm(['ci', '--help'], c.io, '/')).toBe(EXIT_CODES.success);
+    for (const word of [
+      'pnpm-lock.yaml',
+      '--filter|-F <selector>',
+      '--os <os>',
+      '--cpu <cpu>',
+      '--libc <libc>',
+      '--supported-architectures project',
+      '--plan',
+      'packageManager',
+    ])
+      expect(c.out).toContain(word);
+  });
+});
