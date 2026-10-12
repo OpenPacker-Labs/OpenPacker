@@ -2,6 +2,7 @@ import {
   canonicalDigest,
   compareCanonicalStrings,
   formatDigest,
+  safeEcho,
 } from '@openpacker/canonical';
 import type {
   Digest,
@@ -533,7 +534,7 @@ export async function evaluatePolicy(
       checks.push({
         code: 'supply-chain.release-age',
         status: 'valid',
-        message: `Published no later than ${facts.publishedNoLaterThan}, at least ${policy.minimumReleaseAgeMinutes}m before evaluation`,
+        message: `Published no later than ${safeEcho(facts.publishedNoLaterThan)}, at least ${policy.minimumReleaseAgeMinutes}m before evaluation`,
       });
     } else if (!facts.publishedAt || !facts.evaluationTime) {
       checks.push({
