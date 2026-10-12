@@ -135,34 +135,22 @@ describe('reading a project', () => {
     expect(result.lockfileVersion).toBe(3);
   });
 
-  it('refuses a workspace lock and lists its members', async () => {
+  it('does not install a workspace lock for a project whose workspace it was not shown', async () => {
     const { detected } = await project({
       'package.json': { name: 'app', workspaces: ['packages/*'] },
       'package-lock.json': lockOf(
         {
           'node_modules/@app/one': { resolved: 'packages/one', link: true },
-          'node_modules/@app/two': { resolved: 'packages/two', link: true },
           'packages/one': { name: '@app/one', version: '1.0.0' },
-          'packages/two': { name: '@app/two', version: '1.0.0' },
-          'packages/two/node_modules/x': registry('x', '1.0.0'),
+          'packages/one/node_modules/x': registry('x', '1.0.0'),
         },
         { workspaces: ['packages/*'] },
       ),
     });
-    const result = await new NpmProjectFormat().readFrozenLock!(
-      detected,
-      options,
-    );
-    expect(result.packages).toEqual([]);
-    expect(result.refused.map((entry) => entry.path)).toEqual([
-      'node_modules/@app/one',
-      'node_modules/@app/two',
-      'packages/one',
-      'packages/two',
-      '(inside the members)',
-    ]);
-    expect(result.refused[2]?.reason).toBe(
-      'a workspace member (@app/one); workspaces are not installed yet',
+    await expect(
+      new NpmProjectFormat().readFrozenLock!(detected, options),
+    ).rejects.toThrow(
+      /not in sync.*the lock lists the members packages\/one; the project declares the members \(none\)/su,
     );
   });
 

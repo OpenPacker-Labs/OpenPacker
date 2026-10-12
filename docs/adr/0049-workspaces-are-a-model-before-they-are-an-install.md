@@ -3,7 +3,9 @@
 - Status: Accepted
 - Date: 2026-10-12
 - Amends [ADR 0042](0042-upm-v1-gaps.md) §2 ("opm has no workspace graph"):
-  there is now one, read-only, with no command on top of it yet.
+  there is now one, read-only, with no command on top of it yet. (Since
+  [ADR 0051](0051-opm-ci-installs-workspace-locks.md), `opm ci` installs a
+  workspace lock using this discovery.)
 - Relates: [0034](0034-opm-projects-into-native-project-formats.md) (the native
   workspace files stay the person's),
   [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (the
@@ -258,9 +260,12 @@ the difference is stated and not reproduced.
 
 Limits that remain:
 
-- Nothing installs from this yet. `opm ci` still refuses a workspace lock, and
-  there are no per-member `node_modules`. (`opm run` and `opm exec` take
-  `--filter` since [ADR 0053](0053-opm-run-across-workspace-members.md).)
+- Nothing installed from this when it was written: `opm ci` refused a workspace
+  lock, `opm run` had no `--filter`, and there were no per-member
+  `node_modules`. `opm ci` installs a workspace lock as of
+  [ADR 0051](0051-opm-ci-installs-workspace-locks.md), and `opm run` and
+  `opm exec` take `--filter` since
+  [ADR 0053](0053-opm-run-across-workspace-members.md).
 - Ranges are read by the range parser `adapter-core` already has, which is not
   node-semver on partial versions. Put to npm's own semver (7.7.2,
   `satisfies(version, range, true)`) on 289 ranges and 23 versions, 6,647 pairs

@@ -570,7 +570,7 @@ describe('installFrozen', () => {
     expect(await exists(join(w.dir, 'ran'))).toBe(false);
   });
 
-  it('refuses a workspace lock, listing the members, before it fetches anything', async () => {
+  it('refuses a workspace lock whose members are not on disk, naming both sides, before it fetches anything', async () => {
     const w = await setup();
     w.place('node_modules/a', { name: 'a', version: '1.0.0' });
     w.raw('node_modules/@app/one', { resolved: 'packages/one', link: true });
@@ -579,9 +579,9 @@ describe('installFrozen', () => {
     await w.write({ workspaces: ['packages/*'] });
 
     await expect(w.install()).rejects.toMatchObject({
-      code: 'UNSUPPORTED_LOCK',
+      code: 'INVALID_LOCK',
       message: expect.stringMatching(
-        /node_modules\/@app\/one: a link to packages\/one.*packages\/one: a workspace member \(@app\/one\)/su,
+        /the lock lists the members packages\/one; the project declares the members \(none\); packages\/one \(@app\/one\) is a member in the lock and is not on disk/su,
       ),
     });
     expect(w.registry.requests).toEqual([]);

@@ -13,6 +13,7 @@ import type {
   DetectedProject,
   FrozenLock,
   FrozenLockOptions,
+  NativeLayoutWorkspace,
   NativeLockEntry,
   NativeRequirement,
   PackProjectOptions,
@@ -31,7 +32,8 @@ import {
   writeFileAtomic,
 } from '@openpacker/project-io';
 import { readFrozenPackageLock } from './frozen-lock.js';
-import { writeNodeModules, type LayoutOutcome } from './layout-write.js';
+import { layoutLoss } from './layout-loss.js';
+import { writeNodeModules } from './layout-write.js';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD = {
@@ -65,6 +67,8 @@ interface PackageJson {
 export class NpmProjectFormat implements ProjectFormat {
   readonly providerId = 'org.openpacker.project.npm';
   readonly purlType = 'npm' as const;
+  /** `package.json` `workspaces` is npm's: a frozen install reads members the way npm does. */
+  readonly workspaceTool = 'npm' as const;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');
@@ -250,8 +254,12 @@ export class NpmProjectFormat implements ProjectFormat {
   async writeLayout(
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
+    options: { workspace?: NativeLayoutWorkspace } = {},
   ): Promise<ProjectionResult> {
-    const outcome = await writeNodeModules(project.root, packages);
+    const outcome = await writeNodeModules(project.root, packages, {
+      links: options.workspace?.links ?? [],
+      members: options.workspace?.members ?? [],
+    });
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],
       ...(outcome.skipped.length > 0 && { skipped: outcome.skipped }),
@@ -413,31 +421,6 @@ function integrityLoss(entry: NativeLockEntry): SemanticLoss {
     mitigation:
       'Re-resolve so the integrity value is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
-  };
-}
-
-function layoutLoss(outcome: LayoutOutcome, layoutOnly: boolean): SemanticLoss {
-  const nested =
-    outcome.nested > 0
-      ? `, ${outcome.nested} nested to keep conflicting versions apart`
-      : '';
-  return {
-    code: 'NATIVE_LAYOUT_NOT_TOOL_EQUIVALENT',
-    severity: 'info',
-    sourceEcosystem: 'npm',
-    sourcePath: outcome.root,
-    originalMeaning:
-      'node_modules was materialised from the digest-verified opm store',
-    representedMeaning: `${outcome.packages} package(s) in a node_modules Node can resolve${nested}, ${
-      outcome.copied ? 'copied' : 'hardlinked'
-    } from the store, with ${outcome.bins} executable(s) as script shims in .bin${
-      layoutOnly ? '; there is no package.json here and none was created' : ''
-    }`,
-    omittedMeaning:
-      'npm was not run: no lifecycle scripts, no symlinked bin links, and a placement that is correct for the selected versions but not necessarily the one npm would choose',
-    mitigation:
-      'Run npm install if a package needs its install scripts, or keep native_projection at "lock".',
-    blocksProfile: [],
   };
 }
 

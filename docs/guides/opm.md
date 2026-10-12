@@ -287,14 +287,13 @@ convention ([ADR 0050](../adr/0050-workspace-member-links.md), decided
   an absolute path, so a project moved on disk needs its layout written again,
   and a member must be a directory.
 
-The layout writer and its plan carry these links today. Reading members out of a
-lock and installing a workspace (`opm ci` still refuses a lock that has
-`link: true` entries) is not part of this.
+The layout writer and its plan carry these links, and `opm ci` writes them for a
+workspace lock ([below](#installing-a-workspace-lock)).
 
 ### Installing exactly a lock (`opm ci`)
 
-`opm ci` installs a committed `package-lock.json` (lockfileVersion 2 or 3, no
-workspaces) the way `npm ci` does, without npm and without an `opm.toml`.
+`opm ci` installs a committed `package-lock.json` (lockfileVersion 2 or 3, a
+workspace's too) the way `npm ci` does, without npm and without an `opm.toml`.
 `opm install --frozen` is the same command. It reads `package.json` and the
 lock, resolves nothing, and replaces `node_modules` with the tree the lock
 describes ([ADR 0046](../adr/0046-a-lockfile-is-installed-not-re-resolved.md)).
@@ -316,10 +315,10 @@ Installed 894 packages into /app/node_modules (845 from the store, 0 fetched, 0.
 
 What it does, in order:
 
-1. **Reads the lock, refuses what it cannot install.** Links, workspace members
-   (and the packages inside them), a git or path source, an entry with no
-   `resolved` or no `integrity`, and a `package.json` that no longer matches the
-   lock are each named, and nothing is installed. Exit code 3.
+1. **Reads the lock, refuses what it cannot install.** A git or path source, an
+   entry with no `resolved` or no `integrity`, a link or key in a workspace lock
+   that is not a member's, and a `package.json` that no longer matches the lock
+   are each named, and nothing is installed. Exit code 3.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release
@@ -330,9 +329,9 @@ What it does, in order:
    the previous `node_modules` as it was. The only hosts contacted are those of
    the lock's `resolved` URLs.
 4. **Writes the lock's layout.** Each package is at the path its key names,
-   hard-linked from the store, with `.bin` shims; no symlinks (a lock's
-   workspace links are refused for now, see
-   [Workspace member links](#workspace-member-links)).
+   hard-linked from the store, with `.bin` shims; no symlinks, except a
+   workspace member's own link
+   ([Workspace member links](#workspace-member-links)).
 
 Which entries a machine installs follows npm: `dev`, `optional` and `peer`
 entries are dropped by `--omit`; an optional package for another `os`, `cpu` or
@@ -345,6 +344,54 @@ reader of the same lock: no difference in which package is installed at which
 path. Cold, with an empty store, it takes about two minutes; with the store
 populated, about one; a second project adds 1.6% of the first
 ([measurements](../adr/0046-a-lockfile-is-installed-not-re-resolved.md#consequences)).
+
+#### Installing a workspace lock
+
+A lock written for an npm workspace is installed with the same command
+([ADR 0051](../adr/0051-opm-ci-installs-workspace-locks.md)). Each member is
+**linked, not fetched**: `node_modules/<name>` is a symlink to the member's
+directory (a directory junction on Windows), so an edit to a member's source is
+seen by the others at once. A version of a package only one member wants is
+written in that member's own `node_modules` (`packages/web/node_modules/left`),
+and a member's executables get shims in the project's `node_modules/.bin`, where
+npm links them. No member's scripts are run.
+
+```sh
+opm ci                              # the project, every member, everything they need
+opm ci -w @acme/web                 # that member, what it needs, the members it uses
+opm ci --workspace packages/web --workspace packages/lib
+opm ci -w packages                  # every member one level below packages/
+opm ci -w @acme/web --include-workspace-root   # and the project's own dependencies
+opm ci --workspaces                 # every member, not the project's own dependencies
+opm ci --workspaces=false           # only the project's own dependencies (--no-workspaces)
+opm ci --production -w @acme/web    # --omit applies to what the member needs
+```
+
+```text
+Installed 263 packages into /repo/node_modules (62 from the store, 200 fetched, 86.2 MB) in 38.3 s; 4 declare install scripts, which opm does not run
+  left out: 78 optional, for another platform
+  workspace: 50 of 50 members linked, not fetched; their scripts are not run
+```
+
+What it checks first, and refuses before anything is fetched or written:
+
+- **The lock's members are the project's.** The members the lock lists and the
+  members the project's `workspaces` declare must be the same directories with
+  the same names and versions; if not, the error lists both sides. Each member's
+  `package.json` must agree with the lock's entry for it as the project's does.
+- **A link in the lock is a request for a symlink, so it is checked.** It must
+  be `node_modules/<name>`, name a member the lock's own `workspaces` select,
+  and be that member's own name. A link that leaves the project, points at a
+  directory the patterns do not select, is named otherwise or is nested, a
+  package bundled in a member, and a package inside a directory that is not a
+  member are each listed by path with the reason (exit 3).
+
+Like `npm ci`, it clears the `node_modules` of every workspace, the ones it does
+not install included. `--path` must be the workspace root: unlike npm it does
+not look upward from a member, so there is no implicit `-w`. `workspace:`
+specifiers and pnpm or yarn locks are not read by this command. A member's
+executable whose script is built after the install is shimmed to run under
+`node` until the script exists.
 
 ### `opm.toml`
 
@@ -537,36 +584,36 @@ their verifier evidence can be independently replayed.
 
 ## Commands
 
-| Command                                  | What it does                                                                                                                                                      |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                       |
-| `opm import --native`                    | One-shot: read native project files into `opm.toml`. Native files are not authority after import.                                                                 |
-| `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                           |
-| `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                               |
-| `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                         |
-| `opm ci` / `opm install --frozen`        | Install exactly what a committed `package-lock.json` says into `node_modules`: no resolving, no scripts ([below](#installing-exactly-a-lock-opm-ci))              |
-| `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                               |
-| `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                    |
-| `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`. |
-| `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                      |
-| `opm why <alias>`                        | Why a package is present                                                                                                                                          |
-| `opm run [script] [options] [-- args]`   | Run a `package.json` script, or with `--filter`/`-r`/`-w` in workspace members ([below](#across-the-members-of-a-workspace)). Not sandboxed.                      |
-| `opm exec [options] <bin> [-- args]`     | Run an executable from `node_modules/.bin`, in the project or in members. Never fetches, never searches PATH (`node` aside). Not sandboxed.                       |
-| `opm <script\|bin> [args]`               | A word that is no command: the project script of that name, else the bin (`opm typecheck`, `opm --filter a build`).                                               |
-| `opm search <query>`                     | Candidate packages in a registry                                                                                                                                  |
-| `opm versions <purl>`                    | Every published version, oldest first                                                                                                                             |
-| `opm info <exact-purl>`                  | Digest, size, media type, download URL                                                                                                                            |
-| `opmx <bin\|pkg> [args…]`                | Run an installed executable                                                                                                                                       |
-| `opm generations`                        | List the environment history; `*` marks current                                                                                                                   |
-| `opm rollback [--to N]`                  | Return to the previous generation, or a named one                                                                                                                 |
-| `opm gc [--keep N]`                      | Remove store paths no retained generation needs                                                                                                                   |
-| `opm shell [--json]`                     | Print the environment for this generation                                                                                                                         |
-| `opm plugin add <name>`                  | Install a delegated adapter plugin (digest-pinned)                                                                                                                |
-| `opm plugin list`                        | List installed plugins and their pins                                                                                                                             |
-| `opm plugin remove <name>`               | Remove a plugin and its store entry                                                                                                                               |
-| `opm publish --from <dir>\|--pack <eco>` | Publish packed native bytes to a PREX registry                                                                                                                    |
-| `opm yank <exact-purl>`                  | Yank one published version via lifecycle apply                                                                                                                    |
-| `opm auth set\|list\|unset`              | Origin → token-env **name** map (no secrets)                                                                                                                      |
+| Command                                  | What it does                                                                                                                                                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                                                                                        |
+| `opm import --native`                    | One-shot: read native project files into `opm.toml`. Native files are not authority after import.                                                                                                                                  |
+| `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                                                                                            |
+| `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                                                                                                |
+| `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                                                                                          |
+| `opm ci` / `opm install --frozen`        | Install exactly what a committed `package-lock.json` says into `node_modules`, a workspace's too (`-w`, `--include-workspace-root`, `--workspaces[=false]`): no resolving, no scripts ([below](#installing-exactly-a-lock-opm-ci)) |
+| `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                                                                                                |
+| `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                                                                                     |
+| `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`.                                                                  |
+| `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                                                                                       |
+| `opm why <alias>`                        | Why a package is present                                                                                                                                                                                                           |
+| `opm run [script] [options] [-- args]`   | Run a `package.json` script, or with `--filter`/`-r`/`-w` in workspace members ([below](#across-the-members-of-a-workspace)). Not sandboxed.                                                                                       |
+| `opm exec [options] <bin> [-- args]`     | Run an executable from `node_modules/.bin`, in the project or in members. Never fetches, never searches PATH (`node` aside). Not sandboxed.                                                                                        |
+| `opm <script\|bin> [args]`               | A word that is no command: the project script of that name, else the bin (`opm typecheck`, `opm --filter a build`).                                                                                                                |
+| `opm search <query>`                     | Candidate packages in a registry                                                                                                                                                                                                   |
+| `opm versions <purl>`                    | Every published version, oldest first                                                                                                                                                                                              |
+| `opm info <exact-purl>`                  | Digest, size, media type, download URL                                                                                                                                                                                             |
+| `opmx <bin\|pkg> [args…]`                | Run an installed executable                                                                                                                                                                                                        |
+| `opm generations`                        | List the environment history; `*` marks current                                                                                                                                                                                    |
+| `opm rollback [--to N]`                  | Return to the previous generation, or a named one                                                                                                                                                                                  |
+| `opm gc [--keep N]`                      | Remove store paths no retained generation needs                                                                                                                                                                                    |
+| `opm shell [--json]`                     | Print the environment for this generation                                                                                                                                                                                          |
+| `opm plugin add <name>`                  | Install a delegated adapter plugin (digest-pinned)                                                                                                                                                                                 |
+| `opm plugin list`                        | List installed plugins and their pins                                                                                                                                                                                              |
+| `opm plugin remove <name>`               | Remove a plugin and its store entry                                                                                                                                                                                                |
+| `opm publish --from <dir>\|--pack <eco>` | Publish packed native bytes to a PREX registry                                                                                                                                                                                     |
+| `opm yank <exact-purl>`                  | Yank one published version via lifecycle apply                                                                                                                                                                                     |
+| `opm auth set\|list\|unset`              | Origin → token-env **name** map (no secrets)                                                                                                                                                                                       |
 
 ### Generations and rollback
 
@@ -896,11 +943,11 @@ here.
 members, which member depends on which, in what order they build, and which
 members a `--filter` selects
 ([ADR 0049](../adr/0049-workspaces-are-a-model-before-they-are-an-install.md)).
-Only `opm run` and `opm exec` use it so far
-([above](#across-the-members-of-a-workspace)); `opm ci` still refuses a
-workspace lock. It is a library that the commands will be built on, in
-`@openpacker/opm-project` (reading the directory) and `@openpacker/adapter-core`
-(the pure model).
+`opm ci` uses it to hold a workspace lock to the members on disk and to read
+`-w`; `opm run` and `opm exec` use it for `--filter`, `-r` and `-w`
+([above](#across-the-members-of-a-workspace)). It is a library that the commands
+are built on, in `@openpacker/opm-project` (reading the directory) and
+`@openpacker/adapter-core` (the pure model).
 
 ```ts
 import { discoverWorkspace, graphOfWorkspace } from '@openpacker/opm-project';
@@ -943,6 +990,54 @@ directory and nothing inside it, `./packages` is no member at all, and
 `./packages/*` or `{packages/**}` are the ones to write for several.
 `legacyDirFiltering: true` gives pnpm's `legacy-dir-filtering` instead (a
 directory and everything under it); `.npmrc` is not read, so you say which.
+
+### pnpm locks (the model)
+
+`opm` can read a `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9 and 10
+write; pnpm 11's additions are refused by name) into a typed, validated and
+bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses
+it yet: `opm ci` still reads only `package-lock.json`. It is a library in
+`@openpacker/adapter-npm`, beside the reader of `package-lock.json`, and it
+fetches nothing, installs nothing and decides no policy.
+
+```ts
+import { readFile } from 'node:fs/promises';
+import {
+  DEFAULT_PNPM_LOCK_LIMITS,
+  parseDepPath,
+  readPnpmLock,
+  summarizePnpmLock,
+} from '@openpacker/adapter-npm';
+
+// Refuses a lock that disagrees with itself; the report lists the rest.
+const { lock, report } = readPnpmLock(await readFile('pnpm-lock.yaml'));
+const facts = summarizePnpmLock(lock); // importers, packages, snapshots, link and alias edges, ...
+report.exoticSources; // tarballs, git repositories, directories, runtimes: for the policy
+report.orphanSnapshots; // snapshots no importer reaches
+parseDepPath('react-dom@18.2.0(react@18.2.0)', DEFAULT_PNPM_LOCK_LIMITS, '')
+  .peers;
+```
+
+What it reads: `importers` (each dependency as a specifier and a reference to a
+snapshot or a `link:`), `packages` (where the bytes come from, and what the
+package claims about `os`, `cpu`, `libc` and `engines`), `snapshots` (the edges,
+one per set of peers a package was resolved against), and the settings,
+overrides, catalogs, patches and checksums. A snapshot key such as
+`@scope/a@1.0.0(b@2.0.0(c@3.0.0))(d@4.0.0)` is parsed the way pnpm splits it,
+and anything that would parse two ways is refused.
+
+What it refuses, each with a reason and the path to the fault
+(`packages["a@1.0.0"].hasBin`): any other `lockfileVersion`; a key pnpm does not
+write; YAML anchors, aliases, tags, directives and repeated keys; absolute or
+escaping paths; a package name that cannot be a directory under `node_modules`;
+a URL with a user name or password (no message repeats one: the user information
+and query string of an address printed in an error become `[redacted]`); an
+`integrity` that is not one canonical digest. Size is bounded (8 MiB, 500,000
+YAML nodes, 2.5 million lexemes, and per-section entry counts, all in
+`PnpmLockLimits`); a larger lock is refused with the number to raise, and the
+worst input at the ceiling is refused in about 5 s using under 500 MB. The
+complete HoBo lock (792 importers, 2,160 packages, 2,193 snapshots) reads in
+about 0.8 s using 150 MB.
 
 ### `opmx`
 

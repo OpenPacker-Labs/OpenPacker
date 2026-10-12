@@ -10,6 +10,10 @@ Relates to: [0033](0033-native-supply-chain-capture-and-mitigation.md),
 [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md),
 [0044](0044-a-closure-is-what-the-host-installs.md).
 
+Amended by [0051](0051-opm-ci-installs-workspace-locks.md) (2026-10-12): the
+refusal of workspace members and links in §8 is replaced; a workspace lock is
+installed.
+
 ## Context
 
 A repository with a committed `package-lock.json` and no workspaces could not be
@@ -124,11 +128,12 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    extraction needs in one shared budget, so several large archives are not
    unpacked at once.
 
-8. **What cannot be honoured is refused, by name, whole.** Links, workspace
-   members and the packages installed inside them, an entry with no `resolved`
-   or no `integrity`, a git or path source: each is listed, up to twenty a
-   screen, and nothing is installed. Workspaces are a later slice; the refusal
-   is the member list. A lock opm cannot install is not partly installed.
+8. **What cannot be honoured is refused, by name, whole.** An entry with no
+   `resolved` or no `integrity`, a git or path source: each is listed, up to
+   twenty a screen, and nothing is installed. Workspace members and links were
+   on this list until [ADR 0051](0051-opm-ci-installs-workspace-locks.md), which
+   installs them; what it still refuses is a link or a key that is not a
+   workspace member's. A lock opm cannot install is not partly installed.
 
 9. **Nothing is executed.** `allow_lifecycle_scripts = false` stays the default.
    The packages that declare an install script are counted in the summary line
@@ -151,7 +156,7 @@ registry.npmjs.org through the sandbox's proxy, with an application's lock of
 | integrity                                | 845 distinct archives, all verified; changing one character of one digest exits 7 and changes nothing                                                                  |
 | the installed tree runs                  | `tsc`, `vitest`, the platform `esbuild` binary, `@swc/core`, `sharp` and `onnxruntime-node` load or run                                                                |
 | two small tool locks (2 and 29 packages) | 0 differences against the oracle; `esbuild`, `workerd` and `miniflare` run                                                                                             |
-| a workspace lock (4 members)             | exit 3, 8 entries named (4 links, 4 members), nothing written                                                                                                          |
+| a workspace lock (4 members)             | exit 3, 8 entries named (4 links, 4 members), nothing written (as measured then; ADR 0051 installs it)                                                                 |
 | cold: empty store, 354 MB fetched        | 113.5 s: 90.9 s fetching and extracting, 22.3 s writing the layout                                                                                                     |
 | warm: store populated, a new project     | 55.0 s: 18.9 s adopting the 845 entries, 35.6 s writing the layout                                                                                                     |
 | a second project from the same lock      | adds 21,376 KB to 1,337,948 KB (1.60%): its 5,164 directories and nothing else (`du` over all paths in one invocation)                                                 |
@@ -170,9 +175,10 @@ Costs and limits, stated so nobody finds them by surprise.
   looks at a file with one `lstat`, not an open, a stat and a close: the layout
   step went from 38 s to 29 s). Fewer verification passes, or synchronous I/O
   under the same handle checks, is the next step and is not taken here.
-- **Workspaces, links and git or path dependencies are refused.** pnpm locks are
-  not read. `opm.lock.json` installs (`opm install`) are unchanged and still
-  evaluate policy on the facts the older lock persists.
+- **Git and path dependencies are refused.** (Workspaces and their links are
+  installed as of [ADR 0051](0051-opm-ci-installs-workspace-locks.md).) pnpm
+  locks are not read. `opm.lock.json` installs (`opm install`) are unchanged and
+  still evaluate policy on the facts the older lock persists.
 - **Hard links, not copies.** Editing a file under `node_modules` in place fails
   (ADR 0048). With `OPM_STORE_HOME=off`, or a store on another device, archives
   are extracted beside `node_modules`, linked in, and the extraction removed, so
