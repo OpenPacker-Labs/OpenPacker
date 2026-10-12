@@ -69,7 +69,7 @@ own repository.
    `.bin` entry, so `opm exec x` is a script of one line. What bounds it is how
    the bin got there: through `add`/`sync`, under the supply-chain gates of ADR
    0033, as a validated shim written without running a package script (ADR
-   0043).
+   0048).
 8. **A dependency's lifecycle scripts are never run by these commands.** `run`
    starts the scripts of the project's own `package.json` only. A name is looked
    up in that file, never in a dependency's.
