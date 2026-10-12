@@ -209,12 +209,9 @@ function memberManifestDisagreements(
 /** How the members the lock lists differ from the ones the project declares. */
 function workspaceDisagreements(
   tree: ReturnType<typeof parsePackageLockText>,
-  options: FrozenLockOptions,
+  disk: readonly WorkspaceMember[],
 ): string[] {
-  const lines = memberListDisagreements(
-    tree.workspace?.members ?? [],
-    options.workspace?.disk ?? [],
-  );
+  const lines = memberListDisagreements(tree.workspace?.members ?? [], disk);
   return lines.length === 0
     ? []
     : [`the workspace members differ (${lines.join('; ')})`];
@@ -223,13 +220,11 @@ function workspaceDisagreements(
 /** Each member the lock and the disk both have, against its own `package.json`. */
 function memberManifestDisagreements(
   tree: ReturnType<typeof parsePackageLockText>,
-  options: FrozenLockOptions,
+  disk: readonly WorkspaceMember[],
 ): string[] {
-  const disk = new Map(
-    (options.workspace?.disk ?? []).map((member) => [member.dir, member]),
-  );
+  const onDisk = new Map(disk.map((member) => [member.dir, member]));
   return (tree.workspace?.members ?? []).flatMap((member) => {
-    const there = disk.get(member.dir);
+    const there = onDisk.get(member.dir);
     return there === undefined
       ? []
       : memberDisagreements(tree, member, manifestOfMember(there));
