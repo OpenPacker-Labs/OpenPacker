@@ -57,7 +57,9 @@ A resolution fails closed unless **all** of these hold:
 
 1. The bundle is a valid Sigstore bundle verified against the shipped (or
    operator-supplied) trusted root; a keyless signature carries a transparency
-   log entry, and its time is the log's, not the wall clock.
+   log entry, and its time is one the verifier vouched for (the log's signed
+   timestamp, or a timestamp authority's), not the wall clock and not the
+   statement's own `published_at`.
 2. The signer is who the project said — or, for a GitHub/GitLab project with no
    configuration, a certificate for **that repository**, issued by the forge's
    own OIDC issuer.
@@ -69,8 +71,8 @@ A resolution fails closed unless **all** of these hold:
 5. The host meets the release's hard requirements (or the project said
    `allow_incompatible_host`).
 6. The signer is not worse than the one the lock remembers (below).
-7. Ordinary opm policy: release age, trust tier no-downgrade, source rules,
-   accepted identities and issuers, required evidence.
+7. Ordinary opm policy: release age (measured from a verified time, below),
+   trust tier no-downgrade, source rules, required evidence.
 
 A vendor's list of releases (a signed `.well-known/packslip.json`) is checked
 for expiry and for rollback against the highest sequence the lock has seen.
@@ -108,6 +110,13 @@ allow_incompatible_host = false
 | `issuer`                        | OIDC issuer; defaults to the forge's for GitHub and GitLab projects                  |
 | `source_repository`             | Repository URI the certificate must name                                             |
 | `allow_unlogged`                | Accept a key-signed bundle with no transparency-log entry                            |
+
+`identity_prefix` is a plain string prefix. End it at a boundary — a directory
+(`…/.github/workflows/`) or the file and its `@` (`…/release.yml@`) — or it also
+matches `…/release.yml.evil`. A project's entry matches whatever the case the
+name is written in (forge names are case-insensitive). A section such as
+`[adapters.packslp…]`, for an adapter that has no settings, is an error: an
+ignored `pin` would be a project that trusts whoever signs.
 
 An **unknown key is an error**, reported before any request is made. A
 misspelled `pin` that was quietly ignored would be a project that trusts whoever
@@ -165,8 +174,15 @@ differ between resolutions of the same release (a list's sequence number); a
 frozen install does not compare them, and takes the names from its own fresh
 resolution, never from the lock.
 
-A missing or unreadable lock means no history, never a reason to refuse or to
-trust more.
+For a key-signed project the lock keeps the whole key, not only the key id
+printed beside it: the id is a label written into the `.pub` file, so a
+different key can carry the same one.
+
+A missing or unreadable lock means no history, never a reason to refuse. It does
+switch off what needs history: a changed signer is no longer noticed and a
+replayed older list is no longer recognised, so keep `opm.lock.json` committed.
+It cannot add trust: the pins, keys and repositories in `opm.toml` are checked
+on every resolution whether or not a lock exists.
 
 ## Policy facts
 
@@ -178,11 +194,37 @@ trust more.
 | evidence `sigstore`              | **Keyless only** — Sigstore's PKI vouched for the signer              |
 | evidence `sigstore-transparency` | The signature has a verified log entry                                |
 | trust tier                       | keyless + logged → `trusted-publisher`; otherwise `registry-attested` |
-| `publishedAt`                    | The signed `published_at` (for minimum release age)                   |
+| `publishedAt`                    | A verified time only (below); absent when none was verified           |
 | source kind                      | `registry`: the provider is the authority and the bytes are verified  |
 
 A key the project pinned is that project's anchor, not Sigstore's, so
 `required_evidence = ["sigstore"]` is **not** satisfied by a key-signed release.
+The `trusted-publisher` tier needs a keyless signature that is logged, bound to
+a repository, and made by the vendor for its own release; an email identity or a
+repackager's attestation is `registry-attested`.
+
+### Release age, and vendors that do not log
+
+The default policy holds a release for 24 hours (`minimum_release_age_minutes`).
+That gate exists for a stolen signing key or CI workflow, which is also the
+thing that could write any `published_at` it likes into a statement it signs. So
+opm measures a release's age from **a time the verifier vouched for**: the
+transparency log's signed timestamp, or a timestamp authority's. The statement's
+own date is shown (`statedPublishedAt`) but never used as a clock.
+
+A release with no such time — a key-signed one the vendor did not log, trusted
+with `allow_unlogged = true` — has no age opm can establish. Under the default
+policy the resolve stops as _indeterminate_ (`POLICY_INDETERMINATE`, exit 6). If
+you do trust that vendor, say so for that tool, where a reviewer will see it:
+
+```toml
+[policy]
+minimum_release_age_minutes = 1440
+minimum_release_age_exclude = ["pkg:packslip/example.com/tool"]
+```
+
+(`[policy]` is the section `opm init` already wrote; add the one line to it. See
+[supply-chain.md](../security/supply-chain.md).)
 
 ## Environment
 
@@ -224,6 +266,11 @@ the connection to the address it checked.
 - **Host requirements** are detected without running anything: operating system,
   architecture, libc. Anything that would need a probe is reported as a warning
   rather than guessed.
+- **A rename** is followed through the release statement (the repository ID
+  shows it is the same project) but not through a signed release list, which
+  must name the project exactly as asked. After a rename, ask for the new name.
+- **`opm packslip approve` and `pin --write`** rewrite `opm.toml` with opm's own
+  writer, as `opm add` does: comments are not kept. Review the diff.
 - **`opmx`** has no project to read trust from, so ephemeral runs work only for
   keyless GitHub projects, which need no configuration.
 - Offline replay follows the registry rule: attestation in a lock is not policy

@@ -43,9 +43,13 @@ Four questions had to be settled:
   tested); `OPM_PACKSLIP_TRUSTED_ROOT` replaces it for a private Sigstore. This
   is ADR 0030's _outcome 2_: the primitive is bought, the packslip semantics are
   built. A keyless signature must carry a transparency-log entry, and the
-  signing time is the log's integration time, not the wall clock. A key-signed
-  bundle is trusted only when the project named its public key; it may be
-  unlogged only when the project says so.
+  signing time is a time the verifier itself vouched for — a log entry whose
+  signed entry timestamp covers its integration time, or an RFC 3161 timestamp
+  from a trusted authority — not the wall clock and not the statement's own
+  `published_at`. A log entry that carries a proof but no signed timestamp
+  (Rekor v2) has an integration time that is only JSON, and is not believed as a
+  time. A key-signed bundle is trusted only when the project named its public
+  key; it may be unlogged only when the project says so.
 - **D3 — Trust anchors are committed in `opm.toml`, never in the lock.**
   `[adapters.packslip.trust."<project>"]` holds a fingerprint pin
   (`pin = ["ps1_…"]`), a key (`public_key`), or an identity constraint. The lock
@@ -54,7 +58,11 @@ Four questions had to be settled:
   trust makes the lock stale. With no entry, a GitHub or GitLab project is
   trusted to the extent the forge can prove: the signing certificate must name
   that repository. Once a release is accepted its repository ID is remembered,
-  so a rename is followed and a recreated name is not.
+  so a rename is followed and a recreated name is not. A trust entry matches its
+  project whatever the case it was written in (forge names are case-insensitive;
+  an exactly-matched pin would be skipped in silence), and a section naming an
+  adapter that has no settings is an error rather than a setting that never
+  applies.
 - **D4 — The lock remembers the signer so a change can be noticed.** Each locked
   package records an `attestation` (signer, issuer, signing time, evidence, and
   an opaque `record` the adapter reads back). On the next resolution the adapter
@@ -64,15 +72,33 @@ Four questions had to be settled:
   exactly that change. A person approves it by adding the id to `approvals`
   (`opm packslip approve <id>`); an id approves one change and nothing else. A
   repository ID that differs from the remembered one is not approvable at all —
-  it is a different project. A missing or unreadable lock is the same as no
-  history, never a reason to refuse or to trust more.
+  it is a different project. For a key-signed project the whole key is
+  remembered (the hash of the public key beside its label), because the label is
+  written into the `.pub` file and is not a function of the key. A missing or
+  unreadable lock is the same as no history, never a reason to refuse: it
+  switches off the checks that need history (signer change, replayed list), so
+  deleting the lock cannot make anything _more_ trusted than the manifest's
+  anchors already allow, but it does stop opm noticing drift. The anchors
+  themselves — pins, keys, the forge's repository — are in the manifest and are
+  checked every time.
 - **D5 — Evidence is stated honestly.** The adapter reports `sigstore` evidence
   only when Sigstore's PKI vouched for the signer (keyless). A release checked
   against a key the project pinned is reported as `packslip` evidence only, so a
-  policy that requires `sigstore` is not satisfied by it. Trust tiers: keyless
-  and logged → `trusted-publisher`; otherwise `registry-attested`. The signed
-  `published_at` feeds minimum-release-age, and is believed only because it came
-  from verified metadata.
+  policy that requires `sigstore` is not satisfied by it. Trust tiers: a keyless
+  signature that is logged, bound to a repository, and made by the vendor for
+  its own release → `trusted-publisher`; otherwise `registry-attested`.
+- **D5a — Release age is measured from a verified time, or not at all.** The
+  statement's `published_at` is the signer's own word: a stolen key, or a stolen
+  CI workflow, writes whatever date suits it, and believing the date would turn
+  the minimum-release-age gate — the control that exists for exactly that
+  compromise — into a no-op. The adapter therefore offers policy a `publishedAt`
+  only when the verifier authenticated a time (above); the signer's date is kept
+  as `statedPublishedAt`, a claim nothing treats as a clock. With no verified
+  time (an unlogged key-signed release) policy cannot establish the release's
+  age, and under the default policy the resolve stops as indeterminate. A
+  project that deliberately trusts such a vendor excuses that one tool with
+  `minimum_release_age_exclude`, which is a written, reviewable decision in
+  `opm.toml`.
 - **D6 — State that advances is kept but not compared.** A vendor's signed list
   carries a sequence number that rises with every release, and the lock keeps it
   so a replayed older list is refused. A frozen install re-resolves and compares
@@ -109,6 +135,11 @@ Stated so nobody infers more than was verified:
   requirement the host does not meet stops the resolve unless the project sets
   `allow_incompatible_host`.
 - **No transitive dependencies.** A packslip release is self-contained.
+- **A rename is followed through the release statement, not through a signed
+  release list.** A statement can show, by repository ID, that a renamed project
+  is the one that was pinned. A list carries no such proof, so it must name the
+  project exactly as asked: a list signed under a project's new name is refused
+  for its old one (`PROJECT_MISMATCH`, fail closed). Ask for the new name.
 - **`opmx` has no project**, so only keyless GitHub projects, which need no
   configuration, can be run ephemerally.
 
