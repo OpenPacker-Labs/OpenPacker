@@ -18,6 +18,7 @@ import {
   type FrozenLockOptions,
   type WorkspaceMember,
 } from '@openpacker/adapter-core';
+import { assertPlaceable } from './frozen-placement.js';
 import { planFrozenPackageLock } from './frozen-select.js';
 import {
   DEPENDENCY_FIELDS,
@@ -172,7 +173,11 @@ export async function readFrozenPackageLock(
       'INVALID_LOCKFILE',
       `package.json and package-lock.json are not in sync (npm ci would refuse too): ${disagreements.slice(0, 20).join('; ')}${disagreements.length > 20 ? `; and ${disagreements.length - 20} more` : ''}`,
     );
-  return { ...common, ...planFrozenPackageLock({ tree, options }) };
+  const plan = planFrozenPackageLock({ tree, options });
+  // The places are the lock's keys: a lock whose places cannot be written is
+  // refused now, before anything is fetched or the project's node_modules goes.
+  assertPlaceable(plan);
+  return { ...common, ...plan };
 }
 
 /** How the members the lock lists differ from the ones the project declares. */

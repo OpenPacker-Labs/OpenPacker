@@ -321,8 +321,10 @@ What it does, in order:
 
 1. **Reads the lock, refuses what it cannot install.** A git or path source, an
    entry with no `resolved` or no `integrity`, a link or key in a workspace lock
-   that is not a member's, and a `package.json` that no longer matches the lock
-   are each named, and nothing is installed. Exit code 3.
+   that is not a member's, a place the lock names that cannot be written (two
+   names that differ only by case in one directory), and a `package.json` that
+   no longer matches the lock are each named, and nothing is installed or
+   removed. Exit code 3.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release

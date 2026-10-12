@@ -29,7 +29,7 @@ import {
   placeWantedLinks,
   removeStaleLinks,
 } from './layout-write-links.js';
-import { chainOfLockPath, splitNestedLockPath } from './lock-entry.js';
+import { placeOfLockPath } from './lock-entry.js';
 import {
   planLayout,
   planLayoutFromPaths,
@@ -256,7 +256,7 @@ function planFor(
   const seen = new Set<string>();
   const placed = entries.map((source): PlacedEntry => {
     const path = source.layoutPath!;
-    const where = placeOf(path);
+    const where = placeOfLockPath(path);
     if (where === undefined)
       throw new Error(`${path} is not a place under node_modules`);
     if (seen.has(path)) throw new Error(`${path} is claimed twice`);
@@ -278,16 +278,6 @@ function planFor(
     return { entry, ...where };
   });
   return planLayoutFromPaths(placed, { links, members });
-}
-
-/** A lock's place for a package: in the project's `node_modules`, or a member's. */
-function placeOf(path: string): { chain: string[]; base?: string } | undefined {
-  const own = chainOfLockPath(path);
-  if (own !== undefined) return { chain: own };
-  const nested = splitNestedLockPath(path);
-  if (nested === undefined) return undefined;
-  const chain = chainOfLockPath(nested.place);
-  return chain === undefined ? undefined : { chain, base: nested.directory };
 }
 
 /**

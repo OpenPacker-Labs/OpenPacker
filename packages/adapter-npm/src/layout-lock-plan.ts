@@ -5,10 +5,19 @@
  * an opm lock records which package needs which and not where Node should find
  * it. An npm lock already says: its key is the path, in the project's own
  * `node_modules` or in a workspace member's.
+ *
+ * The rules a lock's places must meet (`checkLockPlacements`) look at the lock
+ * alone, so a frozen install runs them when it reads the lock and refuses
+ * before it fetches or removes anything; the layout runs them again on what it
+ * is about to write.
  */
 
 import { compareText } from './layout-compare.js';
-import { checkLayoutLinks, placePath } from './layout-links.js';
+import {
+  checkLayoutLinks,
+  placePath,
+  type LayoutLink,
+} from './layout-links.js';
 import { caseCollision, unsafeNameProblem } from './layout-names.js';
 import {
   LayoutTooLargeError,
@@ -25,6 +34,17 @@ export interface PlacedEntry {
   /** Package names from the project root down, as in {@link Placement}. */
   chain: readonly string[];
   /** The member whose `node_modules` the chain starts in, as in {@link Placement}. */
+  base?: string;
+}
+
+/** What the placement rules look at of one package. */
+export interface PlaceToCheck {
+  /** What the messages call the place's package. */
+  id: string;
+  /** The package's own name and version, for the messages. */
+  name: string;
+  version: string;
+  chain: readonly string[];
   base?: string;
 }
 
@@ -72,16 +92,49 @@ export function planLayoutFromPaths(
   placed: readonly PlacedEntry[],
   options: PlanOptions = {},
 ): LayoutPlan {
+  const links = checkLockPlacements(
+    placed.map(({ entry, chain, base }) => ({
+      id: entry.id,
+      name: entry.name,
+      version: entry.version,
+      chain,
+      ...(base !== undefined && { base }),
+    })),
+    options,
+  );
+  const placements = placed
+    .map(({ entry, chain, base = '' }) => ({
+      entry,
+      chain,
+      ...(base !== '' && { base }),
+    }))
+    .sort(comparePlacements);
+  return { placements, skipped: [], links };
+}
+
+/**
+ * Whether every place a lock names can be written as written, and the member
+ * links it carries, checked against them. Throws {@link LayoutPathsError} (or
+ * the links' own error) naming each problem; returns the links in path order.
+ */
+export function checkLockPlacements(
+  placed: readonly PlaceToCheck[],
+  options: PlanOptions = {},
+): readonly LayoutLink[] {
   const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   if (placed.length > maximumPlacements)
     throw new LayoutTooLargeError(maximumPlacements);
   const problems: string[] = [];
   const members = new Set(options.members ?? []);
-  const taken = new Map<string, LayoutEntry>();
+  const taken = new Map<string, PlaceToCheck>();
   // Names that differ only by case, beside each other in one `node_modules`:
   // the project's and each member's own are directories of their own.
-  const casing = new Map<string, { installName: string; entry: LayoutEntry }>();
-  for (const { entry, chain, base = '' } of placed) {
+  const casing = new Map<
+    string,
+    { installName: string; entry: PlaceToCheck }
+  >();
+  for (const entry of placed) {
+    const { chain, base = '' } = entry;
     const where = placePath(chain, base);
     if (chain.length === 0) {
       problems.push(`${entry.id} has no place`);
@@ -114,24 +167,13 @@ export function planLayoutFromPaths(
       problems.push(`${caseCollision(entry, installName, twin)} (at ${where})`);
     else casing.set(folded, { installName, entry });
   }
-  for (const { entry, chain, base = '' } of placed) {
+  for (const { id, chain, base = '' } of placed) {
     if (chain.length < 2) continue;
     if (!taken.has(placementKey(base, chain.slice(0, -1))))
       problems.push(
-        `${entry.id} lives inside ${base === '' ? '' : `${base}/node_modules/`}${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
+        `${id} lives inside ${base === '' ? '' : `${base}/node_modules/`}${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
       );
   }
   if (problems.length > 0) throw new LayoutPathsError(problems);
-  const placements = placed
-    .map(({ entry, chain, base = '' }) => ({
-      entry,
-      chain,
-      ...(base !== '' && { base }),
-    }))
-    .sort(comparePlacements);
-  return {
-    placements,
-    skipped: [],
-    links: checkLayoutLinks(options.links ?? [], placements),
-  };
+  return checkLayoutLinks(options.links ?? [], placed);
 }

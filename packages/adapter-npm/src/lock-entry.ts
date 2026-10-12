@@ -108,6 +108,18 @@ export function splitNestedLockPath(
   return { directory: path.slice(0, at), place: path.slice(at + 1) };
 }
 
+/** A lock's place for a package: in the project's `node_modules`, or a member's. */
+export function placeOfLockPath(
+  path: string,
+): { chain: string[]; base?: string } | undefined {
+  const own = chainOfLockPath(path);
+  if (own !== undefined) return { chain: own };
+  const nested = splitNestedLockPath(path);
+  if (nested === undefined) return undefined;
+  const chain = chainOfLockPath(nested.place);
+  return chain === undefined ? undefined : { chain, base: nested.directory };
+}
+
 export function readEntry(
   path: string,
   member: string,

@@ -224,6 +224,31 @@ describe('installFrozen refuses, before it fetches or writes anything', () => {
     await symlink(real, join(w.dir, 'packages'));
     await refused(w, 'UNSAFE_PATH', /packages/u);
   });
+
+  // The plan of the lock's places is knowable from the lock alone, so a place
+  // that cannot be written is refused here, with the project's node_modules
+  // (the `keep` the helper puts there) still in place.
+  it.each([
+    ['the project', 'node_modules'],
+    ['a member', 'packages/one/node_modules'],
+  ])(
+    'two names that differ only by case in the node_modules of %s',
+    async (_who, dir) => {
+      const w = await standard((x) => {
+        x.place(`${dir}/MS`, { name: 'ms', version: '2.1.3' }, { name: 'ms' });
+        x.place(`${dir}/ms`, { name: 'ms', version: '2.1.3' });
+      });
+      await w.write();
+      await refused(
+        w,
+        'INVALID_LOCK',
+        new RegExp(
+          `ms@2\\.1\\.3 would be installed as ms, which differs only by case from MS.*\\(at ${dir.replaceAll('/', '\\/')}\\/ms\\)`,
+          'u',
+        ),
+      );
+    },
+  );
 });
 
 describe('a project without a workspace', () => {
