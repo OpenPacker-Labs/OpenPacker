@@ -113,7 +113,8 @@ export function labelOf(pkg: FrozenLockPackage): string {
  * userinfo, query and fragment, and with its scheme. An address with an origin
  * is shown as its origin and path (`redactUrl`). `git+https:`, `git+ssh:`,
  * `file:` and the other schemes that have none have no origin to show, so the
- * address itself is shown, cleared.
+ * address itself is shown, cleared. An address the URL parser refuses is cut as
+ * text, and loses the same three things.
  */
 export function redactSource(source: string): string {
   try {
@@ -125,7 +126,10 @@ export function redactSource(source: string): string {
     url.hash = '';
     return url.href;
   } catch {
-    return source.replace(/\/\/[^/@]*@/u, '//');
+    // Not a URL the parser accepts, so cut it as text. Userinfo goes first and
+    // ends at the last `@` before the first `/`, because a password may hold a
+    // `?`, a `#` or an `@`; then nothing from the first `?` or `#` is kept.
+    return source.replace(/\/\/[^/]*@/u, '//').replace(/[?#].*$/su, '');
   }
 }
 

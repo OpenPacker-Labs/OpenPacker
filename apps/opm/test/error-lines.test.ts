@@ -231,6 +231,24 @@ describe('the lists of opm ci, from a lock', () => {
     expect(err).not.toContain(CANARY);
   });
 
+  it('withholds the query and fragment of a git source a URL parser refuses', async () => {
+    const { err } = await ci(
+      { dependencies: { a: '1.0.0', c: 'git+ssh://git@github.com:o/c.git' } },
+      {
+        'node_modules/a': registry('a'),
+        'node_modules/c': {
+          ...git,
+          resolved: `git+ssh://git@github.com:o/c.git?token=${CANARY}#frag-${CANARY}`,
+        },
+      },
+    );
+    expect(err).toBe(
+      'opm: opm ci installs from archives with a pinned digest, and cannot install 1 package from a git or path source yet:\n' +
+        '  c@1.0.0 (node_modules/c): git+ssh://github.com:o/c.git\n',
+    );
+    expect(err).not.toContain(CANARY);
+  });
+
   it('lists the packages missing from the store when it is offline, one to a line', async () => {
     const { err, code } = await ci(
       { dependencies: { a: '1.0.0', b: '1.0.0' } },

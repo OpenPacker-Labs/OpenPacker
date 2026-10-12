@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { redactSource } from '../src/frozen-store.js';
 
+/** Stands for a credential an address holds. */
+const CANARY = 'vtok_dummy_marker_0123456789abcdef';
+
 /**
  * A lock entry's `resolved` is shown in two errors of `opm ci`: the list of
  * git and path sources it cannot install, and an archive that does not match
@@ -48,4 +51,45 @@ describe('a source named in an error', () => {
   ])('keeps the scheme of %s', (_, source, expected) => {
     expect(redactSource(source)).toBe(expected);
   });
+
+  /**
+   * An address `new URL` refuses (a colon and then a path where a port goes) is
+   * not parsed, so its userinfo, query and fragment are cut as text. Nothing
+   * after the first `?` or `#` is printed, and userinfo ends at the last `@`
+   * before the first `/`, so an `@`, `?` or `#` inside a password does not leave
+   * the rest of it behind.
+   */
+  it.each([
+    [
+      'the query and fragment',
+      `git+ssh://git@github.com:o/r.git?token=${CANARY}#frag`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'the fragment',
+      `git+ssh://git@github.com:o/r.git#${CANARY}`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'the query of a relative path',
+      `../local/pkg?token=${CANARY}`,
+      '../local/pkg',
+    ],
+    [
+      'the rest of a password that holds an @',
+      `git+ssh://deploy:${CANARY}@x@github.com:o/r.git`,
+      'git+ssh://github.com:o/r.git',
+    ],
+    [
+      'a password that holds a ? and a #',
+      `git+ssh://deploy:${CANARY}?x#y@github.com:o/r.git`,
+      'git+ssh://github.com:o/r.git',
+    ],
+  ])(
+    'withholds %s of an address a URL parser refuses',
+    (_, source, expected) => {
+      expect(redactSource(source)).toBe(expected);
+      expect(redactSource(source)).not.toContain(CANARY);
+    },
+  );
 });
