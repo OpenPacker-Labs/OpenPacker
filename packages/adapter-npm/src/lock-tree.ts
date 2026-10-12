@@ -8,57 +8,37 @@
  *
  * This is the one reader of that file. The codec's lock capture and the frozen
  * install both go through it, so the root entry, a package locked at several
- * paths, a link and a workspace member are classified the same way by both.
+ * paths, a link and a workspace member are classified the same way by both. The
+ * workspace itself (members, their links, the packages inside them) is read by
+ * `lock-workspace.ts` and arrives as `workspace`; `entries`, `links` and
+ * `foreign` keep their meaning for the readers that predate it.
  *
  * Everything in the file is input. A key becomes a directory name and a
  * `resolved` value becomes a request, so the shapes are checked here and a
  * malformed lock is refused rather than read generously.
  */
 
-import { ProviderError } from '@openpacker/adapter-core';
-import { unsafeNameProblem } from './layout-plan.js';
+import {
+  chainOfLockPath,
+  readEntry,
+  resolveFromChain,
+  type LockEntry,
+} from './lock-entry.js';
+import {
+  findDuplicateJsonKey,
+  invalid,
+  isRecord,
+  optionalString,
+  stringMap,
+  type StringMap,
+} from './lock-json.js';
+import { readLockWorkspace, type LockWorkspace } from './lock-workspace.js';
+
+export { chainOfLockPath, findDuplicateJsonKey, resolveFromChain };
+export type { LockEntry, LockWorkspace };
 
 /** Most entries a lock may hold; the layout planner's own ceiling. */
 export const MAXIMUM_LOCK_ENTRIES = 50_000;
-
-type StringMap = Readonly<Record<string, string>>;
-
-/** One package the lock installs somewhere under `node_modules`. */
-export interface LockEntry {
-  /** The lock's key, e.g. `node_modules/a/node_modules/b`. */
-  path: string;
-  /**
-   * Directory names from the project down: `['a', 'b']` is the example above.
-   * A scoped name is one element, `@scope/name`.
-   */
-  chain: readonly string[];
-  /** The name the package lives under: the alias, for an aliased dependency. */
-  name: string;
-  /** The package's own name; differs from `name` only for an `npm:` alias. */
-  packageName: string;
-  version: string;
-  resolved?: string;
-  integrity?: string;
-  /** Reachable only through devDependencies. */
-  dev: boolean;
-  /** Reachable only through optionalDependencies. */
-  optional: boolean;
-  /** Reachable only through dev or optional edges, but through both kinds. */
-  devOptional: boolean;
-  /** Reachable only through peerDependencies. */
-  peer: boolean;
-  /** Shipped inside its parent's tarball rather than fetched on its own. */
-  inBundle: boolean;
-  os?: readonly string[];
-  cpu?: readonly string[];
-  libc?: readonly string[];
-  hasInstallScript: boolean;
-  deprecated?: string;
-  dependencies: StringMap;
-  optionalDependencies: StringMap;
-  peerDependencies: StringMap;
-  peerDependenciesMeta: Readonly<Record<string, { optional?: boolean }>>;
-}
 
 /** `link: true`: a symlink in npm, a workspace member or a `file:` link. */
 export interface LockLink {
@@ -89,156 +69,27 @@ export interface LockRoot {
 export interface PackageLockTree {
   lockfileVersion: 2 | 3;
   root: LockRoot | undefined;
-  /** Sorted by path, so the tree reads the same however the file was ordered. */
+  /**
+   * Sorted by path, so the tree reads the same however the file was ordered.
+   * Registry packages in the project's own `node_modules`; the ones inside a
+   * workspace member are `workspace.entries`.
+   */
   entries: readonly LockEntry[];
   links: readonly LockLink[];
   foreign: readonly LockForeignEntry[];
+  /** Members, their links and what is installed inside them; absent in a lock with none. */
+  workspace: LockWorkspace | undefined;
 }
 
-function invalid(message: string): ProviderError {
-  return new ProviderError('INVALID_LOCKFILE', message);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
- * Directory names for a `node_modules/...` key, or undefined for a key that is
- * not under `node_modules` at all. A key that starts there and is not a clean
- * sequence of `node_modules/<name>` pairs is refused.
- */
-export function chainOfLockPath(path: string): string[] | undefined {
-  if (!path.startsWith('node_modules/')) return undefined;
-  const segments = path.split('/');
-  const chain: string[] = [];
-  let at = 0;
-  while (at < segments.length) {
-    if (segments[at] !== 'node_modules')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
-    at += 1;
-    let name = segments[at];
-    if (name === undefined || name === '')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
-    at += 1;
-    if (name.startsWith('@')) {
-      const second = segments[at];
-      if (second === undefined || second === '')
-        throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
-      name = `${name}/${second}`;
-      at += 1;
-    }
-    const problem = unsafeNameProblem(name);
-    if (problem !== undefined)
-      throw invalid(`The lock path ${JSON.stringify(path)}: ${problem}`);
-    chain.push(name);
-  }
-  return chain;
-}
-
-/**
- * The first key that appears twice in one JSON object, or undefined.
- *
- * `JSON.parse` keeps the last of two equal keys, so a lock that lists one path
- * twice would install whichever came second without anyone having chosen it.
- */
-export function findDuplicateJsonKey(text: string): string | undefined {
-  const objects: (Set<string> | undefined)[] = [];
-  let expectKey = false;
-  let at = 0;
-  while (at < text.length) {
-    const character = text[at]!;
-    if (character === '"') {
-      let end = at + 1;
-      while (end < text.length && text[end] !== '"')
-        end += text[end] === '\\' ? 2 : 1;
-      const open = objects.at(-1);
-      if (open !== undefined && expectKey) {
-        const raw = text.slice(at + 1, end);
-        const key = raw.includes('\\') ? parseKey(raw) : raw;
-        if (open.has(key)) return key;
-        open.add(key);
-        expectKey = false;
-      }
-      at = end + 1;
-      continue;
-    }
-    if (character === '{') {
-      objects.push(new Set());
-      expectKey = true;
-    } else if (character === '[') {
-      objects.push(undefined);
-      expectKey = false;
-    } else if (character === '}' || character === ']') {
-      objects.pop();
-      expectKey = false;
-    } else if (character === ',') {
-      expectKey = objects.at(-1) !== undefined;
-    } else if (character === ':') {
-      expectKey = false;
-    }
-    at += 1;
-  }
-  return undefined;
-}
-
-function parseKey(raw: string): string {
-  try {
-    // SAFETY: JSON.parse of a quoted string yields a string.
-    return JSON.parse(`"${raw}"`) as string;
-  } catch {
-    return raw;
-  }
-}
-
-function stringMap(value: unknown, where: string): StringMap {
-  if (value === undefined) return {};
-  if (!isRecord(value)) throw invalid(`${where} must be an object`);
-  const out: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry !== 'string')
-      throw invalid(`${where}.${key} must be a string`);
-    out[key] = entry;
-  }
-  return out;
-}
-
-function stringList(value: unknown, where: string): string[] | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === 'string') return [value];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
-    throw invalid(`${where} must be a list of strings`);
-  return value as string[];
-}
-
-function flag(record: Record<string, unknown>, key: string, where: string) {
-  const value = record[key];
-  if (value === undefined) return false;
-  if (typeof value !== 'boolean')
-    throw invalid(`${where}.${key} must be true or false`);
-  return value;
-}
-
-function optionalString(
-  record: Record<string, unknown>,
-  key: string,
-  where: string,
-): string | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string')
-    throw invalid(`${where}.${key} must be a string`);
-  return value;
-}
-
-function metaMap(value: unknown, where: string) {
-  if (value === undefined) return {};
-  if (!isRecord(value)) throw invalid(`${where} must be an object`);
-  const out: Record<string, { optional?: boolean }> = {};
-  for (const [key, entry] of Object.entries(value))
-    out[key] =
-      isRecord(entry) && entry.optional === true ? { optional: true } : {};
-  return out;
+function hasUnsafeSegments(path: string): boolean {
+  return (
+    path.includes('\\') ||
+    path.includes('\0') ||
+    path.startsWith('/') ||
+    path
+      .split('/')
+      .some((segment) => segment === '' || segment === '.' || segment === '..')
+  );
 }
 
 /**
@@ -271,7 +122,9 @@ export function readPackageLock(lock: unknown): PackageLockTree {
   let root: LockRoot | undefined;
   const entries: LockEntry[] = [];
   const links: LockLink[] = [];
+  const linkChains: { path: string; chain: string[]; target: string }[] = [];
   const foreign: LockForeignEntry[] = [];
+  const foreignRecords = new Map<string, Record<string, unknown>>();
   for (const path of keys.sort()) {
     const record = packages[path];
     const where =
@@ -281,16 +134,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
       root = readRoot(record, where);
       continue;
     }
-    if (
-      path.includes('\\') ||
-      path.includes('\0') ||
-      path.startsWith('/') ||
-      path
-        .split('/')
-        .some(
-          (segment) => segment === '' || segment === '.' || segment === '..',
-        )
-    )
+    if (hasUnsafeSegments(path))
       throw invalid(
         `The lock path ${JSON.stringify(path)} is not a relative path inside the project`,
       );
@@ -303,16 +147,18 @@ export function readPackageLock(lock: unknown): PackageLockTree {
         ...(name !== undefined && { name }),
         ...(entryVersion !== undefined && { version: entryVersion }),
       });
+      foreignRecords.set(path, record);
       continue;
     }
-    if (flag(record, 'link', where)) {
-      links.push({
-        path,
-        target: optionalString(record, 'resolved', where) ?? '',
-      });
+    if (record.link === true) {
+      const target = optionalString(record, 'resolved', where) ?? '';
+      links.push({ path, target });
+      linkChains.push({ path, chain, target });
       continue;
     }
-    entries.push(readEntry(path, chain, record, where));
+    if (record.link !== undefined && typeof record.link !== 'boolean')
+      throw invalid(`${where}.link must be true or false`);
+    entries.push(readEntry(path, '', chain, record, where));
   }
   return {
     lockfileVersion: version,
@@ -320,6 +166,11 @@ export function readPackageLock(lock: unknown): PackageLockTree {
     entries,
     links,
     foreign,
+    workspace: readLockWorkspace({
+      workspaces: root?.workspaces,
+      links: linkChains,
+      foreign: foreignRecords,
+    }),
   };
 }
 
@@ -346,57 +197,6 @@ function readRoot(record: Record<string, unknown>, where: string): LockRoot {
   };
 }
 
-function readEntry(
-  path: string,
-  chain: string[],
-  record: Record<string, unknown>,
-  where: string,
-): LockEntry {
-  const version = record.version;
-  if (typeof version !== 'string' || version === '')
-    throw invalid(`${where}.version must be a non-empty string`);
-  const name = chain.at(-1)!;
-  const packageName = optionalString(record, 'name', where) ?? name;
-  const resolved = optionalString(record, 'resolved', where);
-  const integrity = optionalString(record, 'integrity', where);
-  const deprecated = optionalString(record, 'deprecated', where);
-  const os = stringList(record.os, `${where}.os`);
-  const cpu = stringList(record.cpu, `${where}.cpu`);
-  const libc = stringList(record.libc, `${where}.libc`);
-  return {
-    path,
-    chain,
-    name,
-    packageName,
-    version,
-    ...(resolved !== undefined && { resolved }),
-    ...(integrity !== undefined && { integrity }),
-    dev: flag(record, 'dev', where),
-    optional: flag(record, 'optional', where),
-    devOptional: flag(record, 'devOptional', where),
-    peer: flag(record, 'peer', where),
-    inBundle: flag(record, 'inBundle', where),
-    ...(os !== undefined && { os }),
-    ...(cpu !== undefined && { cpu }),
-    ...(libc !== undefined && { libc }),
-    hasInstallScript: flag(record, 'hasInstallScript', where),
-    ...(deprecated !== undefined && { deprecated }),
-    dependencies: stringMap(record.dependencies, `${where}.dependencies`),
-    optionalDependencies: stringMap(
-      record.optionalDependencies,
-      `${where}.optionalDependencies`,
-    ),
-    peerDependencies: stringMap(
-      record.peerDependencies,
-      `${where}.peerDependencies`,
-    ),
-    peerDependenciesMeta: metaMap(
-      record.peerDependenciesMeta,
-      `${where}.peerDependenciesMeta`,
-    ),
-  };
-}
-
 /** Parse the text of a lock, refusing a key that appears twice in one object. */
 export function parsePackageLockText(text: string): PackageLockTree {
   const duplicate = findDuplicateJsonKey(text);
@@ -413,26 +213,4 @@ export function parsePackageLockText(text: string): PackageLockTree {
     );
   }
   return readPackageLock(parsed);
-}
-
-/**
- * Where Node finds `name` from the directory a package lives in: its own
- * `node_modules`, then each ancestor's, then the project's.
- */
-export function resolveFromChain(
-  byPath: ReadonlyMap<string, LockEntry>,
-  from: readonly string[],
-  name: string,
-): LockEntry | undefined {
-  for (let depth = from.length; depth >= 0; depth -= 1) {
-    const base = from.slice(0, depth);
-    const key = [
-      ...base.flatMap((part) => ['node_modules', part]),
-      'node_modules',
-      name,
-    ].join('/');
-    const hit = byPath.get(key);
-    if (hit !== undefined) return hit;
-  }
-  return undefined;
 }
