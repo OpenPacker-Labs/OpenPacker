@@ -734,7 +734,8 @@ How a run goes:
   directory when it has none, then the step: `prebuild`, `build`, or the bin for
   `exec`), stdout to stdout and stderr to stderr, one block per member as each
   ends. With `--stream`, `--parallel` or one member at a time, lines come as
-  they arrive. Several members get no stdin.
+  they arrive. Several members get no stdin and write to pipes, not a terminal:
+  a tool that colours or animates only on a terminal does not.
 - **Failure.** The first member to fail stops anything new from starting, the
   running ones are sent `SIGTERM` (to their whole process group when there is no
   terminal), and `opm` exits with that member's status after one line,

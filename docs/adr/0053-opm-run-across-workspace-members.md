@@ -135,7 +135,9 @@ refused by name with the reason. An unknown option stays a usage error (0047
    member. Arguments after `--` go to the script of every member, and to no
    hook. Nothing prints the environment.
 7. Stdin is not shared: with several members to run each gets none
-   (`/dev/null`), because no terminal belongs to many programs.
+   (`/dev/null`), because no terminal belongs to many programs. Their output
+   goes to pipes, not a terminal, so a tool that colours or animates only on a
+   terminal does not.
 
 ### What is printed
 
