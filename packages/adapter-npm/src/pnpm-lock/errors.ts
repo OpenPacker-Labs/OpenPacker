@@ -9,6 +9,7 @@
  */
 
 import { ProviderError } from '@openpacker/adapter-core';
+import { redactAddresses } from './redact.js';
 
 export type PnpmLockReason =
   /** Input larger than `maxBytes`. */
@@ -45,18 +46,25 @@ export type PnpmLockReason =
   | 'inconsistent';
 
 export class PnpmLockError extends ProviderError {
+  /** Where in the lock, e.g. `packages["a@1.0.0"].resolution`; empty for the whole file. */
+  readonly where: string;
+
   constructor(
     readonly reason: PnpmLockReason,
     message: string,
-    /** Where in the lock, e.g. `packages["a@1.0.0"].resolution`; empty for the whole file. */
-    readonly where: string = '',
+    where = '',
   ) {
+    // Both pass through `redactAddresses`: a key is often an address, and the path to a
+    // failure is built from the key, so a credential must not leave through either.
     super(
       'INVALID_LOCKFILE',
-      where === ''
-        ? `pnpm-lock.yaml ${message}`
-        : `pnpm-lock.yaml ${where} ${message}`,
+      redactAddresses(
+        where === ''
+          ? `pnpm-lock.yaml ${message}`
+          : `pnpm-lock.yaml ${where} ${message}`,
+      ),
     );
+    this.where = redactAddresses(where);
     this.name = 'PnpmLockError';
   }
 }

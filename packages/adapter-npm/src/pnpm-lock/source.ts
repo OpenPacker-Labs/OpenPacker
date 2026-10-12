@@ -5,6 +5,8 @@
  * allowed; the policy that reads the model does that.
  */
 
+import { unsafeNameProblem } from '../layout-plan.js';
+
 /** Where a `name@version` says the package comes from. */
 export type SourceKind = 'registry' | 'file' | 'tarball' | 'git' | 'runtime';
 
@@ -14,6 +16,17 @@ const SEMVER =
 
 export function isSemver(value: string): boolean {
   return SEMVER.test(value);
+}
+
+/**
+ * What is wrong with `name` as a package name, or undefined. A name that is an
+ * address is reported without being repeated: it is the front of a key whose
+ * `@` ended it, so the user information would be quoted and its `@` would not.
+ */
+export function packageNameProblem(name: string): string | undefined {
+  return name.includes('://')
+    ? 'an address is not an npm package name'
+    : unsafeNameProblem(name);
 }
 
 const GIT_COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;

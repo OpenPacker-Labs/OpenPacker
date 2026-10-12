@@ -15,6 +15,7 @@
 import { PnpmLockError } from './errors.js';
 import { exoticSourcesOf, type PnpmExoticSource } from './exotic.js';
 import { packageKeyOf } from './dep-path.js';
+import { redactAddresses } from './redact.js';
 import {
   catalogOfSpecifier,
   isWorkspaceSpecifier,
@@ -118,7 +119,11 @@ class Findings {
   add(code: PnpmLockProblemCode, where: string, message: string): void {
     this.count += 1;
     if (this.problems.length < MAXIMUM_REPORTED_PROBLEMS)
-      this.problems.push({ code, where, message });
+      this.problems.push({
+        code,
+        where: redactAddresses(where),
+        message: redactAddresses(message),
+      });
   }
 }
 

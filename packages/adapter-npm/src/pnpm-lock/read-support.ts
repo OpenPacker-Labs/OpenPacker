@@ -4,9 +4,9 @@
  * here knows what a lock is.
  */
 
-import { unsafeNameProblem } from '../layout-plan.js';
 import { PnpmLockError, at, field } from './errors.js';
 import { checkLimit, type PnpmLockLimits } from './limits.js';
+import { packageNameProblem } from './source.js';
 import type { YamlMap, YamlValue } from './yaml-tree.js';
 
 export interface ReadContext {
@@ -151,7 +151,7 @@ export function sortedEntries(map: YamlMap): [string, YamlValue][] {
 
 /** A package name that can be a directory under `node_modules`, or a refusal. */
 export function checkedName(name: string, where: string): string {
-  const problem = unsafeNameProblem(name);
+  const problem = packageNameProblem(name);
   if (problem !== undefined) throw new PnpmLockError('name', problem, where);
   return name;
 }

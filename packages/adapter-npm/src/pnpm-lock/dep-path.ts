@@ -20,10 +20,14 @@
  * differently.
  */
 
-import { unsafeNameProblem } from '../layout-plan.js';
 import { PnpmLockError } from './errors.js';
 import { checkLimit, type PnpmLockLimits } from './limits.js';
-import { classifyVersion, type SourceKind } from './source.js';
+import { redactAddresses } from './redact.js';
+import {
+  classifyVersion,
+  packageNameProblem,
+  type SourceKind,
+} from './source.js';
 
 /** `name@version(patch)(peers)`; a peer is itself a `DepPath`. */
 export interface DepPath {
@@ -51,9 +55,11 @@ interface Budget {
 }
 
 function refuse(budget: Budget, text: string, message: string): PnpmLockError {
+  // Redacted before it is cut: a cut inside the user information would leave half of it.
+  const shown = redactAddresses(text);
   return new PnpmLockError(
     'dep-path',
-    `${JSON.stringify(text.length > 120 ? `${text.slice(0, 117)}...` : text)} ${message}`,
+    `${JSON.stringify(shown.length > 120 ? `${shown.slice(0, 117)}...` : shown)} ${message}`,
     budget.where,
   );
 }
@@ -117,7 +123,7 @@ function parseAt(budget: Budget, text: string, nesting: number): DepPath {
   if (separator === -1)
     throw refuse(budget, text, 'has no @ between the name and the version');
   const name = text.slice(0, separator);
-  const nameProblem = unsafeNameProblem(name);
+  const nameProblem = packageNameProblem(name);
   if (nameProblem !== undefined)
     throw new PnpmLockError(
       'name',
