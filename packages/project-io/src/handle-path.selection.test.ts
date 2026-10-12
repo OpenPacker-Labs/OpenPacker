@@ -212,11 +212,43 @@ describe('the override cannot weaken a shipped build', () => {
     expect(Object.keys(entry)).not.toContain('linuxGlibcProfile');
   });
 
-  it.each(['handle-path.ts', 'handle-libc.ts', 'handle-libc-profile.ts'])(
-    'is not switched by an environment variable in %s',
-    (file) => {
-      const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-      expect(source).not.toMatch(/process\.env|\benv\[/u);
-    },
-  );
+  it('does not export the seams of the link code, only what makes, reads and removes a link', () => {
+    for (const internal of [
+      'NtJunctions',
+      'realNtLinkOps',
+      'createJunction',
+      'readJunction',
+      'inspectReparse',
+      'windowsReadReparse',
+      'openProjectDirectory',
+      'libcBackend',
+    ])
+      expect(Object.keys(entry)).not.toContain(internal);
+    for (const exported of [
+      'symlinkChild',
+      'readlinkChild',
+      'unlinkChild',
+      'placeMemberLink',
+      'readMemberLink',
+      'removeMemberLink',
+      'removeEmptyScope',
+      'collectTree',
+    ])
+      expect(Object.keys(entry)).toContain(exported);
+  });
+
+  it.each([
+    'handle-path.ts',
+    'handle-libc.ts',
+    'handle-libc-profile.ts',
+    'handle-link.ts',
+    'handle-nt-link.ts',
+    'handle-nt-reparse.ts',
+    'member-link.ts',
+    'link-rules.ts',
+    'reparse-data.ts',
+  ])('is not switched by an environment variable in %s', (file) => {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    expect(source).not.toMatch(/process\.env|\benv\[/u);
+  });
 });
