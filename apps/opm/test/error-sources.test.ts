@@ -111,3 +111,22 @@ describe('a hostile document read by the PyPI adapter', () => {
     expectOneLine(await written(() => pypi.enumerate('pkg:pypi/evilpy')));
   });
 });
+
+describe('a hostile document read by the Cargo adapter', () => {
+  // The sparse index is one JSON document to a line.
+  const index = (version: string) =>
+    JSON.stringify({
+      name: 'evil',
+      vers: version,
+      deps: [],
+      cksum: '1'.repeat(64),
+      features: {},
+      yanked: false,
+      size: 12,
+    });
+
+  it('is one line when a version is not one', async () => {
+    const cargo = adapter('cargo', () => index(`1.0.0${FORGED_VERSION}`));
+    expectOneLine(await written(() => cargo.enumerate('pkg:cargo/evil')));
+  });
+});
