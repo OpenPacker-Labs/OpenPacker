@@ -52,7 +52,10 @@ Accepted decisions:
 48. [One copy of a package per machine, and a node_modules Node can resolve](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)
 49. [Workspaces are a model before they are an install](0049-workspaces-are-a-model-before-they-are-an-install.md)
 50. [Workspace members are linked into node_modules, through the no-follow handle API and nowhere else](0050-workspace-member-links.md)
-51. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
+51. [`opm ci` installs a workspace lock](0051-opm-ci-installs-workspace-locks.md)
+52. [A pnpm lockfile is a model before it is an install](0052-pnpm-lockfile-model.md)
+53. [`opm run` and `opm exec` across the members of a workspace](0053-opm-run-across-workspace-members.md)
+54. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

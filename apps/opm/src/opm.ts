@@ -59,6 +59,8 @@ import {
   type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
+import { COMMANDS } from './commands/command-names.js';
+import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { RUN_HELP } from './commands/run-help.js';
 import { formatFailure, parseFailure } from './error-report.js';
@@ -94,39 +96,6 @@ interface Parsed {
 /** Reported as the producer of any manifest opm writes. */
 const OPM_VERSION = '0.1.0';
 
-const COMMANDS = new Set([
-  'init',
-  'import',
-  'add',
-  'remove',
-  'install',
-  'ci',
-  'uninstall',
-  'sync',
-  'update',
-  'run',
-  'exec',
-  'list',
-  'why',
-  'search',
-  'versions',
-  'info',
-  'resolve',
-  'manifest',
-  'pack',
-  'publish',
-  'yank',
-  'packslip',
-  'plugin',
-  'auth',
-  'system',
-  'generations',
-  'rollback',
-  'gc',
-  'shell',
-  'help',
-]);
-
 /** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
 export interface RunOpmOptions {
   /** Network used by `plugin add`; production resolves and pins real addresses. */
@@ -139,6 +108,25 @@ export async function runOpm(
   cwd = process.cwd(),
   options: RunOpmOptions = {},
 ): Promise<number> {
+  // pnpm and npm put workspace options before the command, and a script's name
+  // where a command goes (ADR 0053); say which `run` or `exec` that means first.
+  try {
+    const routed = await routeRun(argv, cwd);
+    if (routed !== undefined) {
+      const { runProjectCommand } = await import('./commands/run.js');
+      return await runProjectCommand(
+        routed.command,
+        [],
+        routed.rest,
+        io,
+        cwd,
+        undefined,
+        routed.fallbackExec,
+      );
+    }
+  } catch (error) {
+    return handleError(error, io);
+  }
   const args = parseArgs(argv);
   // `run` and `exec` start the person's own code and read no registry, so they
   // load no adapter or plugin (ADR 0047): a broken plugin store cannot print
@@ -194,7 +182,10 @@ export async function runOpm(
       return EXIT_CODES.success;
     }
     if (!COMMANDS.has(args.command)) {
-      throw usage(`Unknown command: ${args.command}`);
+      const hint = unknownCommandHint(args.command);
+      throw usage(
+        `Unknown command: ${args.command}${hint === undefined ? '' : `. ${hint}`}`,
+      );
     }
 
     switch (args.command) {
@@ -935,6 +926,8 @@ function shortToLong(short: string): string {
       return 'ecosystem';
     case 'h':
       return 'help';
+    case 'w':
+      return 'workspace';
     default:
       return short;
   }
@@ -958,6 +951,9 @@ function isBooleanFlag(key: string): boolean {
     key === 'shared' ||
     key === 'production' ||
     key === 'frozen' ||
+    key === 'workspaces' ||
+    key === 'no-workspaces' ||
+    key === 'include-workspace-root' ||
     key === 'write'
   );
 }
@@ -1243,9 +1239,16 @@ Usage:
   opm remove <alias>
   opm install [--offline|--online]
   opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
+         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
                                       install exactly what package-lock.json says;
                                       resolves nothing, runs no install script
-                                      (opm install --frozen is the same)
+                                      (opm install --frozen is the same).
+                                      A workspace lock links each member to its
+                                      directory and gives it its own node_modules;
+                                      -w installs only those members and what they
+                                      need (--include-workspace-root adds the root's
+                                      own dependencies), --workspaces=false only
+                                      the root's
   opm uninstall [alias]
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]

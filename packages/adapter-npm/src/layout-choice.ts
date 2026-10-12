@@ -6,7 +6,7 @@
 
 import { compareText, compareVersions } from './layout-compare.js';
 import { unsafeNameProblem } from './layout-names.js';
-import type { LayoutEntry } from './layout-plan.js';
+import type { LayoutEntry } from './layout-plan-types.js';
 
 /** One edge, as the planner follows it: the entry and the name it is found by. */
 export interface Want {

@@ -32,68 +32,37 @@ import {
   sortEntries,
   wantsOf,
 } from './layout-choice.js';
+import { checkLayoutLinks } from './layout-links.js';
 import {
   caseCollision,
   caseVariant,
   unsafeNameProblem,
 } from './layout-names.js';
-import { checkLayoutLinks, type LayoutLink } from './layout-links.js';
+import {
+  LayoutTooLargeError,
+  MAXIMUM_PLACEMENTS,
+  type LayoutEntry,
+  type LayoutPlan,
+  type LayoutSkip,
+  type PlanOptions,
+} from './layout-plan-types.js';
 
 export { compareVersions };
 export { unsafeNameProblem };
-
-/** One package the plan places. */
-export interface LayoutEntry {
-  /** Unique within the plan; what `dependencies` refer to. */
-  id: string;
-  name: string;
-  version: string;
-  digest: string;
-  direct: boolean;
-  /** `id` of every entry this one requires under that entry's own name. */
-  dependencies: readonly string[];
-  /**
-   * The name a direct entry is installed under when it is not its own
-   * (`"string-width-cjs": "npm:string-width@^4"`). Directory names come from
-   * here, never from `name`, which is what the package calls itself.
-   */
-  installName?: string;
-  /** `id` of every entry this one requires under another name: name → id. */
-  aliases?: Readonly<Record<string, string>>;
-  source: NativeLockEntry;
-}
-
-export interface Placement {
-  entry: LayoutEntry;
-  /**
-   * Package names from the project root down: `['b', 'c']` is
-   * `node_modules/b/node_modules/c`.
-   */
-  chain: readonly string[];
-}
-
-export interface LayoutSkip {
-  entry: LayoutEntry;
-  reason: string;
-}
-
-export interface LayoutPlan {
-  /** Parents before the packages nested in them. */
-  placements: readonly Placement[];
-  skipped: readonly LayoutSkip[];
-  /**
-   * The workspace-member links, checked against the placements (see
-   * `layout-links.ts`) and in path order. Empty unless the caller asked for some.
-   */
-  links: readonly LayoutLink[];
-}
-
-/** What a planner is told besides the packages. */
-export interface PlanOptions {
-  maximumPlacements?: number;
-  /** Member links to carry in the plan; refused whole if any is not acceptable. */
-  links?: readonly LayoutLink[];
-}
+export {
+  LayoutTooLargeError,
+  MAXIMUM_PLACEMENTS,
+  type LayoutEntry,
+  type LayoutPlan,
+  type LayoutSkip,
+  type PlanOptions,
+  type Placement,
+} from './layout-plan-types.js';
+export {
+  LayoutPathsError,
+  planLayoutFromPaths,
+  type PlacedEntry,
+} from './layout-lock-plan.js';
 
 interface Node {
   entry: LayoutEntry | undefined;
@@ -134,13 +103,6 @@ export function toLayoutEntries(
   }
   return out;
 }
-
-/**
- * Most placements a plan may hold. A package that two dependents need at
- * different versions is placed once per dependent, so a lock built to nest
- * thousands of conflicting versions could otherwise ask for a tree of any size.
- */
-export const MAXIMUM_PLACEMENTS = 50_000;
 
 export function planLayout(
   entries: readonly LayoutEntry[],
@@ -323,102 +285,6 @@ export function planLayout(
     skipped,
     links: checkLayoutLinks(options.links ?? [], placements),
   };
-}
-
-/** One package with the place its lock gave it. */
-export interface PlacedEntry {
-  entry: LayoutEntry;
-  /** Package names from the project root down, as in {@link Placement}. */
-  chain: readonly string[];
-}
-
-/** A lock whose placements cannot be laid out as written. */
-export class LayoutPathsError extends Error {
-  readonly code = 'LAYOUT_PATHS_INVALID';
-  constructor(readonly problems: readonly string[]) {
-    super(
-      `The lock's placements cannot be written as they are: ${problems.slice(0, 10).join('; ')}${problems.length > 10 ? `; and ${problems.length - 10} more` : ''}`,
-    );
-    this.name = 'LayoutPathsError';
-  }
-}
-
-/**
- * Lay out exactly the places a lock names.
- *
- * `planLayout` has to decide where each package goes, because an opm lock
- * records which package needs which and not where Node should find it. An npm
- * lock already says: its key is the path. Re-planning from the edges would
- * choose a placement that is correct but not the lock's, and a frozen install
- * is meant to be the lock. So nothing is chosen here; the chains are checked
- * and sorted, parents before the packages nested in them.
- *
- * A placement that cannot be written (an unsafe name, two packages claiming one
- * place, a package inside a parent that is not installed) is an error, not a
- * skip: dropping it would install something other than the lock.
- */
-export function planLayoutFromPaths(
-  placed: readonly PlacedEntry[],
-  options: PlanOptions = {},
-): LayoutPlan {
-  const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
-  if (placed.length > maximumPlacements)
-    throw new LayoutTooLargeError(maximumPlacements);
-  const problems: string[] = [];
-  const taken = new Map<string, LayoutEntry>();
-  for (const { entry, chain } of placed) {
-    const where = chain.join('/node_modules/');
-    if (chain.length === 0) {
-      problems.push(`${entry.id} has no place`);
-      continue;
-    }
-    const bad = chain
-      .map((name) => unsafeNameProblem(name))
-      .find((problem) => problem !== undefined);
-    if (bad !== undefined) {
-      problems.push(bad);
-      continue;
-    }
-    const key = chain.join('\0');
-    const rival = taken.get(key);
-    if (rival !== undefined) {
-      problems.push(
-        `${rival.id} and ${entry.id} both claim node_modules/${where}`,
-      );
-      continue;
-    }
-    taken.set(key, entry);
-  }
-  for (const { entry, chain } of placed) {
-    if (chain.length < 2) continue;
-    if (!taken.has(chain.slice(0, -1).join('\0')))
-      problems.push(
-        `${entry.id} lives inside ${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
-      );
-  }
-  if (problems.length > 0) throw new LayoutPathsError(problems);
-  const placements = placed
-    .map(({ entry, chain }) => ({ entry, chain }))
-    .sort(
-      (left, right) =>
-        left.chain.length - right.chain.length ||
-        compareText(left.chain.join('\0'), right.chain.join('\0')),
-    );
-  return {
-    placements,
-    skipped: [],
-    links: checkLayoutLinks(options.links ?? [], placements),
-  };
-}
-
-export class LayoutTooLargeError extends Error {
-  readonly code = 'LAYOUT_TOO_LARGE';
-  constructor(limit: number) {
-    super(
-      `The lock needs more than ${limit} package directories in node_modules; refusing to write a layout that large`,
-    );
-    this.name = 'LayoutTooLargeError';
-  }
 }
 
 /** What Node finds for `name` from the directory this package lives in. */

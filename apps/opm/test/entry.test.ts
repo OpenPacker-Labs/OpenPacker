@@ -36,6 +36,24 @@ describe('the process entry', () => {
     }
   });
 
+  it('refuses a workspace option before a command that does not take it, instead of handing it to the full CLI', async () => {
+    const root = await makeProject({});
+    for (const argv of [
+      ['--filter', 'a', 'sync'],
+      ['-r', 'install'],
+    ]) {
+      const cap = capture();
+      let handed = false;
+      const status = await main(argv, cap.io, root, async () => {
+        handed = true;
+        return 0;
+      });
+      expect(handed, argv.join(' ')).toBe(false);
+      expect(status, argv.join(' ')).toBe(2);
+      expect(cap.err).toContain('does not take it');
+    }
+  });
+
   it('hands every other command, and a help request, to the full CLI', async () => {
     const root = await makeProject({});
     for (const argv of [

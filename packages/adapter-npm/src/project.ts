@@ -13,6 +13,7 @@ import type {
   DetectedProject,
   FrozenLock,
   FrozenLockOptions,
+  NativeLayoutWorkspace,
   NativeLockEntry,
   NativeRequirement,
   PackProjectOptions,
@@ -32,14 +33,10 @@ import {
 } from '@openpacker/project-io';
 import { formatNpmAlias, isNpmAlias, parseNpmAlias } from './alias.js';
 import { readFrozenPackageLock } from './frozen-lock.js';
+import { layoutLoss } from './layout-loss.js';
 import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
-import {
-  integrityLoss,
-  layoutLoss,
-  packLoss,
-  scopeLoss,
-} from './project-losses.js';
+import { integrityLoss, packLoss, scopeLoss } from './project-losses.js';
 
 /** Where each scope lives in package.json. */
 const SCOPE_FIELD = {
@@ -73,6 +70,8 @@ interface PackageJson {
 export class NpmProjectFormat implements ProjectFormat {
   readonly providerId = 'org.openpacker.project.npm';
   readonly purlType = 'npm' as const;
+  /** `package.json` `workspaces` is npm's: a frozen install reads members the way npm does. */
+  readonly workspaceTool = 'npm' as const;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');
@@ -304,8 +303,12 @@ export class NpmProjectFormat implements ProjectFormat {
   async writeLayout(
     project: DetectedProject,
     packages: readonly NativeLockEntry[],
+    options: { workspace?: NativeLayoutWorkspace } = {},
   ): Promise<ProjectionResult> {
-    const outcome = await writeNodeModules(project.root, packages);
+    const outcome = await writeNodeModules(project.root, packages, {
+      links: options.workspace?.links ?? [],
+      members: options.workspace?.members ?? [],
+    });
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],
       ...(outcome.skipped.length > 0 && { skipped: outcome.skipped }),

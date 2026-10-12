@@ -1,11 +1,13 @@
+/**
+ * What the npm project format says it did not do, as losses. The layout's own
+ * is `layout-loss.ts`.
+ */
+
 import type {
   NativeLockEntry,
   NativeRequirement,
 } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
-import type { LayoutOutcome } from './layout-write.js';
-
-/** What the npm project format says it did not do, as losses. */
 
 export function scopeLoss(requirement: NativeRequirement): SemanticLoss {
   return {
@@ -35,34 +37,6 @@ export function integrityLoss(entry: NativeLockEntry): SemanticLoss {
     mitigation:
       'Re-resolve so the integrity value is captured, or keep native_projection at "manifest".',
     blocksProfile: ['native-validated-v1'],
-  };
-}
-
-export function layoutLoss(
-  outcome: LayoutOutcome,
-  layoutOnly: boolean,
-): SemanticLoss {
-  const nested =
-    outcome.nested > 0
-      ? `, ${outcome.nested} nested to keep conflicting versions apart`
-      : '';
-  return {
-    code: 'NATIVE_LAYOUT_NOT_TOOL_EQUIVALENT',
-    severity: 'info',
-    sourceEcosystem: 'npm',
-    sourcePath: outcome.root,
-    originalMeaning:
-      'node_modules was materialised from the digest-verified opm store',
-    representedMeaning: `${outcome.packages} package(s) in a node_modules Node can resolve${nested}, ${
-      outcome.copied ? 'copied' : 'hardlinked'
-    } from the store, with ${outcome.bins} executable(s) as script shims in .bin${
-      layoutOnly ? '; there is no package.json here and none was created' : ''
-    }`,
-    omittedMeaning:
-      'npm was not run: no lifecycle scripts, no symlinked bin links, and a placement that is correct for the selected versions but not necessarily the one npm would choose',
-    mitigation:
-      'Run npm install if a package needs its install scripts, or keep native_projection at "lock".',
-    blocksProfile: [],
   };
 }
 

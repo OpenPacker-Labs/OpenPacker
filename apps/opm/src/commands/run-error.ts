@@ -22,3 +22,8 @@ export class RunError extends Error {
     this.code = code;
   }
 }
+
+/** A misuse of the command line, with the pointer every usage error ends in. */
+export function usageError(message: string): RunError {
+  return new RunError('USAGE', `${message} (opm --help shows the usage)`);
+}

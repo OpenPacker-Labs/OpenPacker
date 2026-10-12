@@ -1148,5 +1148,9 @@ export {
   type LockForeignEntry,
   type LockLink,
   type LockRoot,
+  type LockWorkspace,
   type PackageLockTree,
 } from './lock-tree.js';
+export type { LockMember, LockMemberLink } from './lock-workspace.js';
+
+export * from './pnpm-lock/index.js';

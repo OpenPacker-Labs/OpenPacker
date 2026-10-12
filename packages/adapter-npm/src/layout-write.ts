@@ -9,15 +9,12 @@
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { NativeLockEntry } from '@openpacker/adapter-core';
-import { materialiseTree, writeFileAtomic } from '@openpacker/project-io';
-import {
-  interpreterFor,
-  readPackageBins,
-  renderCmdShim,
-  renderPosixShim,
-  type PackageBin,
-} from './layout-bins.js';
+import type {
+  NativeLayoutMember,
+  NativeLockEntry,
+} from '@openpacker/adapter-core';
+import { materialiseTree } from '@openpacker/project-io';
+import { directoryOf, modulesOf } from './layout-dirs.js';
 import type { LayoutLink } from './layout-links.js';
 import { placePath } from './layout-links.js';
 import {
@@ -26,19 +23,20 @@ import {
   removeStale,
   writeRecord,
 } from './layout-record.js';
+import { writeShims } from './layout-shims.js';
 import {
   assertNoUndeclaredSymlinks,
   placeWantedLinks,
   removeStaleLinks,
 } from './layout-write-links.js';
-import { chainOfLockPath } from './lock-tree.js';
+import { chainOfLockPath, splitNestedLockPath } from './lock-entry.js';
 import {
   planLayout,
   planLayoutFromPaths,
   toLayoutEntries,
   type LayoutEntry,
   type LayoutPlan,
-  type Placement,
+  type PlacedEntry,
 } from './layout-plan.js';
 
 /** What opm wrote, so a later layout removes those and nothing else. */
@@ -58,6 +56,8 @@ export interface LayoutOutcome {
     unchanged: number;
     removed: number;
   };
+  /** Workspace members whose own `node_modules` the layout wrote packages into. */
+  memberModules: number;
   skipped: { path: string; reason: string }[];
 }
 
@@ -67,6 +67,13 @@ export interface LayoutWriteOptions {
    * packages here (`checkLayoutLinks`), whatever the caller already checked.
    */
   links?: readonly LayoutLink[];
+  /**
+   * The workspace members this layout installs. A package whose place lies
+   * under one of their directories is written in that member's own
+   * `node_modules`; under any other directory it is refused. Their executables
+   * are shimmed in the project's `.bin`.
+   */
+  members?: readonly NativeLayoutMember[];
 }
 
 /** Packages written at the same time within one depth of the tree. */
@@ -77,7 +84,8 @@ export async function writeNodeModules(
   entries: readonly NativeLockEntry[],
   options: LayoutWriteOptions = {},
 ): Promise<LayoutOutcome> {
-  const root = join(projectRoot, 'node_modules');
+  const root = modulesOf(projectRoot, '');
+  const members = options.members ?? [];
   const skipped: { path: string; reason: string }[] = [];
   const storable = entries.filter((entry) => {
     if (entry.storePath) return true;
@@ -87,7 +95,11 @@ export async function writeNodeModules(
     });
     return false;
   });
-  const plan = planFor(storable, options.links ?? []);
+  const plan = planFor(
+    storable,
+    options.links ?? [],
+    members.map((member) => member.dir),
+  );
   for (const refusal of plan.skipped)
     skipped.push({
       path: join(root, ...refusal.entry.name.split('/')),
@@ -107,6 +119,11 @@ export async function writeNodeModules(
       unchanged: 0,
       removed: 0,
     },
+    memberModules: new Set(
+      plan.placements.flatMap((place) =>
+        place.base === undefined ? [] : [place.base],
+      ),
+    ).size,
     skipped,
   };
 
@@ -130,10 +147,15 @@ export async function writeNodeModules(
             if (placement === undefined) return;
             // SAFETY: only entries with a store path were planned.
             const stored = placement.entry.source.storePath!;
+            const base = placement.base ?? '';
+            // The anchor a write may not leave: the project's own
+            // `node_modules`, or, inside a member, the project, walked down
+            // one directory at a time without following a link.
+            const anchor = base === '' ? root : projectRoot;
             const result = await materialiseTree(
               await treeToInstall(stored),
-              directoryOf(root, placement.chain),
-              root,
+              directoryOf(modulesOf(projectRoot, base), placement.chain),
+              anchor,
               { link: true },
             );
             outcome.linked += result.linked;
@@ -144,16 +166,44 @@ export async function writeNodeModules(
     );
   }
 
-  const shims = await writeShims(root, plan.placements, skipped);
+  const shims = await writeShims(
+    projectRoot,
+    plan.placements,
+    members,
+    skipped,
+  );
   outcome.bins = shims.total;
 
   const previous = await readRecord(root);
-  const names = new Set(
-    plan.placements
-      .filter((place) => place.chain.length === 1)
-      .map((place) => place.chain[0]!),
-  );
-  await removeStale(root, previous, names, new Set(shims.root));
+  // The directory a package sits in is its install name, which for an aliased
+  // package is not the name the package calls itself.
+  const namesIn = (base: string): Set<string> =>
+    new Set(
+      plan.placements
+        .filter(
+          (place) => (place.base ?? '') === base && place.chain.length === 1,
+        )
+        .map((place) => place.chain[0]!),
+    );
+  const names = namesIn('');
+  const rootBins = shims.names.get(root) ?? [];
+  await removeStale(root, previous, names, new Set(rootBins));
+  // A member's own `node_modules` is a layout of its own, recorded where it is.
+  for (const base of new Set(
+    plan.placements.map((place) => place.base ?? ''),
+  )) {
+    if (base === '') continue;
+    const modules = modulesOf(projectRoot, base);
+    const earlier = await readRecord(modules);
+    const here = namesIn(base);
+    const binNames = shims.names.get(modules) ?? [];
+    await removeStale(modules, earlier, here, new Set(binNames));
+    await writeRecord(modules, earlier, {
+      packages: [...here],
+      bins: binNames,
+      links: [],
+    });
+  }
   // Links last: a name that was a package is gone by now, and a package that
   // takes the place of an old link has already replaced it. They go in two
   // halves with the record between them, so that a link made is a link recorded
@@ -162,11 +212,11 @@ export async function writeNodeModules(
     projectRoot,
     plan.links,
     previous.links ?? [],
-    new Set(plan.placements.map((place) => placePath(place.chain))),
+    new Set(plan.placements.map((place) => placePath(place.chain, place.base))),
   );
   await writeRecord(root, previous, {
     packages: [...names],
-    bins: shims.root,
+    bins: rootBins,
     links: plan.links,
   });
   const made = await placeWantedLinks(projectRoot, plan.links, stale.emptied);
@@ -191,6 +241,7 @@ export async function writeNodeModules(
 function planFor(
   entries: readonly NativeLockEntry[],
   links: readonly LayoutLink[],
+  members: readonly string[],
 ): LayoutPlan {
   const withPath = entries.filter((entry) => entry.layoutPath !== undefined);
   if (withPath.length === 0)
@@ -200,25 +251,35 @@ function planFor(
       'Either every package of a layout names its place in the lock, or none does',
     );
   const seen = new Set<string>();
-  const placed = entries.map((source) => {
+  const placed = entries.map((source): PlacedEntry => {
     const path = source.layoutPath!;
-    const chain = chainOfLockPath(path);
-    if (chain === undefined)
+    const where = placeOf(path);
+    if (where === undefined)
       throw new Error(`${path} is not a place under node_modules`);
     if (seen.has(path)) throw new Error(`${path} is claimed twice`);
     seen.add(path);
     const entry: LayoutEntry = {
       id: path,
-      name: chain.at(-1)!,
+      name: where.chain.at(-1)!,
       version: source.version,
       digest: source.digest,
       direct: !source.transitive,
       dependencies: [],
       source,
     };
-    return { entry, chain };
+    return { entry, ...where };
   });
-  return planLayoutFromPaths(placed, { links });
+  return planLayoutFromPaths(placed, { links, members });
+}
+
+/** A lock's place for a package: in the project's `node_modules`, or a member's. */
+function placeOf(path: string): { chain: string[]; base?: string } | undefined {
+  const own = chainOfLockPath(path);
+  if (own !== undefined) return { chain: own };
+  const nested = splitNestedLockPath(path);
+  if (nested === undefined) return undefined;
+  const chain = chainOfLockPath(nested.place);
+  return chain === undefined ? undefined : { chain, base: nested.directory };
 }
 
 /**
@@ -236,97 +297,4 @@ async function treeToInstall(storePath: string): Promise<string> {
   } catch {
     return storePath;
   }
-}
-
-/** `['b', 'c']` → `<root>/b/node_modules/c`. */
-function directoryOf(root: string, chain: readonly string[]): string {
-  return join(
-    root,
-    ...chain.flatMap((name, index) => [
-      ...(index === 0 ? [] : ['node_modules']),
-      ...name.split('/'),
-    ]),
-  );
-}
-
-/** The `node_modules` directory a package at `chain` sits directly in. */
-function containerOf(root: string, chain: readonly string[]): string {
-  return chain.length === 1
-    ? root
-    : join(directoryOf(root, chain.slice(0, -1)), 'node_modules');
-}
-
-async function writeShims(
-  root: string,
-  placements: readonly Placement[],
-  skipped: { path: string; reason: string }[],
-): Promise<{ total: number; root: string[] }> {
-  const byContainer = new Map<
-    string,
-    Map<string, { placement: Placement; bin: PackageBin }>
-  >();
-  for (const placement of placements) {
-    const directory = directoryOf(root, placement.chain);
-    const { bins, refused } = await readPackageBins(
-      directory,
-      placement.entry.name,
-    );
-    for (const refusal of refused)
-      skipped.push({
-        path: join(directory, 'package.json'),
-        reason: `${placement.entry.name}: bin ${JSON.stringify(refusal.name)} ${refusal.reason}`,
-      });
-    const container = containerOf(root, placement.chain);
-    const taken = byContainer.get(container) ?? new Map();
-    byContainer.set(container, taken);
-    for (const bin of bins) {
-      const rival = taken.get(bin.name);
-      const candidate = { placement, bin };
-      if (rival === undefined) {
-        taken.set(bin.name, candidate);
-        continue;
-      }
-      const [keep, lose] = outranks(placement, rival.placement)
-        ? [candidate, rival]
-        : [rival, candidate];
-      taken.set(bin.name, keep);
-      skipped.push({
-        path: join(container, '.bin', bin.name),
-        reason: `${lose.placement.chain.at(-1)} also declares ${bin.name}; ${keep.placement.chain.at(-1)} keeps it`,
-      });
-    }
-  }
-
-  let total = 0;
-  const rootNames: string[] = [];
-  for (const [container, taken] of byContainer) {
-    for (const [name, { placement, bin }] of taken) {
-      const directory = directoryOf(root, placement.chain);
-      const interpreter = await interpreterFor(
-        join(directory, ...bin.target.split('/')),
-      );
-      // The directory the package is in, which for an alias is not its name.
-      const relative = `../${placement.chain.at(-1)}/${bin.target}`;
-      await writeFileAtomic(
-        join(container, '.bin', name),
-        renderPosixShim(relative, interpreter),
-        { mode: 0o755 },
-      );
-      if (process.platform === 'win32')
-        await writeFileAtomic(
-          join(container, '.bin', `${name}.cmd`),
-          renderCmdShim(relative, interpreter),
-        );
-      total += 1;
-      if (container === root) rootNames.push(name);
-    }
-  }
-  return { total, root: rootNames };
-}
-
-/** A direct requirement keeps a contested name; otherwise the first by name. */
-function outranks(candidate: Placement, rival: Placement): boolean {
-  if (candidate.entry.direct !== rival.entry.direct)
-    return candidate.entry.direct;
-  return candidate.chain.at(-1)! < rival.chain.at(-1)!;
 }

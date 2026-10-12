@@ -71,6 +71,25 @@ export async function readPackageBins(
   )
     declared.push(...Object.entries(parsed.bin));
 
+  return validateBins(declared, async (target) =>
+    isRegularFile(join(packageDirectory, ...target.split('/'))),
+  );
+}
+
+/**
+ * The executables among `declared` (name and path pairs) that are safe to shim:
+ * a name that is a file name, a target that is a path inside the package, and,
+ * when `exists` is given, a target that is a file there. A member of the
+ * workspace passes none: its scripts are built after the install, and a shim
+ * for a script that is not there yet is what npm's link to it is too.
+ */
+export async function validateBins(
+  declared: readonly (readonly [string, unknown])[],
+  exists?: (target: string) => Promise<boolean>,
+): Promise<{
+  bins: PackageBin[];
+  refused: { name: string; reason: string }[];
+}> {
   const bins: PackageBin[] = [];
   const refused: { name: string; reason: string }[] = [];
   for (const [name, target] of declared) {
@@ -86,7 +105,7 @@ export async function readPackageBins(
       });
       continue;
     }
-    if (!(await isRegularFile(join(packageDirectory, ...cleaned.split('/'))))) {
+    if (exists !== undefined && !(await exists(cleaned))) {
       refused.push({ name, reason: `its target ${cleaned} is not a file` });
       continue;
     }
@@ -131,7 +150,8 @@ export async function interpreterFor(scriptPath: string): Promise<Interpreter> {
   return parseShebang(head.split('\n', 1)[0] ?? '');
 }
 
-const NODE: Interpreter = { program: 'node', args: [] };
+/** What runs a script whose first line asks for nothing, or that is not there yet. */
+export const NODE: Interpreter = { program: 'node', args: [] };
 
 /** `#!/usr/bin/env -S node --flag` and `#!/bin/sh` → program and arguments. */
 export function parseShebang(line: string): Interpreter {
