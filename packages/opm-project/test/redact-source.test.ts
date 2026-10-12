@@ -7,11 +7,11 @@ const CANARY = 'vtok_dummy_marker_0123456789abcdef';
 /**
  * A lock entry's `resolved` is shown in two errors of `opm ci`: the list of
  * git and path sources it cannot install, and an archive that does not match
- * the digest the lock pins. It is shown as the same address with what must not
- * be printed taken out: userinfo, query and fragment. The scheme stays, so
- * that a person can tell a git source from an archive, as it does for an
- * `https:` address (`redactUrl`: origin and path). A scheme that has no origin
- * (`git+https:`, `git+ssh:`, `file:`) used to print as `null` and the path.
+ * the digest the lock pins. What is shown is built from the URL parser's own
+ * components (`redactAddress` in adapter-core): the scheme, the host and the
+ * path, never userinfo, query or fragment, and never a slice of the text. An
+ * address the parser refuses, or one in which an `@` after the authority may be
+ * the end of a password, is the scheme and `[address withheld]`.
  */
 describe('a source named in an error', () => {
   it.each([
@@ -42,51 +42,45 @@ describe('a source named in an error', () => {
       'https://u:CANARY@github.com/o/r/tarball/abc?token=CANARY#f',
       'https://github.com/o/r/tarball/abc',
     ],
-    [
-      'an address a URL parser refuses, as before',
-      'git+ssh://git@github.com:o/r.git',
-      'git+ssh://github.com:o/r.git',
-    ],
-    ['a relative path, as before', '../local/pkg', '../local/pkg'],
-  ])('keeps the scheme of %s', (_, source, expected) => {
+  ])('keeps the scheme, host and path of %s', (_, source, expected) => {
     expect(redactSource(source)).toBe(expected);
   });
 
   /**
-   * An address `new URL` refuses (a colon and then a path where a port goes) is
-   * not parsed, so its userinfo, query and fragment are cut as text. Nothing
-   * after the first `?` or `#` is printed, and userinfo ends at the last `@`
-   * before the first `/`, so an `@`, `?` or `#` inside a password does not leave
-   * the rest of it behind.
+   * Addresses `new URL` refuses (a colon and then a path where a port goes) are
+   * not read at all. Nothing of the text is shown but a scheme it starts with:
+   * a scp-like source costs its host and path, which is the price of never
+   * cutting text.
    */
   it.each([
     [
-      'the query and fragment',
+      'a scp-like git address',
       `git+ssh://git@github.com:o/r.git?token=${CANARY}#frag`,
-      'git+ssh://github.com:o/r.git',
+      'git+ssh:[address withheld]',
     ],
     [
-      'the fragment',
-      `git+ssh://git@github.com:o/r.git#${CANARY}`,
-      'git+ssh://github.com:o/r.git',
+      'a scp-like address with no scheme',
+      `git@github.com:o/r.git#${CANARY}`,
+      '[address withheld]',
     ],
+    ['a relative path', '../local/pkg', '[address withheld]'],
     [
-      'the query of a relative path',
-      `../local/pkg?token=${CANARY}`,
-      '../local/pkg',
-    ],
-    [
-      'the rest of a password that holds an @',
+      'a password that holds an @',
       `git+ssh://deploy:${CANARY}@x@github.com:o/r.git`,
-      'git+ssh://github.com:o/r.git',
+      'git+ssh:[address withheld]',
     ],
     [
       'a password that holds a ? and a #',
       `git+ssh://deploy:${CANARY}?x#y@github.com:o/r.git`,
-      'git+ssh://github.com:o/r.git',
+      'git+ssh:[address withheld]',
+    ],
+    [
+      'a host with a space in it',
+      `https://u:${CANARY}@ho st/x?q=${CANARY}`,
+      'https:[address withheld]',
     ],
   ])(
-    'withholds %s of an address a URL parser refuses',
+    'shows %s the parser refuses as the scheme and a fixed word',
     (_, source, expected) => {
       expect(redactSource(source)).toBe(expected);
       expect(redactSource(source)).not.toContain(CANARY);
@@ -98,6 +92,12 @@ describe('a source named in an error', () => {
     ['an address with no slashes after the scheme', 'http:', 'ß.é.', '/x'],
     ['an address with a leading space', ' https://u:p@', 'ß.é.', '/x'],
     ['an address with a [ inside its host', 'https://x[:', 'ß.é.', '/x'],
+    [
+      'an address with a [ inside its host and a path after',
+      'https://x[',
+      'ß.é.',
+      '',
+    ],
     [
       'a ws address with userinfo and a [ inside its host',
       'ws://u:p@x[:',
@@ -128,7 +128,6 @@ describe('a source named in an error', () => {
 
   it.each([
     ['a git source', 'git+https://u:p@', '/o/r.git#abc'],
-    ['a scp-like git address', 'git+ssh://git@', ':o/r.git?token=x'],
     ['a custom scheme', 'x-custom://', '/y'],
   ])(
     'does not withhold %s with a long host: the parser reads it in linear time',
@@ -137,6 +136,9 @@ describe('a source named in an error', () => {
       const shown = redactSource(`${before}${'ß.é.'.repeat(8192)}${after}`);
       expect(shown).not.toBe('[url]');
       expect(shown.startsWith(before.replace(/[^/]*@$/u, ''))).toBe(true);
+      // 256 characters of the host, and how many there were.
+      expect(shown.length).toBeLessThan(600);
+      expect(shown).toContain('… (');
       expect(performance.now() - started).toBeLessThan(500);
     },
   );
@@ -191,21 +193,15 @@ describe('a source named in an error', () => {
         `https://deploy:443/${C1}/${C2}@registry.example/a.tgz`,
         `https://deploy:443?${C1}@registry.example/a.tgz`,
         `git+ssh://deploy:22#${C1}@github.com:o/r.git`,
+        `git+https://deploy:/${C1}/@example.test:8443/o/b.git`,
+        `git+ssh://deploy:/${C1}/@github.com/o/r.git`,
+        `https://deploy:123/${C1}/@host.example/x.tgz`,
       ]) {
         expect(redactSource(address), address).not.toContain(
           'vtok_dummy_marker',
         );
         expect(redactSource(address), address).not.toContain('deploy');
       }
-    });
-
-    it('keeps the host and the path where the address says where they are', () => {
-      expect(
-        redactSource(`git+ssh://deploy:${C1}/${C2}@github.com:o/r.git`),
-      ).toBe('git+ssh://github.com:o/r.git');
-      expect(redactSource(`git+ssh://deploy:${C1}@github.com:o/r.git`)).toBe(
-        'git+ssh://github.com:o/r.git',
-      );
     });
 
     it('is withheld from a user name, a query and a fragment too', () => {
@@ -217,13 +213,23 @@ describe('a source named in an error', () => {
         expect(redactSource(address)).not.toContain('vtok_dummy_marker');
     });
 
-    it('costs an @ in the rest of an address its front: that is the price', () => {
-      // Userinfo ends at the last @, so an @ in the path or the query of an
-      // address the parser refuses takes the host with it.
-      expect(redactSource('git+ssh://git@github.com:@scope/pkg.git')).toBe(
-        'git+ssh://scope/pkg.git',
-      );
-      expect(redactSource('git+ssh://u@h.example?x=a@b')).toBe('git+ssh://b');
+    it('shows the host a person wrote, never the one after an @ of the text', () => {
+      // An @ in the path, the query or the fragment is not userinfo to the
+      // parser, and is not a host to anyone: the address is withheld, and a
+      // host that comes after the @ is not shown in its place.
+      for (const address of [
+        'https://evil.example/x@registry.npmjs.org/p/-/p-1.0.0.tgz',
+        'https://evil.example/p#x@registry.npmjs.org',
+        'git+https://evil.example/a@github.com/o/r.git',
+        `git+https://github.com/o/r.git?email=a@b.com&sig=${CANARY}`,
+        `github:o/r#feature@${CANARY}`,
+      ]) {
+        const shown = redactSource(address);
+        expect(shown, address).not.toContain('registry.npmjs.org');
+        expect(shown, address).not.toContain('b.com');
+        expect(shown, address).not.toContain(CANARY);
+        expect(shown, address).toMatch(/\[address withheld\]$/u);
+      }
     });
   });
 
@@ -231,24 +237,28 @@ describe('a source named in an error', () => {
    * An address with a scheme and no authority has an opaque path, which is where
    * userinfo stands when someone writes `user:password@host:path` or
    * `github:user:password@owner/repo`: the parser accepts it, with the user name
-   * as the scheme, and the address printed as it was.
+   * as the scheme. An `@` anywhere in it withholds it.
    */
   it.each([
-    ['a hosted shorthand', `github:u:${CANARY}@o/r`, 'github:o/r'],
     [
-      'a hosted shorthand with a fragment',
-      `github:u:${CANARY}@o/r#abc`,
-      'github:o/r',
+      'a hosted shorthand',
+      `github:u:${CANARY}@o/r`,
+      'github:[address withheld]',
+    ],
+    [
+      'a hosted shorthand with a ? in the password',
+      `github:u:${CANARY}?x@o/r#abc`,
+      'github:[address withheld]',
     ],
     [
       'a scp-like address with a user name taken for a scheme',
       `user:${CANARY}@host:o/r`,
-      'user:host:o/r',
+      'user:[address withheld]',
     ],
     [
       'a scp-like address under a git scheme and no slashes',
       `git+ssh:git:${CANARY}@github.com:o/r.git?token=${CANARY}`,
-      'git+ssh:github.com:o/r.git',
+      'git+ssh:[address withheld]',
     ],
   ])('keeps no userinfo from %s', (_, source, expected) => {
     expect(redactSource(source)).toBe(expected);
@@ -263,16 +273,25 @@ describe('a source named in an error', () => {
       'blob:https://h/x',
     ],
     [
+      'an https address whose password holds a ?',
+      `blob:https://u:${CANARY}?q@h/x`,
+      'blob:[address withheld]',
+    ],
+    [
       'userinfo that the path takes for a scheme',
       `blob:u:${CANARY}@h/x`,
-      'blob:u:h/x',
+      'blob:u:[address withheld]',
     ],
     [
       'a blob in a blob',
       `blob:blob:https://u:${CANARY}@h/x`,
       'blob:blob:https://h/x',
     ],
-    ['a path that is not an address', 'blob:null/0c8d2f', 'blob:null/0c8d2f'],
+    [
+      'a path that is not an address',
+      'blob:null/0c8d2f',
+      'blob:[address withheld]',
+    ],
   ])(
     'shows a blob URL holding %s as its address, redacted',
     (_, source, expected) => {
@@ -284,7 +303,7 @@ describe('a source named in an error', () => {
   /**
    * Whatever a password holds and wherever the address says its userinfo is,
    * no scheme that names a remote shows it: 10 schemes, three ways to begin
-   * (`://`, `:/`, `:`), 13 shapes of userinfo (a password that holds `@ ? # : /`,
+   * (`://`, `:/`, `:`), 13 forms of userinfo (a password that holds `@ ? # : /`,
    * a space, a newline, an escaped `@`, a user name alone), 7 hosts (one the
    * parser refuses, one it takes for a port) and 4 queries and fragments.
    * `file:` and `link:` are paths on this machine, which an `@` may be part of.

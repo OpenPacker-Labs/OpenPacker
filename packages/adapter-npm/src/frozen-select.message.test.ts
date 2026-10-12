@@ -7,7 +7,8 @@ const CANARY = 'vtok_dummy_marker_0123456789abcdef';
 /**
  * A lock entry's `resolved` that is not a URL is named in the refusal, and it
  * was named whole: userinfo, query and fragment reached the terminal. It is
- * named as the other errors of `opm ci` name a source (`redactAddress`).
+ * named as the other errors of `opm ci` name a source (`redactAddress`): an
+ * address the parser refuses is its scheme and a fixed word.
  */
 describe('classifyResolved, on an address that is not a URL', () => {
   const entry = (resolved: string) => ({
@@ -20,22 +21,22 @@ describe('classifyResolved, on an address that is not a URL', () => {
     [
       'a space in the host',
       `https://u:${CANARY}@ho st/x?q=${CANARY}#${CANARY}`,
-      'https://ho st/x',
+      'https:[address withheld]',
     ],
     [
       'a bracket that is never closed',
       `https://u:${CANARY}@[::1/x?q=${CANARY}#${CANARY}`,
-      'https://[::1/x',
+      'https:[address withheld]',
     ],
     [
       'a port that is not a number',
       `https://u:${CANARY}@host:port/x?q=${CANARY}`,
-      'https://host:port/x',
+      'https:[address withheld]',
     ],
     [
       'a password that holds a /',
       `https://u:${CANARY}/y@ho st/z`,
-      'https://ho st/z',
+      'https:[address withheld]',
     ],
   ])('names it without its credentials: %s', (_, resolved, shown) => {
     const outcome = classifyResolved(entry(resolved));

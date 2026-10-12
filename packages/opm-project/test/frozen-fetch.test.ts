@@ -67,7 +67,7 @@ describe('the transport a lock allows', () => {
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    expect(message).toBe('https://ho st/x.tgz is not a URL opm can fetch');
+    expect(message).toBe('https:[address withheld] is not a URL opm can fetch');
     expect(message).not.toContain(CANARY);
   });
 
@@ -198,7 +198,8 @@ describe('downloadArchive', () => {
     ).catch((caught: unknown) => caught);
     expect(error).toMatchObject({
       code: 'FETCH_FAILED',
-      message: 'Failed to fetch a@1.0.0 from https://ho st/a.tgz: fetch failed',
+      message:
+        'Failed to fetch a@1.0.0 from https:[address withheld]: fetch failed',
     });
   });
 

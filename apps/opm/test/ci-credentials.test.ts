@@ -38,6 +38,21 @@ const SOURCES: readonly ((c: string) => string)[] = [
   (c) => `file:///srv/pkg?x=${c}#y`,
 ];
 
+/** More git sources: a screen lists twenty, so these are a lock of their own. */
+const MORE_SOURCES: readonly ((c: string) => string)[] = [
+  // An `@` in a query or a fragment is where a password may end.
+  (c) => `git+https://github.com/o/r.git?email=a@b.com&sig=${c}`,
+  (c) => `git+https://github.com/o/r.git#user@feature&sig=${c}`,
+  (c) => `git+ssh://git@github.com/o/r.git#semver:@scope/pkg@${c}`,
+  (c) => `git+https://example.test/o/r.git?x=a@b&access=${c}`,
+  (c) => `github:o/r#feature@${c}`,
+  // A password the parser reads as a host, a port and a path.
+  (c) => `git+https://deploy:/${c}/@example.test:8443/o/b.git`,
+  (c) => `git+ssh://deploy:/${c}/@github.com/o/r.git`,
+  (c) => `git+ssh://deploy:1234/${c}@github.com/o/r.git`,
+  (c) => `git+ssh://deploy:@${c}@x?y@github.com/o/r.git`,
+];
+
 /** Addresses `opm ci` refuses by name, with a reason of its own. */
 const REFUSED: readonly ((c: string) => string)[] = [
   (c) => `https://u:${c}@ho st/x?q=${c}#${c}`,
@@ -101,6 +116,7 @@ describe('what opm ci writes of a lock entry it cannot install', () => {
 
   it.each([
     ['listed as git or path sources', SOURCES],
+    ['listed as git sources with an @ after the authority', MORE_SOURCES],
     ['refused by name', REFUSED],
   ])(
     'holds no credential of an entry %s',

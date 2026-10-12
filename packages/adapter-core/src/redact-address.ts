@@ -1,130 +1,130 @@
 import { hasOverlongHost } from './url-host.js';
 
-/** A scheme and its colon, at the start of a text. */
-const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/u;
-/** Where a query or a fragment begins. */
-const QUERY_OR_FRAGMENT = /[?#]/u;
-/** An `@` in a path that does not begin a segment: where userinfo would end. */
-const AT_IN_SEGMENT = /[^/]@/u;
+/** What stands for an address the URL parser refuses, after its scheme if it has one. */
+const WITHHELD = '[address withheld]';
+/** What stands for an address with a host no DNS name could be, or one nested too deep. */
+const OVERLONG = '[url]';
+/** A scheme and its colon at the start of a text, short enough to be a scheme. */
+const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]{0,31}:/u;
 /** Schemes whose address is a path on this machine, where an `@` is a character. */
 const LOCAL_PATH_SCHEMES: ReadonlySet<string> = new Set(['file:', 'link:']);
 /** How many blob URLs inside one another are read, one inside the next. */
 const MOST_BLOBS = 4;
+/** The most a host, and the most a path, is shown at. */
+const MOST_CHARACTERS = 256;
+
+/** `text` as it is, or its first characters and how many there were. */
+function capped(text: string): string {
+  return text.length <= MOST_CHARACTERS
+    ? text
+    : `${text.slice(0, MOST_CHARACTERS)}… (${text.length} characters)`;
+}
+
+/** The scope of a scoped package: `@` and the characters npm allows in one. */
+const SCOPE = /^@[a-z0-9][a-z0-9._~-]*$/u;
 
 /**
- * An address that the URL parser does not read, with what must not be printed
- * taken out: its userinfo, then its query and fragment.
- *
- * Userinfo is what stands between the scheme (and the `//` after it) and the
- * LAST `@` of the text. A password may hold an `@`, a `?`, a `#`, a `:` or a
- * `/`, and the last `@` is the only mark that does not depend on which of them
- * it holds. The price is paid by an address that has an `@` after its host: in
- * `git+ssh://git@github.com:@scope/pkg.git` the front goes with the userinfo
- * (`git+ssh://scope/pkg.git`), and so does `git+ssh://h.example?x=a@b`
- * (`git+ssh://b`).
- *
- * A text with no scheme and no leading `//` has userinfo when a `:` stands
- * before its last `@` (`host//user:password@h`, a password); a user name alone
- * (`git@github.com:o/r.git`, as scp writes it) is a login name and is kept.
+ * Whether a path is the path of a scoped package's tarball,
+ * `<prefix>/@scope/name/-/name-<version>.tgz`, which holds one `@`, at the start
+ * of the scope. Any other path that holds an `@` may be the rest of a password
+ * the parser took for a port and a path.
  */
-export function redactAddressText(text: string): string {
-  const scheme = SCHEME.exec(text);
-  const lastAtSign = text.lastIndexOf('@');
-  let start = -1;
-  if (scheme !== null)
-    start =
-      scheme[0].length + (text.startsWith('//', scheme[0].length) ? 2 : 0);
-  else if (text.startsWith('//')) start = 2;
-  else if (lastAtSign !== -1 && text.lastIndexOf(':', lastAtSign) !== -1)
-    start = 0;
-  const withoutUserinfo =
-    start !== -1 && lastAtSign >= start
-      ? text.slice(0, start) + text.slice(lastAtSign + 1)
-      : text;
-  const cut = withoutUserinfo.search(QUERY_OR_FRAGMENT);
-  return cut === -1 ? withoutUserinfo : withoutUserinfo.slice(0, cut);
+function isScopedTarballPath(pathname: string): boolean {
+  const segments = pathname.split('/');
+  const last = segments.length - 1;
+  if (last < 4 || segments[last - 1] !== '-') return false;
+  const name = segments[last - 2]!;
+  const file = segments[last]!;
+  if (!SCOPE.test(segments[last - 3]!)) return false;
+  if (!file.startsWith(`${name}-`) || !file.endsWith('.tgz')) return false;
+  return segments.every(
+    (segment, index) => index === last - 3 || !segment.includes('@'),
+  );
+}
+
+/**
+ * Whether the part of the address after the authority holds an `@`, so that the
+ * real end of userinfo may be in it. A password that holds a `/`, a `?` or a `#`
+ * ends the parser's authority there, and the `@` that ends the password is then
+ * in the path, the query or the fragment: `deploy:123/secret@host` is a host, a
+ * port 123 and a path, and `deploy:a@b?c@host` is a user, a password `a` and a
+ * host `b`. If that part holds no `@`, no password was split. A scoped
+ * package's tarball path (`/@scope/name/-/file`) holds one `@`, at the start of
+ * the scope, and is the one exception.
+ */
+function mayHoldUserinfo(url: URL): boolean {
+  if (url.search.includes('@') || url.hash.includes('@')) return true;
+  return url.pathname.includes('@') && !isScopedTarballPath(url.pathname);
+}
+
+/** The scheme of a text that has one, in lower case, with the fixed words after it. */
+function withheld(address: string): string {
+  let from = 0;
+  while (from < address.length && address.charCodeAt(from) <= 0x20) from += 1;
+  const scheme = SCHEME.exec(address.slice(from, from + 40));
+  return scheme === null ? WITHHELD : `${scheme[0].toLowerCase()}${WITHHELD}`;
 }
 
 function render(address: string, blobs: number): string {
-  // A host no DNS name could be is not handed to the URL parser, which takes
-  // the square of its length on some (see `url-host.ts`).
-  if (hasOverlongHost(address)) return '[url]';
   let url: URL;
   try {
     url = new URL(address);
   } catch {
-    return redactAddressText(address);
+    return withheld(address);
   }
-  // A blob URL holds an address as its path. Its `origin` would parse that
-  // address again, and is not what is shown: the address is, redacted. The
-  // address is all that follows `blob:`, query and fragment included, because
-  // a password that holds a `?` puts the rest of the address there.
-  if (url.protocol === 'blob:')
-    return blobs >= MOST_BLOBS
-      ? '[url]'
-      : `blob:${render(url.href.slice('blob:'.length), blobs + 1)}`;
-  // The parser found userinfo. It ends userinfo at the first `/`, `?` or `#`
-  // (`\` too, for a special scheme), so a password that holds one of them and
-  // then an `@` is read as a host and a path, or a query, with the rest of the
-  // password in them. The text rule, which ends userinfo at the last `@`, does
-  // not depend on what the password holds.
-  if (url.username !== '' || url.password !== '')
-    return redactAddressText(url.href);
-  // No authority. Either the address is a path on this machine (`file:` and
-  // `link:`), which an `@` may be part of, or it has an opaque path or a path of
-  // slashes, which is where `user:password@host:path` and
-  // `github:user:password@owner/repo` keep the userinfo the parser did not take
-  // for one. The text rule gets the whole of it, query and fragment too: a
-  // password that holds a `?` or a `#` leaves its `@` in them.
+  if (url.protocol === 'blob:') {
+    // A blob URL holds an address as its path, shown the same way.
+    if (blobs >= MOST_BLOBS) return OVERLONG;
+    if (url.search.includes('@') || url.hash.includes('@'))
+      return `blob:${WITHHELD}`;
+    return `blob:${render(url.pathname, blobs + 1)}`;
+  }
   if (url.host === '') {
-    if (!LOCAL_PATH_SCHEMES.has(url.protocol))
-      return redactAddressText(url.href);
-    url.search = '';
-    url.hash = '';
-    return url.href;
+    // The scheme's `//`, if the address has an empty authority, as the parser has it.
+    const slashes = url.href.startsWith(`${url.protocol}//`) ? '//' : '';
+    if (LOCAL_PATH_SCHEMES.has(url.protocol))
+      return `${url.protocol}${slashes}${capped(url.pathname)}`;
+    // An opaque path is where `user:password@host:path` keeps its userinfo, and
+    // a `?` or `#` in the password leaves the `@` in the query or fragment.
+    if ((url.pathname + url.search + url.hash).includes('@'))
+      return `${url.protocol}${WITHHELD}`;
+    return `${url.protocol}${slashes}${capped(url.pathname)}`;
   }
-  // `user:123/secret@host` has a password of digits and a `/` (or a `?` or a
-  // `#`), and the parser reads it as the host `user`, the port 123 and a path
-  // (or a query). Userinfo needs an `@` after it, and a scoped package's `@`
-  // begins a segment (`/@scope/p`), so an `@` further into a segment of the
-  // path, or anywhere in the query or fragment, of an address with a host is
-  // taken for the end of userinfo. A `name@version` segment pays for it.
-  if (
-    AT_IN_SEGMENT.test(url.pathname) ||
-    url.search.includes('@') ||
-    url.hash.includes('@')
-  )
-    return redactAddressText(url.href);
-  if (url.origin !== 'null') return `${url.origin}${url.pathname}`;
-  url.search = '';
-  url.hash = '';
-  return url.href;
+  if (mayHoldUserinfo(url)) return `${url.protocol}${WITHHELD}`;
+  return `${url.protocol}//${capped(url.host)}${capped(url.pathname)}`;
 }
 
 /**
- * An address as an error may show it, for text a lock or a registry chose: the
- * address without userinfo, query and fragment, and with its scheme.
+ * An address as an error may show it, for text a lock, a registry or a person
+ * chose. What it prints can only be:
  *
- * - A host longer than a DNS name can be, where the URL parser spends time on
- *   it (`hasOverlongHost`), is shown as `[url]` and never parsed.
- * - An address in which the parser finds userinfo is cut as text, because the
- *   parser ends userinfo at the first `/`, `?` or `#` and a password can hold
- *   any of them.
- * - An address with no host (an opaque path, `scheme:/path`) is cut as text,
- *   query and fragment included, unless its scheme is `file:` or `link:`: those
- *   are paths on this machine, shown whole without query and fragment.
- * - An address with a host whose path holds an `@` inside a segment, or whose
- *   query or fragment holds an `@`, is cut as text as well: the parser may have
- *   read a password that holds a `/`, `?` or `#` as a host, a port and the
- *   rest. A scoped package (`/@scope/p`) is not cut.
- * - An address with an origin (`https:`) is its origin and path; any other with
- *   a host is as the parser serialises it, without query and fragment
- *   (`git+https://host/o/r.git`).
- * - A `blob:` URL is `blob:` and the address after it, shown the same way.
- * - An address the parser refuses is cut as text (`redactAddressText`). A text
- *   with no scheme and no leading `//` (`git@github.com:o/r.git`) has no
- *   userinfo to find and is shown with its query and fragment cut.
+ * - the scheme;
+ * - when the URL parser accepts the address, the parser's own host (with its
+ *   port) and path, taken from the URL object and not from the text, each shown
+ *   at 256 characters and then how many there were. Never userinfo, query or
+ *   fragment, so nothing after an `@` or a `?` of the text is ever shown, and a
+ *   host that is not the parser's is never shown;
+ * - the fixed words `[url]` and `[address withheld]`.
+ *
+ * `[url]` stands for a host longer than a DNS name can be, where the URL parser
+ * spends time on it (`hasOverlongHost`, asked once, of the address as written,
+ * before any parser reads it), and for a `blob:` URL nested more than four deep.
+ * A `blob:` URL is `blob:` and the address in its path, shown the same way.
+ *
+ * `[address withheld]`, after the scheme if the text has one, stands for:
+ *
+ * - an address the parser refuses (`git@github.com:o/r.git`,
+ *   `git+ssh://git@github.com:o/r.git`, `https://u:p@ho st/x`);
+ * - an address the parser accepts and in which an `@` comes after the authority,
+ *   in the path, the query or the fragment, or anywhere in an opaque path: that
+ *   `@` may be where userinfo ends, with the rest of a password read as a host
+ *   and a path (`mayHoldUserinfo`). A scoped package's tarball path,
+ *   `/@scope/name/-/file`, is the one `@` that does not count.
+ *
+ * `file:` and `link:` addresses are paths on this machine, where an `@` is a
+ * character, and are shown without query and fragment.
  */
 export function redactAddress(address: string): string {
+  if (hasOverlongHost(address)) return OVERLONG;
   return render(address, 0);
 }
