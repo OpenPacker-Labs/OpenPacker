@@ -127,7 +127,10 @@ describe('the packslip adapter in the default set', () => {
   });
 
   it('refuses a token variable name that is not a name, without repeating it', async () => {
-    setEnv('OPM_PACKSLIP_GITHUB_TOKEN_ENV', 'github_pat_11AB-secret-value');
+    setEnv(
+      'OPM_PACKSLIP_GITHUB_TOKEN_ENV',
+      'ghp_AbCdEf0123456789AbCdEf0123456789AbCd',
+    );
     const error = await createDefaultAdapterRegistry()
       .catalogFor('packslip', {
         fetch: fakeFetch(web),
@@ -139,7 +142,7 @@ describe('the packslip adapter in the default set', () => {
         (caught: Error) => caught,
       );
     expect(error).toMatchObject({ code: 'INVALID_PACKSLIP_INPUT' });
-    expect(String(error)).not.toContain('secret-value');
+    expect(String(error)).not.toContain('AbCdEf0123456789');
   });
 
   it('reports an unreadable trusted root instead of falling back to the built-in one', async () => {

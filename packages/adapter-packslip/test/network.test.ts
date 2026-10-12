@@ -170,17 +170,46 @@ describe('the network a provider uses', () => {
       );
     });
 
-    it('never repeats what it refused, because that may be the token itself', () => {
-      const pasted = 'github_pat_11ABCDEF-secret-value';
-      let message = '';
-      try {
-        createNetwork({ githubTokenEnv: pasted });
-      } catch (error) {
-        message = String(error);
-      }
-      expect(message).not.toBe('');
-      expect(message).not.toContain('secret-value');
-      expect(message).not.toContain('github_pat');
+    it.each([
+      // The shapes real GitHub tokens have: mixed case, so not a name.
+      ['a classic token', 'ghp_AbCdEf0123456789AbCdEf0123456789AbCd'],
+      [
+        'a fine-grained token',
+        'github_pat_11AABBCCDD0abcdefghijk_lmnopqrstuvwxyz0123456789',
+      ],
+      ['an OAuth token', 'gho_AbCdEf0123456789AbCdEf0123456789AbCd'],
+      // Upper-cased, it would pass for a name; the prefix gives it away.
+      [
+        'a token that was upper-cased',
+        'GHP_ABCDEF0123456789ABCDEF0123456789ABCD',
+      ],
+      ['a name that is too long to be one', 'A'.repeat(65)],
+      ['a lowercase name', 'github_token'],
+    ])(
+      'refuses %s, and never repeats it, because it may be the token itself',
+      (_label, pasted) => {
+        let message = '';
+        try {
+          createNetwork({ githubTokenEnv: pasted });
+        } catch (error) {
+          message = String(error);
+        }
+        expect(message).toContain('environment variable');
+        expect(message).not.toContain(pasted);
+        expect(message.toLowerCase()).not.toContain(
+          pasted.slice(0, 12).toLowerCase(),
+        );
+      },
+    );
+
+    it('accepts the conventional capitalised names', () => {
+      for (const name of [
+        'GITHUB_TOKEN',
+        'GH_TOKEN',
+        'OPM_GITHUB_TOKEN',
+        '_X1',
+      ])
+        expect(() => createNetwork({ githubTokenEnv: name })).not.toThrow();
     });
   });
 });

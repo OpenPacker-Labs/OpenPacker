@@ -18,7 +18,14 @@ const GITHUB_HOSTS = new Set(
   GITHUB_ORIGINS.map((origin) => new URL(origin).host),
 );
 const GITHUB_API = 'https://api.github.com';
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+/**
+ * A variable's name, in capitals as opm's other token settings require. A real
+ * GitHub token (`ghp_…`, `github_pat_…`) mixes cases, so the likeliest mistake,
+ * pasting the token where its variable's name belongs, cannot pass for a name;
+ * the known prefixes are refused as well in case someone upper-cased one.
+ */
+const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/u;
+const LOOKS_LIKE_TOKEN = /^(?:GH[POUSR]_|GITHUB_PAT_)/iu;
 
 /** Per request, body included; a 64 MiB archive at a modest 0.5 MiB/s fits. */
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -66,7 +73,8 @@ function mapFailure(url: string, error: Error): PackslipError {
 export function createNetwork(options: NetworkOptions): Fetcher {
   if (
     options.githubTokenEnv !== undefined &&
-    !ENV_NAME.test(options.githubTokenEnv)
+    (!ENV_NAME.test(options.githubTokenEnv) ||
+      LOOKS_LIKE_TOKEN.test(options.githubTokenEnv))
   )
     // The value is deliberately not quoted: the likeliest mistake is pasting
     // the token itself where its variable's name belongs.
