@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { packTarGzip } from '@openpacker/project-io';
-import { runOpm } from '../src/opm.js';
+import { runOpm, type RunOpmOptions } from '../src/opm.js';
 import { capture } from './capture.js';
 import type { Json, Ran } from './repo-fixture.js';
 
@@ -75,7 +75,7 @@ export function lines(text: string): number {
 export async function runWith(
   files: Record<string, string>,
   argv: string[],
-  options: { fetch?: typeof fetch } = {},
+  options: RunOpmOptions = {},
 ): Promise<Ran> {
   const dir = await mkdtemp(join(tmpdir(), 'opm-plain-'));
   const previous = process.env.OPM_STORE_HOME;

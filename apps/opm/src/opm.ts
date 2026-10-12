@@ -56,6 +56,7 @@ import {
   uninstallProject,
   updateProject,
   whyPackage,
+  type AdapterModule,
   type AdapterRegistry,
   type Generation,
 } from '@openpacker/opm-project';
@@ -133,6 +134,8 @@ const COMMANDS = new Set([
 export interface RunOpmOptions {
   /** Network used by `plugin add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
+  /** Adapters registered beside the bundled ones, as a bound plugin is. */
+  adapters?: readonly AdapterModule[];
 }
 
 export async function runOpm(
@@ -164,7 +167,7 @@ export async function runOpm(
   }
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
-    const adapterRegistry = configureDefaultAdapters();
+    const adapterRegistry = configureDefaultAdapters(options.adapters);
     // Delegated adapter plugins (ADR 0039) register after the first-party
     // set: a plugin never displaces a bundled adapter (conflicts are
     // refused), and a tampered or broken plugin is reported and skipped —
@@ -425,7 +428,7 @@ export async function runOpm(
           out(io, '(no matches)\n');
           return EXIT_CODES.success;
         }
-        for (const item of found) out(io, `${item.canonicalPurl}\n`);
+        for (const item of found) out(io, `${plainLine(item.canonicalPurl)}\n`);
         return EXIT_CODES.success;
       }
       case 'versions': {
@@ -444,7 +447,7 @@ export async function runOpm(
         }
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
-        for (const version of versions) out(io, `${version}\n`);
+        for (const version of versions) out(io, `${plainLine(version)}\n`);
         return EXIT_CODES.success;
       }
       case 'resolve': {
@@ -497,12 +500,12 @@ export async function runOpm(
         });
         out(
           io,
-          `${artifact.exactPurl}\n` +
-            `  version   ${artifact.version}\n` +
-            `  digest    ${artifact.digest}\n` +
+          `${plainLine(artifact.exactPurl)}\n` +
+            `  version   ${plainLine(artifact.version)}\n` +
+            `  digest    ${plainLine(artifact.digest)}\n` +
             `  size      ${artifact.size} bytes\n` +
-            `  mediaType ${artifact.mediaType}\n` +
-            `  source    ${artifact.uri}\n`,
+            `  mediaType ${plainLine(artifact.mediaType)}\n` +
+            `  source    ${plainLine(artifact.uri)}\n`,
         );
         return EXIT_CODES.success;
       }
