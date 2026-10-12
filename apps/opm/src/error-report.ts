@@ -26,8 +26,14 @@ import { plainLine, plainText } from '@openpacker/canonical';
  * What it cannot do is tell an entry opm wrote from a line a registry added: a
  * message that reaches it with a line feed from a registry in it can start a
  * line of its own, in plain text. Flattening a registry's text where it is
- * quoted is the first layer's job, and so far only the npm adapter and the
- * policy do it (ADR 0044).
+ * quoted is the first layer's job, and every adapter that quotes a registry's
+ * document does it (`echoed` in @openpacker/adapter-core: its shared parsers and
+ * the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters; `safeEcho`
+ * in the OCI client and the materializer, npm and the policy). Text that does
+ * not come through an adapter (a plugin's, a path project-io refuses) reaches
+ * this writer unflattened. It also reads an unterminated `ESC ]` or `ESC P` as
+ * running to the end of the message, as a terminal does, so a field that ends
+ * in one drops the entries after it (ADR 0044).
  */
 
 /**

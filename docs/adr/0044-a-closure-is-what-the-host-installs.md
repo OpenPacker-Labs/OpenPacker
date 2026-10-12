@@ -389,28 +389,65 @@ independent review got the same two figures.
   the same reading as `safeEcho` without the cut): escape sequences and control,
   format and bidirectional characters are removed, a tab and the other layout
   (vertical tab, form feed, U+2028, U+2029) is one space, a carriage return,
-  alone or before a line feed, is a line feed, and NEL is removed. The line
-  feeds a message carries are kept, because several of opm's own errors are
-  lists, one entry to a line: the closure `opm add` could not lock ("What the
-  walk could not use:" and an entry to a line) and the four lists of `opm ci`
-  (entries it cannot install, packages the policy refuses, packages from a git
-  source, packages missing from the store offline). A first version of the
-  writer made every message one line, which ran those lists together after their
-  colons and made "a message with nothing to remove is written as before" true
-  of one-line messages only. `apps/opm/test/error-lines.test.ts` pins the text
-  of each: the four `opm ci` lists through `runOpm` against lock files, and the
-  closure message as the real walk builds it, which
-  `packages/opm-project/test/closure-refusal.test.ts` pins against the walk.
-- **The writer cannot flatten what it cannot tell apart.** It does not know an
-  entry opm wrote from a line a registry added, so a line feed that reaches it
-  from a registry can start a line of its own, in plain text: it cannot move the
-  cursor, retitle the window or hide text, and it can say something misleading.
-  Flattening a registry's text where it is quoted is the first layer's job, and
-  so far only the npm adapter and the policy do it. The other ecosystems'
-  adapters still word their own errors from their registries' text (the PyPI
-  adapter echoes an over-long requirement whole,
-  `Invalid PEP 508 requirement: <text>`), and the writer makes that plain on the
-  way out and keeps its line feeds. A run of blank lines is kept too.
+  alone or before a line feed, is a line feed, and NEL is removed. A tab, or any
+  other layout, at the start of a line is removed and not spaced, so a child's
+  stderr that is indented with tabs (the delegated provider's, which
+  `PACK_FAILED` carries) loses its indentation. The line feeds a message carries
+  are kept, because several of opm's own errors are lists, one entry to a line:
+  the closure `opm add` could not lock ("What the walk could not use:" and an
+  entry to a line) and the four lists of `opm ci` (entries it cannot install,
+  packages the policy refuses, packages from a git source, packages missing from
+  the store offline). A first version of the writer made every message one line,
+  which ran those lists together after their colons and made "a message with
+  nothing to remove is written as before" true of one-line messages only.
+  `apps/opm/test/error-lines.test.ts` pins the text of each: the four `opm ci`
+  lists through `runOpm` against lock files, and the closure message as the real
+  walk builds it, which `packages/opm-project/test/closure-refusal.test.ts` pins
+  against the walk.
+- **The writer cannot flatten what it cannot tell apart, so the sources do.** It
+  does not know an entry opm wrote from a line a registry added, so a line feed
+  that reaches it from a registry starts a line of its own, in plain text. A
+  review drove the real binary against a hostile PyPI registry whose
+  `requires_dist` entry was `dep[x`, a line feed, `opm: internal error: forged`,
+  a line feed, an erase and `opm: ok installed 1 package`: `opm add` printed
+  four lines and `opm resolve` six, with the failing exit code beside a line
+  that said "ok". Every adapter that quotes a registry's document therefore
+  makes the text it quotes one line where it quotes it, with `safeEcho` (256
+  characters; npm's dependency text has its own limits, 200 to 214): `echoed` in
+  `@openpacker/adapter-core` for its shared parsers (PURL, version, range, VERS,
+  identity and digest algorithm) and for adapter-pypi, adapter-cargo,
+  adapter-nuget, adapter-maven, adapter-golang, the OCI provider and
+  registry-client; `safeEcho` itself in the OCI client (the registry's error
+  body, token scope, media types and digests) and the materializer (the name of
+  an archive entry, in the fifty "Unsafe archive rejected" refusals); and, from
+  round 4, npm and the policy. Against the same registry, with `cat -v`:
+  `opm add` prints one line, and `opm resolve` its three real ones. Each adapter
+  has a unit test of its messages that failed on the sources before the change,
+  and `apps/opm/test/error-sources.test.ts` reads a hostile document with the
+  real adapter and writes the error with the real handler: it failed first for
+  PyPI (4 of 6), NuGet, Maven and OCI. For Cargo and Go it is a control, because
+  their own sites cannot be reached by a document (a Cargo coordinate and a Go
+  module path come from the caller; a Cargo target and a Go build constraint are
+  recorded as meaning lost and are not errors), so a hostile version reaches the
+  shared parser instead.
+- **What still relies on the writer alone.** Text opm does not get from an
+  adapter: the plugin host's messages (a plugin's own stderr is appended to its
+  errors, up to 2,048 characters, and a manifest's schema reasons name its
+  fields), the plugin store's, and the paths `project-io` refuses while it
+  writes an archive; the writer makes these plain and keeps their line feeds.
+  Not audited, not changed.
+- **The writer reads an unterminated escape string as a terminal would.** An
+  `ESC ]` (OSC) or `ESC P`, `ESC X`, `ESC ^`, `ESC _` with no terminator runs to
+  the end of the message, so a field that ends in one drops the rest of the
+  message it is in, opm's own later list entries included:
+  `plainText('Cannot lock: boom\nWhat the walk could not use:\n  - pkg:npm/a@1: evil ESC]0;t\n  - pkg:npm/b@1: the real reason')`
+  is `Cannot lock: boom\nWhat the walk could not use:\n  - pkg:npm/a@1: evil `.
+  An earlier sentence here, that a line feed "cannot move the cursor, retitle
+  the window or hide text", was untrue of that case, and is withdrawn. It is the
+  reading round 4's `plainLine` already had, so it is not a regression. At the
+  source the same sequence ends with its field, because `safeEcho` reads one
+  field and not the message, so a field that ends in one loses the rest of that
+  field and no more. A run of blank lines is kept too.
 - **Plain before redacted, and NEL is removed, not spaced.** The writer makes a
   message plain before the secrets are withheld, so a zero-width character
   cannot split a credential's name past the redaction. The scrubber reads white
@@ -424,6 +461,15 @@ independent review got the same two figures.
   `plainLine` and `plainText` now space exactly the characters `\s` matches
   (tab, LF, VT, FF, CR, U+2028, U+2029), and a test sweeps the basic plane to
   say so.
+- **A name in an error shows what the writer would remove.** The lock reader
+  quoted a package name with `JSON.stringify`, which leaves format characters as
+  they are, so a name differing from `member` only by a zero-width space, a
+  right-to-left override and NEL was refused as
+  `"member" is not a safe directory name for node_modules`, which read as untrue
+  once the writer had removed them. `quoted` (adapter-npm) writes each such
+  character out:
+  `"member\u{200b}\u{202e}\u{85}" is not a safe directory name for node_modules`.
+  Only the lock reader's own messages change; the writer is the same.
 - **Reading a message is linear.** The first `plainLine` asked the string it was
   building whether it ended in a space, once for each character, and V8 flattens
   a string that is still being built for that. A message of 64,000 lines of
@@ -436,7 +482,12 @@ independent review got the same two figures.
   `plainLine` (two runs), and 17 to 40 ms and 85 to 171 ms in `plainText` (one
   run). Through `report`, 1,000,000 characters of lines took 198 ms, and the
   100,000-line requirement through `handleError` 61 ms. The tests of both fail
-  above 2 s.
+  above 2 s. Time is linear and memory is not small: the reading appends one
+  character at a time, so a message of 8 MiB held 272 MiB of heap while it was
+  written (about 33 bytes a character, a string node for each), peaked at 345
+  MiB of RSS and took 2.1 s, and one of 64 MiB took 2.2 GiB and 13 to 15 s in
+  the review's runs. Nothing opm builds is that long: the adapters cut what they
+  quote and a document's size is bounded by the limits above.
 - **Every writer, and the ones left as written.** `handleError` (usage, run,
   `OpmError` and coded errors), `formatFailure` (an error with no code keeps the
   line breaks of its message; its causes are one line each, and so are
@@ -447,15 +498,20 @@ independent review got the same two figures.
   all use `report`. Left as written, each with its reason in a list that
   `apps/opm/test/stderr-writers.test.ts` holds against the sources with the
   TypeScript parser (a new writer that is neither routed nor named fails, and so
-  does a name that no longer matches a call): a child's own stderr (a host
-  installer's, a tool's, a script's, passed through as it wrote it), constant
-  sentences around a count or an exit status, the usage text of `opm auth` (the
-  person's own argument), and the two lines of the run path that name a script
-  of the person's own `package.json` or the bin the person typed (the run path
-  loads no workspace package, `run-load.test.ts`). Eleven writers were not
-  routed before this; the plugin-store one is also driven for real (a hostile
-  `OPM_PLUGIN_HOME`), and the rest are held by the list, because they need a
-  registry or a module mock, which the repository's lint rejects.
+  does a name that no longer matches a call; "routed" is that the whole
+  expression written is a call to `report` or `formatFailure`, and the scanner
+  follows aliases and destructuring of the stream, `stderr['write']`,
+  `write.bind/call/apply`, `console.error` and `console.warn`,
+  `fs.writeSync(2, …)` and `pipe(stderr)`, each held by a fixture that must be
+  caught): a child's own stderr (a host installer's, a tool's, a script's,
+  passed through as it wrote it), constant sentences around a count or an exit
+  status, the usage text of `opm auth` (the person's own argument), and the two
+  lines of the run path that name a script of the person's own `package.json` or
+  the bin the person typed (the run path loads no workspace package,
+  `run-load.test.ts`). Eleven writers were not routed before this; the
+  plugin-store one is also driven for real (a hostile `OPM_PLUGIN_HOME`), and
+  the rest are held by the list, because they need a registry or a module mock,
+  which the repository's lint rejects.
 - **A rejection that skipped the writer.** `case 'system'` in `runOpm`, the
   host-install branch of `add`, and `runSystemCommand` returned another async
   function's promise inside the `try` without `await`, so a rejected
@@ -523,8 +579,10 @@ linux/x64, 4 CPUs shared with other work (load average 2.4 to 11), so the
 seconds are probably longer than an idle machine's. The figure to read is the
 peak RSS of the client process (`maxRSS`), in MiB (1 MiB is 1,048,576 bytes and
 1 GiB is 1,024 MiB), and it moves between runs of one shape by as much as a
-fifth (1,555 and 1,883 MiB for the object of `[]`-valued members, 2,169 and
-2,655 MiB for the 12-character one).
+quarter (1,555 and 1,964 MiB for the object of `[]`-valued members, 26 percent;
+2,169 and 2,655 MiB for the 12-character one, 22 percent). The runs were made by
+different people on different days and loads, on 4 CPUs shared with other work,
+so a range is not one machine's spread.
 
 Two sets of runs make up the table: the fix's own, and an independent review's,
 which wrote its own harness, re-ran the heaviest shapes and added four. A range
@@ -542,7 +600,7 @@ most. The number of runs is in brackets where there was more than one.
 | `"<14 characters>",` (17 bytes a value)                                       | accepted: 3.3 s, 862 MiB                                          | accepted: 5.1 s, 1,227 MiB                                       |
 | `{"<26 characters, each different>":{}},` (an object in an object)            | accepted: 9.9 s, 1,782 MiB                                        | accepted: 16.6 s, 2,594 MiB                                      |
 | the same, 20-character keys (14 bytes a value)                                | refused after 56 MiB: 6.0 s, 1,214 MiB                            | refused after 84 MiB: 9.7 s, 1,741 MiB                           |
-| one object of `"<12 characters, each different>":[],` members (18 bytes each) | accepted: 18.7 to 19.6 s, 1,555 to 1,883 MiB (3 runs)             | not tried                                                        |
+| one object of `"<12 characters, each different>":[],` members (18 bytes each) | accepted: 16.7 to 19.6 s, 1,555 to 1,964 MiB (4 runs)             | not tried                                                        |
 | one object of `"<10 characters, each different>":{},` members (16 bytes each) | refused at the end of the body: 17.8 s, 1,628 MiB                 | refused at the end of the body: 43.2 s, 2,646 MiB                |
 | one object of `"<12 characters, each different>":{},` members (18 bytes each) | accepted: 22.5 to 28.9 s, 2,169 to 2,655 MiB (4 runs)             | accepted: 40.4 to 43.5 s, 3,149 to 3,653 MiB (3 runs)            |
 | the same, with one `€` in the name                                            | accepted: 23.8 to 30.4 s, 2,394 to 2,683 MiB (3 runs)             | accepted: 37.1 to 44.1 s, 3,807 to 3,956 MiB (3 runs)            |
@@ -572,7 +630,7 @@ Reading it:
   shapes tried, over the runs made, and nothing here shows that no heavier one
   exists.
 - An array of `[]` (3 bytes a value) is refused like `{},`, after 12 MiB: 2.6 to
-  2.8 s, 509 to 524 MiB (two runs). An earlier version of this table gave that
+  2.8 s, 493 to 524 MiB (three runs). An earlier version of this table gave that
   label to the row above, which is an object of `[]`-valued members and is
   accepted whole.
 - The `€` was first thought to make the 12-character object dearer, from a
