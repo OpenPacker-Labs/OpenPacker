@@ -235,6 +235,21 @@ describe('parseDepPath: refusals', () => {
     expect(reasonOf(text)).toBe(reason);
   });
 
+  it('says which parenthesis is wrong', () => {
+    const message = (text: string) => {
+      try {
+        parse(text);
+      } catch (error) {
+        return (error as PnpmLockError).message;
+      }
+      return '';
+    };
+    expect(message('react@18.2.0(a@1.0.0))')).toContain('never opened');
+    expect(message('react@18.2.0((a@1.0.0)')).toContain('never closes');
+    expect(message('react@(a@1.0.0)(b@1.0.0)')).toContain('has no version');
+    expect(message('react@18.2.0(a@1.0.0')).toContain('not a peer suffix');
+  });
+
   it('names the key and where it is', () => {
     try {
       parse('a@latest');

@@ -29,7 +29,6 @@ import {
   Composer,
   Lexer,
   Parser,
-  isAlias,
   isMap,
   isNode,
   isScalar,
@@ -245,8 +244,8 @@ function walkValue(
 ): YamlValue {
   if (node === null) return null;
   countNode(state);
-  if (isAlias(node))
-    throw feature(state.text, offsetOf(node), `an alias (*${node.source})`);
+  // An alias needs an anchor before it, and an anchor is refused where it is defined, so
+  // none is met here; one that were would fall through to the last throw below.
   refuseAnchorAndTag(state, node);
   checkLimit(depth, state.limits.maxDepth, 'levels of nesting', 'maxDepth');
   if (isScalar(node)) return walkScalar(state, node, node.value);

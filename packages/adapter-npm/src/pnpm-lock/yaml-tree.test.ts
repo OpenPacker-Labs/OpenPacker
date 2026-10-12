@@ -111,7 +111,9 @@ describe('readYamlTree: what pnpm writes', () => {
 describe('readYamlTree: what it refuses', () => {
   it('refuses an anchor, an alias and a merge key, and never expands them', () => {
     expect(reasonOf('a: &x {b: 1}\nc: 2\n')).toBe('yaml-feature');
-    expect(reasonOf('a: &x {b: 1}\nc: *x\n')).toBe('yaml-feature');
+    const aliased = refusal('a: &x {b: 1}\nc: *x\n');
+    expect(aliased.reason).toBe('yaml-feature');
+    expect(aliased.message).toContain('anchor (&x)');
     expect(reasonOf('a: &x {b: 1}\nc:\n  <<: *x\n')).toBe('yaml-feature');
     // Each level names the one before it three times: 3^10 values if expanded.
     const bomb = [

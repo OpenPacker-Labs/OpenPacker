@@ -72,10 +72,11 @@ function suffixStart(budget: Budget, rest: string): number {
     else if (code === 0x28) {
       depth -= 1;
       if (depth < 0)
-        throw refuse(budget, rest, 'closes a parenthesis it never opened');
+        throw refuse(budget, rest, 'opens a parenthesis it never closes');
     } else if (depth === 0) return at + 1;
   }
-  if (depth !== 0) throw refuse(budget, rest, 'has an unclosed parenthesis');
+  if (depth !== 0)
+    throw refuse(budget, rest, 'closes a parenthesis it never opened');
   return 0;
 }
 
