@@ -19,10 +19,20 @@
  * | typescript      |  8,728,082 | 260,520 | 3,850    |
  * | playwright-core |  8,418,576 | 156,979 | 5,714    |
  *
- * A document costs 27 to 54 bytes a value. The bound used to be 8 MiB, which
- * refused all six of these, and a parsed document used to be allowed 200,000
- * values, which refused `next`, `gatsby`, `@ionic/core` and `typescript` even
- * when the bytes were let through.
+ * A wider look the same day (4,887 names, the full packument of the 400 with the
+ * largest abbreviated one) found larger documents, and they are what the bounds
+ * below rest on:
+ *
+ * | package                      | abbreviated | values    | full       | values    |
+ * | ---------------------------- | ----------- | --------- | ---------- | --------- |
+ * | public-unscoped-test-package | 38,335,911  |           | 62,061,474 |           |
+ * | @prisma/client               | 38,178,921  | 1,077,961 | 68,527,188 | 2,127,695 |
+ * | @wix/wix-code-types          | 27,197,598  |           | 76,503,820 | 2,655,900 |
+ *
+ * The bound used to be 8 MiB, which refused all six of the first, and a parsed
+ * document used to be allowed 200,000 values, which refused `next`, `gatsby`,
+ * `@ionic/core` and `typescript` even when the bytes were let through. ADR 44
+ * has the rest, including what a hostile document of this size costs to parse.
  */
 import { safeEcho } from '@openpacker/canonical';
 import {
@@ -35,20 +45,24 @@ import {
 } from '@openpacker/adapter-core';
 
 /**
- * The most an abbreviated packument may weigh: 64 MiB, 2.6 times `next`, the
- * largest measured, and 7.3 times `typescript`. `next` published 580 versions
- * in the year to 2026-10-12, at 6.4 KB each in this document: 3.6 MiB a year,
- * so about a decade of room, not a fit to today. Below the 128 MiB an artifact
- * download may weigh, so a hostile registry is allowed no more of the client's
- * memory by a packument than by a tarball.
+ * The most an abbreviated packument may weigh: 64 MiB, 1.75 times the largest
+ * found (38,335,911 bytes), 2.6 times `next` and 7.7 times `typescript`. At last
+ * year's pace `next` and `@prisma/client` have twelve years of room; a package
+ * that publishes a version for every change has less. Below the 128 MiB an
+ * artifact download may weigh, so the bytes a hostile registry can make the
+ * client hold for one packument are no more than for one tarball. That bounds
+ * bytes. What parsing them costs (up to about 2.7 GB and 52 s measured), and
+ * what a resolve keeps of the packuments it has read, are not bounded by it.
  */
 export const MAXIMUM_PACKUMENT_BYTES = MAXIMUM_METADATA_BYTES;
 
 /**
- * The most the full packument (`application/json`) may weigh. It is read only
- * for the publish times in it, once per package that changed within the
+ * The most the full packument (`application/json`) may weigh: 96 MiB. It is read
+ * only for the publish times in it, once per package that changed within the
  * release-age window, and is several times the abbreviated one (`vite`: 39 MB
- * against 2.3 MB, `typescript`: 15.8 MB against 8.7 MB).
+ * against 2.3 MB). The largest found is 76,503,820 bytes (`@wix/wix-code-types`)
+ * and then 68,527,188 (`@prisma/client`), so 96 MiB is 1.31 times the largest
+ * and 64 MiB would refuse both.
  */
 export const MAXIMUM_FULL_PACKUMENT_BYTES = 96 * 1024 * 1024;
 

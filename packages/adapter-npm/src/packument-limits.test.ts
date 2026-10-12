@@ -73,14 +73,27 @@ function providerFor(name: string, body: Uint8Array) {
 }
 
 describe('the packument bound', { timeout: 30_000 }, () => {
-  it('is set above the largest abbreviated packument measured, with room', () => {
-    // next, 25,636,598 bytes on 2026-10-12.
-    expect(MAXIMUM_PACKUMENT_BYTES).toBeGreaterThanOrEqual(2 * 25_636_598);
-    // Never more of the client's memory than a tarball may take.
+  it('is set above the largest abbreviated packument found, with room', () => {
+    // public-unscoped-test-package, 38,335,911 bytes on 2026-10-12; next is
+    // 25,636,598 and @prisma/client 38,178,921.
+    expect(MAXIMUM_PACKUMENT_BYTES).toBeGreaterThanOrEqual(1.5 * 38_335_911);
+    // Never more bytes of the client's memory than a tarball may take.
     expect(MAXIMUM_PACKUMENT_BYTES).toBeLessThan(128 * MiB);
     expect(MAXIMUM_FULL_PACKUMENT_BYTES).toBeGreaterThan(
       MAXIMUM_PACKUMENT_BYTES,
     );
+  });
+
+  it('is set above the largest full packument found, which is over 64 MiB', () => {
+    // @wix/wix-code-types, 76,503,820 bytes; @prisma/client, 68,527,188. Both
+    // are over 64 MiB, so the full bound cannot be the abbreviated one.
+    expect(MAXIMUM_FULL_PACKUMENT_BYTES).toBeGreaterThanOrEqual(
+      1.25 * 76_503_820,
+    );
+    expect(FULL_PACKUMENT_LIMITS.maximumNodes).toBeGreaterThanOrEqual(
+      2 * 2_655_900,
+    );
+    expect(PACKUMENT_LIMITS.maximumNodes).toBeGreaterThanOrEqual(3 * 1_077_961);
   });
 
   it('allows a value for every 16 bytes of it, above any packument measured', () => {
