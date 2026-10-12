@@ -47,15 +47,15 @@ import {
 /**
  * The most an abbreviated packument may weigh: 64 MiB, 1.75 times the largest
  * found (38,335,911 bytes), 2.6 times `next` and 7.7 times `typescript`. At last
- * year's pace `next` and `@prisma/client` have twelve years of room; a package
- * that publishes a version for every change has less. Below the 128 MiB an
- * artifact download may weigh, so the bytes a hostile registry can make the
- * client hold for one packument are no more than for one tarball. That bounds
- * bytes. What parsing them costs (2,169 to 2,683 MiB in 22.5 to 30.4 s for the
- * shape that held the most, 1,412 to 1,547 MiB in 52.2 to 60.8 s for the
- * slowest, over the runs made), and what a resolve keeps of the packuments it
- * has read, are not bounded by it. ADR 44 has the shapes and the full bound's
- * figures.
+ * year's pace `next` (11.7 years) and `@prisma/client` (12.6) have about twelve
+ * years of room; a package that publishes a version for every change has less
+ * (`renovate`, 2.9 years). Below the 128 MiB an artifact download may weigh,
+ * so the bytes a hostile registry can make the client hold for one packument
+ * are no more than for one tarball. That bounds bytes. What parsing them costs
+ * (2,169 to 2,683 MiB in 22.5 to 30.4 s for the shape that held the most,
+ * 1,412 to 1,547 MiB in 52.2 to 60.8 s for the slowest, over the runs made), and
+ * what a resolve keeps of the packuments it has read, are not bounded by it.
+ * ADR 44 has the shapes and the full bound's figures.
  */
 export const MAXIMUM_PACKUMENT_BYTES = MAXIMUM_METADATA_BYTES;
 

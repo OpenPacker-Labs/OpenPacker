@@ -527,12 +527,17 @@ Three parts, and only the first is a bound on the resolve.
 3. **What a resolve keeps.** The provider keeps every packument it has read, the
    body and the tree parsed from it, until the resolve ends: the resolve never
    asks it to forget one. One provider reading six different 12 MiB packuments
-   held, after a collection, 188, 258, 328, 398, 468 and 538 MB of heap: 70 MB
-   for each, 5.8 times its size and beside the body itself, and linear. So the
-   bound is on a document and not on a resolve, and a registry that has the walk
-   visit enough packages can make it hold as much as it likes. It could at the
-   old 8 MiB bound too; what has changed is that a document may now be eight
-   times the size. A cap on what a resolve keeps is not here.
+   held, after a collection, 188, 258, 328, 398, 468 and 538 MiB of heap, and
+   the review's rerun gave the same six figures: 70 MiB for each, 5.8 times its
+   size and beside the body itself, and linear. The documents were the dense
+   shape `{"<26 characters, each different>":1},` repeated, 33 bytes holding two
+   values, because that shape is accepted whole. A real packument holds a value
+   per 29 to 35 bytes (28.8 for the densest found), about half as many for its
+   size, so 5.8 times is probably high for one; a real packument was not
+   measured. So the bound is on a document and not on a resolve, and a registry
+   that has the walk visit enough packages can make it hold as much as it likes.
+   It could at the old 8 MiB bound too; what has changed is that a document may
+   now be eight times the size. A cap on what a resolve keeps is not here.
 
 Measured on Node 22.22.0, linux/x64, live registry, in a project written by
 `opm init` with its default policy:
