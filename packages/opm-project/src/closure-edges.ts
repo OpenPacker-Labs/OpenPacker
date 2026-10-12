@@ -50,7 +50,7 @@ export function installedRequirements(
   );
 }
 
-function baseOf(requirement: Requirement): string {
+export function baseOf(requirement: Requirement): string {
   return stripPurlVersion(
     requirement.expression.type === 'package'
       ? requirement.expression.purl

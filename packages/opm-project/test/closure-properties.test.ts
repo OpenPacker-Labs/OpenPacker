@@ -2,13 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import type { PackageInstance } from '@openpacker/contracts';
-import { codecFor, resolveGraph, solveGraph } from '../src/index.js';
-import { installedRequirements } from '../src/closure-edges.js';
-import {
-  nativeRange,
-  requirementInstallName,
-  satisfiesNative,
-} from '../src/requirement-info.js';
+import { resolveGraph, solveGraph } from '../src/index.js';
 import {
   NpmRegistryFixture,
   type FixturePackage,
@@ -17,7 +11,7 @@ import {
 configureDefaultAdapters();
 
 /**
- * Random registries with aliases and several versions of one name.
+ * Random registries with aliases, prereleases and several versions of one name.
  *
  * Whatever the registry is, a closure the solver returns must satisfy every
  * edge by the ecosystem's own range rules, must be the same closure the next
@@ -25,13 +19,27 @@ configureDefaultAdapters();
  * several versions only where no single release suits every dependent, and
  * must be refused only when no closure exists (checked by trying every subset
  * of what the walk found).
+ *
+ * The oracle is not the code under test. Which versions a range accepts is
+ * written out below, once, by hand, for each range the generator can draw
+ * (node-semver's rules: a prerelease satisfies a range only through a
+ * comparator on the same major.minor.patch that has a prerelease), and the
+ * edges expected of each release are read from the generated registry itself,
+ * not from the requirements the walk produced.
  */
 
 // A soak run: OPM_PROPERTY_RUNS=1000 OPM_PROPERTY_SEED=7 npx vitest run test/closure-properties.test.ts
 const RUNS = Number(process.env.OPM_PROPERTY_RUNS ?? 120);
 const SEED = Number(process.env.OPM_PROPERTY_SEED ?? 20261012);
 
-const VERSIONS = ['1.0.0', '1.5.0', '2.0.0', '3.0.0'] as const;
+const VERSIONS = [
+  '1.0.0',
+  '1.5.0',
+  '2.0.0',
+  '2.0.0-rc.1',
+  '3.0.0-rc.1',
+  '3.0.0',
+] as const;
 // Mostly ranges several releases satisfy, and a few that few do.
 const RANGES = [
   '*',
@@ -43,7 +51,28 @@ const RANGES = [
   '1.5.0',
   '~1.0.0',
   '^3',
+  '>=2.0.0-rc.0',
+  '^2.0.0-0',
 ] as const;
+
+/** What each range accepts of VERSIONS, by node-semver's rules, by hand. */
+const ACCEPTS: Record<
+  (typeof RANGES)[number],
+  readonly (typeof VERSIONS)[number][]
+> = {
+  '*': ['1.0.0', '1.5.0', '2.0.0', '3.0.0'],
+  '^1': ['1.0.0', '1.5.0'],
+  '>=1': ['1.0.0', '1.5.0', '2.0.0', '3.0.0'],
+  '>=1.0.0 <3.0.0': ['1.0.0', '1.5.0', '2.0.0'],
+  '^2': ['2.0.0'],
+  '1.5.0': ['1.5.0'],
+  '~1.0.0': ['1.0.0'],
+  '^3': ['3.0.0'],
+  '>=2.0.0-rc.0': ['2.0.0-rc.1', '2.0.0', '3.0.0'],
+  '^2.0.0-0': ['2.0.0-rc.1', '2.0.0'],
+};
+const accepts = (range: (typeof RANGES)[number], version: string): boolean =>
+  (ACCEPTS[range] as readonly string[]).includes(version);
 const NAMES = ['p0', 'p1', 'p2', 'p3', 'p4'] as const;
 
 interface Dependency {
@@ -137,29 +166,52 @@ async function solve(registry: FixturePackage[]) {
   }
 }
 
-/** Whether any set of the packages the walk found holds a closed closure. */
-function someClosureExists(packages: readonly PackageInstance[]): boolean {
-  const roots = packages.filter(
-    (item) => item.identity.canonicalPurl === 'pkg:npm/root',
-  );
+/** The dependencies the generated registry gives a release. */
+function dependenciesOf(
+  input: Spec,
+  name: string,
+  version: string,
+): { key: string; target: string; range: (typeof RANGES)[number] }[] {
+  const items =
+    name === 'root'
+      ? input.rootDependencies
+      : input.packages[
+          NAMES.indexOf(name as (typeof NAMES)[number])
+        ]!.versions.find((entry) => entry.version === version)?.dependencies;
+  return (items ?? []).map((item, index) => ({
+    key: item.aliased
+      ? `as-${NAMES[item.target]}-${index}`
+      : NAMES[item.target]!,
+    target: NAMES[item.target]!,
+    range: item.range,
+  }));
+}
+
+const nameOf = (item: PackageInstance): string =>
+  item.identity.canonicalPurl.slice('pkg:npm/'.length);
+
+/**
+ * Whether any set of the releases the walk found holds a closed closure: one
+ * root, and for every chosen release a chosen release of each dependency's
+ * package that the dependency's range accepts.
+ */
+function someClosureExists(
+  input: Spec,
+  packages: readonly PackageInstance[],
+): boolean {
   const count = packages.length;
   for (let mask = 1; mask < 2 ** count; mask += 1) {
     const chosen = packages.filter((_item, index) => (mask >> index) & 1);
-    if (!chosen.some((item) => roots.includes(item))) continue;
+    if (!chosen.some((item) => nameOf(item) === 'root')) continue;
     const closed = chosen.every((item) =>
-      installedRequirements(item).every((requirement) => {
-        const base =
-          requirement.expression.type === 'package'
-            ? requirement.expression.purl
-            : '';
-        const range = nativeRange(requirement);
-        return chosen.some(
-          (candidate) =>
-            candidate.identity.canonicalPurl === base &&
-            (range === undefined ||
-              satisfiesNative('npm', candidate.nativeVersion, range)),
-        );
-      }),
+      dependenciesOf(input, nameOf(item), item.nativeVersion).every(
+        (dependency) =>
+          chosen.some(
+            (candidate) =>
+              nameOf(candidate) === dependency.target &&
+              accepts(dependency.range, candidate.nativeVersion),
+          ),
+      ),
     );
     if (closed) return true;
   }
@@ -189,7 +241,7 @@ describe('a closure over a random registry', () => {
           expect(again.error?.message).toBe(first.error.message);
           // And only because there is nothing to find.
           if (first.graph.packages.length <= 14)
-            expect(someClosureExists(first.graph.packages)).toBe(false);
+            expect(someClosureExists(input, first.graph.packages)).toBe(false);
           return;
         }
         solvedCount += 1;
@@ -197,78 +249,74 @@ describe('a closure over a random registry', () => {
         const selected = solved.selected;
         const byNode = new Map(selected.map((item) => [item.nodeId, item]));
 
-        // Every installed requirement of every selected package has exactly one
-        // edge, to a selected package of that name whose version it accepts,
-        // under the name the requirement was written with.
+        // Every dependency the registry gives a selected release has exactly one
+        // edge, to a selected release of that package the range accepts, under
+        // the name the dependency was written with.
         for (const item of selected)
-          for (const requirement of installedRequirements(item)) {
+          for (const dependency of dependenciesOf(
+            input,
+            nameOf(item),
+            item.nativeVersion,
+          )) {
             const edges = solved.dependencyEdges.filter(
               (edge) =>
                 edge.fromNodeId === item.nodeId &&
-                edge.requirementId === requirement.id,
+                edge.installName === dependency.key,
             );
-            expect(edges, `${exactOf(item)} ${requirement.id}`).toHaveLength(1);
+            expect(edges, `${exactOf(item)} ${dependency.key}`).toHaveLength(1);
             const target = byNode.get(edges[0]!.toNodeId);
             expect(target).toBeDefined();
-            const range = nativeRange(requirement);
-            expect(target!.identity.canonicalPurl).toBe(
-              requirement.expression.type === 'package'
-                ? requirement.expression.purl
-                : '',
-            );
-            if (range !== undefined)
-              expect(
-                satisfiesNative('npm', target!.nativeVersion, range),
-                `${exactOf(item)} needs ${range}, got ${exactOf(target!)}`,
-              ).toBe(true);
-            expect(edges[0]!.installName).toBe(
-              requirementInstallName(requirement),
-            );
-            if (requirement.nativeSemantics?.data !== undefined)
-              aliasEdges += Number(edges[0]!.installName.startsWith('as-'));
+            expect(nameOf(target!)).toBe(dependency.target);
+            expect(
+              accepts(dependency.range, target!.nativeVersion),
+              `${exactOf(item)} needs ${dependency.range}, got ${exactOf(target!)}`,
+            ).toBe(true);
+            aliasEdges += Number(dependency.key.startsWith('as-'));
           }
+        // And no edge the registry did not give.
+        for (const edge of solved.dependencyEdges) {
+          const from = byNode.get(edge.fromNodeId)!;
+          expect(
+            dependenciesOf(input, nameOf(from), from.nativeVersion).map(
+              (dependency) => dependency.key,
+            ),
+          ).toContain(edge.installName);
+        }
         // Nothing is selected that no edge and no root reaches.
         const reached = new Set(
           solved.dependencyEdges.map((edge) => edge.toNodeId),
         );
         for (const item of selected)
-          if (item.identity.canonicalPurl !== 'pkg:npm/root')
+          if (nameOf(item) !== 'root')
             expect(reached.has(item.nodeId), exactOf(item)).toBe(true);
 
         // A name at several versions is a name no single release suits.
         const byName = new Map<string, PackageInstance[]>();
         for (const item of selected)
-          byName.set(item.identity.canonicalPurl, [
-            ...(byName.get(item.identity.canonicalPurl) ?? []),
-            item,
-          ]);
+          byName.set(nameOf(item), [...(byName.get(nameOf(item)) ?? []), item]);
         for (const [name, versions] of byName) {
           if (versions.length < 2) continue;
           multi += 1;
           const ranges = solved.dependencyEdges
-            .filter(
-              (edge) =>
-                byNode.get(edge.toNodeId)?.identity.canonicalPurl === name,
-            )
+            .filter((edge) => nameOf(byNode.get(edge.toNodeId)!) === name)
             .map((edge) => {
               const from = byNode.get(edge.fromNodeId)!;
-              return nativeRange(
-                installedRequirements(from).find(
-                  (requirement) => requirement.id === edge.requirementId,
-                )!,
-              );
-            })
-            .filter((range): range is string => range !== undefined);
-          const codec = codecFor('npm');
-          void codec;
+              return dependenciesOf(
+                input,
+                nameOf(from),
+                from.nativeVersion,
+              ).find((dependency) => dependency.key === edge.installName)!
+                .range;
+            });
           const suits = graph.packages.filter(
             (candidate) =>
-              candidate.identity.canonicalPurl === name &&
-              ranges.every((range) =>
-                satisfiesNative('npm', candidate.nativeVersion, range),
-              ),
+              nameOf(candidate) === name &&
+              ranges.every((range) => accepts(range, candidate.nativeVersion)),
           );
-          expect(suits, `${name} could have been one release`).toEqual([]);
+          expect(
+            suits.map(exactOf),
+            `${name} could have been one release`,
+          ).toEqual([]);
         }
 
         // The same closure the next time, and whatever order it is listed in.

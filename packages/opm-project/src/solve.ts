@@ -11,6 +11,7 @@ import {
   viableCandidates,
   type ClosureEdge,
 } from './closure-edges.js';
+import { narrowUnmetEdges } from './closure-tighten.js';
 import { loadResolver } from './resolver-load.js';
 import { defaultHostEnvironment, type ResolvedGraph } from './resolve.js';
 import { universeFrom } from './universe.js';
@@ -143,6 +144,7 @@ export async function solveGraph(input: {
   const viable = viableCandidates(input.graph.packages);
   let packages = viable.kept;
   const kept = new Set<string>();
+  const narrowed = new Set<string>();
   for (let round = 0; ; round += 1) {
     const universe = await universeFrom({ ...input.graph, packages });
     let solved: ReturnType<typeof resolver.solve>;
@@ -202,11 +204,22 @@ export async function solveGraph(input: {
           'Selected package lacks an exact PURL',
         );
     const assigned = assignEdges(chosen);
-    if (assigned.unmet.length > 0)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `The closure the solver selected leaves a requirement unmet: ${describeUnmet(assigned.unmet, chosen)}`,
-      );
+    if (assigned.unmet.length > 0) {
+      // The solver reads a range as a comparison, which admits a prerelease
+      // the ecosystem's rule leaves out. Narrow those edges to the releases
+      // it accepts and solve again, before calling the closure unsatisfiable.
+      const narrowing =
+        round >= MAXIMUM_SOLVE_ROUNDS
+          ? undefined
+          : narrowUnmetEdges({ packages, unmet: assigned.unmet, narrowed });
+      if (narrowing === undefined || !narrowing.changed)
+        throw new OpmError(
+          'UNRESOLVABLE',
+          `The closure the solver selected leaves a requirement unmet: ${describeUnmet(assigned.unmet, chosen)}`,
+        );
+      packages = narrowing.packages;
+      continue;
+    }
     const selected = reachableSelection({
       selected: chosen,
       edges: assigned.edges,
@@ -242,14 +255,14 @@ export async function solveGraph(input: {
         // An invalid proof never gets this far: the check above throws on it.
         proofValid: true,
       };
-    if (round >= MAXIMUM_UNIFICATION_ROUNDS)
+    if (round >= MAXIMUM_SOLVE_ROUNDS)
       throw new OpmError(
         'UNRESOLVABLE',
-        `The closure still holds several versions of ${[...duplicated.keys()].join(', ')} after ${MAXIMUM_UNIFICATION_ROUNDS} attempts to unify them`,
+        `The closure still holds several versions of ${[...duplicated.keys()].join(', ')} after ${MAXIMUM_SOLVE_ROUNDS} rounds of narrowing and unifying`,
       );
     packages = unified.packages;
   }
 }
 
 /** Enough for a closure of ordinary shape; a loop here is a bug, not a graph. */
-const MAXIMUM_UNIFICATION_ROUNDS = 32;
+const MAXIMUM_SOLVE_ROUNDS = 32;
