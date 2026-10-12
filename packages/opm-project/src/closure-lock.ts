@@ -20,14 +20,16 @@ import { resolveGraph, type ResolvedGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import {
+  applyAttestation,
   assertSupplyChainAllowed,
   captureFactsFromSourceUri,
   capturePublishTime,
   insideReleaseAge,
+  lockAttestationFrom,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
 } from './supply-chain.js';
-import type { LockPackage, OpmManifest } from './types.js';
+import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
 
 /**
@@ -79,6 +81,7 @@ export async function resolveTransitive(input: {
   manifest: OpmManifest;
   registryOptions?: RegistryOptions | undefined;
   pool: ProviderPool;
+  previousLock?: OpmLockfile | undefined;
 }): Promise<TransitiveLock> {
   // Only what came from a registry is walked through that registry. A package
   // pinned to a file, a catalog entry or a URL is not the registry's package of
@@ -126,7 +129,13 @@ export async function resolveTransitive(input: {
       policy: {
         allowYanked: policy.allowYanked,
         allowQuarantined: policy.allowQuarantined,
-        requiredEvidence: policy.requiredEvidence,
+        // The solver has no evidence facts, so it can only be asked for the
+        // one kind it establishes itself. Every other kind (sigstore,
+        // packslip, a pinned key) is a fact about a downloaded release, and is
+        // checked against each selected package below, before anything locks.
+        requiredEvidence: policy.requiredEvidence.filter(
+          (kind) => kind === 'receipt-signature',
+        ),
         semanticLossMaximum: policy.semanticLossMaximum,
         acceptedOverlayAuthorities: input.manifest.policy
           ?.acceptedOverlayAuthorities ?? ['publisher'],
@@ -229,6 +238,8 @@ export async function resolveTransitive(input: {
         exact,
         { minimumReleaseAgeMinutes: policy.minimumReleaseAgeMinutes },
       );
+      if (artifact.attestation !== undefined)
+        applyAttestation(facts, artifact.attestation);
       try {
         await assertSupplyChainAllowed(policy, facts);
       } catch (error) {
@@ -272,6 +283,9 @@ export async function resolveTransitive(input: {
           nativeIntegrity: transitiveIntegrity,
         }),
         ...lockPackageSupplyChainFields(facts),
+        ...(artifact.attestation !== undefined && {
+          attestation: lockAttestationFrom(artifact.attestation),
+        }),
       };
       bindVerifiedArtifactBytes(locked, artifact.bytes, 'registry', facts);
       out[alias] = locked;

@@ -203,7 +203,7 @@ rename it) instead. On Windows files are copied and the default store is off.
 
 Measured on 50 packages (79 MB unpacked): the first project costs 84 MiB and a
 second adds 2.6 MiB; with `OPM_STORE_HOME=off` each costs 134 MiB
-([ADR 0043](../adr/0043-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)).
+([ADR 0048](../adr/0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)).
 
 Free what no project uses any more with `opm gc --shared` (see
 [Collecting unused store paths](#collecting-unused-store-paths)).
@@ -368,6 +368,7 @@ layout = "opm"
 | Spec                         | Notes                                    |
 | ---------------------------- | ---------------------------------------- |
 | `pkg:npm/@scope/name@1.2.3`  | Full PURL (preferred)                    |
+| `packslip:jdx/hk@2.5.0`      | A vendor's signed release ([packslip])   |
 | `name@1.2.3 --ecosystem npm` | Bare name requires `-e` / `--ecosystem`  |
 | `… --source ./pkg.tgz`       | Local artifact (offline)                 |
 | `… --alias tool`             | Override local alias                     |
@@ -422,6 +423,25 @@ Split-horizon of a public default hostname (`registry.npmjs.org` → `10.x`) fai
 closed. Point `OPM_REGISTRY_*` at the **internal name**; that origin is the pin.
 First-party production traffic uses classify-and-pin on the same `fetch`.
 `RegistryClient` loopback HTTP fixtures stay origin-allowlist.
+
+### Signed vendor releases (packslip)
+
+A tool that publishes a [packslip](../integrations/packslip.md) beside its
+release installs without a registry: the signer is verified, and **remembered**
+in the lock so a changed signer stops the next resolve until a person approves
+exactly that change.
+
+```sh
+# list "packslip" in project.ecosystems first (see above), then:
+opm add packslip:jdx/hk                 # GitHub project: forge-proven signer, no config
+opm packslip verify packslip:jdx/hk     # who signed it; installs nothing
+opm packslip pin packslip:jdx/hk --write
+```
+
+Trust is configured in the committed manifest —
+`[adapters.packslip.trust."<project>"]` — never in the lock, which anyone with
+write access can edit. See the [packslip guide](../integrations/packslip.md) and
+[ADR 0043](../adr/0043-packslip-signed-vendor-releases.md).
 
 ### Browsing
 
@@ -1072,3 +1092,5 @@ NODE_USE_ENV_PROXY=1 opm add pkg:npm/is-odd
 - Dual-surface decision: [ADR 0022](../adr/0022-opm-package-manager-surface.md)
 - Offline fixture packages: [`fixtures/opm/`](../../fixtures/opm/)
 - Example project: [`examples/opm-project/`](../../examples/opm-project/)
+
+[packslip]: ../integrations/packslip.md

@@ -1,7 +1,7 @@
 /**
  * What a workspace-member link may be, as code.
  *
- * ADR 0043 keeps symlinks out of `node_modules`: a path inside it is never an
+ * ADR 0048 keeps symlinks out of `node_modules`: a path inside it is never an
  * alias for a path outside it. ADR 0050 makes one exception, a link from a
  * workspace member's name to the member's own directory, and these rules are
  * what keep the exception that small. Every link the package creates passes

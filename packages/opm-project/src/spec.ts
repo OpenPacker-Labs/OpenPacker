@@ -8,6 +8,7 @@ const PURL_TYPE = /^[a-z0-9][a-z0-9.+-]*$/u;
  * Parse package specs for `opm add`.
  * Accepts:
  * - pkg:type/name@version
+ * - packslip:project@version (`packslip:jdx/hk`, `packslip:github.com/jdx/hk@2.5.0`)
  * - name@version with --ecosystem
  * - name with --ecosystem
  *
@@ -23,6 +24,9 @@ export function parsePackageSpec(
 
   if (trimmed.startsWith('pkg:')) {
     return parsePurlSpec(trimmed, options);
+  }
+  if (trimmed.startsWith('packslip:')) {
+    return parsePackslipSpec(trimmed, options);
   }
 
   // `string-width-cjs@npm:string-width@^4.2.0`: npm's alias, installed under
@@ -136,6 +140,65 @@ function parsePurlSpec(
     alias,
     purl: version ? `${basePurl}@${version}` : basePurl,
     ecosystem,
+  };
+  if (version !== undefined) result.version = version;
+  if (options.source !== undefined) result.source = options.source;
+  return result;
+}
+
+/** A project name: a host, then path segments, none of them empty or exotic. */
+const PROJECT_SEGMENT = /^[A-Za-z0-9._~-]+$/u;
+
+/**
+ * `packslip:` is shorthand for the PURL of a project whose releases are signed
+ * with packslip. The project is the name its vendor publishes under, so it is
+ * written the way the vendor writes it: `github.com/jdx/hk`, or a domain such
+ * as `mise.jdx.dev`. `jdx/hk` alone means GitHub, the same convention the
+ * packslip tools use, and is expanded here so the manifest and the lock always
+ * carry the full name that a trust setting is keyed by.
+ */
+function parsePackslipSpec(
+  spec: string,
+  options: { ecosystem?: string; source?: string; alias?: string },
+): ParsedPackageSpec {
+  if (options.ecosystem !== undefined && options.ecosystem !== 'packslip')
+    throw new OpmError(
+      'INVALID_SPEC',
+      `A packslip: spec is for the packslip ecosystem, not --ecosystem ${options.ecosystem}`,
+    );
+  const body = spec.slice('packslip:'.length);
+  const { name, version } = splitNameVersion(body);
+  const segments = name.split('/');
+  if (
+    name === '' ||
+    segments.some(
+      (segment) =>
+        !PROJECT_SEGMENT.test(segment) || segment === '.' || segment === '..',
+    ) ||
+    (version !== undefined && version === '')
+  )
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${spec}" does not name a packslip project (expected packslip:<host>/<path>[@version], such as packslip:github.com/jdx/hk)`,
+    );
+  // `owner/repo` is GitHub shorthand: a first segment with no dot is not a host,
+  // and then there must be exactly an owner and a repository. Anything else
+  // (`a/b/c`, a lone `mise`) names no project, and is refused here rather than
+  // as a GitHub project that cannot exist.
+  const shorthand = !segments[0]?.includes('.');
+  if (shorthand && segments.length !== 2)
+    throw new OpmError(
+      'INVALID_SPEC',
+      `"${spec}" does not name a packslip project: write packslip:<owner>/<repo> for GitHub, or packslip:<host>/<path> such as packslip:github.com/jdx/hk`,
+    );
+  const qualified = shorthand ? ['github.com', ...segments] : segments;
+  const purl = `pkg:packslip/${qualified.map((part) => encodeURIComponent(part)).join('/')}`;
+  const last =
+    qualified.length > 1 ? qualified.at(-1) : qualified[0]?.split('.')[0];
+  const result: ParsedPackageSpec = {
+    alias: options.alias ?? simpleAlias(last ?? 'tool'),
+    purl: version === undefined ? purl : `${purl}@${version}`,
+    ecosystem: 'packslip',
   };
   if (version !== undefined) result.version = version;
   if (options.source !== undefined) result.source = options.source;
