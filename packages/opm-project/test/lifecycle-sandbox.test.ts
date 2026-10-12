@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   detectNpmLifecycleScripts,
   hasLifecycleScripts,
@@ -286,5 +286,71 @@ describe('lifecycle jail execution', () => {
     await expect(readFile(marker, 'utf8')).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+});
+
+describe('containment withdrawn off Linux', () => {
+  const restores: Array<() => void> = [];
+  afterEach(() => {
+    for (const restore of restores.splice(0)) restore();
+  });
+  function spoofPlatform(value: NodeJS.Platform): void {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value });
+    restores.push(() => {
+      if (original) Object.defineProperty(process, 'platform', original);
+    });
+  }
+  const failClosed: PolicyInput = {
+    ...allowPolicy,
+    sandboxMode: 'fail-closed',
+    sandboxRequired: true,
+    sandboxPrefer: 'native',
+  };
+
+  it('tells a lifecycle script on macOS why it did not run and what to use instead', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-life-macos-'));
+    spoofPlatform('darwin');
+    const failure = await runLifecycleScript({
+      event: 'postinstall',
+      script: 'echo hi',
+      packageDir: dir,
+      packageId: 'pkg:npm/esbuild',
+      policy: failClosed,
+    }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+    expect(String(failure)).toMatch(
+      /sandbox was not enforced \(backend=none\)/u,
+    );
+    expect(String(failure)).toMatch(/withdrawn on macOS \(ADR 0036\)/u);
+    expect(String(failure)).toMatch(/Run this on a Linux host/u);
+  });
+
+  it('tells opmx the same', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'opm-run-macos-'));
+    spoofPlatform('darwin');
+    const failure = await runSandboxedPackageProcess({
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+      cwd: project,
+      projectRoot: project,
+      policy: failClosed,
+    }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+    expect(String(failure)).toMatch(/withdrawn on macOS \(ADR 0036\)/u);
+    expect(String(failure)).toMatch(/`opm exec <bin>`/u);
+  });
+
+  it('adds nothing on Linux, where the jail exists', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opm-life-linux-'));
+    const failure = await runLifecycleScript({
+      event: 'postinstall',
+      script: 'echo hi',
+      packageDir: dir,
+      packageId: 'pkg:npm/esbuild',
+      policy: failClosed,
+      backend: createMockBackend({ unavailable: true }),
+    }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+    expect(String(failure)).not.toMatch(/withdrawn on/u);
   });
 });
