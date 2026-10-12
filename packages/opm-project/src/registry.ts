@@ -439,10 +439,9 @@ function etagOf(response: HttpResponse): string | undefined {
  * `ENTRY_LIMIT` is the adapters' own ceiling and not a number of this class's:
  * a request is kept only if it asks for no more than that, so an adapter that
  * is allowed a bigger document than this keeps would be fetched again at every
- * use (npm's `next` packument is 25.6 MB). What is
- * kept is what the provider holds for the resolve anyway, so the total bounds
- * how many large documents a resolve keeps being able to answer from memory, not
- * how much it holds.
+ * use (npm's `next` packument is 25.6 MB). What is kept is what the provider
+ * holds for the resolve anyway, so the total bounds how many large documents a
+ * resolve keeps being able to answer from memory, not how much it holds.
  */
 export class MemoizingTransport implements HttpTransport {
   static readonly ENTRY_LIMIT = MAXIMUM_METADATA_BYTES;
