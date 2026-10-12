@@ -12,7 +12,7 @@ export {
   CanonicalJsonLimitError,
   type CanonicalParseLimits,
 } from './errors.js';
-export { ECHO_LIMIT, safeEcho } from './echo.js';
+export { ECHO_LIMIT, plainLine, safeEcho } from './echo.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];

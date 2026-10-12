@@ -3,6 +3,7 @@ import {
   CanonicalJsonError,
   ECHO_LIMIT,
   parseCanonicalJson,
+  plainLine,
   safeEcho,
 } from '../src/index.js';
 
@@ -209,6 +210,73 @@ describe('an escape sequence at the cut', () => {
     expect(safeEcho(text, 5000)).toBe(
       `${'a'.repeat(4095)}… (${text.length} characters)`,
     );
+  });
+});
+
+describe('plainLine', () => {
+  it('leaves text with nothing to remove byte for byte, at any length', () => {
+    for (const text of [
+      '',
+      'id',
+      'two  spaces and a trailing one ',
+      ' a leading space',
+      'The packument of @scope/name exceeds the limit of 67108864 bytes (64.00 MiB)',
+      'p@1.0.0 depends on dep as "git+https://x.test/a.git", a git specifier',
+      'naïve ключ 键 \u{1f511}',
+      'k'.repeat(100_000),
+    ])
+      expect(plainLine(text)).toBe(text);
+  });
+
+  it.each([
+    ['a colour', `${ESC}[31mred${ESC}[0m`, 'red'],
+    ['a window title', `a${ESC}]0;pwned${BEL}b`, 'ab'],
+    ['a title that never ends', `a${ESC}]0;pwned`, 'a'],
+    ['a bidirectional override', 'a\u202eb', 'ab'],
+    ['a zero-width character', 'a\u200bb', 'ab'],
+    ['NUL, DEL and a C1 control', 'a\u0000b\u007fc\u009bd', 'abcd'],
+    ['a lone surrogate', 'a\ud800b', 'ab'],
+  ])('removes %s', (_, text, expected) => {
+    expect(plainLine(text)).toBe(expected);
+  });
+
+  it.each([
+    ['LF', 'a\nb'],
+    ['CRLF', 'a\r\nb'],
+    ['CR', 'a\rb'],
+    ['NEL', 'a\u0085b'],
+    ['line separator', 'a\u2028b'],
+    ['paragraph separator', 'a\u2029b'],
+    ['tab', 'a\tb'],
+    ['vertical tab', 'a\u000bb'],
+    ['form feed', 'a\u000cb'],
+    ['a run of them', 'a\n\n\r\n\tb'],
+  ])(
+    'puts one space where a message had a %s, and no line break',
+    (_, text) => {
+      expect(plainLine(text)).toBe('a b');
+    },
+  );
+
+  it('keeps no break at either end, and adds no space beside one', () => {
+    expect(plainLine('\nabc\n')).toBe('abc');
+    expect(plainLine('a\n b')).toBe('a b');
+    expect(plainLine('a \nb')).toBe('a b');
+    expect(plainLine('a\n\u200b\nb')).toBe('a b');
+  });
+
+  it('cannot be made to carry a line break or a forbidden character', () => {
+    for (const [low, high] of FORBIDDEN)
+      for (let code = low; code <= high; code += 1) {
+        const shown = plainLine(`a${String.fromCodePoint(code)}\u00e9`);
+        expect(holdsForbidden(shown)).toBe(false);
+        expect(shown).toMatch(/^a ?\u00e9$/u);
+      }
+  });
+
+  it('reads all of a long text, where safeEcho reads 4,096 characters', () => {
+    const text = `${'a'.repeat(10_000)}${ESC}[31mb\nc`;
+    expect(plainLine(text)).toBe(`${'a'.repeat(10_000)}b c`);
   });
 });
 

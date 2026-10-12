@@ -14,7 +14,8 @@
  * every format character (zero-width characters and the bidirectional
  * overrides that make text read other than it is written) and the line and
  * paragraph separators. What is left is plain, so it is safe wherever the
- * message goes.
+ * message goes. `plainLine` is the same without the cut, for a writer that shows
+ * a whole message on a line of its own.
  */
 
 /** How many characters of the text a message may carry. */
@@ -69,18 +70,34 @@ function isBetween(code: number, low: number, high: number): boolean {
   return code >= low && code <= high;
 }
 
+/** Layout whitespace, which `plainLine` turns into one space. */
+const LAYOUT = /[\t\n\v\f\r\u0085\u2028\u2029]/u;
+
+interface Plain {
+  /** What can be shown of the text read. */
+  shown: string;
+  /** How far into the text the reading went. */
+  end: number;
+}
+
 /**
- * `text` as a short, plain string. When anything was cut, or when nothing was
- * left to show of a text that was not empty, the result ends in the length of
- * the original, so a reader can tell a long key from a short one, and a key of
- * control characters from no key at all.
+ * The one reading of a text that every caller shares: escape sequences whole,
+ * then every character in UNSHOWN, up to `limit` characters shown and
+ * `scanLimit` characters read. With `layout`, a run of layout whitespace is one
+ * space between two shown characters and nothing at either end.
  */
-export function safeEcho(text: string, limit = ECHO_LIMIT): string {
-  // Nothing past SCAN_LIMIT is read, an escape sequence's tail included.
-  const head = text.length > SCAN_LIMIT ? text.slice(0, SCAN_LIMIT) : text;
+function read(
+  text: string,
+  limit: number,
+  scanLimit: number,
+  layout: boolean,
+): Plain {
+  // Nothing past scanLimit is read, an escape sequence's tail included.
+  const head = text.length > scanLimit ? text.slice(0, scanLimit) : text;
   let shown = '';
   let count = 0;
   let index = 0;
+  let spaceDue = false;
   while (index < head.length && count < limit) {
     if (head.charCodeAt(index) === ESCAPE) {
       index = Math.max(endOfEscape(head, index), index + 1);
@@ -88,11 +105,41 @@ export function safeEcho(text: string, limit = ECHO_LIMIT): string {
     }
     const character = String.fromCodePoint(head.codePointAt(index) ?? 0xfffd);
     index += character.length;
+    if (layout && LAYOUT.test(character)) {
+      spaceDue = true;
+      continue;
+    }
     if (UNSHOWN.test(character)) continue;
+    if (spaceDue && shown !== '' && character !== ' ' && !shown.endsWith(' ')) {
+      shown += ' ';
+      count += 1;
+    }
+    spaceDue = false;
     shown += character;
     count += 1;
   }
-  if (index < text.length || (shown === '' && text !== ''))
+  return { shown, end: index };
+}
+
+/**
+ * `text` as a short, plain string. When anything was cut, or when nothing was
+ * left to show of a text that was not empty, the result ends in the length of
+ * the original, so a reader can tell a long key from a short one, and a key of
+ * control characters from no key at all.
+ */
+export function safeEcho(text: string, limit = ECHO_LIMIT): string {
+  const { shown, end } = read(text, limit, SCAN_LIMIT, false);
+  if (end < text.length || (shown === '' && text !== ''))
     return `${shown}… (${text.length} character${text.length === 1 ? '' : 's'})`;
   return shown;
+}
+
+/**
+ * `text` on one line and fit for a terminal, with nothing cut: the same
+ * characters removed as `safeEcho` removes, each run of line breaks and tabs
+ * one space, none at either end. For a writer that must show a whole message
+ * and add its own line breaks, so that the message cannot add one.
+ */
+export function plainLine(text: string): string {
+  return read(text, Infinity, Infinity, true).shown;
 }
