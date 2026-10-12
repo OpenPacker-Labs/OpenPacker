@@ -89,6 +89,21 @@ describe('a full packument the client refuses', () => {
     );
   });
 
+  it('is a refusal when it is not text, naming the package', async () => {
+    const { provider } = registry(() => ({
+      status: 200,
+      headers: {},
+      body: Uint8Array.of(0x5b, 0x22, 0xff, 0xfe, 0x22, 0x5d),
+      url: URL,
+    }));
+    const error = await ask(provider).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'INVALID_PROVIDER_METADATA',
+      message:
+        'The full packument of demo is not usable: The encoded data was not valid for encoding utf-8',
+    });
+  });
+
   it('is a refusal when it holds more than the parser allows, with how far it got', async () => {
     const { provider } = registry(() => body('['.repeat(100)));
     const error = await ask(provider).catch((caught: unknown) => caught);

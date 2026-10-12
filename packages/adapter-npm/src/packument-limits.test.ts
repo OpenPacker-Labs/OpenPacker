@@ -151,6 +151,24 @@ describe('the packument bound', { timeout: 30_000 }, () => {
   });
 });
 
+describe('a packument that is not text', () => {
+  it('is refused in terms of the package, as a document the parser could not use', async () => {
+    const { provider } = providerFor(
+      'binary',
+      Uint8Array.of(0x5b, 0x22, 0xff, 0xfe, 0x22, 0x5d),
+    );
+    const error = await provider
+      .enumerate('pkg:npm/binary')
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({
+      code: 'INVALID_PROVIDER_METADATA',
+      message:
+        'The packument of binary is not usable: The encoded data was not valid for encoding utf-8',
+    });
+  });
+});
+
 describe('a refusal is said in terms of the package', () => {
   it('renames a size refusal and leaves its numbers', () => {
     const renamed = aboutPackument(

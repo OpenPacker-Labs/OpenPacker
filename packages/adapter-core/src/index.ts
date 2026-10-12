@@ -2203,8 +2203,11 @@ export function json<T>(
 ): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
-  const document = text(response);
+  // Decoding is inside the try: a body that is not UTF-8 is a refused document
+  // like any other, and `text` throws a bare TypeError for it.
+  let document = '';
   try {
+    document = text(response);
     // The limits stop the parse itself: counting values after the tree is built
     // spends the memory the limit exists to protect.
     // SAFETY: The surrounding boundary establishes the asserted domain contract.

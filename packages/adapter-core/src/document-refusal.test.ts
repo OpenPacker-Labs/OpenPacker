@@ -49,3 +49,23 @@ describe('what counts as a refusal of the document', () => {
     expect(isDocumentRefusal(undefined)).toBe(false);
   });
 });
+
+/** 0xff is never a byte of well-formed UTF-8. */
+const NOT_UTF8 = Uint8Array.of(0x5b, 0x22, 0xff, 0xfe, 0x22, 0x5d);
+
+describe('a body that is not text', () => {
+  it("is a refused document, not the decoder's own error", () => {
+    let caught: unknown;
+    try {
+      json({ status: 200, headers: {}, body: NOT_UTF8, url: 'https://r.test' });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ProviderError);
+    expect(caught).toMatchObject({
+      code: 'INVALID_PROVIDER_METADATA',
+      message: expect.stringMatching(/not valid for encoding utf-8/u) as string,
+    });
+    expect(isDocumentRefusal(caught)).toBe(true);
+  });
+});
