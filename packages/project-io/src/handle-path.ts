@@ -278,6 +278,7 @@ export async function lstatChild(
         name,
         constants.O_RDONLY | constants.O_NOFOLLOW | ANY_KIND,
       ),
+      windowsReadReparse,
     );
   const libc = libcBackend();
   if (libc !== undefined) return libc.lstatChild(parent, name);

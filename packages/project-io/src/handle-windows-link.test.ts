@@ -10,21 +10,16 @@
  * down without a JavaScript error, and the last line then names the call.
  */
 
-import { constants, writeSync } from 'node:fs';
+import { constants } from 'node:fs';
 import {
   lstat,
   mkdir,
-  mkdtemp,
   open,
   readFile,
   readdir,
   readlink,
-  realpath,
-  rm,
   writeFile,
-  type FileHandle,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { inspectReparse } from './handle-nt-link.js';
@@ -37,39 +32,15 @@ import {
   removeChild,
 } from './handle-path.js';
 import { IO_REPARSE_TAG_MOUNT_POINT } from './reparse-data.js';
+import {
+  MEMBER,
+  cleanup,
+  handles,
+  project,
+  trace,
+} from './handle-windows-link-support.js';
 
-const trace = (message: string): void => {
-  writeSync(2, `[handle-windows-link] ${message}\n`);
-};
-
-const MEMBER = '../packages/pkg';
-
-const temps: string[] = [];
-const handles: FileHandle[] = [];
-afterEach(async () => {
-  await Promise.all(handles.splice(0).map((handle) => handle.close()));
-  await Promise.all(
-    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
-});
-
-async function project() {
-  trace('make a project directory');
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'opm-junction-')));
-  temps.push(root);
-  await mkdir(join(root, 'node_modules'), { recursive: true });
-  await mkdir(join(root, 'packages', 'pkg'), { recursive: true });
-  await writeFile(join(root, 'packages', 'pkg', 'index.js'), 'member');
-  const modules = await open(join(root, 'node_modules'), constants.O_RDONLY);
-  handles.push(modules);
-  return {
-    root,
-    modules,
-    site: { directory: 'node_modules', projectRoot: root },
-    member: join(root, 'packages', 'pkg'),
-    link: (name: string) => join(root, 'node_modules', name),
-  };
-}
+afterEach(cleanup);
 
 describe.skipIf(process.platform !== 'win32')(
   'member links as junctions through NT handles',
