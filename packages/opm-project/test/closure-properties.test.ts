@@ -218,6 +218,32 @@ function someClosureExists(
   return false;
 }
 
+/**
+ * The releases the walk found that can be installed at all: one whose
+ * dependency has no installable release is dropped, until none is. Of the
+ * releases a name has, only these could have stood in for several.
+ */
+function installableReleases(
+  input: Spec,
+  packages: readonly PackageInstance[],
+): PackageInstance[] {
+  let kept = [...packages];
+  for (;;) {
+    const next = kept.filter((item) =>
+      dependenciesOf(input, nameOf(item), item.nativeVersion).every(
+        (dependency) =>
+          kept.some(
+            (candidate) =>
+              nameOf(candidate) === dependency.target &&
+              accepts(dependency.range, candidate.nativeVersion),
+          ),
+      ),
+    );
+    if (next.length === kept.length) return kept;
+    kept = next;
+  }
+}
+
 const exactOf = (item: PackageInstance) => item.identity.exactPurl!;
 
 describe('a closure over a random registry', () => {
@@ -308,7 +334,7 @@ describe('a closure over a random registry', () => {
               ).find((dependency) => dependency.key === edge.installName)!
                 .range;
             });
-          const suits = graph.packages.filter(
+          const suits = installableReleases(input, graph.packages).filter(
             (candidate) =>
               nameOf(candidate) === name &&
               ranges.every((range) => accepts(range, candidate.nativeVersion)),
