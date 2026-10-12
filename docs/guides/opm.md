@@ -465,9 +465,13 @@ package, how much it had read and what the limit is, for example
 A document that is small enough but holds too many values, or is not JSON, is
 refused as
 `The packument of x is not usable: Provider metadata exceeds 4194304 values`,
-and the parser stops at the limit rather than after it. When the refused
-document is the full packument that a release-age check needed, the policy
-message says so after "not captured":
+and the parser stops at the limit rather than after it. The bounds limit what
+opm reads, not what it holds: the heaviest 64 MiB document tried took 2,169 to
+2,683 MiB to parse, and under `--max-old-space-size=1536` V8 ended the process
+with exit 134 (`JavaScript heap out of memory`) instead of opm refusing it, so a
+process started with a heap limit below what a document needs can be ended by
+one the bound accepts. When the refused document is the full packument that a
+release-age check needed, the policy message says so after "not captured":
 `publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
 A registry that is simply down leaves that message as it was. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).

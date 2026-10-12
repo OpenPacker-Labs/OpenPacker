@@ -582,6 +582,16 @@ archive's bound on what it expands to and is not touched here.
   limit is a change to `MINIMUM_BYTES_PER_METADATA_VALUE` and to the tests that
   pin 4,194,304; a cheaper tree or a budget that weighs objects is a change to
   the parser. Neither was made here.
+- A document the bounds let through can be fatal under a small V8 heap. The 64
+  MiB object of 12-character keys, accepted whole, ended the client with
+  `FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory`
+  and exit 134 under `--max-old-space-size=1536`, not with a refusal (the review
+  saw it, and a rerun for this amendment did); at 2048 it finished (2,293 MiB
+  peak in the review, 2,176 MiB in the rerun). The default limit on the 16 GB
+  machine these runs were made on is 8,240 MiB, so no run in the tables above
+  crashed, and a process started with a lower limit can be ended by a document
+  the bound accepts. The review's 96 MiB `€` object finished at
+  `--max-old-space-size=3072` and peaked at 3,372 MiB.
 - A resolve keeps every packument it reads (above), so the bounds on a document
   are not a bound on a resolve. Not changed here.
 - What the tests hold: the stop at the limit for `{},` and `1,` at exactly 64
