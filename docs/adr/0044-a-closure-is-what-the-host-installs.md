@@ -228,7 +228,7 @@ versions) was not among the 4,889 names, and a second look found it. It can also
 miss a package whose full document is far larger than its abbreviated one, as
 `@material/list`'s is (3.05 MiB and 58.77 MiB), if its abbreviated one does not
 rank in the first 400. The second look, made after an independent review, took
-79 more names chosen for weight and 6,516 from 54 further searches (the
+108 more names chosen for weight and 6,516 from 54 further searches (the
 abbreviated packument of each, the full one of the 150 largest abbreviated), and
 beyond `renovate` it found nothing past 22.1 MiB abbreviated (`prisma`) or 47.9
 MiB full (`sanity`). Sizes are MiB, decoded; values are counted where they were
@@ -375,31 +375,103 @@ independent review got the same two figures.
   as long as the key, escape and newline in it. It gives
   `Duplicate object member: ` and `xy` and 62 `k`, then
   `… (2097170 characters) at byte N`.
-- **The CLI makes what it writes of an error plain, once.** A `safeEcho` at each
-  site that repeats registry text kept missing one. A review found a
-  dependency's name and range in `UNSUPPORTED_DEPENDENCY_SPEC` and the
-  `modified` timestamp in the release-age check that passes, and a probe after
-  it a version string in `Invalid version`, each with its escape sequences
+- **The CLI makes what it writes of an error plain, once, and keeps its lines.**
+  A `safeEcho` at each site that repeats registry text kept missing one. A
+  review found a dependency's name and range in `UNSUPPORTED_DEPENDENCY_SPEC`
+  and the `modified` timestamp in the release-age check that passes, and a probe
+  after it a version string in `Invalid version`, each with its escape sequences
   intact (V8 reads a parenthesised comment after a date as part of the date, so
   `2020-01-01 (<escape>)` is a time). The sites that were found now use
   `safeEcho` (the dependency's name, range and owner in the three messages of
-  `dependency-spec.ts`, `Invalid npm coordinate`, and the policy's bound), and
-  the one place the CLI writes an error, `report` in
-  `apps/opm/src/error-report.ts`, passes every message through `plainLine`
-  (`@openpacker/canonical`, the same reading as `safeEcho` without the cut):
-  escape sequences and control, format and bidirectional characters are removed
-  and each run of line breaks and tabs is one space, so the only line break in
-  what is written is the one the writer adds. It does this before the secrets
-  are withheld, so a zero-width character cannot split a credential's name past
-  the redaction. `handleError` (usage, run, `OpmError` and coded errors),
-  `formatFailure` (an error with no code, its causes, and `opmx`'s) and the
-  reasons `opm resolve` lists use it. A message with nothing to remove is
-  written byte for byte as before (`apps/opm/test/error-text.test.ts` pins six
-  real ones). Not covered: stderr lines that are not errors (what a conversion
-  lost, a skipped path), `opm plugin` store messages, a child process's own
-  stderr, and `opmx`'s spawn failures; and the other ecosystems' adapters still
-  word their own errors from their registries' text, which the CLI now makes
-  plain on the way out.
+  `dependency-spec.ts`, `Invalid npm coordinate`, and the policy's bound). The
+  writer, `report` in `apps/opm/src/error-report.ts`, is a second layer under
+  them, and passes every message through `plainText` (`@openpacker/canonical`,
+  the same reading as `safeEcho` without the cut): escape sequences and control,
+  format and bidirectional characters are removed, a tab and the other layout
+  (vertical tab, form feed, U+2028, U+2029) is one space, a carriage return,
+  alone or before a line feed, is a line feed, and NEL is removed. The line
+  feeds a message carries are kept, because several of opm's own errors are
+  lists, one entry to a line: the closure `opm add` could not lock ("What the
+  walk could not use:" and an entry to a line) and the four lists of `opm ci`
+  (entries it cannot install, packages the policy refuses, packages from a git
+  source, packages missing from the store offline). A first version of the
+  writer made every message one line, which ran those lists together after their
+  colons and made "a message with nothing to remove is written as before" true
+  of one-line messages only. `apps/opm/test/error-lines.test.ts` pins the text
+  of each: the four `opm ci` lists through `runOpm` against lock files, and the
+  closure message as the real walk builds it, which
+  `packages/opm-project/test/closure-refusal.test.ts` pins against the walk.
+- **The writer cannot flatten what it cannot tell apart.** It does not know an
+  entry opm wrote from a line a registry added, so a line feed that reaches it
+  from a registry can start a line of its own, in plain text: it cannot move the
+  cursor, retitle the window or hide text, and it can say something misleading.
+  Flattening a registry's text where it is quoted is the first layer's job, and
+  so far only the npm adapter and the policy do it. The other ecosystems'
+  adapters still word their own errors from their registries' text (the PyPI
+  adapter echoes an over-long requirement whole,
+  `Invalid PEP 508 requirement: <text>`), and the writer makes that plain on the
+  way out and keeps its line feeds. A run of blank lines is kept too.
+- **Plain before redacted, and NEL is removed, not spaced.** The writer makes a
+  message plain before the secrets are withheld, so a zero-width character
+  cannot split a credential's name past the redaction. The scrubber reads white
+  space as `\s`, which does not match NEL (U+0085), and a NEL turned into a
+  space ended a URL the scrubber had read whole: `https://<NEL>user:secret@host`
+  printed the credential. A differential run of 300,000 secret-bearing strings
+  with up to three noise tokens inserted (seed 99, the review's script) counted
+  the strings where the plain step shows a credential the old path withheld: 518
+  with NEL spaced, and 0 with NEL removed; the strings where the plain step
+  withholds what the old path let through rose from 72,939 to 80,367.
+  `plainLine` and `plainText` now space exactly the characters `\s` matches
+  (tab, LF, VT, FF, CR, U+2028, U+2029), and a test sweeps the basic plane to
+  say so.
+- **Reading a message is linear.** The first `plainLine` asked the string it was
+  building whether it ended in a space, once for each character, and V8 flattens
+  a string that is still being built for that. A message of 64,000 lines of
+  `line` (320,000 characters) took 5.5 s, the review's 1,000,000 characters took
+  55.7 s, and `adapter-pypi`'s echo of a 500 KB requirement of 100,000 lines
+  took 14.1 s in `handleError`. It keeps the last character appended in a
+  variable. With a load average of 5 to 9 on 4 CPUs, six shapes (a word to a
+  line, a space and a break, a tab, a CRLF, a zero-width character, plain text)
+  took 16 to 63 ms at 320,000 characters and 69 to 196 ms at 1,048,576 in
+  `plainLine` (two runs), and 17 to 40 ms and 85 to 171 ms in `plainText` (one
+  run). Through `report`, 1,000,000 characters of lines took 198 ms, and the
+  100,000-line requirement through `handleError` 61 ms. The tests of both fail
+  above 2 s.
+- **Every writer, and the ones left as written.** `handleError` (usage, run,
+  `OpmError` and coded errors), `formatFailure` (an error with no code keeps the
+  line breaks of its message; its causes are one line each, and so are
+  `opmx`'s), the reasons `opm resolve` lists, the plugin that was not loaded and
+  the plugin store that could not be used, the paths and reasons skipped and the
+  meaning lost in `add`, a host install, `manifest`, `pack` and `opm ci`, and
+  `opmx`'s line naming the version it ran and the reason a run could not start
+  all use `report`. Left as written, each with its reason in a list that
+  `apps/opm/test/stderr-writers.test.ts` holds against the sources with the
+  TypeScript parser (a new writer that is neither routed nor named fails, and so
+  does a name that no longer matches a call): a child's own stderr (a host
+  installer's, a tool's, a script's, passed through as it wrote it), constant
+  sentences around a count or an exit status, the usage text of `opm auth` (the
+  person's own argument), and the two lines of the run path that name a script
+  of the person's own `package.json` or the bin the person typed (the run path
+  loads no workspace package, `run-load.test.ts`). Eleven writers were not
+  routed before this; the plugin-store one is also driven for real (a hostile
+  `OPM_PLUGIN_HOME`), and the rest are held by the list, because they need a
+  registry or a module mock, which the repository's lint rejects.
+- **A rejection that skipped the writer.** `case 'system'` in `runOpm`, the
+  host-install branch of `add`, and `runSystemCommand` returned another async
+  function's promise inside the `try` without `await`, so a rejected
+  `opm system <subcommand>` or `opm add pkg:apt/...` that a host installer
+  refused went past `handleError`: Node printed the message with its escape
+  sequences and exited 1. `return await` fixes the three, and
+  `apps/opm/test/error-reach.test.ts` drives them through `runOpm` (and, by
+  hand, the built binary under `cat -v`: exit 2 and 3, no escape sequence). The
+  other `return <call>(` sites in `apps/opm/src` are in functions with no `try`
+  of their own, whose callers await them (`rollbackToPrevious`, `spawnDeclared`,
+  `spawnTool`), or are synchronous. A `message` that is not a string is written
+  as `String` writes it (`opm: undefined`), where an earlier version of the
+  writer threw.
+- **A message with nothing to remove is written byte for byte as before**
+  (`apps/opm/test/error-text.test.ts` pins six real single-line ones, and
+  `error-lines.test.ts` the lists).
 
 ### The value limit is a budget the parser stops at
 
@@ -450,7 +522,9 @@ packument. Every document is exactly the size of its bound. Node 22.22.0,
 linux/x64, 4 CPUs shared with other work (load average 2.4 to 11), so the
 seconds are probably longer than an idle machine's. The figure to read is the
 peak RSS of the client process (`maxRSS`), in MiB (1 MiB is 1,048,576 bytes and
-1 GiB is 1,024 MiB), and it moves about 10 percent from run to run.
+1 GiB is 1,024 MiB), and it moves between runs of one shape by as much as a
+fifth (1,555 and 1,883 MiB for the object of `[]`-valued members, 2,169 and
+2,655 MiB for the 12-character one).
 
 Two sets of runs make up the table: the fix's own, and an independent review's,
 which wrote its own harness, re-ran the heaviest shapes and added four. A range
@@ -468,7 +542,7 @@ most. The number of runs is in brackets where there was more than one.
 | `"<14 characters>",` (17 bytes a value)                                       | accepted: 3.3 s, 862 MiB                                          | accepted: 5.1 s, 1,227 MiB                                       |
 | `{"<26 characters, each different>":{}},` (an object in an object)            | accepted: 9.9 s, 1,782 MiB                                        | accepted: 16.6 s, 2,594 MiB                                      |
 | the same, 20-character keys (14 bytes a value)                                | refused after 56 MiB: 6.0 s, 1,214 MiB                            | refused after 84 MiB: 9.7 s, 1,741 MiB                           |
-| an array of `[]`                                                              | accepted: 19.1 s, 1,555 MiB                                       | not tried                                                        |
+| one object of `"<12 characters, each different>":[],` members (18 bytes each) | accepted: 18.7 to 19.6 s, 1,555 to 1,883 MiB (3 runs)             | not tried                                                        |
 | one object of `"<10 characters, each different>":{},` members (16 bytes each) | refused at the end of the body: 17.8 s, 1,628 MiB                 | refused at the end of the body: 43.2 s, 2,646 MiB                |
 | one object of `"<12 characters, each different>":{},` members (18 bytes each) | accepted: 22.5 to 28.9 s, 2,169 to 2,655 MiB (4 runs)             | accepted: 40.4 to 43.5 s, 3,149 to 3,653 MiB (3 runs)            |
 | the same, with one `€` in the name                                            | accepted: 23.8 to 30.4 s, 2,394 to 2,683 MiB (3 runs)             | accepted: 37.1 to 44.1 s, 3,807 to 3,956 MiB (3 runs)            |
@@ -497,15 +571,21 @@ Reading it:
   put the time of one shape beside the memory of another. These are the heaviest
   shapes tried, over the runs made, and nothing here shows that no heavier one
   exists.
+- An array of `[]` (3 bytes a value) is refused like `{},`, after 12 MiB: 2.6 to
+  2.8 s, 509 to 524 MiB (two runs). An earlier version of this table gave that
+  label to the row above, which is an object of `[]`-valued members and is
+  accepted whole.
 - The `€` was first thought to make the 12-character object dearer, from a
   single run (2,683 MiB against 2,169 to 2,432 MiB for the object without it).
   The review's runs overlap (2,655 MiB without it, 2,676 and 2,394 MiB with it),
   so the explanation is not shown and is dropped.
 - The worst shape is one object with millions of members, each an empty object.
-  The tree is dear and so is the time: 6 to 15 microseconds a member, growing a
-  little faster than the size (5.3 microseconds a member at 250,000 members and
-  7.9 at 2,000,000, measured separately). The parse is on the main thread, so
-  the command is stuck for that long.
+  The tree is dear and so is the time: 6.0 to 15.9 microseconds a member (the
+  least is 22.5 s over the 3.7 million members of the 12-character object, the
+  most 100 s over the 6.3 million values at which the 7-character one is
+  refused), growing a little faster than the size (5.3 microseconds a member at
+  250,000 members and 7.9 at 2,000,000, measured separately). The parse is on
+  the main thread, so the command is stuck for that long.
 - A refusal is not cheap. It comes when the tree has the limit's worth of
   values, wherever that is in the body, so a dense body is refused having built
   as many values as a sparse one is accepted with: the object with 7-character
@@ -571,31 +651,40 @@ Measured on Node 22.22.0, linux/x64, live registry, in a project written by
 
 |                                             | requests | wire bytes | wall   | peak RSS |
 | ------------------------------------------- | -------- | ---------- | ------ | -------- |
-| `opm add pkg:npm/typescript@5.9.3`          | 3        | 8,041,336  | 4.7 s  | 367 MB   |
-| `opm sync` (`native_projection = "layout"`) | 3        | 8,043,278  | 4.7 s  | 362 MB   |
-| `opm add pkg:npm/@types/node`               | 4        | 1,632,949  | 2.5 s  | 167 MB   |
-| `opm add pkg:npm/vitest@4.1.9`              | 160      | 17,342,455 | 13.8 s | 433 MB   |
-| `opm resolve pkg:npm/next`                  | 108      | 14,570,411 | 22.5 s | 958 MB   |
-| the same with `--max-old-space-size=256`    | 108      | 14,569,442 | 34.2 s | 458 MB   |
+| `opm add pkg:npm/typescript@5.9.3`          | 3        | 8,041,336  | 4.6 s  | 365 MiB  |
+| `opm sync` (`native_projection = "layout"`) | 3        | 8,043,278  | 4.8 s  | 362 MiB  |
+| `opm add pkg:npm/@types/node`               | 4        | 1,632,949  | 2.4 s  | 160 MiB  |
+| `opm add pkg:npm/vitest@4.1.9`              | 160      | 17,342,455 | 16.3 s | 440 MiB  |
+| `opm resolve pkg:npm/next`                  | 108      | 14,570,411 | 20.9 s | 838 MiB  |
+| the same with `--max-old-space-size=256`    | 108      | 14,569,442 | 23.1 s | 463 MiB  |
 
-Wire bytes are as received, compressed, tarballs included. The three requests
-for `typescript` are its abbreviated packument, its full packument (for the
-publish time of a package modified within the last day) and the tarball.
-`vitest` is the 160 requests, none repeated, of the table above. The resolve of
-`next` holds a 25.6 MB packument and finishes inside a 256 MB old-space limit,
-so the 958 MB is the collector's slack and not live data.
+Wall and peak RSS are one run each on the final build, made again for the last
+review of this amendment (peak RSS is `ru_maxrss`, in KiB, divided by 1,024; the
+load average was 2.2 at the end of the runs). The first run gave 4.7, 4.7, 2.5,
+13.8, 22.5 and 34.2 s and 367, 362, 167, 433, 958 and 458 with the unit not
+kept. Five of those six are within 5 percent of the MiB figures here (four
+within 2 percent) and `next` is not (958 against 838), so they are read as MiB.
+Requests and wire bytes are the first run's, counted with a diagnostics-channel
+preload that was not run again. Wire bytes are as received, compressed, tarballs
+included. The three requests for `typescript` are its abbreviated packument, its
+full packument (for the publish time of a package modified within the last day)
+and the tarball. `vitest` is the 160 requests, none repeated, of the table
+above. The resolve of `next` holds a 25.6 MB packument and finishes inside a 256
+MiB old-space limit, so the 838 MiB at the default limit (958 in the first run)
+is the collector's slack and not live data.
 
 The largest documents found, on the final build. The first two rows are the wall
 time and peak RSS of the `opm` process; the last two call `publishTime` of the
 real provider in a script, which reads the abbreviated packument first and then
-the full one:
+the full one (peak RSS in MiB: `ru_maxrss` in KiB, or `maxRSS`, divided by
+1,024):
 
-| command                                                             | wall   | peak RSS |
-| ------------------------------------------------------------------- | ------ | -------- |
-| `opm resolve pkg:npm/%40prisma/client` (36.41 MiB abbreviated)      | 9.0 s  | 525 MB   |
-| `opm resolve pkg:npm/public-unscoped-test-package` (36.56 MiB)      | 7.1 s  | 487 MB   |
-| full packument of `@wix/wix-code-types` (72.96 MiB, then 25.94 MiB) | 9.5 s  | 1,031 MB |
-| full packument of `@prisma/client` (65.35 MiB, then 36.41 MiB)      | 13.6 s | 819 MB   |
+| command                                                             | wall   | peak RSS  |
+| ------------------------------------------------------------------- | ------ | --------- |
+| `opm resolve pkg:npm/%40prisma/client` (36.41 MiB abbreviated)      | 9.0 s  | 525 MiB   |
+| `opm resolve pkg:npm/public-unscoped-test-package` (36.56 MiB)      | 7.1 s  | 487 MiB   |
+| full packument of `@wix/wix-code-types` (72.96 MiB, then 25.94 MiB) | 9.5 s  | 1,031 MiB |
+| full packument of `@prisma/client` (65.35 MiB, then 36.41 MiB)      | 13.6 s | 819 MiB   |
 
 Both resolves exit 0. `opm add pkg:npm/%40prisma/client` reads the same
 packument and then stops at its tarball with
