@@ -1,6 +1,6 @@
 /**
- * Runs the whole of member-link.test.ts and member-link.tree.test.ts again with every POSIX child operation
- * routed through the libc `*at()` backend (bound to glibc).
+ * Runs the whole of member-link.test.ts, member-link.prefix.test.ts and member-link.tree.test.ts again with
+ * every POSIX child operation routed through the libc `*at()` backend (bound to glibc).
  */
 
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -18,6 +18,7 @@ if (glibcLinux()) {
     expect(calls()).toBeGreaterThan(100);
   });
   await import('./member-link.test.js');
+  await import('./member-link.prefix.test.js');
   await import('./member-link.tree.test.js');
   it('was routed through the libc backend', () => {
     expect(calls()).toBeGreaterThan(0);

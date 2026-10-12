@@ -36,17 +36,67 @@ A link has a **directory**, a **name** and a **target**, and each has a rule
 that runs before any call reaches the operating system (`link-rules.ts`,
 `memberLinkProblem`):
 
-| Part      | Rule                                                                                                                                                                                                                                                   |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Directory | A `node_modules`, or a scope directory in one, at the project root or inside the `node_modules` of a package the layout installs. Never `.bin`, never a package's own files, never the project root.                                                   |
-| Name      | One package directory name (no slash, no leading dot, not `node_modules`, `[A-Za-z0-9._~+-]`). A scoped package is its scope directory and its name, never a name with a slash in it.                                                                  |
-| Target    | The link's text, relative to its directory, in normal form (so comparing two is comparing two strings), at most 1024 characters, no NUL, line break or backslash. It resolves strictly inside the project root, and not into `node_modules` or `.opm`. |
+| Part      | Rule                                                                                                                                                                                                                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Directory | A `node_modules`, or a scope directory in one, at the project root or inside the `node_modules` of a package the layout installs. Never `.bin`, never a package's own files, never the project root.                                                                                                                |
+| Name      | One package directory name (no slash, no leading dot, not `node_modules`, `[A-Za-z0-9._~+-]`). A scoped package is its scope directory and its name, never a name with a slash in it.                                                                                                                               |
+| Target    | The link's text, relative to its directory, in normal form (so comparing two is comparing two strings), at most 1024 characters, no NUL, line break or backslash. Its text resolves strictly inside the project root, and not into `node_modules` or `.opm`. What it leads to on disk is checked separately, below. |
 
 The last rule is also why a member's own dependencies resolve: Node looks for a
 package's dependencies from the link's real path, which is under the project
 root, so the project's `node_modules` is on the way up. A target that left the
 project, named the root, or named a registry package would make a path in
 `node_modules` an alias for something this layout did not put there.
+
+### Where a link's target leads
+
+The target rule is a rule about text. `../packages/pkg` stays inside the project
+root as a string whatever `packages` is on disk, so if `packages` is itself a
+symlink (a committed `packages -> ../outside` is enough) the link would resolve
+outside the project. The rule alone does not stop that, so before a link is
+made, and before one that already exists is called `unchanged`, the **nearest
+existing prefix of its target is walked** from the project root with the same
+no-follow, one-handle-at-a-time opens the link's own directory is reached with
+(`link-prefix.ts`):
+
+- a component that is a symbolic link, or on Windows a reparse point, refuses
+  the request (`UNSAFE_PATH`, naming the component). That includes the last
+  component: a member that is itself a link is not a member directory;
+- a target that does not exist yet stays allowed, so only what exists is judged.
+  The walk stops at the first component that is missing, and at the first that
+  is not a directory, since nothing deeper can be resolved through it;
+- the project root is taken as `realpath` says, once, so a project reached
+  through a symlinked home directory or `/var` on macOS is not refused for its
+  own location.
+
+**What this guarantees and what it does not.** It is a check at the moment of
+the call, and the call is repeated at every layout write, because an identical
+existing link goes through the check too. So no link opm creates or finds
+unchanged has a link among the existing components of its target at that moment,
+and a component swapped for a link since is found, and refused with its name, by
+the next layout write. It does not close the window in between. A link is a name
+the operating system resolves each time somebody uses it (Node, a bundler, an
+editor); a component swapped after the check is followed by whoever resolves the
+link next, and nothing done once at creation can prevent that. The actor needs
+write access to the project tree, which already lets them replace a member's
+source; opm itself is not affected, since it never writes through a link and
+never reads through one (the walkers take a recorded link as a leaf, and removal
+unlinks). It is also a check of the filesystem and not of any lock: a later step
+that feeds `link: true` lock entries in must treat a lock's `resolved` as
+untrusted input and not take this walk for an authorisation of it.
+
+Ancestors of the project root are not part of it (the project's own location is
+canonicalised once, not judged). On Windows any reparse point on the way is
+refused, not only junctions and symbolic links, as it is for the link's own
+directory.
+
+`symlinkChild` also takes the place of its directory (`site`) from its caller.
+It applies the rules and walks the target against that statement, but does not
+prove the handle is the directory `site.directory` names: a handle names the
+directory it opened even if the pathname has since been swapped, and the
+`swapped` conformance scenario pins that. `placeMemberLink` builds its `site`
+from its own no-follow walk, so for it the statement is true by construction; a
+direct caller of `symlinkChild` vouches for it.
 
 Nothing else in `node_modules` is a symlink: not a registry package, not a bin
 (`.bin` entries stay script shims), not a nested copy. `materialiseTree` refuses

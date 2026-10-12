@@ -19,7 +19,13 @@ import {
   sep,
 } from 'node:path';
 import { ProjectIoError } from './index.js';
-import { O_DIRECTORY, mkdirChild, openChild } from './handle-path.js';
+import {
+  O_DIRECTORY,
+  lstatChild,
+  mkdirChild,
+  openChild,
+  windowsReadReparse,
+} from './handle-path.js';
 
 /**
  * Canonicalize the existing ancestor prefix of a stable target.
@@ -140,4 +146,63 @@ export function unsafe(path: string): ProjectIoError {
     path,
     `Layout path is linked, special, or unstable: ${path}`,
   );
+}
+
+/** What one step down a path found, without following anything. */
+export type PlainStep =
+  | { kind: 'directory'; handle: FileHandle }
+  | { kind: 'missing' | 'link' | 'other' };
+
+/**
+ * Open the child directory `name` of `parent` and say what it is: a plain
+ * directory (a handle on it), nothing at all, a link, or something that is not
+ * a directory. A link is a symbolic link, or on Windows any reparse point:
+ * Windows opens a junction as itself and not as what it points at, so that open
+ * succeeds and says "directory", and what a junction is comes from its reparse
+ * data (`FSCTL_GET_REPARSE_POINT`), not from what NT would then do inside it.
+ */
+export async function stepPlainDirectory(
+  parent: FileHandle,
+  name: string,
+): Promise<PlainStep> {
+  let next: FileHandle;
+  try {
+    next = await openChild(
+      parent,
+      name,
+      constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+  } catch (error) {
+    // SAFETY: the operations above throw Error values with an optional errno code.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'missing' };
+    if (code !== 'ELOOP' && code !== 'ENOTDIR') throw error;
+    // Refused for being a link, or for not being a directory: one lstat says which.
+    try {
+      const info = await lstatChild(parent, name);
+      return { kind: info.isSymbolicLink() ? 'link' : 'other' };
+    } catch (again) {
+      // SAFETY: the operations above throw Error values with an optional errno code.
+      if ((again as NodeJS.ErrnoException).code === 'ENOENT')
+        return { kind: 'missing' };
+      throw again;
+    }
+  }
+  try {
+    if (!(await next.stat()).isDirectory()) {
+      await next.close();
+      return { kind: 'other' };
+    }
+    if (
+      process.platform === 'win32' &&
+      windowsReadReparse(next.fd) !== undefined
+    ) {
+      await next.close();
+      return { kind: 'link' };
+    }
+  } catch (error) {
+    await next.close().catch(() => undefined);
+    throw error;
+  }
+  return { kind: 'directory', handle: next };
 }

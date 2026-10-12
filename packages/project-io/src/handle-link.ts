@@ -34,6 +34,7 @@ import {
   linkTargetProblem,
 } from './link-rules.js';
 import { createJunction, readJunction } from './handle-nt-link.js';
+import { linkOnTheWayTo } from './link-prefix.js';
 
 /** Where a link sits, which the rules and a Windows junction both need. */
 export interface LinkSite {
@@ -151,6 +152,15 @@ export async function symlinkChild(
   site: LinkSite,
 ): Promise<LinkOutcome> {
   checkRequest(site, name, target);
+  // Before anything is made, and before an existing link is called unchanged:
+  // a prefix swapped since the link was made is found at the next write.
+  const through = await linkOnTheWayTo(site, target);
+  if (through !== undefined)
+    throw refuse(
+      site,
+      name,
+      `its target ${JSON.stringify(target)} goes through ${through}, which is a link, so the link could lead out of the project`,
+    );
   for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
     try {
       await createRaw(directory, name, target, site);

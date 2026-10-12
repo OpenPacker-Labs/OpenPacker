@@ -32,6 +32,11 @@ export async function cleanup(): Promise<void> {
   );
 }
 
+/** Have `cleanup` remove a path the test made outside its project. */
+export function remember(path: string): void {
+  temps.push(path);
+}
+
 export async function project() {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'member-link-'));
   temps.push(root);

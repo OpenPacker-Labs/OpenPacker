@@ -265,7 +265,11 @@ convention ([ADR 0050](../adr/0050-workspace-member-links.md), decided
   project** that is not under `node_modules` or `.opm`. An absolute target, a
   `..` that leaves the project, an empty or NUL-containing text, a link in
   `.bin` and a link where a package is installed are all refused before anything
-  is written.
+  is written. So is a target that goes through a directory which is itself a
+  symlink (a committed `packages -> ../outside`): the part of the target that
+  exists is walked without following anything, at every layout write. A target
+  that does not exist yet is allowed. The check is of the moment it runs; a
+  directory swapped for a link after it is found at the next write.
 - It is made through the same no-follow, handle-relative calls as every other
   write. A name that already holds something else (a file, a directory, a link
   to another place) is an error that names it and is not replaced; the same link

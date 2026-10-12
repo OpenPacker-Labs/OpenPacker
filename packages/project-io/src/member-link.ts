@@ -9,7 +9,6 @@
  * that is a link or not a directory is `UNSAFE_PATH`.
  */
 
-import { constants } from 'node:fs';
 import { realpath, type FileHandle } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
@@ -20,17 +19,14 @@ import {
   type LinkSite,
 } from './handle-link.js';
 import {
-  O_DIRECTORY,
   lstatChild,
   mkdirChild,
-  openChild,
   readDirChild,
   removeChild,
-  windowsReadReparse,
 } from './handle-path.js';
 import { ProjectIoError } from './index.js';
 import { linkDirectoryProblem, splitLinkPath } from './link-rules.js';
-import { openProjectDirectory } from './stable-open.js';
+import { openProjectDirectory, stepPlainDirectory } from './stable-open.js';
 
 /** What a member link's path holds. */
 export type MemberLinkState =
@@ -67,33 +63,17 @@ async function openContainer(
         await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== 'EEXIST') throw error;
         });
-      let next: FileHandle;
-      try {
-        next = await openChild(
-          handle,
-          part,
-          constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-        );
-      } catch (error) {
-        // SAFETY: the operations above throw Error values with an optional errno code.
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT' && !create) {
-          await handle.close();
-          return undefined;
-        }
-        if (code === 'ELOOP' || code === 'ENOTDIR')
-          throw unsafe(path, `${part} is a link or not a directory`);
-        throw error;
+      const step = await stepPlainDirectory(handle, part);
+      if (step.kind === 'missing' && !create) {
+        await handle.close();
+        return undefined;
       }
+      if (step.kind === 'missing')
+        throw unsafe(path, `${part} vanished while it was being opened`);
+      if (step.kind !== 'directory')
+        throw unsafe(path, `${part} is a link or not a directory`);
       await handle.close();
-      handle = next;
-      if (!(await handle.stat()).isDirectory())
-        throw unsafe(path, `${part} is not a directory`);
-      // Windows opens a junction as itself and not as what it points at, so
-      // that open succeeds and says "directory". A component that is a link is
-      // refused here, by what it is, whatever NT would then do inside it.
-      if (process.platform === 'win32' && windowsReadReparse(handle.fd))
-        throw unsafe(path, `${part} is a link`);
+      handle = step.handle;
     }
     return {
       handle,

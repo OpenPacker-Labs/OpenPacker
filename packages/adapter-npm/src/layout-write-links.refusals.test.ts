@@ -9,6 +9,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -50,6 +51,24 @@ describe('what the writer refuses to write', () => {
     );
 
     await expect(lstat(p.modules)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a link whose target goes through a directory that is a symlink out of the project, and makes no link', async () => {
+    const p = await project();
+    const outside = join(p.dir, 'outside');
+    await mkdir(join(outside, 'member'), { recursive: true });
+    await rm(join(p.root, 'packages'), { recursive: true });
+    await symlink(outside, join(p.root, 'packages'), 'junction');
+
+    await expect(
+      p.write([], [MEMBER]),
+      'writeNodeModules with packages a symlink to a directory outside the project',
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+
+    await expect(lstat(join(p.modules, 'member'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(await readdir(outside)).toEqual(['member']);
   });
 
   it('refuses a package whose store holds a symlink, and leaves no symlink behind', async () => {
