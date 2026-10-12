@@ -94,19 +94,50 @@ describe('a source named in an error', () => {
   );
 
   it.each([
-    ['an https address', 'https://', '/x.tgz?token=x'],
-    ['a git source', 'git+https://u:p@', '/o/r.git#abc'],
-    ['an address with no slashes after the scheme', 'http:', '/x'],
-    ['an address a URL parser refuses', 'git+ssh://git@', ':o/r.git?token=x'],
+    ['an https address', 'https://', 'ß.é.', '/x.tgz?token=x'],
+    ['an address with no slashes after the scheme', 'http:', 'ß.é.', '/x'],
+    ['an address with a leading space', ' https://u:p@', 'ß.é.', '/x'],
+    ['an address with a [ inside its host', 'https://x[:', 'ß.é.', '/x'],
+    [
+      'a ws address with userinfo and a [ inside its host',
+      'ws://u:p@x[:',
+      '日.',
+      '',
+    ],
+    ['a file address with an @ in its host', 'file://', 'ß.é.', '@x/y'],
+    ['a file address with a colon in its host', 'file://x:', 'ß.é.', ''],
+    ['a blob URL holding an address', 'blob:https://', 'ß.é.', '/x'],
+    [
+      'a blob URL holding an address with a [ in its host',
+      'blob:http://x[:',
+      'ß.é.',
+      '',
+    ],
   ])(
-    'shows %s with a host no DNS name could be as [url], unread',
-    (_, before, after) => {
+    'shows %s, whose host no DNS name could be, as [url] and unread',
+    (_, before, unit, after) => {
       const started = performance.now();
-      expect(redactSource(`${before}${'ß.é.'.repeat(16384)}${after}`)).toBe(
+      expect(redactSource(`${before}${unit.repeat(32768)}${after}`)).toBe(
         '[url]',
       );
-      // Node's parser takes more than a second for this host.
-      expect(performance.now() - started).toBeLessThan(2000);
+      // Node's parser takes a second or more for this host, and `origin` of a
+      // blob URL parses its path again.
+      expect(performance.now() - started).toBeLessThan(500);
+    },
+  );
+
+  it.each([
+    ['a git source', 'git+https://u:p@', '/o/r.git#abc'],
+    ['a scp-like git address', 'git+ssh://git@', ':o/r.git?token=x'],
+    ['a custom scheme', 'x-custom://', '/y'],
+  ])(
+    'does not withhold %s with a long host: the parser reads it in linear time',
+    (_, before, after) => {
+      const started = performance.now();
+      const shown = redactSource(`${before}${'ß.é.'.repeat(8192)}${after}`);
+      expect(shown).not.toBe('[url]');
+      expect(shown.startsWith(before.replace(/[^/]*@$/u, ''))).toBe(true);
+      expect(performance.now() - started).toBeLessThan(500);
     },
   );
 

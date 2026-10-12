@@ -41,15 +41,15 @@ function run(name: string): Run | 'killed' {
 }
 
 describe('scrub on a mebibyte built to make it rescan', () => {
-  it.each(HOSTILE.map((text) => text.name))(
+  it.each(HOSTILE.map((text) => [text.name, text.size ?? MIB] as const))(
     'is linear: %s',
-    (name) => {
+    (name, size) => {
       const outcome = run(name);
       if (outcome === 'killed')
         throw new Error(
-          `scrub had not finished a mebibyte of ${name} after ${KILL_AFTER_MS} ms; the child was killed`,
+          `scrub had not finished ${size} characters of ${name} after ${KILL_AFTER_MS} ms; the child was killed`,
         );
-      expect(outcome.length).toBe(MIB);
+      expect(outcome.length).toBe(size);
       expect(outcome.correct).toBe(true);
       expect(outcome.milliseconds).toBeLessThan(BOUND_MS);
     },

@@ -185,67 +185,88 @@ describe('scrub gives the first version\u2019s text', () => {
 describe('scrub withholds a URL whose host no DNS name could be', () => {
   const ascii = (length: number) => 'a'.repeat(length);
   const labels = (length: number) => 'ß.é.'.repeat(64).slice(0, length);
+  const L = LONGEST_HOST;
 
   it.each([
-    ['253 ASCII characters', `http://${ascii(LONGEST_HOST)}/p`, false],
-    ['254 ASCII characters', `http://${ascii(LONGEST_HOST + 1)}/p`, true],
+    ['253 ASCII characters', `http://${ascii(L)}/p`, false],
+    ['254 ASCII characters', `http://${ascii(L + 1)}/p`, true],
+    ['253 characters of non-ASCII labels', `http://${labels(L)}/p`, false],
+    ['254 characters of non-ASCII labels', `http://${labels(L + 1)}/p`, true],
     [
-      '253 characters of non-ASCII labels',
-      `http://${labels(LONGEST_HOST)}/p`,
+      '254 characters in a scheme the parser reads in linear time',
+      `x://${ascii(L + 1)}/p`,
       false,
     ],
     [
-      '254 characters of non-ASCII labels',
-      `http://${labels(LONGEST_HOST + 1)}/p`,
-      true,
+      'a long scp-like git address, which has an opaque host',
+      `git+ssh://git@${ascii(300)}:o/r.git`,
+      false,
     ],
-    ['a host of any scheme', `x://${ascii(LONGEST_HOST + 1)}/p`, true],
     [
       '254 characters with a port after them',
-      `https://${ascii(LONGEST_HOST + 1)}:8443/p`,
+      `https://${ascii(L + 1)}:8443/p`,
       true,
     ],
     [
       '253 characters with a long port after them',
-      `https://${ascii(LONGEST_HOST)}:${'9'.repeat(400)}/p`,
+      `https://${ascii(L)}:${'9'.repeat(400)}/p`,
       false,
     ],
     [
       '253 characters behind a long userinfo',
-      `https://${'u'.repeat(900)}:${'p'.repeat(900)}@${ascii(LONGEST_HOST)}/p`,
+      `https://${'u'.repeat(900)}:${'p'.repeat(900)}@${ascii(L)}/p`,
       false,
     ],
     [
       '254 characters behind a short userinfo',
-      `https://u:p@${ascii(LONGEST_HOST + 1)}/p`,
+      `https://u:p@${ascii(L + 1)}/p`,
       true,
     ],
-    [
-      '254 characters after two @',
-      `https://a@b@${ascii(LONGEST_HOST + 1)}/p`,
-      true,
-    ],
+    ['254 characters after two @', `https://a@b@${ascii(L + 1)}/p`, true],
     [
       '253 characters with a long path, query and fragment',
-      `https://${ascii(LONGEST_HOST)}/${'p'.repeat(900)}?${'q'.repeat(900)}#${'f'.repeat(900)}`,
+      `https://${ascii(L)}/${'p'.repeat(900)}?${'q'.repeat(900)}#${'f'.repeat(900)}`,
       false,
     ],
-    [
-      '254 characters ended by a query',
-      `https://${ascii(LONGEST_HOST + 1)}?q`,
-      true,
-    ],
-    [
-      '254 characters ended by a fragment',
-      `https://${ascii(LONGEST_HOST + 1)}#f`,
-      true,
-    ],
+    ['254 characters ended by a query', `https://${ascii(L + 1)}?q`, true],
+    ['254 characters ended by a fragment', `https://${ascii(L + 1)}#f`, true],
     [
       'a bracketed host after a long userinfo (the URL pattern ends at the ])',
       `https://${'u'.repeat(900)}@[::1]:80/p`,
       false,
     ],
-    ['no path after a host of 254', `http://${ascii(LONGEST_HOST + 1)}`, true],
+    ['no path after a host of 254', `http://${ascii(L + 1)}`, true],
+    // A [ inside the host switches the port colon off: the host runs on.
+    ['a [ inside the host, 253', `http://x[:${ascii(L - 3)}/p`, false],
+    ['a [ inside the host, 254', `http://x[:${ascii(L - 2)}/p`, true],
+    ['a [ inside the host, ws, 254', `ws://u:p@x[:${ascii(L - 2)}`, true],
+    [
+      'a [ inside the host with ß.é. labels',
+      `https://x[:${'ß.é.'.repeat(200)}`,
+      true,
+    ],
+    [
+      'a [ inside the host with escaped labels',
+      `https://x[:${'%C3%A9.'.repeat(100)}`,
+      true,
+    ],
+    // A file host has no userinfo and no port: the whole authority is the host.
+    ['a file host, @ at the end, 253', `file://${ascii(L - 2)}@x/p`, false],
+    ['a file host, @ at the end, 254', `file://${ascii(L - 1)}@x/p`, true],
+    ['a file host, a colon first, 254', `file://:${ascii(L)}/p`, true],
+    [
+      'a file host, a colon after a name, 254',
+      `file://x:${ascii(L - 1)}`,
+      true,
+    ],
+    ['a file host, userinfo-like, 254', `file://u:${ascii(L - 1)}@h`, true],
+    ['an empty file host and a long path', `file:///${ascii(300)}`, false],
+    [
+      'a file URL with its path in the host slot of one slash',
+      `file:/${ascii(300)}`,
+      false,
+    ],
+    ['a file URL with no slash at all', `file:${ascii(300)}`, false],
   ])('with %s', (_, address, withheld) => {
     const text = `see ${address} end`;
     const found = withheld ? 'see [url] end' : legacyScrub(text);
@@ -266,6 +287,7 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
     const found: string[] = [];
     let withheld = 0;
     let kept = 0;
+    let overlong = 0;
     for (let count = 0; count < 40_000; count += 1) {
       const input = withLongHosts(random);
       const expected = expectedScrub(input);
@@ -275,6 +297,7 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
           `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}`,
         );
       // The difference from the first version is the class, and only the class.
+      if (holdsOverlongHost(input)) overlong += 1;
       if (expected !== legacy) {
         withheld += 1;
         if (!holdsOverlongHost(input) && found.length < 5)
@@ -284,8 +307,12 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
       } else kept += 1;
     }
     expect(found).toEqual([]);
-    // Both sides of the edge are exercised.
-    expect(withheld).toBeGreaterThan(10_000);
+    // Both sides of the edge are exercised: strings the first version printed
+    // and this withholds, strings it left alone, and strings with an overlong
+    // host that the first version already wrote as `[url]`, because the parser
+    // refuses a host with a `[` or an `@` in it.
+    expect(withheld).toBeGreaterThan(3000);
     expect(kept).toBeGreaterThan(5000);
+    expect(overlong).toBeGreaterThan(10_000);
   }, 300_000);
 });

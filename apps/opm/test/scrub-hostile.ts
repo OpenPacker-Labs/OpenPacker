@@ -25,6 +25,14 @@ export interface Hostile {
   unit: string;
   /** What comes before them. */
   prefix?: string;
+  /** What comes after them. */
+  suffix?: string;
+  /**
+   * The length of the text, if not a mebibyte. Node's parser gives up on a host
+   * of percent-escaped labels past about 800,000 characters, in a few
+   * milliseconds, so those texts are the longest that are slow.
+   */
+  size?: number;
   /** What `scrub` makes of the prefix and the units, where it is not themselves. */
   becomes?: string;
 }
@@ -106,6 +114,55 @@ export const HOSTILE: readonly Hostile[] = [
     unit: '.',
     becomes: '[url]',
   },
+  // The two kinds of address a first reading of the host missed. Once a `[` is
+  // inside the host the parser ignores every `:` until a `]`, so the port colon
+  // does not end it; and a `file:` host is the whole authority, with no
+  // userinfo and no port. Node's parser is as slow on these as on `http://`.
+  {
+    name: 'http://x[: then ß.é.',
+    against: 'a [ inside the host switches the port colon off',
+    prefix: 'http://x[:',
+    unit: 'ß.é.',
+    becomes: '[url]',
+  },
+  {
+    name: 'https://x[: then %C3%A9. (percent-escaped labels)',
+    against: 'the same, for labels the parser must percent-decode first',
+    prefix: 'https://x[:',
+    unit: '%C3%A9.',
+    size: 768 * 1024,
+    becomes: '[url]',
+  },
+  {
+    name: 'ftp://u:p@x[: then 日.',
+    against: 'the same, behind userinfo',
+    prefix: 'ftp://u:p@x[:',
+    unit: '日.',
+    becomes: '[url]',
+  },
+  {
+    name: 'file:// then ß.é. then @x',
+    against: 'a file host has no userinfo, so the @ does not end it',
+    prefix: 'file://',
+    unit: 'ß.é.',
+    suffix: '@x',
+    becomes: '[url]',
+  },
+  {
+    name: 'file://x: then ß.é.',
+    against: 'a file host has no port, so the : does not end it',
+    prefix: 'file://x:',
+    unit: 'ß.é.',
+    becomes: '[url]',
+  },
+  {
+    name: 'file://: then %C3%A9. (percent-escaped labels)',
+    against: 'the same, with a colon first and labels to decode',
+    prefix: 'file://:',
+    unit: '%C3%A9.',
+    size: 768 * 1024,
+    becomes: '[url]',
+  },
 ];
 
 /**
@@ -116,13 +173,19 @@ export const HOSTILE: readonly Hostile[] = [
  */
 export function build(
   text: Hostile,
-  size: number = MIB,
+  size: number = text.size ?? MIB,
 ): { input: string; expected: string } {
   const prefix = text.prefix ?? '';
-  const body =
-    prefix +
-    text.unit
-      .repeat(Math.ceil(size / text.unit.length))
-      .slice(0, size - WITNESS.length - prefix.length);
-  return { input: body + WITNESS, expected: (text.becomes ?? body) + WITHHELD };
+  const suffix = text.suffix ?? '';
+  const room = size - WITNESS.length - prefix.length - suffix.length;
+  // Whole units only: a host cut in the middle of a percent-escape decodes to
+  // text the parser refuses early, and is no longer slow. The spaces that make
+  // up the size end the URL and are left as they are.
+  const count = Math.floor(room / text.unit.length);
+  const padding = ' '.repeat(room - count * text.unit.length);
+  const body = prefix + text.unit.repeat(count) + suffix;
+  return {
+    input: body + padding + WITNESS,
+    expected: (text.becomes ?? body) + padding + WITHHELD,
+  };
 }

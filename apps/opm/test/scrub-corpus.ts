@@ -152,29 +152,54 @@ export function longRun(random: Random): string {
   return run(random, 1500) + pick(random, AFTER_A_RUN) + structured(random);
 }
 
-const HOST_UNITS = table('a|a|ß.é.|日.|ǆ.|ς.σ.|xn--zca.|.|a.|é|-|%41|a-');
-const AUTHORITIES = table(
-  `://|://|://|://u:p@|://${'z'.repeat(400)}@|://${'z'.repeat(400)}:${'9'.repeat(300)}@`,
+const HOST_UNITS = table(
+  'a|a|ß.é.|日.|ǆ.|ς.σ.|xn--zca.|.|a.|é|-|%41|a-|%C3%A9.',
 );
-const ENDS = table(':8080|/p|/p?q#f|?q|#f||/|:80/p?token=x');
+const AUTHORITIES = table(
+  `://|://|://|://u:p@|://${'z'.repeat(400)}@|://${'z'.repeat(400)}:${'9'.repeat(300)}@|:///|:////`,
+);
+const ENDS = table(':8080|/p|/p?q#f|?q|#f||/|:80/p?token=x|@x|@v@h');
+/** Where the host's characters stand in the authority: a bracket before the port colon, a file host's @ and :. */
+const AROUND = [
+  ['', ''],
+  ['', ''],
+  ['', ''],
+  ['', ''],
+  ['', ''],
+  ['x[:', ''],
+  ['x[', ':80'],
+  ['x[:', ']'],
+  ['', '@x'],
+  ['x:', ''],
+  [':', ''],
+  ['[::1]', ''],
+  ['u:', '@h'],
+] as const;
+const SPECIAL = table('http|https|ws|wss|ftp|file|HTTP|FILE|Https');
 
 /**
  * A URL whose host is between 240 and 269 characters, about a DNS name's
- * longest, of ASCII or of many non-ASCII labels, with userinfo and a port
- * that are not part of the host and are sometimes long.
+ * longest, of ASCII or of many non-ASCII labels, with a bracket before a port
+ * colon, an @ or a colon where a file host takes them as part of the host,
+ * userinfo and a port that are sometimes long, and every scheme.
  */
 export function longHost(random: Random): string {
   const unit = pick(random, HOST_UNITS);
-  const length = 240 + Math.floor(random() * 30);
+  const [before, after] = pick(random, AROUND);
+  const length = 240 + Math.floor(random() * 30) - before.length - after.length;
   let host = '';
   while (host.length < length) host += unit;
   return (
-    pick(
-      random,
-      SCHEMES.filter((scheme) => scheme !== ''),
-    ) +
+    (random() < 0.75
+      ? pick(random, SPECIAL)
+      : pick(
+          random,
+          SCHEMES.filter((scheme) => scheme !== ''),
+        )) +
     pick(random, AUTHORITIES) +
+    before +
     host.slice(0, length) +
+    after +
     pick(random, ENDS)
   );
 }

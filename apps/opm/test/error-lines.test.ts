@@ -250,10 +250,12 @@ describe('the lists of opm ci, from a lock', () => {
   });
 
   it.each([
-    ['an https archive', 'https://', '/b/-/b-1.0.0.tgz', 'tarball'],
-    ['a git source', 'git+https://', '/b.git#0123456789abcdef', 'git'],
+    ['an https archive', 'https://', '/b/-/b-1.0.0.tgz'],
+    ['an https archive with a [ inside its host', 'https://x[:', '/b.tgz'],
+    ['a file address with an @ in its host', 'file://', '@x'],
+    ['a file address with a colon in its host', 'file://x:', ''],
   ])(
-    'refuses %s with a host no DNS name could be, without reading it',
+    'refuses %s, whose host no DNS name could be, without reading it',
     async (_, before, after) => {
       const started = performance.now();
       const { dir, err, code } = await ci(
