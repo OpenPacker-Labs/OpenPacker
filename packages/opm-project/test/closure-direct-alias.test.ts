@@ -128,20 +128,23 @@ describe('install_name in opm.toml', () => {
   it.each(['../x', 'a b', '', 'node_modules', '.hidden', 'a/b/c'])(
     'refuses %j as a name to install under',
     (name) => {
-      expect(() =>
-        parseManifest(
-          [
-            '[project]',
-            'name = "demo"',
-            'ecosystems = ["npm"]',
-            '',
-            '[packages.x]',
-            'purl = "pkg:npm/y"',
-            `install_name = ${JSON.stringify(name)}`,
-            '',
-          ].join('\n'),
-        ),
-      ).toThrow(/install_name/u);
+      expect(
+        () =>
+          parseManifest(
+            [
+              '[project]',
+              'name = "demo"',
+              'ecosystems = ["npm"]',
+              '',
+              '[packages.x]',
+              'purl = "pkg:npm/y"',
+              `install_name = ${JSON.stringify(name)}`,
+              '',
+            ].join('\n'),
+          ),
+        // The message of the parser that reads the key, not the "unknown
+        // field" a parser that does not know it would give.
+      ).toThrow(/install_name must be a package name/u);
     },
   );
 });
