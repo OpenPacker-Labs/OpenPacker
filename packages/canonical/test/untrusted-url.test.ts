@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   LONGEST_HOST_LENGTH,
@@ -9,8 +10,9 @@ import {
  * 16,384 labels of non-ASCII text: 65,536 characters of host. Node's `new URL`
  * takes the square of that length on a special scheme's host, so the same
  * string that the guard answers in a millisecond keeps the real parser busy
- * for most of a second. `the control` below measures that on this machine, so
- * a faster parser or a faster machine is a failure here and not a silent pass.
+ * for most of a second. `the control` below measures that on this machine, in a
+ * fresh process, so a faster parser or a faster machine is a failure here and
+ * not a silent pass.
  */
 const LABELS = 'ß.é.'.repeat(16384);
 const ESCAPED = '%C3%A9.'.repeat(14043);
@@ -52,14 +54,25 @@ function expectRefused(run: () => void): void {
   expect(elapsed).toBeLessThan(FAST_MS);
 }
 
+/**
+ * The real parser on the hostile host, in a fresh process. The first call in a
+ * process is about four times a later one (1,126 ms against 265 to 275 ms here),
+ * and a worker that has parsed the same host already, as one that runs the whole
+ * repository's tests may have, would show the later figure and fail the control
+ * for a reason that is not the parser being fast.
+ */
+function freshParserMilliseconds(): number {
+  const script =
+    "const started = performance.now(); try { new URL('https://' + 'ß.é.'.repeat(16384) + '/x.tgz'); } catch {} process.stdout.write(String(performance.now() - started));";
+  return Number(
+    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }),
+  );
+}
+
 describe('the control', () => {
   it('shows that the real parser needs more than 300 ms for the hostile host', () => {
-    expect(
-      milliseconds(() => {
-        new URL(`https://${LABELS}/x.tgz`);
-      }),
-    ).toBeGreaterThanOrEqual(SLOW_MS);
-  });
+    expect(freshParserMilliseconds()).toBeGreaterThanOrEqual(SLOW_MS);
+  }, 30_000);
 });
 
 describe('parseUntrustedUrl', () => {
