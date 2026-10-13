@@ -7,9 +7,11 @@ import {
 import { NpmRegistryProvider } from './index.js';
 import {
   FULL_PACKUMENT_LIMITS,
+  FULL_PACKUMENT_PARSE_COST,
   MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
   PACKUMENT_LIMITS,
+  PACKUMENT_PARSE_COST,
   aboutPackument,
 } from './packument-limits.js';
 
@@ -90,20 +92,20 @@ describe('the packument bound', { timeout: 30_000 }, () => {
     expect(MAXIMUM_FULL_PACKUMENT_BYTES).toBeGreaterThanOrEqual(
       1.25 * 76_503_820,
     );
-    expect(FULL_PACKUMENT_LIMITS.maximumNodes).toBeGreaterThanOrEqual(
-      2 * 2_655_900,
-    );
-    expect(PACKUMENT_LIMITS.maximumNodes).toBeGreaterThanOrEqual(3 * 1_077_961);
   });
 
-  it('allows a value for every 16 bytes of it, above any packument measured', () => {
-    expect(PACKUMENT_LIMITS.maximumNodes).toBe(MAXIMUM_PACKUMENT_BYTES / 16);
-    expect(FULL_PACKUMENT_LIMITS.maximumNodes).toBe(
-      MAXIMUM_FULL_PACKUMENT_BYTES / 16,
-    );
-    // next, 846,076 values; the full document of typescript, 538,245.
-    expect(PACKUMENT_LIMITS.maximumNodes).toBeGreaterThan(4 * 846_076);
-    expect(FULL_PACKUMENT_LIMITS.maximumNodes).toBeGreaterThan(538_245);
+  it('limits what a parsed packument may cost, not how many values it holds', () => {
+    // The cost of a tree follows what it allocates (ADR 0044); a count of
+    // values is not applied to a packument, which would let `{},` and `1,`
+    // through at four million of them.
+    expect(PACKUMENT_LIMITS.maximumNodes).toBeUndefined();
+    expect(FULL_PACKUMENT_LIMITS.maximumNodes).toBeUndefined();
+    expect(PACKUMENT_LIMITS.maximumCost).toBe(PACKUMENT_PARSE_COST);
+    expect(FULL_PACKUMENT_LIMITS.maximumCost).toBe(FULL_PACKUMENT_PARSE_COST);
+    expect(PACKUMENT_PARSE_COST).toBe(512 * MiB);
+    expect(FULL_PACKUMENT_PARSE_COST).toBe(720 * MiB);
+    // The full document may cost more: it is several times the size.
+    expect(FULL_PACKUMENT_PARSE_COST).toBeGreaterThan(PACKUMENT_PARSE_COST);
   });
 
   it.each([
@@ -200,13 +202,13 @@ describe('a refusal is said in terms of the package', () => {
       'vite',
       new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        'Provider metadata exceeds 4194304 values',
+        'Provider metadata exceeds 536870912 bytes of parsed size',
       ),
     );
     expect(renamed).toMatchObject({
       code: 'INVALID_PROVIDER_METADATA',
       message:
-        'The packument of vite is not usable: Provider metadata exceeds 4194304 values',
+        'The packument of vite is not usable: Provider metadata exceeds 536870912 bytes of parsed size',
     });
   });
 

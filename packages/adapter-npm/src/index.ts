@@ -1205,9 +1205,11 @@ export { NpmProjectFormat, npmPublishPaths } from './project.js';
 export { npmPackageRuns, npmTargetPredicate } from './platform.js';
 export {
   FULL_PACKUMENT_LIMITS,
+  FULL_PACKUMENT_PARSE_COST,
   MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
   PACKUMENT_LIMITS,
+  PACKUMENT_PARSE_COST,
 } from './packument-limits.js';
 export {
   chainOfLockPath,

@@ -40,7 +40,6 @@ import {
   MetadataLimitError,
   ProviderError,
   ResponseTooLargeError,
-  metadataValueLimit,
   type ProviderMetadataLimits,
 } from '@openpacker/adapter-core';
 
@@ -52,10 +51,9 @@ import {
  * (`renovate`, 2.9 years). Below the 128 MiB an artifact download may weigh,
  * so the bytes a hostile registry can make the client hold for one packument
  * are no more than for one tarball. That bounds bytes. What parsing them costs
- * (2,169 to 2,683 MiB in 22.5 to 30.4 s for the shape that held the most,
- * 1,412 to 1,547 MiB in 52.2 to 60.8 s for the slowest, over the runs made), and
- * what a resolve keeps of the packuments it has read, are not bounded by it.
- * ADR 44 has the shapes and the full bound's figures.
+ * is bounded by `PACKUMENT_PARSE_COST` below, and what a resolve keeps of the
+ * packuments it has read by the retention budget of `MemoizingTransport`. ADR
+ * 44 has the measurements.
  */
 export const MAXIMUM_PACKUMENT_BYTES = MAXIMUM_METADATA_BYTES;
 
@@ -69,17 +67,41 @@ export const MAXIMUM_PACKUMENT_BYTES = MAXIMUM_METADATA_BYTES;
  */
 export const MAXIMUM_FULL_PACKUMENT_BYTES = 96 * 1024 * 1024;
 
-/** What a parsed abbreviated packument may hold: one value per 16 bytes. */
-export const PACKUMENT_LIMITS: ProviderMetadataLimits = {
-  maximumNodes: metadataValueLimit(MAXIMUM_PACKUMENT_BYTES),
-};
+/**
+ * What a parsed abbreviated packument may cost to build: 512 MiB of the
+ * estimated heap `PARSE_COSTS.peak` gives each part of the tree. The cost
+ * follows what the tree allocates (an object about 240, a member's name 3.5 a
+ * character, a number 90 as an array element), so `{},` is refused at 1.6
+ * million of them and `1,` at 6 million, where a count of 4,194,304 values let
+ * 3.7 million empty objects through and they took 2.1 to 2.6 GB.
+ *
+ * It is set against what exists. `renovate`, the abbreviated packument nearest
+ * it, costs 219 MiB (2.3 times under), `@prisma/client` 213 and `next` 155, and
+ * a document of renovate's composition at the 64 MiB byte bound would cost 415,
+ * so for any packument shaped like a real one the byte bound is still what
+ * stops it. The heaviest document the budget lets through, of every kind tried,
+ * was read in a heap of 1 GiB (`--max-old-space-size=1024`) in under 10 s of
+ * CPU. ADR 44 has the table.
+ */
+export const PACKUMENT_PARSE_COST = 512 * 1024 * 1024;
 
 /**
- * What a parsed full packument may hold. `typescript` is 538,245 values, which
- * is why the default of 200,000 could not stay.
+ * What a parsed full packument may cost to build: 720 MiB. The heaviest found,
+ * `@wix/wix-code-types` (73.0 MiB), costs 562 MiB, which is 1.28 times under; it
+ * is the tightest of the documents surveyed, and the budget is as high as a
+ * full packument's text, which may be two bytes a character (192 MiB), and the
+ * budget can share a heap of 1 GiB.
  */
+export const FULL_PACKUMENT_PARSE_COST = 720 * 1024 * 1024;
+
+/** The abbreviated packument is limited by what it costs, not by how many values it holds. */
+export const PACKUMENT_LIMITS: ProviderMetadataLimits = {
+  maximumCost: PACKUMENT_PARSE_COST,
+};
+
+/** The full packument likewise. */
 export const FULL_PACKUMENT_LIMITS: ProviderMetadataLimits = {
-  maximumNodes: metadataValueLimit(MAXIMUM_FULL_PACKUMENT_BYTES),
+  maximumCost: FULL_PACKUMENT_PARSE_COST,
 };
 
 /** The longest an npm package name may be, scope and slash included. */

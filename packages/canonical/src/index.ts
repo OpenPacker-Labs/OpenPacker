@@ -13,6 +13,12 @@ export {
   type CanonicalParseLimits,
 } from './errors.js';
 export {
+  BIG_OBJECT_MEMBERS,
+  PARSE_COSTS,
+  type ParseCostTable,
+  type ParseCosts,
+} from './costs.js';
+export {
   ECHO_LIMIT,
   plainLine,
   plainText,
@@ -123,6 +129,16 @@ class JsonParser {
     this.budget = new ParseBudget(limits);
   }
 
+  /** What the tree cost to build, in the units of `PARSE_COSTS.peak`. */
+  get cost(): number {
+    return this.budget.cost;
+  }
+
+  /** What the finished tree keeps, in the units of `PARSE_COSTS.retained`. */
+  get retained(): number {
+    return this.budget.retained;
+  }
+
   parse(): JsonValue {
     const value = this.value(0);
     this.space();
@@ -137,7 +153,7 @@ class JsonParser {
     const character = this.input[this.index];
     if (character === '{') return this.object(depth);
     if (character === '[') return this.array(depth);
-    if (character === '"') return this.string();
+    if (character === '"') return this.string(undefined);
     if (character === 't') return this.literal('true', true);
     if (character === 'f') return this.literal('false', false);
     if (character === 'n') return this.literal('null', null);
@@ -145,6 +161,7 @@ class JsonParser {
   }
 
   private object(depth: number): { [key: string]: JsonValue } {
+    this.budget.object(this.index);
     this.index += 1;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result: { [key: string]: JsonValue } = Object.create(null) as {
@@ -157,7 +174,7 @@ class JsonParser {
       this.space();
       if (this.input[this.index] !== '"')
         this.fail('Object member name must be a string');
-      const key = this.string();
+      const key = this.string(keys.size);
       if (keys.has(key)) this.fail(`Duplicate object member: ${safeEcho(key)}`);
       keys.add(key);
       this.space();
@@ -170,11 +187,13 @@ class JsonParser {
   }
 
   private array(depth: number): JsonValue[] {
+    this.budget.array(this.index);
     this.index += 1;
     const result: JsonValue[] = [];
     this.space();
     if (this.take(']')) return result;
     while (true) {
+      this.budget.element(result.length, this.index);
       result.push(this.value(depth + 1));
       this.space();
       if (this.take(']')) return result;
@@ -182,16 +201,29 @@ class JsonParser {
     }
   }
 
-  private string(): string {
+  /**
+   * A string, as the name of the `member`th member of an object or, with none,
+   * as a value. What it will cost is charged once its closing quote is found
+   * and before it is decoded, so a string the budget cannot afford is never
+   * built. A name or value with a character past U+00FF, or an escape, is
+   * charged as two-byte text.
+   */
+  private string(member: number | undefined): string {
     const start = this.index;
     this.index += 1;
     let escaped = false;
+    let wide = false;
     while (this.index < this.input.length) {
       const character = this.input[this.index];
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
+      if (escaped) {
+        escaped = false;
+        if (character === 'u') wide = true;
+      } else if (character === '\\') escaped = true;
       else if (character === '"') {
         this.index += 1;
+        const length = this.index - start - 2;
+        if (member === undefined) this.budget.string(length, wide, this.index);
+        else this.budget.member(member, length, wide, this.index);
         try {
           return validString(
             // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -201,8 +233,11 @@ class JsonParser {
           if (error instanceof CanonicalJsonError) throw error;
           this.fail('Invalid JSON string');
         }
-      } else if (character !== undefined && character.charCodeAt(0) < 0x20)
-        this.fail('Unescaped control character in string');
+      } else if (character !== undefined) {
+        const code = character.charCodeAt(0);
+        if (code < 0x20) this.fail('Unescaped control character in string');
+        if (code > 0xff) wide = true;
+      }
       this.index += 1;
     }
     return this.fail('Unterminated JSON string');
@@ -252,6 +287,21 @@ export function parseCanonicalJson<T = JsonValue>(
 ): T {
   // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
   return new JsonParser(text, limits).parse() as T;
+}
+
+/**
+ * The same parse, and what the tree cost to build (`cost`, in the units a
+ * limit is set in) and what it keeps (`retained`). A holder that keeps the tree
+ * for a while counts it by the second.
+ */
+export function parseCanonicalJsonCosted<T = JsonValue>(
+  text: string,
+  limits: CanonicalParseLimits = {},
+): { value: T; cost: number; retained: number } {
+  const parser = new JsonParser(text, limits);
+  // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
+  const value = parser.parse() as T;
+  return { value, cost: parser.cost, retained: parser.retained };
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Digest> {

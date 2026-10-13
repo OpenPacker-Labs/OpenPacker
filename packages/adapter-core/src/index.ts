@@ -54,7 +54,7 @@ import {
   CanonicalJsonLimitError,
   canonicalProjectionDigest,
   formatDigest,
-  parseCanonicalJson,
+  parseCanonicalJsonCosted,
 } from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
@@ -2243,13 +2243,19 @@ const DEFAULT_MAXIMUM_VALUES = 200_000;
 
 /**
  * The shape a metadata document may have once parsed. The defaults suit the
- * small documents most registries serve; a registry whose documents are
- * legitimately large (an npm packument lists every version ever published)
- * states its own, derived from the byte limit it reads under.
+ * small documents most registries serve: 200,000 values, 64 deep. A registry
+ * whose documents are legitimately large (an npm packument lists every
+ * version ever published) states a cost instead, derived from the byte limit
+ * it reads under and what its real documents cost to hold. A count of values
+ * cannot say what a tree costs: `{},` is three bytes and an object that takes
+ * about 200 of memory, `1,` is two bytes and a slot. With `maximumCost` the
+ * count is not applied unless `maximumNodes` is also given.
  */
 export interface ProviderMetadataLimits {
   maximumDepth?: number;
   maximumNodes?: number;
+  /** The most the parsed tree may cost, in estimated bytes of heap. */
+  maximumCost?: number;
 }
 
 /**
@@ -2261,22 +2267,14 @@ export interface ProviderMetadataLimits {
 export const MAXIMUM_METADATA_BYTES = 64 * 1024 * 1024;
 
 /**
- * The least a parsed metadata value may weigh, in bytes of the document it came
- * from. A document denser than this (`[1,1,1,...]` is two bytes a value) costs
- * far more to hold than its size says, so the number of values allowed is the
- * byte limit divided by this, never a number of its own.
+ * `json`, and what the tree cost to build (`cost`, in the units of
+ * `maximumCost`) and what it keeps (`retained`, in bytes of heap), for a holder
+ * that keeps it.
  */
-export const MINIMUM_BYTES_PER_METADATA_VALUE = 16;
-
-/** How many values a document read under `maximumBytes` may hold. */
-export function metadataValueLimit(maximumBytes: number): number {
-  return Math.floor(maximumBytes / MINIMUM_BYTES_PER_METADATA_VALUE);
-}
-
-export function json<T>(
+export function jsonWithCost<T>(
   response: HttpResponse,
   limits: ProviderMetadataLimits = {},
-): T {
+): { value: T; cost: number; retained: number } {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
   // Decoding is inside the try: a body that is not UTF-8 is a refused document
@@ -2286,11 +2284,18 @@ export function json<T>(
     document = text(response);
     // The limits stop the parse itself: counting values after the tree is built
     // spends the memory the limit exists to protect.
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return parseCanonicalJson(document, {
-      maximumValues: limits.maximumNodes ?? DEFAULT_MAXIMUM_VALUES,
+    const counted = !(limits.maximumNodes === undefined)
+      ? limits.maximumNodes
+      : limits.maximumCost === undefined
+        ? DEFAULT_MAXIMUM_VALUES
+        : undefined;
+    return parseCanonicalJsonCosted<T>(document, {
+      ...(!(counted === undefined) && { maximumValues: counted }),
+      ...(!(limits.maximumCost === undefined) && {
+        maximumCost: limits.maximumCost,
+      }),
       maximumDepth: limits.maximumDepth ?? DEFAULT_MAXIMUM_DEPTH,
-    }) as T;
+    });
   } catch (error) {
     if (error instanceof CanonicalJsonLimitError)
       throw new MetadataLimitError(
@@ -2299,12 +2304,21 @@ export function json<T>(
         error.visited,
         error.offset,
         document.length,
+        undefined,
+        error.spent,
       );
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
       error instanceof Error ? error.message : 'Invalid JSON',
     );
   }
+}
+
+export function json<T>(
+  response: HttpResponse,
+  limits: ProviderMetadataLimits = {},
+): T {
+  return jsonWithCost<T>(response, limits).value;
 }
 
 export function assertBoundedProviderMetadata(
