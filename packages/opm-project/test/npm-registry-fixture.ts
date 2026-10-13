@@ -183,6 +183,8 @@ export interface RecordedRequest {
 }
 
 export class NpmRegistryFixture implements HttpTransport {
+  /** It answers a document it has answered before with the same document. */
+  readonly refetchable = true;
   readonly requests: RecordedRequest[] = [];
   readonly #packages = new Map<string, FixturePackage>();
 

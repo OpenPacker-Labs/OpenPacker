@@ -1,4 +1,9 @@
-import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalDigest,
+  formatDigest,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import * as dependencyText from './dependency-spec.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { npmTargetPredicate } from './platform.js';
@@ -6,6 +11,7 @@ import {
   FULL_PACKUMENT_LIMITS,
   MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
+  NPM_NAME_LIMIT,
   PACKUMENT_LIMITS,
   aboutPackument,
 } from './packument-limits.js';
@@ -33,6 +39,7 @@ import {
   header,
   isDocumentRefusal,
   json,
+  jsonWithCost,
   packageNodeId,
   parsePurl,
   ProviderError,
@@ -51,6 +58,7 @@ import {
   type ParsedRange,
   type ParsedVersion,
   type RangeAst,
+  type RetentionLedger,
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
@@ -758,7 +766,9 @@ export class NpmRegistryProvider implements CatalogProvider {
     offlineReplay: true,
     extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
-  readonly #records = new Map<string, ProviderRecord<NpmPackument>>();
+  readonly #records = new Map<string, HeldPackument>();
+  /** Packuments being read for the first time, or again, which a second asker waits for. */
+  readonly #reading = new Map<string, Promise<PackumentRecord>>();
   readonly #times = new Map<
     string,
     Promise<Record<string, string> | undefined>
@@ -784,11 +794,47 @@ export class NpmRegistryProvider implements CatalogProvider {
   }
 
   invalidate(purl?: string): void {
-    if (purl === undefined) this.#records.clear();
-    else {
+    if (purl === undefined) {
+      for (const key of this.#records.keys())
+        this.ledger?.forget(this.held(key));
+      this.#records.clear();
+    } else {
       const parsed = parsePurl(this.codec.canonicalizePurl(purl));
-      this.#records.delete(formatPurl({ ...parsed, version: undefined }));
+      const key = formatPurl({ ...parsed, version: undefined });
+      this.ledger?.forget(this.held(key));
+      this.#records.delete(key);
     }
+  }
+
+  /**
+   * Where this provider says what it keeps, when its transport lets a holder
+   * let go of what it can get again. A packument let go is read again through
+   * the transport, and only a transport that says it can be asked again is
+   * trusted to answer.
+   */
+  private get ledger(): RetentionLedger | undefined {
+    return this.transport.refetchable === true
+      ? this.transport.retention
+      : undefined;
+  }
+
+  private held(key: string): string {
+    return `npm\n${this.endpoint}\n${key}`;
+  }
+
+  /**
+   * The objects of a packument go; that it was read, and what it said, stay.
+   * The digest of its text is taken as it goes, because the text goes with it:
+   * it is what the snapshot says was read, and what a second reading is
+   * compared with.
+   */
+  private letGo(key: string): void {
+    const kept = this.#records.get(key);
+    if (kept?.record === undefined) return;
+    const digest = digestOf(kept.record.rawBody);
+    // Not awaited here: a refusal is the asker's, when it is awaited.
+    digest.catch(() => undefined);
+    this.#records.set(key, { ...kept, digest, record: undefined });
   }
 
   async enumerate(
@@ -1011,10 +1057,10 @@ export class NpmRegistryProvider implements CatalogProvider {
     const recordDigests = await Promise.all(
       [...this.#records.values()]
         .sort((a, b) => compareCodePoints(a.key, b.key))
-        .map(async (record) => ({
-          key: record.key,
-          ...(!(record.etag === undefined) && { etag: record.etag }),
-          digest: formatDigest(await sha256(record.rawBody)),
+        .map(async (held) => ({
+          key: held.key,
+          ...(!(held.etag === undefined) && { etag: held.etag }),
+          digest: await (held.digest ?? digestOf(held.record!.rawBody)),
         })),
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -1139,14 +1185,36 @@ export class NpmRegistryProvider implements CatalogProvider {
     );
   }
 
-  private async packument(
+  private packument(
     purl: string,
     signal?: AbortSignal,
-  ): Promise<ProviderRecord<NpmPackument>> {
+  ): Promise<PackumentRecord> {
     const canonical = this.codec.canonicalizePurl(purl);
     const parsed = parsePurl(canonical);
     const key = formatPurl({ ...parsed, version: undefined });
-    const existing = this.#records.get(key);
+    // A packument with no objects held is read once however many ask while it
+    // is: each asker parsing its own would hold a tree apiece, and what was let
+    // go to save memory would be read into memory several times over.
+    if (this.#records.get(key)?.record !== undefined)
+      return this.read(parsed, key, signal);
+    const reading = this.#reading.get(key);
+    if (reading !== undefined) return reading;
+    const read = this.read(parsed, key, signal).finally(() => {
+      this.#reading.delete(key);
+    });
+    this.#reading.set(key, read);
+    return read;
+  }
+
+  private async read(
+    parsed: ReturnType<typeof parsePurl>,
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<PackumentRecord> {
+    const kept = this.#records.get(key);
+    // A packument let go to stay within the resolve's budget is asked for
+    // afresh, with no validator: there is nothing here to revalidate.
+    const existing = kept?.record;
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
     let response: HttpResponse;
@@ -1168,25 +1236,46 @@ export class NpmRegistryProvider implements CatalogProvider {
         : error;
     }
     if (response.status === 304) {
-      if (!existing)
+      if (!existing || !kept)
         throw new ProviderError(
           'STALE_METADATA',
           `Received 304 without cached metadata for ${key}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };
-      this.#records.set(key, revalidated);
+      this.#records.set(key, {
+        ...kept,
+        retrievedAt: revalidated.retrievedAt,
+        record: revalidated,
+      });
+      this.ledger?.touch(this.held(key));
       return revalidated;
     }
     let body: NpmPackument;
+    let retained: number;
     try {
-      body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+      ({ value: body, retained } = jsonWithCost<NpmPackument>(
+        response,
+        PACKUMENT_LIMITS,
+      ));
     } catch (error) {
       throw error instanceof ProviderError
         ? aboutPackument(name, error)
         : error;
     }
-    const record: ProviderRecord<NpmPackument> = {
+    // A packument read again after it was let go must be the one that was: a
+    // resolve that took two different documents under one name would record
+    // evidence for neither.
+    if (
+      kept?.record === undefined &&
+      kept?.digest !== undefined &&
+      (await kept.digest) !== (await digestOf(response.body))
+    )
+      throw new ProviderError(
+        'STALE_METADATA',
+        `The packument of ${safeEcho(name, NPM_NAME_LIMIT)} changed while the resolve was running; run it again`,
+      );
+    const record: PackumentRecord = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
@@ -1196,9 +1285,43 @@ export class NpmRegistryProvider implements CatalogProvider {
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
-    this.#records.set(record.key, record);
+    this.#records.set(key, {
+      key,
+      retrievedAt: record.retrievedAt,
+      ...(!(record.etag === undefined) && { etag: record.etag }),
+      record,
+    });
+    // What this record keeps alive by itself: the objects (what the parse
+    // measured the tree to keep), and the text they came from, which the
+    // transport may be holding as well.
+    this.ledger?.retain(
+      this.held(key),
+      retained + response.body.byteLength,
+      () => this.letGo(key),
+    );
     return record;
   }
+}
+
+/** The packument's objects, the text they came from, and where from. */
+type PackumentRecord = ProviderRecord<NpmPackument>;
+
+async function digestOf(bytes: Uint8Array): Promise<string> {
+  return formatDigest(await sha256(bytes));
+}
+
+/**
+ * A packument this provider has read. `record` holds its objects until the
+ * resolve's budget lets them go; what the snapshot needs to say the document
+ * was read, its digest and etag and when, is kept for good.
+ */
+interface HeldPackument {
+  readonly key: string;
+  /** Of the text, once it has been let go; until then the record has it. */
+  readonly digest?: Promise<string>;
+  readonly etag?: string;
+  readonly retrievedAt: string;
+  readonly record: PackumentRecord | undefined;
 }
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';

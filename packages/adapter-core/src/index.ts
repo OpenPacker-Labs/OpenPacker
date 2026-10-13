@@ -17,6 +17,12 @@ import {
 export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
 export { isAddress, redactText } from './redact-text.js';
 export { ProviderError } from './provider-error.js';
+import { RetentionLedger } from './retention.js';
+export {
+  DEFAULT_RETAINED_BYTES,
+  RetentionLedger,
+  type Release,
+} from './retention.js';
 export { redactAddress, shownScheme } from './redact-address.js';
 export {
   hasOverlongHost,
@@ -790,6 +796,21 @@ export interface HttpResponse {
 
 export interface HttpTransport {
   request(request: HttpRequest): Promise<HttpResponse>;
+  /**
+   * Whether asking again for a document this transport already answered gets
+   * the document again, from the origin or from a store of the transport's
+   * own. A holder may let go of a document only of such a transport, because
+   * it can get it back. Absent means no: a transport that replays what it was
+   * recorded with, or answers once from a source that is gone, is kept whole.
+   */
+  readonly refetchable?: boolean | undefined;
+  /**
+   * Where a holder of what this transport returned says what it keeps, so that
+   * a resolve's documents and the objects parsed from them are bounded
+   * together. Present on a transport that keeps documents for a resolve; a
+   * holder uses it only when `refetchable`.
+   */
+  readonly retention?: RetentionLedger | undefined;
 }
 
 export type DestinationPolicy = 'origin-allowlist' | 'classify-and-pin';
@@ -853,6 +874,8 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
 const TOKEN68 = /^[A-Za-z0-9\-._~+/]+=*$/u;
 
 export class BoundedFetchTransport implements HttpTransport {
+  /** The origin is asked again, so a caller may let go of what it was given. */
+  readonly refetchable = true;
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
