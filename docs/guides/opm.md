@@ -539,16 +539,25 @@ abbreviated packument of up to 64 MiB and a full one of up to 96 MiB, counted as
 the body arrives. Past that the command stops with exit 8 and says which
 package, how much it had read and what the limit is, for example
 `The packument of x exceeds the limit of 67108864 bytes (64.00 MiB): stopped reading at 67174400 bytes (64.06 MiB)`.
-A document that is small enough but holds too many values, or is not JSON, is
-refused as
-`The packument of x is not usable: Provider metadata exceeds 4194304 values`,
-and the parser stops at the limit rather than after it. The bounds limit what
-opm reads, not what it holds: the heaviest 64 MiB document tried took 2,169 to
-2,683 MiB to parse, and under `--max-old-space-size=1536` V8 ended the process
-with exit 134 (`JavaScript heap out of memory`) instead of opm refusing it, so a
-process started with a heap limit below what a document needs can be ended by
-one the bound accepts. When the refused document is the full packument that a
-release-age check needed, the policy message says so after "not captured":
+A document that is small enough but would cost too much to hold, or is not JSON,
+is refused as
+`The packument of x is not usable: Provider metadata exceeds 536870912 bytes of parsed size`,
+and the parser stops at the limit rather than after it. The cost is what the
+tree would allocate, not a count of values: an object weighs about 240 bytes, a
+member's name 3.5 a character, a number in an array 90. So `{},` repeated is
+refused at 1.6 million objects, where `1,` is refused at 6 million, and a
+document of the densest shape the 64 MiB bound allows can no longer end opm: the
+heaviest one the limit lets through was read inside a 1 GiB heap
+(`--max-old-space-size=1024`), and what used to be fatal there (exit 134,
+`JavaScript heap out of memory`, for 64 MiB of one object of 3.7 million empty
+objects) is now this refusal. A resolve also keeps what it reads only up to a
+budget, 256 MiB of packument text and parsed objects by default
+(`OPM_RETAINED_METADATA_MIB`, a whole number of MiB or `unlimited`); over it the
+least recently used are let go and read again through the registry, and a
+document that changed in between stops the resolve (`STALE_METADATA`) rather
+than mix two versions of it. When the refused document is the full packument
+that a release-age check needed, the policy message says so after "not
+captured":
 `publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
 A registry that is simply down leaves that message as it was. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).

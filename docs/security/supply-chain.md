@@ -148,53 +148,58 @@ accordingly so policy can block them.
 
 A provider reads registry metadata under a byte bound that is applied while the
 body arrives, so a missing or understated `Content-Length` does not lift it, and
-under a bound on the values the parsed document may hold, one per 16 bytes of
-the byte bound, which the parser enforces as it builds the tree: the first value
-past the limit is refused before it is built. npm's abbreviated packument is
-bounded at 64 MiB and the full one at 96 MiB, above the largest documents found
-on 2026-10-12 and below the 128 MiB an artifact may weigh. The abbreviated size
-was measured for 4,887 packages (the largest, 36.6 MiB); the full size only for
-the 400 of them with the largest abbreviated document (the largest, 73.0 MiB).
-That is a sample and it missed a package, `renovate` (33.8 MiB abbreviated, 68.6
-MiB full), which a second look found. Those are bytes held, per document. What
-parsing a hostile body costs is separate and measured, through the real
-transport and provider on a 4-CPU machine shared with other work, over fifteen
-shapes of document and one to five runs of each. For an abbreviated packument
-the shape that held the most took 2,169 to 2,683 MiB (2.1 to 2.6 GiB) of peak
-memory in 22.5 to 30.4 s, and the slowest, a different shape, took 52.2 to 60.8
-s at 1,412 to 1,547 MiB (1.4 to 1.5 GiB). For a full packument the same two
-shapes took 3,149 to 3,956 MiB (3.1 to 3.9 GiB) in 37.1 to 44.1 s, and 91.1 to
-100 s at 2,244 to 2,347 MiB (2.2 to 2.3 GiB). Counting values after the parse
-instead cost 7,442 MiB and 50.7 s for a 64 MiB body of `{},` in one `json()`
-call, and the parser stopping at the limit costs 1,108 to 1,121 MiB and 2.0 to
-4.4 s for the same body. Those are the heaviest shapes tried, not a proven
-maximum, and a later run can fall outside a range. The bound is on a document
-and not on a resolve: the provider keeps every packument it has read until the
-resolve ends, so a registry that makes a resolve visit many packages can make it
-hold more than one document's worth. A refusal names the package, the size seen
-and the limit, and a publish time that is missing because the registry's
-document was refused says so in the policy message; the text it repeats from the
-document is capped and made one line by the package that quotes it (the registry
-adapters, the OCI client, the materializer, the plugin store, npm and the
-policy), so a registry cannot add a line to what opm writes. The same holds for
-the values of a cloned repository's `package.json`, `package-lock.json`,
-`opm.toml` and `opm.lock.json` in what `opm ci` (after it has installed too),
-`install`, `sync`, `add`, `remove`, `uninstall`, `update`, `list`, `why`,
-`import --native`, `pack`, `manifest`, `gc`, `generations`, `rollback`,
-`resolve`, `run` and `exec` write on either stream: each value is on one line of
-its own, with no escape or control character, and `opm list`, `why`,
-`import --native`, `run` and `exec` print those values that way on stdout. The
-other commands (`search`, `versions`, `info`, `shell`, `env`, `system`,
-`plugin`, `auth`, `publish`, `yank`, `opmx`) were not driven with such files,
-and the ADR lists what else is not claimed. Some text still reaches the command
-line's writer unflattened: a plugin's own output and manifest, the paths
-`project-io` refuses, the standard packers' file names, and what a host
-installer, a tool or a script writes to its own stderr. The writer removes
-escape sequences and control characters from the errors and warnings it writes
-(a child process's own output is passed through), so none reaches a terminal,
-and it keeps the line breaks, because several errors are lists, so a line feed
-in that text starts a line. `openpacker-cli` and `openpackerd` are not covered.
-See the
+under a bound on what the parsed tree would cost to hold, which the parser
+enforces as it builds the tree: the first part past the limit is refused before
+it is built. The cost follows what the tree allocates (an object about 240
+bytes, a member's name 3.5 a character, a number in an array 90), 512 MiB for
+npm's abbreviated packument and 720 MiB for the full one. npm's abbreviated
+packument is bounded at 64 MiB in bytes and the full one at 96 MiB, above the
+largest documents found on 2026-10-12 and below the 128 MiB an artifact may
+weigh. The abbreviated size was measured for 4,887 packages (the largest, 36.6
+MiB); the full size only for the 400 of them with the largest abbreviated
+document (the largest, 73.0 MiB). That is a sample and it missed a package,
+`renovate` (33.8 MiB abbreviated, 68.6 MiB full), which a second look found. The
+real packuments cost at most 219 MiB (`renovate`, abbreviated) and 562 MiB
+(`@wix/wix-code-types`, full), 2.3 and 1.28 times under their limits. Those are
+bytes held, per document. What parsing a hostile body costs is separate and
+measured, through the real transport and provider on a 4-CPU machine shared with
+other work. Before the cost limit, over fifteen shapes of document, the shape
+that held the most took 2,169 to 2,683 MiB (2.1 to 2.6 GiB) of peak memory in
+22.5 to 30.4 s for an abbreviated packument, and 3,149 to 3,956 MiB in 37.1 to
+44.1 s for a full one, and a process started with a heap of 1 GiB or 1.5 GiB was
+ended by it with exit 134. Now every shape of that table (sixteen, at both
+bounds) is refused by the cost limit, in 2.3 to 6.2 s and at most 868 MiB of
+peak RSS, and the heaviest document each limit lets through, of seventeen kinds,
+was read inside a heap of 1 GiB in at most 8.7 s of CPU (abbreviated) and 12.8 s
+(full). Those are the heaviest kinds tried, not a proven maximum, and a later
+run can fall outside a range. What a resolve keeps is bounded too: the memo and
+the npm provider keep the packuments they read up to a budget of 256 MiB by
+default (`OPM_RETAINED_METADATA_MIB`), counting the text and the parsed objects,
+release the least recently used and read them again through the registry, and
+stop the resolve if a document read again is not the one that was released. A
+refusal names the package, the size seen and the limit, and a publish time that
+is missing because the registry's document was refused says so in the policy
+message; the text it repeats from the document is capped and made one line by
+the package that quotes it (the registry adapters, the OCI client, the
+materializer, the plugin store, npm and the policy), so a registry cannot add a
+line to what opm writes. The same holds for the values of a cloned repository's
+`package.json`, `package-lock.json`, `opm.toml` and `opm.lock.json` in what
+`opm ci` (after it has installed too), `install`, `sync`, `add`, `remove`,
+`uninstall`, `update`, `list`, `why`, `import --native`, `pack`, `manifest`,
+`gc`, `generations`, `rollback`, `resolve`, `run` and `exec` write on either
+stream: each value is on one line of its own, with no escape or control
+character, and `opm list`, `why`, `import --native`, `run` and `exec` print
+those values that way on stdout. The other commands (`search`, `versions`,
+`info`, `shell`, `env`, `system`, `plugin`, `auth`, `publish`, `yank`, `opmx`)
+were not driven with such files, and the ADR lists what else is not claimed.
+Some text still reaches the command line's writer unflattened: a plugin's own
+output and manifest, the paths `project-io` refuses, the standard packers' file
+names, and what a host installer, a tool or a script writes to its own stderr.
+The writer removes escape sequences and control characters from the errors and
+warnings it writes (a child process's own output is passed through), so none
+reaches a terminal, and it keeps the line breaks, because several errors are
+lists, so a line feed in that text starts a line. `openpacker-cli` and
+`openpackerd` are not covered. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 Host installers that only advertise `install` still participate: their plans
