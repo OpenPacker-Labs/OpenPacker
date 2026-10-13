@@ -760,8 +760,10 @@ independent review got the same two figures.
   65,536-character host of `ß.é.` the real parser took 1,126 ms on its first
   call here and 265 to 275 ms on the next two (Node 22.22, a load average of 6
   to 9), and the guard took 8.9 ms on its first and 0.4 to 0.6 ms on four more;
-  `untrusted-url.test.ts` has the first call as its control and fails if the
-  real parser ever needs under 300 ms for it.
+  `untrusted-url.test.ts` times one call in a fresh process as its control (a
+  worker that has parsed the host already shows the later figure, which failed
+  an earlier control in `npm run test:security`: 252.7 ms against 300) and fails
+  if the real parser ever needs under 300 ms for it.
 
   Before this, 56 places in 30 files of `packages/*/src` and `apps/*/src` handed
   text that a registry, a lock, a manifest, a peer or a configured endpoint
