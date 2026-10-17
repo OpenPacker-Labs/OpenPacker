@@ -751,6 +751,7 @@ opm run lint --if-present     # succeed quietly when there is no `lint`
 opm run build --path ./site   # the package.json in ./site, exactly
 opm exec vitest --version     # node_modules/.bin/vitest, never a download
 opm exec tsc -- -b            # a lone -- right after the bin is dropped
+opm exec tsc --path pkg -- -b # --path straight after the bin is opm's
 ```
 
 `run` reads the `package.json` at the opm project root (the nearest directory at
@@ -758,8 +759,11 @@ or above where you are that holds an `opm.toml`; where you are when there is
 none) and starts each script with that directory as its working directory.
 `exec` looks for the bin in `node_modules/.bin` of that root and of each parent
 directory, nearest first, and runs it where you are. It does not search `PATH`
-and takes a name, never a path. Everything after the bin name goes to the bin,
-so `opm exec vitest --help` is vitest's help.
+and takes a name, never a path. A `--path <dir>` straight after the bin name is
+`opm`'s, as it is before the name; everything from the first other word, or
+after `--`, goes to the bin, so `opm exec vitest --help` is vitest's help and an
+argument the bin calls `--path` is written after `--`
+(`opm exec tool -- --path x`).
 
 What they set up for the child:
 
