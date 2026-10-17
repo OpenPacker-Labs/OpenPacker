@@ -38,6 +38,13 @@ export {
   type RecoveredStep,
 } from './rollback-recovery.js';
 export { snapshotProject } from './project-rollback.js';
+export {
+  currentProcessOwner,
+  describeProcessOwner,
+  parseProcessOwner,
+  processOwnerMayBeAlive,
+  type ProcessOwner,
+} from './process-owner.js';
 
 export {
   assertDigest,
