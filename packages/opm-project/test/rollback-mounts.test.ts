@@ -177,7 +177,9 @@ describeNamespaced('a project laid out over mounts', mountNamespace, () => {
           report.error = { code: error.code, message: error.message };
         }
         report.copies = (await readdir(join(root, '.opm'))).filter((n) => n.startsWith('.rollback-'));
+        report.marked = (await readdir(join(root, '.opm', report.copies[0], 'trees'))).includes('0.moving');
       `);
+    expect(report.marked).toBe(true);
     expect(report.error).toEqual({
       code: 'UNAVAILABLE',
       message: expect.stringMatching(
