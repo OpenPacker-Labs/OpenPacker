@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Write oracle.json: what npm's and pnpm's own tar readers install from each
- * case below: archives whose end, checksum, prefix or name the two read
- * differently, and archives they read alike. Paths are recorded as installed,
+ * case in cases.mjs: archives the two read differently, and archives they
+ * read alike. Paths are recorded as installed,
  * the first component stripped (pacote's `strip: 1`; pnpm strips it itself).
  *
  *   node generate.mjs <node-tar 6.2.1 package dir> <pnpm 10.28.0 package dir> [--check]
@@ -22,123 +22,11 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { CASES } from './cases.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(here, 'oracle.json');
 const START = 'process.setMaxListeners(0);\nvar argv = process.argv.slice(2);';
-
-/**
- * A header and the data of a regular file, padded to whole blocks: ustar, its
- * checksum written `NNNNNN\0 `, unless `edit` changes the header first or
- * `checksum` writes the field another way.
- */
-function file(name, text, { prefix = '', edit, checksum } = {}) {
-  const body = Buffer.from(text);
-  const header = Buffer.alloc(512);
-  header.write(name, 0);
-  header.write('0000644\0', 100);
-  header.write('0000000\0', 108);
-  header.write('0000000\0', 116);
-  header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124);
-  header.write('00000000000\0', 136);
-  header.write('        ', 148);
-  header.write('0', 156);
-  header.write('ustar\0', 257);
-  header.write('00', 263);
-  header.write(prefix, 345);
-  edit?.(header);
-  let sum = 0;
-  for (const byte of header) sum += byte;
-  header.write(
-    checksum?.(sum) ?? `${sum.toString(8).padStart(6, '0')}\0 `,
-    148,
-  );
-  return Buffer.concat([
-    header,
-    body,
-    Buffer.alloc((512 - (body.length % 512)) % 512),
-  ]);
-}
-
-const Z = Buffer.alloc(512);
-const a = file('package/a.js', 'a');
-const b = file('package/b.js', 'b');
-const c = file('package/c.js', 'c');
-/** 512 bytes that are not zero and not a header. */
-const garbage = Buffer.alloc(512, 0x41);
-/** What node-tar takes for a null block: a checksum field that is no number, every other byte zero. */
-const N = Buffer.alloc(512);
-N.write('        ', 148);
-
-export const CASES = {
-  'two zero blocks end it': [a, Z, Z],
-  'a whole record of zeros ends it': [a, Buffer.alloc(9216)],
-  'the end of the data ends it': [a],
-  'one zero block at the end of the data ends it': [a, Z],
-  'nothing after two zero blocks is read': [a, Z, Z, b, Z, Z],
-  'a lone zero block between entries': [a, Z, b, Z, Z],
-  'lone zero blocks between three entries': [a, Z, b, Z, c, Z, Z],
-  'a lone zero block before the first entry': [Z, a, Z, Z],
-  'a lone zero block, then a block that is not a header': [a, Z, garbage, Z, Z],
-  'a lone zero block, a block that is not a header, then an entry': [
-    a,
-    Z,
-    garbage,
-    b,
-    Z,
-    Z,
-  ],
-  'a node-tar null block between entries': [a, N, b, Z, Z],
-  'a lone zero block, then a node-tar null block': [a, Z, N, b],
-  'a node-tar null block, then a zero block': [a, N, Z, b],
-  'an 8-digit checksum with no terminator, typeflag 0 after it': [
-    a,
-    file('package/eight.js', 'e', {
-      checksum: (sum) => sum.toString(8).padStart(8, '0'),
-    }),
-    Z,
-    Z,
-  ],
-  'an 8-digit checksum with no terminator, typeflag NUL after it': [
-    a,
-    file('package/ok.js', 'k', {
-      edit: (header) => header.fill(0, 156, 157),
-      checksum: (sum) => sum.toString(8).padStart(8, '0'),
-    }),
-    Z,
-    Z,
-  ],
-  'a prefix in a header without ustar magic': [
-    a,
-    file('noprefix.js', 'p', {
-      prefix: 'package',
-      edit: (header) => header.fill(0, 257, 265),
-    }),
-    Z,
-    Z,
-  ],
-  'a prefix in a GNU header (magic "ustar  ")': [
-    a,
-    file('gnu.js', 'g', {
-      prefix: 'package',
-      edit: (header) => header.write('ustar  \0', 257),
-    }),
-    Z,
-    Z,
-  ],
-  'a long path split into a ustar prefix': [
-    a,
-    file('file.js', 'l', { prefix: `package/${'d'.repeat(60)}` }),
-    Z,
-    Z,
-  ],
-  'a header whose name starts with NUL, its path in the prefix': [
-    a,
-    file('', 'h', { prefix: 'package/hidden.js' }),
-    Z,
-    Z,
-  ],
-};
 
 function loadParseTarball(directory) {
   const manifest = JSON.parse(

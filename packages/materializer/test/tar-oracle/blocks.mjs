@@ -1,0 +1,47 @@
+/**
+ * The blocks the oracle's archives are built from (generate.mjs reads them
+ * with node-tar and pnpm, cases.mjs composes them).
+ */
+
+/**
+ * A header and the data of a regular file, padded to whole blocks: ustar, its
+ * checksum written `NNNNNN\0 `, unless `edit` changes the header first or
+ * `checksum` writes the field another way.
+ */
+export function file(name, text, { prefix = '', edit, checksum } = {}) {
+  const body = Buffer.from(text);
+  const header = Buffer.alloc(512);
+  header.write(name, 0);
+  header.write('0000644\0', 100);
+  header.write('0000000\0', 108);
+  header.write('0000000\0', 116);
+  header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124);
+  header.write('00000000000\0', 136);
+  header.write('        ', 148);
+  header.write('0', 156);
+  header.write('ustar\0', 257);
+  header.write('00', 263);
+  header.write(prefix, 345);
+  edit?.(header);
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(
+    checksum?.(sum) ?? `${sum.toString(8).padStart(6, '0')}\0 `,
+    148,
+  );
+  return Buffer.concat([
+    header,
+    body,
+    Buffer.alloc((512 - (body.length % 512)) % 512),
+  ]);
+}
+
+export const Z = Buffer.alloc(512);
+export const a = file('package/a.js', 'a');
+export const b = file('package/b.js', 'b');
+export const c = file('package/c.js', 'c');
+/** 512 bytes that are not zero and not a header. */
+export const garbage = Buffer.alloc(512, 0x41);
+/** What node-tar takes for a null block: a checksum field that is no number, every other byte zero. */
+export const N = Buffer.alloc(512);
+N.write('        ', 148);
