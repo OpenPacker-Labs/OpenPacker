@@ -483,8 +483,10 @@ naming the importer and the dependency:
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
 reaches a message quoted, with control characters escaped. After extraction,
-each archive's own `package.json` must be the package the lock names, or the
-install stops before `node_modules` is touched.
+each archive's own `package.json` must be the package the lock names (its name,
+in any case, and the version the lock records for it, which the entry of an
+`https:` tarball may leave out), or the install stops before `node_modules` is
+touched.
 
 An optional package for another `os`, `cpu` or `libc` is left out, with whatever
 only it needs, and counted by reason in the summary. The target is this machine

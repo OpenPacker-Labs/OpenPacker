@@ -62,6 +62,34 @@ describe('the archives of a pnpm install', () => {
     expect((await w.install()).installed).toBe(1);
   });
 
+  it('takes a name in another case as the same name, as pnpm does', async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'd', version: '1.0.0', manifest: { name: 'D' } });
+    w.importer('.', { dependencies: { d: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+    expect((await w.install()).installed).toBe(1);
+  });
+
+  it('quotes what an archive says, with no character a terminal acts on', async () => {
+    const w = await pnpmWorld();
+    w.pkg({
+      name: 'b',
+      version: '1.0.0',
+      manifest: { name: 'a\u009b2J\u202eb', version: '1.0.0\u2066' },
+    });
+    w.importer('.', { dependencies: { b: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+    const error = await w.install().then(
+      () => undefined,
+      (thrown: Error & { code?: string }) => thrown,
+    );
+    expect(error?.code).toBe('DIGEST_MISMATCH');
+    expect(error?.message).toContain('is "a\\u009b2J\\u202eb@1.0.0\\u2066"');
+    expect(
+      /[\u0080-\u009f\u202a-\u202e\u2066-\u2069]/u.test(error!.message),
+    ).toBe(false);
+  });
+
   describe('a dependency on an https: tarball', () => {
     const url = 'https://registry.npmjs.org/odd/-/odd-1.0.0.tgz';
     /**

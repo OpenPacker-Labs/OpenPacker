@@ -109,7 +109,11 @@ design:
    is the one the lock records for the archive: a registry package's, or a
    tarball entry's own `version` (its key holds the URL), and a tarball entry
    with none has its name compared alone; a `name` the entry writes beside its
-   key must match as well. Neither pnpm nor npm makes that check.
+   key must match as well. A name is compared without regard to case, as pnpm
+   compares one: pnpm makes the same check when it reads a package back from its
+   store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
+   `strict-store-pkg-content-check`); npm does not make it. Every value the
+   archive gives is quoted and escaped as the lock's values are.
 
 ### Where each instance goes
 
