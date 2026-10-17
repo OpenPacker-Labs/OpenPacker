@@ -158,8 +158,10 @@ describe('opm ci --plan', () => {
     expect(result.code).toBe(EXIT_CODES.success);
     expect(result.err).toBe('');
     expect(result.out).toMatch(
-      /^Plan for .*\(.*pnpm-lock\.yaml\): nothing was fetched or written\n {2}\d+ packages? in \d+ places? under node_modules, from \d+ archives?, in \d+\.\d s\n/u,
+      /^Plan for .*\(.*pnpm-lock\.yaml\): nothing was fetched or written\n {2}\d+ packages? in \d+ places? under node_modules, from \d+ archives?\n/u,
     );
+    // The plan is the same text every time, so two plans can be diffed.
+    expect((await run(p, '--plan')).out).toBe(result.out);
     expect(result.out).toContain(
       '  left out: 1 optional, for another platform\n',
     );
