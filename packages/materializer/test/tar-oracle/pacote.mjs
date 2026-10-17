@@ -41,8 +41,8 @@ export async function pacoteInstalls(tar, bytes) {
         preserveOwner: false,
         onwarn: () => undefined,
         filter: (_, entry) => {
-          if (/Link$/u.test(entry.type)) return false;
-          if (!/File$/u.test(entry.type)) return false;
+          if (entry.type.endsWith('Link')) return false;
+          if (!entry.type.endsWith('File')) return false;
           const base = basename(entry.path);
           if (base === '.npmignore') sawIgnores.add(entry.path);
           else if (base === '.gitignore') {
