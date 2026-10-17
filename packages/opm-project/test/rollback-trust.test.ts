@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   chown,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -145,6 +146,25 @@ describe('a copy that is not a directory of this project', () => {
       expect(await copies(root)).toEqual([name]);
     },
   );
+});
+
+describe('a file put back where a link now is', () => {
+  it('replaces the link, and never writes through it', async () => {
+    const { dir, root } = await beside();
+    const kept = await readFile(join(root, 'opm.toml'), 'utf8');
+    await deadCopy(root);
+    await writeFile(join(dir, 'outside.txt'), 'outside the project\n');
+    await rm(join(root, 'opm.toml'));
+    await symlink(join(dir, 'outside.txt'), join(root, 'opm.toml'));
+    expect(await recoverInterruptedSteps(root)).toEqual([
+      expect.objectContaining({ restored: true }),
+    ]);
+    expect(await readFile(join(dir, 'outside.txt'), 'utf8')).toBe(
+      'outside the project\n',
+    );
+    expect((await lstat(join(root, 'opm.toml'))).isSymbolicLink()).toBe(false);
+    expect(await readFile(join(root, 'opm.toml'), 'utf8')).toBe(kept);
+  });
 });
 
 describe('a record that cannot be read', () => {

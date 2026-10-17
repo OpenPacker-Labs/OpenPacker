@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
   copyFile,
   link,
   lstat,
   mkdir,
+  open,
   readdir,
   readFile,
   readlink,
@@ -11,6 +13,7 @@ import {
   rm,
   symlink,
   writeFile,
+  type FileHandle,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -51,6 +54,9 @@ import {
  * (`rollback-recovery.ts`). It is taken inside a step (`project-step.ts`), so
  * no other step runs on the project while it exists.
  */
+
+/** Not defined where links cannot be refused by `open` (Windows). */
+const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
 
 export interface ProjectSnapshot {
   /** Put every file and tree back as it was when the snapshot was taken. */
@@ -142,7 +148,7 @@ async function keepFile(
  * Put the project back from a `ready` copy, then remove the copy. Every path
  * comes from the tables, never from the record. Safe to run again after it
  * was itself interrupted: a tree already moved back is skipped, and files are
- * rewritten whole, each under a temporary name renamed over the old.
+ * rewritten whole.
  */
 export async function restoreFrom(
   root: string,
@@ -165,13 +171,38 @@ export async function restoreFrom(
     if (kept === undefined || kept.before === null)
       await rm(path, { force: true });
     else
-      await writeStableFile(
+      await putBack(
         path,
         await readFile(join(holder, 'files', String(index))),
         kept.mode ?? 0o644,
       );
   }
   await discardCopy(holder);
+}
+
+/**
+ * Write a kept file back over `path` in place, never through a link: a link
+ * where the file was is removed and the file made anew. In place, so that a
+ * putting back that is itself killed leaves no temporary file behind; the
+ * next one writes the file whole again.
+ */
+async function putBack(path: string, bytes: Buffer, mode: number) {
+  const write = constants.O_WRONLY | constants.O_CREAT | NO_FOLLOW;
+  let file: FileHandle;
+  try {
+    file = await open(path, write | constants.O_TRUNC, mode);
+  } catch (error) {
+    // SAFETY: only the errno code of a file-system error is read.
+    if ((error as NodeJS.ErrnoException).code !== 'ELOOP') throw error;
+    await rm(path);
+    file = await open(path, write | constants.O_EXCL, mode);
+  }
+  try {
+    await file.writeFile(bytes);
+    await file.chmod(mode);
+  } finally {
+    await file.close();
+  }
 }
 
 /**
