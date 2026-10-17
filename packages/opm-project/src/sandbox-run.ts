@@ -6,6 +6,7 @@ import {
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
 import { sandboxPolicyFromProject } from './lifecycle.js';
+import { storeViews } from './store-view.js';
 import { OpmError } from './types.js';
 
 /**
@@ -35,26 +36,34 @@ export async function runSandboxedPackageProcess(input: {
   const projectRoot = input.projectRoot;
   const storePaths = input.storePaths ?? [];
 
+  // One handle per store, however many of its entries the tool needs.
+  const view = await storeViews(storePaths);
   const readonlyPaths = [
     ...(projectRoot && !projectWrite ? [projectRoot] : []),
-    ...storePaths,
+    ...view.readonlyPaths,
   ];
   const readwritePaths = projectRoot && projectWrite ? [projectRoot] : [];
 
   // If cwd is the project and project is RO, cwd is still chdir'd RO by backend.
   // If tools need a scratch dir, they use $TMPDIR (jail home).
-  const outcome = await runInSandbox({
-    argv: input.argv,
-    cwd: input.cwd,
-    ...(!(input.env === undefined) && { env: input.env }),
-    policy,
-    profile: 'package-exec',
-    ...(!(input.packageId === undefined) && { packageId: input.packageId }),
-    readwritePaths,
-    readonlyPaths,
-    ...(!(input.network === undefined) && { network: input.network }),
-    ...(!(input.backend === undefined) && { backend: input.backend }),
-  });
+  let outcome: SandboxOutcome;
+  try {
+    outcome = await runInSandbox({
+      argv: input.argv,
+      cwd: input.cwd,
+      ...(!(input.env === undefined) && { env: input.env }),
+      policy,
+      profile: 'package-exec',
+      ...(!(input.packageId === undefined) && { packageId: input.packageId }),
+      readwritePaths,
+      readonlyPaths,
+      directoryAuthorities: view.authorities,
+      ...(!(input.network === undefined) && { network: input.network }),
+      ...(!(input.backend === undefined) && { backend: input.backend }),
+    });
+  } finally {
+    await view.dispose();
+  }
 
   const mode = policy.mode ?? 'fail-closed';
   if (

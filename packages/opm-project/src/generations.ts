@@ -29,6 +29,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
+import { isStoreView } from './store-view.js';
 import { collectFilesFromHandle } from '@openpacker/project-io';
 
 /**
@@ -677,7 +678,7 @@ export async function collectableStorePaths(input: {
   try {
     storeHandle = await openStableDirectory(paths.store);
     present = (await readDirChildWithTypes(storeHandle))
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && !isStoreView(entry.name))
       .map((entry) => join(paths.store, entry.name));
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.

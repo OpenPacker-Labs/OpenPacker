@@ -1103,6 +1103,14 @@ different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
 
+An npm tool runs from a `node_modules` of its closure, written for that run
+under `<tool cache>/.opm/runs/` and bound read-only into the sandbox as one
+tree, so `opmx pkg:npm/cowsay hi` finds `yargs`. The packages a run needs from
+one store are bound through one view of that store once there are more than
+eight (ADR 0036, amendment of 2026-10-17), so a tool with a large closure runs.
+Both are removed when the run ends; what a run stopped by a signal leaves is
+removed by the next run.
+
 ### Delegated adapter plugins
 
 Third-party ecosystems arrive as delegated adapter plugins (ADR 0039): a

@@ -17,6 +17,7 @@ import {
   providerFor,
   resolveRegistryArtifactDeferred,
 } from './registry.js';
+import type { ToolPackage } from './ephemeral-layout.js';
 import { resolveGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -72,6 +73,10 @@ export interface EphemeralTool {
    * transitive dependencies of the tool are importable.
    */
   runtimePaths: string[];
+  /** The tool cache the run was placed in. */
+  cacheRoot: string;
+  /** The tool and every package of its runtime closure, as the cache holds them. */
+  closure: ToolPackage[];
 }
 
 /**
@@ -127,6 +132,7 @@ export async function fetchTool(input: {
   // run, and a registry that omits a dependency must not make a previously
   // runnable tool unusable.
   const runtimePaths = [primary.storePath];
+  const closure: ToolPackage[] = [toolPackage(primary)];
   try {
     const graph = await resolveGraph({
       roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
@@ -142,8 +148,22 @@ export async function fetchTool(input: {
         const depEco = instance.identity.purlType;
         if (!requireAdapterRegistry().has(depEco)) continue;
         const dep = await materialiseExact(depEco, depExact, cacheRoot);
-        if (!runtimePaths.includes(dep.storePath))
+        if (!runtimePaths.includes(dep.storePath)) {
           runtimePaths.push(dep.storePath);
+          closure.push(toolPackage(dep));
+        }
+      }
+      // Which package each one requires, for the layout an npm tool runs from.
+      const exactOf = new Map(
+        solved.selected.map((item) => [item.nodeId, item.identity.exactPurl]),
+      );
+      for (const pkg of closure) pkg.requires = {};
+      for (const edge of solved.dependencyEdges) {
+        const from = exactOf.get(edge.fromNodeId);
+        const to = exactOf.get(edge.toNodeId);
+        const dependent = closure.find((pkg) => pkg.exactPurl === from);
+        if (dependent?.requires !== undefined && to !== undefined)
+          dependent.requires[edge.installName] = to;
       }
     }
   } catch {
@@ -157,6 +177,8 @@ export async function fetchTool(input: {
     bins: primary.bins,
     cached: primary.cached,
     runtimePaths,
+    cacheRoot,
+    closure,
   };
 }
 
@@ -164,13 +186,12 @@ async function materialiseExact(
   ecosystem: string,
   exact: string,
   cacheRoot: string,
-): Promise<{
-  exactPurl: string;
-  digest: string;
-  storePath: string;
-  bins: BinDeclaration[];
-  cached: boolean;
-}> {
+): Promise<
+  ToolPackage & {
+    bins: BinDeclaration[];
+    cached: boolean;
+  }
+> {
   // Resolve the artifact identity with the byte download deferred: what an
   // unpinned purl means today is registry metadata and is re-read on every
   // run, but the bytes are content-addressed, so a digest the tool cache
@@ -223,6 +244,8 @@ async function materialiseExact(
         return {
           exactPurl: resolved.exactPurl,
           digest: resolved.digest,
+          size: pkg.size,
+          source: pkg.source,
           storePath: hit.storePath,
           bins: hit.bins,
           cached: true,
@@ -246,6 +269,8 @@ async function materialiseExact(
   return {
     exactPurl: resolved.exactPurl,
     digest: resolved.digest,
+    size: pkg.size,
+    source: pkg.source,
     storePath,
     bins,
     cached: cached ?? false,
@@ -304,4 +329,15 @@ export function selectToolBin(
     `${tool.exactPurl} provides several executables and none matches the ` +
       `package name. Name one with --bin: ${tool.bins.map((bin) => bin.name).join(', ')}.`,
   );
+}
+
+/** What the layout of a run needs of a materialised package, and no more. */
+function toolPackage(pkg: ToolPackage): ToolPackage {
+  return {
+    exactPurl: pkg.exactPurl,
+    digest: pkg.digest,
+    size: pkg.size,
+    source: pkg.source,
+    storePath: pkg.storePath,
+  };
 }

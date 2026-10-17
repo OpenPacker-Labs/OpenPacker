@@ -114,6 +114,12 @@ export {
 } from './lifecycle.js';
 
 export { runSandboxedPackageProcess } from './sandbox-run.js';
+export {
+  ephemeralNodeRun,
+  layOutTool,
+  type ToolLayout,
+  type ToolPackage,
+} from './ephemeral-layout.js';
 
 export {
   addPackage,

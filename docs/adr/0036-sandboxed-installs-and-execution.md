@@ -111,3 +111,90 @@ policies refuse with exit 78, and `degrade-warn`/`off` refuse with
 boundary and is never a fallback. The withdrawal lifts when the SDK exposes
 handle-relative binds; the `ambient` profile row above describes intent, not an
 executable mode.
+
+## Amendment (2026-10-17) — one handle per store, and a node_modules for a tool
+
+`opmx pkg:npm/cowsay hi` was refused with "At most 16 valid handles may be
+inherited":
+
+- Since the amendment of 2026-08-19 every bind is an inherited no-follow
+  directory handle. `runInSandbox` opens one for each read-only path, each
+  writable path and the working directory, and bwrap binds it with
+  `--ro-bind-fd`.
+- The spawner refuses more than 16 inherited handles
+  (`packages/sandbox/src/backends/mock.ts`). The bound is the spawner's own:
+  bwrap has no such limit, and MXC takes no handles at all.
+- `opmx` passed every package of a tool's closure as a path of its own. cowsay's
+  closure is 33 packages, so it needed 33 handles for the store alone. Any tool
+  with more than about a dozen packages was refused, and so was `opmx <bin>` in
+  a project with as many.
+
+Past that, an npm tool that requires a dependency failed with "Cannot find
+module 'yargs'". The tool cache holds each package as its own store tree, and
+nothing put them where Node looks.
+
+Decision:
+
+1. **Past eight store entries, those a run needs from one store are bound
+   through one view** (`store-view.ts`).
+   - The view is a directory of hard links to exactly those entries, made inside
+     the store as `.view-<host>-<pid>-<uuid>`. It is opened once with a
+     no-follow handle and bound read-only at the store's own path.
+   - The links are made by the layout's own tree copy (`materialiseTree`, ADR
+     0048): each file linked is the inode opened through no-follow handles, and
+     an entry or a name in it that is a symbolic link, or that was swapped
+     meanwhile, is refused, as a bind of the entry on its own refuses it.
+   - Inside the sandbox the store holds the same entries at the same paths as
+     when each was bound alone, and nothing else: no other package of the store,
+     and not the view itself.
+   - A run that needs eight entries or fewer binds each as before, and so does a
+     store with only one entry the run needs. Eight leaves room in the 16 for
+     the project, the working directory, the jail's home and policy grants.
+   - The limit of 16 handles is unchanged.
+2. **An npm tool run by `opmx` runs from a `node_modules` of its closure**
+   (`ephemeral-layout.ts`).
+   - The layout is written by the same writer as a project's (ADR 0048), with
+     hard links to the store's files, under
+     `<tool cache>/.opm/runs/run-<host>-<pid>-<uuid>`.
+   - The layout is told which package each one requires, as the solve chose (ADR
+     0054), so two versions of one name stay apart. cowsay's closure holds four
+     names twice; told nothing, the layout kept one of each, and cowsay got
+     `string-width` 4 where it asked for 2.
+   - That one tree is what the sandbox binds.
+   - A layout is never reused between runs, which would make it one more thing a
+     run trusts without checking it again.
+   - Python, .NET and native tools run as before; past eight packages their
+     closure is bound through a view.
+3. **A run removes both when it ends** (`run-scratch.ts`).
+   - A run stopped by a signal, Ctrl-C included, cannot. The next run that makes
+     a view in the same store, or a layout in the same cache, removes those
+     whose process on this host has ended.
+   - One whose process may still be running is never touched.
+   - `opm gc` does not count a view as a store path (`isStoreView`).
+   - While a view exists, each entry it shows has files with a second name, so
+     the shared store's `opm gc` counts that entry as in use.
+
+Consequences:
+
+- Confinement is unchanged: read-only binds, the same paths, and only the
+  closure visible. No store file's bytes are copied, unless the file system
+  refuses a hard link, where the file is copied.
+- A run past eight entries pays a link per file of what it binds: the closure
+  for a tool, every package of the project for `opmx <bin>` in a project. An npm
+  tool pays it once, for its layout. Before this, such a run was refused.
+- `opmx pkg:npm/cowsay hi` runs against registry.npmjs.org (with the release-age
+  capture of #182). Its layout of 33 packages, 419 files, took 0.2 to 1.0 s, and
+  a view of the same entries 0.4 to 3.1 s, on a 4-core machine at a load average
+  of 23 to 38. Most of the 23 to 29 s a run took was resolving the closure from
+  the registry.
+
+Limits:
+
+- A view or layout left by a killed run stays until the next run in the same
+  place. One left on another host is never removed from this one.
+- A pid reused by a live process keeps a leftover until that process ends too.
+- Measured and exercised on Linux, where bwrap is the backend.
+  `tool-many-deps.test.ts` runs a 21-package tool, binds a symbolic link among
+  its entries, kills a run with SIGKILL in the middle, and runs again;
+  `tool-layout-versions.test.ts` lays out two versions of one name.
+  `store-view-gc.test.ts` runs `opm gc` while a view is in use.
