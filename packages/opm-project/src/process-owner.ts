@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
 
 /**
  * Which process holds something on disk (a step's lock, its rollback copy), and
- * whether that process may still be running.
+ * whether that process may still be running. The one rule for every holder opm
+ * records; other owners (a run's scratch, a store lease) judge by it too.
  *
  * A pid names a process only inside one PID namespace, on one boot of one
  * machine. Two containers of a pod that share a volume, `docker --pid` or
@@ -11,28 +13,73 @@ import { hostname } from 'node:os';
  * the same hostname and count pids in a different table. So the record holds
  * where its pid is meaningful as well as the pid:
  *
- * - `machineId`: `/etc/machine-id` (or `/var/lib/dbus/machine-id`), and the
- *   hostname, which is all a system without one offers;
+ * - `machineId`: `/etc/machine-id` (or `/var/lib/dbus/machine-id`);
+ * - `host`: the hostname, which is all a system without a machine id offers;
  * - `bootId`: `/proc/sys/kernel/random/boot_id`, since pids start again at
  *   every boot;
  * - `pidNamespace`: the inode of `/proc/self/ns/pid`;
  * - `startTime`: field 22 of `/proc/<pid>/stat`, since a pid is given to
  *   another process once its own ends.
  *
- * The rule ({@link isOwnerAlive}) never lets a live holder be judged gone,
- * with one exception that is certain: a holder of this machine (same machine
- * id and hostname) from an earlier boot (another boot id) is gone, since
- * every process of that boot ended with it. Otherwise, where the machine id,
- * boot id or PID namespace differs from this process's, or is known on one
- * side only, nothing here can judge the pid, and the holder counts as alive.
- * Where they agree, the pid must not answer signal 0 (ESRCH), or must answer
- * with another start time, for the holder to count as gone. A system that
- * says none of this (macOS, Windows) compares hostnames and pids alone: a
- * reused pid then keeps a stale holder waiting, never the reverse.
+ * ## The rule
  *
- * The exception trusts the machine id: two machines cloned from one image
- * that kept its `/etc/machine-id`, with one hostname, sharing a project,
- * would each take the other's live holder for one of an earlier boot.
+ * {@link ownerPlace} says where an owner runs, seen from a reader:
+ *
+ * - `ended`: the owner is of this machine (the machine id is known and equal
+ *   on both sides, and the hostname equal) and of another boot that both sides
+ *   know. Every process of that boot ended with it. The only judgement made
+ *   without looking at a pid.
+ * - `elsewhere`: any other difference in host, machine id, boot id or PID
+ *   namespace. Nothing here can judge the pid.
+ * - `here`: the place agrees. The pid decides ({@link isOwnerAlive}).
+ *
+ * A field is compared as a value, and unreadable is a value (`undefined`):
+ *
+ * | owner's field | reader's field | meaning                                     |
+ * |---------------|----------------|---------------------------------------------|
+ * | a value       | the same       | agrees                                      |
+ * | a value       | another        | `elsewhere` (`ended` for the boot, above)   |
+ * | a value       | unreadable     | `elsewhere`: the reader cannot place it     |
+ * | unreadable    | a value        | `elsewhere`: the owner could not be placed  |
+ * | unreadable    | unreadable     | agrees: the same kind of process on a host  |
+ * |               |                | that hides it; nothing says they differ     |
+ *
+ * Unreadable on both sides is "agrees" so that a holder left by a process that
+ * could not read the field is not immortal: the rule never needs a field that
+ * neither side has. The cost is that two such processes on one host name,
+ * sharing a volume in different PID namespaces, would count each other's pid
+ * in the wrong table. That is rare (on Linux every process can read its own
+ * namespace and boot), and a caller that cannot accept it passes
+ * `unreadableNamespaceIsForeign`: a reader with no PID namespace on Linux then
+ * sees every owner as `elsewhere`. That makes a dead owner of such a host
+ * immortal, so it suits a holder that has another way to be reclaimed (a lease
+ * with its own lock file), not a step lock, whose way out is
+ * `opm recover --abandon-step`.
+ *
+ * The machine id matters in one place only: the `ended` rule. Unreadable on
+ * both sides it makes no claim about boots; the owner is then judged by its
+ * pid as any other, so a step killed on a host with no machine id is still
+ * recovered.
+ *
+ * Where the place agrees, {@link isOwnerAlive} asks the pid:
+ *
+ * - signal 0 answers ESRCH: gone. EPERM (another user's process has the pid)
+ *   and a pid that answers: look at the process;
+ * - its `/proc/<pid>/stat` state is Z (a zombie that nobody reaped) or X
+ *   (dead): gone, the process has ended;
+ * - its start time differs from the recorded one: gone, the pid was reused.
+ *   Not compared when this process cannot read its own start time (a `/proc`
+ *   of another PID namespace) or the record has none; then it is alive;
+ * - anything unreadable (the stat, a `hidepid` mount): alive.
+ *
+ * So `isOwnerAlive` is false only when it is certain. A system that says none
+ * of this (macOS, Windows) compares hostnames and pids alone: a reused pid
+ * keeps a stale holder waiting, never the reverse; run there, it is not
+ * tested.
+ *
+ * The `ended` rule trusts the machine id: two machines cloned from one image
+ * that kept its `/etc/machine-id`, with one hostname, sharing a project, would
+ * each take the other's live holder for one of an earlier boot.
  */
 export interface ProcessOwner {
   pid: number;
@@ -48,6 +95,22 @@ export interface ProcessOwner {
   machineId?: string;
 }
 
+/** Where an owner runs, seen from a reader. */
+export type OwnerPlace = 'ended' | 'elsewhere' | 'here';
+
+export interface PlaceOptions {
+  /** See the header: on Linux, a reader with no PID namespace sees no owner `here`. */
+  unreadableNamespaceIsForeign?: boolean;
+}
+
+/** What `isOwnerAlive` asks of the system; replaceable in a test. */
+export interface OwnerProbe {
+  /** Signal 0 to `pid`. Throws the error the system gave. */
+  signal(pid: number): void;
+  /** State letter and start time from `/proc/<pid>/stat`; undefined where unreadable. */
+  stat(pid: number): Promise<{ state: string; startTime: string } | undefined>;
+}
+
 /** The fields compared before a pid is trusted to mean anything here. */
 const PLACE = ['host', 'machineId', 'bootId', 'pidNamespace'] as const;
 
@@ -60,8 +123,8 @@ export function currentOwner(): Promise<ProcessOwner> {
 }
 
 async function readCurrentOwner(): Promise<ProcessOwner> {
-  const [startTime, pidNamespace, bootId, machineId] = await Promise.all([
-    ownStartTime(),
+  const [stat, pidNamespace, bootId, machineId] = await Promise.all([
+    linuxOnly(() => readFile('/proc/self/stat', 'utf8')),
     linuxOnly(async () => {
       const link = await readlink('/proc/self/ns/pid');
       return /^pid:\[(\d+)\]$/u.exec(link)?.[1];
@@ -71,51 +134,97 @@ async function readCurrentOwner(): Promise<ProcessOwner> {
     ),
     linuxOnly(readMachineId),
   ]);
+  // The /proc this process sees may be another PID namespace's: its `self`
+  // then names another pid, and no start time it gives can be compared.
+  const own =
+    stat !== undefined && Number(stat.split(' ', 1)[0]) === process.pid
+      ? parseStat(stat)
+      : undefined;
   return {
     pid: process.pid,
     host: hostname(),
-    ...(!(startTime === undefined) && { startTime }),
+    ...(!(own === undefined) && { startTime: own.startTime }),
     ...(!(pidNamespace === undefined) && { pidNamespace }),
     ...(!(bootId === undefined || bootId === '') && { bootId }),
     ...(!(machineId === undefined) && { machineId }),
   };
 }
 
-/**
- * Whether `owner` may still be running. False only when this process can tell
- * that it is not: this machine at an earlier boot; or this machine, boot and
- * PID namespace, and the pid is free or belongs to a process that started at
- * another time.
- */
-export async function isOwnerAlive(owner: ProcessOwner): Promise<boolean> {
-  const here = await currentOwner();
-  if (fromEarlierBoot(owner, here)) return false;
-  for (const field of PLACE) if (owner[field] !== here[field]) return true;
-  try {
-    process.kill(owner.pid, 0);
-  } catch (error) {
-    // EPERM: a process of another user has the id, which is alive.
-    // SAFETY: only the errno code of the failed signal is read.
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-  if (owner.startTime === undefined) return true;
-  // Only a /proc that belongs to this PID namespace says when a pid started
-  // (`unshare --pid` without `--mount-proc` keeps the parent's).
-  if (here.startTime === undefined) return true;
-  const now = await startTimeOf(String(owner.pid));
-  return now === undefined || now === owner.startTime;
+/** Where `owner` runs, seen from `reader`. See the header for each case. */
+export function ownerPlace(
+  owner: ProcessOwner,
+  reader: ProcessOwner,
+  options: PlaceOptions = {},
+): OwnerPlace {
+  if (
+    reader.machineId !== undefined &&
+    owner.machineId === reader.machineId &&
+    owner.host === reader.host &&
+    reader.bootId !== undefined &&
+    owner.bootId !== undefined &&
+    owner.bootId !== reader.bootId
+  )
+    return 'ended';
+  for (const field of PLACE)
+    if (owner[field] !== reader[field]) return 'elsewhere';
+  if (
+    options.unreadableNamespaceIsForeign === true &&
+    process.platform === 'linux' &&
+    reader.pidNamespace === undefined
+  )
+    return 'elsewhere';
+  return 'here';
 }
 
-/** Same machine id and hostname as `here`, and another boot of it. */
-function fromEarlierBoot(owner: ProcessOwner, here: ProcessOwner): boolean {
-  return (
-    here.machineId !== undefined &&
-    owner.machineId === here.machineId &&
-    owner.host === here.host &&
-    here.bootId !== undefined &&
-    owner.bootId !== undefined &&
-    owner.bootId !== here.bootId
-  );
+/**
+ * Whether `owner` may still be running. False only when this process can tell
+ * that it is not: see the header. `reader` is the process judging, this one by
+ * default; `probe` is the system, replaceable in a test.
+ */
+export async function isOwnerAlive(
+  owner: ProcessOwner,
+  reader?: ProcessOwner,
+  probe: OwnerProbe = systemProbe,
+): Promise<boolean> {
+  const here = reader ?? (await currentOwner());
+  const place = ownerPlace(owner, here);
+  if (place !== 'here') return place === 'elsewhere';
+  try {
+    probe.signal(owner.pid);
+  } catch (error) {
+    // SAFETY: only the errno code of the failed signal is read.
+    const code = (error as NodeJS.ErrnoException).code;
+    // EPERM: another user's process has the pid; it still has to be this one.
+    if (code === 'ESRCH') return false;
+    if (code !== 'EPERM') return true;
+  }
+  // Only a /proc that belongs to this PID namespace says anything about a pid
+  // (`unshare --pid` without `--mount-proc` keeps the parent's).
+  if (here.startTime === undefined) return true;
+  const now = await probe.stat(owner.pid);
+  if (now === undefined) return true;
+  if (now.state === 'Z' || now.state === 'X' || now.state === 'x') return false;
+  return owner.startTime === undefined || now.startTime === owner.startTime;
+}
+
+/**
+ * A name for an owner: 32 hex digits of a digest of every field, the same in
+ * every process and safe in a file name. Equal owners have equal keys; the
+ * owner cannot be read back from it, so a record keeps the owner itself.
+ */
+export function ownerKey(owner: ProcessOwner): string {
+  const fields = [
+    owner.pid,
+    owner.host,
+    owner.startTime ?? null,
+    owner.pidNamespace ?? null,
+    owner.bootId ?? null,
+    owner.machineId ?? null,
+  ];
+  return createHash('sha256')
+    .update(JSON.stringify(fields))
+    .digest('hex')
+    .slice(0, 32);
 }
 
 /** `process 4242 on vm`, for messages. */
@@ -152,28 +261,34 @@ export function parseProcessOwner(value: unknown): ProcessOwner | undefined {
   return owner;
 }
 
-async function ownStartTime(): Promise<string | undefined> {
-  const stat = await linuxOnly(() => readFile('/proc/self/stat', 'utf8'));
-  // The /proc this process sees may be another PID namespace's: its `self`
-  // then names another pid, and no start time it gives can be compared.
-  if (stat === undefined || Number(stat.split(' ', 1)[0]) !== process.pid)
-    return undefined;
-  return startTimeField(stat);
-}
-
-async function startTimeOf(pid: string): Promise<string | undefined> {
-  const stat = await linuxOnly(() => readFile(`/proc/${pid}/stat`, 'utf8'));
-  return stat === undefined ? undefined : startTimeField(stat);
-}
+/** What the system says: `kill(pid, 0)` and `/proc/<pid>/stat` (Linux). */
+export const systemProbe: OwnerProbe = {
+  signal: (pid) => {
+    process.kill(pid, 0);
+  },
+  stat: async (pid) => {
+    const text = await linuxOnly(() => readFile(`/proc/${pid}/stat`, 'utf8'));
+    return text === undefined ? undefined : parseStat(text);
+  },
+};
 
 /**
  * `pid (comm) state ppid …`: comm may hold spaces and parentheses, so the
- * fields are counted from the last `)`. starttime is field 22, the 20th after
- * it.
+ * fields are counted from the last `)`. The state is field 3, the start time
+ * field 22, the 20th after it.
  */
-function startTimeField(stat: string): string | undefined {
-  const field = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
-  return field !== undefined && /^\d+$/u.test(field) ? field : undefined;
+function parseStat(
+  stat: string,
+): { state: string; startTime: string } | undefined {
+  const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+  const [state] = fields;
+  const startTime = fields[19];
+  return state !== undefined &&
+    /^[A-Za-z]$/u.test(state) &&
+    startTime !== undefined &&
+    /^\d+$/u.test(startTime)
+    ? { state, startTime }
+    : undefined;
 }
 
 async function readMachineId(): Promise<string | undefined> {

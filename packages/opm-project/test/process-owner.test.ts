@@ -1,138 +1,297 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  currentOwner,
   describeProcessOwner,
-  parseProcessOwner,
   isOwnerAlive,
+  ownerKey,
+  ownerPlace,
+  parseProcessOwner,
+  type OwnerProbe,
+  type PlaceOptions,
   type ProcessOwner,
 } from '../src/index.js';
 
 /**
- * Whether the holder of a lock or a rollback copy may still be running. A pid
- * means something only on its own machine, boot and PID namespace; anything
- * that differs, or is known on one side only, counts as alive.
+ * The owner rule, over every combination of what is readable on either side
+ * (the table in the header of `process-owner.ts`), with the system replaced by
+ * a probe so that each branch runs on any machine: EPERM, a zombie, a start
+ * time that differs, a `/proc` that is another PID namespace's.
  */
 
-const here = dirname(fileURLToPath(import.meta.url));
-const viteNode = join(here, '../../../node_modules/.bin/vite-node');
-const ownerSource = join(here, '../src/process-owner.ts');
-const linux = process.platform === 'linux';
+const BOOT = '9f7295d1-5100-478f-84e5-84ce9db4b369';
+const EARLIER = '00000000-0000-4000-8000-000000000000';
+const MACHINE = '4c398f739c8447eb99d3fe100ad1b0fa';
 
-const temps: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temps.splice(0).map((path) => rm(path, { recursive: true, force: true })),
-  );
-});
+/** The process judging. */
+const reader: ProcessOwner = {
+  pid: 100,
+  host: 'vm',
+  startTime: '500',
+  pidNamespace: '4026531836',
+  bootId: BOOT,
+  machineId: MACHINE,
+};
+/** An owner of the same place; its pid is another. */
+const owner: ProcessOwner = { ...reader, pid: 4242, startTime: '777' };
 
-/** The id of a process that has exited. */
-async function exitedPid(): Promise<number> {
-  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
-  await new Promise((resolve) => child.on('exit', resolve));
-  return child.pid!;
-}
+const without = (value: ProcessOwner, field: keyof ProcessOwner) => {
+  const { [field]: _gone, ...rest } = value;
+  // SAFETY: only an optional field is taken out (host and pid are never named).
+  return rest as ProcessOwner;
+};
 
-/** This process's place (machine, boot, namespace) with an exited pid. */
-async function goneHere(): Promise<ProcessOwner> {
-  const { startTime: _ignored, ...place } = await currentOwner();
-  return { ...place, pid: await exitedPid() };
-}
+describe('where an owner runs, seen from a reader', () => {
+  // Each readable-or-not combination of one field, the rest agreeing.
+  const fields = ['host', 'machineId', 'bootId', 'pidNamespace'] as const;
+  for (const field of fields) {
+    it(`${field}: the same value agrees`, () => {
+      expect(ownerPlace(owner, reader)).toBe('here');
+    });
+    if (field !== 'host') {
+      it(`${field}: unreadable on both sides agrees`, () => {
+        expect(ownerPlace(without(owner, field), without(reader, field))).toBe(
+          'here',
+        );
+      });
+      it(`${field}: unreadable on the owner's side only is elsewhere`, () => {
+        expect(ownerPlace(without(owner, field), reader)).toBe('elsewhere');
+      });
+      it(`${field}: unreadable on the reader's side only is elsewhere`, () => {
+        expect(ownerPlace(owner, without(reader, field))).toBe('elsewhere');
+      });
+    }
+    if (field !== 'bootId')
+      it(`${field}: another value is elsewhere`, () => {
+        expect(ownerPlace({ ...owner, [field]: 'other0' }, reader)).toBe(
+          'elsewhere',
+        );
+      });
+  }
 
-describe('the owner a record names', () => {
-  it('is this process, with where its pid means something', async () => {
-    const owner = await currentOwner();
-    expect(owner.pid).toBe(process.pid);
-    expect(owner.host).not.toBe('');
-    if (linux)
-      expect(owner).toEqual(
-        expect.objectContaining({
-          startTime: expect.stringMatching(/^\d+$/u),
-          pidNamespace: expect.stringMatching(/^\d+$/u),
-          bootId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
-        }),
+  describe('an earlier boot of this machine has ended', () => {
+    const earlier = { ...owner, bootId: EARLIER };
+    it('when machine, host and both boots are known', () => {
+      expect(ownerPlace(earlier, reader)).toBe('ended');
+      // Its PID namespace went with it.
+      expect(ownerPlace({ ...earlier, pidNamespace: '1' }, reader)).toBe(
+        'ended',
       );
-    expect(describeProcessOwner(owner)).toBe(
-      `process ${owner.pid} on ${owner.host}`,
+    });
+    it.each([
+      ['another machine id', { ...earlier, machineId: 'f'.repeat(32) }],
+      ['another host', { ...earlier, host: 'other' }],
+      ['no boot id of its own', without(earlier, 'bootId')],
+    ])('not with %s', (_case, value) => {
+      expect(ownerPlace(value, reader)).toBe('elsewhere');
+    });
+    it('not when the reader has no boot id or no machine id', () => {
+      expect(ownerPlace(earlier, without(reader, 'bootId'))).toBe('elsewhere');
+      expect(
+        ownerPlace(without(earlier, 'machineId'), without(reader, 'machineId')),
+      ).toBe('elsewhere');
+    });
+  });
+
+  describe('a reader that cannot read its PID namespace', () => {
+    const blind = without(reader, 'pidNamespace');
+    const peer = without(owner, 'pidNamespace');
+    const strict: PlaceOptions = { unreadableNamespaceIsForeign: true };
+    it('sees a peer of the same kind as here by default', () => {
+      expect(ownerPlace(peer, blind)).toBe('here');
+    });
+    it.runIf(process.platform === 'linux')(
+      'sees every owner elsewhere when asked to',
+      () => {
+        expect(ownerPlace(peer, blind, strict)).toBe('elsewhere');
+        expect(ownerPlace(owner, blind, strict)).toBe('elsewhere');
+      },
     );
-    expect(await isOwnerAlive(owner)).toBe(true);
+    it('asked to, still judges one that can read it', () => {
+      expect(ownerPlace(owner, reader, strict)).toBe('here');
+    });
   });
-
-  it('is gone when its pid is free here', async () => {
-    expect(await isOwnerAlive(await goneHere())).toBe(false);
-  });
-
-  it.runIf(linux)(
-    'is gone when its pid now belongs to a process that started at another time',
-    async () => {
-      const owner = await currentOwner();
-      expect(await isOwnerAlive({ ...owner, startTime: '1' })).toBe(false);
-    },
-  );
 });
 
-describe('an owner this process cannot judge counts as alive', () => {
-  // Every case names a pid that has exited here, so only the place decides.
-  // A boot id that differs on this machine is an earlier boot, which is
-  // certain: see the next block. On another machine it is not.
-  for (const field of ['host', 'machineId', 'pidNamespace'] as const)
-    it(`when its ${field} differs`, async () => {
-      const owner = await goneHere();
-      expect(await isOwnerAlive({ ...owner, [field]: 'elsewhere0' })).toBe(
+/** A system that answers as told, and says what it was asked. */
+function probe(
+  answer: {
+    signal?: string;
+    stat?: { state: string; startTime: string };
+  },
+  asked: string[] = [],
+): OwnerProbe {
+  return {
+    signal: (pid) => {
+      asked.push(`signal ${pid}`);
+      if (answer.signal !== undefined)
+        throw Object.assign(new Error(answer.signal), { code: answer.signal });
+    },
+    stat: async (pid) => {
+      asked.push(`stat ${pid}`);
+      return answer.stat;
+    },
+  };
+}
+const running = { state: 'S', startTime: '777' };
+
+describe('whether an owner of this place may still be running', () => {
+  it.each([
+    ['its pid is free (ESRCH)', { signal: 'ESRCH' }, false],
+    ['its pid answers and started when recorded', { stat: running }, true],
+    [
+      'its pid answers and started at another time',
+      { stat: { state: 'S', startTime: '888' } },
+      false,
+    ],
+    [
+      'it is a zombie that nobody reaped',
+      { stat: { ...running, state: 'Z' } },
+      false,
+    ],
+    ['it is dead (X)', { stat: { ...running, state: 'X' } }, false],
+    ['it is dead (x)', { stat: { ...running, state: 'x' } }, false],
+    ['it is stopped', { stat: { ...running, state: 'T' } }, true],
+    ['its stat cannot be read', {}, true],
+    ['the signal fails another way (EINVAL)', { signal: 'EINVAL' }, true],
+    [
+      'another user has the pid (EPERM) and it started when recorded',
+      { signal: 'EPERM', stat: running },
+      true,
+    ],
+    [
+      'another user has the pid (EPERM) and it started at another time',
+      { signal: 'EPERM', stat: { state: 'S', startTime: '1' } },
+      false,
+    ],
+    [
+      'another user has the pid (EPERM) and its stat is hidden',
+      { signal: 'EPERM' },
+      true,
+    ],
+  ])('when %s: %s', async (_case, answer, alive) => {
+    expect(await isOwnerAlive(owner, reader, probe(answer))).toBe(alive);
+  });
+
+  it('is alive when the record has no start time and the pid answers', async () => {
+    expect(
+      await isOwnerAlive(
+        without(owner, 'startTime'),
+        reader,
+        probe({ stat: running }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is gone as a zombie even without a recorded start time', async () => {
+    expect(
+      await isOwnerAlive(
+        without(owner, 'startTime'),
+        reader,
+        probe({ stat: { ...running, state: 'Z' } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("never compares a start time from a /proc that is not this namespace's", async () => {
+    const asked: string[] = [];
+    // The reader could not read its own start time: its /proc is not its own.
+    const foreign = without(reader, 'startTime');
+    expect(
+      await isOwnerAlive(
+        owner,
+        foreign,
+        probe({ stat: { state: 'S', startTime: '1' } }, asked),
+      ),
+    ).toBe(true);
+    expect(asked).toEqual(['signal 4242']);
+  });
+
+  it('asks nothing of an owner of another place', async () => {
+    const asked: string[] = [];
+    const elsewhere = { ...owner, pidNamespace: '1' };
+    expect(
+      await isOwnerAlive(elsewhere, reader, probe({ signal: 'ESRCH' }, asked)),
+    ).toBe(true);
+    expect(asked).toEqual([]);
+  });
+
+  it('asks nothing of an owner of an earlier boot, and it is gone', async () => {
+    const asked: string[] = [];
+    expect(
+      await isOwnerAlive(
+        { ...owner, bootId: EARLIER },
+        reader,
+        probe({}, asked),
+      ),
+    ).toBe(false);
+    expect(asked).toEqual([]);
+  });
+
+  describe('where the machine id cannot be read on either side', () => {
+    // The #186 bug: an unreadable id taken for another machine made every
+    // owner immortal. The machine id matters only to the earlier-boot rule.
+    const blind = without(reader, 'machineId');
+    const peer = without(owner, 'machineId');
+    it('judges a gone pid gone', async () => {
+      expect(await isOwnerAlive(peer, blind, probe({ signal: 'ESRCH' }))).toBe(
+        false,
+      );
+    });
+    it('judges a reused pid gone', async () => {
+      expect(
+        await isOwnerAlive(
+          peer,
+          blind,
+          probe({ stat: { state: 'S', startTime: '1' } }),
+        ),
+      ).toBe(false);
+    });
+    it('judges a running pid alive', async () => {
+      expect(await isOwnerAlive(peer, blind, probe({ stat: running }))).toBe(
         true,
       );
     });
-  // A record without one of these, read where it is known (an older opm, or
-  // another system), says nothing about where its pid lives.
-  for (const field of ['machineId', 'bootId', 'pidNamespace'] as const)
-    it.runIf(linux)(`when its ${field} is known here only`, async () => {
-      const { [field]: _known, ...partial } = await goneHere();
-      expect(await isOwnerAlive(partial)).toBe(true);
+    it('claims nothing about an earlier boot', async () => {
+      expect(
+        await isOwnerAlive(
+          { ...peer, bootId: EARLIER },
+          blind,
+          probe({ signal: 'ESRCH' }),
+        ),
+      ).toBe(true);
     });
+  });
 });
 
-/** This process, where it can say which machine and boot it runs on. */
-const self = await currentOwner();
-const knowsBoot = self.machineId !== undefined && self.bootId !== undefined;
+describe('the name of an owner', () => {
+  it('is 32 hex digits, the same for equal owners in every process', () => {
+    expect(ownerKey(owner)).toMatch(/^[0-9a-f]{32}$/u);
+    expect(ownerKey({ ...owner })).toBe(ownerKey(owner));
+  });
 
-describe.runIf(knowsBoot)(
-  'an owner from an earlier boot of this machine',
-  () => {
-    // This process's pid, so that only the boot id can make it gone.
-    const earlier = async (): Promise<ProcessOwner> => ({
-      ...(await currentOwner()),
-      bootId: '00000000-0000-4000-8000-000000000000',
-    });
+  it.each([
+    ['pid', { pid: 4243 }],
+    ['host', { host: 'other' }],
+    ['startTime', { startTime: '778' }],
+    ['pidNamespace', { pidNamespace: '1' }],
+    ['bootId', { bootId: EARLIER }],
+    ['machineId', { machineId: 'f'.repeat(32) }],
+  ])('differs when the %s does', (_field, change) => {
+    expect(ownerKey({ ...owner, ...change })).not.toBe(ownerKey(owner));
+  });
 
-    it('is gone: every process of that boot has ended', async () => {
-      const owner = await earlier();
-      expect(await isOwnerAlive(owner)).toBe(false);
-      // Its PID namespace is gone with it; one that differs changes nothing.
-      expect(await isOwnerAlive({ ...owner, pidNamespace: '1' })).toBe(false);
-    });
+  it('tells an unreadable field from an empty-looking one', () => {
+    expect(ownerKey(without(owner, 'bootId'))).not.toBe(
+      ownerKey({ ...owner, bootId: '0' }),
+    );
+  });
 
-    it.each([
-      ['its machine id differs', { machineId: 'f'.repeat(32) }],
-      ['its host differs', { host: 'elsewhere0' }],
-    ])('counts as alive when %s', async (_case, other) => {
-      expect(await isOwnerAlive({ ...(await earlier()), ...other })).toBe(true);
-    });
-
-    it('counts as alive when no machine id says it is this machine', async () => {
-      const { machineId: _none, ...owner } = await earlier();
-      expect(await isOwnerAlive(owner)).toBe(true);
-    });
-  },
-);
+  it('names the process in a message', () => {
+    expect(describeProcessOwner(owner)).toBe('process 4242 on vm');
+  });
+});
 
 describe('a record read back from disk', () => {
-  it('keeps an owner whose fields are well formed', async () => {
-    const owner = await currentOwner();
+  it('keeps an owner whose fields are well formed', () => {
     expect(parseProcessOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
   });
 
@@ -150,51 +309,4 @@ describe('a record read back from disk', () => {
   ])('refuses %s', (_case, value) => {
     expect(parseProcessOwner(value)).toBeUndefined();
   });
-});
-
-/** Whether this machine lets a process start a PID namespace of its own. */
-const unshare =
-  linux &&
-  spawnSync('unshare', ['--pid', '--fork', '--mount-proc', 'true']).status ===
-    0;
-if (!unshare)
-  console.warn(
-    'process-owner.test.ts: `unshare --pid --fork --mount-proc` is refused here (it needs root or user namespaces); the PID-namespace case is skipped',
-  );
-
-describe.runIf(unshare)('a live process in another PID namespace', () => {
-  it('counts as alive, whatever its pid names here', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-owner-pidns-'));
-    temps.push(dir);
-    const script = join(dir, 'owner.ts');
-    const report = join(dir, 'owner.json');
-    await writeFile(
-      script,
-      `import { writeFile } from 'node:fs/promises';
-       import { currentOwner } from ${JSON.stringify(ownerSource)};
-       await writeFile(${JSON.stringify(report)}, JSON.stringify(await currentOwner()));
-       setInterval(() => {}, 1000);`,
-    );
-    const child = spawn(
-      'unshare',
-      ['--pid', '--fork', '--kill-child', '--mount-proc', viteNode, script],
-      { stdio: 'ignore' },
-    );
-    try {
-      while (!existsSync(report))
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      // SAFETY: written by the child a moment ago.
-      const owner = JSON.parse(await readFile(report, 'utf8')) as ProcessOwner;
-      const self = await currentOwner();
-      // The first process of its namespace: pid 1, which here is init.
-      expect(owner.pid).toBe(1);
-      expect(owner.pidNamespace).not.toBe(self.pidNamespace);
-      expect(owner.host).toBe(self.host);
-      expect(await isOwnerAlive(owner)).toBe(true);
-    } finally {
-      const gone = new Promise((resolve) => child.on('exit', resolve));
-      child.kill('SIGKILL');
-      await gone;
-    }
-  }, 60_000);
 });
