@@ -26,7 +26,6 @@ import {
   memberProblems,
   presentImporters,
   readRootProject,
-  refuseDoubts,
   refuseStale,
 } from './check.js';
 import { linkTargetBetween, placePath } from '../layout-links.js';
@@ -133,7 +132,7 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       `pnpm-lock.yaml does not list every member of the project's workspace (opm ci installs what the lock lists, and a member with dependencies has to be in it; pnpm install writes it there): ${members.join('; ')}`,
     );
-  const { stale, own, doubts } = freshnessProblems({
+  const { stale, own } = freshnessProblems({
     root,
     model,
     present,
@@ -144,7 +143,6 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       `opm ci does not install this project as it is: ${own.join('; ')}`,
     );
-  if (doubts.length > 0) refuseDoubts(doubts);
   if (stale.length > 0) refuseStale(stale);
 
   // 3. What needs the machine.

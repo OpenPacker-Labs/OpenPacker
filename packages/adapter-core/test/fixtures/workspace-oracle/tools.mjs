@@ -17,6 +17,7 @@ export const PINNED = {
   mapWorkspaces: '4.0.2',
   glob: '10.4.5',
   semver: '7.7.2',
+  pnpmSemver: '7.7.3',
 };
 
 function versionOf(directory) {
@@ -49,10 +50,13 @@ export function loadTools(pnpmDirectory, npmDirectory) {
   );
   expect('glob', join(modules, 'glob'), PINNED.glob);
   expect('semver', join(modules, 'semver'), PINNED.semver);
+  const pnpmSemver = join(pnpmDirectory, 'dist', 'node_modules', 'semver');
+  expect('the semver pnpm bundles', pnpmSemver, PINNED.pnpmSemver);
   return {
     pnpmBinary: join(pnpmDirectory, 'bin', 'pnpm.cjs'),
     mapWorkspaces: required('@npmcli/map-workspaces'),
     semver: required('semver'),
+    pnpmSemver: createRequire(join(pnpmSemver, 'package.json'))('./index.js'),
   };
 }
 

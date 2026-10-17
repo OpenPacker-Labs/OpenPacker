@@ -7,8 +7,9 @@
  * node-semver's `intersects`: some alternative of each is satisfiable and every
  * comparator of the one intersects every comparator of the other, pairwise,
  * with node-semver's rules for an exact comparator and for prereleases. This is
- * that rule over the range grammar `@openpacker/adapter-core` already reads; a
- * range it cannot read is not a range, as one node-semver cannot read is not.
+ * that rule over the comparators `@openpacker/adapter-core` reads an npm range
+ * to, which are node-semver's own (`1.2` is `>=1.2.0 <1.3.0-0`, `>=0.0.0` is
+ * `*`); a range it refuses is not a range, as node-semver refuses it.
  */
 
 import {
@@ -30,10 +31,6 @@ interface Comparator {
 }
 
 const ANY: Comparator = { operator: '', version: '' };
-
-/** node-semver's `replaceGTE0`: `>=0.0.0` (build metadata aside, no prerelease) is `*`. */
-const isGte0 = (operator: string, version: string): boolean =>
-  operator === '>=' && version.split('+', 1)[0] === '0.0.0';
 
 const compare = (left: string, right: string): number =>
   compareParsedVersions(parseSemver(left), parseSemver(right));
@@ -62,52 +59,19 @@ function comparatorSets(range: string): Comparator[][] | undefined {
       }
       if (item.type !== 'comparison' || item.operator === '!=')
         return undefined;
-      set.push(
-        isGte0(item.operator, item.version)
-          ? ANY
-          : {
-              operator: item.operator === '=' ? '' : item.operator,
-              version: item.version,
-            },
-      );
+      set.push({
+        operator: item.operator === '=' ? '' : item.operator,
+        version: item.version,
+      });
     }
-    // node-semver drops `*` from a set that holds anything else.
-    const bounded = set.filter((comparator) => comparator !== ANY);
-    sets.push(bounded.length > 0 ? bounded : [ANY]);
+    sets.push(set);
   }
   return sets;
 }
 
-/** node-semver's XRANGEIDENTIFIER. */
-const XR = String.raw`(?:0|[1-9]\d*|[xX*])`;
-/**
- * Ahead: a version as node-semver's XRANGEPLAIN reads one after its `[v=\s]*`
- * (a prerelease or build only after three parts), to where the comparator ends.
- */
-const VERSION_AHEAD = String.raw`(?=${XR}(?:\.${XR}(?:\.${XR}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)?)?(?:$|[\s|]))`;
-const TILDE = new RegExp(String.raw`~\s*>?\s*[v=\s]*${VERSION_AHEAD}`, 'gu');
-const CARET = new RegExp(String.raw`\^\s*[v=\s]*${VERSION_AHEAD}`, 'gu');
-const PREFIX = new RegExp(
-  String.raw`(?<=^|[\s|])(<=|>=|<|>|=)?\s*[v=]*${VERSION_AHEAD}`,
-  'gu',
-);
-
-/**
- * `text` with the spellings node-semver reads and the range reader does not
- * written as the reader's: `~>` is `~`, and a `v` or `=` before a version, after
- * an operator or alone, is nothing (`v1`, `v1.x`, `>=v1`, `^=1`, `~>v1`). A
- * version node-semver would not read there (`v1-beta`) is left as written.
- */
-function plainSpelling(text: string): string {
-  return text.replace(TILDE, '~').replace(CARET, '^').replace(PREFIX, '$1');
-}
-
-/** `semver.validRange(text) !== null`, as far as the forms opm reads go. */
+/** `semver.validRange(text) !== null`. */
 export function isRange(text: string): boolean {
-  return (
-    comparatorSets(text) !== undefined ||
-    comparatorSets(plainSpelling(text)) !== undefined
-  );
+  return comparatorSets(text) !== undefined;
 }
 
 /** `new Range(comparator).test(version)`: the comparator, and the prerelease rule. */
@@ -201,39 +165,4 @@ export function overrideRangeApplies(
     specifier === selectorRange ||
     rangesIntersect(specifier, selectorRange)
   );
-}
-
-const NUMBER = String.raw`(?:0|[1-9]\d*)`;
-const WILD = '[xX*]';
-/** A whole version with no prerelease, where node-semver's `-0` bounds would differ. */
-const FULL = String.raw`${NUMBER}\.${NUMBER}\.${NUMBER}(?:\+[0-9A-Za-z.-]+)?`;
-const PARTIAL = String.raw`${NUMBER}(?:\.(?:${NUMBER}|${WILD})){0,2}`;
-/**
- * node-semver reads `<=1.2` as `<1.3.0-0`, `>1` as `>=2.0.0`, `^0.x` as
- * `<1.0.0-0`, `~1.x` as `<2.0.0-0` and `<0.x` as nothing, the range reader
- * otherwise, so a partial version takes only these.
- */
-const COMPARATOR = String.raw`(?:(?:[~^]|[<>]=?|=)?${FULL}|(?:>=)?${PARTIAL}|<[1-9]\d*(?:\.(?:${NUMBER}|${WILD})){0,2}|\^[1-9]\d*(?:\.(?:${NUMBER}|${WILD})){0,2}|~${NUMBER}(?:\.${NUMBER}(?:\.${WILD})?)?)`;
-/** One alternative in the forms both readings agree on, or a hyphen range. */
-const PLAIN_ALTERNATIVE = new RegExp(
-  `^(?:${WILD}|${FULL} - (?:${FULL}|${PARTIAL})|${COMPARATOR}(?: +${COMPARATOR})*)$`,
-  'u',
-);
-
-/**
- * Whether opm reads `text` as pnpm (node-semver) does: a range of whole
- * versions without a prerelease written with `^`, `~`, comparators, x-ranges,
- * hyphen ranges and `||`; a `name:` or `path/` specifier or a dist-tag, which
- * neither reads as a range. Not `~>1`, `v1.x`, `<*`, `<=1.2` or a prerelease
- * bound, which the two read differently.
- */
-export function readsAsPnpm(text: string): boolean {
-  const trimmed = text.trim();
-  if (trimmed === '' || /[:/]/u.test(trimmed)) return true;
-  if (/^[A-Za-z][\w.-]*$/u.test(trimmed) && !/^[vV=]?[\dxX*]/u.test(trimmed))
-    return true;
-  return trimmed
-    .replace(/([<>]=?|=|~|\^)\s+/gu, '$1')
-    .split('||')
-    .every((alternative) => PLAIN_ALTERNATIVE.test(alternative.trim()));
 }

@@ -15,6 +15,7 @@ refuses a tool whose version is not the one named below (`PINNED` in
 | `workspace-glob-oracle.json`   | `oracle-glob.mjs` (`glob-battery.mjs`)     | pnpm 10.28.0 (`pnpm ls -r`, so its bundled tinyglobby 0.2.14); npm 10.9.4 (`@npmcli/map-workspaces` 4.0.2, glob 10.4.5) | `workspace-patterns.test.ts`, and `workspace-real-shapes.test.ts` in `opm-project` over real directories |
 | `workspace-filter-oracle.json` | `oracle-filter.mjs` (`filter-battery.mjs`) | pnpm 10.28.0 (`pnpm --filter=... ls`), with and without `legacy-dir-filtering`                                          | `workspace-filter.oracle.test.ts`                                                                        |
 | `workspace-range-oracle.json`  | `oracle-ranges.mjs`                        | semver 7.7.2, the copy inside npm 10.9.4 (`satisfies(version, range, true)`)                                            | `workspace-ranges.oracle.test.ts`                                                                        |
+| `npm-range-oracle.json`        | `oracle-npm-ranges.mjs`                    | semver 7.7.3, the copy inside pnpm 10.28.0 (`new Range(range).range`, `satisfies(version, range)`)                      | `npm-ranges.oracle.test.ts`                                                                              |
 
 `workspace-glob-known-differences.json` is not generated: it names the pattern
 lists on which pnpm's globber is the odd one out and the model deliberately is

@@ -465,9 +465,8 @@ naming the importer and the dependency:
   a git repository, a directory, a `file:` archive or a runtime, a package with
   no sha512, sha384 or sha256 integrity, an injected workspace package, a member
   with dependencies the lock does not list, a link to an importer the project no
-  longer has, an override range opm does not read as pnpm does (anything but
-  `^`, `~`, comparators, x-ranges, hyphen ranges and `||` over versions without
-  a prerelease), and a non-optional package that does not run on the target.
+  longer has, and a non-optional package that does not run on the target. Every
+  range, an override's included, is read as node-semver reads it.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files

@@ -192,17 +192,12 @@ describe('applyOverrides, as pnpm 10 applies overrides', () => {
     ).toBe('link:../../vendor/left-pad');
   });
 
-  it('does not guess at a range opm reads differently from pnpm: it is a doubt', () => {
-    const doubts: string[] = [];
+  it('reads a range only node-semver spells (v1.x) as pnpm does, and applies the override', () => {
     const out = applyOverrides(
       manifest,
       new Map([['left-pad@v1.x', '1.3.0']]),
       {},
-      doubts,
     );
-    expect(pad(out)).toBe('^1.2.0');
-    expect(doubts).toEqual([
-      'the override "left-pad@v1.x" and "left-pad" "^1.2.0" of the project are ranges opm does not read as pnpm does, so whether it applies is not known',
-    ]);
+    expect(pad(out)).toBe('1.3.0');
   });
 });

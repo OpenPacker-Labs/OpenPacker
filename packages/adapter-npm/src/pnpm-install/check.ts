@@ -116,8 +116,6 @@ export interface Freshness {
   readonly stale: readonly string[];
   /** What opm does not install, by its own rule: a patch the project declares. */
   readonly own: readonly string[];
-  /** Overrides opm cannot apply as pnpm would, so cannot hold the lock to. */
-  readonly doubts: readonly string[];
 }
 
 /** How the lock differs from the files of the importers the project has. */
@@ -130,23 +128,17 @@ export function freshnessProblems(input: {
   const { root, model, present, disk } = input;
   const { lists: rootLists, config } = root;
   const byDir = new Map(disk.map((member) => [member.dir, member]));
-  const doubts: string[] = [];
   const overridden = (dir: string): ManifestLists => {
     const member = byDir.get(dir);
     // A project with no workspace has no members on disk: it is its own root.
     const own = dir === '' ? config.project : {};
     const name = member?.name ?? own.name;
     const version = member?.manifest.version ?? own.version;
-    return applyOverrides(
-      member?.manifest ?? rootLists,
-      config.overrides,
-      {
-        ...(name !== undefined && { name }),
-        ...(version !== undefined && { version }),
-        dir,
-      },
-      doubts,
-    );
+    return applyOverrides(member?.manifest ?? rootLists, config.overrides, {
+      ...(name !== undefined && { name }),
+      ...(version !== undefined && { version }),
+      dir,
+    });
   };
   const { lock } = model;
   const auto = lock.settings.autoInstallPeers !== false;
@@ -181,7 +173,7 @@ export function freshnessProblems(input: {
     (key) =>
       `the project declares a patch for ${quote(key)}, which opm does not apply`,
   );
-  return { stale, own, doubts: [...new Set(doubts)] };
+  return { stale, own };
 }
 
 /** pnpm compares the two lists sorted; the lock's own list is refused before this. */
@@ -196,14 +188,6 @@ function ignoredProblems(
     : [
         `ignoredOptionalDependencies is ${show(config.ignoredOptionalDependencies)} in the project and ${show(inLock)} in pnpm-lock.yaml`,
       ];
-}
-
-/** Throw the error a lock opm cannot hold to the project's overrides is. */
-export function refuseDoubts(doubts: readonly string[]): never {
-  throw new ProviderError(
-    'INVALID_LOCKFILE',
-    `opm ci cannot tell whether pnpm-lock.yaml is up to date with the project's overrides: ${doubts.slice(0, 20).join('; ')}${doubts.length > 20 ? `; and ${doubts.length - 20} more` : ''}. opm compares ranges written with ^, ~, comparators, x-ranges, hyphen ranges and || over versions without a prerelease, which it reads as pnpm does; write the override in those terms`,
-  );
 }
 
 /**
