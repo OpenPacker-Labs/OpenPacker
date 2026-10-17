@@ -131,10 +131,14 @@ before it.
    version grammar, so a package served by a delegated adapter plugin, which
    exports none, is locked as the direct entry it is and its dependencies are
    not walked. Without a codec nothing can tell a range or a dist-tag from a
-   version either, so `isExactVersion` takes any hint after `@` for a version,
-   and a range or a tag is sent to the plugin as written, for its registry to
-   accept or refuse. The policy, digest and size refusals propagated before and
-   still do.
+   version either, so the host resolves no hint for such a package: whatever the
+   manifest wrote after `@`, a `^` or `~` range or a tag included, is sent to
+   the plugin as written (`targetAsWritten`). The identity the plugin answers
+   with must carry that same version, so a plugin cannot turn a range into
+   another release: it accepts the hint as the version it names, or the resolve
+   fails. Only a requirement with no hint lists the plugin's releases and takes
+   the newest the policy's minimum release age allows. The policy, digest and
+   size refusals propagated before and still do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
    repeated read of the same document from memory (never an artifact download),

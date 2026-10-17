@@ -2,7 +2,7 @@ import type { PolicyDocument } from '@openpacker/policy';
 import type { CatalogProvider } from '@openpacker/adapter-core';
 import { codecFor, hasCodec } from './codecs.js';
 import { listRegistryVersions, type RegistryOptions } from './registry.js';
-import { stripPurlVersion } from './spec.js';
+import { exactPurl, stripPurlVersion } from './spec.js';
 import { insideReleaseAge } from './supply-chain.js';
 import { OpmError } from './types.js';
 
@@ -18,11 +18,30 @@ import { OpmError } from './types.js';
  * `string-width-cjs@npm:string-width@^4` could have locked 7.x.
  */
 
+/**
+ * The release asked for by what the manifest wrote, for an ecosystem whose
+ * adapter exports no codec (a delegated plugin's): nothing here can tell a
+ * range or a tag from a version, so any hint, `^` and `~` ranges included, goes
+ * to the plugin as written. The identity the plugin answers must carry that
+ * same version, so it cannot turn a range into a release: it accepts the hint
+ * as the version it names, or the resolve fails. Undefined when the ecosystem
+ * has a codec or nothing was written; only the latter lists the releases.
+ */
+export function targetAsWritten(
+  ecosystem: string,
+  purl: string,
+  hint: string | undefined,
+): string | undefined {
+  if (hint === undefined || hint === '' || hasCodec(ecosystem))
+    return undefined;
+  return exactPurl(stripPurlVersion(purl), hint);
+}
+
 /** Whether `hint` is one release, in the ecosystem's own grammar. */
 export function isExactVersion(ecosystem: string, hint: string): boolean {
-  // With no codec nothing can tell a range or a tag from a version, so what the
-  // manifest wrote is a version, as it was before ranges were read, and the
-  // registry the adapter names accepts or refuses it.
+  // With no codec nothing can tell a range or a tag from a version. A resolve
+  // does not act on this answer for such an ecosystem: `targetAsWritten`, which
+  // it asks first, sends the hint as written.
   if (!hasCodec(ecosystem)) return true;
   try {
     codecFor(ecosystem).parseNativeVersion(hint);
