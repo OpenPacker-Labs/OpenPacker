@@ -26,6 +26,8 @@ export async function runSandboxedPackageProcess(input: {
   policy?: PolicyInput;
   network?: boolean;
   env?: Readonly<Record<string, string>>;
+  /** Ends the process tree when aborted; the run's views are still removed. */
+  signal?: AbortSignal;
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
@@ -67,6 +69,7 @@ export async function runSandboxedPackageProcess(input: {
       readonlyPaths,
       directoryAuthorities: view.authorities,
       ...(!(input.network === undefined) && { network: input.network }),
+      ...(!(input.signal === undefined) && { signal: input.signal }),
       ...(!(input.backend === undefined) && { backend: input.backend }),
     });
   } finally {

@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import {
   mkdir,
   mkdtemp,
@@ -18,6 +19,8 @@ import {
   listGenerations,
   projectPaths,
 } from '../src/index.js';
+import { currentOwner } from '../src/run-owner.js';
+import { scratchName, scratchNameFor } from '../src/run-scratch.js';
 import { storeViews } from '../src/store-view.js';
 
 configureDefaultAdapters();
@@ -92,5 +95,30 @@ describe('opm gc while a tool runs', () => {
     expect((await readdir(store)).sort()).toEqual(
       before.filter((name) => !unreachable.includes(join(store, name))).sort(),
     );
+  });
+});
+
+describe('opm gc after a run that was killed', () => {
+  it('removes the view it left, and keeps one a run still uses or another machine made', async () => {
+    const root = await project();
+    const store = projectPaths(root).store;
+    await mkdir(store, { recursive: true });
+    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+    await new Promise((resolve) => child.once('exit', resolve));
+    const ended = { ...currentOwner(), pid: child.pid!, start: '' };
+    const left = scratchNameFor('.view-', ended);
+    const running = scratchName('.view-');
+    const foreign = scratchNameFor('.view-', { ...ended, machine: 'zzzzzzzz' });
+    for (const name of [left, running, foreign])
+      await mkdir(join(store, name, `sha256-${'0'.repeat(64)}`), {
+        recursive: true,
+      });
+
+    await collectGarbage({ root, dryRun: true });
+    expect((await readdir(store)).sort()).toEqual(
+      [left, running, foreign].sort(),
+    );
+    await collectGarbage({ root });
+    expect((await readdir(store)).sort()).toEqual([running, foreign].sort());
   });
 });

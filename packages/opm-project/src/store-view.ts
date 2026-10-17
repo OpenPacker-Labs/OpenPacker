@@ -15,6 +15,10 @@ const VIEW_PREFIX = '.view-';
 export const isStoreView = (name: string): boolean =>
   name.startsWith(VIEW_PREFIX);
 
+/** Remove the views in `store` that runs which have ended left (`opm gc`). */
+export const sweepAbandonedViews = (store: string): Promise<void> =>
+  sweepAbandoned(store, VIEW_PREFIX);
+
 /**
  * Store entries bound into a sandbox through one directory handle per store,
  * not one per entry.

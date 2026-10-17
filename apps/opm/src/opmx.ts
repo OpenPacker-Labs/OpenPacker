@@ -7,7 +7,6 @@ import {
   OpmError,
   activateGeneration,
   enableDefaultSharedStore,
-  ephemeralNodeRun,
   projectPaths,
   readEnvironmentState,
   readGeneration,
@@ -21,8 +20,10 @@ import {
 import type { PolicyInput } from '@openpacker/contracts';
 import { formatFailure, parseFailure } from './error-report.js';
 import { grantedEnvironment, help, parse } from './opmx-args.js';
+import { holdingSignals } from './opmx-signals.js';
 import {
   EXIT_CODES,
+  runTool,
   spawnDeclared,
   spawnTool,
   type CliIo,
@@ -103,20 +104,9 @@ export async function runOpmx(
         `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
       );
       // An npm script runs from a node_modules of its closure, bound whole.
-      const layout = await ephemeralNodeRun(tool, bin);
-      try {
-        return await spawnDeclared(
-          layout?.bin ?? bin,
-          layout?.root ?? tool.storePath,
-          passthrough,
-          io,
-          cwd,
-          layout === undefined ? tool.runtimePaths : [layout.root],
-          tool.exactPurl,
-        );
-      } finally {
-        await layout?.dispose();
-      }
+      return await holdingSignals((signal) =>
+        runTool(tool, bin, passthrough, io, cwd, signal),
+      );
     }
 
     const root = await requireOpmRoot(cwd);
@@ -174,32 +164,38 @@ export async function runOpmx(
         ? undefined
         : state.packages[resolved.packageAlias];
     const declared = owner?.bins.find((bin) => bin.name === resolved.name);
-    if (owner !== undefined && declared !== undefined) {
-      return await spawnDeclared(
-        {
-          name: declared.name,
-          path: declared.path,
-          ...(!(declared.interpreter === undefined) && {
-            interpreter: declared.interpreter,
-          }),
-          ...(!(declared.entry === undefined) && { entry: declared.entry }),
-        },
-        owner.storePath,
-        passthrough,
-        io,
-        cwd,
-        Object.values(state.packages).map((pkg) => pkg.storePath),
-        pkgId,
-        projectPolicy,
-        root,
-      );
-    }
-    return await spawnTool(resolved.target, passthrough, io, cwd, {
+    const sandbox = {
       projectRoot: root,
-      storePaths: Object.values(state.packages).map((p) => p.storePath),
       ...(!(pkgId === undefined) && { packageId: pkgId }),
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
-    });
+    };
+    const storePaths = Object.values(state.packages).map(
+      (pkg) => pkg.storePath,
+    );
+    if (owner !== undefined && declared !== undefined) {
+      const bin = {
+        name: declared.name,
+        path: declared.path,
+        ...(!(declared.interpreter === undefined) && {
+          interpreter: declared.interpreter,
+        }),
+        ...(!(declared.entry === undefined) && { entry: declared.entry }),
+      };
+      return await holdingSignals((signal) =>
+        spawnDeclared(bin, owner.storePath, passthrough, io, cwd, {
+          ...sandbox,
+          runtimePaths: storePaths,
+          signal,
+        }),
+      );
+    }
+    return await holdingSignals((signal) =>
+      spawnTool(resolved.target, passthrough, io, cwd, {
+        ...sandbox,
+        storePaths,
+        signal,
+      }),
+    );
   } catch (error) {
     io.stderr.write(formatFailure(parseFailure(error), { tool: 'opmx' }));
     return exitForError(error);

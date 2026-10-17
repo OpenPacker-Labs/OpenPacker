@@ -29,7 +29,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
-import { isStoreView } from './store-view.js';
+import { isStoreView, sweepAbandonedViews } from './store-view.js';
 import { collectFilesFromHandle } from '@openpacker/project-io';
 
 /**
@@ -702,6 +702,7 @@ export async function collectGarbage(input: {
 }): Promise<{ removed: string[]; retained: Generation[] }> {
   const { collectable, retained } = await collectableStorePaths(input);
   if (input.dryRun) return { removed: collectable, retained };
+  await sweepAbandonedViews(projectPaths(input.root).store);
 
   for (const path of collectable) {
     await removeStableTree(path);

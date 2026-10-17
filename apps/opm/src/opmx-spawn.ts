@@ -1,6 +1,12 @@
 import { join } from 'node:path';
 import type { PolicyInput } from '@openpacker/contracts';
-import { OpmError, runSandboxedPackageProcess } from '@openpacker/opm-project';
+import {
+  OpmError,
+  ephemeralNodeRun,
+  runSandboxedPackageProcess,
+  type BinDeclaration,
+  type EphemeralTool,
+} from '@openpacker/opm-project';
 
 export const EXIT_CODES = {
   success: 0,
@@ -19,6 +25,48 @@ export interface CliIo {
   stderr: Pick<NodeJS.WriteStream, 'write'>;
 }
 
+/** Where and how a run is sandboxed, beyond its command. */
+export interface SandboxContext {
+  projectRoot?: string;
+  storePaths?: readonly string[];
+  packageId?: string;
+  policy?: PolicyInput;
+  /** Aborted by a signal opmx holds: ends the process tree (opmx-signals.ts). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Run a fetched tool's bin. An npm script runs from a node_modules of its
+ * closure, written for this run and bound whole, and removed when it ends;
+ * anything else runs from the tool cache as it is.
+ */
+export async function runTool(
+  tool: EphemeralTool,
+  bin: BinDeclaration,
+  args: readonly string[],
+  io: CliIo,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const layout = await ephemeralNodeRun(tool, bin);
+  try {
+    return await spawnDeclared(
+      layout?.bin ?? bin,
+      layout?.root ?? tool.storePath,
+      args,
+      io,
+      cwd,
+      {
+        runtimePaths: layout === undefined ? tool.runtimePaths : [layout.root],
+        packageId: tool.exactPurl,
+        ...(!(signal === undefined) && { signal }),
+      },
+    );
+  } finally {
+    await layout?.dispose();
+  }
+}
+
 /**
  * Run an entry point with whatever interpreter its ecosystem needs.
  *
@@ -32,16 +80,16 @@ export async function spawnDeclared(
   args: readonly string[],
   io: CliIo,
   cwd: string,
-  runtimePaths: readonly string[] = [storePath],
-  packageId?: string,
-  policy?: PolicyInput,
-  projectRoot?: string,
+  context: Omit<SandboxContext, 'storePaths'> & {
+    /** Every store root of the closure; the tool's own alone by default. */
+    runtimePaths?: readonly string[];
+  } = {},
 ): Promise<number> {
-  const sandboxCtx = {
+  const { runtimePaths: given, ...rest } = context;
+  const runtimePaths = given ?? [storePath];
+  const sandboxCtx: SandboxContext = {
+    ...rest,
     storePaths: runtimePaths.length > 0 ? runtimePaths : [storePath],
-    ...(!(projectRoot === undefined) && { projectRoot }),
-    ...(!(packageId === undefined) && { packageId }),
-    ...(!(policy === undefined) && { policy }),
   };
   if (bin.interpreter === 'python') {
     const [moduleName, callable] = (bin.entry ?? '').split(':');
@@ -117,12 +165,7 @@ export async function spawnTool(
   args: readonly string[],
   io: CliIo,
   cwd: string,
-  sandbox?: {
-    projectRoot?: string;
-    storePaths?: readonly string[];
-    packageId?: string;
-    policy?: PolicyInput;
-  },
+  sandbox?: SandboxContext,
 ): Promise<number> {
   return spawnProcess(process.execPath, [target, ...args], io, cwd, sandbox);
 }
@@ -132,12 +175,7 @@ async function spawnProcess(
   argv: readonly string[],
   io: CliIo,
   cwd: string,
-  sandbox?: {
-    projectRoot?: string;
-    storePaths?: readonly string[];
-    packageId?: string;
-    policy?: PolicyInput;
-  },
+  sandbox?: SandboxContext,
   missingHint?: string,
 ): Promise<number> {
   try {
@@ -154,6 +192,7 @@ async function spawnProcess(
         packageId: sandbox.packageId,
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
+      ...(!(sandbox?.signal === undefined) && { signal: sandbox.signal }),
     });
     if (outcome.stdout) io.stdout.write(outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
