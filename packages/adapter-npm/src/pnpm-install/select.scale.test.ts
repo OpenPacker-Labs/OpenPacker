@@ -104,12 +104,10 @@ describe('the selection on a long chain of optional packages', () => {
     const length = 20_000;
     const model = chain(length);
     const meter = { visits: 0 };
-    const started = performance.now();
     const selection = selectInstances(
       { model, tops: new Set(['.']), omit: new Set(), targets: [LINUX] },
       meter,
     );
-    const elapsed = performance.now() - started;
 
     expect(selection.included.size).toBe(0);
     expect(selection.refused).toEqual([]);
@@ -121,10 +119,10 @@ describe('the selection on a long chain of optional packages', () => {
       kind: 'orphaned',
       reason: 'needs "p6@1.0.0", which this machine does not install',
     });
-    // A generous bound on a shared machine: the quadratic closure took minutes.
-    expect(elapsed).toBeLessThan(5_000);
     // Every instance and every edge is looked at a bounded number of times:
-    // three walks, the platform pass, the reverse edges and the closure.
+    // three walks, the platform pass, the reverse edges and the closure. (The
+    // quadratic closure took minutes; a step count, unlike a wall-clock bound,
+    // does not fail on a loaded machine.)
     const size = model.instances.size + (length - 1) + 1;
     expect(meter.visits).toBeGreaterThan(0);
     expect(meter.visits).toBeLessThanOrEqual(8 * size);
