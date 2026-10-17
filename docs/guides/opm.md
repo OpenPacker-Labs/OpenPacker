@@ -710,7 +710,9 @@ opm gc --shared
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries younger than ten minutes are left alone (an
-install may be about to link them), as are entries any project still uses.
+install may be about to link them), as are entries any project still uses. An
+entry's age is that of the newer of its `.tree` record and the entry directory
+itself.
 
 ### Shell environment
 

@@ -560,20 +560,7 @@ describe('opm gc --shared', () => {
     expect(result.referenced).toBe(1);
   });
 
-  it('leaves an entry younger than the grace period alone', async () => {
-    const shared = await tempDir('opm-shared-');
-    const pkg = archive();
-    const key = storeKeyFromDigest(pkg.digest);
-    await rm(await install(shared, key, pkg.bytes), { recursive: true });
-
-    const young = await collectSharedStore({ env: { OPM_STORE_HOME: shared } });
-    expect(young).toMatchObject({ removed: [], tooNew: 1 });
-
-    const old = new Date(Date.now() - 3_600_000);
-    await utimes(join(shared, `${key}.tree`), old, old);
-    const aged = await collectSharedStore({ env: { OPM_STORE_HOME: shared } });
-    expect(aged.removed).toEqual([join(shared, key)]);
-  });
+  // How old an entry must be: shared-store-gc.test.ts.
 
   it('does nothing when there is no shared store', async () => {
     expect(await collectSharedStore({ env: {} })).toEqual({
