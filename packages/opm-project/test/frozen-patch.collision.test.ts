@@ -1,11 +1,18 @@
-import { readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup } from './frozen-pnpm-fixture.js';
 import { patchedWorld } from './frozen-patch-fixture.js';
 import { onPosix } from './frozen-workspace-fixture.js';
 
-afterEach(cleanup);
+const stores: string[] = [];
+afterEach(async () => {
+  await cleanup();
+  await Promise.all(
+    stores.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
 
 /**
  * A patch that creates `LIB.js` beside the package's `lib.js` leaves a pair an
@@ -26,7 +33,8 @@ describe.runIf(onPosix)('opm ci over a patch that creates a case twin', () => {
 
   it('stops with UNSAFE_PATH naming CASE_COLLISION, and leaves nothing installed or published', async () => {
     const w = await patchedWorld(PATCH);
-    const store = join(w.dir, '..', 'collision-store');
+    const store = await mkdtemp(join(tmpdir(), 'opm-collision-'));
+    stores.push(store);
     const outcome = await w.install({ env: { OPM_STORE_HOME: store } }).then(
       () => 'installed',
       (error: unknown) => error,

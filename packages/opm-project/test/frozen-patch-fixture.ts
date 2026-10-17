@@ -52,6 +52,7 @@ export function publish(
   root: string,
   format: Pick<ProjectFormat, 'applyFrozenPatch'>,
   recordWaitMs?: number,
+  maximumFiles?: number,
 ) {
   return patchArchives({
     lock: LOCK,
@@ -70,6 +71,7 @@ export function publish(
     shared: true,
     format,
     ...(recordWaitMs !== undefined && { recordWaitMs }),
+    ...(maximumFiles !== undefined && { maximumFiles }),
   });
 }
 

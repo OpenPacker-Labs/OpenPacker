@@ -32,10 +32,11 @@
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, lstat, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import type {
-  FrozenLockPackage,
-  FrozenPatch,
-  ProjectFormat,
+import {
+  PACKAGE_TREE_LIMITS,
+  type FrozenLockPackage,
+  type FrozenPatch,
+  type ProjectFormat,
 } from '@openpacker/adapter-core';
 import { adapterFailure } from './frozen-prepare.js';
 import { packageDirectory } from './frozen-scripts.js';
@@ -140,6 +141,29 @@ interface PublishInput {
   format: PatchFormat;
   /** How long to wait for another install's record; `RECORD_WAIT_MS` if absent. */
   recordWaitMs?: number;
+  /** The most files the patched entry may hold; an archive's, if absent. */
+  maximumFiles?: number;
+}
+
+/**
+ * Files in a store tree. Past `limit` the walk stops: the answer is that it
+ * is over, and the tree is not read to the end.
+ */
+async function countFiles(path: string, limit: number): Promise<number> {
+  const handle = await openStableDirectory(path);
+  try {
+    let count = 0;
+    for (const entry of await readDirChildWithTypes(handle)) {
+      assertEntryName(entry.name);
+      if (entry.isDirectory())
+        count += await countFiles(join(path, entry.name), limit - count);
+      else count += 1;
+      if (count > limit) break;
+    }
+    return count;
+  } finally {
+    await handle.close();
+  }
 }
 
 /** The unpatched entry copied to `tmp` and patched there; the tree's digest. */
@@ -154,6 +178,14 @@ async function buildPatched(input: PublishInput, tmp: string): Promise<string> {
   } catch (error) {
     throw adapterFailure(error);
   }
+  // The patch may have added to a package already at the limit.
+  const limit = input.maximumFiles ?? PACKAGE_TREE_LIMITS.maximumFiles;
+  const files = await countFiles(tmp, limit);
+  if (files > limit)
+    throw new OpmError(
+      'SIZE_LIMIT',
+      `${input.label} patched by ${input.patch.file} would hold more than the ${limit} files a package may hold`,
+    );
   return stableStoreTreeDigest(tmp);
 }
 
@@ -243,6 +275,7 @@ export async function patchArchives(input: {
   shared: boolean;
   format: PatchFormat;
   recordWaitMs?: number;
+  maximumFiles?: number;
 }): Promise<{
   byPath: Map<string, StoredEntry>;
   patched: { packages: number; patches: number };
@@ -273,6 +306,9 @@ export async function patchArchives(input: {
         format: input.format,
         ...(input.recordWaitMs !== undefined && {
           recordWaitMs: input.recordWaitMs,
+        }),
+        ...(input.maximumFiles !== undefined && {
+          maximumFiles: input.maximumFiles,
         }),
       });
       made.set(id, entry);
