@@ -17,6 +17,8 @@ import {
   recoverInterruptedSteps,
   snapshotProject,
 } from '@openpacker/opm-project';
+import { cliStep } from '../src/commands/recover.js';
+import { writePin } from '../src/commands/packslip.js';
 import { runOpm } from '../src/opm.js';
 import { capture } from './run-fixture.js';
 
@@ -177,6 +179,12 @@ const commands: Command[] = [
       expect((await opm(root, 'generations')).out).toMatch(/^\* 1\t/mu),
   },
   {
+    argv: ['rollback', '--to', '1'],
+    prepare: (root) => opm(root, 'add', 'pkg:npm/beta@1.0.0', '--offline'),
+    effect: async (root) =>
+      expect((await opm(root, 'generations')).out).toMatch(/^\* 1\t/mu),
+  },
+  {
     argv: ['gc', '--keep', '1'],
     prepare: (root) => opm(root, 'add', 'pkg:npm/beta@1.0.0', '--offline'),
     effect: async (root) =>
@@ -186,6 +194,25 @@ const commands: Command[] = [
   },
   {
     argv: ['ci', '--offline'],
+    prepare: async (root) => {
+      await mkdir(join(root, 'node_modules', 'stale'), { recursive: true });
+      await writeFile(join(root, 'node_modules', 'stale', 'index.js'), '\n');
+      await writeFile(
+        join(root, 'package.json'),
+        '{"name":"frozen","version":"1.0.0"}\n',
+      );
+      await writeFile(
+        join(root, 'package-lock.json'),
+        '{"name":"frozen","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"frozen","version":"1.0.0"}}}\n',
+      );
+    },
+    // The lock is the whole tree, and it names nothing.
+    effect: async (root) =>
+      expect(existsSync(join(root, 'node_modules', 'stale'))).toBe(false),
+  },
+  {
+    // Dispatched apart from `ci`, to the same step.
+    argv: ['install', '--frozen', '--offline'],
     prepare: async (root) => {
       await mkdir(join(root, 'node_modules', 'stale'), { recursive: true });
       await writeFile(join(root, 'node_modules', 'stale', 'index.js'), '\n');
@@ -249,5 +276,34 @@ describe('a command that changes no project', () => {
     );
     expect(run.err).not.toContain('opm: put the project back');
     expect(await copies(root)).toEqual([name]);
+  });
+});
+
+describe('opm packslip pin --write after a step a killed opm left', () => {
+  it('puts the project back first, once, and writes the pin', async () => {
+    const root = await project();
+    const { name, pid } = await deadCopy(root);
+    const cap = capture();
+    expect(
+      await writePin(
+        root,
+        'github.com/acme/tool',
+        'ps1_snirenkjwr7m5ozgcufameodnm',
+        cap.io,
+        cliStep(cap.io),
+      ),
+    ).toBe(0);
+    expect(
+      cap.err
+        .split('\n')
+        .filter((line) => line.startsWith('opm: put the project back')),
+    ).toEqual([
+      `opm: put the project back as it was before a step that process ${pid} did not finish, and removed ${join('.opm', name)}`,
+    ]);
+    expect(await copies(root)).toEqual([]);
+    expect(await read(root, 'opm.toml')).toContain(
+      'ps1_snirenkjwr7m5ozgcufameodnm',
+    );
+    expect(await recoverInterruptedSteps(root)).toEqual([]);
   });
 });

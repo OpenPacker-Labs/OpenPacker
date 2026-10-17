@@ -15,6 +15,7 @@ import {
   writeManifestFile,
   type OpmManifest,
   type RegistryOptions,
+  type StepOptions,
 } from '@openpacker/opm-project';
 import { cliStep } from './recover.js';
 
@@ -254,11 +255,30 @@ async function pin(
     return 0;
   }
   const root = await requireOpmRoot(cwd);
-  // Read again inside the step: what it holds is what a killed step left put
-  // back, and nothing else writes it meanwhile.
-  return projectStep(root, cliStep(io, args.options), async () => {
+  return writePin(
+    root,
+    release.project,
+    fingerprint,
+    io,
+    cliStep(io, args.options),
+  );
+}
+
+/**
+ * Record a keyless signer's fingerprint in opm.toml, as one step on the
+ * project (`project-step.ts`): opm.toml is read again inside it, so it holds
+ * what a killed step left put back, and nothing else writes it meanwhile.
+ */
+export async function writePin(
+  root: string,
+  project: string,
+  fingerprint: string,
+  io: CommandIo,
+  step: StepOptions,
+): Promise<number> {
+  return projectStep(root, step, async () => {
     const manifest = await readManifestFile(projectPaths(root).manifest);
-    return pinIn(root, manifest, release.project, fingerprint, io);
+    return pinIn(root, manifest, project, fingerprint, io);
   });
 }
 

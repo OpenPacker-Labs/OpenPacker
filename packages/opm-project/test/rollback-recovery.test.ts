@@ -1,6 +1,14 @@
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { hostname } from 'node:os';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
@@ -13,11 +21,13 @@ import { undoStep } from '../src/install-commit.js';
 import { snapshotProject } from '../src/project-rollback.js';
 import {
   copies,
+  deadCopy,
   editRecord,
   exitedPid,
   killedHalfWay,
   project,
   snapshot,
+  temporary,
   transport,
 } from './rollback-support.js';
 
@@ -201,12 +211,18 @@ describe('a copy that cannot be finished', () => {
     'is removed at once, not left for the next step',
     async () => {
       const root = await project();
-      // A socket in .opm/bin: copying it fails part way through the copy.
+      // A socket in .opm/bin: copying it fails part way through the copy. It is
+      // bound at a short path and moved there, since a socket's own path may
+      // not pass 107 characters, and a project under a long TMPDIR does.
       await mkdir(join(root, '.opm', 'bin'), { recursive: true });
+      const short = temporary(
+        await mkdtemp(join(existsSync('/tmp') ? '/tmp' : tmpdir(), 's-')),
+      );
       const server = createServer();
       await new Promise<void>((resolve) =>
-        server.listen(join(root, '.opm', 'bin', 'socket'), resolve),
+        server.listen(join(short, 's'), resolve),
       );
+      await rename(join(short, 's'), join(root, '.opm', 'bin', 'socket'));
       try {
         await expect(snapshotProject(root)).rejects.toThrow();
         expect(await copies(root)).toEqual([]);
@@ -215,6 +231,42 @@ describe('a copy that cannot be finished', () => {
       }
     },
   );
+});
+
+describe('a copy that its step had finished with', () => {
+  it('is removed, never restored from: the rename to .discard is the commit point', async () => {
+    const root = await project(['base']);
+    const name = await deadCopy(root);
+    await rename(
+      join(root, '.opm', name),
+      join(root, '.opm', `${name}.discard`),
+    );
+    // What the finished step wrote, which a restore would undo.
+    await writeFile(join(root, 'opm.toml'), 'what the finished step wrote\n');
+    expect(await recoverInterruptedSteps(root)).toEqual([
+      expect.objectContaining({ restored: false }),
+    ]);
+    expect(await readFile(join(root, 'opm.toml'), 'utf8')).toBe(
+      'what the finished step wrote\n',
+    );
+    expect(await copies(root)).toEqual([]);
+  });
+});
+
+describe('a holder with no record', () => {
+  it('is removed: its step was killed before it wrote anything', async () => {
+    const root = await project(['base']);
+    const before = await snapshot(root);
+    const holder = join(
+      root,
+      '.opm',
+      `.rollback-${await exitedPid()}-0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f`,
+    );
+    await mkdir(join(holder, 'files'), { recursive: true });
+    expect(await recoverInterruptedSteps(root)).toEqual([]);
+    expect(await copies(root)).toEqual([]);
+    expect(await snapshot(root)).toEqual(before);
+  });
 });
 
 describe('a step that fails and cannot be put back', () => {
