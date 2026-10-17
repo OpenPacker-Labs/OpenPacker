@@ -59,14 +59,17 @@ export {
 
 export {
   buildBwrapArgv,
-  buildSeatbeltProfile,
   createBwrapBackend,
   createNativeBackend,
-  createSeatbeltBackend,
   findTrustedSandboxHelper,
   probeNativeBackends,
   reopenExecutableAuthority,
 } from './backends/native.js';
+
+export {
+  buildSeatbeltProfile,
+  createSeatbeltBackend,
+} from './backends/seatbelt.js';
 
 export {
   createMxcBackend,
