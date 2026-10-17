@@ -158,13 +158,14 @@ function assertPrefixAgrees(header: Uint8Array, at: number): void {
 /**
  * Refuse a link name on a header that is no link. node-tar drops such an entry
  * (`TAR_ENTRY_INVALID`, "linkpath forbidden") and reads its data as headers;
- * pnpm and opm read it. A directory is dropped too, but has no data and no
- * file, so the file sets agree and it is not refused. Links themselves are
- * refused whatever their name.
+ * pnpm and opm read it. A directory is dropped too, and although it holds no
+ * file, node-tar drops it before it clears a pending extended header, so that
+ * header's path goes to the next entry instead: a directory with a link name
+ * is refused as well. Links themselves are refused whatever their name.
  */
 function assertLinkNameAgrees(header: Uint8Array, at: number): void {
   const type = String.fromCharCode(header[156] ?? 0);
-  if (header[157] === 0 || ['1', '2', '5'].includes(type)) return;
+  if (header[157] === 0 || ['1', '2'].includes(type)) return;
   throw unsafe(
     'TAR_AMBIGUOUS_LINK',
     `the header at offset ${at} has a link name and is no link: npm drops the entry and reads its data as headers, pnpm reads the entry`,

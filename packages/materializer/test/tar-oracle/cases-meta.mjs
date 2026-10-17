@@ -118,4 +118,20 @@ export const META_CASES = {
     Z,
     Z,
   ],
+  'an extended header with a path, a directory with a link name, then a file': [
+    a,
+    pax({ path: 'package/X.js' }),
+    entry('package/d/', '', { type: '5', linkname: 'zzz' }),
+    decoy,
+    Z,
+    Z,
+  ],
+  'an extended header with a path, a directory, then a file': [
+    a,
+    pax({ path: 'package/X.js' }),
+    entry('package/d/', '', { type: '5' }),
+    decoy,
+    Z,
+    Z,
+  ],
 };

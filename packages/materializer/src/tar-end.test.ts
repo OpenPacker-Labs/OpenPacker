@@ -81,6 +81,8 @@ const REFUSED: Record<string, string> = {
   'a benign file, then the same name behind a path with a newline':
     'TAR_AMBIGUOUS_PAX',
   'a newline in the second of two records': 'TAR_AMBIGUOUS_PAX',
+  'an extended header with a path, a directory with a link name, then a file':
+    'TAR_AMBIGUOUS_LINK',
   'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
   'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
 };
@@ -92,6 +94,7 @@ const REFUSED: Record<string, string> = {
 const OVER_REFUSED: Record<string, string> = {
   'an extended header with a size, a global header, then a file':
     'TAR_AMBIGUOUS_PAX',
+  'a directory with a link name': 'TAR_AMBIGUOUS_LINK',
   'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
   'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
