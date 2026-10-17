@@ -13,6 +13,7 @@ import {
   type NativeTarget,
 } from '@openpacker/adapter-core';
 import { say } from '../error-report.js';
+import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -259,7 +260,9 @@ export async function runCiCommand(
     ...(options.fetch !== undefined && { fetch: options.fetch }),
   };
   if (args.options.has('plan')) {
-    printPlan(await planFrozen(request), io, root);
+    const plan = await planFrozen(request);
+    printPlan(plan, io, root);
+    if (plan.peers !== undefined) printPeerNotice(io, plan.peers);
     return 0;
   }
   const result = await installFrozen(request);
@@ -294,5 +297,6 @@ export async function runCiCommand(
         io.stderr,
         `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
       );
+  if (result.peers !== undefined) printPeerNotice(io, result.peers);
   return 0;
 }

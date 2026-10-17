@@ -63,6 +63,11 @@ describe('a split no layout avoids', () => {
     expect(resolutionProblems(input, placement)).toEqual([]);
     expect(placement.fallback).toBe(false);
     expect(placement.splits).toBe(1);
+    expect(placement.firstSplit).toEqual({
+      importer: expect.any(String),
+      dependent: expect.stringMatching(/^p\d@/u),
+      dependency: expect.stringMatching(/^p\d@/u),
+    });
     // The independent check finds the same second copy.
     expect(peerSplitProblems(input, placement)).not.toEqual([]);
   });
@@ -75,5 +80,6 @@ describe('a split no layout avoids', () => {
     expect(placement.fallback).toBe(true);
     expect(placement.isolated).toEqual([]);
     expect(placement.splits).toBe(1);
+    expect(placement.firstSplit).toBeDefined();
   });
 });

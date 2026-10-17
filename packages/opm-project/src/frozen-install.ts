@@ -26,6 +26,7 @@
 
 import { join } from 'node:path';
 import type {
+  FrozenLockPeers,
   FrozenLockSkip,
   NativeLockEntry,
   NativeTarget,
@@ -69,6 +70,8 @@ export interface FrozenInstallResult {
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
+  /** Present when the places do not keep every shared peer to one copy of it. */
+  peers?: FrozenLockPeers;
   layout: ProjectionResult;
   milliseconds: { read: number; fetch: number; layout: number; total: number };
 }
@@ -156,6 +159,7 @@ export async function installFrozen(
       shared: store.shared,
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
+      ...(lock.peers !== undefined && { peers: lock.peers }),
       installScripts: scriptedPackages(lock.packages, declares, stored.byPath),
       layout,
       ...(lock.workspace !== undefined && {

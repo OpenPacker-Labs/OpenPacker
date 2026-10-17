@@ -11,7 +11,7 @@
  * copy, and shared from above only when the copy above does so already.
  */
 
-import type { PlaceEdge, PlaceInstance } from './place-types.js';
+import type { PlaceEdge, PlaceInstance, SplitEdge } from './place-types.js';
 import { lookup, settle, type Node } from './place-tree.js';
 
 type Edge = PlaceEdge;
@@ -140,11 +140,9 @@ export function homeOf(question: HomeQuestion): Node | 'shared' {
 }
 
 /** A dependent and the edge whose dependency loads another copy of a peer the dependent requires too. */
-export interface PeerSplit {
+export interface PeerSplit extends SplitEdge {
   /** `pinId` of the edge. */
   readonly id: string;
-  /** The importer whose subtree the dependent sits in. */
-  readonly base: string;
 }
 
 /**
@@ -170,7 +168,12 @@ export function findSplits(
       if (found?.key !== edge.to) continue;
       const shared = sharedPeers(node, mine, peersOf(edge.to));
       if (!agrees(found, shared))
-        splits.push({ id: edgeId(node, edge.as), base: node.base });
+        splits.push({
+          id: edgeId(node, edge.as),
+          importer: node.base,
+          ...(node.key !== undefined && { dependent: node.key }),
+          dependency: edge.to,
+        });
     }
   return splits;
 }

@@ -8,7 +8,11 @@
  * network, the store or the disk.
  */
 
-import type { FrozenLockSkip, NativeTarget } from '@openpacker/adapter-core';
+import type {
+  FrozenLockPeers,
+  FrozenLockSkip,
+  NativeTarget,
+} from '@openpacker/adapter-core';
 import {
   now,
   prepareFrozen,
@@ -31,6 +35,8 @@ export interface FrozenPlan {
   workspace?: { members: number; installed: number; linked: number };
   skipped: readonly FrozenLockSkip[];
   targets?: readonly NativeTarget[];
+  /** Present when the places would not keep every shared peer to one copy of it. */
+  peers?: FrozenLockPeers;
   milliseconds: number;
 }
 
@@ -60,6 +66,7 @@ export async function planFrozen(
     }),
     skipped: lock.skipped,
     ...(lock.targets !== undefined && { targets: lock.targets }),
+    ...(lock.peers !== undefined && { peers: lock.peers }),
     milliseconds: now() - started,
   };
 }

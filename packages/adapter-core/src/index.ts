@@ -25,6 +25,7 @@ export type {
   FrozenLockOptions,
   FrozenLockPackage,
   FrozenLockRefusal,
+  FrozenLockPeers,
   FrozenLockSkip,
   FrozenLockWorkspace,
   FrozenOmit,
