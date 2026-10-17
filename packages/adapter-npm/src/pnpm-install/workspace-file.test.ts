@@ -50,8 +50,9 @@ describe('pnpm-workspace.yaml, read with the bounds of the lock', () => {
     expect(performance.now() - started).toBeLessThan(5_000);
     expect(error.code).toBe('INVALID_MANIFEST');
     expect(error.message).toMatch(
-      /pnpm-workspace\.yaml" has \d+ levels of nesting, more than the limit of \d+ \(maxDepth\)/u,
+      /pnpm-workspace\.yaml" has \d+ levels of nesting, more than the limit of \d+ \(opm's limit for a pnpm-workspace\.yaml, which no setting changes\)$/u,
     );
+    expect(error.message).not.toMatch(/maxDepth|pnpm-lock/u);
   }, 60_000);
 
   it('reads 40,000 catalog entries in linear time', async () => {

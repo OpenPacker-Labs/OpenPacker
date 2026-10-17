@@ -115,8 +115,13 @@ export async function readWorkspaceFile(
     // No document at all (empty, or comments only) is a file that sets nothing.
     if (error.reason === 'yaml-syntax' && error.message.endsWith(' is empty'))
       return {};
-    // The reader names the lock; the rest of its sentence is about this file.
-    refuse(error.message.replace(/^pnpm-lock\.yaml /u, ''));
+    // The reader's sentence is about this file; a limit is opm's own for it,
+    // and not the lock's setting the lock's message names.
+    refuse(
+      error.limit === undefined
+        ? error.sentence
+        : `${error.sentence} (opm's limit for a pnpm-workspace.yaml, which no setting changes)`,
+    );
   }
   const value = plain(tree);
   return typeof value === 'object' && value !== null && !isPlainList(value)

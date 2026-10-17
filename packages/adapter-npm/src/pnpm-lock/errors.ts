@@ -9,6 +9,7 @@
  */
 
 import { ProviderError, quote, terminalSafe } from '@openpacker/adapter-core';
+import type { PnpmLockLimits } from './limits.js';
 import { redactAddresses } from './redact.js';
 
 export type PnpmLockReason =
@@ -48,23 +49,31 @@ export type PnpmLockReason =
 export class PnpmLockError extends ProviderError {
   /** Where in the lock, e.g. `packages["a@1.0.0"].resolution`; empty for the whole file. */
   readonly where: string;
+  /**
+   * The refusal without the file it is about or the setting it names: what a
+   * reader of another file with the same grammar (`pnpm-workspace.yaml`)
+   * says after that file's name.
+   */
+  readonly sentence: string;
 
   constructor(
     readonly reason: PnpmLockReason,
     message: string,
     where = '',
+    /** The limit (`PnpmLockLimits`) a `limit` refusal is over, named after the message. */
+    readonly limit?: keyof PnpmLockLimits,
   ) {
     // Both pass through `redactAddresses`: a key is often an address, and the path to a
     // failure is built from the key, so a credential must not leave through either.
+    const sentence = redactAddresses(
+      where === '' ? message : `${where} ${message}`,
+    );
     super(
       'INVALID_LOCKFILE',
-      redactAddresses(
-        where === ''
-          ? `pnpm-lock.yaml ${message}`
-          : `pnpm-lock.yaml ${where} ${message}`,
-      ),
+      `pnpm-lock.yaml ${sentence}${limit === undefined ? '' : ` (${limit})`}`,
     );
     this.where = redactAddresses(where);
+    this.sentence = sentence;
     this.name = 'PnpmLockError';
   }
 }

@@ -190,7 +190,9 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
     if (error instanceof RangeError)
       throw new PnpmLockError(
         'limit',
-        'nests deeper than the YAML reader can follow (maxDepth)',
+        'nests deeper than the YAML reader can follow',
+        '',
+        'maxDepth',
       );
     throw error;
   }
