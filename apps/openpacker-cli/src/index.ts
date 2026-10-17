@@ -12,6 +12,7 @@ import {
   type ArtifactSource,
 } from '@openpacker/artifact-model';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
+import { extractionLimits } from './extraction.js';
 import {
   canonicalBytes,
   canonicalDigest,
@@ -206,14 +207,13 @@ async function execute(
       const response = await client.materialize(input as never, requestOptions);
       const destination = option(args, 'install-prefix');
       if (!destination) return response;
+      const { descriptor } = response.data;
       const installation = await materialize({
-        source: locationSource(
-          response.data.descriptor,
-          args.options.has('offline'),
-        ),
-        descriptor: response.data.descriptor,
+        source: locationSource(descriptor, args.options.has('offline')),
+        descriptor,
         destination,
-        format: archiveFormat(response.data.descriptor),
+        format: archiveFormat(descriptor),
+        limits: extractionLimits(descriptor),
         managedDestination: true,
       });
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
