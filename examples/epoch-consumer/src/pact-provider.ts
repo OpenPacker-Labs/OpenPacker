@@ -47,6 +47,8 @@ export async function verifyEpochPact(
  * provider request through `HTTPS_PROXY || HTTP_PROXY` with an
  * `HttpsProxyAgent` and never consults NO_PROXY
  * (`@pact-foundation/pact` `dsl/verifier/proxy/proxyRequest.js`).
+ * NO_PROXY is not enough: Pact 17.0.1's proxyRequest.js ignores it, so a
+ * loopback provider listed there is still asked through the proxy.
  */
 const PACT_PROXY_VARIABLES = ['HTTPS_PROXY', 'HTTP_PROXY'] as const;
 let hidden: { holders: number; saved: Record<string, string> } | undefined;
