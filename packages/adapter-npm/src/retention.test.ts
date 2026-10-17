@@ -24,6 +24,8 @@ class Registry implements HttpTransport {
   /** Full documents served, as against the 304s. */
   documents = 0;
   revision = 0;
+  /** Holds back each 304 until it settles, as a slow origin does. */
+  gate: Promise<void> | undefined;
   constructor(
     readonly refetchable: boolean | undefined,
     budget: number,
@@ -37,13 +39,15 @@ class Registry implements HttpTransport {
     const name = decodeURIComponent(request.url.slice(ENDPOINT.length + 1));
     if (!this.names.includes(name)) throw new Error(`no ${name}`);
     const etag = `"${name}-${this.revision}"`;
-    if (request.headers?.['if-none-match'] === etag)
+    if (request.headers?.['if-none-match'] === etag) {
+      await this.gate;
       return {
         status: 304,
         headers: { etag },
         body: new Uint8Array(),
         url: request.url,
       };
+    }
     this.documents += 1;
     const body = encoder.encode(
       JSON.stringify({
@@ -61,7 +65,7 @@ class Registry implements HttpTransport {
   }
 }
 
-const provider = (registry: Registry) =>
+const provider = (registry: HttpTransport) =>
   new NpmRegistryProvider(
     registry,
     { now: () => '2026-10-12T00:00:00Z' },
@@ -152,6 +156,36 @@ describe('a provider under a retention budget', () => {
       message:
         'The packument of a changed while the resolve was running; run it again',
     });
+  });
+
+  it('counts a packument again that it let go while its revalidation was out', async () => {
+    // What one packument counts, read alone.
+    const probe = new Registry(true, Number.POSITIVE_INFINITY, ['a']);
+    await provider(probe).enumerate('pkg:npm/a');
+    const one = probe.retention.retainedBytes;
+    // Room for two and a half: a, b and c each weigh the same.
+    const budget = Math.floor(2.5 * one);
+    const registry = new Registry(true, budget, ['a', 'b', 'c']);
+    const npm = provider(registry);
+    await npm.enumerate('pkg:npm/a');
+    await npm.enumerate('pkg:npm/b');
+    let settle!: () => void;
+    registry.gate = new Promise((resolve) => (settle = resolve));
+    const again = npm.enumerate('pkg:npm/a');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // c is read while a's revalidation is at the origin: a is the least
+    // recently used, so the budget lets it go.
+    await npm.enumerate('pkg:npm/c');
+    const held = (name: string) =>
+      registry.retention.has(`npm\n${ENDPOINT}\npkg:npm/${name}`);
+    expect(held('a')).toBe(false);
+    settle();
+    await again;
+    // The 304 kept a's tree; it is counted again, and the budget still holds.
+    expect(held('a')).toBe(true);
+    expect(registry.retention.retainedBytes).toBe(2 * one);
+    expect(registry.retention.retainedBytes).toBeLessThanOrEqual(budget);
+    expect(held('b')).toBe(false);
   });
 
   it('forgets a packument it was told to invalidate, with no check of what comes next', async () => {

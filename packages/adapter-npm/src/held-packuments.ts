@@ -23,6 +23,8 @@ export interface HeldPackument {
   readonly etag?: string;
   readonly retrievedAt: string;
   readonly record: PackumentRecord | undefined;
+  /** What the record is counted at while it is held: its tree and its text. */
+  readonly weight: number;
 }
 
 async function digestOf(bytes: Uint8Array): Promise<string> {
@@ -90,12 +92,24 @@ export class HeldPackuments {
     return started;
   }
 
-  /** `existing`, which the origin says is current. */
+  /**
+   * `existing`, which the origin says is current. It is counted again and not
+   * only marked used: the budget may have let it go while the revalidation was
+   * out, and the 304 brings its objects back, which a mark would leave held
+   * and uncounted for the rest of the resolve.
+   */
   revalidated(existing: PackumentRecord, retrievedAt: string): PackumentRecord {
-    const kept = this.#held.get(existing.key)!;
+    const { key } = existing;
+    const kept = this.#held.get(key);
+    if (kept === undefined)
+      throw new ProviderError(
+        'STALE_METADATA',
+        `Received 304 without cached metadata for ${key}`,
+        304,
+      );
     const record = { ...existing, retrievedAt };
-    this.#held.set(existing.key, { ...kept, retrievedAt, record });
-    this.ledger?.touch(this.ledgerKey(existing.key));
+    this.#held.set(key, { ...kept, retrievedAt, record });
+    this.hold(key, kept.weight);
     return record;
   }
 
@@ -122,21 +136,23 @@ export class HeldPackuments {
         'STALE_METADATA',
         `The packument of ${safeEcho(name, NPM_NAME_LIMIT)} changed while the resolve was running; run it again`,
       );
+    // What this record keeps alive by itself: the objects (what the parse
+    // measured the tree to keep), and the text they came from, which the
+    // transport may be holding as well.
+    const weight = retained + record.rawBody.byteLength;
     this.#held.set(key, {
       key,
       retrievedAt: record.retrievedAt,
       ...(!(record.etag === undefined) && { etag: record.etag }),
       record,
+      weight,
     });
-    // What this record keeps alive by itself: the objects (what the parse
-    // measured the tree to keep), and the text they came from, which the
-    // transport may be holding as well.
-    this.ledger?.retain(
-      this.ledgerKey(key),
-      retained + record.rawBody.byteLength,
-      () => this.letGo(key),
-    );
+    this.hold(key, weight);
     return record;
+  }
+
+  private hold(key: string, weight: number): void {
+    this.ledger?.retain(this.ledgerKey(key), weight, () => this.letGo(key));
   }
 
   invalidate(key?: string): void {
