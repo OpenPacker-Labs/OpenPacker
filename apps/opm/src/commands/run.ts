@@ -131,7 +131,11 @@ export async function runScriptCommand(
     initCwd: resolve(cwd),
     context,
   });
-  if (result.failure !== undefined) io.stderr.write(`opm: ${result.failure}\n`);
+  if (result.failure !== undefined) {
+    // A failure is the rare path: the printer that escapes it loads the library.
+    const { say } = await import('../error-report.js');
+    say(io.stderr, `opm: ${result.failure}\n`);
+  }
   return result.status;
 }
 

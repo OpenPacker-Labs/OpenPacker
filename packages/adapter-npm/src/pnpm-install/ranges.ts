@@ -15,6 +15,7 @@
 import {
   compareParsedVersions,
   evaluateSemverRange,
+  npmVersion,
   parseSemver,
   parseSemverRange,
   type RangeAst,
@@ -129,16 +130,17 @@ export function rangesIntersect(left: string, right: string): boolean {
   );
 }
 
-/** A whole version as node-semver reads one: three numbers, no fewer. */
-const FULL_VERSION =
-  /^v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-
-/** `semver.satisfies(version, range)`; false when either does not parse. */
+/**
+ * `semver.satisfies(version, range)`; false when either does not parse. The
+ * version is read by node-semver's strict grammar (`npmVersion`), which refuses
+ * `1.2.3-01` and `01.2.3` as `new SemVer` does.
+ */
 export function versionSatisfies(version: string, range: string): boolean {
-  if (!FULL_VERSION.test(version.trim())) return false;
+  const written = npmVersion(version);
+  if (written === undefined) return false;
   try {
     return evaluateSemverRange(
-      version,
+      written,
       parseSemverRange(range, {
         scheme: 'npm',
         bare: 'exact',

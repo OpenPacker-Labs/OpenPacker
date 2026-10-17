@@ -47,16 +47,36 @@ function checkNesting(text: string): void {
 }
 
 /**
+ * The library's options. Its own repeated-key check (`uniqueKeys`) compares
+ * each key with every earlier one (40,000 catalog entries took 13 s), so it is
+ * off, and `firstRepeatedKey` finds a repeat by one lookup per key.
+ */
+export const DOCUMENT_OPTIONS = {
+  version: '1.2',
+  uniqueKeys: false,
+  prettyErrors: false,
+  logLevel: 'error',
+} as const;
+
+/** Counts the keys looked up, for the tests that hold a read to linear work. */
+export interface DeclarationMeter {
+  keyLookups: number;
+}
+
+/**
  * The first key a mapping repeats, anywhere in the tree, by its scalar value as
  * text. The YAML spec tells `1` (an integer) from `"1"` (a string); pnpm does
  * not, as its reader keys an object by text and refuses the second as a
  * duplicated mapping key (pnpm 10.28 on `1: ^1` beside `"1": ^2`), so neither
  * does this.
  */
-function firstRepeatedKey(node: unknown): string | undefined {
+function firstRepeatedKey(
+  node: unknown,
+  meter: DeclarationMeter,
+): string | undefined {
   if (isSeq(node))
     for (const item of node.items) {
-      const found = firstRepeatedKey(item);
+      const found = firstRepeatedKey(item, meter);
       if (found !== undefined) return found;
     }
   if (!isMap(node)) return undefined;
@@ -64,10 +84,11 @@ function firstRepeatedKey(node: unknown): string | undefined {
   for (const pair of node.items) {
     if (isScalar(pair.key)) {
       const key = String(pair.key.value);
+      meter.keyLookups += 1;
       if (seen.has(key)) return key;
       seen.add(key);
     }
-    const found = firstRepeatedKey(pair.value);
+    const found = firstRepeatedKey(pair.value, meter);
     if (found !== undefined) return found;
   }
   return undefined;
@@ -82,23 +103,17 @@ function firstRepeatedKey(node: unknown): string | undefined {
 export function parsePnpmWorkspaceYaml(
   text: string,
   limits: WorkspaceLimits,
+  meter: DeclarationMeter = { keyLookups: 0 },
 ): PnpmDeclaration {
   checkNesting(text);
-  // The library's own repeated-key check compares each key with every earlier
-  // one (40,000 catalog entries took 13 s); `firstRepeatedKey` is linear.
-  const document = parseDocument(text, {
-    version: '1.2',
-    uniqueKeys: false,
-    prettyErrors: false,
-    logLevel: 'error',
-  });
+  const document = parseDocument(text, DOCUMENT_OPTIONS);
   const failure = document.errors[0];
   if (failure !== undefined)
     throw invalid(`is not valid YAML: ${failure.message.split('\n')[0]}`);
   const warning = document.warnings[0];
   if (warning !== undefined)
     throw invalid(`is not read: ${warning.message.split('\n')[0]}`);
-  const repeated = firstRepeatedKey(document.contents);
+  const repeated = firstRepeatedKey(document.contents, meter);
   if (repeated !== undefined)
     throw invalid(
       `has the duplicate key ${quote(repeated)} in one mapping (a key is compared as text, as pnpm compares it, so 1 and "1" are one key)`,

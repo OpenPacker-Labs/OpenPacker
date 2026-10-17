@@ -17,7 +17,6 @@ export const PINNED = {
   mapWorkspaces: '4.0.2',
   glob: '10.4.5',
   semver: '7.7.2',
-  pnpmSemver: '7.7.3',
 };
 
 function versionOf(directory) {
@@ -30,6 +29,28 @@ function expect(what, directory, wanted) {
   if (found !== wanted)
     throw new Error(
       `${what} at ${directory} is ${found}; the golden files are generated with ${wanted}`,
+    );
+}
+
+/**
+ * pnpm's own code reads ranges with the semver its bundle embeds
+ * (`dist/pnpm.cjs`, from `node_modules/.pnpm/semver@<version>`), which cannot
+ * be loaded on its own; npm's copy stands in for it, so the two must be one
+ * version. The `dist/node_modules/semver` beside the bundle (7.7.3 in pnpm
+ * 10.28.0) is shipped for node-gyp and is not what pnpm runs.
+ */
+function expectEmbeddedSemver(pnpmDirectory) {
+  const bundle = join(pnpmDirectory, 'dist', 'pnpm.cjs');
+  const versions = new Set(
+    [
+      ...readFileSync(bundle, 'utf8').matchAll(
+        /node_modules\/\.pnpm\/semver@([^/]+)\//gu,
+      ),
+    ].map((match) => match[1]),
+  );
+  if (versions.size !== 1 || !versions.has(PINNED.semver))
+    throw new Error(
+      `${bundle} embeds semver ${[...versions].join(', ') || 'of no version'}; the golden files are generated with ${PINNED.semver}`,
     );
 }
 
@@ -50,13 +71,11 @@ export function loadTools(pnpmDirectory, npmDirectory) {
   );
   expect('glob', join(modules, 'glob'), PINNED.glob);
   expect('semver', join(modules, 'semver'), PINNED.semver);
-  const pnpmSemver = join(pnpmDirectory, 'dist', 'node_modules', 'semver');
-  expect('the semver pnpm bundles', pnpmSemver, PINNED.pnpmSemver);
+  expectEmbeddedSemver(pnpmDirectory);
   return {
     pnpmBinary: join(pnpmDirectory, 'bin', 'pnpm.cjs'),
     mapWorkspaces: required('@npmcli/map-workspaces'),
     semver: required('semver'),
-    pnpmSemver: createRequire(join(pnpmSemver, 'package.json'))('./index.js'),
   };
 }
 

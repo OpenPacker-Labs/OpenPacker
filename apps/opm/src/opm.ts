@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { terminalSafe } from '@openpacker/adapter-core';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   registerInstalledPlugins,
@@ -64,8 +63,9 @@ import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { CI_HELP } from './commands/ci-help.js';
+import { isBooleanFlag, shortToLong } from './cli-flags.js';
 import { RUN_HELP } from './commands/run-help.js';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, say } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -162,14 +162,16 @@ export async function runOpm(
         registry: adapterRegistry,
       });
       for (const refused of pluginRegistration.refused)
-        io.stderr.write(
+        say(
+          io.stderr,
           `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
         );
     } catch (error) {
       // A store-level failure (corrupt index, unsafe root) leaves every
       // plugin unregistered; their purl types stay unsupported, which is
       // the fail-closed answer, and `opm plugin` can still repair the store.
-      io.stderr.write(
+      say(
+        io.stderr,
         `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
       );
     }
@@ -474,7 +476,7 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
+          say(io.stderr, `opm: ${item.purl}: ${item.reason}\n`);
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -483,7 +485,7 @@ export async function runOpm(
           `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
         );
         for (const instance of solved.selected)
-          io.stdout.write(`  ${instance.identity.exactPurl}\n`);
+          say(io.stdout, `  ${instance.identity.exactPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'info': {
@@ -730,11 +732,11 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
 /**
  * Report a failure and choose the exit code that tells a script what kind it
  * was. Every failure `opm` reports is printed here, so this is where a message
- * is made safe for the terminal (`terminalSafe`): a message may carry text a
- * repository wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
+ * is made safe for the terminal (`say`): a message may carry text a repository
+ * wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
  */
 export function handleError(error: unknown, io: CliIo): number {
-  const report = (text: string) => io.stderr.write(terminalSafe(text));
+  const report = (text: string) => say(io.stderr, text);
   if (error instanceof UsageError) {
     report(`${error.message}\n`);
     return EXIT_CODES.usage;
@@ -928,47 +930,6 @@ function parseArgs(argv: string[]): Parsed {
     head: commandIndex === -1 ? [...argv] : argv.slice(0, commandIndex),
     rest: commandIndex === -1 ? [] : argv.slice(commandIndex + 1),
   };
-}
-
-function shortToLong(short: string): string {
-  switch (short) {
-    case 'e':
-      return 'ecosystem';
-    case 'h':
-      return 'help';
-    case 'w':
-      return 'workspace';
-    case 'F':
-      return 'filter';
-    default:
-      return short;
-  }
-}
-
-function isBooleanFlag(key: string): boolean {
-  return (
-    key === 'help' ||
-    key === 'force' ||
-    key === 'offline' ||
-    key === 'online' ||
-    key === 'json' ||
-    key === 'dry-run' ||
-    key === 'delegate' ||
-    key === 'allow-build' ||
-    key === 'allow-network' ||
-    key === 'allow-elevation' ||
-    key === 'latest' ||
-    key === 'if-present' ||
-    key === 'native' ||
-    key === 'shared' ||
-    key === 'production' ||
-    key === 'frozen' ||
-    key === 'workspaces' ||
-    key === 'no-workspaces' ||
-    key === 'include-workspace-root' ||
-    key === 'plan' ||
-    key === 'write'
-  );
 }
 
 /**

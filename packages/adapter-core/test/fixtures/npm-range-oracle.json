@@ -1,6 +1,6 @@
 {
   "generatedWith": {
-    "semver": "semver 7.7.3, the copy inside pnpm 10.28.0: new Range(range).range and satisfies(version, range); null where new Range(range) throws"
+    "semver": "semver 7.7.2, the version pnpm 10.28.0 embeds (npm 10.9.4's copy): new Range(range).range and satisfies(version, range); null where new Range(range) throws"
   },
   "versions": [
     "0.0.0",
@@ -2947,7 +2947,7 @@
       "satisfies": "111111111111111111000000000000"
     },
     ">=0.0.0+build": {
-      "range": "",
+      "range": ">=0.0.0",
       "satisfies": "111111111111111111000000000000"
     },
     "^0.0.0-beta": {
@@ -3013,6 +3013,20 @@
     ">=1.2.3-beta <=1.2": {
       "range": ">=1.2.3-beta <1.3.0-0",
       "satisfies": "000000000011000000000011000000"
+    },
+    "=1+b": null,
+    "<=1.2+b": null,
+    "1.x+b": null,
+    "^1.2+b": null,
+    "~1+b": null,
+    ">1.x+b": null,
+    "1.2.x+b": {
+      "range": ">=1.2.0 <1.3.0-0",
+      "satisfies": "000000001111000000000000000000"
+    },
+    ">=0.0.0+build <1": {
+      "range": ">=0.0.0 <1.0.0-0",
+      "satisfies": "111111000000000000000000000000"
     },
     "X": {
       "range": "",

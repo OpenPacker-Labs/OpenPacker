@@ -19,7 +19,7 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, say } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -413,12 +413,12 @@ async function spawnProcess(
       error instanceof Error &&
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
-    io.stderr.write(
-      `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
+    const hint = missing ? missingHint : undefined;
+    say(
+      io.stderr,
+      `opmx: ${hint ? `${hint} (${command} not found)` : message}\n`,
     );
-    return missing && missingHint
-      ? EXIT_CODES.unavailable
-      : EXIT_CODES.internal;
+    return hint ? EXIT_CODES.unavailable : EXIT_CODES.internal;
   }
 }
 

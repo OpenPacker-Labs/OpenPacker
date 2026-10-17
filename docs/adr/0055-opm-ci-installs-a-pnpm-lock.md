@@ -105,20 +105,26 @@ design:
    is refused too: it does not pin the bytes). `deprecated` becomes a lifecycle
    fact. The integrity proves the bytes and not what they hold, so after
    extraction the host reads each archive's own `package.json` and refuses one
-   whose name or version (a leading `v` or `=` and build metadata aside) is not
-   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched). The version
-   is the one the lock records for the archive: a registry package's, or a
-   tarball entry's own `version` (its key holds the URL), and a tarball entry
-   with none has its name compared alone; a `name` the entry writes beside its
-   key must match as well. A name is compared without regard to case, as pnpm
-   compares one: pnpm makes the same check when it reads a package back from its
-   store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
-   `strict-store-pkg-content-check`); npm does not make it. Every value the
-   archive gives is quoted and escaped as the lock's values are. One difference
-   from pnpm is deliberate: pnpm compares a name or version only when the
-   archive's `package.json` has one, and opm refuses an archive with no `name`
-   (or, where the lock records a version, no `version`), because an archive that
-   does not say what it is cannot be identified as the package the lock names.
+   whose name or version is not the lock's (`DIGEST_MISMATCH`, before
+   `node_modules` is touched); a version refused names the version the lock
+   records. The version is the one the lock records for the archive: a registry
+   package's, or a tarball entry's own `version` (its key holds the URL), and a
+   tarball entry with none has its name compared alone; a `name` the entry
+   writes beside its key must match as well. Both are compared as pnpm compares
+   them when it reads a package back from its store
+   (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
+   `strict-store-pkg-content-check`); npm does not make the check. A name is
+   compared without regard to case, and a version by pnpm's
+   `equalOrSemverEqual`: the same text, or node-semver 7.7.2's
+   `eq(a, b, { loose: true })`, so an archive that writes `v1.0.0`, `=1.0.0`,
+   `vv1.0.0`, `01.0.0` or `1.0.0+build` is `1.0.0`, as pnpm takes it, and loose
+   reading never makes two versions one (`1.0.1` and `1.0.0-1` are refused for
+   `1.0.0`). Every value the archive gives is quoted and escaped as the lock's
+   values are. One difference from pnpm is deliberate: pnpm compares a name or
+   version only when the archive's `package.json` has one, and opm refuses an
+   archive with no `name` (or, where the lock records a version, no `version`),
+   because an archive that does not say what it is cannot be identified as the
+   package the lock names.
 
 ### Where each instance goes
 
@@ -275,17 +281,27 @@ design:
        and moves to `dependencies` when the replacement is not a peer range
        (node-semver's `validRange`, which takes `v1` and `~>1` as ranges too). A
        selector is split at the first `>` pnpm splits at. Every npm range is
-       read as node-semver 7.7.3 (the copy pnpm 10.28 bundles) reads it: the
-       range reader of `adapter-core` follows node-semver's own steps for the
-       npm scheme (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`,
-       `x.y`, `> = 1`) and keeps the comparators it keeps (`1.2` is
-       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`). `npm-range-oracle.json` holds
-       node-semver's answers for 1,142 ranges and 30 versions and the parser
-       must give each; the review differential found 0 differences over 123,039
-       ranges. So no override is left in doubt: an override written `v1.x` or
-       `<=1.2` applies where pnpm applies it (pnpm 10.28 found such a lock up to
-       date). Before this the reader read some forms its own way and opm refused
-       the override as its own rule rather than guess.
+       read as node-semver 7.7.2 reads it, the version pnpm 10.28's own code
+       embeds (`dist/pnpm.cjs`) and npm 10.9 uses; the 7.7.3 pnpm ships beside
+       its bundle is node-gyp's, and differs only in stripping build metadata
+       first, so 7.7.2 refuses `=1+b`, `<=1.2+b` and `1.x+b`. The range reader
+       of `adapter-core` follows node-semver's own steps for the npm scheme
+       (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`, `x.y`,
+       `> = 1`, `=1+b`) and keeps the comparators it keeps (`1.2` is
+       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`, `>=0.0.0+build` is `>=0.0.0`).
+       `npm-range-oracle.json` holds node-semver 7.7.2's answers for 1,150
+       ranges and 30 versions and the parser must give each. Three differentials
+       agree: the fix that brought the port found its comparator sets equal to
+       7.7.3's over 123,039 generated ranges; the round-3 review, from a
+       generator of its own (about 128,000 ranges), found none against 7.7.3
+       and, against 7.7.2, only the build-metadata one above; and that review's
+       script, run against 7.7.2 once the port followed it, found 0 differences
+       in comparator sets, in 843,210 `satisfies` answers and in 112,428
+       `intersects` answers over 128,229 ranges. So no override is left in
+       doubt: an override written `v1.x` or `<=1.2` applies where pnpm applies
+       it (pnpm 10.28 found such a lock up to date). Before this the reader read
+       some forms its own way and opm refused the override as its own rule
+       rather than guess.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it

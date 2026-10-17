@@ -1,12 +1,17 @@
 /**
  * Where `ranges.ts` disagreed with node-semver (the review of #179, round 2,
  * N3): every pair and form below is one the review's differential found, with
- * node-semver's answer (7.7.3, the copy pnpm 10.28 bundles, and 7.8.5 agree on
- * each), and a few beside them that must keep their answer.
+ * node-semver 7.7.2's answer (the version pnpm 10.28's own code embeds), and a
+ * few beside them that must keep their answer.
  */
 
 import { describe, expect, it } from 'vitest';
-import { isRange, overrideRangeApplies, rangesIntersect } from './ranges.js';
+import {
+  isRange,
+  overrideRangeApplies,
+  rangesIntersect,
+  versionSatisfies,
+} from './ranges.js';
 
 /** The spellings of `>=0.0.0` the differential had, each `*` to node-semver. */
 const AT_LEAST_ZERO = [
@@ -40,7 +45,8 @@ describe('rangesIntersect, against node-semver', () => {
   );
 
   it.each([
-    ['<0.0.0', '>=0.0.0+build', true],
+    // 7.7.2 keeps the build, so this is `>=0.0.0` and not `*` (7.7.3: true).
+    ['<0.0.0', '>=0.0.0+build', false],
     // `*` beside another comparator is dropped, as node-semver drops it.
     ['<0.0.0', '>=0.0.0 <1.0.0', false],
     ['<0.0.0', '* <1.0.0', false],
@@ -113,4 +119,29 @@ describe('isRange, against node-semver validRange', () => {
   ] as const)('reads %j as node-semver does: %j', (text, expected) => {
     expect(isRange(text)).toBe(expected);
   });
+});
+
+describe('versionSatisfies, against node-semver satisfies', () => {
+  // node-semver 7.7.2's answers. A version is read by the strict grammar, so a
+  // numeric prerelease identifier with a leading zero is not a version at all.
+  it.each([
+    ['1.2.3-01', '>=1.2.3-0 <1.2.4', false],
+    ['1.2.3-alpha.01', '>=1.2.3-0 <1.2.4', false],
+    ['1.2.3-00', '>=1.2.3-0 <1.2.4', false],
+    ['1.2.3-1', '>=1.2.3-0 <1.2.4', true],
+    ['1.2.3-0', '>=1.2.3-0 <1.2.4', true],
+    ['1.2.3-0a', '>=1.2.3-0 <1.2.4', true],
+    ['1.2.3-alpha.1', '>=1.2.3-0 <1.2.4', true],
+    ['01.2.3', '>=1.0.0', false],
+    ['1.2', '>=1.0.0', false],
+    ['=1.2.3', '>=1.0.0', false],
+    ['v1.2.3', '>=1.0.0', true],
+    [' 1.2.3 ', '>=1.0.0', true],
+    ['1.2.3+b.01', '>=1.0.0', true],
+  ] as const)(
+    'answers %j in %j as node-semver does: %j',
+    (version, range, expected) => {
+      expect(versionSatisfies(version, range)).toBe(expected);
+    },
+  );
 });

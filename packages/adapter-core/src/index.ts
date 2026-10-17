@@ -11,9 +11,11 @@ export {
 } from './host-target.js';
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
+export { ProviderError } from './provider-error.js';
+import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
-import { npmRangeAst } from './npm-semver-range.js';
-import { quote } from './terminal-text.js';
+import { npmAst } from './npm-semver-range.js';
+export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type {
   FrozenLock,
   FrozenLockOptions,
@@ -1666,17 +1668,6 @@ export class FixtureHttpTransport implements HttpTransport {
   }
 }
 
-export class ProviderError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly upstreamStatus?: number,
-  ) {
-    super(message);
-    this.name = 'ProviderError';
-  }
-}
-
 export interface ParsedPurl {
   type: string;
   namespace?: string | undefined;
@@ -1947,11 +1938,7 @@ export function evaluateSemverRange(
   return acceptsPrerelease(ast);
 }
 
-/**
- * How a range is read. An `npm` range is read as node-semver reads it, whatever
- * the rest says (`npm-semver-range.ts`); `bare`, `commaAnd` and `hyphenRanges`
- * are the cargo and Go readings'.
- */
+/** How a range is read; an `npm` one is node-semver's, whatever the rest says. */
 export interface SemverRangeOptions {
   scheme: 'npm' | 'cargo' | 'golang';
   bare: 'exact' | 'caret';
@@ -2084,21 +2071,6 @@ function astVers(ast: RangeAst): string | undefined {
   if (ast.type === 'or') return undefined;
   const parts = ast.items.map(astVers);
   return parts.some((part) => part === undefined) ? undefined : parts.join('|');
-}
-
-/**
- * An npm range as node-semver 7.7.3 reads it (`npm-semver-range.ts`): what it
- * refuses is refused, and `bare`, `commaAnd` and `hyphenRanges` do not apply,
- * npm's grammar fixing all three.
- */
-function npmAst(value: string): RangeAst {
-  const ast = npmRangeAst(value);
-  if (ast === undefined)
-    throw new ProviderError(
-      'INVALID_NATIVE_RANGE',
-      `Invalid npm range: ${quote(value)}`,
-    );
-  return ast;
 }
 
 /** A cargo or Go range, by the reader those schemes share. */
