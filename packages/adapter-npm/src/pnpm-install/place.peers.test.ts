@@ -207,6 +207,38 @@ describe('the peer check is not vacuous', () => {
   });
 });
 
+describe('a name whose slot in the project stays empty', () => {
+  it('goes to the instance two members write, which then has one real path (E)', () => {
+    // x@2 is wanted by more packages, but each sits in a beside the project's
+    // own y, w and v and finds a's x first; the project's slot stays empty.
+    const placement = plan(
+      world(
+        [
+          instance('x@1.0.0'),
+          instance('x@2.0.0'),
+          instance('y@1.0.0', { x: 'x@2.0.0' }),
+          instance('y@2.0.0'),
+          instance('w@1.0.0', { x: 'x@2.0.0' }),
+          instance('w@2.0.0'),
+          instance('v@1.0.0', { x: 'x@2.0.0' }),
+          instance('v@2.0.0'),
+        ],
+        [
+          top('', { y: 'y@2.0.0', w: 'w@2.0.0', v: 'v@2.0.0' }),
+          top('packages/a', {
+            x: 'x@1.0.0',
+            y: 'y@1.0.0',
+            w: 'w@1.0.0',
+            v: 'v@1.0.0',
+          }),
+          top('packages/b', { x: 'x@1.0.0' }, { a: 'packages/a' }),
+        ],
+      ),
+    );
+    expect(whereIs(placement)['x@1.0.0']).toEqual(['node_modules/x']);
+  });
+});
+
 describe('random worlds of peer variants', () => {
   const reacts = ['r@1.0.0', 'r@2.0.0', 'r@3.0.0'];
   const worlds = fc

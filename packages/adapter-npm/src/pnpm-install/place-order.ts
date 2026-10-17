@@ -5,6 +5,7 @@
  */
 
 import { compareText, compareVersions } from '../layout-compare.js';
+import type { Node } from './place-tree.js';
 import type { PlaceInstance, PlaceTop } from './place-types.js';
 
 /** The member directories that enclose `dir`, nearest first (never `dir`, never the project). */
@@ -75,4 +76,40 @@ function mostWanted(
       ) ||
       compareText(leftKey, rightKey),
   )[0]?.[0];
+}
+
+/**
+ * The names whose slot in the project a plan left empty while one instance of
+ * the name is written in two or more members' own `node_modules`, each with
+ * the instance written in the most of them: given the slot, that instance has
+ * one real path for all of those members.
+ */
+export function emptySlotChoices(
+  laid: {
+    readonly project: Node;
+    readonly placed: readonly Node[];
+    readonly preferred: ReadonlyMap<string, string>;
+  },
+  instances: ReadonlyMap<string, PlaceInstance>,
+): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const node of laid.placed) {
+    const name = node.installName;
+    if (node.base === '' || node.chain.length !== 1) continue;
+    if (laid.project.children.has(name)) continue;
+    const byKey = counts.get(name) ?? new Map<string, number>();
+    counts.set(name, byKey);
+    byKey.set(node.key!, (byKey.get(node.key!) ?? 0) + 1);
+  }
+  const choices = new Map<string, string>();
+  for (const [name, byKey] of counts) {
+    const best = mostWanted(byKey, instances);
+    if (
+      best !== undefined &&
+      byKey.get(best)! >= 2 &&
+      laid.preferred.get(name) !== best
+    )
+      choices.set(name, best);
+  }
+  return choices;
 }

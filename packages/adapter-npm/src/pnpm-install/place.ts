@@ -20,6 +20,9 @@
  * - except that an instance with a peer its dependent requires too is shared,
  *   or written, only where that peer resolves to the dependent's own copy
  *   (`place-peers.ts`): as high as that holds, and no higher;
+ * - a name whose slot in the project stays empty while one instance of it is
+ *   written in two members' `node_modules` gives that instance the slot, and the
+ *   plan is made again;
  * - a member link takes `node_modules/<member name>` in the project;
  * - a member nested inside another member's directory looks in that member's
  *   `node_modules` before the project's, as Node does.
@@ -38,7 +41,12 @@ import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
 } from '../layout-plan-types.js';
-import { enclosingDirs, orderedEdges, rootChoice } from './place-order.js';
+import {
+  emptySlotChoices,
+  enclosingDirs,
+  orderedEdges,
+  rootChoice,
+} from './place-order.js';
 import {
   homeOf,
   peerEdgesOf,
@@ -70,9 +78,11 @@ export type {
 export const MAXIMUM_DEPTH = 32;
 
 interface Laid {
+  readonly project: Node;
   readonly tops: ReadonlyMap<string, Node>;
   readonly placed: readonly Node[];
   readonly links: ReadonlyMap<string, string>;
+  readonly preferred: ReadonlyMap<string, string>;
   readonly problems: readonly string[];
 }
 
@@ -88,16 +98,21 @@ const edgeId = (node: Node, as: string): string =>
     ? `\u0001${node.base}\u0000${as}`
     : `${node.key}\u0000${as}`;
 
-/** One plan. An edge in `pinned` is answered beside its dependent whatever it finds. */
+/**
+ * One plan. An edge in `pinned` is answered beside its dependent whatever it
+ * finds; a name in `elected` gives the project's slot to that instance.
+ */
 function layOut(
   input: PlaceInput,
   known: Known,
   pinned: ReadonlySet<string>,
+  elected: ReadonlyMap<string, string>,
 ): Laid {
   const { instances } = input;
   const maximum = input.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   const problems: string[] = [];
   const preferred = rootChoice(instances, input.tops);
+  for (const [name, key] of elected) preferred.set(name, key);
   const tops = new Map<string, Node>();
   const placed: Node[] = [];
   const queue: Node[] = [];
@@ -282,7 +297,7 @@ function layOut(
     }
   }
 
-  return { tops, placed, links, problems };
+  return { project, tops, placed, links, preferred, problems };
 }
 
 /** Every dependent of a plan: each top, then each placed instance. */
@@ -312,9 +327,10 @@ export function planPlacement(input: PlaceInput): Placement {
     peersOf: (key) => peers.get(key) ?? [],
     mineOf: (key) => mine.get(key) ?? new Map(),
   };
-  // Each round pins at least one edge, of finitely many.
+  // Each round pins an edge or elects a name, of finitely many.
   const pinned = new Set<string>();
-  let laid = layOut(input, known, pinned);
+  const elected = new Map<string, string>();
+  let laid = layOut(input, known, pinned, elected);
   for (;;) {
     if (laid.problems.length > 0) break;
     const splits = peerSplits(
@@ -323,9 +339,16 @@ export function planPlacement(input: PlaceInput): Placement {
       edgeId,
       pinned,
     );
-    if (splits.length === 0) break;
+    const choices =
+      splits.length > 0
+        ? []
+        : [...emptySlotChoices(laid, input.instances)].filter(
+            ([name]) => !elected.has(name),
+          );
+    if (splits.length === 0 && choices.length === 0) break;
     for (const split of splits) pinned.add(split);
-    laid = layOut(input, known, pinned);
+    for (const [name, key] of choices) elected.set(name, key);
+    laid = layOut(input, known, pinned, elected);
   }
   const { placed, links, problems } = laid;
   return {
