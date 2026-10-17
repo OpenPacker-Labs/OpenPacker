@@ -1,13 +1,6 @@
 import type { JsonValue } from '@openpacker/contracts';
 import { WorkspaceError, type WorkspaceLimits } from '@openpacker/adapter-core';
-import {
-  Lexer,
-  Parser,
-  isMap,
-  isScalar,
-  isSeq,
-  parseDocument,
-} from 'yaml';
+import { Lexer, Parser, isMap, isScalar, isSeq, parseDocument } from 'yaml';
 
 /** What `pnpm-workspace.yaml` says that the workspace model uses. */
 export interface PnpmDeclaration {
@@ -50,9 +43,7 @@ function checkNesting(text: string): void {
 }
 
 /** The first key a mapping repeats, anywhere in the tree, by its scalar value. */
-function firstRepeatedKey(
-  node: unknown,
-): string | undefined {
+function firstRepeatedKey(node: unknown): string | undefined {
   if (isSeq(node))
     for (const item of node.items) {
       const found = firstRepeatedKey(item);
