@@ -34,6 +34,22 @@ describe('the directory of a tarball that is the package', () => {
     expect(await exists(join(p.modules, 'dep', 'other'))).toBe(false);
   });
 
+  it('is still the store root where a second top-level directory holds a file deeper down', async () => {
+    const p = await project();
+    const dep = await p.store('dep');
+    await mkdir(join(dep.storePath!, 'other', 'inner'), { recursive: true });
+    await writeFile(join(dep.storePath!, 'other', 'inner', 'o.js'), 'o');
+
+    await p.write([dep], []);
+
+    expect(await exists(join(p.modules, 'dep', 'package', 'index.js'))).toBe(
+      true,
+    );
+    expect(await exists(join(p.modules, 'dep', 'other', 'inner', 'o.js'))).toBe(
+      true,
+    );
+  });
+
   it('is still the store root where a second top-level directory holds a file', async () => {
     const p = await project();
     const dep = await p.store('dep');
