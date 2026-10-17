@@ -129,3 +129,42 @@ describe('which ephemeral bins run from a layout', () => {
     ).toBeUndefined();
   });
 });
+
+describe('a tool whose tree is not wrapped in a directory', () => {
+  // npm strips the one directory a tarball wraps its files in; a tree whose
+  // only entry is a file has none, and the layout writer keeps it whole.
+  it('runs its bin from where the layout put it', async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-tool-unwrapped-'));
+    roots.push(cacheRoot);
+    const storePath = join(
+      cacheRoot,
+      '.opm',
+      'store',
+      `sha256-${'1'.repeat(64)}`,
+    );
+    await mkdir(storePath, { recursive: true });
+    await writeFile(join(storePath, 'cli.js'), "console.log('unwrapped');\n");
+    const layout = await layOutTool({
+      cacheRoot,
+      tool: 'pkg:npm/bare@1.0.0',
+      closure: [
+        {
+          exactPurl: 'pkg:npm/bare@1.0.0',
+          digest: `sha256:${'1'.repeat(64)}`,
+          size: 1,
+          source: 'https://registry.npmjs.org/bare/-/bare-1.0.0.tgz',
+          storePath,
+        },
+      ],
+    });
+    try {
+      expect(layout.relative('cli.js')).toBe('node_modules/bare/cli.js');
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        layout.entry('cli.js'),
+      ]);
+      expect(stdout).toBe('unwrapped\n');
+    } finally {
+      await layout.dispose();
+    }
+  });
+});

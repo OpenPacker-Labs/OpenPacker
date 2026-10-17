@@ -1,6 +1,7 @@
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
+import { tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { scratchName, sweepAbandoned } from './run-scratch.js';
 import {
@@ -111,10 +112,9 @@ export async function layOutTool(input: {
   }
   const own = input.closure.find((pkg) => pkg.exactPurl === input.tool);
   // The layout drops the one directory an npm tarball wraps its files in, as
-  // npm does; a path inside the store tree drops it too.
-  const children =
-    own === undefined ? [] : await readdir(own.storePath).catch(() => []);
-  const wrapper = children.length === 1 ? children[0] : undefined;
+  // npm does; a path inside the store tree drops it too, by the same rule.
+  const wrapper =
+    own === undefined ? undefined : await tarballWrapper(own.storePath);
   const place = [
     'node_modules',
     ...purlPackageName(stripPurlVersion(input.tool)).split('/'),

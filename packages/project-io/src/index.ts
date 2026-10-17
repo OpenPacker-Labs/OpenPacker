@@ -365,6 +365,8 @@ export type {
 
 export { removeBelow } from './remove-under.js';
 
+export { tarballWrapper } from './tarball-wrapper.js';
+
 export {
   placeMemberLink,
   readMemberLink,
