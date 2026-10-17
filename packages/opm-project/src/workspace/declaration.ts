@@ -1,6 +1,13 @@
 import type { JsonValue } from '@openpacker/contracts';
 import { WorkspaceError, type WorkspaceLimits } from '@openpacker/adapter-core';
-import { parseDocument } from 'yaml';
+import {
+  Lexer,
+  Parser,
+  isMap,
+  isScalar,
+  isSeq,
+  parseDocument,
+} from 'yaml';
 
 /** What `pnpm-workspace.yaml` says that the workspace model uses. */
 export interface PnpmDeclaration {
@@ -24,6 +31,47 @@ function invalid(problem: string): WorkspaceError {
   );
 }
 
+/** Deeper than any real declaration nests; `[` a megabyte long is refused here. */
+const MAXIMUM_NESTING = 64;
+
+/**
+ * Refuse text that nests deeper than {@link MAXIMUM_NESTING}, watching the
+ * parser's stack as the lexemes arrive, before a document is built: a megabyte
+ * of `[` otherwise costs a second and close to a gigabyte to compose.
+ */
+function checkNesting(text: string): void {
+  const parser = new Parser();
+  for (const lexeme of new Lexer().lex(text)) {
+    // The tokens are not kept; walking the generator is what moves the parser.
+    for (const token of parser.next(lexeme)) void token;
+    if (parser.stack.length > MAXIMUM_NESTING)
+      throw invalid(`nests deeper than ${MAXIMUM_NESTING} levels`);
+  }
+}
+
+/** The first key a mapping repeats, anywhere in the tree, by its scalar value. */
+function firstRepeatedKey(
+  node: unknown,
+): string | undefined {
+  if (isSeq(node))
+    for (const item of node.items) {
+      const found = firstRepeatedKey(item);
+      if (found !== undefined) return found;
+    }
+  if (!isMap(node)) return undefined;
+  const seen = new Set<string>();
+  for (const pair of node.items) {
+    if (isScalar(pair.key)) {
+      const key = String(pair.key.value);
+      if (seen.has(key)) return key;
+      seen.add(key);
+    }
+    const found = firstRepeatedKey(pair.value);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /**
  * Read `pnpm-workspace.yaml`. A document that is not one YAML mapping, that
  * repeats a key, or whose `packages` is not a list of strings is refused;
@@ -34,14 +82,26 @@ export function parsePnpmWorkspaceYaml(
   text: string,
   limits: WorkspaceLimits,
 ): PnpmDeclaration {
+  checkNesting(text);
+  // The library's own repeated-key check compares each key with every earlier
+  // one (40,000 catalog entries took 13 s); `firstRepeatedKey` is linear.
   const document = parseDocument(text, {
     version: '1.2',
-    uniqueKeys: true,
+    uniqueKeys: false,
     prettyErrors: false,
+    logLevel: 'error',
   });
   const failure = document.errors[0];
   if (failure !== undefined)
     throw invalid(`is not valid YAML: ${failure.message.split('\n')[0]}`);
+  const warning = document.warnings[0];
+  if (warning !== undefined)
+    throw invalid(`is not read: ${warning.message.split('\n')[0]}`);
+  const repeated = firstRepeatedKey(document.contents);
+  if (repeated !== undefined)
+    throw invalid(
+      `is not valid YAML: the key ${JSON.stringify(repeated)} is written twice in one mapping`,
+    );
   let value: JsonValue;
   try {
     value = document.toJS({ maxAliasCount: 64 }) ?? null;
