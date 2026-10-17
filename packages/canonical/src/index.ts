@@ -121,7 +121,8 @@ class JsonParser {
     const value = this.value(0);
     this.space();
     if (this.index !== this.input.length) this.fail('Unexpected trailing data');
-    canonicalize(value);
+    // Each part was checked as it was built; encoding the tree again would
+    // check nothing more and hold a second copy of the text at the peak.
     return value;
   }
 

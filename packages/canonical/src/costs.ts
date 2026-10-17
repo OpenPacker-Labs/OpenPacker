@@ -11,9 +11,10 @@
  * allocates"; the method and the figures are there):
  *
  * - `peak` is what the parse needs while it builds the tree. It is what a limit
- *   is set in. The parser builds a `Set` of the names of each object and
- *   validates the tree by encoding it again, so the peak is above what the
- *   finished tree keeps, most of all for an object with a great many members.
+ *   is set in. The parser builds a `Set` of the names of each object, so the
+ *   peak is above what the finished tree keeps, most of all for an object with
+ *   a great many members. (The weights were fitted when the parse also encoded
+ *   the tree again, which it no longer does; they are above what it needs now.)
  *   For each of the thirty-eight shapes the weights were fitted on, the cost
  *   is at least the heap the parse needed. An object of a few dozen members
  *   can need more: V8 gives its dictionary up to three slots a member, and
