@@ -12,6 +12,7 @@ import {
   type FrozenOmit,
   type NativeTarget,
 } from '@openpacker/adapter-core';
+import { say } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -209,16 +210,18 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
  * nothing done. The same plan is the same text, so it carries no wall time.
  */
 function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
-  io.stdout.write(
+  say(
+    io.stdout,
     `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
       `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
   );
   const clause = leftOut(plan);
-  if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
   if (plan.targets !== undefined)
-    io.stdout.write(`  platforms: ${describeTargets(plan.targets)}\n`);
+    say(io.stdout, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
-    io.stdout.write(
+    say(
+      io.stdout,
       `  workspace: ${plan.workspace.installed} of ${plan.workspace.members} member${plan.workspace.members === 1 ? '' : 's'} installed, ${plan.workspace.linked} linked at the project\n`,
     );
 }
@@ -262,30 +265,33 @@ export async function runCiCommand(
   const result = await installFrozen(request);
 
   const noScripts = result.installScripts.length;
-  io.stdout.write(
+  say(
+    io.stdout,
     `Installed ${result.installed} package${result.installed === 1 ? '' : 's'} into ${resolve(root, 'node_modules')} ` +
       `(${result.fromStore} from the store, ${result.fetched} fetched, ${megabytes(result.fetchedBytes)}) ` +
       `in ${(result.milliseconds.total / 1000).toFixed(1)} s; ` +
       `${noScripts} ${noScripts === 1 ? 'declares an install script' : 'declare install scripts'}, which opm does not run\n`,
   );
   const clause = leftOut(result);
-  if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
   if (result.targets !== undefined)
-    io.stdout.write(`  platforms: ${describeTargets(result.targets)}\n`);
+    say(io.stdout, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)
-    io.stdout.write(
+    say(
+      io.stdout,
       `  workspace: ${result.workspace.linked} of ${result.workspace.members} member${result.workspace.members === 1 ? '' : 's'} linked, not fetched; their scripts are not run\n`,
     );
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
-    io.stdout.write(`  install script not run: ${item.name}@${item.version}\n`);
+    say(io.stdout, `  install script not run: ${item.name}@${item.version}\n`);
   if (noScripts > shown.length)
-    io.stdout.write(`  ... and ${noScripts - shown.length} more\n`);
+    say(io.stdout, `  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
-    io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    say(io.stderr, `opm: skipped ${entry.path}: ${entry.reason}\n`);
   for (const loss of result.layout.semanticLoss)
     if (loss.severity !== 'info')
-      io.stderr.write(
+      say(
+        io.stderr,
         `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
       );
   return 0;
