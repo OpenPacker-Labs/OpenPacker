@@ -57,3 +57,23 @@ A new case is a new line in the oracle's battery file, then `--write` for that
 oracle; the replaying test picks it up with no edit, and a case on which the
 model should differ from the tool is a decision to record in the test and the
 ADR, not a reason to drop the case.
+
+## The differential
+
+`differential.mjs` asks node-semver 7.7.2 (npm 10.9.4's copy, the version pnpm
+10.28 embeds) about input a seeded generator writes, where the golden files ask
+about a fixed battery: for each of some 20,000 ranges, the comparator sets and
+refusal (`npm-semver-range.ts`), `satisfies` of 30 versions through
+`parseSemverRange` and through `pnpm-install/ranges.ts`, `rangesIntersect` over
+pairs of valid ranges, and `npmVersionsEqual` against pnpm's
+`equalOrSemverEqual` over version spellings. It reads the built packages and is
+not part of a test run:
+
+```sh
+npm run build -w packages/adapter-core -w packages/adapter-npm
+D=packages/adapter-core/test/fixtures/workspace-oracle/differential.mjs
+node "$D" --npm "$NPM_DIR" --seed 7 --draws 20000   # exit 1 on any difference
+```
+
+It prints one line of counts (`differences` must be all zero) and the first ten
+differences it found.
