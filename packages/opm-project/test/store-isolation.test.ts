@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { assertResolvedStores } from './store-isolation.js';
+import { assertResolvedStores } from '../../../tests/support/store-guard.js';
 
 /**
  * A test run never reads or writes the caller's package store or caches. An
@@ -28,6 +28,9 @@ describe('a test run and the caller stores', () => {
     expect(insideTmp(process.env.XDG_CACHE_HOME ?? '')).toBe(true);
   });
 
+  // Starts a second vitest, which transforms and collects host-fetch.test.ts's
+  // whole import graph before it runs one test: 19 to 21 s at a load of 40
+  // here, so it keeps a bound above the shared 30 s, and the child's own is 90 s.
   it("leaves the caller's store alone while a test tampers with a store file", async () => {
     const sentinel = await mkdtemp(join(tmpdir(), 'opm-caller-store-'));
     try {

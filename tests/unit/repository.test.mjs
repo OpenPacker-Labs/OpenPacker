@@ -115,6 +115,48 @@ test('Turbo cannot restore a stale Rust-backed embedded build', () => {
   assert.ok(turbo.globalDependencies.includes('tsconfig.base.json'));
 });
 
+// One vitest default for every package, so a run under load is not failed by
+// a bound some packages raised and others did not; a test that asserts a
+// duration says so itself.
+test('every package and root vitest run extends the one shared default', () => {
+  const shared = readFileSync(join(root, 'vitest.shared.ts'), 'utf8');
+  assert.match(shared, /testTimeout: 30_000/u);
+  assert.match(shared, /hookTimeout: 30_000/u);
+  assert.match(shared, /tests\/support\/stores\.setup\.ts/u);
+  const workspaces = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  ).workspaces.flatMap((pattern) =>
+    pattern.endsWith('/*')
+      ? readdirSync(join(root, pattern.slice(0, -2))).map(
+          (name) => `${pattern.slice(0, -2)}/${name}`,
+        )
+      : [pattern],
+  );
+  const usingVitest = workspaces.filter((workspace) => {
+    const manifest = join(root, workspace, 'package.json');
+    if (!existsSync(manifest)) return false;
+    const { scripts = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
+    return Object.values(scripts).some((script) => /\bvitest\b/u.test(script));
+  });
+  assert.ok(usingVitest.length > 40, `${usingVitest.length} workspaces`);
+  for (const workspace of usingVitest) {
+    const config = join(root, workspace, 'vitest.config.ts');
+    assert.ok(existsSync(config), `${workspace} has no vitest.config.ts`);
+    const text = readFileSync(config, 'utf8');
+    assert.match(text, /'\.\.\/\.\.\/vitest\.shared\.js'/u, workspace);
+    assert.doesNotMatch(text, /testTimeout|hookTimeout/u, workspace);
+  }
+  for (const config of [
+    'scripts/vitest.coverage.config.mjs',
+    'scripts/vitest.gate.config.mjs',
+  ]) {
+    const text = readFileSync(join(root, config), 'utf8');
+    assert.match(text, /'\.\.\/vitest\.shared\.ts'/u, config);
+    assert.doesNotMatch(text, /testTimeout|hookTimeout/u, config);
+    assert.match(text, /store-guard\.setup\.ts/u, config);
+  }
+});
+
 // Strict env mode hands a task only what turbo.json names. Without these, cargo
 // under `turbo run build` ignores an exported CARGO_TARGET_DIR and builds into
 // the checkout's own target/, so every worktree grows a private copy.

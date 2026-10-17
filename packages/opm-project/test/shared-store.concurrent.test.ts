@@ -35,9 +35,6 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('the shared store under concurrent installs', () => {
-  // 30 rounds of 6 racing installs. 15.4 s at a load of 43, alone and with the
-  // setup before this commit, past the package's 15 s; it asserts what each
-  // round leaves in the store, never how long the rounds take.
   it('publishes each new package once however many installs race for it', async () => {
     for (let round = 0; round < 30; round += 1) {
       const bytes = packTarGzip([
@@ -74,5 +71,5 @@ describe('the shared store under concurrent installs', () => {
         [key, `${key}.tree`].sort(),
       );
     }
-  }, 60_000);
+  });
 });
