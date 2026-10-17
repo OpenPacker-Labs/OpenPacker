@@ -120,6 +120,15 @@ inside the bundle.
      its path, a deleted file's text is not compared, a rename never overwrites,
      a mode change sets 644 or 755; any other mode (a symlink's `120000`) makes
      the patch unreadable, `ERR_PNPM_INVALID_PATCH`;
+     - pnpm reads an `index abc..def` line with `/(\w+)\.\.(\w+)/` and a
+       `diff --git a/x b/y` line with `/^diff --git a\/(.*?) b\/(.*?)\s*$/`, and
+       both backtrack: one header line of 40,000 characters held `--plan` for
+       5.8 s and one of 160,000 for 104 s, before any budget exists, and a patch
+       file may be 16 MiB. opm reads the two lines in one pass
+       (`header-lines.ts`), with the groups the regexes give (compared with them
+       over 60,000 and 120,000 generated lines, line terminators and Unicode
+       whitespace included), and refuses a header line over 8,300 characters
+       (point 13);
    - a binary diff is read as nothing, as pnpm reads it;
    - when the patch fails, it counts as applied if its reverse would apply: the
      package already has the change;
@@ -152,15 +161,33 @@ inside the bundle.
    sections that each change one line of one large file costs K times that file:
    2,000 such sections, 146 KB, against a 2 MB file ran for a minute, and a 16
    MiB patch would run for an hour. opm counts the characters it reads, compares
-   and writes, and the lines a splice moves, and refuses a patch past 256 MiB of
-   them as too costly (`PATCH_FAILED`, exit 3); that one is refused after 1.9 s.
-   Measured on 2026-10-17, OpenSesame's four patches spend 6,207
-   (`js-yaml@3.15.2`), 27,372 (`braces@3.0.3`), 67,200
-   (`@simple-git/argv-parser@2.0.1`) and 124,000 (`node-forge@1.4.0`), and the
-   37 oracle cases at most 1,880: the bound is 2,164 times the largest real
-   patch. A real patch changes a file in one section; by the count, one section
-   of 500 hunks spread over a file of 9 MB and 250,000 lines spends about 143
-   million, half the bound (computed, not run).
+   and writes, the lines a splice moves, and the paths it looks up: a lookup in
+   the patch's tree costs its path and each ancestor it visits (a character
+   each, and one), making sure of a directory costs the parent at each level,
+   and each named path and directory above it costs an `lstat` of 2,048 and its
+   length. One budget runs the tree's read, the patch and, if it fails, its
+   reverse, and a patch past 256 MiB of them is refused as too costly
+   (`PATCH_FAILED`, exit 3); the 2,000-section patch is refused after 1.9 s.
+   Without the path charges a 16 MiB patch within every other bound (one path
+   128 directories deep created 4,801 times) was applied after 330 s, and 2 MiB
+   of distinct deep paths took 177 s, 892,000 `lstat` calls and 375 MB; the
+   first is refused as too costly after 1.5 s now, and the second at `--plan`,
+   where the paths and the directories above them are held to 100,000 (point
+   13).
+
+   The costliest patch of each shape that still applies, found by bisection on
+   2026-10-17 (4 CPUs, load average 28 to 40, Node 22.22.0,
+   `reports/fix-184-r2.scripts/17-worst-case.mjs`): 27 creations of a 3,455-byte
+   path 128 deep, a patch of 94 KB, 1.7 s (0.5 s of CPU) and 170 MB resident;
+   381 distinct paths 128 deep each deleted, 1.3 MB, 4.9 s of CPU and 136 MB;
+   99,850 shallow files each deleted, 5.5 MB, 3.9 s of CPU and 231 MB. Measured
+   the same day, OpenSesame's four patches spend 49,836 (`braces@3.0.3`), 13,113
+   (`js-yaml@3.15.2`), 189,011 (`node-forge@1.4.0`, most of it `lstat`) and
+   96,686 (`@simple-git/argv-parser@2.0.1`), and the 37 oracle cases at most
+   6,241: the bound is 1,420 times the largest real patch. A real patch changes
+   a file in one section; by the count, one section of 500 hunks spread over a
+   file of 9 MB and 250,000 lines spends about 143 million, half the bound
+   (computed, not run).
 
 ### Where the patched package lives
 
@@ -194,17 +221,29 @@ inside the bundle.
     follows the rename so that agreement does not rest on the applier alone). An
     entry already there is adopted only after its tree is hashed again against
     that record; one renamed into place whose record is not there yet is waited
-    for, up to ten seconds, and is then the error an unrecorded entry always
-    was. `opm gc --shared` reads the key under ADR 0048 §8's rules: kept while a
-    project links any of its files, kept while its `.tree`, or the directory
-    itself while it has no record, is younger than the age rule, removed with
-    its record otherwise, and a leftover `.<key>.materialize-` cleared once old,
-    as is a `<key>.tree` whose entry is gone (an install or a collection that
-    stopped between the two leaves one; this holds for an archive's record too).
-    While a patched copy is kept, so is the archive's entry it was made from,
-    although no project links that one: an install proves the archive to be the
-    package the lock names before it adopts the copy (point 12), and an offline
-    install has nowhere else to find it.
+    for, up to ten seconds. After that the install makes the tree again from the
+    unpatched entry it has proved (point 12), in a temporary directory, and
+    records the entry in place only if its files are that tree: a publisher
+    killed between its rename and its record leaves nothing that wedges the
+    store (150 SIGKILLs at random moments over a publish: 8 left an entry with
+    no record, and the next install succeeded after all 150, the 8 in 10.0 to
+    10.2 s, `18-kill-publisher-heal.mjs`; before, 2 of 120 left an entry every
+    later install refused until gc removed it once ten minutes old). An entry
+    that is not that tree is not trusted: no record is written and the error
+    names the two paths to remove. `opm gc --shared` reads the key under ADR
+    0048 §8's rules: kept while a project links any of its files, kept while its
+    `.tree`, or the directory itself while it has no record, is younger than the
+    age rule, removed with its record otherwise, and a leftover
+    `.<key>.materialize-` cleared once old, as is a `<key>.tree` whose entry is
+    gone (an install or a collection that stopped between the two leaves one;
+    this holds for an archive's record too). A record gc moved aside and finds
+    to be one written since it judged the old one is put back and is not
+    reported removed; for the instant between the two a reader finds no record,
+    which a patched entry's reader makes good as above and an archive's is told,
+    and runs again. While a patched copy is kept, so is the archive's entry it
+    was made from, although no project links that one: an install proves the
+    archive to be the package the lock names before it adopts the copy (point
+    12), and an offline install has nowhere else to find it.
 12. **Order.** The archive is fetched, proved against the lock's integrity,
     extracted, and proved to be the package the lock names (ADR 0055 §7)
     **before** it is patched: a patch that edits `package.json` changes what is
@@ -221,29 +260,45 @@ inside the bundle.
       patch gives; a hash of neither pnpm's form;
     - by the project's files: a patch file that is not there (`NOT_FOUND`, exit
       4, as pnpm's `ENOENT`); a patch file larger than 16 MiB, or patch files
-      that come to more than 64 MiB together, sized before any is read
-      (`SIZE_LIMIT`, exit 7: each is held whole, as bytes and as text, while the
-      lock is read, and pnpm reads whatever is there); a path that leaves the
-      project through `..` or an absolute path, or that is reached through a
-      link (`UNSAFE_PATH`, exit 7); a patch that names a path outside its
-      package or with an empty, `.` or `..` segment, a backslash or NUL, or one
-      past the bounds of a path in an archive, 128 segments or 4,096 UTF-8 bytes
-      (`UNSAFE_PATH`); a patch that names more than the 100,000 files an archive
-      may hold (`SIZE_LIMIT`, exit 7); the three bounds are
-      `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts an archive under, so no
-      path of a patched entry is one an archive could not hold; a patch pnpm
-      cannot read (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm
-      install --frozen-lockfile would refuse too"), a key added or removed, a
-      path moved, a file edited;
+      that come to more than 64 MiB together, sized before any is read and read
+      to at most one byte past the bound (`SIZE_LIMIT`, exit 7: each is held
+      whole, as bytes and as text, while the lock is read, and pnpm reads
+      whatever is there); a path that leaves the project through `..` or an
+      absolute path, or that is reached through a link (`UNSAFE_PATH`, exit 7);
+      a patch that names a path outside its package or with an empty, `.` or
+      `..` segment, a backslash or NUL, or one past the bounds of a path in an
+      archive, 128 segments or 4,096 UTF-8 bytes, or with a segment an archive
+      refuses on every platform (a Windows device name, with or without an
+      extension, such as `CON` or `aux.js`; a `:`; a trailing dot:
+      `segmentProblem` in adapter-core, the materializer's own rule, which both
+      call) or a segment of more than 255 bytes (`UNSAFE_PATH`; the parser, as
+      pnpm's, takes whitespace off the end of a path, so a name that ends in a
+      space is the name without it); a patch whose paths and the directories
+      above them come to more than the 100,000 files an archive may hold
+      (`SIZE_LIMIT`, exit 7); a header line of more than 8,300 characters, two
+      paths at the bounds and the `diff --git a/ b/` around them (`SIZE_LIMIT`;
+      a line of a hunk has no bound, it is a line of the package, and a path
+      thousands of directories deep makes such a line before it is looked at as
+      a path); the bounds are `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts
+      an archive under and the materializer's defaults read (`limits.test.ts`),
+      so no path of a patched entry is one an archive could not hold, in its
+      depth, its length, its names or its count; a patch pnpm cannot read
+      (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm install
+      --frozen-lockfile would refuse too"), a key added or removed, a path
+      moved, a file edited;
     - when it is applied (exit 3): a patch that does not apply, or one too
       costly to apply (point 9) (`PATCH_FAILED`).
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
       the way to a path it names: pnpm follows both and writes outside the
       package; opm writes only below it;
-    - a path past an archive's bounds: pnpm makes the directories whatever their
-      depth (a 12 KB patch names a path 2,000 deep), and opm refuses it as it
-      refuses that path in an archive;
+    - a path past an archive's bounds, or with a name an archive refuses: pnpm
+      makes the directories whatever their depth (a 12 KB patch names a path
+      2,000 deep) and creates `lib/CON` or `a:b`, and opm refuses them as it
+      refuses those in an archive;
+    - a header line past 8,300 characters, and a patch that would cost more than
+      256 MiB of work: pnpm reads the first with a backtracking regex and runs
+      the second for as long as it takes (points 7 and 9);
     - a patch that fails for a bare-name key, or with `ignorePatchFailures`:
       pnpm warns and installs the package unpatched; opm refuses, because a lock
       that says a package is patched and an install where it is not are two
@@ -266,7 +321,7 @@ OpenSesame was copied with `git archive origin/main` (b788faadc) for its 81
 
 | Measured                                                                     | Result                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `opm ci --plan`, the whole lock                                              | exit 0 (was exit 3): 1,758 packages in 2,847 places from 1,739 archives, 4 packages patched by 4 patches, 71 of 71 members; the four pnpm 9 hashes match their files                                                                                                                                     |
+| `opm ci --plan`, the whole lock                                              | exit 0 (was exit 3): 1,758 packages in 2,847 places from 1,739 archives, 4 packages patched by 4 patches, 71 of 71 members; the four pnpm 9 hashes match their files (again on 2026-10-17 at 6d4cdc795, after the review's fixes and #179's placement: 2,120 places, 47 members linked, 10 s)            |
 | `opm ci`, the whole lock                                                     | exit 7 after 244 s, not for a patch: `sylvester@0.0.21`'s archive is a gzip stream padded with zero bytes to 30,720, which the materializer's `DecompressionStream` refuses ("Trailing junk found after the end of the compressed stream") and Node's zlib, and so npm and pnpm, accepts. Not fixed here |
 | `opm ci --filter '!./tests/redteam'` (the one member that needs `sylvester`) | exit 0 in 219 s: 2,054 places of 1,305 packages, 377 archives fetched (78.4 MB) and 911 from the store, 3 packages patched by 3 patches, 47 of 71 members linked                                                                                                                                         |
 | each patched package against GNU `patch -p1` 2.7.6                           | `braces@3.0.3` (4 of 10 files changed), `js-yaml@3.15.2` (1 of 36), `node-forge@1.4.0` (1 of 59): the installed directory equals the unpatched entry patched by GNU patch, file for file and executable bit for executable bit; Node resolves `braces` to the patched copy                               |
