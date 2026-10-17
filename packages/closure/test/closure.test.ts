@@ -241,9 +241,11 @@ describe('scanner equivalence and scaling', () => {
     ).toEqual([]);
   });
 
-  it('stays fast as the candidate set grows', () => {
+  it('does not grow with the number of candidates', () => {
     // The point of the rewrite: cost tracks bytes, not candidates. The old
-    // scanner took ~8s for this shape.
+    // scanner took ~8s for this shape, a pass per candidate. Compared with
+    // itself over the same bytes rather than with a clock, so a loaded machine
+    // slows both sides alike: the fastest of three interleaved runs each.
     const alphabet = '0123456789abcdfghijklmnpqrsvwxyz';
     // Each character takes five *high* bits of a mixed value. Taking `% 32` of
     // an LCG uses its low five bits, whose period is 32 — that produced 32
@@ -267,9 +269,23 @@ describe('scanner equivalence and scaling', () => {
     const data = new Uint8Array(2 * 1024 * 1024);
     for (let index = 0; index < data.length; index += 1)
       data[index] = 48 + (index % 10);
-    const started = Date.now();
-    expect(scanReferences([{ path: 'big', data }], candidates)).toEqual([]);
-    expect(Date.now() - started).toBeLessThan(2000);
+    const files = [{ path: 'big', data }];
+    const few = candidates.slice(0, 10);
+    const fastest = { few: Infinity, many: Infinity };
+    for (let round = 0; round < 3; round += 1)
+      for (const [size, set] of [
+        ['few', few],
+        ['many', candidates],
+      ] as const) {
+        const started = performance.now();
+        expect(scanReferences(files, set)).toEqual([]);
+        fastest[size] = Math.min(fastest[size], performance.now() - started);
+      }
+    // A pass over the bytes per candidate makes the thousand 19 (indexOf) to
+    // 50 (a rolling hash, as the old scanner did) times the ten; this
+    // scanner's automaton makes it 3.5 to 8 (all measured at loads of 24 to
+    // 40).
+    expect(fastest.many).toBeLessThan(12 * fastest.few);
   });
 });
 
