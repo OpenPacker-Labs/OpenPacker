@@ -10,6 +10,7 @@ import type {
 } from './types.js';
 import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
+import { recoverInterruptedSteps } from './rollback-recovery.js';
 import {
   canonicalCatalogPurl,
   canonicalPurlOrSelf,
@@ -214,6 +215,8 @@ export async function addPackage(input: {
   };
 }> {
   const paths = projectPaths(input.root);
+  // A step a killed process left half way is finished first.
+  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const parsed = parsePackageSpec(input.spec, {
     ...(input.ecosystem !== undefined && { ecosystem: input.ecosystem }),
@@ -339,6 +342,8 @@ export async function syncProject(input: {
   native?: NativeProjectionReport;
 }> {
   const paths = projectPaths(input.root);
+  // A step a killed process left half way is finished first.
+  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
   const lock = await resolveManifestToLock({
@@ -372,6 +377,8 @@ export async function installProject(input: {
   native?: NativeProjectionReport;
 }> {
   const paths = projectPaths(input.root);
+  // A step a killed process left half way is finished first.
+  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const lock = await readLockfile(paths.lock);
   if (!lock || Object.keys(lock.packages).length === 0) {

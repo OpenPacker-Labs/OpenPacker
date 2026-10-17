@@ -59,6 +59,7 @@ import {
   type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
+import { recoverBeforeCommand } from './commands/recover.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
@@ -188,6 +189,7 @@ export async function runOpm(
       );
     }
 
+    await recoverBeforeCommand(args.command, cwd, option(args, 'path'), io);
     switch (args.command) {
       case 'init': {
         const root = option(args, 'path') ?? cwd;

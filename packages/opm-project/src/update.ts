@@ -6,6 +6,7 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
+import { recoverInterruptedSteps } from './rollback-recovery.js';
 import { loadCatalogs } from './catalog.js';
 import { digestOf, readProjectState } from './install.js';
 import { readLockfile } from './lock.js';
@@ -40,6 +41,8 @@ export async function updateProject(input: {
   updated: readonly string[];
 }> {
   const paths = projectPaths(input.root);
+  // A step a killed process left half way is finished first.
+  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
   const latest = input.latest === true;

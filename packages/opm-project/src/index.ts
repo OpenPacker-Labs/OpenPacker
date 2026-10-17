@@ -32,6 +32,12 @@ export {
   writeLockfile,
 } from './lock.js';
 export { reproducibleLockForm } from './lock-reproducible.js';
+export {
+  describeRecovery,
+  recoverInterruptedSteps,
+  type RecoveredStep,
+} from './rollback-recovery.js';
+export { snapshotProject } from './project-rollback.js';
 
 export {
   assertDigest,

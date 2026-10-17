@@ -10,6 +10,7 @@ import { renameInstalled } from './rename-installed.js';
 import { serializeManifest } from './toml.js';
 import type { OpmLockfile, OpmManifest, ProjectState } from './types.js';
 import { OpmError } from './types.js';
+import { recoverInterruptedSteps } from './rollback-recovery.js';
 import { manifestAliasNamed } from './why.js';
 
 /**
@@ -36,6 +37,8 @@ export async function removePackage(input: {
   native?: NativeProjectionReport;
 }> {
   const paths = projectPaths(input.root);
+  // A step a killed process left half way is finished first.
+  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const alias = manifestAliasNamed(manifest, input.alias);
   if (alias === undefined) {
