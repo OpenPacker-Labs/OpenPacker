@@ -186,6 +186,24 @@ export interface FrozenLockWorkspace {
   layout: NativeLayoutWorkspace;
 }
 
+/**
+ * How far the places chosen for a lock that records none keep a package and
+ * its dependent to one copy of a peer they share. Present only when they do
+ * not all: a layout in `node_modules` has no symlinks, so some locks cannot be
+ * laid out so that they do.
+ */
+export interface FrozenLockPeers {
+  /** Edges whose dependency loads another copy of a peer its dependent requires too. */
+  splits: number;
+  /** Whether the places were chosen without peers in view, because no layout with them could be written. */
+  withoutPeers: boolean;
+  /**
+   * The first such edge, named for a person: the dependency, and what needs
+   * it. Each is already quoted, and holds nothing of the lock but names.
+   */
+  first?: { dependency: string; dependent: string };
+}
+
 export interface FrozenLock {
   /** The lock file read, absolute. */
   lockPath: string;
@@ -204,4 +222,6 @@ export interface FrozenLock {
   refused: FrozenLockRefusal[];
   /** Present when the lock is a workspace's. */
   workspace?: FrozenLockWorkspace;
+  /** Present when the places do not keep every shared peer to one copy. */
+  peers?: FrozenLockPeers;
 }

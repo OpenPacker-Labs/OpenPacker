@@ -15,6 +15,7 @@ import type {
   FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,
+  FrozenLockPeers,
   FrozenLockRefusal,
   FrozenLockWorkspace,
   WorkspaceMember,
@@ -33,7 +34,9 @@ import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
 import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
+import { quote } from './quote.js';
 import { planPlacement } from './place.js';
+import type { PlannedPlacement } from './place-types.js';
 import { placeInputOf } from './place-input.js';
 import { directPlaces, resolutionProblems } from './place-check.js';
 import {
@@ -204,6 +207,39 @@ export async function readFrozenPnpmLock(
     skipped: [...selection.skipped],
     refused: [],
     ...(workspace !== undefined && { workspace }),
+    ...peersOf(model, placement),
+  };
+}
+
+/** What to say about the peers the places could not keep to one copy: nothing when they all are. */
+function peersOf(
+  model: PnpmModel,
+  placement: PlannedPlacement,
+): { peers: FrozenLockPeers } | undefined {
+  if (placement.splits === 0 && !placement.fallback) return undefined;
+  const instanceName = (key: string): string => {
+    const instance = model.instances.get(key);
+    return quote(
+      instance === undefined ? key : `${instance.name}@${instance.version}`,
+    );
+  };
+  const edge = placement.firstSplit;
+  return {
+    peers: {
+      splits: placement.splits,
+      withoutPeers: placement.fallback,
+      ...(edge !== undefined && {
+        first: {
+          dependency: instanceName(edge.dependency),
+          dependent:
+            edge.dependent !== undefined
+              ? instanceName(edge.dependent)
+              : edge.importer === ''
+                ? 'the project'
+                : `the member ${quote(edge.importer)}`,
+        },
+      }),
+    },
   };
 }
 

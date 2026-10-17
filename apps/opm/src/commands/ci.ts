@@ -298,5 +298,6 @@ export async function runCiCommand(
           `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
         ),
       );
+  if (result.peers !== undefined) printPeerNotice(io, result.peers);
   return 0;
 }

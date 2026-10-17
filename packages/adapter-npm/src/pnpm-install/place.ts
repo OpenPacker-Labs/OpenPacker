@@ -199,6 +199,10 @@ export function planPlacement(input: PlaceInput): PlannedPlacement {
     );
   }
   const { placed, links, problems } = laid;
+  const splits = fallback
+    ? findSplits(dependentsOf(input, laid, known), known.peersOf, pinId)
+    : (attempt.best?.splits ?? []);
+  const first = splits[0];
   return {
     placed: placed
       .map((node) => ({
@@ -220,9 +224,13 @@ export function planPlacement(input: PlaceInput): PlannedPlacement {
     layouts,
     fallback,
     isolated: fallback ? [] : [...isolated].sort(compareText),
-    splits: fallback
-      ? findSplits(dependentsOf(input, laid, known), known.peersOf, pinId)
-          .length
-      : (attempt.best?.splits.length ?? 0),
+    splits: splits.length,
+    ...(first !== undefined && {
+      firstSplit: {
+        importer: first.importer,
+        ...(first.dependent !== undefined && { dependent: first.dependent }),
+        dependency: first.dependency,
+      },
+    }),
   };
 }
