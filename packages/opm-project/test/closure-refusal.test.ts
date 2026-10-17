@@ -52,7 +52,7 @@ describe('a closure that cannot be locked', () => {
       );
       expect(failure).toMatchObject({ code: 'UNRESOLVABLE' });
       expect((failure as Error).message).toMatch(
-        /^Cannot lock the dependency closure of pkg:npm\/needs-aix@1\.0\.0: UNSATISFIABLE: [^\n]*\nWhat the walk could not use:\n {2}- pkg:npm\/only-aix@1\.0\.0: does not run on this host \([^\n]*\)\n {2}- pkg:npm\/only-aix: no candidate satisfying 1\.0\.0 can be installed here$/u,
+        /^Cannot lock the dependency closure of pkg:npm\/needs-aix@1\.0\.0: no selection of releases satisfies every requirement: [^\n]*\nWhat the walk could not use:\n {2}- pkg:npm\/only-aix@1\.0\.0: does not run on this host \([^\n]*\) \(required by pkg:npm\/needs-aix@1\.0\.0\)\n {2}- pkg:npm\/only-aix: no candidate satisfying 1\.0\.0 can be installed here \(required by pkg:npm\/needs-aix@1\.0\.0\)$/u,
       );
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -158,10 +158,9 @@ export async function solveGraph(input: {
     } catch (error) {
       // The engine's refusal is a JSON document naming the project's own
       // requirement ids; what a person needs is which edge nothing satisfies.
-      if (
-        !/^UNSATISFIABLE\b/u.test(error instanceof Error ? error.message : '')
-      )
-        throw error;
+      // The wasm binding throws it as a string, the Node-API one as an Error.
+      const refusal = error instanceof Error ? error.message : String(error);
+      if (!/^UNSATISFIABLE\b/u.test(refusal)) throw error;
       const causes = explainUnsatisfiable({
         dropped: viable.dropped,
         kept: viable.kept,
