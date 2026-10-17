@@ -453,6 +453,14 @@ else was published. A `latest` inside the policy's minimum release age gives way
 to the newest older release that is not a prerelease. `opm update --latest` and
 `opmx` choose by the same rule.
 
+An add that fails after its requirement resolved (a package in the closure that
+cannot be downloaded, whose bytes are not the ones published, or whose archive
+cannot be extracted) leaves `opm.toml`, the lock and `node_modules` as they
+were: they are written only once every package is in the store. Archives are
+read as npm writes them: a path longer than a tar header holds is taken from its
+pax record, and a file listed twice with the same bytes is one file (one listed
+twice with different bytes is refused).
+
 ---
 
 ## Registries

@@ -310,29 +310,31 @@ export async function addPackage(input: {
     }),
     previousLock: await readPreviousLock(paths.lock),
   });
-  // Only once the requirement has resolved. A refused or unsatisfiable add
-  // used to leave it in opm.toml, where every later install tripped over it.
-  await writeManifestFile(paths.manifest, manifest);
-  await writeLockfile(paths.lock, lock);
-
-  // What is installed under a key the lock no longer has: adding the package
-  // that makes a name two versions re-keys the first (`ansi-regex` is
-  // `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now), and the old record would
-  // go on being listed as installed.
-  const stale = Object.keys(
-    (await readProjectState(paths.projectState))?.packages ?? {},
-  ).filter((key) => !lock.packages[key]);
-  if (stale.length > 0)
-    await uninstallPackages({ root: input.root, aliases: stale });
-
   // The whole lock, not just the alias that was named: a package is not
   // installed in any useful sense without the things it needs, and the lock now
-  // carries them.
+  // carries them. opm.toml and the lock are written only once every package is
+  // in the store: a refused or unsatisfiable add used to leave its requirement
+  // in opm.toml, and one whose dependency could not be fetched, verified or
+  // extracted left opm.toml and the lock rewritten for a closure never
+  // installed.
   const state = await installFromLock({
     root: input.root,
     lock,
     offline,
     ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
+    beforeLinking: async () => {
+      await writeManifestFile(paths.manifest, manifest);
+      await writeLockfile(paths.lock, lock);
+      // What is installed under a key the lock no longer has: adding the
+      // package that makes a name two versions re-keys the first (`ansi-regex`
+      // is `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now), and the old record
+      // would go on being listed as installed.
+      const stale = Object.keys(
+        (await readProjectState(paths.projectState))?.packages ?? {},
+      ).filter((key) => !lock.packages[key]);
+      if (stale.length > 0)
+        await uninstallPackages({ root: input.root, aliases: stale });
+    },
   });
 
   // Last, and only after the store is real: a native manifest that names a
