@@ -20,6 +20,7 @@ import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
 import { tarNumber, tarText, verifyTarChecksum } from './tar-fields.js';
 import * as agree from './tar-agreement.js';
+import { zipName } from './zip-name.js';
 
 export { MaterializationError };
 
@@ -88,7 +89,6 @@ export interface MaterializationManifest {
   lifecycleScriptsExecuted: false;
 }
 
-const utf8 = new TextDecoder('utf-8', { fatal: true });
 const utf8Bytes = new TextEncoder();
 
 export function validateArchivePath(
@@ -604,7 +604,7 @@ async function parseZip(
         'ADAPTER_REQUIRED',
         'Non-UTF-8 ZIP names require an ecosystem adapter',
       );
-    const rawName = utf8.decode(nameBytes);
+    const rawName = zipName(nameBytes);
     const path = validateArchivePath(rawName, limits);
     if (paths.has(path)) throw unsafe('DUPLICATE_PATH', path);
     const foldedPath = path.toLowerCase();
