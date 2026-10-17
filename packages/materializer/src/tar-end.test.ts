@@ -87,6 +87,15 @@ const OVER_REFUSED: Record<string, string> = {
   'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a base-256 checksum': 'TAR_AMBIGUOUS_END',
+  'a directory whose checksum field node-tar reads as another number':
+    'TAR_AMBIGUOUS_CHECKSUM',
+  'a directory whose uid is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a directory with a size whose span holds only zero blocks':
+    'TAR_AMBIGUOUS_DIRECTORY',
+  'an extended header with a path, a global header, then a directory':
+    'TAR_AMBIGUOUS_PAX',
+  'a prefix without ustar magic, under an extended header with a path':
+    'TAR_AMBIGUOUS_PREFIX',
 };
 
 /**
