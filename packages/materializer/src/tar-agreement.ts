@@ -15,6 +15,7 @@
  */
 
 import { unsafe } from './errors.js';
+import { assertNumbersAgree } from './tar-numbers.js';
 
 const BLOCK = 512;
 const utf8 = new TextDecoder('utf-8');
@@ -120,6 +121,15 @@ function endsHere(bytes: Uint8Array, offset: number): boolean {
 export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   assertChecksumAgrees(header, at);
   assertPrefixAgrees(header, at);
+  assertNumbersAgree(header, at, hasUstarMagic(header));
+}
+
+/** node-tar reads the fields after the magic only under `ustar\0` `00`. */
+function hasUstarMagic(header: Uint8Array): boolean {
+  const magic = header.subarray(257, 265);
+  return [0x75, 0x73, 0x74, 0x61, 0x72, 0, 0x30, 0x30].every(
+    (byte, index) => magic[index] === byte,
+  );
 }
 
 /** Refuse a checksum field that node-tar reads as another number than opm. */
@@ -133,14 +143,11 @@ function assertChecksumAgrees(header: Uint8Array, at: number): void {
 
 /** Refuse a prefix that node-tar ignores: one without `ustar\0` `00` magic. */
 function assertPrefixAgrees(header: Uint8Array, at: number): void {
-  if (header[345] === 0) return;
-  const magic = header.subarray(257, 265);
-  const ustar = [0x75, 0x73, 0x74, 0x61, 0x72, 0, 0x30, 0x30];
-  if (!ustar.every((byte, index) => magic[index] === byte))
-    throw unsafe(
-      'TAR_AMBIGUOUS_PREFIX',
-      `the header at offset ${at} has a prefix and no ustar magic: npm ignores the prefix, pnpm joins it to the name`,
-    );
+  if (header[345] === 0 || hasUstarMagic(header)) return;
+  throw unsafe(
+    'TAR_AMBIGUOUS_PREFIX',
+    `the header at offset ${at} has a prefix and no ustar magic: npm ignores the prefix, pnpm joins it to the name`,
+  );
 }
 
 /**

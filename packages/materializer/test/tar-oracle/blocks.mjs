@@ -63,3 +63,10 @@ export function entry(name, text, { type, size, linkname, ...rest } = {}) {
     },
   });
 }
+
+/** A base-256 field that node-tar cannot read: its first byte is neither 0x80 nor 0xff. */
+export function invalidBase256(length) {
+  const field = Buffer.alloc(length);
+  field[0] = 0x81;
+  return field;
+}

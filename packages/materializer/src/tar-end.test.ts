@@ -56,6 +56,15 @@ const REFUSED: Record<string, string> = {
   'a directory with a size hides a header and leaves a payload that starts with NUL':
     'TAR_AMBIGUOUS_DIRECTORY',
   'a file named like a directory, with no size': 'TAR_AMBIGUOUS_DIRECTORY',
+  'a uid that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a gid that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'an mtime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a devmajor that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a devminor that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'an atime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a ctime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
+  'a uid that is a base-256 number too large to be safe':
+    'TAR_AMBIGUOUS_NUMBER',
 };
 
 const disagree = (item: OracleCase) =>
