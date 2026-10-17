@@ -32,8 +32,12 @@ afterEach(async () => {
   );
 });
 
-/** A package whose executable `bin` prints which package it is. */
-const tool = (name: string, bin: string) => ({ name, bin });
+/** A package whose executable `bin` prints which package it is, and the packages it depends on. */
+const tool = (name: string, bin: string, needs: readonly string[] = []) => ({
+  name,
+  bin,
+  needs,
+});
 
 /** An importer's side of a workspace: a tool it needs, members it links, executables it declares itself. */
 interface Importer {
@@ -52,7 +56,11 @@ interface Importer {
  * none) or to a fuller description.
  */
 async function installed(
-  tools: readonly { name: string; bin: string }[],
+  tools: readonly {
+    name: string;
+    bin: string;
+    needs: readonly string[];
+  }[],
   importers: Record<string, string | undefined | Importer>,
 ): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-bins-'));
@@ -63,7 +71,7 @@ async function installed(
   const packages: string[] = [];
   const snapshots: string[] = [];
   const text = (value: string) => new TextEncoder().encode(value);
-  for (const { name, bin } of tools) {
+  for (const { name, bin, needs } of tools) {
     const bytes = packTarGzip([
       {
         path: 'package/package.json',
@@ -81,7 +89,11 @@ async function installed(
     packages.push(
       `  ${name}@1.0.0:\n    resolution: {integrity: ${integrity}}\n    hasBin: true\n`,
     );
-    snapshots.push(`  ${name}@1.0.0: {}\n`);
+    snapshots.push(
+      needs.length === 0
+        ? `  ${name}@1.0.0: {}\n`
+        : `  ${name}@1.0.0:\n    dependencies:\n${needs.map((need) => `      ${need}: 1.0.0\n`).join('')}`,
+    );
   }
   const lockImporters: string[] = [];
   for (const [id, given] of Object.entries(importers)) {
@@ -255,5 +267,30 @@ posix("a member's own executable", () => {
       'I am esbuild',
       'I am the member b (tool)',
     ]);
+  });
+
+  it('outranks the executable of a transitive dependency of the same name, hoisted beside it at the project', async () => {
+    // `deep` sorts before `zed`, which decides when neither is direct.
+    const dir = await installed(
+      [tool('viax', 'vx', ['deep']), tool('deep', 'tool')],
+      {
+        '.': { tool: 'viax', links: { zed: 'packages/zed' }, build: 'tool' },
+        'packages/zed': { bin: { tool: 'bin.js' } },
+      },
+    );
+    expect(await build(dir, '')).toBe('I am the member zed (tool)');
+  });
+
+  it('is kept, between two linked members that declare one name, by the member whose name sorts first', async () => {
+    const dir = await installed([tool('pad', 'pad')], {
+      '.': {
+        links: { aaa: 'packages/aaa', bbb: 'packages/bbb' },
+        build: 'tool',
+      },
+      'packages/aaa': { bin: { tool: 'bin.js' } },
+      'packages/bbb': { bin: { tool: 'bin.js' } },
+      'packages/c': 'pad',
+    });
+    expect(await build(dir, '')).toBe('I am the member aaa (tool)');
   });
 });
