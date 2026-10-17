@@ -219,9 +219,9 @@ describe('one budget for a whole patch', () => {
 describe('a patch that makes the tree walk for minutes', () => {
   const create = (path: string) =>
     `diff --git a/x b/${path}\nnew file mode 100644\n`;
-  /** 128 segments of 27 characters, 3,455 bytes: within every bound. */
+  /** 127 segments of 27 characters, 3,428 bytes: within every bound. */
   const deep = Array.from(
-    { length: 128 },
+    { length: 127 },
     (_, index) => `${String(index).padStart(3, '0')}${'s'.repeat(23)}`,
   ).join('/');
   const patch = (text: string) => ({
@@ -333,11 +333,11 @@ describe('the files a patch tree may hold', () => {
     );
   }, 60_000);
 
-  it('refuses at --plan, in a moment, 800 paths that are each 128 directories deep: 102,400 lstat calls', () => {
+  it('refuses at --plan, in a moment, 800 paths that are each 127 segments deep: 101,600 lstat calls', () => {
     const text = Array.from(
       { length: 800 },
       (_, index) =>
-        `diff --git a/p${index}${'/a'.repeat(127)} b/\ndeleted file mode 100644\n`,
+        `diff --git a/p${index}${'/a'.repeat(126)} b/\ndeleted file mode 100644\n`,
     ).join('');
     expect(text.length).toBeLessThan(600_000);
     const started = performance.now();

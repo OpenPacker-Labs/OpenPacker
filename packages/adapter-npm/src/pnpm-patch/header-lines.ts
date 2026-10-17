@@ -16,10 +16,12 @@
 import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
 
 /**
- * The longest header line opm reads: two paths at the bound of a path in an
- * archive, the `diff --git a/ b/` frame (16 characters) around them, and room
- * for trailing whitespace, which the line may carry and is not part of a path.
- * A git diff writes nothing longer; a longer line is refused, not read.
+ * The longest header line opm reads: two paths of the longest a patch may
+ * name (4,088 bytes, the 4,096 of a path in an archive less `package/`), the
+ * `diff --git a/ b/` frame (16 characters) around them, 8,192 in all, and 108
+ * of room for trailing whitespace, which the line may carry and is not part
+ * of a path. A git diff writes nothing longer; a longer line is refused, not
+ * read.
  */
 export const MAXIMUM_HEADER_LINE =
   2 * PACKAGE_TREE_LIMITS.maximumPathBytes + 108;

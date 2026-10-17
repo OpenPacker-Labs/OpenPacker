@@ -29,6 +29,7 @@ import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  PACKAGE_ROOT,
   PACKAGE_TREE_LIMITS,
   quote,
   segmentProblem,
@@ -49,14 +50,19 @@ export function patchPathProblem(path: string): string | undefined {
   if (path.includes('\0')) return 'holds a NUL character';
   if (path.includes('\\')) return 'holds a backslash';
   if (path.startsWith('/')) return 'is absolute';
+  // The archive counts the directory its paths begin with, `package/`, as a
+  // segment and as bytes; a path below the package is held with it in front.
   const { maximumDepth, maximumPathBytes } = PACKAGE_TREE_LIMITS;
+  const rootBytes = Buffer.byteLength(PACKAGE_ROOT, 'utf8') + 1;
+  const mostBytes = maximumPathBytes - rootBytes;
+  const mostSegments = maximumDepth - 1;
   // Measured before the path is split: a long one is never taken apart.
   const bytes = Buffer.byteLength(path, 'utf8');
-  if (bytes > maximumPathBytes)
-    return `is ${bytes} bytes long, more than the ${maximumPathBytes} a path in an archive may be`;
+  if (bytes > mostBytes)
+    return `is ${bytes} bytes long, more than the ${mostBytes} a path below a package may be (the ${maximumPathBytes} of a path in an archive, less ${PACKAGE_ROOT}/ in front of it)`;
   const segments = path.split('/');
-  if (segments.length > maximumDepth)
-    return `is ${segments.length} segments deep, more than the ${maximumDepth} a path in an archive may be`;
+  if (segments.length > mostSegments)
+    return `is ${segments.length} segments deep, more than the ${mostSegments} a path below a package may be (the ${maximumDepth} of a path in an archive, less ${PACKAGE_ROOT})`;
   if (segments.includes('..')) return 'leaves the package (a ".." segment)';
   if (segments.some((segment) => segment === '' || segment === '.'))
     return 'is not a plain path below the package (an empty or "." segment)';

@@ -47,11 +47,11 @@ const tooLong = (length: number) =>
   });
 
 describe('a header line of a patch', () => {
-  it('may be 8,300 characters: two paths of 4,096 bytes and the frame around them', () => {
+  it('may be 8,300 characters: two paths of 4,088 bytes and the frame around them', () => {
     expect(MAXIMUM_HEADER_LINE).toBe(8_300);
-    const path = pathOfBytes(4_096);
+    const path = pathOfBytes(4_088);
     const diffLine = `diff --git a/${path} b/${path}`;
-    expect(diffLine.length).toBe(8_208);
+    expect(diffLine.length).toBe(8_192);
     expect(MAXIMUM_HEADER_LINE).toBeGreaterThan(diffLine.length);
     const effects = readPatchText(
       `${diffLine}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`,

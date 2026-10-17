@@ -72,29 +72,30 @@ describe('the bounds of a patch', () => {
 
   it('refuses a path 2,000 segments deep, which a header line takes, as a path', () => {
     expect(() => readPatchText(create(deep(2_000)), 'p')).toThrow(
-      refusal('UNSAFE_PATH', 'is 2001 segments deep, more than the 128'),
+      refusal('UNSAFE_PATH', 'is 2001 segments deep, more than the 127'),
     );
   });
 
-  it('takes a path 128 segments deep and refuses one 129 deep, as an archive', () => {
-    expect(readPatchText(create(deep(127)), 'p')).toHaveLength(1);
-    expect(() => readPatchText(create(deep(128)), 'p')).toThrow(
-      refusal('UNSAFE_PATH', 'is 129 segments deep, more than the 128'),
+  it('takes a path 127 segments deep and refuses one 128 deep: the archive counts package/ as the 128th', () => {
+    expect(readPatchText(create(deep(126)), 'p')).toHaveLength(1);
+    expect(() => readPatchText(create(deep(127)), 'p')).toThrow(
+      refusal('UNSAFE_PATH', 'is 128 segments deep, more than the 127'),
     );
   });
 
   it('takes a path of 4,096 UTF-8 bytes and refuses one of 4,097, counting bytes and not characters', () => {
-    expect(pathOfBytes(4_096)).toHaveLength(4_096);
-    expect(readPatchText(create(pathOfBytes(4_096)), 'p')).toHaveLength(1);
-    expect(() => readPatchText(create(pathOfBytes(4_097)), 'p')).toThrow(
-      refusal('UNSAFE_PATH', 'is 4097 bytes long, more than the 4096'),
+    // 4,096 bytes with the package/ the archive counts in front of it.
+    expect(pathOfBytes(4_088)).toHaveLength(4_088);
+    expect(readPatchText(create(pathOfBytes(4_088)), 'p')).toHaveLength(1);
+    expect(() => readPatchText(create(pathOfBytes(4_089)), 'p')).toThrow(
+      refusal('UNSAFE_PATH', 'is 4089 bytes long, more than the 4088'),
     );
-    // Two bytes each: 4,098 bytes in 2,029 characters and 40 separators.
-    const accented = pathOfBytes(4_098, 'é');
-    expect(Buffer.byteLength(accented)).toBe(4_098);
-    expect(accented.length).toBeLessThan(4_098 - 1_000);
+    // Two bytes each: 4,090 bytes in about 2,000 characters and separators.
+    const accented = pathOfBytes(4_090, 'é');
+    expect(Buffer.byteLength(accented)).toBe(4_090);
+    expect(accented.length).toBeLessThan(4_090 - 1_000);
     expect(() => readPatchText(create(accented), 'p')).toThrow(
-      refusal('UNSAFE_PATH', 'is 4098 bytes long'),
+      refusal('UNSAFE_PATH', 'is 4090 bytes long'),
     );
   });
 
