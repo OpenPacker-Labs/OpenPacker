@@ -65,6 +65,9 @@ describe('an ecosystem whose adapter exports no codec', () => {
 
   it('takes what a manifest wrote after @ for a version', () => {
     expect(isExactVersion('nocodec', '1.0.0')).toBe(true);
+    // Nothing can tell a range or a tag from a version without a codec.
+    expect(isExactVersion('nocodec', '^1.0.0')).toBe(true);
+    expect(isExactVersion('nocodec', 'next')).toBe(true);
     expect(isExactVersion('npm', '1.0.0')).toBe(true);
     expect(isExactVersion('npm', '^1.0.0')).toBe(false);
     expect(isExactVersion('npm', 'next')).toBe(false);
