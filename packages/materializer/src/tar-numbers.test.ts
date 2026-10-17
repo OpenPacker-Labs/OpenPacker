@@ -70,9 +70,28 @@ describe('the numeric fields only node-tar decodes', () => {
     );
   });
 
-  it('holds a negative number to the safe integers, -1 in and -2^56 out', () => {
+  it('holds a negative number to the safe integers, -1 and -(2^53 - 1) in, -2^53 and -2^56 out', () => {
     expect(refused(header(108, Array(8).fill(0xff)))).toBeUndefined();
+    expect(
+      refused(header(108, [0xff, 0xe0, 0, 0, 0, 0, 0, 1])),
+    ).toBeUndefined();
+    expect(refused(header(108, [0xff, 0xe0, 0, 0, 0, 0, 0, 0]))).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
     expect(refused(header(108, [0xff, 0, 0, 0, 0, 0, 0, 0]))).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
+  });
+
+  it('holds a 12-byte field (mtime) to the same bounds', () => {
+    const ff = (count: number) => Array<number>(count).fill(0xff);
+    const mtime = (bytes: number[]) => refused(header(136, bytes));
+    expect(mtime([0x80, 0, 0, 0, 0, 0x1f, ...ff(6)])).toBeUndefined();
+    expect(mtime([0x80, 0, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 0])).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
+    expect(mtime([...ff(5), 0xe0, 0, 0, 0, 0, 0, 1])).toBeUndefined();
+    expect(mtime([...ff(5), 0xe0, 0, 0, 0, 0, 0, 0])).toBe(
       'TAR_AMBIGUOUS_NUMBER',
     );
   });
