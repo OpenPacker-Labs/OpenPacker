@@ -39,3 +39,13 @@ export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
     return 'tag';
   }
 }
+
+/**
+ * Whether npm reads `tag` as a dist-tag name at all: npm-package-arg@14.0.0
+ * (`lib/npa.js` 468-469) refuses one that `encodeURIComponent` would change
+ * ("Invalid tag name ... Tags may not have any characters that
+ * encodeURIComponent encodes").
+ */
+export function isNpmTagName(tag: string): boolean {
+  return tag !== '' && encodeURIComponent(tag) === tag;
+}

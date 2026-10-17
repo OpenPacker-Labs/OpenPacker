@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseNpmAlias } from './alias.js';
 import { NpmCodec, type NpmVersionMetadata } from './index.js';
 
 /**
@@ -78,6 +79,31 @@ describe('a plain dist-tag where the install walks', () => {
       kind: 'development',
       optional: true,
       semanticLoss: [{ code: 'NPM_DEPENDENCY_SPEC_NOT_A_RANGE' }],
+    });
+  });
+});
+
+describe("an npm: alias's dist-tag", () => {
+  it('is held to the rule a plain tag is', () => {
+    expect(parseNpmAlias('npm:foo@next')).toEqual({
+      target: 'foo',
+      spec: 'next',
+      kind: 'tag',
+    });
+    for (const tag of ['not a tag', 'a#b', 'caf\u00e9', '50%'])
+      expect(parseNpmAlias(`npm:foo@${tag}`)).toEqual({
+        problem: `"${tag}" is not a dist-tag name npm reads`,
+      });
+  });
+
+  it('fails the package by name where the install walks', async () => {
+    await expect(
+      translate({ dependencies: { x: 'npm:foo@not a tag' } }),
+    ).rejects.toMatchObject({
+      code: 'UNSUPPORTED_DEPENDENCY_SPEC',
+      message: expect.stringContaining(
+        '"not a tag" is not a dist-tag name npm reads',
+      ),
     });
   });
 });

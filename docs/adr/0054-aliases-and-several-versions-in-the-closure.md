@@ -460,8 +460,9 @@ the same).
   exactly as an alias's tag is; the lock records the version. A tag the
   packument does not have fails the resolve and names who asked for it. A tag
   npm would refuse to read (one `encodeURIComponent` changes, npm-package-arg
-  `lib/npa.js` 468-469) is still refused by name. Development dependencies and
-  optional peers keep what ADR 0044 §1 made them.
+  `lib/npa.js` 468-469) is still refused by name, and so is such a tag on an
+  `npm:` alias (`npm:foo@not a tag`), which was read as a tag before.
+  Development dependencies and optional peers keep what ADR 0044 §1 made them.
 - **In opm.toml** a `version` of `latest` or `next` was already resolved by
   §10's `registry-target.ts`, but was then taken for a pinned version, because
   it is spelled like one: a second `opm install` refused the lock ("Lock package

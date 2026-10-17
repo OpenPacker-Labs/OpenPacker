@@ -4,7 +4,7 @@ import {
   semanticLoss,
   sourceRef,
 } from '@openpacker/adapter-core';
-import type { NpmDependencySpecKind } from './dependency-spec.js';
+import { isNpmTagName, type NpmDependencySpecKind } from './dependency-spec.js';
 
 /**
  * A dependency whose specifier is not a version range: a dist-tag, git, a URL,
@@ -63,12 +63,7 @@ export function nonRangeRequirement(input: {
     semanticLoss: losses,
   });
   const dependencyField = input.dependencyField;
-  if (
-    specKind === 'tag' &&
-    input.followed &&
-    tag !== '' &&
-    encodeURIComponent(tag) === tag
-  )
+  if (specKind === 'tag' && input.followed && isNpmTagName(tag))
     return requirement(
       input.optional,
       { dependencyField, range: tag, specKind },

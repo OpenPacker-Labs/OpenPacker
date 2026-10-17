@@ -9,7 +9,7 @@
  * read once, here, into the target's name and what was asked of it.
  */
 
-import { classifyDependencySpec } from './dependency-spec.js';
+import { classifyDependencySpec, isNpmTagName } from './dependency-spec.js';
 
 /** What an `npm:` specifier asks the registry for. */
 export interface NpmAlias {
@@ -59,7 +59,10 @@ export function parseNpmAlias(value: string): NpmAlias | NpmAliasProblem {
   if (spec === '') return { target: name, spec: '*', kind: 'range' };
   const kind = classifyDependencySpec(spec);
   if (kind === 'range') return { target: name, spec, kind: 'range' };
-  if (kind === 'tag') return { target: name, spec, kind: 'tag' };
+  if (kind === 'tag')
+    return isNpmTagName(spec)
+      ? { target: name, spec, kind: 'tag' }
+      : { problem: `"${spec}" is not a dist-tag name npm reads` };
   return {
     problem:
       kind === 'alias'
