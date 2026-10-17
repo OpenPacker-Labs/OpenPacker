@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import { lstat, mkdir, readdir, rm, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { materialiseTree } from '@openpacker/project-io';
@@ -143,6 +144,12 @@ export async function storeViews(
   return { readonlyPaths, authorities, dispose };
 }
 
+/** Whether two stats are of one directory: the same device and the same inode. */
+export const isSameDirectory = (
+  left: Pick<Stats, 'dev' | 'ino'>,
+  right: Pick<Stats, 'dev' | 'ino'>,
+): boolean => left.dev === right.dev && left.ino === right.ino;
+
 /**
  * The view the links were made in, by its path, is the directory `handle`
  * holds, and that holds exactly `entries`: a view swapped for another
@@ -156,11 +163,7 @@ async function assertViewHeld(
   const [held, named] = await Promise.all([handle.stat(), lstat(view)]);
   const listed = (await readdir(stableHandlePath(handle))).sort();
   const expected = entries.map((entry) => basename(entry)).sort();
-  if (
-    held.dev !== named.dev ||
-    held.ino !== named.ino ||
-    listed.join('/') !== expected.join('/')
-  )
+  if (!isSameDirectory(held, named) || listed.join('/') !== expected.join('/'))
     throw new OpmError(
       'UNSAFE_PATH',
       `The store view ${view} changed while it was made, and is not bound`,

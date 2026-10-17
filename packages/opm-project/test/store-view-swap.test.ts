@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { materialiseTree } from '@openpacker/project-io';
-import { storeViews } from '../src/store-view.js';
+import { isSameDirectory, storeViews } from '../src/store-view.js';
 
 /**
  * A view is made in its store, by path, and bound through a handle. The handle
@@ -80,5 +80,38 @@ describe('a view swapped for another directory while it is made', () => {
     expect(await views(root)).toEqual([
       expect.stringMatching(/^\.view-.*-other$/u),
     ]);
+  });
+});
+
+describe('a view whose held directory lists the right names', () => {
+  it('is refused when the path now names another directory', async () => {
+    // The directory the handle holds is filled with the entries' names, and the
+    // view's path is swapped for a fresh directory the links then go into: the
+    // listing of what is held is exactly the entries', and only that the path
+    // is no longer the held directory (its inode) shows the swap.
+    const { root, entries } = await store();
+    swaps.push(async (view) => {
+      await rename(view, `${view}-moved`);
+      await mkdir(view);
+      for (const entry of entries)
+        await mkdir(join(`${view}-moved`, basename(entry)));
+    });
+    await expect(storeViews(entries, 1, linkTree)).rejects.toThrow(
+      'changed while it was made',
+    );
+    expect(await views(root)).toEqual([
+      expect.stringMatching(/^\.view-.*-moved$/u),
+    ]);
+  });
+});
+
+describe('two stats of one directory', () => {
+  it('are the same device and the same inode', () => {
+    const one = { dev: 64768, ino: 4242 };
+    expect(isSameDirectory(one, { ...one })).toBe(true);
+    // The inode alone differing, and the device alone (a directory on another
+    // file system, or under a mount, with an inode number that happens to match).
+    expect(isSameDirectory(one, { ...one, ino: 4243 })).toBe(false);
+    expect(isSameDirectory(one, { ...one, dev: 64769 })).toBe(false);
   });
 });
