@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
 import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
@@ -102,6 +102,20 @@ const executable = async (path: string) =>
   ((await stat(path)).mode & 0o111) !== 0;
 const inode = async (path: string) => (await stat(path)).ino;
 
+/** The mode of every file below `root`, by its path there. */
+async function fileModes(root: string): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const entry of await readdir(root, {
+    withFileTypes: true,
+    recursive: true,
+  }))
+    if (entry.isFile()) {
+      const path = join(entry.parentPath, entry.name);
+      out[relative(root, path)] = (await stat(path)).mode;
+    }
+  return out;
+}
+
 describe('opm ci over a pnpm lock with patchedDependencies', () => {
   it.runIf(onPosix)(
     'installs the patched files for every importer, and a project on the same store its own unpatched ones',
@@ -146,6 +160,14 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
       expect(patchedEntry).toMatch(
         new RegExp(`^sha256-[0-9a-f]{64}-patch-${applied}$`, 'u'),
       );
+      // Sealed as an archive's entry is: an edit in one project's
+      // node_modules/x cannot change every project's copy.
+      const modes = await fileModes(join(store, patchedEntry));
+      expect(Object.keys(modes)).toEqual(
+        expect.arrayContaining(['package/lib.js', 'package/added.js']),
+      );
+      for (const [file, mode] of Object.entries(modes))
+        expect([file, mode & 0o222]).toEqual([file, 0]);
 
       // Each entry is held while a project links it, and only then.
       const env = { OPM_STORE_HOME: store };
