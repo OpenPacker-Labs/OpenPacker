@@ -68,7 +68,7 @@ export class HeldPackuments {
     return this.#held.values();
   }
 
-  /** What the snapshot names each document read by, in key order of `held`. */
+  /** What the snapshot names a document read by: the digest of its text. */
   digest(held: HeldPackument): Promise<string> {
     return held.digest ?? digestOf(held.record!.rawBody);
   }

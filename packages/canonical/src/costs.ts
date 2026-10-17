@@ -17,11 +17,11 @@
  *   For each of the thirty-eight shapes the weights were fitted on, the cost
  *   is at least the heap the parse needed. An object of a few dozen members
  *   can need more: V8 gives its dictionary up to three slots a member, and
- *   such a document at the limit needed up to 1.2 times its cost (ADR 0044,
+ *   such a document at the limit needed up to 1.23 times its cost (ADR 0044,
  *   "Shapes found since").
  * - `retained` is what the finished tree keeps, for a holder that keeps trees
  *   (a resolve counts the packuments it holds by it). It is above what the
- *   tree kept for every real packument, and below it by up to 1.6 times for
+ *   tree kept for every real packument, and below it by up to 1.64 times for
  *   such an object and 1.3 times for an array just past a growth step.
  *
  * Nothing here is a V8 constant; they are what a build of Node 22 measured, and

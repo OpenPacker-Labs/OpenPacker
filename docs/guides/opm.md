@@ -548,16 +548,21 @@ member's name 3.5 a character, a number in an array 90. So `{},` repeated is
 refused at 1.6 million objects, where `1,` is refused at 6 million, and a
 document of the densest shape the 64 MiB bound allows can no longer end opm: the
 heaviest one the limit lets through was read inside a 1 GiB heap
-(`--max-old-space-size=1024`), and what used to be fatal there (exit 134,
+(`--max-old-space-size=1024`; a bound on one document, not on a resolve, which
+also holds what its budget keeps), and what used to be fatal there (exit 134,
 `JavaScript heap out of memory`, for 64 MiB of one object of 3.7 million empty
 objects) is now this refusal. A resolve also keeps what it reads only up to a
 budget, 256 MiB of packument text and parsed objects by default
 (`OPM_RETAINED_METADATA_MIB`, a whole number of MiB or `unlimited`); over it the
 least recently used are let go and read again through the registry, and a
-document that changed in between stops the resolve (`STALE_METADATA`) rather
-than mix two versions of it. When the refused document is the full packument
-that a release-age check needed, the policy message says so after "not
-captured":
+document that changed in between stops the resolve rather than mix two versions
+of it:
+`opm: The registry changed the packument of x during the resolve; run it again`,
+exit 8. A document the resolve still holds is answered from memory and never
+read again, whatever the budget. An `OPM_RETAINED_METADATA_MIB` that is not a
+whole number or `unlimited` is a usage error, exit 2. When the refused document
+is the full packument that a release-age check needed, the policy message says
+so after "not captured":
 `publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
 A registry that is simply down leaves that message as it was. See the
 [amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).

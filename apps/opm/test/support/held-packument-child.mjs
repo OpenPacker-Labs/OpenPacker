@@ -6,8 +6,12 @@ import { pathToFileURL } from 'node:url';
 
 const [root] = process.argv.slice(2);
 const load = (path) => import(pathToFileURL(`${root}/${path}`).href);
-const { NpmRegistryProvider } = await load('packages/adapter-npm/dist/esm/index.js');
-const { RetentionLedger } = await load('packages/adapter-core/dist/esm/index.js');
+const { NpmRegistryProvider } = await load(
+  'packages/adapter-npm/dist/esm/index.js',
+);
+const { RetentionLedger } = await load(
+  'packages/adapter-core/dist/esm/index.js',
+);
 
 // 600,000 objects of one member: about 110 MiB of tree for 9 MiB of text.
 const abbreviated = Buffer.from(
@@ -49,4 +53,6 @@ globalThis.gc();
 const heldMiB = (process.memoryUsage().heapUsed - before) / 2 ** 20;
 release();
 const evidence = await pending;
-process.stdout.write(`${JSON.stringify({ heldMiB: Math.round(heldMiB), evidence })}\n`);
+process.stdout.write(
+  `${JSON.stringify({ heldMiB: Math.round(heldMiB), evidence })}\n`,
+);

@@ -160,23 +160,28 @@ MiB); the full size only for the 400 of them with the largest abbreviated
 document (the largest, 73.0 MiB). That is a sample and it missed a package,
 `renovate` (33.8 MiB abbreviated, 68.6 MiB full), which a second look found. The
 real packuments cost at most 219 MiB (`renovate`, abbreviated) and 562 MiB
-(`@wix/wix-code-types`, full), 2.3 and 1.28 times under their limits. Those are
-bytes held, per document. What parsing a hostile body costs is separate and
-measured, through the real transport and provider on a 4-CPU machine shared with
-other work. Before the cost limit, over fifteen shapes of document, the shape
-that held the most took 2,169 to 2,683 MiB (2.1 to 2.6 GiB) of peak memory in
-22.5 to 30.4 s for an abbreviated packument, and 3,149 to 3,956 MiB in 37.1 to
-44.1 s for a full one, and a process started with a heap of 1 GiB or 1.5 GiB was
-ended by it with exit 134. Now every shape of that table (sixteen, at both
-bounds) is refused by the cost limit, in 2.3 to 6.2 s and at most 868 MiB of
-peak RSS, and the heaviest document each limit lets through, of seventeen kinds,
-was read inside a heap of 1 GiB in at most 8.7 s of CPU (abbreviated) and 12.8 s
-(full). Those are the heaviest kinds tried, not a proven maximum, and a later
-run can fall outside a range. What a resolve keeps is bounded too: the memo and
-the npm provider keep the packuments they read up to a budget of 256 MiB by
-default (`OPM_RETAINED_METADATA_MIB`), counting the text and the parsed objects,
-release the least recently used and read them again through the registry, and
-stop the resolve if a document read again is not the one that was released. A
+(`@wix/wix-code-types`, full), 2.3 and 1.28 times under their limits (the latter
+needs 78 percent of its limit). Those are bytes held, per document. What parsing
+a hostile body costs is separate and measured, through the real transport and
+provider on a 4-CPU machine shared with other work. Before the cost limit, over
+fifteen shapes of document, the shape that held the most took 2,169 to 2,683 MiB
+(2.1 to 2.6 GiB) of peak memory in 22.5 to 30.4 s for an abbreviated packument,
+and 3,149 to 3,956 MiB in 37.1 to 44.1 s for a full one, and a process started
+with a heap of 1 GiB or 1.5 GiB was ended by it with exit 134. Now every shape
+of that table (sixteen, at both bounds) is refused by the cost limit, in 2.3 to
+6.2 s and at most 868 MiB of peak RSS, and the heaviest document each limit lets
+through, of seventeen kinds, was read inside a heap of 1 GiB in at most 8.7 s of
+CPU (abbreviated) and 12.8 s (full); of eight kinds found since, the heaviest
+(objects of 86 members) took 14.6 s and was read inside 1 GiB with nothing to
+spare. Those are the heaviest kinds tried, not a proven maximum, and a later run
+can fall outside a range. The 1 GiB is a bound on one document: a resolve that
+also holds its budget's packuments needs more against a hostile registry (a
+hostile abbreviated and full pair took 1,522 MiB of RSS). What a resolve keeps
+is bounded too: the memo and the npm provider keep the packuments they read up
+to a budget of 256 MiB by default (`OPM_RETAINED_METADATA_MIB`), counting the
+text and the parsed objects, release the least recently used and read them again
+through the registry, and stop the resolve (exit 8) if a document read again is
+not the one that was released; a document still held is never read again. A
 refusal names the package, the size seen and the limit, and a publish time that
 is missing because the registry's document was refused says so in the policy
 message; the text it repeats from the document is capped and made one line by
