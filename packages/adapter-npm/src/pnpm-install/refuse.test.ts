@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { fixtureBytes } from '../pnpm-lock/fixture-support.js';
 import { worldOf } from './frozen-support.js';
+import { readPnpmLock } from '../pnpm-lock/index.js';
 import { INTEGRITY, LOCK, dependency, pkg } from './lock-support.js';
+import { buildPnpmModel } from './model.js';
+import { sourceOfInstance } from './refuse.js';
 
 /** What a lock with one odd package is refused as, by name. */
 async function refusedAs(
@@ -222,5 +225,43 @@ snapshots: {}
     );
     const world = await worldOf(text);
     expect((await world.read()).refused).toEqual([]);
+  });
+});
+
+describe('the address of a registry package the lock gives no URL', () => {
+  const model = buildPnpmModel(
+    readPnpmLock(
+      LOCK(`importers:
+
+  .:
+    dependencies:
+${dependency('a', '1.0.0+build.1', '1.0.0+build.1')}${dependency('@s/b', '2.0.0', '2.0.0')}
+packages:
+
+${pkg('a@1.0.0+build.1')}
+${pkg('@s/b@2.0.0')}
+
+snapshots:
+
+  a@1.0.0+build.1: {}
+  '@s/b@2.0.0': {}
+`),
+    ).lock,
+  );
+  const url = (key: string): string | undefined => {
+    const source = sourceOfInstance(
+      model.instances.get(key)!,
+      'https://registry.example/',
+    );
+    return 'url' in source ? source.url : undefined;
+  };
+
+  it("is the registry's path for the name and version, without build metadata, as pnpm fetches it", () => {
+    expect(url('a@1.0.0+build.1')).toBe(
+      'https://registry.example/a/-/a-1.0.0.tgz',
+    );
+    expect(url('@s/b@2.0.0')).toBe(
+      'https://registry.example/@s/b/-/b-2.0.0.tgz',
+    );
   });
 });
