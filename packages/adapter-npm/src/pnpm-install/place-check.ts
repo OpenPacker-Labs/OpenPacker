@@ -12,6 +12,7 @@
  */
 
 import { enclosingDirs, type PlaceInput, type Placement } from './place.js';
+import { quote } from './quote.js';
 
 /** What is at one place. */
 type Occupant =
@@ -76,8 +77,8 @@ export function resolutionProblems(
     hit === undefined
       ? 'nothing'
       : hit.kind === 'instance'
-        ? hit.key
-        : `the link to ${hit.memberDir}`;
+        ? quote(hit.key)
+        : `the link to ${quote(hit.memberDir)}`;
 
   const problems: string[] = [];
   const placedKeys = new Set(placement.placed.map((item) => item.key));
@@ -86,7 +87,7 @@ export function resolutionProblems(
       const hit = found(item.base, item.chain, edge.as);
       if (hit?.kind !== 'instance' || hit.key !== edge.to)
         problems.push(
-          `${item.key} at ${item.base === '' ? '' : `${item.base}/`}node_modules/${item.chain.join('/node_modules/')} needs ${edge.as} as ${edge.to}, and Node finds ${describe(hit)}`,
+          `${quote(item.key)} at ${quote(`${item.base === '' ? '' : `${item.base}/`}node_modules/${item.chain.join('/node_modules/')}`)} needs ${quote(edge.as)} as ${quote(edge.to)}, and Node finds ${describe(hit)}`,
         );
     }
   for (const top of input.tops) {
@@ -95,19 +96,19 @@ export function resolutionProblems(
       const hit = found(top.dir, [], edge.as);
       if (hit?.kind !== 'instance' || hit.key !== edge.to)
         problems.push(
-          `${top.id} needs ${edge.as} as ${edge.to}, and Node finds ${describe(hit)}`,
+          `${quote(top.id)} needs ${quote(edge.as)} as ${quote(edge.to)}, and Node finds ${describe(hit)}`,
         );
     }
     for (const link of top.links) {
       const hit = found(top.dir, [], link.as);
       if (hit?.kind !== 'link' || hit.memberDir !== link.memberDir)
         problems.push(
-          `${top.id} links ${link.memberDir} as ${link.as}, and Node finds ${describe(hit)}`,
+          `${quote(top.id)} links ${quote(link.memberDir)} as ${quote(link.as)}, and Node finds ${describe(hit)}`,
         );
     }
   }
   for (const key of input.instances.keys())
     if (!placedKeys.has(key))
-      problems.push(`${key} is in the plan and was given no place`);
+      problems.push(`${quote(key)} is in the plan and was given no place`);
   return problems;
 }

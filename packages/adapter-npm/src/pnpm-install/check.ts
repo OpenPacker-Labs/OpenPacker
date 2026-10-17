@@ -23,8 +23,9 @@ import {
 } from './fresh.js';
 import type { PnpmModel } from './model.js';
 import { applyOverrides } from './overrides.js';
+import { quote } from './quote.js';
 
-const show = (dir: string): string => (dir === '' ? '(root)' : dir);
+const show = (dir: string): string => (dir === '' ? '(root)' : quote(dir));
 
 /** How the members the lock lists differ from the ones on disk, as sentences. */
 export function memberProblems(
@@ -119,7 +120,7 @@ export function freshnessProblems(input: {
     ...catalogProblems(lock, config.catalogs),
     ...config.patches.map(
       (key) =>
-        `the project declares a patch for ${key}, which opm does not apply`,
+        `the project declares a patch for ${quote(key)}, which opm does not apply`,
     ),
     ...linkNameProblems(
       model,

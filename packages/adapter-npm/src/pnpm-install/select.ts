@@ -21,6 +21,7 @@ import type {
 } from '@openpacker/adapter-core';
 import { npmPackageRuns } from '../platform.js';
 import type { PnpmInstance, PnpmModel, PnpmTopEdge } from './model.js';
+import { quote } from './quote.js';
 
 export interface SelectInput {
   readonly model: PnpmModel;
@@ -46,19 +47,26 @@ export interface Selection {
 }
 
 function describeTarget(target: NativeTarget): string {
-  return `${target.os}/${target.architecture}${target.libc === undefined ? '' : `/${target.libc}`}`;
+  return quote(
+    `${target.os}/${target.architecture}${target.libc === undefined ? '' : `/${target.libc}`}`,
+  );
 }
 
+/** What the lock says the package runs on, every value quoted: it is the lock's text. */
 function describeDeclared(instance: PnpmInstance): string {
   const { os, cpu, libc } = instance.pkg;
+  const list = (values: readonly string[]) => values.map(quote).join(',');
   return [
-    os && `os ${os.join(',')}`,
-    cpu && `cpu ${cpu.join(',')}`,
-    libc && `libc ${libc.join(',')}`,
+    os && `os ${list(os)}`,
+    cpu && `cpu ${list(cpu)}`,
+    libc && `libc ${list(libc)}`,
   ]
     .filter(Boolean)
     .join(' ');
 }
+
+const labelOf = (instance: PnpmInstance): string =>
+  quote(`${instance.name}@${instance.version}`);
 
 /** Every instance reachable from `roots`, not entering `blocked`. */
 function reach(
@@ -199,7 +207,7 @@ export function selectInstances(
     else
       refused.push({
         path: key,
-        reason: `${instance.name}@${instance.version} is for ${describeDeclared(instance)}, not ${targets.map(describeTarget).join(' or ')}, and is not optional`,
+        reason: `${labelOf(instance)} is for ${describeDeclared(instance)}, not ${targets.map(describeTarget).join(' or ')}, and is not optional`,
       });
   }
   // What needs a dropped instance outright cannot work either (arborist's
@@ -215,7 +223,7 @@ export function selectInstances(
     const instance = model.instances.get(key)!;
     refused.push({
       path: key,
-      reason: `${instance.name}@${instance.version} needs ${to}, which is for another platform, and is not optional`,
+      reason: `${labelOf(instance)} needs ${quote(to)}, which is for another platform, and is not optional`,
     });
   }
   const roots = rootsOf(keptEdges).filter((key) => !dropped.has(key));
@@ -241,7 +249,7 @@ export function selectInstances(
         key,
         'orphaned',
         needs.has(key)
-          ? `needs ${needs.get(key)!}, which this machine does not install`
+          ? `needs ${quote(needs.get(key)!)}, which this machine does not install`
           : 'only needed by packages this machine does not install',
       );
   }

@@ -13,6 +13,7 @@ import {
   type FrozenWorkspaceScope,
 } from '@openpacker/adapter-core';
 import type { PnpmModel } from './model.js';
+import { quote } from './quote.js';
 
 const idOfDir = (dir: string): string => (dir === '' ? '.' : dir);
 
@@ -31,7 +32,7 @@ export function selectTops(
   if (unknown.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `The workspace selection names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not an importer of the lock`,
+      `The workspace selection names ${unknown.map(quote).join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not an importer of the lock`,
     );
   const chosen = new Set<string>();
   const pending = [...seeds];

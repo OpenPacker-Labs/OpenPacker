@@ -107,7 +107,7 @@ describe("a pnpm project's settings", () => {
     [
       { pnpm: { overrides: { a: 1 } } },
       undefined,
-      /package\.json pnpm\.overrides\.a must be a string/u,
+      /package\.json pnpm\.overrides\["a"\] must be a string/u,
     ],
     [
       { pnpm: { supportedArchitectures: { os: 'linux' } } },

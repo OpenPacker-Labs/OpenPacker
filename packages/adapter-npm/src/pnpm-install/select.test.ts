@@ -247,7 +247,7 @@ snapshots:
       {
         path: 'native-arm@1.0.0',
         reason:
-          'native-arm@1.0.0 is for cpu arm64, not linux/x64/glibc, and is not optional',
+          '"native-arm@1.0.0" is for cpu "arm64", not "linux/x64/glibc", and is not optional',
       },
     ]);
   });
@@ -297,7 +297,7 @@ describe('which importers are installed', () => {
         dirs: ['packages/nope'],
         includeRoot: false,
       }),
-    ).toThrow(/packages\/nope, which is not an importer of the lock/u);
+    ).toThrow(/"packages\/nope", which is not an importer of the lock/u);
   });
 
   it('reports what a selection leaves out as outside the importers selected', () => {

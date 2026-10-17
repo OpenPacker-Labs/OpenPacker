@@ -46,7 +46,7 @@ describe("a lock held to the importers' package.json", () => {
       /pnpm-lock\.yaml is not up to date with the project \(pnpm install --frozen-lockfile would refuse too\)/u,
     );
     expect(message).toMatch(
-      /packages\/sdk: zod is "\^5\.0\.0" in package\.json and "[^"]+" in pnpm-lock\.yaml/u,
+      /"packages\/sdk": "zod" is "\^5\.0\.0" in package\.json and "[^"]+" in pnpm-lock\.yaml/u,
     );
   });
 
@@ -58,7 +58,7 @@ describe("a lock held to the importers' package.json", () => {
           : manifest,
     });
     expect(message).toContain(
-      'packages/testing: left is in package.json (devDependencies) and not in pnpm-lock.yaml',
+      '"packages/testing": "left" is in package.json (devDependencies) and not in pnpm-lock.yaml',
     );
   });
 
@@ -74,7 +74,7 @@ describe("a lock held to the importers' package.json", () => {
       },
     });
     expect(message).toContain(
-      'the project: fast-check is in pnpm-lock.yaml and not in package.json',
+      'the project: "fast-check" is in pnpm-lock.yaml and not in package.json',
     );
   });
 
@@ -95,7 +95,7 @@ describe("a lock held to the importers' package.json", () => {
       },
     });
     expect(message).toContain(
-      'the project: fast-check is in dependencies of package.json and in devDependencies of pnpm-lock.yaml',
+      'the project: "fast-check" is in dependencies of package.json and in devDependencies of pnpm-lock.yaml',
     );
   });
 
@@ -122,7 +122,7 @@ describe("a lock held to the importers' package.json", () => {
         id === 'packages/sdk' ? { ...manifest, name: 'not-sdk' } : manifest,
     });
     expect(message).toContain(
-      'packages/cli links packages/sdk as @ai-bdd/sdk, and the member there is called not-sdk: opm links a member under its own name only',
+      '"packages/cli" links "packages/sdk" as "@ai-bdd/sdk", and the member there is called "not-sdk": opm links a member under its own name only',
     );
   });
 });
@@ -162,7 +162,7 @@ snapshots:
     const manifest = lists({ peerDependencies: [['react', '^18.0.0']] });
     expect(importerProblems('.', manifest, lock, true)).toEqual([]);
     expect(importerProblems('.', manifest, lock, false)).toEqual([
-      'the project: react is in pnpm-lock.yaml and not in package.json',
+      'the project: "react" is in pnpm-lock.yaml and not in package.json',
     ]);
   });
 
@@ -293,7 +293,7 @@ snapshots:
       }),
     });
     expect(message).toContain(
-      'the catalog "default" has left as "^2.0.0" in the project and "^1.0.0" in pnpm-lock.yaml',
+      'the catalog "default" has "left" as "^2.0.0" in the project and "^1.0.0" in pnpm-lock.yaml',
     );
     const fine = await worldOf(lock, {
       workspaceYaml: 'catalog:\n  left: ^1.0.0\n',
@@ -312,7 +312,7 @@ snapshots:
       },
     });
     expect(message).toContain(
-      'the project declares a patch for semver@7.7.2, which opm does not apply',
+      'the project declares a patch for "semver@7.7.2", which opm does not apply',
     );
   });
 });

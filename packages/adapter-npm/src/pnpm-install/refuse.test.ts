@@ -46,7 +46,7 @@ describe('what opm ci refuses of a pnpm lock, by name', () => {
       {
         path: 'odd@1.0.0',
         reason:
-          'odd@1.0.0 has only a sha1 integrity, which does not pin its bytes',
+          '"odd@1.0.0" has only a sha1 integrity, which does not pin its bytes',
       },
     ]);
   });
@@ -129,7 +129,7 @@ snapshots:
 `),
     );
     expect((await dir.read()).refused[0]!.reason).toContain(
-      'comes from the directory ../odd',
+      'comes from the directory "../odd"',
     );
   });
 
@@ -208,7 +208,7 @@ snapshots: {}
       {
         path: 'importers["."]["outside"]',
         reason:
-          'links ../outside, which is not a workspace member (an importer of this lock); opm links members only',
+          'links "../outside", which is not a workspace member (an importer of this lock); opm links members only',
       },
     ]);
   });
