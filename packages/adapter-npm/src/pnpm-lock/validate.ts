@@ -12,7 +12,7 @@
  * decision a frozen install makes.
  */
 
-import { isWorkspaceSpecifier } from '@openpacker/adapter-core';
+import { isWorkspaceSpecifier, quote } from '@openpacker/adapter-core';
 import { PnpmLockError } from './errors.js';
 import { exoticSourcesOf, type PnpmExoticSource } from './exotic.js';
 import { packageKeyOf } from './dep-path.js';
@@ -127,7 +127,7 @@ class Findings {
 
 function checkResolutionKinds(lock: PnpmLock, findings: Findings): void {
   for (const pkg of lock.packages) {
-    const where = `packages[${JSON.stringify(pkg.key)}]`;
+    const where = `packages[${quote(pkg.key)}]`;
     if (!RESOLUTIONS_FOR[pkg.source].includes(pkg.resolution.kind))
       findings.add(
         'resolution-source-mismatch',
@@ -141,7 +141,7 @@ function checkResolutionKinds(lock: PnpmLock, findings: Findings): void {
       findings.add(
         'resolution-source-mismatch',
         where,
-        `names the git source ${JSON.stringify(pkg.version)} but its resolution is ${JSON.stringify(gitKeyVersion(pkg.resolution))}`,
+        `names the git source ${quote(pkg.version)} but its resolution is ${quote(gitKeyVersion(pkg.resolution))}`,
       );
   }
 }
@@ -159,7 +159,7 @@ function checkPatches(lock: PnpmLock, findings: Findings): void {
     const declared =
       lock.patchedDependencies.get(exact) ??
       lock.patchedDependencies.get(snapshot.path.name);
-    const where = `snapshots[${JSON.stringify(snapshot.key)}]`;
+    const where = `snapshots[${quote(snapshot.key)}]`;
     if (declared === undefined) {
       // A key that is a range is not evaluated here: it only has to name this package.
       if (!patched.has(snapshot.path.name))
@@ -180,7 +180,7 @@ function checkPatches(lock: PnpmLock, findings: Findings): void {
     if (!names.has(name))
       findings.add(
         'patch-unused',
-        `patchedDependencies[${JSON.stringify(key)}]`,
+        `patchedDependencies[${quote(key)}]`,
         `patches ${name}, which the lock does not install`,
       );
   }
@@ -202,13 +202,13 @@ function checkImporters(
       importer.optionalDependencies,
     ]) {
       for (const dependency of list) {
-        const where = `importers[${JSON.stringify(importer.id)}][${JSON.stringify(dependency.name)}]`;
+        const where = `importers[${quote(importer.id)}][${quote(dependency.name)}]`;
         const earlier = seen.get(dependency.name);
         if (earlier !== undefined && earlier !== dependency.specifier)
           findings.add(
             'conflicting-specifiers',
             where,
-            `is listed with the specifiers ${JSON.stringify(earlier)} and ${JSON.stringify(dependency.specifier)}`,
+            `is listed with the specifiers ${quote(earlier)} and ${quote(dependency.specifier)}`,
           );
         seen.set(dependency.name, dependency.specifier);
         checkSpecifier(
@@ -237,7 +237,7 @@ function checkImporters(
           findings.add(
             'importer-dependency-unresolved',
             where,
-            `resolves to ${JSON.stringify(ref.target.raw)}, which is not in snapshots`,
+            `resolves to ${quote(ref.target.raw)}, which is not in snapshots`,
           );
       }
     }
@@ -268,7 +268,7 @@ function checkSpecifier(
     findings.add(
       'catalog-entry-missing',
       where,
-      `asks for the catalog ${JSON.stringify(catalog)}, which has no entry for ${name}`,
+      `asks for the catalog ${quote(catalog)}, which has no entry for ${name}`,
     );
 }
 
@@ -300,12 +300,12 @@ function checkSnapshots(
   links: PnpmLinkEdge[],
 ): void {
   for (const snapshot of lock.snapshots) {
-    const where = `snapshots[${JSON.stringify(snapshot.key)}]`;
+    const where = `snapshots[${quote(snapshot.key)}]`;
     if (!packageKeys.has(packageKeyOf(snapshot.path)))
       findings.add(
         'snapshot-without-package',
         where,
-        `has no entry ${JSON.stringify(packageKeyOf(snapshot.path))} in packages`,
+        `has no entry ${quote(packageKeyOf(snapshot.path))} in packages`,
       );
     for (const list of [snapshot.dependencies, snapshot.optionalDependencies]) {
       for (const dependency of list) {
@@ -320,8 +320,8 @@ function checkSnapshots(
         else if (!snapshotKeys.has(ref.target.raw))
           findings.add(
             'snapshot-dependency-unresolved',
-            `${where}[${JSON.stringify(dependency.name)}]`,
-            `resolves to ${JSON.stringify(ref.target.raw)}, which is not in snapshots`,
+            `${where}[${quote(dependency.name)}]`,
+            `resolves to ${quote(ref.target.raw)}, which is not in snapshots`,
           );
       }
     }

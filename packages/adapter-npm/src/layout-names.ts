@@ -6,6 +6,8 @@
  * directory on the filesystems it is written to.
  */
 
+import { quote } from '@openpacker/adapter-core';
+
 /**
  * Why a registry-supplied name is not a safe directory name, or undefined.
  *
@@ -16,7 +18,7 @@ export function unsafeNameProblem(name: string): string | undefined {
   const segments = name.split('/');
   const scoped = name.startsWith('@');
   if (segments.length !== (scoped ? 2 : 1))
-    return `${JSON.stringify(name)} is not an npm package name`;
+    return `${quote(name)} is not an npm package name`;
   for (const [index, segment] of segments.entries()) {
     const body = scoped && index === 0 ? segment.slice(1) : segment;
     if (
@@ -25,7 +27,7 @@ export function unsafeNameProblem(name: string): string | undefined {
       body.toLowerCase() === 'node_modules' ||
       !/^[A-Za-z0-9._~+-]+$/u.test(body)
     )
-      return `${JSON.stringify(name)} is not a safe directory name for node_modules`;
+      return `${quote(name)} is not a safe directory name for node_modules`;
   }
   return undefined;
 }

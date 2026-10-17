@@ -8,7 +8,7 @@
  * message.
  */
 
-import { ProviderError } from '@openpacker/adapter-core';
+import { ProviderError, quote, terminalSafe } from '@openpacker/adapter-core';
 import { redactAddresses } from './redact.js';
 
 export type PnpmLockReason =
@@ -71,10 +71,17 @@ export class PnpmLockError extends ProviderError {
 
 /** A path into the lock, spelled so a key with dots or slashes stays one step. */
 export function at(where: string, key: string): string {
-  return where === '' ? key : `${where}[${JSON.stringify(key)}]`;
+  return where === '' ? key : `${where}[${quote(key)}]`;
 }
 
 /** The step to a field, `where.field`. */
 export function field(where: string, name: string): string {
   return where === '' ? name : `${where}.${name}`;
+}
+
+/** A YAML value as a message shows it: a string by `quote`, any other as its JSON, made safe and cut. */
+export function shown(value: unknown): string {
+  return typeof value === 'string'
+    ? quote(value)
+    : terminalSafe(String(JSON.stringify(value)).slice(0, 200));
 }
