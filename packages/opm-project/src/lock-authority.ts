@@ -17,6 +17,8 @@ const LOCK_PACKAGE_FIELDS = new Set([
   'reason',
   'ecosystem',
   'dependencies',
+  'aliases',
+  'installName',
   'trustLevel',
   'publishedAt',
   'registryId',

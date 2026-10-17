@@ -36,29 +36,21 @@ import type {
   FrozenLockPackage,
   FrozenLockRefusal,
   FrozenLockSkip,
+  FrozenLockWorkspace,
   FrozenSourceKind,
   NativeTarget,
 } from '@openpacker/adapter-core';
-import {
-  resolveFromChain,
-  type LockEntry,
-  type PackageLockTree,
-} from './lock-tree.js';
+import { buildGraph, optionalSet } from './frozen-graph.js';
+import type { LockEntry, PackageLockTree } from './lock-tree.js';
 import { npmPackageRuns } from './platform.js';
 import { npmPurl } from './purl.js';
-
-interface Edge {
-  /** Null for an edge from the project's own manifest. */
-  from: LockEntry | null;
-  to: LockEntry;
-  /** An optionalDependencies edge, or an optional peer. */
-  optional: boolean;
-}
+import { scopeOfWorkspace, workspaceLayout } from './frozen-workspace.js';
 
 export interface FrozenInstallPlan {
   packages: FrozenLockPackage[];
   skipped: FrozenLockSkip[];
   refused: FrozenLockRefusal[];
+  workspace?: FrozenLockWorkspace;
 }
 
 /** A locked package as a message names it: its name, `@`, its version. */
@@ -136,91 +128,6 @@ export function classifyResolved(entry: {
 }
 
 /**
- * The edges of the lock's dependency graph: for each declared dependency, the
- * entry Node would find for it from where the declaring package lives.
- */
-function buildEdges(
-  tree: PackageLockTree,
-  byPath: ReadonlyMap<string, LockEntry>,
-) {
-  const into = new Map<LockEntry, Edge[]>();
-  const out = new Map<LockEntry, Edge[]>();
-  const connect = (
-    from: LockEntry | null,
-    chain: readonly string[],
-    name: string,
-    optional: boolean,
-  ): void => {
-    const to = resolveFromChain(byPath, chain, name);
-    if (to === undefined) return;
-    const edge: Edge = { from, to, optional };
-    into.set(to, [...(into.get(to) ?? []), edge]);
-    if (from !== null) out.set(from, [...(out.get(from) ?? []), edge]);
-  };
-  const root = tree.root;
-  if (root !== undefined) {
-    for (const name of Object.keys(root.dependencies))
-      if (!(name in root.optionalDependencies)) connect(null, [], name, false);
-    for (const name of Object.keys(root.devDependencies))
-      connect(null, [], name, false);
-    for (const name of Object.keys(root.optionalDependencies))
-      connect(null, [], name, true);
-    for (const name of Object.keys(root.peerDependencies))
-      connect(null, [], name, false);
-  }
-  for (const entry of tree.entries) {
-    for (const name of Object.keys(entry.dependencies))
-      if (!(name in entry.optionalDependencies))
-        connect(entry, entry.chain, name, false);
-    for (const name of Object.keys(entry.optionalDependencies))
-      connect(entry, entry.chain, name, true);
-    for (const name of Object.keys(entry.peerDependencies))
-      connect(
-        entry,
-        entry.chain,
-        name,
-        entry.peerDependenciesMeta[name]?.optional === true,
-      );
-  }
-  return { into, out };
-}
-
-/**
- * What npm drops when an optional package cannot be installed (arborist's
- * `optionalSet`): the package, the packages above it that need it outright,
- * and whatever is then needed only from inside that set.
- */
-function optionalSet(
-  failed: LockEntry,
-  into: ReadonlyMap<LockEntry, readonly Edge[]>,
-  out: ReadonlyMap<LockEntry, readonly Edge[]>,
-): Set<LockEntry> {
-  const set = new Set<LockEntry>([failed]);
-  for (const node of set)
-    for (const edge of into.get(node) ?? [])
-      if (!edge.optional && edge.from !== null) set.add(edge.from);
-  const deps = new Set(set);
-  for (const node of deps)
-    for (const edge of out.get(node) ?? [])
-      if (!edge.optional) deps.add(edge.to);
-  let changed = true;
-  while (changed && deps.size > 0) {
-    changed = false;
-    for (const dep of deps) {
-      const outside = (into.get(dep) ?? []).some(
-        (edge) =>
-          !edge.optional && (edge.from === null || !deps.has(edge.from)),
-      );
-      if (outside) {
-        deps.delete(dep);
-        changed = true;
-      }
-    }
-  }
-  return deps;
-}
-
-/**
  * Decide what a frozen install of `tree` installs on `options.target`.
  *
  * Pure: no file is read. Refusals are collected, not thrown, so that one run
@@ -232,8 +139,10 @@ export function planFrozenPackageLock(input: {
 }): FrozenInstallPlan {
   const { tree, options } = input;
   const { omit, target } = options;
-  const byPath = new Map(tree.entries.map((entry) => [entry.path, entry]));
-  const { into, out } = buildEdges(tree, byPath);
+  const all = [...tree.entries, ...(tree.workspace?.entries ?? [])];
+  const byPath = new Map(all.map((entry) => [entry.path, entry]));
+  const graph = buildGraph(tree, all, byPath);
+  const selection = scopeOfWorkspace(tree, graph, options.workspace?.scope);
   const skipped: FrozenLockSkip[] = [];
   const refused: FrozenLockRefusal[] = [];
   const skip = (
@@ -251,7 +160,11 @@ export function planFrozenPackageLock(input: {
   };
 
   const left = new Set<LockEntry>();
-  for (const entry of tree.entries) {
+  for (const entry of all) {
+    if (selection.entries !== undefined && !selection.entries.has(entry)) {
+      skip(entry, 'workspace', 'outside the workspaces selected');
+      continue;
+    }
     if (entry.inBundle) {
       skip(entry, 'bundled', "shipped inside its parent's tarball");
       continue;
@@ -291,7 +204,7 @@ export function planFrozenPackageLock(input: {
     );
   }
   for (const entry of failed)
-    for (const dropped of optionalSet(entry, into, out)) {
+    for (const dropped of optionalSet(entry, graph)) {
       if (dropped === entry || !left.delete(dropped)) continue;
       skip(
         dropped,
@@ -300,13 +213,7 @@ export function planFrozenPackageLock(input: {
       );
     }
 
-  const roots = tree.root;
-  const named = new Set([
-    ...Object.keys(roots?.dependencies ?? {}),
-    ...Object.keys(roots?.devDependencies ?? {}),
-    ...Object.keys(roots?.optionalDependencies ?? {}),
-    ...Object.keys(roots?.peerDependencies ?? {}),
-  ]);
+  const named = namedByTops(tree);
   const packages: FrozenLockPackage[] = [];
   for (const entry of [...left].sort(byDepthThenPath)) {
     const parent = entry.chain.length > 1 ? parentPath(entry) : undefined;
@@ -342,7 +249,7 @@ export function planFrozenPackageLock(input: {
       source: entry.resolved!,
       sourceKind: source.kind,
       integrity: entry.integrity,
-      direct: entry.chain.length === 1 && named.has(entry.name),
+      direct: entry.chain.length === 1 && isNamedFor(named, entry),
       scope: entry.peer
         ? 'peer'
         : entry.optional
@@ -354,7 +261,43 @@ export function planFrozenPackageLock(input: {
       ...(entry.deprecated !== undefined && { deprecated: entry.deprecated }),
     });
   }
-  return { packages, skipped, refused };
+  const workspace = workspaceLayout(tree, selection.members);
+  return { packages, skipped, refused, ...(workspace && { workspace }) };
+}
+
+/** The names each top (the project `''`, or a member by directory) declares. */
+function namedByTops(tree: PackageLockTree): Map<string, Set<string>> {
+  const names = (declared: {
+    dependencies: object;
+    optionalDependencies: object;
+    peerDependencies: object;
+    devDependencies?: object;
+  }) =>
+    new Set([
+      ...Object.keys(declared.dependencies),
+      ...Object.keys(declared.devDependencies ?? {}),
+      ...Object.keys(declared.optionalDependencies),
+      ...Object.keys(declared.peerDependencies),
+    ]);
+  const named = new Map<string, Set<string>>();
+  if (tree.root !== undefined) named.set('', names(tree.root));
+  for (const member of tree.workspace?.members ?? [])
+    named.set(member.dir, names(member));
+  return named;
+}
+
+/**
+ * Whether a top names the package: a package inside a member is named by that
+ * member alone; one in the project's own `node_modules` by the project or by
+ * any member, since a member's dependency is hoisted there.
+ */
+function isNamedFor(
+  named: ReadonlyMap<string, ReadonlySet<string>>,
+  entry: LockEntry,
+): boolean {
+  if (entry.member !== '')
+    return named.get(entry.member)?.has(entry.name) === true;
+  return [...named.values()].some((names) => names.has(entry.name));
 }
 
 function installed(left: ReadonlySet<LockEntry>, entry: LockEntry | undefined) {

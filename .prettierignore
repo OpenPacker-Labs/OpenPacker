@@ -19,3 +19,6 @@ kimi-export-session_*.md
 # bundles must stay byte-identical to their sources.
 packages/packslip/test/fixtures/**
 packages/packslip/src/sigstore-root.ts
+
+# Verbatim pnpm lockfiles (ADR 0052): that pnpm wrote them is the point of the fixtures
+fixtures/locks/pnpm-v9/*.yaml

@@ -35,8 +35,10 @@ import {
   materializeThroughSharedStore,
   usableSharedRoot,
 } from './shared-store.js';
+import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
+import { restoreSharedBins } from './bin-restore.js';
 import {
   assertSafeSegment,
   O_DIRECTORY,
@@ -744,6 +746,7 @@ export async function materializeLockPackage(input: {
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
           sharedRoot,
+          limits: installArchiveLimits(pkg.ecosystem),
         });
         viaShared = true;
         adoptedTreeDigest = adopted.treeDigest;
@@ -768,6 +771,7 @@ export async function materializeLockPackage(input: {
           destination: stagedPath,
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           format: pkg.format as ArchiveFormat,
+          limits: installArchiveLimits(pkg.ecosystem),
         });
       }
       await revalidateStableDirectory(paths.store, storeHandle);
@@ -1020,6 +1024,13 @@ export async function installFromLock(input: {
 
   let anyLifecycle = false;
   const sandboxOutcomes: SandboxOutcome[] = [];
+  // Executables are one file per name, and the last written wins. Two versions
+  // of a package can both declare one, so a direct requirement is written last.
+  const inWriteOrder = [...materialised].sort(
+    ([, left], [, right]) =>
+      Number(left.pkg.reason === 'direct') -
+      Number(right.pkg.reason === 'direct'),
+  );
   for (const [
     alias,
     {
@@ -1030,7 +1041,7 @@ export async function installFromLock(input: {
       sandboxOutcomes: observed,
       treeDigest,
     },
-  ] of materialised) {
+  ] of inWriteOrder) {
     sandboxOutcomes.push(...observed);
     const previous = state.packages[alias];
     if (previous) {
@@ -1106,10 +1117,12 @@ export async function uninstallPackages(input: {
     packages: {},
   };
 
+  const removedBins = new Set<string>();
   for (const alias of input.aliases) {
     const safeAlias = assertSafeSegment(alias, 'package alias');
     const record = state.packages[alias] ?? state.packages[safeAlias];
     if (!record) continue;
+    for (const bin of record.bins) removedBins.add(bin.name);
     await removeBinShims(
       paths.bin,
       record.bins.map((b) => b.name),
@@ -1122,6 +1135,11 @@ export async function uninstallPackages(input: {
     delete state.packages[alias];
     delete state.packages[safeAlias];
   }
+  await restoreSharedBins({
+    binDir: paths.bin,
+    removed: removedBins,
+    remaining: state.packages,
+  });
   await writeProjectState(paths.projectState, state);
   // Removing packages changes the environment, so it is a new generation for
   // the same reason installing is: the previous state stays rollback-able.

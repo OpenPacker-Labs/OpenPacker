@@ -11,7 +11,7 @@
  * Nothing in this file or in `commands/run*.ts` may import a workspace package
  * for a value at load time; `run-load.test.ts` holds that.
  */
-import { asksForHelp } from './commands/run-args.js';
+import { routeRun } from './commands/run-route.js';
 
 export interface EntryIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -24,18 +24,23 @@ export async function main(
   cwd: string,
   otherCommands: () => Promise<number>,
 ): Promise<number> {
-  const command = argv[0];
-  if (
-    (command === 'run' || command === 'exec') &&
-    !asksForHelp(command, argv.slice(1))
-  ) {
-    try {
+  try {
+    const routed = await routeRun(argv, cwd);
+    if (routed !== undefined) {
       const { runProjectCommand } = await import('./commands/run.js');
-      return await runProjectCommand(command, [], argv.slice(1), io, cwd);
-    } catch (error) {
-      const { handleError } = await import('./opm.js');
-      return handleError(error, io);
+      return await runProjectCommand(
+        routed.command,
+        [],
+        routed.rest,
+        io,
+        cwd,
+        undefined,
+        routed.fallbackExec,
+      );
     }
+  } catch (error) {
+    const { handleError } = await import('./opm.js');
+    return handleError(error, io);
   }
   return await otherCommands();
 }

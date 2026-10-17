@@ -139,7 +139,10 @@ describe('opm exec: what it refuses', () => {
   it('never searches PATH, so a program that is not in .bin is not found', async () => {
     const root = await makeProject({});
     const cap = capture();
-    expect(await runOpm(['exec', 'node', '--version'], cap.io, root)).toBe(4);
+    // `node` is the one name exec answers itself (ADR 0053), so it cannot
+    // stand for "a program on PATH"; `sh` is on every PATH that matters here.
+    const program = process.platform === 'win32' ? 'cmd' : 'sh';
+    expect(await runOpm(['exec', program, '--version'], cap.io, root)).toBe(4);
     expect(cap.err).toContain('exec never fetches or searches PATH');
     expect(cap.out).toBe('');
   });

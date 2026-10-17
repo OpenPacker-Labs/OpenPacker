@@ -2,8 +2,9 @@
  * `package-lock.json` and `package.json` as a frozen install reads them.
  *
  * This reads the two files (no-follow, bounded), checks that the lock still
- * matches its manifest, turns workspaces into a refusal list, and hands the
- * rest to the selection in `frozen-select.ts`.
+ * matches its manifest and, in a workspace, the members on disk, lists what a
+ * workspace lock holds that cannot be installed, and hands the rest to the
+ * selection in `frozen-select.ts`.
  */
 
 import { createHash } from 'node:crypto';
@@ -12,143 +13,30 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   echoed,
-  echoedValue,
   ProviderError,
   type DetectedProject,
   type FrozenLock,
   type FrozenLockOptions,
-  type FrozenLockRefusal,
+  type WorkspaceMember,
 } from '@openpacker/adapter-core';
+import { assertPlaceable } from './frozen-placement.js';
 import { planFrozenPackageLock } from './frozen-select.js';
 import {
-  parsePackageLockText,
-  type LockEntry,
-  type PackageLockTree,
-} from './lock-tree.js';
-import { npmSatisfies } from './npm-range.js';
+  DEPENDENCY_FIELDS,
+  lockDisagreements,
+  manifestOfMember,
+  memberDisagreements,
+  memberListDisagreements,
+  type FrozenManifest,
+} from './frozen-sync.js';
+import { parsePackageLockText } from './lock-tree.js';
+
+export { lockDisagreements, type FrozenManifest };
 
 const MAXIMUM_LOCK_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
 
 type StringMap = Readonly<Record<string, string>>;
-
-/** The parts of `package.json` a frozen install checks the lock against. */
-export interface FrozenManifest {
-  dependencies: StringMap;
-  devDependencies: StringMap;
-  optionalDependencies: StringMap;
-  peerDependencies: StringMap;
-  workspaces?: unknown;
-}
-
-const DEPENDENCY_FIELDS = [
-  'dependencies',
-  'devDependencies',
-  'optionalDependencies',
-  'peerDependencies',
-] as const;
-
-/**
- * Why the lock does not match `package.json`, one line per difference.
- *
- * `npm ci` refuses to install when they disagree, and so does this: a lock
- * that is behind its manifest installs something other than what the project
- * asks for.
- */
-export function lockDisagreements(
-  tree: PackageLockTree,
-  manifest: FrozenManifest,
-): string[] {
-  const problems: string[] = [];
-  const root = tree.root;
-  const byPath = new Map(tree.entries.map((entry) => [entry.path, entry]));
-  for (const field of DEPENDENCY_FIELDS) {
-    const declared = manifest[field];
-    const locked = root?.[field] ?? {};
-    for (const name of Object.keys(declared))
-      if (!(name in locked))
-        problems.push(
-          `${field}.${echoedValue(name)} is in package.json and not in the lock`,
-        );
-    for (const name of Object.keys(locked))
-      if (!(name in declared))
-        problems.push(
-          `${field}.${echoedValue(name)} is in the lock and no longer in package.json`,
-        );
-    for (const [name, spec] of Object.entries(declared)) {
-      const entry = byPath.get(`node_modules/${name}`);
-      if (entry === undefined) {
-        if (field === 'dependencies' || field === 'devDependencies')
-          problems.push(
-            `${echoedValue(name)} (${field}) has no entry in the lock`,
-          );
-        continue;
-      }
-      const problem = specProblem(entry, spec);
-      if (problem !== undefined)
-        problems.push(`${field}.${echoedValue(name)}: ${problem}`);
-    }
-  }
-  return problems;
-}
-
-/** Why a locked entry does not satisfy a manifest spec, or undefined. */
-function specProblem(entry: LockEntry, spec: string): string | undefined {
-  let range = spec.trim();
-  if (range.startsWith('npm:')) {
-    const alias = /^npm:((?:@[^/@]+\/)?[^@/]+)(?:@(.+))?$/u.exec(range);
-    if (alias === null) return undefined;
-    if (alias[1] !== entry.packageName)
-      return `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(entry.packageName)}@${echoedValue(entry.version)}`;
-    range = alias[2] ?? '*';
-  }
-  // Only a plain semver range can be checked against a version. A tag, a URL,
-  // a path and a git ref name something else, which the lock pins in its own way.
-  if (/[:/]/u.test(range)) return undefined;
-  try {
-    return npmSatisfies(entry.version, range)
-      ? undefined
-      : `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(entry.version)}`;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The members a workspace lock holds, as refusals. */
-function workspaceRefusals(
-  tree: PackageLockTree,
-  manifest: FrozenManifest,
-): FrozenLockRefusal[] {
-  const refused: FrozenLockRefusal[] = [];
-  for (const link of tree.links)
-    refused.push({
-      path: link.path,
-      reason: `a link to ${echoedValue(link.target || '(no target)')}; workspace members and links are not installed yet`,
-    });
-  const members = tree.foreign.filter(
-    (entry) => !entry.path.includes('/node_modules/'),
-  );
-  for (const member of members)
-    refused.push({
-      path: member.path,
-      reason: `a workspace member${member.name === undefined ? '' : ` (${echoedValue(member.name)})`}; workspaces are not installed yet`,
-    });
-  const inside = tree.foreign.length - members.length;
-  if (inside > 0)
-    refused.push({
-      path: '(inside the members)',
-      reason: `${inside} package${inside === 1 ? '' : 's'} installed inside workspace members`,
-    });
-  if (
-    refused.length === 0 &&
-    (manifest.workspaces !== undefined || tree.root?.workspaces !== undefined)
-  )
-    refused.push({
-      path: 'package.json',
-      reason: 'declares workspaces, which are not installed yet',
-    });
-  return refused;
-}
 
 async function readBounded(path: string, maximum: number): Promise<string> {
   let handle;
@@ -267,14 +155,53 @@ export async function readFrozenPackageLock(
     // as they come, and agent-base@7.1.4 is published with both.
     extraction: { acceptRedundantEntries: true },
   };
-  const workspaces = workspaceRefusals(tree, manifest);
-  if (workspaces.length > 0)
-    return { ...common, packages: [], skipped: [], refused: workspaces };
-  const disagreements = lockDisagreements(tree, manifest);
+  const refused = tree.workspace?.refused ?? [];
+  if (refused.length > 0)
+    return { ...common, packages: [], skipped: [], refused: [...refused] };
+  // The workspace on disk is looked at only where there is one to hold the lock
+  // to; a project with none is read as it always was.
+  const disk =
+    tree.workspace !== undefined || manifest.workspaces !== undefined
+      ? ((await options.workspace?.disk()) ?? [])
+      : [];
+  const disagreements = [
+    ...workspaceDisagreements(tree, disk),
+    ...lockDisagreements(tree, manifest),
+    ...memberManifestDisagreements(tree, disk),
+  ];
   if (disagreements.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
       `package.json and package-lock.json are not in sync (npm ci would refuse too): ${disagreements.slice(0, 20).join('; ')}${disagreements.length > 20 ? `; and ${disagreements.length - 20} more` : ''}`,
     );
-  return { ...common, ...planFrozenPackageLock({ tree, options }) };
+  const plan = planFrozenPackageLock({ tree, options });
+  // The places are the lock's keys: a lock whose places cannot be written is
+  // refused now, before anything is fetched or the project's node_modules goes.
+  assertPlaceable(plan);
+  return { ...common, ...plan };
+}
+
+/** How the members the lock lists differ from the ones the project declares. */
+function workspaceDisagreements(
+  tree: ReturnType<typeof parsePackageLockText>,
+  disk: readonly WorkspaceMember[],
+): string[] {
+  const lines = memberListDisagreements(tree.workspace?.members ?? [], disk);
+  return lines.length === 0
+    ? []
+    : [`the workspace members differ (${lines.join('; ')})`];
+}
+
+/** Each member the lock and the disk both have, against its own `package.json`. */
+function memberManifestDisagreements(
+  tree: ReturnType<typeof parsePackageLockText>,
+  disk: readonly WorkspaceMember[],
+): string[] {
+  const onDisk = new Map(disk.map((member) => [member.dir, member]));
+  return (tree.workspace?.members ?? []).flatMap((member) => {
+    const there = onDisk.get(member.dir);
+    return there === undefined
+      ? []
+      : memberDisagreements(tree, member, manifestOfMember(there));
+  });
 }

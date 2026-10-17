@@ -1,0 +1,30 @@
+{
+  "everything": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/ansi-cjs|ansi-regex|5.0.1|",
+    "node_modules/pad|left-pad|1.3.0|",
+    "node_modules/shared|shared|1.0.0|",
+    "node_modules/string-width-cjs|string-width|4.2.3|",
+    "node_modules/string-width|string-width|5.1.2|",
+    "node_modules/wrap/node_modules/string-width|string-width|3.1.0|",
+    "node_modules/wrap|wrap|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|",
+    "packages/lib/node_modules/pad|left-pad|0.9.0|"
+  ],
+  "-w @fx/lib": [
+    "node_modules/@fx/lib|@fx/lib|1.0.0|-> packages/lib",
+    "node_modules/shared|shared|1.0.0|",
+    "packages/lib/node_modules/pad|left-pad|0.9.0|"
+  ],
+  "-w @fx/app": [
+    "node_modules/@fx/app|@fx/app|1.0.0|-> packages/app",
+    "node_modules/ansi-cjs|ansi-regex|5.0.1|",
+    "node_modules/pad|left-pad|1.3.0|",
+    "node_modules/string-width-cjs|string-width|4.2.3|",
+    "node_modules/wrap/node_modules/string-width|string-width|3.1.0|",
+    "node_modules/wrap|wrap|1.0.0|",
+    "packages/app/node_modules/shared|shared|2.0.0|"
+  ],
+  "--workspaces=false": ["node_modules/string-width|string-width|5.1.2|"]
+}

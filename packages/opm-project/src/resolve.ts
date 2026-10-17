@@ -1,21 +1,20 @@
-import {
-  canonicalDigest,
-  canonicalProjectionDigest,
-} from '@openpacker/canonical';
-import {
-  DIGEST_PROJECTIONS,
-  type JsonValue,
-  type PackageInstance,
-  type PolicyInput,
-  type Requirement,
-  type TargetPredicate,
+import type {
+  PackageInstance,
+  Requirement,
+  TargetPredicate,
 } from '@openpacker/contracts';
 import type { CatalogProvider } from '@openpacker/adapter-core';
-import type { EmbeddedResolver } from '@openpacker/embedded';
 import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { ProviderPool, type RegistryOptions } from './registry.js';
 import { codecFor } from './codecs.js';
+import { INSTALLED_KINDS } from './closure-edges.js';
+import {
+  isAliasRequirement,
+  isBundledRequirement,
+  nativeRange,
+  requirementTag,
+} from './requirement-info.js';
 import {
   detectNativeTarget,
   evaluateTargetPredicate,
@@ -46,16 +45,6 @@ import {
  * translated metadata; evaluation is a resolve-time decision, not a capture
  * one.
  */
-
-/**
- * Requirement kinds that belong in an install.
- *
- * `optional` is npm's `optionalDependencies`, which npm installs and tolerates
- * the failure of. Whether one belongs *here* depends on the host, so the walk
- * decides it per dependency (see `shouldFollowRequirement`); the kind is listed
- * so that an optional edge the walk made hard is read as an install edge.
- */
-const INSTALLED_KINDS = new Set(['runtime', 'peer', 'optional']);
 
 /**
  * Losses that say a package-level target predicate could not be expressed and
@@ -142,56 +131,20 @@ export interface ResolvedGraph {
   roots: string[];
   /** Packages whose candidate list hit the bound. */
   truncated: string[];
-  /** Packages reachable but not resolvable, with the reason. */
-  unresolved: { purl: string; reason: string }[];
+  /**
+   * Packages reachable but not resolvable, with the reason and, where an edge
+   * asked for them, who did.
+   */
+  unresolved: { purl: string; reason: string; requiredBy?: string[] }[];
   /** Marker-gated requirements skipped because the host marker is false. */
   skippedMarkers: { purl: string; marker: string }[];
   /** Optional dependencies left out because this host is not one they run on. */
   skippedPlatform: { purl: string; reason: string }[];
-  /** Candidates the caller's gate left out, with its reason. */
-  gated: { purl: string; reason: string }[];
+  /** Candidates the caller's gate left out, with its reason and who asked. */
+  gated: { purl: string; reason: string; requiredBy?: string[] }[];
 }
 
-/**
- * The native range a requirement expresses, in its own ecosystem's syntax.
- *
- * Ecosystems do not agree on the field name. npm stores `range`, PyPI stores
- * `specifier`, and some capture paths leave only the raw string. Reading only
- * `range` made every PyPI edge look unconstrained (or worse, dropped when
- * paired with other bugs), which is why a Python graph looked unresolved.
- */
-export function nativeRange(requirement: unknown): string | undefined {
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const value = requirement as {
-    nativeSemantics?: { data?: Record<string, unknown> };
-    raw?: unknown;
-    expression?: { vers?: unknown };
-  };
-  const data = value.nativeSemantics?.data;
-  if (data) {
-    for (const key of ['range', 'specifier'] as const) {
-      const candidate = data[key];
-      if (typeof candidate === 'string' && candidate.trim() !== '')
-        return candidate.trim();
-    }
-  }
-  if (value.raw && typeof value.raw === 'object' && !Array.isArray(value.raw)) {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const raw = value.raw as { range?: unknown; specifier?: unknown };
-    if (typeof raw.range === 'string' && raw.range.trim() !== '')
-      return raw.range.trim();
-    if (typeof raw.specifier === 'string' && raw.specifier.trim() !== '')
-      return raw.specifier.trim();
-  }
-  if (typeof value.raw === 'string' && value.raw.trim() !== '') {
-    // PEP 508: "name[extra]>=1.0; marker" → keep the specifier body.
-    const body = value.raw.split(';', 1)[0]!.trim();
-    const withoutExtras = body.replace(/\[[^\]]*]/g, '');
-    const match = /([<>=!~]=?.+)$/.exec(withoutExtras);
-    if (match) return match[1]!.trim();
-  }
-  return undefined;
-}
+export { nativeRange };
 
 /** Marker string attached to a requirement, if any. */
 export function requirementMarker(requirement: unknown): string | undefined {
@@ -421,8 +374,9 @@ function nativeSpecKind(requirement: unknown): string | undefined {
  * how PyPI encodes "required on this platform" without making every marker a
  * hard edge on every host. npm's `optionalDependencies` are followed where the
  * dependency runs (see `FollowDecision.via`). A specifier that is not a version
- * range (a git URL, a dist-tag, an alias) is never followed: reading it as the
- * registry's package of that name is how dependency confusion lands.
+ * range (a git URL, a bare dist-tag) is never followed: reading it as the
+ * registry's package of that name is how dependency confusion lands. An `npm:`
+ * alias is followed as a requirement on its target, which the adapter named.
  */
 export function shouldFollowRequirement(
   requirement: Requirement,
@@ -433,8 +387,21 @@ export function shouldFollowRequirement(
   if (!INSTALLED_KINDS.has(kind))
     return { follow: false, skipReason: `kind ${kind} is not installed` };
 
+  // A dependency the package ships inside its own archive is installed with it,
+  // and never resolved.
+  if (isBundledRequirement(requirement))
+    return {
+      follow: false,
+      skipReason: 'bundled: it ships inside the package archive',
+    };
   const specKind = nativeSpecKind(requirement);
-  if (specKind !== undefined && specKind !== 'range')
+  // An alias names its target explicitly, so a dist-tag on it is the target's
+  // tag; a bare dist-tag is not read as anything.
+  const aliasedTag =
+    specKind === 'tag' && requirementTag(requirement) !== undefined
+      ? isAliasRequirement(requirement)
+      : false;
+  if (specKind !== undefined && specKind !== 'range' && !aliasedTag)
     return {
       follow: false,
       skipReason: `specifier is a ${specKind}, not a registry version range`,
@@ -476,7 +443,12 @@ async function candidatesFor(
   provider: CatalogProvider,
 ): Promise<string[]> {
   const published = await provider.enumerate(basePurl);
-  if (range === undefined || range === '' || range === '*')
+  // `*` takes every version, except that npm's does not take a prerelease.
+  if (
+    range === undefined ||
+    range === '' ||
+    (range === '*' && ecosystem !== 'npm')
+  )
     return [...published].reverse();
 
   const codec = codecFor(ecosystem);
@@ -551,7 +523,33 @@ function withHostEvaluated(
 interface QueueItem {
   purl: string;
   range?: string;
+  /** `range` names a dist-tag of the package, which the registry resolves. */
+  tag?: boolean;
   via: 'hard' | 'optional';
+  /** Who asked for it, for a message when nothing answers. */
+  by: Set<string>;
+}
+
+/** A requirement that named a dist-tag, to be pinned once the tag is read. */
+interface TagEdge {
+  requirement: Requirement;
+  base: string;
+  ecosystem: string;
+  tag: string;
+}
+
+/** A provider that can say which version a dist-tag points at. */
+interface TagSource {
+  resolveTag(basePurl: string, tag: string): Promise<string | undefined>;
+}
+
+function canResolveTags(
+  provider: CatalogProvider,
+): provider is CatalogProvider & TagSource {
+  return (
+    'resolveTag' in provider &&
+    typeof (provider as { resolveTag?: unknown }).resolveTag === 'function'
+  );
 }
 
 /** What the registry said about one candidate version. */
@@ -567,7 +565,13 @@ type CandidateOutcome =
 /** What reading for a queue item found; the walk applies it in queue order. */
 type PreparedItem =
   | { failure: string }
-  | { candidates: string[]; bounded: boolean; found: CandidateOutcome[] };
+  | {
+      candidates: string[];
+      bounded: boolean;
+      found: CandidateOutcome[];
+      /** For a dist-tag item: the exact version the tag points at. */
+      resolvedTag?: string;
+    };
 
 /**
  * Walk from the root requirements to every package they need.
@@ -609,24 +613,40 @@ export async function resolveGraph(input: {
     new ProviderPool((ecosystem) => input.optionsFor?.(ecosystem) ?? options);
   const packages: PackageInstance[] = [];
   const truncated: string[] = [];
-  const unresolved: { purl: string; reason: string }[] = [];
+  const unresolved: ResolvedGraph['unresolved'] = [];
   const skippedMarkers: { purl: string; marker: string }[] = [];
   const skippedPlatform: { purl: string; reason: string }[] = [];
-  const gated: { purl: string; reason: string }[] = [];
+  const gated: ResolvedGraph['gated'] = [];
   const reported = new Set<string>();
   const expanded = new Set<string>();
-  const queued = new Set<string>();
+  const queued = new Map<string, QueueItem>();
   const discovered = new Set<string>();
+  /** Edges that named a dist-tag, pinned to its version once it is read. */
+  const tagEdges: TagEdge[] = [];
+  /** `base|tag` → the version the registry says the tag points at. */
+  const resolvedTags = new Map<string, string>();
+  /** An unresolved entry and the item it came from, to name who asked. */
+  const askedFor: {
+    entry: { purl: string; reason: string; requiredBy?: string[] };
+    item: QueueItem;
+  }[] = [];
+  const unresolve = (
+    item: QueueItem,
+    entry: Omit<ResolvedGraph['unresolved'][number], 'requiredBy'>,
+  ) => {
+    const recorded = { ...entry };
+    unresolved.push(recorded);
+    askedFor.push({ entry: recorded, item });
+  };
   /** Optional edges, made hard afterwards if their target was admitted. */
   const optionalEdges: {
     requirement: Requirement;
     base: string;
     ecosystem: string;
-    range?: string;
   }[] = [];
 
   const keyOf = (item: QueueItem) =>
-    `${item.purl}|${item.range ?? ''}|${item.via}`;
+    `${item.purl}|${item.tag === true ? 'tag:' : ''}${item.range ?? ''}|${item.via}`;
   // Start reading a package's metadata as soon as something asks for it, not
   // when the walk gets to it. Nothing is read that the walk would not read
   // anyway.
@@ -672,6 +692,24 @@ export async function resolveGraph(input: {
     const ecosystem = ecosystemFromPurl(item.purl);
     try {
       const provider = await pool.provider(ecosystem);
+      if (item.tag === true) {
+        if (!canResolveTags(provider))
+          return {
+            failure: `this ${ecosystem} registry cannot say which version the dist-tag "${item.range}" points at`,
+          };
+        const exact = await provider.resolveTag(item.purl, item.range!);
+        if (exact === undefined)
+          return {
+            failure: `the package has no dist-tag "${item.range}"`,
+          };
+        const found = [await outcomeOf(exact, provider)];
+        return {
+          candidates: [exact],
+          bounded: false,
+          found,
+          resolvedTag: exact.slice(exact.lastIndexOf('@') + 1),
+        };
+      }
       let candidates = await candidatesFor(
         ecosystem,
         item.purl,
@@ -695,10 +733,11 @@ export async function resolveGraph(input: {
   let queue: QueueItem[] = input.roots.map((root) => ({
     purl: stripPurlVersion(root.purl),
     via: 'hard' as const,
+    by: new Set(['the project']),
     ...(!(root.range === undefined) && { range: root.range }),
   }));
   for (const item of queue) {
-    queued.add(keyOf(item));
+    queued.set(keyOf(item), item);
     warm(item.purl);
   }
 
@@ -716,12 +755,12 @@ export async function resolveGraph(input: {
         );
       const ready = prepared[position]!;
       if ('failure' in ready) {
-        unresolved.push({ purl: item.purl, reason: ready.failure });
+        unresolve(item, { purl: item.purl, reason: ready.failure });
         continue;
       }
       const { candidates, found } = ready;
       if (candidates.length === 0) {
-        unresolved.push({
+        unresolve(item, {
           purl: item.purl,
           reason:
             item.range === undefined
@@ -731,6 +770,8 @@ export async function resolveGraph(input: {
         continue;
       }
       if (ready.bounded) truncated.push(item.purl);
+      if (ready.resolvedTag !== undefined)
+        resolvedTags.set(`${item.purl}|${item.range}`, ready.resolvedTag);
 
       let admitted = 0;
       for (const [index, candidate] of candidates.entries()) {
@@ -738,10 +779,11 @@ export async function resolveGraph(input: {
         if (outcome.kind !== 'ok') {
           if (!reported.has(candidate)) {
             reported.add(candidate);
-            (outcome.kind === 'gated' ? gated : unresolved).push({
-              purl: candidate,
-              reason: outcome.reason,
-            });
+            if (outcome.kind === 'gated') {
+              const recorded = { purl: candidate, reason: outcome.reason };
+              gated.push(recorded);
+              askedFor.push({ entry: recorded, item });
+            } else unresolve(item, { purl: candidate, reason: outcome.reason });
           }
           continue;
         }
@@ -751,7 +793,7 @@ export async function resolveGraph(input: {
           const reason = `does not run on this host (${describeTarget(host.nativeTarget)})`;
           if (item.via === 'optional')
             skippedPlatform.push({ purl: candidate, reason });
-          else unresolved.push({ purl: candidate, reason });
+          else unresolve(item, { purl: candidate, reason });
           continue;
         }
         // An optional dependency whose platform cannot be established is left
@@ -809,55 +851,79 @@ export async function resolveGraph(input: {
                 unresolved.push({
                   purl: expression.purl,
                   reason: decision.skipReason,
+                  requiredBy: [candidate],
                 });
             }
             continue;
           }
           if (!expression?.purl) continue;
           const range = nativeRange(requirement);
+          const tag = requirementTag(requirement);
           const next: QueueItem = {
             purl: stripPurlVersion(expression.purl),
             via: decision.via === 'optional' ? 'optional' : 'hard',
+            by: new Set([candidate]),
             ...(!(range === undefined) && { range }),
+            ...(!(tag === undefined) && { tag: true }),
           };
+          if (tag !== undefined)
+            tagEdges.push({
+              requirement,
+              base: next.purl,
+              ecosystem: ecosystemFromPurl(next.purl),
+              tag,
+            });
           if (next.via === 'optional')
             optionalEdges.push({
               requirement,
               base: next.purl,
               ecosystem: ecosystemFromPurl(next.purl),
-              ...(!(range === undefined) && { range }),
             });
           const key = keyOf(next);
-          if (queued.has(key)) continue;
-          queued.add(key);
+          const already = queued.get(key);
+          if (already !== undefined) {
+            already.by.add(candidate);
+            continue;
+          }
+          queued.set(key, next);
           queue.push(next);
           warm(next.purl);
         }
       }
       if (admitted === 0 && item.via === 'hard' && candidates.length > 0)
-        unresolved.push({
+        unresolve(item, {
           purl: item.purl,
           reason: `no candidate${item.range === undefined ? '' : ` satisfying ${item.range}`} can be installed here`,
         });
     }
   }
 
+  // A dist-tag on an alias is the version the registry said it pointed at, for
+  // the solve and for every check after it. A tag the registry did not know
+  // becomes a requirement nothing satisfies, so a dependent that needs it cannot
+  // be selected, and the walk has already said so.
+  for (const edge of tagEdges)
+    pinTag(edge, resolvedTags.get(`${edge.base}|${edge.tag}`));
+
   // An optional dependency that was admitted is installed, so the edge to it
   // is a requirement of the solve. One whose every candidate was left out stays
   // optional and the solve ignores it, as npm does.
   for (const edge of optionalEdges) {
     const codec = codecFor(edge.ecosystem);
+    const range = nativeRange(edge.requirement);
     const admittedCandidate = packages.some((instance) => {
       if (instance.identity.canonicalPurl !== edge.base) return false;
-      if (edge.range === undefined) return true;
+      if (range === undefined) return true;
       try {
-        return codec.satisfies(instance.nativeVersion, edge.range);
+        return codec.satisfies(instance.nativeVersion, range);
       } catch {
         return true;
       }
     });
     if (admittedCandidate) edge.requirement.optional = false;
   }
+  for (const { entry, item } of askedFor)
+    if (item.by.size > 0) entry.requiredBy = [...item.by].sort();
 
   return {
     packages,
@@ -867,6 +933,38 @@ export async function resolveGraph(input: {
     skippedMarkers,
     skippedPlatform,
     gated,
+  };
+}
+
+/** No version of any package satisfies this. */
+const NO_VERSION = 'vers:npm/>=0.0.0|<0.0.0';
+
+/**
+ * Replace the dist-tag an alias named with the version it pointed at, or with a
+ * requirement nothing satisfies when the registry had no such tag.
+ */
+function pinTag(edge: TagEdge, version: string | undefined): void {
+  const { expression, nativeSemantics } = edge.requirement;
+  if (expression.type !== 'package') return;
+  const data =
+    nativeSemantics?.data !== null &&
+    typeof nativeSemantics?.data === 'object' &&
+    !Array.isArray(nativeSemantics.data)
+      ? nativeSemantics.data
+      : {};
+  const { specKind: _tag, ...rest } = data;
+  edge.requirement.expression = {
+    ...expression,
+    vers:
+      version === undefined ? NO_VERSION : `vers:${edge.ecosystem}/${version}`,
+  };
+  edge.requirement.nativeSemantics = {
+    version: nativeSemantics?.version ?? 'npm-v1',
+    data: {
+      ...rest,
+      range: version ?? edge.tag,
+      ...(!(version === undefined) && { resolvedFromTag: edge.tag }),
+    },
   };
 }
 
@@ -880,472 +978,4 @@ function hostPredicateOf(
     | { targetPredicate?: TargetPredicate }
     | undefined;
   return data?.targetPredicate;
-}
-
-/**
- * Load the PREX solver for Node.
- *
- * Through the package's `wasm-node` entry, which wasm-bindgen builds for the
- * nodejs target and which reads the module with `readFileSync`. The generic
- * loader hands wasm-bindgen a relative URL instead and resolves it with
- * `fetch`, and Node's fetch has no `file:` scheme — so that path throws "not
- * implemented" rather than loading anything.
- *
- * A checkout that could not build the wasm target (no `wasm32` toolchain, no
- * `wasm-bindgen`) still builds the Node-API addon from the same crate, so the
- * solver falls back to `@openpacker/embedded/native` rather than returning no
- * closure at all. Both are the same engine; `tests/compat/native-node.test.mjs`
- * holds them to the same answers.
- */
-export async function loadResolver(
-  importers: {
-    wasm?: () => Promise<Record<string, unknown>>;
-    native?: () => Promise<EmbeddedResolver>;
-  } = {},
-): Promise<EmbeddedResolver> {
-  const embedded = await import('@openpacker/embedded');
-  const wasm =
-    importers.wasm ??
-    (async () => {
-      const specifier = '@openpacker/embedded/wasm-node';
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return (await import(specifier)) as Record<string, unknown>;
-    });
-  try {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return embedded.createEmbeddedResolver((await wasm()) as never);
-  } catch (wasmError) {
-    if (!isMissingModule(wasmError)) throw wasmError;
-    try {
-      return await (importers.native ?? loadNativeResolver)();
-    } catch (nativeError) {
-      if (!isMissingModule(nativeError)) throw nativeError;
-      throw new OpmError(
-        'UNRESOLVABLE',
-        'The PREX solver is not built: neither @openpacker/embedded/wasm-node ' +
-          '(npm run build:wasm -w @openpacker/embedded) nor the Node-API addon ' +
-          '(npm run build:native -w @openpacker/embedded) is present',
-      );
-    }
-  }
-}
-
-async function loadNativeResolver(): Promise<EmbeddedResolver> {
-  const specifier = '@openpacker/embedded/native';
-  const native = (await import(specifier)) as {
-    loadNativeEmbeddedResolver: () => Promise<EmbeddedResolver>;
-  };
-  return native.loadNativeEmbeddedResolver();
-}
-
-/** A module the build never produced, as opposed to one that failed to load. */
-function isMissingModule(error: unknown): boolean {
-  // SAFETY: only the optional `code` and `message` of a thrown value are read.
-  const thrown = error as { code?: unknown; message?: unknown } | null;
-  return (
-    thrown?.code === 'ERR_MODULE_NOT_FOUND' ||
-    thrown?.code === 'MODULE_NOT_FOUND' ||
-    // Test runners re-wrap a missing file without keeping Node's code.
-    (typeof thrown?.message === 'string' &&
-      /Cannot find (?:module|package)|Failed to load url/u.test(thrown.message))
-  );
-}
-
-/**
- * What a closure solve asks of the engine: satisfy every requirement, and skip
- * what lifecycle policy excludes.
- *
- * Not the optimizing ladder (`minimize-package-count`, `prefer-stable`,
- * `prefer-highest-native-version`, …). The engine can only prove an
- * optimization objective by exhaustive search, so it refuses one past a
- * handful of nodes — "objective optimality cannot be independently proven
- * above 22 nodes", and in practice `RESOURCE_LIMIT` well before that — and a
- * real closure is hundreds of nodes. Asking for optimization there is not a
- * stricter request, it is a refused one, and so nothing could ever have been
- * locked. The same request for every size also means a lock does not change
- * character when one more package pushes the universe over an invisible line.
- *
- * What the lock gets instead is honest about its strength: every hard
- * requirement is satisfied and the checker re-validates exactly that, and the
- * engine makes no claim that the set is the smallest or the newest possible.
- * The choice among candidates is steered by their order, newest first
- * (`sort_candidates` in the Resolvo engine, over the adapter's
- * `versionSortKey`), which is the same greedy rule the native resolvers use.
- */
-export const CLOSURE_OBJECTIVES = [
-  'satisfy-hard-constraints',
-  'exclude-lifecycle-denied',
-] as const;
-
-/**
- * Solve the graph with the PREX engine and return the selected instances.
- *
- * This is the solver the repository is built around — CDCL search whose result
- * is checked by an independent proof checker — rather than a greedy
- * newest-satisfying walk. An unsatisfiable graph therefore produces an
- * explanation instead of a silently wrong tree.
- */
-export async function solveGraph(input: {
-  graph: ResolvedGraph;
-  rootRequirements: readonly { purl: string; vers?: string }[];
-  evaluationTime?: string;
-  policy?: Pick<
-    PolicyInput,
-    | 'allowYanked'
-    | 'allowQuarantined'
-    | 'requiredEvidence'
-    | 'semanticLossMaximum'
-    | 'acceptedOverlayAuthorities'
-  >;
-}): Promise<{
-  selected: PackageInstance[];
-  dependencyEdges: { fromNodeId: string; toNodeId: string }[];
-  solutionDigest: string;
-  proofValid: boolean;
-}> {
-  const resolver = await loadResolver();
-
-  const request = {
-    environment: { installed: [], locked: [] },
-    evaluationTime: input.evaluationTime ?? new Date().toISOString(),
-    mode: 'closure',
-    objectives: [...CLOSURE_OBJECTIVES],
-    policy: input.policy ?? {
-      acceptedOverlayAuthorities: ['publisher'],
-      allowQuarantined: false,
-      allowYanked: false,
-      requiredEvidence: [],
-      semanticLossMaximum: 'warning',
-    },
-    // `prex-calculus-subset-v1` is the profile whose solutions are formally
-    // checkable, which is the point of solving here rather than walking the
-    // graph greedily.
-    semantics: {
-      nativeCompatibility: [
-        ...new Set(
-          input.graph.packages.map((instance) => instance.identity.purlType),
-        ),
-      ],
-      profile: 'prex-calculus-subset-v1',
-    },
-    // The host this resolution is for. Reported rather than assumed, so a
-    // solution says which machine it is valid on instead of quietly being
-    // wrong on another.
-    target: {
-      abi: {},
-      architecture: process.arch === 'x64' ? 'x86_64' : process.arch,
-      capabilities: [],
-      // What this host reports, and nothing on a host that has no libc to
-      // report, instead of a "glibc" that was true only on glibc linux.
-      ...(!(defaultHostEnvironment().nativeTarget.libc === undefined) && {
-        libc: defaultHostEnvironment().nativeTarget.libc,
-      }),
-      os: process.platform === 'win32' ? 'windows' : process.platform,
-      runtimes: {
-        node: process.versions.node.split('.')[0]!,
-        python: defaultHostEnvironment().pythonVersion.split('.')[0]!,
-      },
-      variables: {},
-    },
-    requirements: input.rootRequirements.map((root, index) => ({
-      authority: 'native',
-      expression: {
-        purl: stripPurlVersion(root.purl),
-        type: 'package',
-        ...(!(root.vers === undefined) && { vers: root.vers }),
-      },
-      id: `root-${index}`,
-      kind: 'runtime',
-      optional: false,
-      semanticLoss: [],
-      source: { type: 'overlay', uri: 'opm://project' },
-    })),
-  };
-
-  // The lock holds one version of a package. The engine does not insist on
-  // that (a package may legitimately coexist in PREX), so a requirement that
-  // takes the newest of its own range and another that takes the newest of
-  // another can leave two. When a single candidate would satisfy every selected
-  // requirement on the package, the others are withdrawn and the solve is run
-  // again; when none would, the closure needs what the lock cannot hold.
-  let packages = input.graph.packages;
-  let solved: ReturnType<typeof resolver.solve>;
-  let selected: PackageInstance[];
-  let selectedByPurl: Map<string, PackageInstance>;
-  for (let round = 0; ; round += 1) {
-    const universe = await universeFrom({ ...input.graph, packages });
-    solved = resolver.solve({
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      request: request as never,
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      universe: universe as never,
-    });
-    // The proof is checked rather than trusted: an unchecked proof is only a
-    // claim, and invariant 5 makes an invalid one a hard failure.
-    const checked = resolver.check(
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      { request: request as never, universe: universe as never },
-      solved,
-    );
-    if (!checked.valid)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `The solver returned a solution its own proof checker rejected: ${checked.diagnostics.join('; ')}`,
-      );
-
-    const byNodeId = new Map(
-      packages.map((instance) => [instance.nodeId, instance]),
-    );
-    selected = solved.solution.selectedNodeIds
-      .map((nodeId) => byNodeId.get(nodeId))
-      .filter(
-        (instance): instance is PackageInstance => instance !== undefined,
-      );
-    const duplicated = new Map<string, PackageInstance[]>();
-    selectedByPurl = new Map<string, PackageInstance>();
-    for (const instance of selected) {
-      const exact = instance.identity.exactPurl;
-      if (exact === undefined)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          'Selected package lacks an exact PURL',
-        );
-      const base = stripPurlVersion(exact);
-      const seen = selectedByPurl.get(base);
-      if (seen !== undefined)
-        duplicated.set(base, [...(duplicated.get(base) ?? [seen]), instance]);
-      else selectedByPurl.set(base, instance);
-    }
-    if (duplicated.size === 0) break;
-    if (round >= MAXIMUM_UNIFICATION_ROUNDS)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `The closure still holds several versions of ${[...duplicated.keys()].join(', ')} after ${MAXIMUM_UNIFICATION_ROUNDS} attempts to unify them`,
-      );
-    packages = unify({
-      packages,
-      selected,
-      duplicated,
-      rootRequirements: input.rootRequirements,
-      resolver,
-    });
-  }
-  const dependencyEdges: { fromNodeId: string; toNodeId: string }[] = [];
-  for (const instance of selected)
-    for (const requirement of instance.requirements ?? []) {
-      if (
-        requirement.optional ||
-        !INSTALLED_KINDS.has(requirement.kind) ||
-        requirement.expression.type !== 'package'
-      )
-        continue;
-      const dependency = selectedByPurl.get(
-        stripPurlVersion(requirement.expression.purl),
-      );
-      if (dependency === undefined)
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `Selected closure omits required package ${requirement.expression.purl}`,
-        );
-      // The solver enforced a comparison form of the range; the ecosystem's own
-      // reading of it has the last word, so a lock never pairs a package with a
-      // version it does not accept.
-      const range = nativeRange(requirement);
-      if (
-        range !== undefined &&
-        !satisfiesNative(
-          dependency.identity.purlType,
-          dependency.nativeVersion,
-          range,
-        )
-      )
-        throw new OpmError(
-          'UNRESOLVABLE',
-          `${instance.identity.exactPurl} requires ${requirement.expression.purl} ${range}, ` +
-            `but the closure selected ${dependency.identity.exactPurl}`,
-        );
-      dependencyEdges.push({
-        fromNodeId: instance.nodeId,
-        toNodeId: dependency.nodeId,
-      });
-    }
-  return {
-    selected,
-    dependencyEdges,
-    solutionDigest: solved.solution.solutionDigest.value,
-    // An invalid proof never gets this far: the loop above throws on it.
-    proofValid: true,
-  };
-}
-
-/** Enough for a closure of ordinary shape; a loop here is a bug, not a graph. */
-const MAXIMUM_UNIFICATION_ROUNDS = 32;
-
-/**
- * Withdraw every candidate of a duplicated package but one that all of its
- * selected dependents accept, or say who cannot agree.
- *
- * The candidate is the newest one that satisfies, by the ecosystem's own reading
- * of each range, every selected requirement on the package, and the root
- * requirement on it if there is one. Nothing else about the universe changes, so
- * the next solve may still move any other package.
- */
-function unify(input: {
-  packages: PackageInstance[];
-  selected: readonly PackageInstance[];
-  duplicated: ReadonlyMap<string, PackageInstance[]>;
-  rootRequirements: readonly { purl: string; vers?: string }[];
-  resolver: Pick<EmbeddedResolver, 'versionSatisfies'>;
-}): PackageInstance[] {
-  const withdrawn = new Set<string>();
-  for (const [base, chosen] of input.duplicated) {
-    const ecosystem = chosen[0]!.identity.purlType;
-    const needs: {
-      by: string;
-      range: string;
-      accepts: (v: string) => boolean;
-    }[] = [];
-    for (const root of input.rootRequirements)
-      if (stripPurlVersion(root.purl) === base && root.vers !== undefined) {
-        const vers = root.vers;
-        needs.push({
-          by: 'the direct requirement',
-          range: vers.replace(/^vers:[^/]+\//u, ''),
-          accepts: (version) => input.resolver.versionSatisfies(version, vers),
-        });
-      }
-    for (const instance of input.selected)
-      for (const requirement of instance.requirements ?? []) {
-        if (
-          requirement.optional ||
-          !INSTALLED_KINDS.has(requirement.kind) ||
-          requirement.expression.type !== 'package' ||
-          stripPurlVersion(requirement.expression.purl) !== base
-        )
-          continue;
-        const range = nativeRange(requirement);
-        if (range !== undefined)
-          needs.push({
-            by: instance.identity.exactPurl ?? instance.nodeId,
-            range,
-            accepts: (version) => satisfiesNative(ecosystem, version, range),
-          });
-      }
-    const codec = codecFor(ecosystem);
-    const candidates = input.packages
-      .filter((item) => item.identity.canonicalPurl === base)
-      .sort((left, right) =>
-        codec.compareNativeVersions(right.nativeVersion, left.nativeVersion),
-      );
-    const agreed = candidates.find((candidate) =>
-      needs.every((need) => need.accepts(candidate.nativeVersion)),
-    );
-    if (agreed === undefined)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `${base} is needed at versions no single release satisfies, and a lock holds one version of a package: ` +
-          needs.map((need) => `${need.by} requires ${need.range}`).join('; ') +
-          `. The closure would need ${chosen
-            .map((item) => item.identity.exactPurl)
-            .join(' and ')}`,
-      );
-    for (const candidate of candidates)
-      if (candidate !== agreed) withdrawn.add(candidate.nodeId);
-  }
-  return input.packages.filter((item) => !withdrawn.has(item.nodeId));
-}
-
-/**
- * Whether `version` is inside `range` by the ecosystem's own rules. A range its
- * codec cannot read cannot be checked, which is not the same as being outside.
- */
-function satisfiesNative(
-  ecosystem: string,
-  version: string,
-  range: string,
-): boolean {
-  try {
-    return codecFor(ecosystem).satisfies(version, range);
-  } catch {
-    return true;
-  }
-}
-
-/** A `ResolutionUniverse` over everything the walk found. */
-export async function universeFrom(
-  graph: ResolvedGraph,
-): Promise<Record<string, unknown>> {
-  const packages = graph.packages.map((instance) => ({
-    ...instance,
-    requirements: instance.requirements.map((requirement) => ({
-      ...requirement,
-      expression: completeExpression(requirement.expression),
-    })),
-    capabilities: instance.capabilities.map((capability) => ({
-      attributes: {},
-      ...capability,
-    })),
-    conflicts: instance.conflicts.map((conflict) => ({
-      ...conflict,
-      expression: completeExpression(conflict.expression),
-    })),
-    cardinalityConstraints: instance.cardinalityConstraints.map(
-      (constraint) => ({
-        ...constraint,
-        selector: completeExpression(constraint.selector),
-      }),
-    ),
-  }));
-  const body = {
-    universeVersion: '1',
-    packages,
-    overlays: [],
-    sourceSnapshots: [],
-    lifecycleRoot: await canonicalDigest([]),
-    targetVocabularyVersion: '1',
-  };
-  const projection = DIGEST_PROJECTIONS.projections.find(
-    ({ id }) => id === 'universe-v1',
-  );
-  if (!projection)
-    throw new OpmError('INTERNAL_ERROR', 'Missing universe-v1 projection');
-  const universeDigest = await canonicalProjectionDigest(
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    JSON.parse(JSON.stringify(body)) as JsonValue,
-    projection,
-  );
-  return {
-    ...body,
-    canonicalDigest: universeDigest,
-  };
-}
-
-function completeExpression(input: JsonValue): JsonValue {
-  if (typeof input !== 'object' || input === null || Array.isArray(input))
-    return input;
-  if (input.type === 'package') return { qualifiers: {}, ...input };
-  if (input.type === 'capability') return { attributes: {}, ...input };
-  if (input.type === 'allOf' || input.type === 'anyOf')
-    return {
-      ...input,
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      expressions: (input.expressions as JsonValue[]).map(completeExpression),
-    };
-  if (input.type === 'not')
-    return {
-      ...input,
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      expression: completeExpression(input.expression as JsonValue),
-    };
-  if (input.type === 'conditional')
-    return {
-      ...input,
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      // oxlint-disable-next-line unicorn/no-thenable -- PREX conditional AST field.
-      then: completeExpression(input.then as JsonValue),
-      ...(!(input.else === undefined) && {
-        else: completeExpression(input.else),
-      }),
-    };
-  return input;
 }

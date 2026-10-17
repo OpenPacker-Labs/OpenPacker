@@ -19,6 +19,7 @@ import {
   renameChild,
   supportsStableHandles,
 } from '@openpacker/project-io';
+import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
 
@@ -422,6 +423,8 @@ function parseTar(
 ): InspectedArchiveEntry[] {
   const entries: InspectedArchiveEntry[] = [];
   const seen = new Map<string, InspectedArchiveEntry>();
+  // The records of an extended header (`x`) apply to the one entry after it.
+  let pending: Map<string, string> | undefined;
   let offset = 0;
   let count = 0;
   while (offset + 512 <= bytes.byteLength) {
@@ -433,17 +436,41 @@ function parseTar(
     verifyTarChecksum(header);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
-    const path = validateArchivePath(
-      prefix ? `${prefix}/${name}` : name,
-      limits,
-    );
     const size = tarNumber(header.subarray(124, 136));
     const mode = tarNumber(header.subarray(100, 108));
     const type = String.fromCharCode(header[156] ?? 0);
     const dataStart = offset + 512;
     const dataEnd = dataStart + size;
     if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.byteLength)
-      throw unsafe('TRUNCATED_ARCHIVE', path);
+      throw unsafe('TRUNCATED_ARCHIVE', name);
+    if (type === 'x' || type === 'g') {
+      // A path longer than a ustar header holds is written as a pax record
+      // (npm's own tar does it); the header's own name, `PaxHeader/...`, names
+      // nothing. What a record may change is narrow: the path of the entry
+      // after it. A path for every entry is refused, and so is a size that is
+      // not the one the entry's own header gives (an entry past the 12 octal
+      // digits of a header is far beyond the limits anyway).
+      if (size > MAXIMUM_PAX_HEADER_BYTES)
+        throw unsafe('PAX_HEADER_LIMIT', `${size}`);
+      const records = parsePaxRecords(bytes.subarray(dataStart, dataEnd));
+      if (records === undefined) throw unsafe('INVALID_PAX_HEADER', name);
+      if (type === 'g') {
+        if (records.has('path') || records.has('size'))
+          throw unsafe('PAX_GLOBAL_REJECTED', name);
+      } else {
+        if (pending !== undefined) throw unsafe('INVALID_PAX_HEADER', name);
+        pending = records;
+      }
+      offset = dataStart + Math.ceil(size / 512) * 512;
+      continue;
+    }
+    if (pending?.has('size') && pending.get('size') !== String(size))
+      throw unsafe('PAX_SIZE_REJECTED', name);
+    const path = validateArchivePath(
+      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name),
+      limits,
+    );
+    pending = undefined;
     if (type === '\0' || type === '0' || type === '7') {
       const file: InspectedArchiveEntry = {
         path,
@@ -485,6 +512,11 @@ function parseTar(
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
+  if (pending !== undefined)
+    throw unsafe(
+      'INVALID_PAX_HEADER',
+      'an extended header with no entry after it',
+    );
   return entries;
 }
 
