@@ -47,10 +47,24 @@ inside the bundle.
    the key `name@1.2.3` for that exact version, else the one `name@<range>` the
    version satisfies (two are `ERR_PNPM_PATCH_KEY_CONFLICT`), else `name@*` or a
    bare `name`. A key whose version part is neither a version nor a range is
-   `ERR_PNPM_PATCH_NON_SEMVER_RANGE`. pnpm 9.15 knew only the exact and the bare
-   forms, which mean the same here. pnpm decides by name and version, so a patch
-   applies to every instance of `name@version` in the lock, whatever its peers:
-   there is no "patched here, unpatched there" in one lock.
+   `ERR_PNPM_PATCH_NON_SEMVER_RANGE`. A key is read as `dp.parse`
+   (`../packages/dependency-path/lib`) reads it: the version is what follows the
+   first `@` after the start, less a run of `(...)` groups at its end (a peer
+   suffix or a `(patch_hash=...)`, found by `indexOfDepPathSuffix`'s scan, which
+   takes an unbalanced end for no suffix), and it is exact when node-semver's
+   strict `valid` takes it: so `x@1.0.0(peer@1.0.0)` is the exact key of
+   `1.0.0`, while `1.0.0-01`, a number past 2^53 - 1 and a version longer than
+   256 characters are neither a version nor a range. pnpm 9.15 looked a package
+   up by the exact string `name@version`, then by `name` (`getPatchInfo` in the
+   9.15.0 bundle), and knew no other form. **A lock pnpm 9 wrote is read by
+   these 10.28 rules too.** The two agree on the forms pnpm 9 knew; any other
+   key (a range, `*`, a `(...)` suffix) pnpm 9 never matched, and so did not
+   patch, while opm reads it by the 10.28 rule: a snapshot it applies to carries
+   no `(patch_hash=...)` in such a lock, and opm refuses the lock rather than
+   install the package unpatched, and a key 10.28 refuses as neither version nor
+   range is refused. pnpm decides by name and version, so a patch applies to
+   every instance of `name@version` in the lock, whatever its peers: there is no
+   "patched here, unpatched there" in one lock.
 
 ### The hash
 
