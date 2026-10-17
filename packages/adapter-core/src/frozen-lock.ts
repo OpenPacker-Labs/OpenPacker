@@ -108,9 +108,11 @@ export interface FrozenLockPackage {
   /** Declares an install script. Nothing here runs it. */
   hasInstallScript: boolean;
   /**
-   * The lock does not say whether the package declares an install script (a
-   * pnpm lock keeps that elsewhere), so the host reads it from the archive it
-   * has extracted and `hasInstallScript` is only a default.
+   * The lock does not describe the archive (a pnpm lock keeps whether a package
+   * declares an install script elsewhere, and pins the bytes by integrity
+   * alone), so the host reads it once extracted: the install script, for which
+   * `hasInstallScript` is only a default, and the archive's own name and
+   * version, which must be this package's.
    */
   scriptsFromArchive?: true;
   /**
