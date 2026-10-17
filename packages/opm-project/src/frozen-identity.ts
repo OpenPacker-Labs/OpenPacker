@@ -14,8 +14,10 @@
  * `strict-store-pkg-content-check`): a name without regard to case, and a
  * version by `equalOrSemverEqual`, the same text or node-semver's
  * `eq(a, b, { loose: true })` (`npmVersionsEqual`), which takes `v1.0.0`,
- * `=1.0.0`, `01.0.0` and `1.0.0+build` for `1.0.0` and never one version for
- * another. A refusal names the version the lock records. An npm lock is not
+ * `=1.0.0`, `01.0.0` and `1.0.0+build` for `1.0.0`, and one version for
+ * another only where node-semver does (numeric prerelease identifiers beyond
+ * 2^53, compared as doubles; see `npmVersionsEqual`). A refusal names the
+ * version the lock records. An npm lock is not
  * checked here, its archives being the ones npm resolved by name.
  */
 

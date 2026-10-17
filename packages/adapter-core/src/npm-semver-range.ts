@@ -238,7 +238,11 @@ function looseVersion(text: string): string | undefined {
  * lock's (`equalOrSemverEqual`): the same text, or node-semver's
  * `eq(a, b, { loose: true })`. Loose reading takes `=1.0.0`, `vv1.0.0`,
  * `01.0.0` and `1.0.0-01` as spellings of one version and ignores build
- * metadata; it never makes two different versions one.
+ * metadata. It makes two versions one only where node-semver itself does: a
+ * numeric prerelease identifier beyond 2^53 is compared as a double, so
+ * `1.0.0-12345678901234567890` and `1.0.0-12345678901234567891` are one, to
+ * pnpm and here. Past such a pair node-semver stops comparing (`.a` and `.b`
+ * after it are one to pnpm); this compares the rest, and refuses them.
  */
 export function npmVersionsEqual(left: string, right: string): boolean {
   if (left === right) return true;
