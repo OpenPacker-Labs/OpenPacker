@@ -459,11 +459,10 @@ ones published, or whose archive cannot be extracted stops them before anything
 outside the store changes: `opm.toml`, the lock and `node_modules` are written
 only once every package is in the store. A failure after that, while linking or
 laying out `node_modules` (a `.bin` that is a file, say), puts `opm.toml`, the
-lock, `package.json`, `node_modules` and opm's own state back as they were: the
-step keeps a copy of them first, as hard links for `node_modules`, so it costs a
-link per file rather than the bytes. If `opm` is killed part way, the next
-command that changes the project puts it back and says so on stderr. One command
-changes a project at a time; another waits, then stops (exit code 8)
+lock, `package.json`, `node_modules` and opm's own state back as they were; so
+does the next command after a kill. One command changes a project at a time;
+another waits (`--wait <ms>`), then stops with exit code 8, and
+[`opm recover`](opm-recovery.md) lets go of a step this machine cannot see
 ([ADR 56](../adr/0056-a-step-finishes-or-leaves-the-project-as-it-was.md)).
 Archives are read as npm writes them: a path longer than a tar header holds is
 taken from its pax record, and a file listed twice with the same bytes is one
@@ -689,6 +688,7 @@ their verifier evidence can be independently replayed.
 | `opm generations`                        | List the environment history; `*` marks current                                                                                                                                                                                    |
 | `opm rollback [--to N]`                  | Return to the previous generation, or a named one                                                                                                                                                                                  |
 | `opm gc [--keep N]`                      | Remove store paths no retained generation needs                                                                                                                                                                                    |
+| `opm recover [--abandon-step ID]`        | Finish what a killed opm left; with an id, take that step as dead (see [recovery](opm-recovery.md))                                                                                                                                |
 | `opm shell [--json]`                     | Print the environment for this generation                                                                                                                                                                                          |
 | `opm plugin add <name>`                  | Install a delegated adapter plugin (digest-pinned)                                                                                                                                                                                 |
 | `opm plugin list`                        | List installed plugins and their pins                                                                                                                                                                                              |
