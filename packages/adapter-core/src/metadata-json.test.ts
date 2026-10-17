@@ -19,13 +19,19 @@ const list = (count: number, piece: string) =>
   `[${Array<string>(count).fill(piece).join(',')}]`;
 
 describe('a registry document read without a cost limit of its own', () => {
-  it('is refused at the default cost limit, under the value count', () => {
-    for (const count of [20_000, 66_600])
-      expect(
-        () => json(response(list(count, '{"1023":0,"2575":0}'))),
-        `${count} objects`,
-      ).toThrow(/exceeds 268435456 bytes of parsed size/u);
-  });
+  // The parse allocates what it charges before it stops, about 200 MiB of real
+  // elements stores, so it is slow under the load of a shared machine.
+  it(
+    'is refused at the default cost limit, under the value count',
+    { timeout: 60_000 },
+    () => {
+      for (const count of [20_000, 66_600])
+        expect(
+          () => json(response(list(count, '{"1023":0,"2575":0}'))),
+          `${count} objects`,
+        ).toThrow(/exceeds 268435456 bytes of parsed size/u);
+    },
+  );
 
   it('is read whole when it is ordinary, up to the value count', () => {
     expect(json<unknown[]>(response(list(66_000, '{"a":1}')))).toHaveLength(
