@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { join } from 'node:path';
 import { projectPaths, readStableFile } from './paths.js';
@@ -7,14 +7,14 @@ import {
   isOwnerAlive,
   type ProcessOwner,
 } from './process-owner.js';
-import { absent, discardCopy, restoreFrom } from './project-rollback.js';
+import { absent, discardCopy, liveDigest, readLive } from './rollback-files.js';
+import { restoreFrom } from './rollback-restore.js';
 import {
   DISCARD_SUFFIX,
   parseRollbackRecord,
   ROLLBACK_FILES,
   ROLLBACK_PREFIX,
   ROLLBACK_RECORD,
-  sha256,
   type RollbackRecord,
 } from './rollback-record.js';
 import { OpmError } from './types.js';
@@ -160,8 +160,8 @@ async function assertRestorable(
   for (const [index, file] of ROLLBACK_FILES.entries()) {
     const kept = record.files[index];
     if (kept?.after === undefined) continue;
-    const bytes = await readFile(join(root, file)).catch(absent);
-    const now = bytes === undefined ? null : sha256(bytes);
+    const live = await readLive(join(root, file), file);
+    const now = live === undefined ? null : liveDigest(live);
     if (now !== kept.before && now !== kept.after)
       throw new OpmError(
         'ROLLBACK_CONFLICT',

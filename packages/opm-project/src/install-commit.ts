@@ -43,8 +43,11 @@ export async function commitInstall(input: {
           ? serializeManifest(manifest)
           : undefined;
         const lockText = serializeLockfile(lock);
+        // opm.toml is the step's to undo only if the step wrote it; one that
+        // leaves it alone (sync) records it as it is, so that a hand edit
+        // after a kill is not put back over.
         snapshot = await snapshotProject(input.root, {
-          ...(!(manifestText === undefined) && { manifest: manifestText }),
+          manifest: manifestText ?? 'unchanged',
           lock: lockText,
         });
         if (manifestText !== undefined)

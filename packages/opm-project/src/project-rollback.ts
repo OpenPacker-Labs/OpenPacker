@@ -1,19 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
 import {
   copyFile,
   link,
   lstat,
   mkdir,
-  open,
   readdir,
-  readFile,
   readlink,
-  rename,
-  rm,
   symlink,
   writeFile,
-  type FileHandle,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -22,18 +16,21 @@ import {
   writeStableFile,
 } from './paths.js';
 import { currentOwner } from './process-owner.js';
+import { absent, discardCopy, readLive } from './rollback-files.js';
 import {
-  DISCARD_SUFFIX,
   LOCK_INDEX,
   MANIFEST_INDEX,
   ROLLBACK_FILES,
   ROLLBACK_PREFIX,
   ROLLBACK_RECORD,
   ROLLBACK_TREES,
+  linkDigest,
   sha256,
   type KeptFile,
+  type KeptTree,
   type RollbackRecord,
 } from './rollback-record.js';
+import { restoreFrom } from './rollback-restore.js';
 
 /**
  * What an install changes once it starts linking, kept so a failure part way
@@ -55,9 +52,6 @@ import {
  * no other step runs on the project while it exists.
  */
 
-/** Not defined where links cannot be refused by `open` (Windows). */
-const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
-
 export interface ProjectSnapshot {
   /** Put every file and tree back as it was when the snapshot was taken. */
   restore(): Promise<void>;
@@ -65,10 +59,15 @@ export interface ProjectSnapshot {
   discard(): Promise<void>;
 }
 
-/** What the step is about to write first, so recovery knows it when it sees it. */
+/**
+ * What the step is about to write first, so recovery knows it when it sees it:
+ * the bytes, or `'unchanged'` for a file the step leaves as it is (`opm sync`
+ * does not write opm.toml, and a hand edit of it after a kill is not the
+ * step's to undo).
+ */
 export interface IntendedWrites {
-  manifest?: string | Uint8Array;
-  lock?: string | Uint8Array;
+  manifest?: string | Uint8Array | 'unchanged';
+  lock?: string | Uint8Array | 'unchanged';
 }
 
 export async function snapshotProject(
@@ -94,7 +93,7 @@ export async function snapshotProject(
     await writeRecord(holder, record);
     await mkdir(join(holder, 'files'));
     await mkdir(join(holder, 'trees'));
-    const after = new Map<number, string | Uint8Array>();
+    const after = new Map<number, string | Uint8Array | 'unchanged'>();
     if (intended.manifest !== undefined)
       after.set(MANIFEST_INDEX, intended.manifest);
     if (intended.lock !== undefined) after.set(LOCK_INDEX, intended.lock);
@@ -104,13 +103,14 @@ export async function snapshotProject(
         await keepFile(
           join(paths.root, file),
           join(holder, 'files', String(index)),
+          file,
           after.get(index),
         ),
       );
-    const trees: boolean[] = [];
+    const trees: KeptTree[] = [];
     for (const [index, tree] of ROLLBACK_TREES.entries())
       trees.push(
-        await keepTree(
+        await keepRoot(
           join(paths.root, tree.path),
           join(holder, 'trees', String(index)),
           tree.copy,
@@ -133,88 +133,25 @@ export async function snapshotProject(
 async function keepFile(
   live: string,
   kept: string,
-  intended: string | Uint8Array | undefined,
+  name: string,
+  intended: string | Uint8Array | 'unchanged' | undefined,
 ): Promise<KeptFile> {
-  const after = intended === undefined ? {} : { after: sha256(intended) };
-  const info = await lstat(live).catch(absent);
-  const bytes = info === undefined ? undefined : await readFile(live);
-  if (info === undefined || bytes === undefined)
-    return { before: null, ...after };
-  await writeFile(kept, bytes, { mode: 0o600 });
-  return { before: sha256(bytes), mode: info.mode & 0o7777, ...after };
-}
-
-/**
- * Put the project back from a `ready` copy, then remove the copy. Every path
- * comes from the tables, never from the record. Safe to run again after it
- * was itself interrupted: a tree already moved back is skipped, and files are
- * rewritten whole.
- */
-export async function restoreFrom(
-  root: string,
-  holder: string,
-  record: RollbackRecord,
-): Promise<void> {
-  for (const [index, tree] of ROLLBACK_TREES.entries()) {
-    const live = join(root, tree.path);
-    const kept = join(holder, 'trees', String(index));
-    if (record.trees[index] !== true)
-      await rm(live, { recursive: true, force: true });
-    else if ((await lstat(kept).catch(absent)) !== undefined) {
-      await rm(live, { recursive: true, force: true });
-      await rename(kept, live);
-    }
-  }
-  for (const [index, file] of ROLLBACK_FILES.entries()) {
-    const path = join(root, file);
-    const kept = record.files[index];
-    if (kept === undefined || kept.before === null)
-      await rm(path, { force: true });
-    else
-      await putBack(
-        path,
-        await readFile(join(holder, 'files', String(index))),
-        kept.mode ?? 0o644,
-      );
-  }
-  await discardCopy(holder);
-}
-
-/**
- * Write a kept file back over `path` in place, never through a link: a link
- * where the file was is removed and the file made anew. In place, so that a
- * putting back that is itself killed leaves no temporary file behind; the
- * next one writes the file whole again.
- */
-async function putBack(path: string, bytes: Buffer, mode: number) {
-  const write = constants.O_WRONLY | constants.O_CREAT | NO_FOLLOW;
-  let file: FileHandle;
-  try {
-    file = await open(path, write | constants.O_TRUNC, mode);
-  } catch (error) {
-    // SAFETY: only the errno code of a file-system error is read.
-    if ((error as NodeJS.ErrnoException).code !== 'ELOOP') throw error;
-    await rm(path);
-    file = await open(path, write | constants.O_EXCL, mode);
-  }
-  try {
-    await file.writeFile(bytes);
-    await file.chmod(mode);
-  } finally {
-    await file.close();
-  }
-}
-
-/**
- * Remove a copy. It is renamed first, so a copy half removed is never taken
- * for one to restore from.
- */
-export async function discardCopy(holder: string): Promise<void> {
-  const gone = holder.endsWith(DISCARD_SUFFIX)
-    ? holder
-    : `${holder}${DISCARD_SUFFIX}`;
-  if (gone !== holder) await rename(holder, gone).catch(absent);
-  await rm(gone, { recursive: true, force: true });
+  const current = await readLive(live, name);
+  const row: KeptFile =
+    current === undefined
+      ? { before: null }
+      : current.kind === 'link'
+        ? { before: linkDigest(current.target), link: current.target }
+        : { before: sha256(current.bytes), mode: current.mode };
+  if (current?.kind === 'file')
+    await writeFile(kept, current.bytes, { mode: 0o600 });
+  const after =
+    intended === 'unchanged'
+      ? row.before
+      : intended === undefined
+        ? null
+        : sha256(intended);
+  return after === null ? row : { ...row, after };
 }
 
 async function writeRecord(holder: string, record: RollbackRecord) {
@@ -224,10 +161,21 @@ async function writeRecord(holder: string, record: RollbackRecord) {
   );
 }
 
-/** `undefined` for a path that does not exist; anything else is thrown. */
-export function absent(error: NodeJS.ErrnoException): undefined {
-  if (error.code === 'ENOENT') return undefined;
-  throw error;
+/**
+ * A tree of the project as the copy keeps it: `false` where there is none, a
+ * link's target where the entry is a link (kept as what it says, never
+ * followed: what is behind it is not the copy's to keep), `true` for a
+ * directory, which is kept at `target`.
+ */
+async function keepRoot(
+  source: string,
+  target: string,
+  copy: boolean,
+): Promise<KeptTree> {
+  const info = await lstat(source).catch(absent);
+  if (info === undefined) return false;
+  if (info.isSymbolicLink()) return readlink(source);
+  return keepTree(source, target, copy);
 }
 
 /**

@@ -57,10 +57,18 @@ export const ROLLBACK_TREES = [
 
 /** One row of {@link ROLLBACK_FILES}, as the copy found and kept it. */
 export interface KeptFile {
-  /** sha256 of the file when the copy was taken; null where there was none. */
+  /**
+   * sha256 of the file when the copy was taken; null where there was none. A
+   * link has the digest of its target (`linkDigest`).
+   */
   before: string | null;
-  /** Its mode then. */
+  /** Its mode then (a regular file). */
   mode?: number;
+  /**
+   * Where the entry was a symbolic link, its target: the copy keeps a link as
+   * a link and never reads what it points at, and puts back a link.
+   */
+  link?: string;
   /**
    * sha256 of what the step was about to write over it, where the step said
    * (opm.toml and the lock). The project is put back only over a file that
@@ -76,15 +84,33 @@ export interface RollbackRecord {
   owner: ProcessOwner;
   /** By index of {@link ROLLBACK_FILES}; empty while `copying`. */
   files: KeptFile[];
-  /** By index of {@link ROLLBACK_TREES}: whether the tree existed. */
-  trees: boolean[];
+  /**
+   * By index of {@link ROLLBACK_TREES}: `false` where there was no tree,
+   * `true` for a directory kept in the copy, or a link's target where the
+   * entry was a symbolic link (what is behind it is not kept).
+   */
+  trees: KeptTree[];
 }
+
+export type KeptTree = boolean | string;
 
 export function sha256(bytes: Uint8Array | string): string {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
 
+/** The digest a link has where a file has the digest of its bytes. */
+export function linkDigest(target: string): string {
+  return sha256(`symlink\0${target}`);
+}
+
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+/** A link target as the record may hold it: text, no NUL, not absurd. */
+const isTarget = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  value.length <= 4096 &&
+  !value.includes('\0');
 
 /**
  * A record as this opm writes it, or `undefined`: another version, a path
@@ -113,21 +139,22 @@ export function parseRollbackRecord(
     if (row === undefined) return undefined;
     kept.push(row);
   }
-  if (!trees.every((present) => typeof present === 'boolean')) return undefined;
-  // SAFETY: every entry was checked to be a boolean just above.
+  if (!trees.every((tree) => typeof tree === 'boolean' || isTarget(tree)))
+    return undefined;
+  // SAFETY: every entry was checked to be a boolean or a link target above.
   return {
     rollbackVersion: 1,
     state,
     owner,
     files: kept,
-    trees: trees as boolean[],
+    trees: trees as KeptTree[],
   };
 }
 
 function parseKeptFile(value: unknown): KeptFile | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   // SAFETY: each field is checked below before it is used.
-  const { before, mode, after } = value as Record<string, unknown>;
+  const { before, mode, after, link } = value as Record<string, unknown>;
   if (!(before === null || (typeof before === 'string' && DIGEST.test(before))))
     return undefined;
   if (
@@ -144,9 +171,14 @@ function parseKeptFile(value: unknown): KeptFile | undefined {
     )
   )
     return undefined;
-  return {
-    before,
-    ...(!(mode === undefined) && { mode }),
-    ...(!(after === undefined) && { after }),
-  };
+  if (link === undefined)
+    return {
+      before,
+      ...(!(mode === undefined) && { mode }),
+      ...(!(after === undefined) && { after }),
+    };
+  // A link is described by its target alone, and its digest says so.
+  if (!isTarget(link) || mode !== undefined || before !== linkDigest(link))
+    return undefined;
+  return { before, link, ...(!(after === undefined) && { after }) };
 }

@@ -38,12 +38,24 @@ export const sources = {
   index: join(here, '../src/index.ts'),
 };
 
-export const registry = () =>
-  new NpmRegistryFixture([
-    { name: 'base', versions: { '1.0.0': {}, '1.1.0': {} } },
-    { name: 'other', versions: { '1.0.0': {} } },
-    { name: 'third', versions: { '1.0.0': {} } },
-  ]);
+/** The fixture registry's packages: plain data, so a child process can build the same. */
+export const REGISTRY_PACKAGES = [
+  { name: 'base', versions: { '1.0.0': {}, '1.1.0': {} } },
+  { name: 'other', versions: { '1.0.0': {} } },
+  { name: 'third', versions: { '1.0.0': {} } },
+  // Linking it needs node_modules/.bin to be a directory.
+  {
+    name: 'tool',
+    versions: {
+      '1.0.0': {
+        bin: { 'tool-cli': 'cli.js' },
+        files: { 'cli.js': '#!/usr/bin/env node\n' },
+      },
+    },
+  },
+];
+
+export const registry = () => new NpmRegistryFixture(REGISTRY_PACKAGES);
 export const transport = () => ({ transport: registry() });
 
 const temps: string[] = [];
@@ -199,6 +211,33 @@ export async function child(
   );
   const [first, ...rest] = [...command, viteNode, script];
   return spawn(first!, rest, { stdio: 'ignore', env });
+}
+
+/** How a child process ended. */
+export async function ended(
+  process: ChildProcess,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve) =>
+    process.on('exit', (code, signal) => resolve({ code, signal })),
+  );
+}
+
+/**
+ * The environment that preloads fixtures/kill-at-fs.mjs: the process is killed
+ * just before the first `fs.promises[call]` whose arguments match.
+ */
+export function killingAt(
+  call: string,
+  first: string,
+  second = '',
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    NODE_OPTIONS: `--import=${join(here, 'fixtures/kill-at-fs.mjs')}`,
+    KILL_FS: call,
+    KILL_FS_ARG0: first,
+    KILL_FS_ARG1: second,
+  };
 }
 
 /** Kill `process` and wait until it has gone. */
