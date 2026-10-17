@@ -495,20 +495,26 @@ and `opm gc --shared` keeps each while a project links it. `--plan` reports
 `patched: N packages by M patches` and refuses, before anything is fetched: a
 patch file that is missing (exit 4), edited since the lock was written (stale,
 exit 3), outside the project or reached through a link (exit 7), one that names
-a path outside its package or past an archive's bounds (128 segments, 4,096
-bytes, a name an archive refuses such as `CON`, `aux.js`, `a:b` or `name.`, a
-name over 255 bytes, and the paths with the directories above them past 100,000
-files; exit 7), one with a header line over 8,300 characters (exit 7), or that
-pnpm cannot read (exit 3), and a patch file over 16 MiB or patch files over 64
-MiB together (exit 7). A patch that does not apply stops the install with
-nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a bare-name key
-and installs the package unpatched; so does one too costly to apply, past 256
-MiB of characters read, compared and written, and of the paths looked up (a file
-patched again in section after section, a path a hundred directories deep made
-again and again), which pnpm would run for as long as it takes. A patched entry
-whose installing process was killed before it wrote its record is made again by
-the next install, which records it only if the files in place are the tree the
-patch gives.
+a path outside its package or past an archive's bounds (127 segments and 4,088
+bytes below the package, an archive's 128 and 4,096 less `package/`; a name an
+archive refuses such as `CON`, `aux.js`, `a:b` or `name.`; a name over 255
+bytes; a path that, with the directory the store makes the package in, comes to
+4,096 bytes or more; and the paths with the directories above them past 100,000
+files; exit 7), one with a header line over 8,300 characters that begins like a
+line the parser reads (exit 7; a long commit-message line before the diff is
+taken), or that pnpm cannot read (exit 3), and a patch file over 16 MiB or patch
+files over 64 MiB together (exit 7). A patch that does not apply stops the
+install with nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a
+bare-name key and installs the package unpatched; so does one too costly to
+apply, past 256 MiB of characters read, compared and written, and of the paths
+looked up (a file patched again in section after section, a path a hundred
+directories deep made again and again), which pnpm would run for as long as it
+takes. At install, which needs the package's files, a patch that would leave two
+files an archive refuses as a case collision (`lib/X.js` beside `lib/x.js`)
+stops it with exit 7, and so does one that takes the package past 100,000 files.
+A patched entry whose installing process was killed before it wrote its record
+is made again by the next install, which records it only if the files in place
+are the tree the patch gives.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
