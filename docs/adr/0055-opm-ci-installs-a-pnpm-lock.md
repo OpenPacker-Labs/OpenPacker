@@ -117,13 +117,17 @@ design:
    `equalOrSemverEqual`: the same text, or node-semver 7.7.2's
    `eq(a, b, { loose: true })`, so an archive that writes `v1.0.0`, `=1.0.0`,
    `vv1.0.0`, `01.0.0` or `1.0.0+build` is `1.0.0`, as pnpm takes it, and loose
-   reading never makes two versions one (`1.0.1` and `1.0.0-1` are refused for
-   `1.0.0`). Every value the archive gives is quoted and escaped as the lock's
-   values are. One difference from pnpm is deliberate: pnpm compares a name or
-   version only when the archive's `package.json` has one, and opm refuses an
-   archive with no `name` (or, where the lock records a version, no `version`),
-   because an archive that does not say what it is cannot be identified as the
-   package the lock names.
+   reading makes two versions one only where node-semver compares numbers as
+   doubles: a numeric prerelease identifier beyond 2^53
+   (`1.0.0-12345678901234567890` and `…891` are one, to pnpm and to opm; `1.0.1`
+   and `1.0.0-1` are refused for `1.0.0`). Past such a pair node-semver compares
+   nothing more, so pnpm also takes `…890.a` for `…891.b`; opm compares the rest
+   and refuses that, failing closed. Every value the archive gives is quoted and
+   escaped as the lock's values are. One difference from pnpm is deliberate:
+   pnpm compares a name or version only when the archive's `package.json` has
+   one, and opm refuses an archive with no `name` (or, where the lock records a
+   version, no `version`), because an archive that does not say what it is
+   cannot be identified as the package the lock names.
 
 ### Where each instance goes
 
