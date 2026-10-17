@@ -14,9 +14,11 @@ import {
  *
  * One run of `shared-store.default.test.ts` rarely lands the interleaving in
  * which an install finds the record beside the entry replaced under it, so this
- * runs it many times. Before `shared-store-record.ts` it failed on every run, in
- * round 0 to 13, with "Metadata file changed during publication" (a script of
- * 40 rounds of six installs measured 8 to 10 failed installs).
+ * runs it many times. Before `shared-store-record.ts` it failed in each of three
+ * runs, in round 0 to 13, and in one of two runs of a later review, with
+ * "Metadata file changed during publication" (a script of 40 rounds of six
+ * installs measured 8 to 10 failed installs), all on Linux. It is a likelihood,
+ * not a guard: `shared-store-record.test.ts` is the deterministic one.
  */
 
 const made: string[] = [];

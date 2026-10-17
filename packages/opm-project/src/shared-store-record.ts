@@ -28,6 +28,14 @@ const stableIo: TreeRecordIo = {
  * A read that follows the file being replaced. Each replacement is one install
  * finishing its own record, so the number of them is the number of installs
  * racing, and a bound this size is far above any machine's.
+ *
+ * The race and its measurements are Linux (ext4) only. A read sees the file
+ * replaced because the rename unlinks the inode it has open, and Linux moves
+ * that inode's ctime as its link count drops to 0, which the read's fstat
+ * before and after then disagrees on. POSIX does not require that, so macOS may
+ * never show the race, and the shared store is off by default on Windows. The
+ * fix depends on no platform: a read is repeated only when it reports
+ * `INPUT_CHANGED`, and an identical record is never rewritten.
  */
 const READ_ATTEMPTS = 200;
 
