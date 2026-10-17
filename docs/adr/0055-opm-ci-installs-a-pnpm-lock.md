@@ -282,12 +282,18 @@ design:
        `> = 1`, `=1+b`) and keeps the comparators it keeps (`1.2` is
        `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`, `>=0.0.0+build` is `>=0.0.0`).
        `npm-range-oracle.json` holds node-semver 7.7.2's answers for 1,150
-       ranges and 30 versions and the parser must give each; the review
-       differential found 0 differences over 123,039 ranges. So no override is
-       left in doubt: an override written `v1.x` or `<=1.2` applies where pnpm
-       applies it (pnpm 10.28 found such a lock up to date). Before this the
-       reader read some forms its own way and opm refused the override as its
-       own rule rather than guess.
+       ranges and 30 versions and the parser must give each. Three differentials
+       agree: the fix that brought the port found its comparator sets equal to
+       7.7.3's over 123,039 generated ranges; the round-3 review, from a
+       generator of its own (about 128,000 ranges), found none against 7.7.3
+       and, against 7.7.2, only the build-metadata one above; and that review's
+       script, run against 7.7.2 once the port followed it, found 0 differences
+       in comparator sets, in 843,210 `satisfies` answers and in 112,428
+       `intersects` answers over 128,229 ranges. So no override is left in
+       doubt: an override written `v1.x` or `<=1.2` applies where pnpm applies
+       it (pnpm 10.28 found such a lock up to date). Before this the reader read
+       some forms its own way and opm refused the override as its own rule
+       rather than guess.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it
