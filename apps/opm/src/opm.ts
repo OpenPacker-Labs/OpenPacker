@@ -943,47 +943,6 @@ function parseArgs(argv: string[]): Parsed {
   };
 }
 
-function shortToLong(short: string): string {
-  switch (short) {
-    case 'e':
-      return 'ecosystem';
-    case 'h':
-      return 'help';
-    case 'w':
-      return 'workspace';
-    case 'F':
-      return 'filter';
-    default:
-      return short;
-  }
-}
-
-function isBooleanFlag(key: string): boolean {
-  return (
-    key === 'help' ||
-    key === 'force' ||
-    key === 'offline' ||
-    key === 'online' ||
-    key === 'json' ||
-    key === 'dry-run' ||
-    key === 'delegate' ||
-    key === 'allow-build' ||
-    key === 'allow-network' ||
-    key === 'allow-elevation' ||
-    key === 'latest' ||
-    key === 'if-present' ||
-    key === 'native' ||
-    key === 'shared' ||
-    key === 'production' ||
-    key === 'frozen' ||
-    key === 'workspaces' ||
-    key === 'no-workspaces' ||
-    key === 'include-workspace-root' ||
-    key === 'plan' ||
-    key === 'write'
-  );
-}
-
 /**
  * Delegated adapter plugin management (ADR 0039). Plugins live in the
  * user-level store (`OPM_PLUGIN_HOME` / XDG), never in a project.
