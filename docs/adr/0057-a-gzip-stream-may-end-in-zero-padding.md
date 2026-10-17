@@ -92,65 +92,131 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    a lower bound on where the stream ends (a trailer's length, and deflate data,
    can end in zero bytes), so a limit taken from it could refuse an archive the
    ratio check accepts.
-8. **For npm's archives, opm refuses what the two reference extractors read
-   differently.** Found by the same review. npm extracts with node-tar 6.2.1 and
-   pnpm 10.28.0 with its own `parseTarball`; where the two would install
-   different files from one archive, opm installs neither set and refuses the
-   archive with a typed code, rather than choose a side. Where they agree, opm
-   extracts what both extract.
+8. **For npm's archives, opm refuses the classes of archive on which the two
+   reference extractors install different files.** Found by the same review and
+   narrowed, round by round, to what the tests below prove. npm extracts with
+   node-tar 6.2.1 and pnpm 10.28.0 with its own `parseTarball`. A tar that the
+   rule covers is refused with a typed code, installing neither set, in each
+   class listed here; where the two agree, opm extracts what both extract,
+   except in the three cases listed after the classes. "Install different files"
+   is one definition throughout: the files each installs from the same bytes, as
+   path and content with the first path component stripped, or pnpm throwing.
+   The claim is as strong as the 58 archives of
+   `packages/materializer/test/tar-oracle/` (each read by both extractors,
+   recorded in `oracle.json`, re-run by `generate.mjs --check`) and no stronger:
+   the classes were found by reading the two sources and by a differential fuzz,
+   neither of which can show there is no other.
 
-   The rule covers the archives the npm adapter materializes, the ones those two
-   are the readers of: an npm lock's and a pnpm lock's tarballs (`opm ci`) and
-   an npm package `opm add` or `opm install` fetches. The adapter asks for it by
-   name, as it asks for `acceptRedundantEntries`: its frozen lock's `extraction`
-   carries `requireNpmReaderAgreement`, `installArchiveLimits` sets it for the
-   npm ecosystem, and the materializer applies it only when the limits say so.
-   It never guesses from the archive. Every other tar (a crate, an sdist, an OCI
-   layer, a plugin) keeps the general rule: the archive ends at two zero blocks
-   in a row or at the end of the data, whatever follows two zero blocks is not
-   read, the checksum is read over its 8 bytes and the prefix is joined whatever
-   the magic. A tar with no zero block at its end therefore still extracts
-   there, and so does one padded with any length of zeros. A lone zero block
-   that anything but zeros follows is refused (`TAR_AMBIGUOUS_END`) in every
-   ecosystem: on `[a][Z][b][Z][Z]` GNU tar 1.35 lists `a` and warns "A lone zero
-   block", Python's `tarfile` lists `a`, Go's `archive/tar` returns `a` and then
-   an error, node-tar lists `a` and `b`, so no reading of the second entry is
-   safe. (The first review's answer read it as node-tar does; this one does
-   not.)
+   **Where the rule applies.** The npm adapter asks for it by name, as it asks
+   for `acceptRedundantEntries`: `requireNpmReaderAgreement` in the
+   materializer's limits. It is set for an npm lock's and a pnpm lock's tarballs
+   (`opm ci`: the frozen lock's `extraction`, from `adapter-npm`), for an npm
+   package `opm add` or `opm install` fetches (`installArchiveLimits('npm')`,
+   through the shared store and directly), for npm bin discovery, and for
+   `openpacker materialize --install-prefix` when the artifact's type is the npm
+   adapter's (`application/vnd.openpacker.npm.package.`;
+   `apps/openpacker-cli/src/ extraction.ts`). The daemon extracts nothing: its
+   `materialize` operation returns the descriptor and its restrictions. It is
+   never guessed from the archive's bytes. The two shared-store functions that
+   extract take `limits` as a required argument (a call without it does not
+   compile), so a caller cannot fall back to the materializer's defaults by
+   forgetting it. Every other tar (a crate, an sdist, an OCI layer, a plugin,
+   another ecosystem's lock) keeps the general rule below.
 
-   The cases, each in `packages/materializer/test/tar-oracle/` (both readers
-   over the same bytes, 19 archives; `generate.mjs --check` re-runs them):
+   **The general rule.** The archive ends at two zero blocks in a row or at the
+   end of the data; whatever follows two zero blocks is not read; the checksum
+   is read over its 8 bytes and the prefix is joined whatever the magic. A tar
+   with no zero block at its end extracts, and so does one padded with any
+   length of zeros. A lone zero block that anything but zeros follows is refused
+   (`TAR_AMBIGUOUS_END`) in every ecosystem. Evidence, run on 2026-10-17 on
+   `[a][Z][b][Z][Z]`: GNU tar 1.35 lists `a` and warns "A lone zero block at 3",
+   Python 3.13's `tarfile` lists `a`, Go 1.24's `archive/tar` returns `a` and
+   then `invalid tar header`, node-tar lists `a` and `b`; the stack's base build
+   (484dc82) returned `a`, the first answer to the review (1d33ec4) `a` and `b`.
+   GNU tar does not read past a lone zero block. Rust's `tar` crate was not run.
+   No reading of the second entry is safe, so none is made.
+
+   **The classes refused in npm mode**, each with its oracle cases (a case is
+   refused if and only if it is one the two read differently, plus the
+   over-refusals below):
    - **The end, `TAR_AMBIGUOUS_END`.** pnpm stops at the first header position
-     whose first byte is 0, and reads a header past the end of the data (and
+     whose first byte is 0 and reads a header past the end of the data (and
      fails). node-tar ends at two null blocks in a row or at the end of the
-     data, and skips a lone null block and a block whose checksum fails. So opm
-     refuses: a lone zero block followed by an entry (npm installs it, pnpm does
-     not), a zero block before the first entry, data that ends with no zero
-     block (pnpm fails, npm installs), and a header whose name starts with NUL
-     with its path in the prefix (pnpm stops there, npm installs it). A lone
-     zero block followed only by blocks node-tar skips, or by a second zero
-     block, ends the archive for both, and opm extracts what came before it;
-     nothing after the end is read. The decision is one pass over the rest of
-     the archive with node-tar's own checksum reading and null-block rule, made
-     once, at the first zero byte in header position.
+     data, and skips a lone null block and a block whose checksum fails. opm
+     refuses a lone zero block followed by an entry, a zero block before the
+     first entry, data that ends with no zero block, and a header whose name
+     starts with NUL with its path in the prefix. The decision is one pass over
+     the rest of the archive with node-tar's checksum reading and null-block
+     rule, made once, at the first zero byte in header position. It assumes
+     node-tar is at the same offset as opm. The checksum, directory, number,
+     link-name and type classes below refuse the headers this review found after
+     which it would not be, and the fuzz found no other.
    - **The checksum, `TAR_AMBIGUOUS_CHECKSUM`.** node-tar reads the field over
-     12 bytes, into the typeflag and the link name; pnpm and opm over its 8. An
-     8-digit field with no terminator before a typeflag digit is another number
-     to node-tar, which skips the entry; pnpm installs it.
+     12 bytes, into the typeflag and the link name; pnpm and opm over its 8.
    - **The prefix, `TAR_AMBIGUOUS_PREFIX`.** node-tar joins the prefix to the
-     name only under `ustar\0` `00` magic; pnpm and opm always do. A prefix with
-     any other magic (none, or GNU's `ustar  `) is refused.
-   - **Blocks that are not all zero.** node-tar also takes for a null block one
-     whose checksum field is not a number and whose other bytes are zero. Where
-     such a block sits at pnpm's end, opm reads it as node-tar does, to decide
-     whether the two agree. Anywhere pnpm reads a header, opm is stricter than
-     node-tar: a block whose checksum fails is refused, where node-tar warns
-     `TAR_ENTRY_INVALID`, skips it and reads on.
+     name only under `ustar\0` `00` magic; pnpm and opm always do.
+   - **A directory, `TAR_AMBIGUOUS_DIRECTORY`.** node-tar takes a directory's
+     size, and the size of a file named with a trailing slash, for 0 and reads
+     the next block as a header; pnpm and opm skip the size. A sized directory
+     hides the entries in its span from pnpm and opm (a payload that starts with
+     NUL, as every `.wasm` does, was accepted by the end rule above for the same
+     reason). A directory with a size is refused, and so is a type `0` or NUL
+     entry whose path ends in a slash at any size (node-tar makes a directory of
+     it, pnpm installs a file).
+   - **A number, `TAR_AMBIGUOUS_NUMBER`.** node-tar decodes uid, gid and mtime
+     in every header, devmajor and devminor under `ustar\0` `00` magic, and
+     atime and ctime there when byte 475 is zero; a base-256 number it cannot
+     decode (a first byte with the high bit set that is not 0x80 or 0xff, or a
+     value that is not a safe integer) makes it drop the entry and read the
+     entry's data as headers. pnpm and opm install the entry. A valid base-256
+     number is accepted. A base-256 size or mode was already refused
+     (`ADAPTER_REQUIRED`).
+   - **A link name, `TAR_AMBIGUOUS_LINK`.** node-tar drops a header that is no
+     link and has a link name ("linkpath forbidden") and reads its data as
+     headers; pnpm and opm install it. That includes an extended header, whose
+     path record node-tar then ignores. A directory with a link name is dropped
+     too, but holds no file, so it is accepted.
+   - **An extended header, `TAR_AMBIGUOUS_PAX`.** An extended header (`x`) with
+     a path or a size, then a global header (`g`), then an entry: node-tar and
+     opm name the entry by the extended path; pnpm applies the path to the
+     global header. (A comment-only extended header is accepted.)
+   - **A type, `TAR_AMBIGUOUS_TYPE`.** Typeflag `7` (a contiguous file) is
+     extracted by node-tar and opm; pnpm throws "Unsupported file type 55".
+   - **A path, `TAR_AMBIGUOUS_PATH`.** A file whose path has a backslash:
+     node-tar keeps it in the name, or drops a single-component path; pnpm trims
+     the first component at it; opm reads it as a separator, so the file lands
+     at a path no other reader uses. A file whose path has no slash: node-tar's
+     strip drops it, pnpm installs it.
+
+   **Refused although the two agree (accepted over-refusals, each an oracle case
+   in `OVER_REFUSED`).** opm cannot tell, without re-implementing node-tar's
+   whole header acceptance, that what it refuses yields no file: a zero block in
+   header position followed by a header node-tar reads but that yields no file
+   (one with no path, a directory, a base-256 checksum it cannot decode:
+   `TAR_AMBIGUOUS_END`); a directory header node-tar drops for its checksum
+   reading or an unreadable number, and a sized directory whose span holds
+   nothing; an extended header's path or size, a global header, then an entry
+   that is a directory (or a size that agrees); a prefix without `ustar\0` `00`
+   magic that a pax path overrides; a backslash below the top-level directory.
+   None of these, and none of the refused classes, occurs in the registry sample
+   below.
+
+   **Extracted although the layouts differ, a known non-security difference
+   (pinned by `PINNED` in `tar-end.test.ts`).** An entry whose name starts with
+   `./`: all three read the same names, opm drops the `.` segment as npm's
+   extractor does for any other (`acceptRedundantEntries`), and the layout
+   (`treeToInstall`: one top-level directory is unwrapped, otherwise the store
+   root is installed) then decides where files go, where npm strips the first
+   component, `.`, and keeps `package/`. A second top-level directory
+   (`other/o.js` beside `package/a.js`): npm and pnpm merge them; opm extracts
+   both and the layout installs the root. In both, the file is in the installed
+   tree at a path other than npm's; none is hidden from a reader of that tree.
 
    This replaces the first answer to the review, which skipped a lone zero block
    and extracted the entries after it as npm does, and so installed, from a pnpm
-   lock, files pnpm itself never installs. None of the refused shapes appears in
-   the registry sample below, nor among the 1,739 archives of OpenSesame's lock.
+   lock, files pnpm itself never installs, and the second, whose end rule
+   assumed node-tar at opm's offset and whose claim covered five shapes it did
+   not refuse.
 
 ## Consequences
 
@@ -163,11 +229,15 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
   `node_modules/sylvester` holding the archive's 20 files and loading
   (`Matrix.create([[1,2],[3,4]]).determinant()` is `-2`):
 
-  | Code                                         | OpenSesame  | Wall    | Load average |
-  | -------------------------------------------- | ----------- | ------- | ------------ |
-  | the padding fix (§1 to §7)                   | `44a81f2de` | 741 s   | 50 to 57     |
-  | after the first review (lone zero skipped)   | `7afd8025b` | 936.5 s | about 44     |
-  | after the second review (§8 as written here) | `034ff40d5` | 1,290 s | 39 to 45     |
+  | Code                                                    | OpenSesame  | Wall    | Load average |
+  | ------------------------------------------------------- | ----------- | ------- | ------------ |
+  | the padding fix (§1 to §7)                              | `44a81f2de` | 741 s   | 50 to 57     |
+  | after the first review (lone zero skipped)              | `7afd8025b` | 936.5 s | about 44     |
+  | after the second review (§8 before the round-4 scoping) | `034ff40d5` | 1,290 s | 39 to 45     |
+
+  The end-to-end has not been re-run on the code of §8 as it now stands; the
+  last run predates the round-4 scoping and every class added since. The
+  evidence for those is the oracle, the fuzz and the registry sample below.
 
 - Tests, in `packages/materializer/src/`: `gzip-padding.test.ts` (padding, junk,
   junk behind padding, a member behind padding, two members, a damaged member,
@@ -178,18 +248,47 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
   refused as output arrives; abort); `gzip-walk.test.ts` (CRC-32, length and
   header CRC named at their member, each optional header field alone, a cut
   trailer, the walk's budget, alone and as gunzipArchive sets it, its member
-  count, an abort at each of its checks); `tar-end.test.ts` (against
-  `test/tar-oracle/oracle.json`: with `requireNpmReaderAgreement`, opm refuses
-  exactly the cases where npm and pnpm install different files, with the code,
-  and extracts node-tar's set where they agree; without it, a tar with no end
-  block, one with a lone zero block, an 8-digit checksum and a prefix without
-  magic extract under the general rule); in `packages/opm-project/test/`,
+  count, an abort at each of its checks); `tar-end.test.ts` (against the 58
+  archives of `test/tar-oracle/oracle.json`: with `requireNpmReaderAgreement`,
+  opm refuses exactly the cases where npm and pnpm install different files, with
+  the code, plus the listed over-refusals (`OVER_REFUSED`, each a case where
+  they agree), and extracts node-tar's set where they agree, but for the pinned
+  layout differences (`PINNED`); without it, a tar with no end block, one with a
+  sized directory, an 8-digit checksum and a prefix without magic extract under
+  the general rule, a lone zero block that data follows is refused, and any
+  length of zero padding after the end is accepted); `tar-numbers.test.ts`
+  (which fields node-tar decodes, under what magic, and which base-256 numbers
+  it reads, at the safe-integer bound); in `packages/opm-project/test/`,
   `frozen-install.gzip-padding.test.ts` (an install, the refusal by package and
   offset, the lock's integrity over the padding),
   `frozen-install.tar-agreement.test.ts` (a pnpm lock's archive with no end
-  block is refused under its name) and `install-limits.test.ts` (the option for
-  npm and for no other ecosystem); and in `packages/adapter-npm`, both lock
-  readers' `extraction`.
+  block is refused under its name), `install-limits.test.ts` (the option for npm
+  and for no other ecosystem) and `shared-store.limits.test.ts` (tsc over a
+  fixture: a shared-store call without `limits` does not compile); in
+  `packages/adapter-npm`, both lock readers' `extraction`; and in
+  `apps/openpacker-cli/test/install-prefix.test.ts` (an npm artifact is
+  extracted under the agreement and refused with its code; any other artifact
+  under the general rule).
+- The differential fuzz of round 5: 103,970 archives composed from headers,
+  bodies, zero, null, junk, partial and meta blocks, read by node-tar 6.2.1,
+  pnpm 10.28.0 and opm in npm mode (96,000 random in `all`, `mix`, `pax`,
+  `type`, `zero`, `num` and `name` families, 12,000 of them with the `./`
+  spellings removed, and 7,970 enumerated: checksum fields, zero blocks at every
+  position, partial blocks, magic and prefix, numeric fields, meta headers).
+  Where the two disagreed, opm refused in every case; where they agreed, opm
+  extracted node-tar's set in every case or refused with one of the listed
+  over-refusals or a path policy of the materializer, except one spelling: with
+  a `./` or a `.` segment in the name, the three differ on how the path is
+  written, which the layout settles as stated above. 0 differences in the 12,000
+  archives with those spellings removed. Not covered by the fuzz: anything the
+  generator does not compose (compressed members, sparse files, GNU long names,
+  which are `ADAPTER_REQUIRED`).
+- A sample of 475 registry archives, the first, one-third, two-thirds and last
+  version of 119 packages, 2010 to now, at most 25 MiB unpacked (run on
+  2026-10-17, this code against 1c0051c, in npm mode and under the general
+  rule): none holds a lone zero block; no archive that 1c0051c extracted is
+  refused and none it refused is extracted, in either mode. 469 extract; the 6
+  refused (5 symlinks, 1 over the ratio) are refused by both.
 - A sample of 386 registry archives, the first three versions and one from the
   first third of the versions of 97 packages, most from 2010 to 2014
   (`registry-tar-end.mjs` from the second review, run on 2026-10-17 against this

@@ -12,6 +12,10 @@
  *   the link name), pnpm and opm over its 8.
  * - The prefix. node-tar joins it to the name only under `ustar\0` `00` magic;
  *   pnpm and opm always do.
+ * - The numbers, link name and entries: `tar-numbers.ts`, and below.
+ *
+ * Each `assert*` throws a `TAR_AMBIGUOUS_*` code. Without the option the general
+ * rule applies (`nextHeader`).
  */
 
 import { unsafe } from './errors.js';
