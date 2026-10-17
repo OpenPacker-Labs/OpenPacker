@@ -2,6 +2,11 @@
  * What the planner is told of a selection: the instances being installed with
  * only the edges that lead to another of them (a peer marked as one), and the
  * importers with the edges and links that are kept.
+ *
+ * A peer is an edge only where the lock resolved it. pnpm writes no edge for an
+ * optional peer nothing provided, so the planner never sees one: there is no
+ * copy of it to keep to one, and a cycle through optional peers is, to the
+ * planner, a cycle through the peers that are resolved.
  */
 
 import type { PlaceInput } from './place-types.js';
