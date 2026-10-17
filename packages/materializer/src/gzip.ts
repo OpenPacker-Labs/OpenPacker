@@ -15,6 +15,7 @@
  */
 
 import {
+  crc32,
   createGunzip,
   createInflateRaw,
   type Gunzip,
@@ -46,7 +47,7 @@ export async function gunzipArchive(
     if (signal?.aborted) throw signal.reason ?? error;
     if (error instanceof RangeError)
       throw unsafe(overflowCode, `${maximumBytes}`);
-    throw await refusal(
+    const refused = await describeRefusal(
       bytes,
       error instanceof Error && error.message !== ''
         ? error.message
@@ -54,26 +55,34 @@ export async function gunzipArchive(
       maximumBytes,
       signal,
     );
+    // An abort while the walk ran is the abort, not this refusal.
+    signal?.throwIfAborted();
+    throw refused;
   }
   for (let at = decoded.consumed; at < bytes.byteLength; at += 1)
     if (bytes[at] !== 0) throw trailingData(bytes, decoded.consumed, at);
   return { expanded: decoded.output, streamEnd: decoded.consumed };
 }
 
-interface Inflated {
+export interface Inflated {
   output: Uint8Array;
   /** Input bytes the engine read: zlib leaves what follows the stream. */
   consumed: number;
 }
 
 /** Run a zlib engine over `bytes`, refusing more than `maximumBytes` of output. */
-function inflate(
+export function inflate(
   engine: Gunzip | InflateRaw,
   bytes: Uint8Array,
   maximumBytes: number,
   signal?: AbortSignal,
 ): Promise<Inflated> {
   return new Promise((resolve, reject) => {
+    // A listener added to a signal already aborted would never be called.
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const chunks: Uint8Array[] = [];
     let size = 0;
     const abort = () => engine.destroy(new Error('aborted'));
@@ -108,64 +117,92 @@ function trailingData(
   at: number,
 ): MaterializationError {
   const value = (bytes[at] ?? 0).toString(16).padStart(2, '0');
+  const count = bytes.byteLength - streamEnd;
   return unsafe(
     'GZIP_TRAILING_DATA',
-    `${bytes.byteLength - streamEnd} bytes follow the gzip stream at offset ${streamEnd}; the byte at offset ${at} is 0x${value}, and only zero bytes may follow it`,
+    `${count} ${count === 1 ? 'byte follows' : 'bytes follow'} the gzip stream at offset ${streamEnd}; the byte at offset ${at} is 0x${value}, and only zero bytes may follow it`,
   );
 }
 
 /**
- * zlib refused the stream; say where. The members are walked as zlib read
- * them, each one's end found by inflating its deflate data. Bytes after a
- * complete member that are neither zero nor another member's header are
- * trailing data (zlib's "incorrect header check"); a member that does not
- * decode is named by its offset. This only words the refusal: what is accepted
- * is decided by zlib above, never here.
+ * zlib refused the stream; say why and where. The members are walked and
+ * checked as zlib checks them: the header (and its CRC when FHCRC is set), the
+ * deflate data, the trailer's CRC-32 and length. The first member that fails
+ * is the refusal, `INVALID_COMPRESSION` at its offset, and the walk goes no
+ * further. Bytes after a member that passes that are neither zero nor another
+ * member's header are trailing data (zlib's "incorrect header check"). The walk
+ * has its own output budget and member count; past either it names no offset.
+ * It only words a refusal: what is accepted is decided by zlib above, never
+ * here.
  */
-async function refusal(
+export async function describeRefusal(
   bytes: Uint8Array,
   reason: string,
-  maximumBytes: number,
+  budget: number,
   signal?: AbortSignal,
 ): Promise<MaterializationError> {
   let at = 0;
-  let budget = maximumBytes;
+  let left = budget;
   for (let walked = 0; walked < MAXIMUM_DIAGNOSED_MEMBERS; walked += 1) {
+    signal?.throwIfAborted();
     if (at >= bytes.byteLength || bytes[at] === 0) break;
     if (bytes[at] !== 0x1f || bytes[at + 1] !== 0x8b)
       return at > 0
         ? trailingData(bytes, at, at)
         : new MaterializationError('INVALID_COMPRESSION', reason);
-    const body = memberBody(bytes, at);
-    const deflated =
-      body === undefined
-        ? undefined
-        : await inflate(
-            createInflateRaw(),
-            bytes.subarray(body),
-            budget,
-            signal,
-          ).catch(() => undefined);
-    // The deflate data, then the trailer's CRC-32 and length: 8 bytes.
-    const end =
-      body === undefined || deflated === undefined
-        ? undefined
-        : body + deflated.consumed + 8;
-    if (end === undefined || deflated === undefined || end > bytes.byteLength)
+    const checked = await checkMember(bytes, at, left, signal);
+    if (checked.kind === 'over-budget') break;
+    if (checked.kind === 'refused')
       return new MaterializationError(
         'INVALID_COMPRESSION',
         `${reason}, in the gzip member at offset ${at}`,
       );
-    at = end;
-    budget -= deflated.output.byteLength;
+    at = checked.end;
+    left -= checked.output;
   }
   return new MaterializationError('INVALID_COMPRESSION', reason);
+}
+
+type CheckedMember =
+  | { kind: 'passed'; end: number; output: number }
+  | { kind: 'refused' }
+  | { kind: 'over-budget' };
+
+/** The member at `start`, checked as zlib checks it. */
+async function checkMember(
+  bytes: Uint8Array,
+  start: number,
+  budget: number,
+  signal?: AbortSignal,
+): Promise<CheckedMember> {
+  const body = memberBody(bytes, start);
+  if (body === undefined) return { kind: 'refused' };
+  let deflated: Inflated;
+  try {
+    deflated = await inflate(
+      createInflateRaw(),
+      bytes.subarray(body),
+      budget,
+      signal,
+    );
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
+    return { kind: error instanceof RangeError ? 'over-budget' : 'refused' };
+  }
+  // The deflate data, then the trailer: CRC-32 and length, 8 bytes.
+  const end = body + deflated.consumed + 8;
+  if (end > bytes.byteLength) return { kind: 'refused' };
+  const trailer = new DataView(bytes.buffer, bytes.byteOffset + end - 8, 8);
+  return trailer.getUint32(0, true) === crc32(deflated.output) &&
+    trailer.getUint32(4, true) === deflated.output.byteLength % 2 ** 32
+    ? { kind: 'passed', end, output: deflated.output.byteLength }
+    : { kind: 'refused' };
 }
 
 /**
  * Where the deflate data of the member at `start` begins (RFC 1952 §2.3:
  * ID1 ID2 CM FLG MTIME XFL OS, then FEXTRA, FNAME, FCOMMENT and FHCRC as FLG
- * says), or undefined where zlib would refuse the header.
+ * says), or undefined where zlib would refuse the header, its CRC included.
  */
 function memberBody(bytes: Uint8Array, start: number): number | undefined {
   const flags = bytes[start + 3] ?? 0xff;
@@ -179,6 +216,12 @@ function memberBody(bytes: Uint8Array, start: number): number | undefined {
       if (end < 0) return undefined;
       at = end + 1;
     }
-  if ((flags & 0x02) !== 0) at += 2;
+  if ((flags & 0x02) !== 0) {
+    if (at + 2 > bytes.byteLength) return undefined;
+    const stored = (bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8);
+    if ((crc32(bytes.subarray(start, at)) & 0xffff) !== stored)
+      return undefined;
+    at += 2;
+  }
   return at < bytes.byteLength ? at : undefined;
 }
