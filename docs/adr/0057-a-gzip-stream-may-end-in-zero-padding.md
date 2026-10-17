@@ -4,7 +4,8 @@
 - Date: 2026-10-17
 - Amends [ADR 0046](0046-a-lockfile-is-installed-not-re-resolved.md) §7 (what
   the materializer tolerates in an ecosystem's archives: zero padding after the
-  gzip stream, and, §8 below, a lone zero block inside the tar)
+  gzip stream; and, §8 below, what it refuses in a tar: what npm's and pnpm's
+  extractors read differently)
 - Relates: [0030](0030-build-versus-buy-for-primitives.md) (the decoder is
   Node's zlib, the one npm and pnpm use, not a port),
   [0056](0056-opm-ci-applies-pnpm-patches.md) (whose end-to-end run found it)
@@ -91,30 +92,66 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    a lower bound on where the stream ends (a trailer's length, and deflate data,
    can end in zero bytes), so a limit taken from it could refuse an archive the
    ratio check accepts.
-8. **A lone zero block inside the tar does not end it.** Found by the same
-   review. The tar reader stopped at the first all-zero block, so an entry after
-   one lone zero block was dropped, silently, where npm's node-tar extracts it.
-   It now ends an archive as node-tar 6.2.1 does: at two zero blocks in a row,
-   or at the end of the data. A lone zero block is skipped, and the next block
-   is read as a header: it counts toward `maximumFiles`, and a block that is not
-   a header is refused (node-tar warns `TAR_ENTRY_INVALID`, skips it, and reads
-   on). Nothing after two zero blocks is read, as before. pnpm 10.28.0's
-   `parseTarball` stops at any block whose first byte is zero, so it extracts
-   less than npm from these archives; opm follows npm, which extracts more,
-   rather than drop what npm installs. The oracle is
-   `packages/materializer/test/tar-oracle/` (node-tar and pnpm over the same 10
-   archives).
+8. **opm refuses what the two reference extractors read differently.** Found by
+   the same review. npm extracts with node-tar 6.2.1 and pnpm 10.28.0 with its
+   own `parseTarball`; where the two would install different files from one
+   archive, opm installs neither set and refuses the archive with a typed code,
+   rather than choose a side. Where they agree, opm extracts what both extract.
+   The cases, each in `packages/materializer/test/tar-oracle/` (both readers
+   over the same bytes, 19 archives; `generate.mjs --check` re-runs them):
+   - **The end, `TAR_AMBIGUOUS_END`.** pnpm stops at the first header position
+     whose first byte is 0, and reads a header past the end of the data (and
+     fails). node-tar ends at two null blocks in a row or at the end of the
+     data, and skips a lone null block and a block whose checksum fails. So opm
+     refuses: a lone zero block followed by an entry (npm installs it, pnpm does
+     not), a zero block before the first entry, data that ends with no zero
+     block (pnpm fails, npm installs), and a header whose name starts with NUL
+     with its path in the prefix (pnpm stops there, npm installs it). A lone
+     zero block followed only by blocks node-tar skips, or by a second zero
+     block, ends the archive for both, and opm extracts what came before it;
+     nothing after the end is read. The decision is one pass over the rest of
+     the archive with node-tar's own checksum reading and null-block rule, made
+     once, at the first zero byte in header position.
+   - **The checksum, `TAR_AMBIGUOUS_CHECKSUM`.** node-tar reads the field over
+     12 bytes, into the typeflag and the link name; pnpm and opm over its 8. An
+     8-digit field with no terminator before a typeflag digit is another number
+     to node-tar, which skips the entry; pnpm installs it.
+   - **The prefix, `TAR_AMBIGUOUS_PREFIX`.** node-tar joins the prefix to the
+     name only under `ustar\0` `00` magic; pnpm and opm always do. A prefix with
+     any other magic (none, or GNU's `ustar  `) is refused.
+   - **Blocks that are not all zero.** node-tar also takes for a null block one
+     whose checksum field is not a number and whose other bytes are zero. Where
+     such a block sits at pnpm's end, opm reads it as node-tar does, to decide
+     whether the two agree. Anywhere pnpm reads a header, opm is stricter than
+     node-tar: a block whose checksum fails is refused, where node-tar warns
+     `TAR_ENTRY_INVALID`, skips it and reads on.
+
+   This replaces the first answer to the review, which skipped a lone zero block
+   and extracted the entries after it as npm does, and so installed, from a pnpm
+   lock, files pnpm itself never installs. The rules apply to every tar the
+   materializer reads, whatever the ecosystem: a refusal is the safe side of any
+   disagreement. None of these shapes appears in the registry sample below, nor
+   among the 1,739 archives of OpenSesame's lock; a tar from another ecosystem
+   that ends with no zero block (pnpm's failure) is now refused too, which no
+   test here has met.
 
 ## Consequences
 
 - OpenSesame's lock installs whole, `tests/redteam` and `sylvester@0.0.21`
-  included. Measured 2026-10-17 on linux-x64, Node 22.22.0, a 4-CPU VM under
-  other agents' load (load average 50 to 57): `git archive` of OpenSesame
-  `44a81f2de` and an empty store, both on tmpfs, `opm ci` with no `--filter`
-  exits 0 in 741 s: 2,847 places from 1,739 archives fetched (639.1 MB), 4
-  packages patched by 4 patches, 47 of 71 members linked, 193 optional packages
-  for other platforms left out. `node_modules/sylvester` holds the archive's 20
-  files and loads (`Matrix.create([[1,2],[3,4]]).determinant()` is `-2`).
+  included. Each run: linux-x64, Node 22.22.0, a 4-CPU VM under other agents'
+  load, `git archive` of OpenSesame's main and an empty store, both on tmpfs,
+  `opm ci` with no `--filter`; each exits 0 with 2,847 places from 1,739
+  archives fetched (639.1 MB), 4 packages patched by 4 patches, 47 of 71 members
+  linked, 193 optional packages for other platforms left out, and
+  `node_modules/sylvester` holding the archive's 20 files and loading
+  (`Matrix.create([[1,2],[3,4]]).determinant()` is `-2`):
+
+  | Code                                         | OpenSesame  | Wall    | Load average |
+  | -------------------------------------------- | ----------- | ------- | ------------ |
+  | the padding fix (§1 to §7)                   | `44a81f2de` | 741 s   | 50 to 57     |
+  | after the first review (lone zero skipped)   | `7afd8025b` | 936.5 s | about 44     |
+  | after the second review (§8 as written here) | `034ff40d5` | 1,290 s | 39 to 45     |
+
 - Tests, in `packages/materializer/src/`: `gzip-padding.test.ts` (padding, junk,
   junk behind padding, a member behind padding, two members, a damaged member,
   the size bound, the ratio, the digest); `gzip.test.ts` (400 seeded cases
@@ -123,10 +160,22 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
   the code each case was built for; the decoder's output bound at the bound, and
   refused as output arrives; abort); `gzip-walk.test.ts` (CRC-32, length and
   header CRC named at their member, each optional header field alone, a cut
-  trailer, the walk's budget and member count, an abort at each of its checks);
-  `tar-end.test.ts` (the tar's end against `test/tar-oracle/oracle.json`); and
+  trailer, the walk's budget, alone and as gunzipArchive sets it, its member
+  count, an abort at each of its checks); `tar-end.test.ts` (against
+  `test/tar-oracle/oracle.json`: opm refuses exactly the cases where npm and
+  pnpm install different files, with the code, and extracts node-tar's set where
+  they agree); and
   `packages/opm-project/test/frozen-install.gzip-padding.test.ts` (an install,
   the refusal by package and offset, the lock's integrity over the padding).
+- A sample of 386 registry archives, the first three versions and one from the
+  first third of the versions of 97 packages, most from 2010 to 2014
+  (`registry-tar-end.mjs` from the second review, run on 2026-10-17 against this
+  ADR's code, the stack's base 484dc82 and the ADR's first revision 1d33ec4):
+  none holds a lone zero block or any other shape §8 refuses, and none is
+  refused that either earlier build accepted. 54 of them end their gzip stream
+  with zero padding; the base refused each (`INVALID_COMPRESSION`) and they now
+  extract. The 15 still refused are refused by all three builds, for reasons
+  outside this ADR (11 symlinks, 2 hard links, 2 over the ratio).
 - A package whose archive hides bytes behind its padding installs with npm and
   pnpm and is refused by opm. If one turns up, the refusal names it and the
   offset; accepting it would be a new decision, not a bug fix.

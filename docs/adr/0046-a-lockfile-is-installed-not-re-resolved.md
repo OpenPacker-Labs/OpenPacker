@@ -138,8 +138,8 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    extraction needs in one shared budget, so several large archives are not
    unpacked at once. Zero bytes after an archive's gzip stream are padding, as
    npm and pnpm read them; any other trailing byte is refused by its offset; and
-   a lone zero block inside the tar does not end it, as it does not for npm's
-   node-tar ([ADR 0057](0057-a-gzip-stream-may-end-in-zero-padding.md)).
+   a tar that npm's and pnpm's extractors would read differently is refused
+   ([ADR 0057](0057-a-gzip-stream-may-end-in-zero-padding.md)).
 
 8. **What cannot be honoured is refused, by name, whole.** An entry with no
    `resolved` or no `integrity`, a git or path source: each is listed, up to
