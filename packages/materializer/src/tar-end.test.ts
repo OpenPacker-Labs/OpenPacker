@@ -55,6 +55,8 @@ const REFUSED: Record<string, string> = {
     'TAR_AMBIGUOUS_DIRECTORY',
   'a file named like a directory, with a size, hides the entries inside it':
     'TAR_AMBIGUOUS_DIRECTORY',
+  'a NUL-typed file named like a directory, with a size, hides the entries inside it':
+    'TAR_AMBIGUOUS_DIRECTORY',
   'a directory with a size hides a header and leaves a payload that starts with NUL':
     'TAR_AMBIGUOUS_DIRECTORY',
   'a file named like a directory, with no size': 'TAR_AMBIGUOUS_DIRECTORY',

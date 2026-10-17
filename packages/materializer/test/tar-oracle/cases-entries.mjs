@@ -27,6 +27,8 @@ export const ENTRY_CASES = {
     Z,
     Z,
   ],
+  'a NUL-typed file named like a directory, with a size, hides the entries inside it':
+    [a, entry('package/d/', '', { type: '', size: 1024 }), hidden, Z, Z],
   'a directory with a size hides a header and leaves a payload that starts with NUL':
     [a, directory(512), wasm, Z, Z],
   'a file named like a directory, with no size': [
