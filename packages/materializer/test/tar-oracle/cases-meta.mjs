@@ -118,6 +118,20 @@ export const META_CASES = {
     Z,
     Z,
   ],
+  'a pax length with a leading zero': [
+    a,
+    paxBody('0023 path=package/X.js\n'),
+    decoy,
+    Z,
+    Z,
+  ],
+  'a pax record with no final newline': [
+    a,
+    paxBody('21 path=package/X.jsY'),
+    decoy,
+    Z,
+    Z,
+  ],
   'an extended header with a path, a directory with a link name, then a file': [
     a,
     pax({ path: 'package/X.js' }),

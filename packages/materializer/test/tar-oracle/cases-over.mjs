@@ -5,8 +5,8 @@
  * which yields no file (TAR_AMBIGUOUS_END), a directory header (which has no
  * file) with a checksum or a number node-tar cannot read, a sized directory
  * whose span holds nothing, a path that an extended header gives a directory,
- * a prefix that a pax path overrides, and a newline in a pax record that
- * changes nothing. ADR 0057 section 8 lists them.
+ * a prefix that a pax path overrides, a newline in a pax record that
+ * changes nothing, and a link name on a global header, which node-tar drops. ADR 0057 section 8 lists them.
  */
 
 import {
@@ -102,6 +102,13 @@ export const OVER_CASES = {
   'a record with a newline in its key': [
     a,
     paxBody(paxRecord('co\nmment', 'c')),
+    b,
+    Z,
+    Z,
+  ],
+  'a global header with a link name': [
+    a,
+    pax({ comment: 'c' }, 'g', { linkname: 'zzz' }),
     b,
     Z,
     Z,

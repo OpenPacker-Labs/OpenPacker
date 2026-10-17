@@ -90,6 +90,8 @@ const REFUSED: Record<string, string> = {
   'a benign file, then the same name behind a path with a newline':
     'TAR_AMBIGUOUS_PAX',
   'a newline in the second of two records': 'TAR_AMBIGUOUS_PAX',
+  'a pax length with a leading zero': 'INVALID_PAX_HEADER',
+  'a pax record with no final newline': 'INVALID_PAX_HEADER',
   'an extended header with a path, a directory with a link name, then a file':
     'TAR_AMBIGUOUS_LINK',
   'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
@@ -133,6 +135,7 @@ const OVER_REFUSED: Record<string, string> = {
     'TAR_AMBIGUOUS_PREFIX',
   'a comment record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
   'a record with a newline in its key': 'TAR_AMBIGUOUS_PAX',
+  'a global header with a link name': 'TAR_AMBIGUOUS_LINK',
 };
 
 /**
