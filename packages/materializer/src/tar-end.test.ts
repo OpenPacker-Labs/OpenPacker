@@ -1,27 +1,23 @@
 /**
- * Where a tar archive ends, against npm's own reader. node-tar ends an archive
- * at two zero blocks in a row, or at the end of the data; a lone zero block
- * between entries is skipped, and the entries after it are extracted. Stopping
- * at the first zero block, as the materializer did, extracted less than npm
- * does, silently. pnpm's `parseTarball` stops at any block that starts with a
- * zero byte (recorded in the oracle beside node-tar).
- *
- * The oracle is test/tar-oracle/oracle.json, written by its generate.mjs from
- * node-tar 6.2.1 and pnpm 10.28.0 over the bytes it holds.
+ * opm refuses a tar archive that npm's and pnpm's own readers install
+ * differently, and installs what both install where they agree. The readers
+ * are node-tar 6.2.1 (npm) and pnpm 10.28.0's `parseTarball`, recorded over
+ * the same bytes in test/tar-oracle/oracle.json by its generate.mjs; paths are
+ * compared as installed, the first component stripped.
  */
 
 import { readFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_MATERIALIZATION_LIMITS,
-  inspectArchive,
-  type MaterializationLimits,
-} from './index.js';
+import { inspectArchive, MaterializationError } from './index.js';
+
+type Files = Array<[string, string]>;
 
 interface OracleCase {
   name: string;
   bytes: string;
-  nodeTar: { entries: Array<[string, string]>; warnings: string[] };
+  nodeTar: { entries: Files; warnings: string[] };
+  pnpm: { entries?: Files; error?: string };
 }
 
 const oracle: { cases: OracleCase[] } = JSON.parse(
@@ -31,42 +27,52 @@ const oracle: { cases: OracleCase[] } = JSON.parse(
   ),
 );
 
-/** Where node-tar skips a block that is not a header (with a warning), opm refuses. */
-const REFUSED = new Set([
-  'a lone zero block, then a block that is not a header',
-  'a lone zero block, a block that is not a header, then an entry',
-]);
+/** The code opm refuses each case with where npm and pnpm disagree. */
+const REFUSED: Record<string, string> = {
+  'the end of the data ends it': 'TAR_AMBIGUOUS_END',
+  'a lone zero block between entries': 'TAR_AMBIGUOUS_END',
+  'lone zero blocks between three entries': 'TAR_AMBIGUOUS_END',
+  'a lone zero block before the first entry': 'TAR_AMBIGUOUS_END',
+  'a lone zero block, a block that is not a header, then an entry':
+    'TAR_AMBIGUOUS_END',
+  'a node-tar null block between entries': 'TAR_AMBIGUOUS_END',
+};
 
-const read = async (bytes: Uint8Array, limits?: MaterializationLimits) =>
-  (await inspectArchive(bytes, 'tar', limits))
-    .filter(({ type }) => type === 'file')
-    .map(({ path, data }) => [path, Buffer.from(data).toString()]);
+const disagree = (item: OracleCase) =>
+  !isDeepStrictEqual(item.nodeTar.entries, item.pnpm.entries);
 
-describe('the end of a tar archive', () => {
+/** What opm installs from `bytes`, as the oracle records it, or its refusal. */
+async function opm(bytes: Uint8Array): Promise<Files | { code?: string | undefined }> {
+  try {
+    return (await inspectArchive(bytes, 'tar'))
+      .filter(({ type }) => type === 'file')
+      .map(({ path, data }) => [
+        path.split('/').slice(1).join('/'),
+        Buffer.from(data).toString(),
+      ]);
+  } catch (error) {
+    return {
+      code: error instanceof MaterializationError ? error.code : undefined,
+    };
+  }
+}
+
+describe('a tar archive npm and pnpm read', () => {
+  it('refuses exactly the cases where npm and pnpm disagree', () => {
+    expect(oracle.cases.filter(disagree).map(({ name }) => name)).toEqual(
+      Object.keys(REFUSED),
+    );
+  });
+
   it.each(oracle.cases.map((item) => [item.name, item] as const))(
     '%s',
     async (name, item) => {
-      const bytes = new Uint8Array(Buffer.from(item.bytes, 'base64'));
-      if (REFUSED.has(name)) {
-        expect(item.nodeTar.warnings).toContain('TAR_ENTRY_INVALID');
-        await expect(inspectArchive(bytes, 'tar')).rejects.toMatchObject({
-          // Its checksum field is not a number: it is not a header.
-          code: 'INVALID_TAR_NUMBER',
-        });
-      } else expect(await read(bytes)).toEqual(item.nodeTar.entries);
+      const result = await opm(
+        new Uint8Array(Buffer.from(item.bytes, 'base64')),
+      );
+      expect(result).toEqual(
+        disagree(item) ? { code: REFUSED[name] } : item.nodeTar.entries,
+      );
     },
   );
-
-  it('counts an entry after a lone zero block toward the file limit', async () => {
-    const item = oracle.cases.find(
-      ({ name }) => name === 'a lone zero block between entries',
-    )!;
-    const bytes = new Uint8Array(Buffer.from(item.bytes, 'base64'));
-    await expect(
-      inspectArchive(bytes, 'tar', {
-        ...DEFAULT_MATERIALIZATION_LIMITS,
-        maximumFiles: 1,
-      }),
-    ).rejects.toMatchObject({ code: 'FILE_COUNT_LIMIT' });
-  });
 });

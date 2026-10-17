@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Write oracle.json: what npm's and pnpm's own tar readers list from each
- * case below, where an archive's zero blocks are not only at its end.
+ * Write oracle.json: what npm's and pnpm's own tar readers install from each
+ * case below: archives whose end, checksum, prefix or name the two read
+ * differently, and archives they read alike. Paths are recorded as installed,
+ * the first component stripped (pacote's `strip: 1`; pnpm strips it itself).
  *
  *   node generate.mjs <node-tar 6.2.1 package dir> <pnpm 10.28.0 package dir> [--check]
  *
@@ -25,8 +27,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(here, 'oracle.json');
 const START = 'process.setMaxListeners(0);\nvar argv = process.argv.slice(2);';
 
-/** A ustar header and the data of a regular file, padded to whole blocks. */
-function file(name, text) {
+/**
+ * A header and the data of a regular file, padded to whole blocks: ustar, its
+ * checksum written `NNNNNN\0 `, unless `edit` changes the header first or
+ * `checksum` writes the field another way.
+ */
+function file(name, text, { prefix = '', edit, checksum } = {}) {
   const body = Buffer.from(text);
   const header = Buffer.alloc(512);
   header.write(name, 0);
@@ -39,9 +45,14 @@ function file(name, text) {
   header.write('0', 156);
   header.write('ustar\0', 257);
   header.write('00', 263);
+  header.write(prefix, 345);
+  edit?.(header);
   let sum = 0;
   for (const byte of header) sum += byte;
-  header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148);
+  header.write(
+    checksum?.(sum) ?? `${sum.toString(8).padStart(6, '0')}\0 `,
+    148,
+  );
   return Buffer.concat([
     header,
     body,
@@ -55,6 +66,9 @@ const b = file('package/b.js', 'b');
 const c = file('package/c.js', 'c');
 /** 512 bytes that are not zero and not a header. */
 const garbage = Buffer.alloc(512, 0x41);
+/** What node-tar takes for a null block: a checksum field that is no number, every other byte zero. */
+const N = Buffer.alloc(512);
+N.write('        ', 148);
 
 export const CASES = {
   'two zero blocks end it': [a, Z, Z],
@@ -74,6 +88,9 @@ export const CASES = {
     Z,
     Z,
   ],
+  'a node-tar null block between entries': [a, N, b, Z, Z],
+  'a lone zero block, then a node-tar null block': [a, Z, N, b],
+  'a node-tar null block, then a zero block': [a, N, Z, b],
 };
 
 function loadParseTarball(directory) {
@@ -107,6 +124,7 @@ function loadParseTarball(directory) {
   return load().parseTarball;
 }
 
+/** The files node-tar reads, as pacote installs them: `strip: 1`. */
 async function nodeTar(Parse, bytes) {
   const entries = [];
   const warnings = [];
@@ -114,9 +132,11 @@ async function nodeTar(Parse, bytes) {
     onentry: (entry) => {
       const chunks = [];
       entry.on('data', (chunk) => chunks.push(chunk));
-      entry.on('end', () =>
-        entries.push([entry.path, Buffer.concat(chunks).toString()]),
-      );
+      entry.on('end', () => {
+        const installed = entry.path.split('/').slice(1).join('/');
+        if (/^(?:Old|Contiguous)?File$/u.test(entry.type) && installed !== '')
+          entries.push([installed, Buffer.concat(chunks).toString()]);
+      });
     },
     onwarn: (code) => warnings.push(code),
   });
@@ -133,7 +153,7 @@ function pnpm(parseTarball, bytes) {
     const { files } = parseTarball(bytes);
     return {
       entries: [...files].map(([path, { offset, size }]) => [
-        `package/${path}`,
+        path,
         bytes.subarray(offset, offset + size).toString(),
       ]),
     };
