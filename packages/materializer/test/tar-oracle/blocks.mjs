@@ -70,18 +70,40 @@ export function invalidBase256(length) {
   return field;
 }
 
+/** One pax record, `<length> <key>=<value>\n`, the length counting its own digits. */
+export function paxRecord(key, value) {
+  const line = ` ${key}=${value}\n`;
+  const bytes = Buffer.byteLength(line);
+  let length = bytes + String(bytes).length;
+  length = bytes + String(length).length;
+  return `${length}${line}`;
+}
+
 /**
- * A pax header (`x`, or `g` for a global one) holding `records`, as the
- * "length key=value" lines pax writes; `options` shape its own header.
+ * A record inside another's value: `outer` holds `inner` (whole records end in
+ * a newline, and the inner one's closes the outer). node-tar splits a pax
+ * header at newlines and reads the inner record; pnpm and opm read by length.
+ */
+export function smuggled(outer, inner) {
+  const text = ` ${outer}=x\n${inner}`;
+  const bytes = Buffer.byteLength(text);
+  let length = bytes + String(bytes).length;
+  length = bytes + String(length).length;
+  return `${length}${text}`;
+}
+
+/** A pax header (`x`, or `g` for a global one) around `text`, as written. */
+export function paxBody(text, type = 'x', options = {}) {
+  return entry('PaxHeader/x', text, { ...options, type });
+}
+
+/**
+ * A pax header holding `records` as the "length key=value" lines pax writes;
+ * `options` shape its own header.
  */
 export function pax(records, type = 'x', options = {}) {
   const text = Object.entries(records)
-    .map(([key, value]) => {
-      const line = ` ${key}=${value}\n`;
-      let length = line.length;
-      length += String(length + String(length).length).length;
-      return `${length}${line}`;
-    })
+    .map(([key, value]) => paxRecord(key, value))
     .join('');
-  return entry('PaxHeader/x', text, { ...options, type });
+  return paxBody(text, type, options);
 }

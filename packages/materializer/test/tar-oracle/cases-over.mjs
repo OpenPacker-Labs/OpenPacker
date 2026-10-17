@@ -5,10 +5,21 @@
  * which yields no file (TAR_AMBIGUOUS_END), a directory header (which has no
  * file) with a checksum or a number node-tar cannot read, a sized directory
  * whose span holds nothing, a path that an extended header gives a directory,
- * and a prefix that a pax path overrides. ADR 0057 section 8 lists them.
+ * a prefix that a pax path overrides, and a newline in a pax record that
+ * changes nothing. ADR 0057 section 8 lists them.
  */
 
-import { Z, a, b, entry, file, invalidBase256, pax } from './blocks.mjs';
+import {
+  Z,
+  a,
+  b,
+  entry,
+  file,
+  invalidBase256,
+  pax,
+  paxBody,
+  paxRecord,
+} from './blocks.mjs';
 
 /** A checksum field node-tar reads over 12 bytes as a base-256 number it cannot use. */
 const base256 = (sum) => {
@@ -78,6 +89,20 @@ export const OVER_CASES = {
       prefix: 'package',
       edit: (header) => header.fill(0, 257, 265),
     }),
+    Z,
+    Z,
+  ],
+  'a comment record with a newline in its value': [
+    a,
+    paxBody(paxRecord('comment', 'one\ntwo')),
+    b,
+    Z,
+    Z,
+  ],
+  'a record with a newline in its key': [
+    a,
+    paxBody(paxRecord('co\nmment', 'c')),
+    b,
     Z,
     Z,
   ],

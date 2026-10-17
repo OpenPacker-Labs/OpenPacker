@@ -469,6 +469,8 @@ function parseTar(
         throw unsafe('PAX_HEADER_LIMIT', `${size}`);
       const records = parsePaxRecords(bytes.subarray(dataStart, dataEnd));
       if (records === undefined) throw unsafe('INVALID_PAX_HEADER', name);
+      if (npmReaders)
+        agree.assertPaxRecordsAgree(bytes.subarray(dataStart, dataEnd), offset);
       if (type === 'g') {
         if (records.has('path') || records.has('size'))
           throw unsafe('PAX_GLOBAL_REJECTED', name);

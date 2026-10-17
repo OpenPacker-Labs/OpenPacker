@@ -3,7 +3,17 @@
  * contiguous file, a link name on an entry that is no link.
  */
 
-import { Z, a, b, entry, file, pax } from './blocks.mjs';
+import {
+  Z,
+  a,
+  b,
+  entry,
+  file,
+  pax,
+  paxBody,
+  paxRecord,
+  smuggled,
+} from './blocks.mjs';
 
 const decoy = file('package/decoy.js', 'D');
 const global = pax({ comment: 'c' }, 'g');
@@ -62,6 +72,48 @@ export const META_CASES = {
   'a directory with a link name': [
     a,
     entry('package/d/', '', { type: '5', linkname: 'zzz' }),
+    b,
+    Z,
+    Z,
+  ],
+  'a path record with a newline in its value': [
+    a,
+    paxBody(paxRecord('path', 'package/n\nl.js')),
+    b,
+    Z,
+    Z,
+  ],
+  'a path record smuggled in a comment record': [
+    a,
+    paxBody(smuggled('comment', paxRecord('path', 'package/evil.js'))),
+    b,
+    Z,
+    Z,
+  ],
+  'a size record smuggled in a comment record': [
+    a,
+    paxBody(smuggled('comment', paxRecord('size', '1'))),
+    file('package/f.js', 'abcde'),
+    Z,
+    Z,
+  ],
+  'a path record that ends in a newline': [
+    a,
+    paxBody(paxRecord('path', 'package/X.js\n')),
+    decoy,
+    Z,
+    Z,
+  ],
+  'a benign file, then the same name behind a path with a newline': [
+    file('package/index.js', 'BENIGN'),
+    paxBody(paxRecord('path', 'package/z\nz.js')),
+    file('package/index.js', 'PAYLOAD'),
+    Z,
+    Z,
+  ],
+  'a newline in the second of two records': [
+    a,
+    paxBody(paxRecord('comment', 'c') + paxRecord('path', 'package/n\nl.js')),
     b,
     Z,
     Z,

@@ -74,6 +74,13 @@ const REFUSED: Record<string, string> = {
   'a contiguous file (typeflag 7)': 'TAR_AMBIGUOUS_TYPE',
   'a file with a link name': 'TAR_AMBIGUOUS_LINK',
   'an extended header with a link name, then a file': 'TAR_AMBIGUOUS_LINK',
+  'a path record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
+  'a path record smuggled in a comment record': 'TAR_AMBIGUOUS_PAX',
+  'a size record smuggled in a comment record': 'TAR_AMBIGUOUS_PAX',
+  'a path record that ends in a newline': 'TAR_AMBIGUOUS_PAX',
+  'a benign file, then the same name behind a path with a newline':
+    'TAR_AMBIGUOUS_PAX',
+  'a newline in the second of two records': 'TAR_AMBIGUOUS_PAX',
   'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
   'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
 };
@@ -98,6 +105,8 @@ const OVER_REFUSED: Record<string, string> = {
     'TAR_AMBIGUOUS_PAX',
   'a prefix without ustar magic, under an extended header with a path':
     'TAR_AMBIGUOUS_PREFIX',
+  'a comment record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
+  'a record with a newline in its key': 'TAR_AMBIGUOUS_PAX',
 };
 
 /**

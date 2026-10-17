@@ -172,6 +172,29 @@ function assertLinkNameAgrees(header: Uint8Array, at: number): void {
 }
 
 /**
+ * Refuse a pax header with a newline inside a record, once `parsePaxRecords`
+ * has checked its framing. node-tar splits an extended header at newlines and
+ * keeps a line only if its length prefix counts exactly that line: a record with
+ * a newline in its value is ignored, and one smuggled inside another record's
+ * value is applied. pnpm and opm cut by the length prefix and read the outer
+ * record whole, so they install different files.
+ */
+export function assertPaxRecordsAgree(data: Uint8Array, at: number): void {
+  let from = 0;
+  while (from < data.byteLength) {
+    const space = data.indexOf(0x20, from);
+    const length = Number(Buffer.from(data.subarray(from, space)).toString());
+    const end = from + length;
+    if (data.subarray(space + 1, end - 1).includes(0x0a))
+      throw unsafe(
+        'TAR_AMBIGUOUS_PAX',
+        `the extended header at offset ${at} has a record with a newline in it: npm splits the header there and ignores the record or reads one inside it, pnpm reads the record whole`,
+      );
+    from = end;
+  }
+}
+
+/**
  * Refuse a global header after an extended header whose path or size is still
  * to apply. pnpm applies them to the global header and the file keeps its own
  * name; node-tar and opm carry them across it to the file.
