@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { terminalSafe } from '@openpacker/adapter-core';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   registerInstalledPlugins,
@@ -726,14 +727,20 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
   return switchGeneration({ root, target: target.generationDigest });
 }
 
-/** Report a failure and choose the exit code that tells a script what kind it was. */
+/**
+ * Report a failure and choose the exit code that tells a script what kind it
+ * was. Every failure `opm` reports is printed here, so this is where a message
+ * is made safe for the terminal (`terminalSafe`): a message may carry text a
+ * repository wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
+ */
 export function handleError(error: unknown, io: CliIo): number {
+  const report = (text: string) => io.stderr.write(terminalSafe(text));
   if (error instanceof UsageError) {
-    io.stderr.write(`${error.message}\n`);
+    report(`${error.message}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    report(`opm: ${error.message}\n`);
     switch (error.code) {
       case 'USAGE':
         return EXIT_CODES.usage;
@@ -747,7 +754,7 @@ export function handleError(error: unknown, io: CliIo): number {
     }
   }
   if (error instanceof OpmError) {
-    io.stderr.write(`opm: ${error.message}\n`);
+    report(`opm: ${error.message}\n`);
     switch (error.code) {
       case 'NOT_FOUND':
       case 'NO_PROJECT':
@@ -799,7 +806,7 @@ export function handleError(error: unknown, io: CliIo): number {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
-      io.stderr.write(`opm: ${error.message}\n`);
+      report(`opm: ${error.message}\n`);
       switch (code) {
         case 'OFFLINE':
         case 'UPSTREAM_UNAVAILABLE':
@@ -840,7 +847,7 @@ export function handleError(error: unknown, io: CliIo): number {
       }
     }
   }
-  io.stderr.write(
+  report(
     formatFailure(parseFailure(error), { tool: 'opm', internalError: true }),
   );
   return EXIT_CODES.internal;

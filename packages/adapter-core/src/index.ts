@@ -10,7 +10,7 @@ export {
   type NativeTarget,
 } from './host-target.js';
 export * from './workspace/index.js';
-export { quote } from './terminal-text.js';
+export { quote, terminalSafe } from './terminal-text.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';

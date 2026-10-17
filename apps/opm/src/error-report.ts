@@ -1,4 +1,4 @@
-import { redactUrl } from '@openpacker/adapter-core';
+import { redactUrl, terminalSafe } from '@openpacker/adapter-core';
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -221,13 +221,14 @@ function proxyHint(env: Environment): string | undefined {
  * A coded failure is one opm expected and named; it is reported as before, one
  * line. Any other is unexpected: its message is scrubbed, its cause chain
  * follows, and a connection fault that coincides with an unused proxy setting
- * ends with the one hint that explains it.
+ * ends with the one hint that explains it. Either way the text is made safe
+ * for a terminal (`terminalSafe`), as `opmx` prints it unchanged.
  */
 export function formatFailure(
   failure: Failure,
   { tool, internalError = false, env = process.env }: FailureReportOptions,
 ): string {
-  if (failure.coded) return `${tool}: ${failure.message}\n`;
+  if (failure.coded) return terminalSafe(`${tool}: ${failure.message}\n`);
   const label = internalError ? `${tool}: internal error` : tool;
   const lines = [`${label}: ${scrub(failure.message)}`];
   for (const [depth, cause] of failure.causes.entries())
@@ -236,5 +237,5 @@ export function formatFailure(
     const hint = proxyHint(env);
     if (hint !== undefined) lines.push(`${tool}: ${hint}`);
   }
-  return `${lines.join('\n')}\n`;
+  return terminalSafe(`${lines.join('\n')}\n`);
 }
