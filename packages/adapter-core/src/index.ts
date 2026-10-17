@@ -17,27 +17,12 @@ import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmAst } from './npm-semver-range.js';
 export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
-import type {
-  FrozenLock,
-  FrozenLockOptions,
-  FrozenPatch,
-} from './frozen-lock.js';
+import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+import type { FrozenPatchFormat } from './frozen-patch.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
-export type {
-  FrozenExtraction,
-  FrozenLock,
-  FrozenLockOptions,
-  FrozenLockPackage,
-  FrozenLockRefusal,
-  FrozenLockSkip,
-  FrozenLockWorkspace,
-  FrozenOmit,
-  FrozenPatch,
-  FrozenSourceKind,
-  FrozenWorkspaceInput,
-  FrozenWorkspaceScope,
-} from './frozen-lock.js';
+export type * from './frozen-lock.js';
+export type * from './frozen-patch.js';
 export type {
   NativeLayoutLink,
   NativeLayoutMember,
@@ -431,7 +416,7 @@ export interface InstallOutcome extends InstallPlan {
  * an absent level means the projection does not happen, not that it silently
  * half-happens.
  */
-export interface ProjectFormat {
+export interface ProjectFormat extends FrozenPatchFormat {
   readonly providerId: string;
   /** PURL type whose requirements this format carries. */
   readonly purlType: Ecosystem;
@@ -501,18 +486,6 @@ export interface ProjectFormat {
     project: DetectedProject,
     options: FrozenLockOptions,
   ): Promise<FrozenLock>;
-
-  /**
-   * Apply a patch `readFrozenLock` gave a package to that package's extracted
-   * files in `packageDir`, a private copy no layout links yet: whole, or
-   * throwing with the files as they were. Called after the archive was proved
-   * to be the package the lock names, and before anything is published.
-   */
-  applyFrozenPatch?(
-    packageDir: string,
-    patch: FrozenPatch,
-    label: string,
-  ): Promise<void>;
 
   /**
    * Where `writeLayout` can write when `root` holds no native manifest.
