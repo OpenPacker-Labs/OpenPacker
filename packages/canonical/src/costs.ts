@@ -21,12 +21,16 @@
  *   slots a member, and such a document at the limit needed 1.06 times its
  *   cost. The parser now charges that dictionary at its size beyond these
  *   weights (`member-table.ts`), and such a document needs about 0.54 of its
- *   cost (ADR 0044, "The member table charged").
+ *   cost (ADR 0044, "The member table charged"). A member named by an array
+ *   index (`"7"`, `"1023"`) is an element, not a property, and V8 grows that
+ *   store by its own rule; the parser charges it on top of these weights
+ *   (`member-table.ts`, ADR 0044, "A member named by an array index").
  * - `retained` is what the finished tree keeps, for a holder that keeps trees
  *   (a resolve counts the packuments it holds by it). It is above what the
- *   tree kept for every real packument and for an object of every member count
- *   measured, and below it by up to 1.3 times for an array just past a growth
- *   step.
+ *   tree kept for every real packument, for an object of every member count
+ *   measured and for every index-named object measured (at least 1.30 times
+ *   what the tree kept), and below it by up to 1.3 times for an array just
+ *   past a growth step.
  *
  * Nothing here is a V8 constant; they are what a build of Node 22 measured, and
  * `canonical/test/parse-costs.test.ts` measures them again.

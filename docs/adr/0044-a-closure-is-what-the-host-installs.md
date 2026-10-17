@@ -341,8 +341,10 @@ independent review got the same two figures.
   size (219 and 562 before), so each limit is 1.97 and 1.20 times the heaviest
   real document it reads, and a real packument may cost at most 85 percent of
   its limit ("The member table charged"). Other documents keep the 200,000 value
-  default. The parser enforces the limit as it builds the tree and refuses the
-  first part past it; it never counts a finished tree.
+  limit and, since the review of 2026-10-17, a cost limit of 256 MiB
+  (`DEFAULT_METADATA_PARSE_COST`, "A member named by an array index"). The
+  parser enforces the limit as it builds the tree and refuses the first part
+  past it; it never counts a finished tree.
 - **The bound is enforced while the body arrives.** A `Content-Length` over the
   limit is refused without reading the body; otherwise chunks are counted as
   they come and the read is cancelled on the chunk that crosses the limit. A
@@ -1710,8 +1712,10 @@ model gives, 16 bytes a member.
   The charged parser refuses the documents of 120,210 and 405,945 objects, which
   now cost 1,234 and 1,120 MiB (`CanonicalJsonLimitError`, ASCII and `€`). Every
   one of the 38 calibration shapes needed at most 0.60 of its cost, and the
-  charge only adds to a cost. The cost is therefore at least the peak for every
-  shape measured.
+  charge only adds to a cost. The cost is therefore at least the peak for each
+  of the 38 shapes. None of them names a member by an array index, which V8
+  keeps outside the member table; such a member is charged apart ("A member
+  named by an array index").
 
 - **The real packuments.** Each cost is by composition, with the tables charged
   from `packument-survey-objects.json`, in MiB and as a share of the limit:
@@ -1753,13 +1757,130 @@ model gives, 16 bytes a member.
     (`HEADROOM` in `packument-headroom.test.ts`).
   - Why: the largest known real packument, `@wix/wix-code-types` in full,
     estimates at 83.1 percent of its limit, while its parse needs 196 MiB at the
-    peak. The estimate is now at least the peak for every shape, and the rule
-    holds the estimate, not the real need.
+    peak. The estimate is now at least the peak for each of the 38 shapes and
+    the real packuments, and the rule holds the estimate, not the real need.
   - In the same shape, that document would reach 85 percent of the limit at 74.7
     MiB and the limit at 87.8 MiB, both before the 96 MiB byte bound.
   - The abbreviated limit is unchanged. `renovate`'s abbreviated packument is
     1.97 times under it, and a document of its composition at the 64 MiB byte
     bound would cost 487 MiB: the byte bound is still what stops a real one.
+
+**A member named by an array index (decided 2026-10-17).** The review of the
+pushed parse found that `{"1023":0,"2575":0}` keeps 31,234 bytes at a charged
+cost of 478, 65 times its cost: a packument of 674 KB, 3 percent of the
+abbreviated limit, ended a process under `--max-old-space-size=1024` with exit
+134, and at the limit the same document would need about 34 GB (abbreviated) or
+47 GB (full). The parser charged such a member as any other. It is not any
+other: V8 keeps a name that is an array index as an element, not as a property,
+so it is not in the object's member table, and the elements store the first one
+makes is far larger than the table the object is charged for.
+
+- **The rule, as modelled and measured.** A name is an index when it is `0` or a
+  decimal with no sign, no leading zero and no more than 4,294,967,294
+  (`isArrayIndex`; an escaped name such as `1` is the name it spells). V8 gives
+  an object's elements `(i + 1) + (i + 1) / 2 + 16` slots of 8 bytes for an
+  index `i` less than 1,024 past the end of the store, and a store of more than
+  5,000 slots (500 in the old generation) stays a fast array only while its
+  capacity is under about 27 slots a member; past that it becomes a dictionary
+  of three words a member. This is V8's rule as modelled here and checked
+  against the measurements below, not a constant of Node. The parser sets
+  `result[key] = value` one member at a time, so it gets the store that rule
+  gives, where V8's own `JSON.parse` sizes it exactly (208 bytes for
+  `{"1023":0,"2575":0}`). That is why the readers that call `JSON.parse`
+  directly (cargo, Go) are unaffected.
+- **What is charged** (`member-table.ts`, `budget.ts`). `FIRST_INDEX_MEMBER`,
+  40,016 bytes (5,000 slots and a header), once for an object, on its first
+  index-named member; `INDEX_MEMBER`, 216 bytes (27 slots), for every
+  index-named member. Both go to the peak and to the retained estimate. They are
+  an upper bound on purpose: the worst kept past the flat 40,016 was 118 bytes a
+  member (names 16 apart, 4,096 of them), against 216.
+- **What was kept** (`elements.json`, `elements.test.ts`), bytes an object of
+  such names kept after a collection, on Node 22.22.0 (V8 12.4); Node 20.20.0
+  and 21.7.3 (V8 11.3 and 11.8) measured within 1 percent of these for every
+  store past 1 KB and at most 12 percent above for an object of one member. Node
+  24 was not available to measure here. The retained estimate and the cost, as a
+  multiple of what was kept:
+
+  | names                             | members | kept      | retained / kept | cost / kept |
+  | --------------------------------- | ------- | --------- | --------------- | ----------- |
+  | `"0"`                             | 1       | 336       | 120.5           | 120.9       |
+  | `"1023"`                          | 1       | 12,616    | 3.21            | 3.22        |
+  | `"1000000"` (dictionary elements) | 1       | 400       | 101.2           | 101.6       |
+  | `"1023"`, `"2575"`                | 2       | 31,240    | 1.30            | 1.31        |
+  | 0, 1040, 2600                     | 3       | 31,342    | 1.31            | 1.31        |
+  | every 9th to 21,846               | 21,846  | 2,276,340 | 3.06            | 6.15        |
+  | every 16th to 4,096 members       | 4,096   | 525,097   | 2.36            | 2.61        |
+  | every 1,000th, 1,000 members      | 1,000   | 49,456    | 6.78            | 7.48        |
+
+  The least of the 26 measured rows is 1.30 (retained) and 1.31 (cost), two
+  members under 5,000 slots; the greatest is 120 for an object of one member,
+  which the flat allowance over-counts as it must. A resolve that holds such
+  trees therefore counts at least 1.30 times what they keep, where for the
+  objects of 86 members it counted 1.64 times too few.
+
+- **At the byte bound, in a child.** Three kinds of document (an array of
+  `{"1023":0}`, of `{"1023":0,"2575":0}` and of `{"0":0,"1040":0,"2600":0}`) are
+  built to the 64 MiB and the 96 MiB bound and read by `json()` under
+  `--max-old-space-size=1024`. Each is refused at the limit, with
+  `Provider metadata exceeds 536870912 bytes of parsed size` (abbreviated) or
+  `754974720` (full), in 4.6 to 8.3 s; before the charge all six ended the
+  process with SIGABRT (`apps/opm/test/index-names.test.ts`, which requires
+  status 3 and no signal).
+- **At 0.97 of the limit.** The same kinds, and a two-byte one, sized to 0.97 of
+  each limit are accepted, and the least heap that reads them, bisected to 2
+  percent with the real provider, is:
+
+  | document        | abbreviated | full    |
+  | --------------- | ----------- | ------- |
+  | `idx1`          | 175 MiB     | 240 MiB |
+  | `idx2`          | 404 MiB     | 568 MiB |
+  | two-byte `idx2` | 404 MiB     | 568 MiB |
+  | `idxObj`        | 416 MiB     | 568 MiB |
+
+  The cost (496.6 and 698.4 MiB) is above the need by 1.2 to 2.9 times, and the
+  heaviest need is 55.5 percent of a 1 GiB heap, with the text and the process.
+
+- **The hostile set**, the review's 44 kinds at each limit, each sized to 0.97
+  of the limit and read through the real provider in a 1 GiB heap: all 88 exited
+  0, 74 accepted and 14 refused by `MetadataLimitError` or `ProviderError`, none
+  ended by the heap. The largest peak RSS was 751 MiB (the full two-byte
+  `idx2`).
+- **The 38 shapes, again.** None names an index, so no cost moved. The least
+  heap of each, bisected again on the charged parser, is within 12 MiB of the
+  run before (the bisection's step), and the greatest peak over cost is 0.61
+  (`"€<999 characters>"`), where it was 0.60.
+- **The real packuments, read live on 2026-10-17.** None of the 22 surveyed
+  names a member by an index, so the charge is zero for them and the headroom is
+  as it was: `@wix/wix-code-types` full, 618,254 objects, 598.3 MiB of 720 (83.1
+  percent); `renovate` full, 540.8 MiB (75.1 percent); `next` abbreviated, 184.1
+  MiB of 512 (35.9 percent).
+- **Every registry document has a cost limit** (`metadata-json.ts`). `json()`
+  and `jsonWithCost()` took a cost limit only from a caller that named one, so a
+  document read by a provider that did not had the 200,000 value count and
+  nothing else (the cargo and Go readers call `JSON.parse` on a byte-bounded
+  body, which sizes an object's elements exactly, and are not affected). They
+  now apply `DEFAULT_METADATA_PARSE_COST`, 256 MiB, to a call with no
+  `maximumCost`. The 66,600-object document above is refused there with
+  `Provider metadata exceeds 268435456 bytes of parsed size`, where it ended a 1
+  GiB child before; 66,000 objects `{"a":1}` are read whole, and 200,000 values
+  are still refused for their count (`metadata-json.test.ts`). The packument
+  limits are unchanged, at 512 and 720 MiB.
+- **Not done: the documents with no limit at all.** Several reads of a network
+  body call `parseCanonicalJson` and not a costed parse: the packslip discovery,
+  verification and resolve payloads and the packslip provider's, the SDK's event
+  lines, the bodies of requests to `openpackerd` and `openpacker-registry`, and
+  the `opm-project` publish client's receipt. The charge is in the parser, so a
+  cost is counted for them, but none is limited. Each needs its own limit, and
+  what it should be depends on what that document is for. They are the same
+  fault in other readers and are not changed here.
+- **Not done: making V8 give the store back.** Deleting the largest index of an
+  object after setting it might shrink the store. The charge does not rely on a
+  behaviour of V8 that the parse cannot see.
+- **Also in this round.** A user name and a password before a host with no
+  scheme (`user:secret@host`) are withheld by the redactor as one with a scheme
+  already was (`USERINFO` in `redact-text.ts`; `redact-text.userinfo.test.ts`
+  and, through a workspace lock's refusal, `lock-tree.userinfo.test.ts`, each
+  with both spellings on one line).
 
 **The shapes of the table above, end to end.** The same loopback server and the
 repository's own `BoundedFetchTransport` and `NpmRegistryProvider`, every body
@@ -2064,8 +2185,11 @@ archive's bound on what it expands to and is not touched here.
 
 - The other ecosystems' metadata bounds (cargo, PyPI, NuGet, Go, Maven: 8 MiB
   each) were not measured against their registries here. They keep the 200,000
-  value default, which is not a cost limit: 200,000 empty objects keep about 40
-  MiB, and an 8 MiB document cannot hold more values than that.
+  value limit and the default cost limit of 256 MiB
+  (`DEFAULT_METADATA_PARSE_COST`). The value limit alone was not a cost limit:
+  200,000 empty objects keep about 40 MiB, but 200,000 values can be 66,600
+  objects of two members named by array indices, 1.3 MB, which V8 gives about 40
+  KiB each ("A member named by an array index").
 - The cost limit allows a tree that costs at most 512 MiB (abbreviated) or 720
   MiB (full) by `PARSE_COSTS.peak`. The heaviest document it lets through, of
   the seventeen kinds of the tables above sized at 0.95 of the limit or at the
@@ -2084,11 +2208,12 @@ archive's bound on what it expands to and is not touched here.
   member table charged"). The load was 4 to 17, so wall seconds ran to 10.4 and
   18.7 and were 12.6 at a load of 4. These are the heaviest kinds tried and not
   a proven maximum: a kind that allocates more for each unit of cost than any of
-  them would exceed the figures, which is why `parse-calibration.test.ts`
-  measures twelve again on whatever Node runs the tests. The heap leaves room
-  for the text of the document, which is two bytes a character if one is past
-  U+00FF (128 MiB and 192 MiB), and for 43 MiB of the process: 683 MiB and 955
-  MiB.
+  them would exceed the figures (objects of members named by array indices were
+  such a kind, 65 times over: "A member named by an array index"), which is why
+  `parse-calibration.test.ts` measures twelve again on whatever Node runs the
+  tests. The heap leaves room for the text of the document, which is two bytes a
+  character if one is past U+00FF (128 MiB and 192 MiB), and for 43 MiB of the
+  process: 683 MiB and 955 MiB.
 - Before the cost limit the value limit allowed 2,169 to 2,683 MiB in 22.5 to
   30.4 s for an abbreviated packument and 3,149 to 3,956 MiB in 37.1 to 44.1 s
   for a full one (history, the tables above); 64 MiB of one object of
@@ -2119,9 +2244,13 @@ archive's bound on what it expands to and is not touched here.
   That is accepted for opm as it is run, and not claimed as a bound under a 1
   GiB heap: opm runs with Node's default heap (on the 16 GB machine of these
   measurements Node 22's limit is 8,240 MiB), the pair does not end it there,
-  and no one document can end it under 1 GiB. A resolve held to 1 GiB would need
-  a budget, and a full packument limit, that leave room for each other, which is
-  a decision about the real packuments first.
+  and no one document of the kinds tried ended a process under 1 GiB (88
+  documents, 44 kinds at each limit, "A member named by an array index"). That
+  is a measurement of those kinds and not a proof that none can: until the
+  charge for a member named by an array index, one could, at both limits. A
+  resolve held to 1 GiB would need a budget, and a full packument limit, that
+  leave room for each other, which is a decision about the real packuments
+  first.
 - A refusal for cost or for values is exit 9 (`internal`) from `opm`, as a
   registry's other unusable document is (`INVALID_PROVIDER_METADATA`), where a
   refusal for bytes is exit 8. That is how it was; it is not changed here.
@@ -2132,7 +2261,13 @@ archive's bound on what it expands to and is not touched here.
   it is below what the tree keeps by up to 1.64 times (objects of 86 members,
   above) and 1.3 times (600,000 small integers in an array, which V8 has grown
   by half again: 11.7 bytes an element against 9), so a budget filled with such
-  trees holds up to 1.64 times what it counts. The estimate is a model and not a
+  trees holds up to 1.64 times what it counts. For an object whose members are
+  named by array indices it is above what the tree keeps in every one of the 26
+  kinds measured, by 1.30 times at least (two members, 1,023 and 2,575) and by
+  120 times for an object of one member, since the first index-named member is
+  charged for the store V8 may give it ("A member named by an array index"); a
+  budget filled with such trees therefore holds less than it counts, and a
+  resolve evicts earlier than it need. The estimate is a model and not a
   measurement of the process: what the walk is using is not in it, and neither
   is what a provider other than npm's keeps (the cargo, Go, Maven, NuGet and
   PyPI providers keep their records, and their bodies with them, without
@@ -2175,9 +2310,20 @@ archive's bound on what it expands to and is not touched here.
   `member-tables.json`), and the member counts of every surveyed packument's
   objects, which must add up to its row and are charged in its cost, at most 85
   percent of its limit (`packument-headroom.test.ts` over
-  `packument-survey-objects.json`). The weights' other shapes, the 96 MiB
-  bodies, the time figures, the live-registry runs and the peak RSS of the
-  resolve of `next` were measured by scripts run for this amendment, which are
+  `packument-survey-objects.json`), the charge for a member named by an array
+  index against what 26 kinds of object kept, the exact charge, an escaped name
+  and the names that are not indices (`elements.test.ts` over `elements.json`),
+  the cost limit every registry document is read under, the 66,600-object
+  document refused and the 66,000-object one read whole
+  (`metadata-json.test.ts`), objects of index-named members at both byte bounds
+  in a child under a 1 GiB heap, a refusal and not exit 134
+  (`index-names.test.ts`), and a user name and a password before a host with no
+  scheme, withheld beside one with a scheme (`redact-text.userinfo.test.ts`,
+  `lock-tree.userinfo.test.ts`). The weights' other shapes, the 96 MiB bodies,
+  the time figures, the live-registry runs, the peak RSS of the resolve of
+  `next`, and, for the member named by an array index, the 38 shapes again, the
+  hostile set and the least heaps at 0.97 of each limit, and the live counts of
+  index-named members were measured by scripts run for this amendment, which are
   not in the repository, and no test fails if those figures change.
 - The full packument of `@wix/wix-code-types` is at three quarters of its byte
   bound (72.96 of 96 MiB) and costs 598.0 of 720 MiB by its composition as read
@@ -2188,14 +2334,26 @@ archive's bound on what it expands to and is not touched here.
   most 85 percent of its limit, which was four fifths before the charge ("The
   member table charged"). So it would pass 85 percent at 74.7 MiB and its cost
   would bind at 87.8 MiB if it grew in the same shape, though it grows only 0.35
-  MiB a year. `renovate`'s full document is at 72 percent of its byte bound
-  (69.14 MiB on 2026-10-17, 68.58 five days before) and costs 540.4 MiB with its
-  member tables charged; it reaches 96 MiB in about 1.3 years at last year's
-  pace, before its cost reaches the limit (at 1.33 times under), and its
-  abbreviated document reaches 64 MiB in about 2.9, costing 487 MiB of 512 by
-  then with its member tables charged; the bounds should be revisited before
-  then. Raising the full packument's byte bound means accepting a larger limit:
-  the heap left for a document of 96 MiB of two-byte text is already 7 percent.
+  MiB a year. **Known limit.** It has 13.7 MiB of margin to the 85 percent rule
+  and its cost grows about 2.8 MiB a year (70 versions published in the last 365
+  days, about 0.04 MiB of cost each; 15,119 versions in all), so the rule has
+  about five years for it, and the limit itself (121.7 MiB under) about forty.
+  The headroom test reads the recorded survey, not the registry, so the growth
+  will not turn it red by itself: the survey is to be read again before then. To
+  raise the limit safely: read the survey again and add the new heaviest
+  document; keep the limit, the two-byte text of the byte bound and 43 MiB of
+  process under the heap the hostile tests use (`--max-old-space-size=1024`),
+  with the 7 percent left now, or raise that heap together with the limit; run
+  the hostile set and the 38 shapes again on the new limit; and, if the weights
+  are to change, fit them again against measured peaks. `renovate`'s full
+  document is at 72 percent of its byte bound (69.14 MiB on 2026-10-17, 68.58
+  five days before) and costs 540.4 MiB with its member tables charged; it
+  reaches 96 MiB in about 1.3 years at last year's pace, before its cost reaches
+  the limit (at 1.33 times under), and its abbreviated document reaches 64 MiB
+  in about 2.9, costing 487 MiB of 512 by then with its member tables charged;
+  the bounds should be revisited before then. Raising the full packument's byte
+  bound means accepting a larger limit: the heap left for a document of 96 MiB
+  of two-byte text is already 7 percent.
 - The sample is 4,887 names and the full packument of 400 of them (above); it is
   not the registry, and it missed `renovate`, which a second look found. The
   composition of each of the 22 packuments in `packument-survey.ts` is of one
