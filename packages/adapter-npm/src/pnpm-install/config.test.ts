@@ -114,7 +114,7 @@ describe("a pnpm project's settings", () => {
       undefined,
       /os must be a list of strings/u,
     ],
-    [{ name: 'a' }, 'overrides: [', /pnpm-workspace\.yaml is not valid YAML/u],
+    [{ name: 'a' }, 'overrides: [', /pnpm-workspace\.yaml" is not valid YAML/u],
   ])(
     'refuses a setting of the wrong shape: %j',
     async (manifest, workspace, message) => {

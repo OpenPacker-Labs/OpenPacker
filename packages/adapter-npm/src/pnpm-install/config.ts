@@ -11,12 +11,9 @@
  * architectures, used to widen the platforms when asked.
  */
 
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
-import { join } from 'node:path';
 import { ProviderError } from '@openpacker/adapter-core';
-import { parse } from 'yaml';
 import { MAXIMUM_MANIFEST_BYTES, readBounded } from '../frozen-read.js';
+import { readWorkspaceFile } from './workspace-file.js';
 
 /** Platforms a project asks pnpm to install optional packages for. */
 export interface SupportedArchitectures {
@@ -34,8 +31,6 @@ export interface PnpmProjectConfig {
   /** The patches the project declares, by `name@version` or name. */
   readonly patches: readonly string[];
 }
-
-const MAXIMUM_WORKSPACE_BYTES = 1024 * 1024;
 
 type Json = Record<string, unknown>;
 
@@ -100,39 +95,6 @@ function parseRecord(text: string, path: string): Json {
       `${path} must be a JSON object`,
     );
   return parsed;
-}
-
-async function readWorkspaceFile(root: string): Promise<Json> {
-  const path = join(root, 'pnpm-workspace.yaml');
-  let text: string;
-  try {
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const info = await handle.stat();
-      if (!info.isFile() || info.size > MAXIMUM_WORKSPACE_BYTES)
-        throw new ProviderError(
-          'INVALID_MANIFEST',
-          `${path} is not a regular file of at most ${MAXIMUM_WORKSPACE_BYTES} bytes`,
-        );
-      text = await handle.readFile('utf8');
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    // SAFETY: Node file errors carry a string `code`.
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-    throw error;
-  }
-  let parsed: unknown;
-  try {
-    parsed = parse(text, { maxAliasCount: 64, uniqueKeys: true });
-  } catch (error) {
-    throw new ProviderError(
-      'INVALID_MANIFEST',
-      `${path} is not valid YAML: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`,
-    );
-  }
-  return isRecord(parsed) ? parsed : {};
 }
 
 /** `$name` in an override is the specifier the root manifest gives `name`. */
