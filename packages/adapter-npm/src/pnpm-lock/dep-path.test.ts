@@ -249,6 +249,10 @@ describe('parseDepPath: refusals', () => {
     expect(shown).toContain(
       'the peer "ui" satisfied by the workspace member at "../ui"',
     );
+    // The member is installed, as a link; what opm ci does not lay out is an
+    // instance of the package keyed by it.
+    expect(shown).toContain('keyed by a workspace member');
+    expect(shown).not.toContain('does not place');
     // Not a peer, a package that is a link: the general message stays.
     expect(message('ui@link:../ui')).toContain('has a version that');
   });

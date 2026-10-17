@@ -143,7 +143,7 @@ function parseAt(budget: Budget, text: string, nesting: number): DepPath {
     throw refuse(
       budget,
       text,
-      `is the peer ${quote(name)} satisfied by the workspace member at ${quote(version.slice(5))}, a directory this install does not place: a package whose peer is a workspace member is refused`,
+      `is the peer ${quote(name)} satisfied by the workspace member at ${quote(version.slice(5))}: opm ci does not lay out an instance of a package keyed by a workspace member, so a package whose peer is a workspace member is refused`,
     );
   const kind = classifyVersion(version);
   if ('problem' in kind)
