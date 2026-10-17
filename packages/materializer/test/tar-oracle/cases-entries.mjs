@@ -3,9 +3,9 @@
  * directory.
  */
 
-import { Z, a, b, file, shaped } from './blocks.mjs';
+import { Z, a, b, file, entry } from './blocks.mjs';
 
-const directory = (size) => shaped('package/d/', '', { type: '5', size });
+const directory = (size) => entry('package/d/', '', { type: '5', size });
 /** An entry and its one block of data, 1,024 bytes after a directory header. */
 const hidden = file('package/hidden.js', 'hidden');
 /** A payload that starts with NUL, as every WebAssembly module does. */
@@ -22,7 +22,7 @@ export const ENTRY_CASES = {
   ],
   'a file named like a directory, with a size, hides the entries inside it': [
     a,
-    shaped('package/d/', '', { size: 1024 }),
+    entry('package/d/', '', { size: 1024 }),
     hidden,
     Z,
     Z,
@@ -31,7 +31,7 @@ export const ENTRY_CASES = {
     [a, directory(512), wasm, Z, Z],
   'a file named like a directory, with no size': [
     a,
-    shaped('package/d/', ''),
+    entry('package/d/', ''),
     Z,
     Z,
   ],

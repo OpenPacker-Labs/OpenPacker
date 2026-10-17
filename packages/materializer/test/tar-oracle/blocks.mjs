@@ -51,7 +51,7 @@ N.write('        ', 148);
  * name set before the checksum is written. The body is `text`, whatever the
  * size field says.
  */
-export function shaped(name, text, { type, size, linkname, ...rest } = {}) {
+export function entry(name, text, { type, size, linkname, ...rest } = {}) {
   return file(name, text, {
     ...rest,
     edit: (header) => {
