@@ -273,17 +273,21 @@ design:
        and moves to `dependencies` when the replacement is not a peer range
        (node-semver's `validRange`, which takes `v1` and `~>1` as ranges too). A
        selector is split at the first `>` pnpm splits at. Every npm range is
-       read as node-semver 7.7.3 (the copy pnpm 10.28 bundles) reads it: the
-       range reader of `adapter-core` follows node-semver's own steps for the
-       npm scheme (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`,
-       `x.y`, `> = 1`) and keeps the comparators it keeps (`1.2` is
-       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`). `npm-range-oracle.json` holds
-       node-semver's answers for 1,142 ranges and 30 versions and the parser
-       must give each; the review differential found 0 differences over 123,039
-       ranges. So no override is left in doubt: an override written `v1.x` or
-       `<=1.2` applies where pnpm applies it (pnpm 10.28 found such a lock up to
-       date). Before this the reader read some forms its own way and opm refused
-       the override as its own rule rather than guess.
+       read as node-semver 7.7.2 reads it, the version pnpm 10.28's own code
+       embeds (`dist/pnpm.cjs`) and npm 10.9 uses; the 7.7.3 pnpm ships beside
+       its bundle is node-gyp's, and differs only in stripping build metadata
+       first, so 7.7.2 refuses `=1+b`, `<=1.2+b` and `1.x+b`. The range reader
+       of `adapter-core` follows node-semver's own steps for the npm scheme
+       (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`, `x.y`,
+       `> = 1`, `=1+b`) and keeps the comparators it keeps (`1.2` is
+       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`, `>=0.0.0+build` is `>=0.0.0`).
+       `npm-range-oracle.json` holds node-semver 7.7.2's answers for 1,150
+       ranges and 30 versions and the parser must give each; the review
+       differential found 0 differences over 123,039 ranges. So no override is
+       left in doubt: an override written `v1.x` or `<=1.2` applies where pnpm
+       applies it (pnpm 10.28 found such a lock up to date). Before this the
+       reader read some forms its own way and opm refused the override as its
+       own rule rather than guess.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it

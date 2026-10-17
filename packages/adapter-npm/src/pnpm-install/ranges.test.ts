@@ -1,8 +1,8 @@
 /**
  * Where `ranges.ts` disagreed with node-semver (the review of #179, round 2,
  * N3): every pair and form below is one the review's differential found, with
- * node-semver's answer (7.7.3, the copy pnpm 10.28 bundles, and 7.8.5 agree on
- * each), and a few beside them that must keep their answer.
+ * node-semver 7.7.2's answer (the version pnpm 10.28's own code embeds), and a
+ * few beside them that must keep their answer.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -40,7 +40,8 @@ describe('rangesIntersect, against node-semver', () => {
   );
 
   it.each([
-    ['<0.0.0', '>=0.0.0+build', true],
+    // 7.7.2 keeps the build, so this is `>=0.0.0` and not `*` (7.7.3: true).
+    ['<0.0.0', '>=0.0.0+build', false],
     // `*` beside another comparator is dropped, as node-semver drops it.
     ['<0.0.0', '>=0.0.0 <1.0.0', false],
     ['<0.0.0', '* <1.0.0', false],

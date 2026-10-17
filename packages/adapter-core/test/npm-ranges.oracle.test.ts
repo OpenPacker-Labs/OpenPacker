@@ -9,8 +9,8 @@ import {
 } from '../src/index.js';
 
 /**
- * npm-range-oracle.json holds what node-semver 7.7.3, the copy pnpm 10.28.0
- * bundles, read each range in test/fixtures/workspace-oracle/oracle-npm-ranges.mjs
+ * npm-range-oracle.json holds what node-semver 7.7.2, the version pnpm 10.28.0's
+ * own code embeds, read each range in test/fixtures/workspace-oracle/oracle-npm-ranges.mjs
  * as (`new Range(range).range`) and which versions satisfy it, or null where
  * it refuses the range. The npm scheme of the range parser must read every one
  * the same: refuse what it refuses, keep the comparators it keeps, and answer
@@ -52,8 +52,8 @@ const compare = (left: string, right: string) =>
 describe('npm ranges, against node-semver as pnpm reads them', () => {
   it('asks about enough ranges and versions to mean something', () => {
     const answers = Object.values(oracle.answers);
-    expect(answers.length).toBeGreaterThanOrEqual(1142);
-    expect(answers.filter((answer) => answer === null).length).toBe(382);
+    expect(answers.length).toBeGreaterThanOrEqual(1150);
+    expect(answers.filter((answer) => answer === null).length).toBe(388);
     expect(oracle.versions).toHaveLength(30);
   });
 

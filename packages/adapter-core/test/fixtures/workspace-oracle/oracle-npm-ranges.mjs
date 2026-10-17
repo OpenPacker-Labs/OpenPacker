@@ -2,8 +2,12 @@ import { PINNED } from './tools.mjs';
 import { rangeList } from './oracle-ranges.mjs';
 
 /**
- * The npm range grammar as pnpm reads it: node-semver 7.7.3, the copy pnpm
- * 10.28.0 bundles, strict (`new Range(range)`, `satisfies(version, range)`).
+ * The npm range grammar as pnpm reads it: node-semver 7.7.2, the version pnpm
+ * 10.28.0's own code embeds (and npm 10.9.4's copy, which stands in for it;
+ * `tools.mjs` checks the two are one version), strict (`new Range(range)`,
+ * `satisfies(version, range)`). 7.7.3, which pnpm ships beside its bundle for
+ * node-gyp, strips build metadata a range writes after a partial version
+ * (`=1+b`); 7.7.2, and so pnpm and npm, refuse that range.
  * The battery is every operator spelling against every operand below, the
  * ranges after them, and the workspace range battery; the versions sit on the
  * edges a range is read at (zeros, a `-0` bound, prereleases on a bound).
@@ -175,6 +179,14 @@ const OTHERS = [
   'v1 || v2.x',
   '>=1.3.0-beta <1.3',
   '>=1.2.3-beta <=1.2',
+  '=1+b',
+  '<=1.2+b',
+  '1.x+b',
+  '^1.2+b',
+  '~1+b',
+  '>1.x+b',
+  '1.2.x+b',
+  '>=0.0.0+build <1',
 ];
 
 /** Every range asked about, in a fixed order, each once. */
@@ -192,7 +204,7 @@ export function npmRangeList() {
  * `null` where it refuses the range.
  */
 export function npmRangeOracle(tools) {
-  const { pnpmSemver: semver } = tools;
+  const { semver } = tools;
   const answers = {};
   for (const range of npmRangeList()) {
     let read = null;
@@ -213,7 +225,7 @@ export function npmRangeOracle(tools) {
   }
   return {
     generatedWith: {
-      semver: `semver ${PINNED.pnpmSemver}, the copy inside pnpm ${PINNED.pnpm}: new Range(range).range and satisfies(version, range); null where new Range(range) throws`,
+      semver: `semver ${PINNED.semver}, the version pnpm ${PINNED.pnpm} embeds (npm ${PINNED.npm}'s copy): new Range(range).range and satisfies(version, range); null where new Range(range) throws`,
     },
     versions: VERSIONS,
     answers,

@@ -2104,7 +2104,7 @@ function astVers(ast: RangeAst): string | undefined {
 }
 
 /**
- * An npm range as node-semver 7.7.3 reads it (`npm-semver-range.ts`): what it
+ * An npm range as node-semver 7.7.2 reads it (`npm-semver-range.ts`): what it
  * refuses is refused, and `bare`, `commaAnd` and `hyphenRanges` do not apply,
  * npm's grammar fixing all three.
  */
