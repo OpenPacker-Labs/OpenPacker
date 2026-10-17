@@ -73,7 +73,9 @@ export async function collectSharedStore(
   for (const leftover of await readdir(root, { withFileTypes: true })) {
     if (
       !leftover.isDirectory() ||
-      !/^\.sha256-[0-9a-f]{64}\.(materialize|collect)-/u.test(leftover.name)
+      !/^\.sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?\.(materialize|collect)-/u.test(
+        leftover.name,
+      )
     )
       continue;
     const path = join(root, leftover.name);
@@ -86,7 +88,9 @@ export async function collectSharedStore(
   const keys = (await readdir(root, { withFileTypes: true }))
     .filter(
       (entry) =>
-        entry.isDirectory() && /^sha256-[0-9a-f]{64}$/u.test(entry.name),
+        entry.isDirectory() &&
+        // An archive's files, or a patched copy of them (ADR 0056).
+        /^sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?$/u.test(entry.name),
     )
     .map((entry) => entry.name)
     .sort();

@@ -15,7 +15,8 @@
  *  2. judge every package against the project's policy, before any fetch;
  *  3. take each archive from the shared store when it is there (found by the
  *     digest the lock pins) and otherwise fetch it from the lock's own URL,
- *     check it against that digest, and keep it;
+ *     check it against that digest, and keep it; a package the lock patches
+ *     is a patched copy of its archive, kept as an entry of its own;
  *  4. replace `node_modules` with the lock's layout, hard-linked from the store;
  *     in a workspace, each member is linked from its name rather than fetched,
  *     and has a `node_modules` of its own for the versions only it wants.
@@ -39,6 +40,7 @@ import {
   type FrozenInstallInput,
 } from './frozen-prepare.js';
 import { checkArchiveIdentities } from './frozen-identity.js';
+import { patchArchives } from './frozen-patch.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
 import {
   frozenArchiveLimits,
@@ -65,6 +67,8 @@ export interface FrozenInstallResult {
   skipped: readonly FrozenLockSkip[];
   /** The machines the install was for, when that is more than this one. */
   targets?: readonly NativeTarget[];
+  /** Packages patched (store entries made or found), and the patches that did it. */
+  patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
@@ -102,10 +106,20 @@ export async function installFrozen(
       options: input,
     });
     const fetched = now();
-    const declares = await installScriptFlags(lock.packages, stored.byPath);
+    // The archives are proved to be the lock's packages before any is patched,
+    // and what declares a script is read from what is installed: the patched
+    // files, where there is a patch (ADR 0056).
     await checkArchiveIdentities(lock.packages, stored.byPath);
+    const { byPath, patched } = await patchArchives({
+      lock,
+      byPath: stored.byPath,
+      storeRoot: store.root,
+      shared: store.shared,
+      format,
+    });
+    const declares = await installScriptFlags(lock.packages, byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
-      const archive = stored.byPath.get(pkg.path)!;
+      const archive = byPath.get(pkg.path)!;
       return {
         purl: pkg.purl,
         // The package's own name, as a resolved closure's entry has; the
@@ -156,7 +170,8 @@ export async function installFrozen(
       shared: store.shared,
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
-      installScripts: scriptedPackages(lock.packages, declares, stored.byPath),
+      installScripts: scriptedPackages(lock.packages, declares, byPath),
+      patched,
       layout,
       ...(lock.workspace !== undefined && {
         workspace: {

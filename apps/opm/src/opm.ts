@@ -765,6 +765,8 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
       case 'UNSUPPORTED_LOCK':
+      case 'PATCH_FAILED':
+      case 'INVALID_PATCH':
       case 'INVALID_CATALOG':
       case 'INVALID_PLUGIN_SPEC':
       case 'INVALID_PLUGIN_MANIFEST':

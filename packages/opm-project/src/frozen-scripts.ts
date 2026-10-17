@@ -16,7 +16,7 @@ import type { FrozenLockPackage } from '@openpacker/adapter-core';
 const MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
 
 /** The directory the package's own files are in: archives wrap them in one directory. */
-async function packageDirectory(extracted: string): Promise<string> {
+export async function packageDirectory(extracted: string): Promise<string> {
   const children = await readdir(extracted, { withFileTypes: true });
   const only = children.length === 1 ? children[0] : undefined;
   return only?.isDirectory() === true ? join(extracted, only.name) : extracted;

@@ -292,7 +292,7 @@ export async function adoptSharedEntry(
  * second one's atomic replace finds a different inode than it wrote. Same
  * content is not a conflict; different content is.
  */
-async function recordTreeDigest(
+export async function recordTreeDigest(
   sharedPath: string,
   treeDigest: string,
 ): Promise<void> {
@@ -309,7 +309,7 @@ async function recordTreeDigest(
 }
 
 /** The recorded tree digest of an entry that is there and intact, else undefined. */
-async function adoptExistingEntry(
+export async function adoptExistingEntry(
   sharedPath: string,
   digest: string,
 ): Promise<string | undefined> {

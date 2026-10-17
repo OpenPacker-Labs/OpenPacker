@@ -160,6 +160,8 @@ export function adapterFailure(error: unknown): Error {
     UNSAFE_PATH: 'UNSAFE_PATH',
     LAYOUT_PATHS_INVALID: 'INVALID_LOCK',
     LAYOUT_TOO_LARGE: 'SIZE_LIMIT',
+    PATCH_FAILED: 'PATCH_FAILED',
+    INVALID_PATCH: 'INVALID_PATCH',
   };
   // SAFETY: provider errors carry an optional string `code`.
   const code = (error as { code?: unknown }).code;
