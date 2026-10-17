@@ -307,3 +307,49 @@ snapshots:
     );
   });
 });
+
+describe('a registry package whose file name keeps its build metadata', () => {
+  // pnpm writes `tarball:` only when the URL is not `@pnpm/tarball-url`'s,
+  // which drops the metadata: so exactly when the registry's file name keeps
+  // it. That is still the registry's path for the name and version.
+  const sourceOf = (tarball: string) =>
+    sourceOfInstance(
+      buildPnpmModel(
+        readPnpmLock(
+          LOCK(`importers:
+
+  .:
+    dependencies:
+${dependency('b', '1.0.0+build.5', '1.0.0+build.5')}
+packages:
+
+  b@1.0.0+build.5:
+    resolution: {integrity: ${INTEGRITY}, tarball: ${tarball}}
+
+snapshots:
+
+  b@1.0.0+build.5: {}
+`),
+        ).lock,
+      ).instances.get('b@1.0.0+build.5')!,
+      'https://registry.npmjs.org/',
+    );
+
+  it.each([
+    'https://registry.npmjs.org/b/-/b-1.0.0+build.5.tgz',
+    'https://registry.npmjs.org/b/-/b-1.0.0%2Bbuild.5.tgz',
+    'https://registry.npmjs.org/b/-/b-1.0.0.tgz',
+  ])('is the registry at %s', (tarball) => {
+    expect(sourceOf(tarball)).toEqual({
+      url: tarball,
+      kind: 'registry',
+      integrity: INTEGRITY,
+    });
+  });
+
+  it('is still a tarball at a path of another version', () => {
+    expect(
+      sourceOf('https://registry.npmjs.org/b/-/b-1.0.1+build.5.tgz'),
+    ).toMatchObject({ kind: 'tarball' });
+  });
+});
