@@ -1,8 +1,8 @@
-import { mkdir, rm, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { materialiseTree } from '@openpacker/project-io';
 import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
-import { openStableDirectory } from './paths.js';
+import { openStableDirectory, stableHandlePath } from './paths.js';
 import { scratchName, sweepAbandoned } from './run-scratch.js';
 import { OpmError } from './types.js';
 
@@ -89,6 +89,8 @@ export function storesToView(
 export async function storeViews(
   paths: readonly string[],
   budget: number,
+  /** How a view's entries are linked: the layout's tree copy, but in tests. */
+  linkTree: typeof materialiseTree = materialiseTree,
 ): Promise<StoreView> {
   const unique = [...new Set(paths.map((item) => resolve(item)))];
   const viewed = storesToView(unique, budget);
@@ -116,14 +118,17 @@ export async function storeViews(
         );
       });
       views.push(view);
+      // Opened once, before anything is linked into it, and bound from this
+      // handle, which must hold the directory the links went into.
+      const handle = await openStableDirectory(view);
+      handles.push(handle);
       // Each file linked is the very inode opened through the store's
       // no-follow handles; a name swapped meanwhile is refused (ADR 0048).
       for (const entry of entries)
-        await materialiseTree(entry, join(view, basename(entry)), view, {
+        await linkTree(entry, join(view, basename(entry)), view, {
           link: true,
         });
-      const handle = await openStableDirectory(view);
-      handles.push(handle);
+      await assertViewHeld(handle, view, entries);
       authorities.push({ fd: handle.fd, path: store });
       readonlyPaths.push(store);
     }
@@ -132,4 +137,28 @@ export async function storeViews(
     throw error;
   }
   return { readonlyPaths, authorities, dispose };
+}
+
+/**
+ * The view the links were made in, by its path, is the directory `handle`
+ * holds, and that holds exactly `entries`: a view swapped for another
+ * directory while it was made is not bound.
+ */
+async function assertViewHeld(
+  handle: FileHandle,
+  view: string,
+  entries: readonly string[],
+): Promise<void> {
+  const [held, named] = await Promise.all([handle.stat(), lstat(view)]);
+  const listed = (await readdir(stableHandlePath(handle))).sort();
+  const expected = entries.map((entry) => basename(entry)).sort();
+  if (
+    held.dev !== named.dev ||
+    held.ino !== named.ino ||
+    listed.join('/') !== expected.join('/')
+  )
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `The store view ${view} changed while it was made, and is not bound`,
+    );
 }
