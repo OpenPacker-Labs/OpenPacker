@@ -444,9 +444,14 @@ not places:
   (a host and its plugins wanted at several versions by several members), the
   members that reach them keep what they need in their own `node_modules`, and a
   lock for which no such layout is found is laid out as before, never refused
-  for a peer. Every edge of every importer and snapshot is resolved on the plan
-  with Node's lookup before anything is fetched, and a plan in which one does
-  not find its target is refused.
+  for a peer. Where no layout keeps a package and its dependent to one copy of a
+  peer they share (a package that depends on an older version of itself and
+  hosts a plugin that peers it, say), the install goes ahead and says so with
+  one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
+  load their own copy of a peer, and which first. pnpm's symlinks keep them to
+  one copy; a tree of directories cannot always. Every edge of every importer
+  and snapshot is resolved on the plan with Node's lookup before anything is
+  fetched, and a plan in which one does not find its target is refused.
 - **Each importer runs its own executables.** The executables of a member's
   direct dependencies are shimmed in the member's own `node_modules/.bin`,
   wherever the package was written, and the project's in the project's, as pnpm
@@ -459,7 +464,7 @@ not places:
 - **A workspace member is linked, not fetched**, at `node_modules/<name>` in the
   project, under the name the importer gives it (its own, or an alias such as
   `"e": "workspace:b@*"`, as pnpm links it), and a member's executables are
-  shimmed in the project's `.bin`.
+  shimmed in the `.bin` of each importer that links it.
 - **The members are the ones the project has.** An importer the lock still lists
   after its member went is left alone, as pnpm leaves it, and a new member with
   no dependencies is installed without being in the lock.
