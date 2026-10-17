@@ -22,7 +22,7 @@ import { unsafe } from './errors.js';
 import { assertNumbersAgree } from './tar-numbers.js';
 
 const BLOCK = 512;
-const utf8 = new TextDecoder('utf-8');
+const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
 /** The sum every reader checks: each byte, the checksum field read as spaces. */
 export function headerSum(header: Uint8Array): number {

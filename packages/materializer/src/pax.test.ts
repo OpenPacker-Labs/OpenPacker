@@ -161,6 +161,21 @@ describe('pax extended headers', () => {
     ).rejects.toThrow(/INVALID_PAX_HEADER/u);
   });
 
+  it('keeps a byte order mark in a key, as node-tar and pnpm do: it is not `path`', async () => {
+    const entries = await inspectArchive(
+      tar([
+        {
+          name: 'PaxHeader/a',
+          type: 'x',
+          data: record('\uFEFFpath', 'package/renamed'),
+        },
+        { name: 'package/ok', data: 'x' },
+      ]),
+      'tar',
+    );
+    expect(entries.map(({ path }) => path)).toEqual(['package/ok']);
+  });
+
   it('may repeat the size the entry already has, as npm writes them', async () => {
     const entries = await inspectArchive(
       tar([

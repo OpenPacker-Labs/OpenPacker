@@ -46,6 +46,10 @@ describe('tarText', () => {
     expect(tarText(Uint8Array.of(0xc3, 0xa9))).toBe('é');
   });
 
+  it('keeps a leading byte order mark, as node-tar and pnpm do', () => {
+    expect(tarText(Uint8Array.of(0xef, 0xbb, 0xbf, 0x61))).toBe('\uFEFFa');
+  });
+
   it('refuses bytes that are not UTF-8 with a typed error', () => {
     expect(refusal(() => tarText(Uint8Array.of(0x61, 0xe9, 0x62)))).toBe(
       'INVALID_TAR_TEXT',

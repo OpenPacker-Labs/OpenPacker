@@ -6,7 +6,7 @@
 
 import { MaterializationError, unsafe } from './errors.js';
 
-const utf8 = new TextDecoder('utf-8', { fatal: true });
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export function tarText(bytes: Uint8Array): string {
   const end = bytes.indexOf(0);
