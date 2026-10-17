@@ -13,6 +13,7 @@
 
 import { ProviderError } from '@openpacker/adapter-core';
 import { MAXIMUM_MANIFEST_BYTES, readBounded } from '../frozen-read.js';
+import { quote } from './quote.js';
 import { readWorkspaceFile } from './workspace-file.js';
 
 /** Platforms a project asks pnpm to install optional packages for. */
@@ -47,7 +48,7 @@ function strings(value: unknown, where: string): ReadonlyMap<string, string> {
     if (typeof entry !== 'string')
       throw new ProviderError(
         'INVALID_MANIFEST',
-        `${where}.${key} must be a string`,
+        `${where}[${quote(key)}] must be a string`,
       );
     out.set(key, entry);
   }
@@ -141,7 +142,7 @@ export async function readPnpmProjectConfig(
     for (const [name, entries] of Object.entries(named))
       catalogs.set(
         name,
-        strings(entries, `pnpm-workspace.yaml catalogs.${name}`),
+        strings(entries, `pnpm-workspace.yaml catalogs[${quote(name)}]`),
       );
   const patches = [
     ...strings(pnpm['patchedDependencies'], 'pnpm.patchedDependencies').keys(),

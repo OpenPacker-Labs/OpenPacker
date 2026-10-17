@@ -13,6 +13,7 @@
 
 import type { PnpmLock, PnpmImporter } from '../pnpm-lock/types.js';
 import type { PnpmModel } from './model.js';
+import { quote } from './quote.js';
 
 /** The four dependency lists of a manifest. */
 export interface ManifestLists {
@@ -29,8 +30,6 @@ const LISTS: readonly ListName[] = [
   'devDependencies',
   'optionalDependencies',
 ];
-
-const show = (text: string): string => JSON.stringify(text);
 
 /**
  * The list pnpm records each dependency of a manifest in: `optionalDependencies`
@@ -62,7 +61,7 @@ export function importerProblems(
   importer: PnpmImporter,
   autoInstallPeers: boolean,
 ): string[] {
-  const where = id === '.' ? 'the project' : id;
+  const where = id === '.' ? 'the project' : quote(id);
   const wanted = listsOf(manifest, autoInstallPeers);
   const recorded = new Map<string, { list: ListName; specifier: string }>();
   for (const list of LISTS)
@@ -73,21 +72,21 @@ export function importerProblems(
     const have = recorded.get(name);
     if (have === undefined)
       problems.push(
-        `${where}: ${name} is in package.json (${want.list}) and not in pnpm-lock.yaml`,
+        `${where}: ${quote(name)} is in package.json (${want.list}) and not in pnpm-lock.yaml`,
       );
     else if (have.specifier !== want.specifier)
       problems.push(
-        `${where}: ${name} is ${show(want.specifier)} in package.json and ${show(have.specifier)} in pnpm-lock.yaml`,
+        `${where}: ${quote(name)} is ${quote(want.specifier)} in package.json and ${quote(have.specifier)} in pnpm-lock.yaml`,
       );
     else if (have.list !== want.list)
       problems.push(
-        `${where}: ${name} is in ${want.list} of package.json and in ${have.list} of pnpm-lock.yaml`,
+        `${where}: ${quote(name)} is in ${want.list} of package.json and in ${have.list} of pnpm-lock.yaml`,
       );
   }
   for (const name of recorded.keys())
     if (!wanted.has(name))
       problems.push(
-        `${where}: ${name} is in pnpm-lock.yaml and not in package.json`,
+        `${where}: ${quote(name)} is in pnpm-lock.yaml and not in package.json`,
       );
   return problems;
 }
@@ -102,17 +101,17 @@ export function overrideProblems(
     const have = lock.overrides.get(selector);
     if (have === undefined)
       problems.push(
-        `the override ${show(selector)} (${show(value)}) is in the project and not in pnpm-lock.yaml`,
+        `the override ${quote(selector)} (${quote(value)}) is in the project and not in pnpm-lock.yaml`,
       );
     else if (have !== value)
       problems.push(
-        `the override ${show(selector)} is ${show(value)} in the project and ${show(have)} in pnpm-lock.yaml`,
+        `the override ${quote(selector)} is ${quote(value)} in the project and ${quote(have)} in pnpm-lock.yaml`,
       );
   }
   for (const selector of lock.overrides.keys())
     if (!project.has(selector))
       problems.push(
-        `the override ${show(selector)} is in pnpm-lock.yaml and not in the project`,
+        `the override ${quote(selector)} is in pnpm-lock.yaml and not in the project`,
       );
   return problems;
 }
@@ -132,11 +131,11 @@ export function catalogProblems(
       const have = project.get(catalog)?.get(name);
       if (have === undefined)
         problems.push(
-          `the catalog ${show(catalog)} has ${name} (${show(entry.specifier)}) in pnpm-lock.yaml and not in the project`,
+          `the catalog ${quote(catalog)} has ${quote(name)} (${quote(entry.specifier)}) in pnpm-lock.yaml and not in the project`,
         );
       else if (have !== entry.specifier)
         problems.push(
-          `the catalog ${show(catalog)} has ${name} as ${show(have)} in the project and ${show(entry.specifier)} in pnpm-lock.yaml`,
+          `the catalog ${quote(catalog)} has ${quote(name)} as ${quote(have)} in the project and ${quote(entry.specifier)} in pnpm-lock.yaml`,
         );
     }
   return problems;
@@ -159,7 +158,7 @@ export function linkNameProblems(
         const name = names.get(dir);
         if (name !== edge.as)
           problems.push(
-            `${id === '.' ? 'the project' : id} links ${dir} as ${edge.as}, and the member there is ${name === undefined ? 'nameless' : `called ${name}`}: opm links a member under its own name only`,
+            `${id === '.' ? 'the project' : quote(id)} links ${quote(dir)} as ${quote(edge.as)}, and the member there is ${name === undefined ? 'nameless' : `called ${quote(name)}`}: opm links a member under its own name only`,
           );
       }
   return problems;

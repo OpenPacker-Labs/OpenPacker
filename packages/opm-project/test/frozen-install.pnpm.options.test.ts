@@ -107,7 +107,7 @@ describe('the platforms of a pnpm install', () => {
     w.importer('.', { dependencies: { 'arm-only': ['^1.0.0', '1.0.0'] } });
     await w.write();
     await expect(w.install()).rejects.toThrow(
-      /arm-only@1\.0\.0 is for cpu arm64, not linux\/x64\/glibc, and is not optional/u,
+      /"arm-only@1\.0\.0" is for cpu "arm64", not "linux\/x64\/glibc", and is not optional/u,
     );
     expect(w.registry.requests).toEqual([]);
   });
@@ -189,7 +189,7 @@ describe("a lock that is not the project's", () => {
       }),
     );
     await expect(w.install()).rejects.toThrow(
-      /pnpm-lock\.yaml is not up to date with the project[\s\S]*the project: a is "\^2\.0\.0" in package\.json and "\^1\.0\.0" in pnpm-lock\.yaml/u,
+      /pnpm-lock\.yaml is not up to date with the project[\s\S]*the project: "a" is "\^2\.0\.0" in package\.json and "\^1\.0\.0" in pnpm-lock\.yaml/u,
     );
     expect(w.registry.requests).toEqual([]);
     expect(await w.read('node_modules/keep.txt')).toBe('kept');

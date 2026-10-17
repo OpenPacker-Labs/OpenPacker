@@ -14,8 +14,7 @@ import type {
 } from '@openpacker/adapter-core';
 import { classifyResolved } from '../frozen-select.js';
 import type { PnpmInstance, PnpmModel } from './model.js';
-
-const quote = (text: string): string => JSON.stringify(text);
+import { quote } from './quote.js';
 
 /** Refusals about the lock as a whole, whatever is installed. */
 export function lockRefusals(model: PnpmModel): FrozenLockRefusal[] {
@@ -37,7 +36,7 @@ export function lockRefusals(model: PnpmModel): FrozenLockRefusal[] {
     if (importer.dependenciesMeta.size > 0)
       out.push({
         path: `importers[${quote(importer.id)}].dependenciesMeta`,
-        reason: `sets ${[...importer.dependenciesMeta.keys()].join(', ')} (injected, patched or a runtime for a dependency), which opm does not install`,
+        reason: `sets ${[...importer.dependenciesMeta.keys()].map(quote).join(', ')} (injected, patched or a runtime for a dependency), which opm does not install`,
       });
     if (importer.publishDirectory !== undefined)
       out.push({
@@ -60,7 +59,7 @@ export function importerRefusals(
       if (edge.kind === 'link' && edge.memberId === undefined)
         out.push({
           path: `importers[${quote(id)}][${quote(edge.as)}]`,
-          reason: `links ${edge.target}, which is not a workspace member (an importer of this lock); opm links members only`,
+          reason: `links ${quote(edge.target)}, which is not a workspace member (an importer of this lock); opm links members only`,
         });
   return out;
 }
@@ -84,11 +83,11 @@ export function sourceOfInstance(
   instance: PnpmInstance,
   registry: string,
 ): InstanceSource | { readonly problem: string } {
-  const label = `${instance.name}@${instance.version}`;
+  const label = quote(`${instance.name}@${instance.version}`);
   const { resolution } = instance.pkg;
   if (instance.links.length > 0)
     return {
-      problem: `${label} depends on ${instance.links.map((link) => `${link.as} as link:${link.target}`).join(', ')}, a directory this install does not place`,
+      problem: `${label} depends on ${instance.links.map((link) => `${quote(link.as)} as ${quote(`link:${link.target}`)}`).join(', ')}, a directory this install does not place`,
     };
   if (resolution.kind === 'git')
     return {
@@ -96,7 +95,7 @@ export function sourceOfInstance(
     };
   if (resolution.kind === 'directory')
     return {
-      problem: `${label} comes from the directory ${resolution.directory}, which opm ci does not install`,
+      problem: `${label} comes from the directory ${quote(resolution.directory)}, which opm ci does not install`,
     };
   if (resolution.kind === 'variations')
     return {

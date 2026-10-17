@@ -33,6 +33,7 @@ import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
 } from '../layout-plan-types.js';
+import { quote } from './quote.js';
 
 /** What the planner needs of an instance. */
 export interface PlaceInstance {
@@ -214,7 +215,7 @@ export function planPlacement(input: PlaceInput): Placement {
     if (parent.chain.length >= MAXIMUM_DEPTH) {
       if (!tooDeep.has(instance.key) && tooDeep.size < 10)
         problems.push(
-          `${instance.key} would sit more than ${MAXIMUM_DEPTH} directories deep: packages that need each other at different versions cannot be laid out as a tree without symlinks`,
+          `${quote(instance.key)} would sit more than ${MAXIMUM_DEPTH} directories deep: packages that need each other at different versions cannot be laid out as a tree without symlinks`,
         );
       tooDeep.add(instance.key);
       return;
@@ -240,6 +241,8 @@ export function planPlacement(input: PlaceInput): Placement {
     }
     return undefined;
   };
+  const held = (node: Node): string =>
+    node.key === undefined ? 'a link' : quote(node.key);
   const refuseName = (name: string, who: string): boolean => {
     const problem = unsafeNameProblem(name);
     if (problem === undefined) return false;
@@ -250,11 +253,11 @@ export function planPlacement(input: PlaceInput): Placement {
   // Round 0: links, then each top's own dependencies.
   for (const top of input.tops)
     for (const link of top.links) {
-      if (refuseName(link.as, `${top.id}'s link`)) continue;
+      if (refuseName(link.as, `${quote(top.id)}'s link`)) continue;
       const earlier = links.get(link.as);
       if (earlier !== undefined && earlier !== link.memberDir) {
         problems.push(
-          `${top.id} links ${link.memberDir} as ${link.as}, which another importer links to ${earlier}; node_modules/${link.as} cannot be both`,
+          `${quote(top.id)} links ${quote(link.memberDir)} as ${quote(link.as)}, which another importer links to ${quote(earlier)}; ${quote(`node_modules/${link.as}`)} cannot be both`,
         );
         continue;
       }
@@ -273,7 +276,7 @@ export function planPlacement(input: PlaceInput): Placement {
       entry: {
         name,
         version: '',
-        label: `the link to ${memberDir}`,
+        label: `the link to ${quote(memberDir)}`,
       },
       direct: false,
     });
@@ -282,21 +285,22 @@ export function planPlacement(input: PlaceInput): Placement {
     const node = tops.get(top.dir)!;
     for (const edge of top.edges) {
       const instance = instances.get(edge.to);
-      if (instance === undefined || refuseName(edge.as, `${top.id}`)) continue;
+      if (instance === undefined || refuseName(edge.as, quote(top.id)))
+        continue;
       const taken = node.children.get(edge.as);
       if (taken !== undefined) {
         if (taken.key !== edge.to)
           problems.push(
             taken.key === undefined
-              ? `${top.id} needs ${edge.as} (${edge.to}), and node_modules/${edge.as} is the link to a workspace member that another importer needs`
-              : `${top.id} needs ${edge.as} twice, as ${taken.key} and ${edge.to}`,
+              ? `${quote(top.id)} needs ${quote(edge.as)} (${quote(edge.to)}), and ${quote(`node_modules/${edge.as}`)} is the link to a workspace member that another importer needs`
+              : `${quote(top.id)} needs ${quote(edge.as)} twice, as ${quote(taken.key)} and ${quote(edge.to)}`,
           );
         continue;
       }
       const variant = caseVariant(node, edge.as);
       if (variant !== undefined) {
         problems.push(
-          `${top.id}: ${caseCollision(instance, edge.as, variant)}`,
+          `${quote(top.id)}: ${caseCollision(instance, edge.as, variant)}`,
         );
         continue;
       }
@@ -310,7 +314,7 @@ export function planPlacement(input: PlaceInput): Placement {
     const instance = instances.get(node.key!)!;
     for (const { as, to } of orderedEdges(instance, instances)) {
       const wanted = instances.get(to);
-      if (wanted === undefined || refuseName(as, instance.key)) continue;
+      if (wanted === undefined || refuseName(as, quote(instance.key))) continue;
       const found = lookup(node, as);
       let where: Node;
       if (found === undefined) {
@@ -320,12 +324,14 @@ export function planPlacement(input: PlaceInput): Placement {
       else where = node;
       const variant = caseVariant(where, as);
       if (variant !== undefined) {
-        problems.push(`${instance.key}: ${caseCollision(wanted, as, variant)}`);
+        problems.push(
+          `${quote(instance.key)}: ${caseCollision(wanted, as, variant)}`,
+        );
         continue;
       }
       if (where.children.has(as)) {
         problems.push(
-          `${instance.key} needs ${as} as ${to}, and its own node_modules already holds ${where.children.get(as)!.key ?? 'a link'} under that name`,
+          `${quote(instance.key)} needs ${quote(as)} as ${quote(to)}, and its own node_modules already holds ${held(where.children.get(as)!)} under that name`,
         );
         continue;
       }

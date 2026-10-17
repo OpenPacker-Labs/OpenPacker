@@ -234,9 +234,11 @@ describe('members', () => {
       links: [],
       problems: [],
     });
-    expect(problems.join('\n')).toContain('a@1.0.0 at node_modules/a needs b');
-    expect(problems.join('\n')).toContain('links packages/lib as lib');
-    expect(problems.join('\n')).toContain('c@1.0.0 is in the plan');
+    expect(problems.join('\n')).toContain(
+      '"a@1.0.0" at "node_modules/a" needs "b"',
+    );
+    expect(problems.join('\n')).toContain('links "packages/lib" as "lib"');
+    expect(problems.join('\n')).toContain('"c@1.0.0" is in the plan');
   });
 });
 

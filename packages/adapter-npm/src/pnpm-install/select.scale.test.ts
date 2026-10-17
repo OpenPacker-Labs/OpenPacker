@@ -119,7 +119,7 @@ describe('the selection on a long chain of optional packages', () => {
     });
     expect(selection.skipped.find((skip) => skip.name === 'p7')).toMatchObject({
       kind: 'orphaned',
-      reason: 'needs p6@1.0.0, which this machine does not install',
+      reason: 'needs "p6@1.0.0", which this machine does not install',
     });
     // A generous bound on a shared machine: the quadratic closure took minutes.
     expect(elapsed).toBeLessThan(5_000);

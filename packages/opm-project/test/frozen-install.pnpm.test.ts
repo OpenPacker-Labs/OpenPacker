@@ -186,7 +186,7 @@ describe('installFrozen of a pnpm workspace', () => {
         .replace('importers:\n', 'importers:\n\n  "packages/ghost": {}\n'),
     });
     await expect(w.install()).rejects.toThrow(
-      /the lock lists packages\/ghost, which the project does not have/u,
+      /the lock lists "packages\/ghost", which the project does not have/u,
     );
     await w.write();
     await mkdir(join(w.dir, 'packages/extra'), { recursive: true });
@@ -195,7 +195,7 @@ describe('installFrozen of a pnpm workspace', () => {
       '{"name":"extra","version":"1.0.0"}',
     );
     await expect(w.install()).rejects.toThrow(
-      /the project has packages\/extra, which the lock does not list/u,
+      /the project has "packages\/extra", which the lock does not list/u,
     );
   });
 });
