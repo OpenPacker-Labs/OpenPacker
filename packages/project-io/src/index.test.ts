@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applySpanEdits,
   collectFiles,
@@ -92,10 +92,12 @@ const WRITE_FLAGS = constants.O_WRONLY | constants.O_RDWR;
  */
 async function afterLastChange(path: string, probe: string): Promise<void> {
   const { ctimeNs } = await lstat(path, { bigint: true });
-  for (let tick = 0; ; tick += 1) {
+  const deadline = Date.now() + 5_000;
+  for (let tick = 0; Date.now() < deadline; tick += 1) {
     await writeFile(probe, String(tick));
     if ((await lstat(probe, { bigint: true })).ctimeNs > ctimeNs) return;
   }
+  throw new Error(`the filesystem clock did not move past ${path} in 5 s`);
 }
 
 describe('editJsonFile', () => {
@@ -243,6 +245,12 @@ describe('applySpanEdits', () => {
 });
 
 describe('materialiseTree', () => {
+  // A test that spies on handle-path must not leave the spy for the next one,
+  // even when it times out before its own `finally` runs.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('advertises stable fd-relative traversal on linux, darwin, and win32', () => {
     expect(supportsStableTreeLayout('linux')).toBe(true);
     expect(supportsStableTreeLayout('darwin')).toBe(true);
