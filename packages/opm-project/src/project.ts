@@ -30,7 +30,11 @@ import { resolveTransitive } from './closure-lock.js';
 import { assertLabelIsFree } from './label-conflict.js';
 import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
-import { isExactVersion, registryTargetFor } from './registry-target.js';
+import {
+  isExactVersion,
+  registryTargetFor,
+  targetAsWritten,
+} from './registry-target.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -970,6 +974,7 @@ async function resolveRequirement(input: {
         : await input.pool.optionsWithProvider(ecosystem);
     // A range or a dist-tag in the manifest is resolved here; a version is a
     // version. (`candidateExact` treats anything but ^ and ~ as a version.)
+    // Without a codec any hint goes to the plugin as written.
     const registryHint =
       versionHint !== undefined &&
       versionHint !== '' &&
@@ -977,6 +982,7 @@ async function resolveRequirement(input: {
         ? versionHint
         : undefined;
     const target =
+      targetAsWritten(ecosystem, requestedPurl, versionHint) ??
       (registryHint === undefined
         ? candidateExact
         : await registryTargetFor({
