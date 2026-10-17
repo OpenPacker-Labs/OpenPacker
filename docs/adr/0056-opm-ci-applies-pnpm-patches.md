@@ -179,6 +179,10 @@ inside the bundle.
     project links any of its files, kept while its `.tree`, or the directory
     itself while it has no record, is younger than the age rule, removed with
     its record otherwise, and a leftover `.<key>.materialize-` cleared once old.
+    While a patched copy is kept, so is the archive's entry it was made from,
+    although no project links that one: an install proves the archive to be the
+    package the lock names before it adopts the copy (point 12), and an offline
+    install has nowhere else to find it.
 12. **Order.** The archive is fetched, proved against the lock's integrity,
     extracted, and proved to be the package the lock names (ADR 0055 §7)
     **before** it is patched: a patch that edits `package.json` changes what is
@@ -247,7 +251,9 @@ Costs and limits:
 - **Two copies of a patched package's files** on the machine: the unpatched
   entry and the patched one. A patched package is small next to a closure, and
   linking the patched entry to the unpatched one's files would make each keep
-  the other alive in `opm gc --shared`'s eyes.
+  the other alive in `opm gc --shared`'s eyes. `opm gc --shared` keeps the
+  unpatched entry for as long as it keeps the patched one (point 11), so both
+  copies stay until no project links the patched one.
 - **The applier is a second implementation of pnpm's.** The oracle is what keeps
   it pnpm's; a new pnpm that changes `@pnpm/patch-package` needs the generator
   run again against it, and a change to what the applier writes must change the

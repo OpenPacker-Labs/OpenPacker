@@ -27,7 +27,7 @@ export interface SharedStoreCollection {
   root?: string;
   /** Entries removed, or that would be on a dry run. */
   removed: string[];
-  /** Entries some project still links to. */
+  /** Entries some project still links to, or that a kept patched copy was made from. */
   referenced: number;
   /** Unreferenced entries left alone because they are too new to judge. */
   tooNew: number;
@@ -94,10 +94,22 @@ export async function collectSharedStore(
     )
     .map((entry) => entry.name)
     .sort();
-  for (const key of keys) {
+  // A patched copy is judged before the entry it was made from (ADR 0056):
+  // while the copy is kept, so is that entry, which an install proves to be
+  // the package its lock names before it adopts the copy, offline too.
+  const needed = new Set<string>();
+  const keep = (key: string) => {
+    const at = key.indexOf('-patch-');
+    if (at !== -1) needed.add(key.slice(0, at));
+  };
+  for (const key of [
+    ...keys.filter((name) => name.includes('-patch-')),
+    ...keys.filter((name) => !name.includes('-patch-')),
+  ]) {
     const entry = join(root, key);
-    if (await hasLinkedFile(entry)) {
+    if (needed.has(key) || (await hasLinkedFile(entry))) {
       result.referenced += 1;
+      keep(key);
       continue;
     }
     // Dated by its record, or, while it has none, by the directory itself: a
@@ -108,6 +120,7 @@ export async function collectSharedStore(
     );
     if (published !== undefined && now - published < minimumAge) {
       result.tooNew += 1;
+      keep(key);
       continue;
     }
     result.removed.push(entry);

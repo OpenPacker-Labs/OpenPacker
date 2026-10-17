@@ -153,14 +153,15 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
         collectSharedStore({ env, minimumAgeMs: 0, now: () => Date.now() });
       expect(await gc()).toMatchObject({ removed: [], referenced: 3 });
       await rm(join(b.dir, 'node_modules'), { recursive: true });
+      // No project links the unpatched entry now, and it is kept: the
+      // patched copy a links was made from it, and an install checks the
+      // archive before it adopts the copy.
       const afterB = await gc();
-      expect(afterB.removed.map((path) => basename(path))).toEqual([
-        patchedEntry.slice(0, 'sha256-'.length + 64),
-      ]);
-      expect(afterB.referenced).toBe(2);
-      // a installs again: the unpatched archive is fetched again, the patched
-      // entry is adopted after its tree is checked.
-      await a.install();
+      expect(afterB.removed).toEqual([]);
+      expect(afterB.referenced).toBe(3);
+      // a installs again, offline: the patched entry is adopted after its
+      // tree is checked, and nothing is fetched.
+      await a.install({ offline: true });
       expect(a.run("console.log(require('x/lib.js'))")).toBe('patched');
       await rm(join(a.dir, 'node_modules'), { recursive: true });
       await rm(join(a.dir, 'packages/web/node_modules'), { recursive: true });

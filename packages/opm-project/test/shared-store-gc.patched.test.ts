@@ -89,4 +89,29 @@ describe('a patched entry in the shared store, collected', () => {
       entry,
     ]);
   });
+
+  it('keeps the unpatched entry while a patched copy of it is kept, and removes both together', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
+    const project = await mkdtemp(join(tmpdir(), 'opm-linker-'));
+    temps.push(shared, project);
+    const base = join(shared, `sha256-${'a'.repeat(64)}`);
+    const copy = join(shared, patchedStoreKey(DIGEST, PATCH));
+    const other = join(shared, `sha256-${'d'.repeat(64)}`);
+    for (const entry of [base, copy, other]) {
+      await mkdir(join(entry, 'package'), { recursive: true });
+      await writeFile(join(entry, 'package', 'index.js'), entry);
+      await writeFile(`${entry}.tree`, `sha256:${'c'.repeat(64)}\n`);
+    }
+    await link(join(copy, 'package', 'index.js'), join(project, 'index.js'));
+    const env = { OPM_STORE_HOME: shared };
+    const hourOn = () => Date.now() + 3_600_000;
+    expect(await collectSharedStore({ env, now: hourOn })).toMatchObject({
+      removed: [other],
+      referenced: 2,
+    });
+    await rm(join(project, 'index.js'));
+    expect(
+      (await collectSharedStore({ env, now: hourOn })).removed.sort(),
+    ).toEqual([base, copy].sort());
+  });
 });

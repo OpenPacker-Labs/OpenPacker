@@ -829,7 +829,9 @@ opm gc --shared
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries younger than ten minutes are left alone (an
-install may be about to link them), as are entries any project still uses.
+install may be about to link them), as are entries any project still uses and
+the archive entry a kept patched copy was made from (`opm ci` checks the archive
+before it adopts the copy, offline too).
 
 ### Shell environment
 
