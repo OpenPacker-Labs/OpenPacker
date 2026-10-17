@@ -117,6 +117,21 @@ export class MemoizingTransport implements HttpTransport {
               this.#kept.delete(key);
               this.#letGo.set(key, digestOf(response.body));
             },
+            {
+              // A provider that keeps the objects parsed from this body keeps
+              // the body too: the two are one entry, counted once and let go
+              // together, and while the provider holds them this answers its
+              // revalidations from memory.
+              shares: response.body,
+              // Let go before the provider held it, it comes back at no cost
+              // when the provider does, unless this has fetched it again since.
+              reclaim: () => {
+                if (this.#kept.has(key)) return false;
+                this.#kept.set(key, fetched);
+                this.#letGo.delete(key);
+                return true;
+              },
+            },
           );
           return response;
         },
@@ -157,7 +172,7 @@ export class MemoizingTransport implements HttpTransport {
       this.#kept.delete(key);
       throw new ProviderError(
         'STALE_METADATA',
-        `${url} changed while the resolve was running; run it again`,
+        `The registry changed ${url} during the resolve; run it again`,
       );
     }
     this.#letGo.delete(key);

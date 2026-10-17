@@ -165,7 +165,7 @@ describe('a memo with a budget', () => {
     expect(error).toMatchObject({
       code: 'STALE_METADATA',
       message:
-        'https://r.test/a changed while the resolve was running; run it again',
+        'The registry changed https://r.test/a during the resolve; run it again',
     });
   });
 

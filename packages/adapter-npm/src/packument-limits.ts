@@ -107,6 +107,14 @@ export const FULL_PACKUMENT_LIMITS: ProviderMetadataLimits = {
 /** The longest an npm package name may be, scope and slash included. */
 export const NPM_NAME_LIMIT = 214;
 
+/** What a resolve is told when its registry changed a document it had read. */
+export function changed(
+  name: string,
+  document: 'packument' | 'full packument' = 'packument',
+): string {
+  return `The registry changed the ${document} of ${safeEcho(name, NPM_NAME_LIMIT)} during the resolve; run it again`;
+}
+
 /**
  * A refusal from the transport or the parser, said in terms of the package
  * that was being read. Any other refusal is returned as it came. The name is
@@ -119,6 +127,10 @@ export function aboutPackument(
   document: 'packument' | 'full packument' = 'packument',
 ): ProviderError {
   const subject = `The ${document} of ${safeEcho(name, NPM_NAME_LIMIT)}`;
+  // The transport compares a document it fetches again with the one it let
+  // go, and knows it by address; the resolve is told by package.
+  if (error.code === 'STALE_METADATA')
+    return new ProviderError(error.code, changed(name, document));
   if (error instanceof ResponseTooLargeError) return error.about(subject);
   if (error instanceof MetadataLimitError) return error.about(subject);
   if (error.code === 'INVALID_PROVIDER_METADATA')

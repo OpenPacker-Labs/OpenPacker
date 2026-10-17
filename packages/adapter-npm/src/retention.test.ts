@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ProviderError,
   RetentionLedger,
   type HttpRequest,
   type HttpResponse,
@@ -154,7 +155,26 @@ describe('a provider under a retention budget', () => {
     await expect(npm.enumerate('pkg:npm/a')).rejects.toMatchObject({
       code: 'STALE_METADATA',
       message:
-        'The packument of a changed while the resolve was running; run it again',
+        'The registry changed the packument of a during the resolve; run it again',
+    });
+  });
+
+  it('names the package when its transport says the document changed', async () => {
+    // The memo compares what it fetches again with what it let go, by URL.
+    const changed: HttpTransport = {
+      async request(request) {
+        throw new ProviderError(
+          'STALE_METADATA',
+          `${request.url} changed during the resolve`,
+        );
+      },
+    };
+    await expect(
+      provider(changed).enumerate('pkg:npm/a'),
+    ).rejects.toMatchObject({
+      code: 'STALE_METADATA',
+      message:
+        'The registry changed the packument of a during the resolve; run it again',
     });
   });
 

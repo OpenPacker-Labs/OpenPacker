@@ -1,4 +1,4 @@
-import { formatDigest, safeEcho, sha256 } from '@openpacker/canonical';
+import { formatDigest, sha256 } from '@openpacker/canonical';
 import {
   ProviderError,
   type HttpTransport,
@@ -6,7 +6,7 @@ import {
   type RetentionLedger,
 } from '@openpacker/adapter-core';
 import type { NpmPackument } from './index.js';
-import { NPM_NAME_LIMIT } from './packument-limits.js';
+import { changed } from './packument-limits.js';
 
 /** The packument's objects, the text they came from, and where from. */
 export type PackumentRecord = ProviderRecord<NpmPackument>;
@@ -109,7 +109,7 @@ export class HeldPackuments {
       );
     const record = { ...existing, retrievedAt };
     this.#held.set(key, { ...kept, retrievedAt, record });
-    this.hold(key, kept.weight);
+    this.hold(key, kept.weight, record.rawBody);
     return record;
   }
 
@@ -132,10 +132,7 @@ export class HeldPackuments {
       kept?.digest !== undefined &&
       (await kept.digest) !== (await digestOf(record.rawBody))
     )
-      throw new ProviderError(
-        'STALE_METADATA',
-        `The packument of ${safeEcho(name, NPM_NAME_LIMIT)} changed while the resolve was running; run it again`,
-      );
+      throw new ProviderError('STALE_METADATA', changed(name));
     // What this record keeps alive by itself: the objects (what the parse
     // measured the tree to keep), and the text they came from, which the
     // transport may be holding as well.
@@ -147,12 +144,18 @@ export class HeldPackuments {
       record,
       weight,
     });
-    this.hold(key, weight);
+    this.hold(key, weight, record.rawBody);
     return record;
   }
 
-  private hold(key: string, weight: number): void {
-    this.ledger?.retain(this.ledgerKey(key), weight, () => this.letGo(key));
+  /**
+   * Counted at `weight`, as the owner of `body`: the transport's entry for the
+   * same bytes is part of this one while it is held.
+   */
+  private hold(key: string, weight: number, body: Uint8Array): void {
+    this.ledger?.retain(this.ledgerKey(key), weight, () => this.letGo(key), {
+      shares: body,
+    });
   }
 
   invalidate(key?: string): void {
