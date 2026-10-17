@@ -108,3 +108,18 @@ describe('the plan of the ai-bdd lock', () => {
     expect(codex[0]!.path).toMatch(/node_modules\/@openai\/codex-linux-x64$/u);
   });
 });
+
+describe('--omit peer', () => {
+  it('is refused for a pnpm lock, before the project is read, saying why', async () => {
+    const error = await read('ai-bdd.pnpm-lock.yaml', {
+      omit: new Set(['peer']),
+    }).then(
+      () => undefined,
+      (thrown: Error) => thrown,
+    );
+    expect(error).toMatchObject({ code: 'INVALID_LOCKFILE' });
+    expect(error?.message).toBe(
+      'opm ci --omit peer does not apply to a pnpm lock: it writes resolved peers as ordinary dependencies, so there is nothing to omit them by',
+    );
+  });
+});
