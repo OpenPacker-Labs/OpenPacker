@@ -76,9 +76,9 @@ export const MAXIMUM_FULL_PACKUMENT_BYTES = 96 * 1024 * 1024;
  * 3.7 million empty objects through and they took 2.1 to 2.6 GB.
  *
  * It is set against what exists. `renovate`, the abbreviated packument nearest
- * it, costs 219 MiB (2.3 times under), `@prisma/client` 213 and `next` 155, and
- * a document of renovate's composition at the 64 MiB byte bound would cost 415,
- * so for any packument shaped like a real one the byte bound is still what
+ * it, costs 259.5 MiB (1.97 times under), `@prisma/client` 245 and `next` 184,
+ * and a document of renovate's composition at the 64 MiB byte bound would cost
+ * 487, so for any packument shaped like a real one the byte bound is still what
  * stops it. The heaviest document the budget lets through, of every kind tried,
  * was read in a heap of 1 GiB (`--max-old-space-size=1024`) in under 10 s of
  * CPU. ADR 44 has the table.
@@ -87,10 +87,11 @@ export const PACKUMENT_PARSE_COST = 512 * 1024 * 1024;
 
 /**
  * What a parsed full packument may cost to build: 720 MiB. The heaviest found,
- * `@wix/wix-code-types` (73.0 MiB), costs 562 MiB, which is 1.28 times under; it
- * is the tightest of the documents surveyed, and the budget is as high as a
- * full packument's text, which may be two bytes a character (192 MiB), and the
- * budget can share a heap of 1 GiB.
+ * `@wix/wix-code-types` (73.0 MiB), costs 598 MiB with its objects' member
+ * tables, 83 percent of the limit, where its parse needs 196 MiB at the peak;
+ * it is the tightest of the documents surveyed. The budget is as high as a full
+ * packument's text, which may be two bytes a character (192 MiB), and the
+ * process (43 MiB) leave 7 percent of a heap of 1 GiB; 768 MiB would leave 2.
  */
 export const FULL_PACKUMENT_PARSE_COST = 720 * 1024 * 1024;
 

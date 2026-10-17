@@ -17,14 +17,16 @@
  *   the tree again, which it no longer does; they are above what it needs now.)
  *   For each of the thirty-eight shapes the weights were fitted on, the cost
  *   is at least the heap the parse needed. An object of a few dozen members
- *   can need more: V8 gives its dictionary up to three slots a member, and
- *   such a document at the limit needed up to 1.23 times its cost while the
- *   parse encoded the tree again, and 1.06 times since (ADR 0044, "Shapes found
- *   since"). `member-table.ts` models that dictionary; it is not charged yet.
+ *   needed more until its dictionary was charged: V8 gives it up to three
+ *   slots a member, and such a document at the limit needed 1.06 times its
+ *   cost. The parser now charges that dictionary at its size beyond these
+ *   weights (`member-table.ts`), and such a document needs about 0.55 of its
+ *   cost (ADR 0044, "The member table charged").
  * - `retained` is what the finished tree keeps, for a holder that keeps trees
  *   (a resolve counts the packuments it holds by it). It is above what the
- *   tree kept for every real packument, and below it by up to 1.64 times for
- *   such an object and 1.3 times for an array just past a growth step.
+ *   tree kept for every real packument and for an object of every member count
+ *   measured, and below it by up to 1.3 times for an array just past a growth
+ *   step.
  *
  * Nothing here is a V8 constant; they are what a build of Node 22 measured, and
  * `canonical/test/parse-costs.test.ts` measures them again.

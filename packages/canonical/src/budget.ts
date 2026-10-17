@@ -7,6 +7,7 @@ import {
   PARSE_COSTS,
   SMALL_INTEGER_LIMIT,
 } from './costs.js';
+import { memberTableExcess } from './member-table.js';
 
 /**
  * What a parse may still spend. The parser charges it as each part of the tree
@@ -130,13 +131,19 @@ export class ParseBudget {
   member(index: number, length: number, wide: boolean, offset: number): void {
     const width = wide ? 2 : 1;
     const big = index >= BIG_OBJECT_MEMBERS;
+    // The object's member table as it grows to hold this member, beyond what
+    // the weights pay for it (`member-table.ts`); it can fall back between
+    // steps, as the members' own weights catch up with the table.
+    const table = memberTableExcess(index + 1) - memberTableExcess(index);
     this.charge(
       PARSE_COSTS.peak.member +
         (big ? PARSE_COSTS.peak.bigMember : 0) +
-        length * width * PARSE_COSTS.peak.nameCharacter,
+        length * width * PARSE_COSTS.peak.nameCharacter +
+        table,
       PARSE_COSTS.retained.member +
         (big ? PARSE_COSTS.retained.bigMember : 0) +
-        length * width * PARSE_COSTS.retained.nameCharacter,
+        length * width * PARSE_COSTS.retained.nameCharacter +
+        table,
       offset,
     );
   }

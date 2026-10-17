@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PARSE_COSTS, parseCanonicalJsonCosted } from '@openpacker/canonical';
+import {
+  memberTableExcess,
+  PARSE_COSTS,
+  parseCanonicalJsonCosted,
+} from '@openpacker/canonical';
 import { json } from '@openpacker/adapter-core';
 import {
   FULL_PACKUMENT_LIMITS,
@@ -20,16 +24,47 @@ import {
 /**
  * The cost limits are held against the packuments that exist. A limit that
  * refuses `renovate` is a limit that breaks `opm add renovate`, so each real
- * document must cost at most four fifths of the limit it is read under (25
- * percent headroom), and every packument kept in this repository must be read.
+ * document must cost at most `HEADROOM` of the limit it is read under, and
+ * every packument kept in this repository must be read.
  */
 
 const MiB = 1024 * 1024;
 
+/**
+ * The share of its limit a real packument may cost: 85 percent. It was four
+ * fifths until an object's member table was charged at its size (ADR 0044,
+ * "The member table charged"); `@wix/wix-code-types`' full packument then costs
+ * 83.1 percent of its limit, where what its parse needs at the peak is 196 MiB.
+ */
+const HEADROOM = 0.85;
+
+/** The objects of each member count in a tree: `objects[i]` of `members[i]`. */
+interface MemberCounts {
+  readonly members: readonly number[];
+  readonly objects: readonly number[];
+}
+
+const SURVEYED_MEMBER_COUNTS = (
+  JSON.parse(
+    readFileSync(
+      new URL('./packument-survey-objects.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { documents: Record<string, MemberCounts> }
+).documents;
+
 /** What the parser charges for a tree of this composition (`PARSE_COSTS.peak`). */
-function treeCost(row: Omit<SurveyedPackument, 'name' | 'document' | 'bytes'>) {
+function treeCost(
+  row: Omit<SurveyedPackument, 'name' | 'document' | 'bytes'>,
+  { members, objects }: MemberCounts,
+) {
   const { peak } = PARSE_COSTS;
   return (
+    objects.reduce(
+      (total, count, index) =>
+        total + count * memberTableExcess(members[index]!),
+      0,
+    ) +
     row.objects * peak.object +
     row.arrays * peak.array +
     (row.arrays - row.emptyArrays) * peak.firstElement +
@@ -43,16 +78,18 @@ function treeCost(row: Omit<SurveyedPackument, 'name' | 'document' | 'bytes'>) {
   );
 }
 
+const keyOf = (row: SurveyedPackument) => `${row.name} ${row.document}`;
+const costOf = (row: SurveyedPackument) =>
+  treeCost(row, SURVEYED_MEMBER_COUNTS[keyOf(row)]!);
+
 const limitOf = (row: SurveyedPackument) =>
   row.document === 'abbreviated'
     ? PACKUMENT_PARSE_COST
     : FULL_PACKUMENT_PARSE_COST;
 
-describe('the real packuments, surveyed 2026-10-12', () => {
+describe('the real packuments, surveyed 2026-10-17', () => {
   it('include the ones the limits were set against', () => {
-    const names = SURVEYED_PACKUMENTS.map(
-      (row) => `${row.name} ${row.document}`,
-    );
+    const names = SURVEYED_PACKUMENTS.map(keyOf);
     for (const wanted of [
       'next abbreviated',
       'renovate abbreviated',
@@ -64,18 +101,14 @@ describe('the real packuments, surveyed 2026-10-12', () => {
       expect(names).toContain(wanted);
   });
 
-  it.each(
-    SURVEYED_PACKUMENTS.map(
-      (row) => [`${row.name} ${row.document}`, row] as const,
-    ),
-  )(
-    'costs at most four fifths of its limit, and is under its byte bound: %s',
+  it.each(SURVEYED_PACKUMENTS.map((row) => [keyOf(row), row] as const))(
+    'costs at most 85 percent of its limit, and is under its byte bound: %s',
     (_, row) => {
-      const cost = treeCost(row);
+      const cost = costOf(row);
       expect(
-        cost * 1.25,
-        `${(cost / MiB).toFixed(0)} MiB of ${(limitOf(row) / MiB).toFixed(0)}`,
-      ).toBeLessThanOrEqual(limitOf(row));
+        cost,
+        `${(cost / MiB).toFixed(1)} MiB of ${(limitOf(row) / MiB).toFixed(0)}`,
+      ).toBeLessThanOrEqual(HEADROOM * limitOf(row));
       expect(row.bytes).toBeLessThanOrEqual(
         row.document === 'abbreviated'
           ? MAXIMUM_PACKUMENT_BYTES
@@ -91,55 +124,49 @@ describe('the real packuments, surveyed 2026-10-12', () => {
     const heaviest = Math.max(
       ...SURVEYED_PACKUMENTS.filter(
         (row) => row.document === 'abbreviated',
-      ).map(treeCost),
+      ).map(costOf),
     );
-    expect(treeCost(renovate)).toBe(heaviest);
-    // 1.25 is the requirement; this is what there is.
-    expect(PACKUMENT_PARSE_COST / heaviest).toBeGreaterThan(2);
+    expect(costOf(renovate)).toBe(heaviest);
+    // 1 / HEADROOM is the requirement; this is what there is.
+    expect(PACKUMENT_PARSE_COST / heaviest).toBeGreaterThan(1.95);
     // The abbreviated document of that composition at the byte bound: the
     // byte bound, and not the cost, is what stops a real packument.
     expect(
-      (treeCost(renovate) * MAXIMUM_PACKUMENT_BYTES) / renovate.bytes,
+      (costOf(renovate) * MAXIMUM_PACKUMENT_BYTES) / renovate.bytes,
     ).toBeLessThan(PACKUMENT_PARSE_COST);
   });
 
   it('leave the tightest full one, wix-code-types, with its headroom stated', () => {
     const heaviest = Math.max(
       ...SURVEYED_PACKUMENTS.filter((row) => row.document === 'full').map(
-        treeCost,
+        costOf,
       ),
     );
     const wix = SURVEYED_PACKUMENTS.find(
       (row) => row.name === '@wix/wix-code-types' && row.document === 'full',
     )!;
-    expect(treeCost(wix)).toBe(heaviest);
-    expect(FULL_PACKUMENT_PARSE_COST / heaviest).toBeGreaterThanOrEqual(1.25);
+    expect(costOf(wix)).toBe(heaviest);
+    expect(heaviest).toBeLessThanOrEqual(HEADROOM * FULL_PACKUMENT_PARSE_COST);
+    // Over four fifths of the limit only because of the member tables.
+    expect(heaviest).toBeGreaterThan(0.8 * FULL_PACKUMENT_PARSE_COST);
   });
 });
 
 describe('the member counts of the surveyed packuments', () => {
-  const counts = JSON.parse(
-    readFileSync(
-      new URL('./packument-survey-objects.json', import.meta.url),
-      'utf8',
-    ),
-  ) as { documents: Record<string, { members: number[]; objects: number[] }> };
-
-  it.each(
-    SURVEYED_PACKUMENTS.map(
-      (row) => [`${row.name} ${row.document}`, row] as const,
-    ),
-  )('add up to the composition of %s', (key, row) => {
-    const { members, objects } = counts.documents[key]!;
-    expect(members).toHaveLength(objects.length);
-    const sum = (each: (count: number, index: number) => number) =>
-      objects.reduce((total, count, index) => total + each(count, index), 0);
-    expect(sum((count) => count)).toBe(row.objects);
-    expect(sum((count, index) => count * members[index]!)).toBe(row.members);
-    expect(
-      sum((count, index) => count * Math.max(0, members[index]! - 4096)),
-    ).toBe(row.bigMembers);
-  });
+  it.each(SURVEYED_PACKUMENTS.map((row) => [keyOf(row), row] as const))(
+    'add up to the composition of %s',
+    (key, row) => {
+      const { members, objects } = SURVEYED_MEMBER_COUNTS[key]!;
+      expect(members).toHaveLength(objects.length);
+      const sum = (each: (count: number, index: number) => number) =>
+        objects.reduce((total, count, index) => total + each(count, index), 0);
+      expect(sum((count) => count)).toBe(row.objects);
+      expect(sum((count, index) => count * members[index]!)).toBe(row.members);
+      expect(
+        sum((count, index) => count * Math.max(0, members[index]! - 4096)),
+      ).toBe(row.bigMembers);
+    },
+  );
 });
 
 describe('the cost of a tree of a given composition', () => {
@@ -158,6 +185,7 @@ describe('the cost of a tree of a given composition', () => {
       wideChars: 0,
       heapNumbers: 0,
     };
+    const tables = new Map<number, number>();
     const pending: unknown[] = [root];
     while (pending.length > 0) {
       const value = pending.pop();
@@ -175,6 +203,7 @@ describe('the cost of a tree of a given composition', () => {
       } else if (typeof value === 'object' && value !== null) {
         const keys = Object.keys(value);
         row.objects += 1;
+        tables.set(keys.length, (tables.get(keys.length) ?? 0) + 1);
         row.members += keys.length;
         row.bigMembers += Math.max(0, keys.length - 4096);
         for (const key of keys) {
@@ -183,7 +212,11 @@ describe('the cost of a tree of a given composition', () => {
         }
       }
     }
-    return row;
+    const counts = {
+      members: [...tables.keys()],
+      objects: [...tables.values()],
+    };
+    return { row, counts };
   }
 
   it('is what the parser charges, so the survey rows say what the parser would', async () => {
@@ -201,11 +234,17 @@ describe('the cost of a tree of a given composition', () => {
         strings: ['', 'abc', 'défg', 'wide €uro', 'x'.repeat(1000)],
         numbers: [1, 1073741823, 1073741824, -1073741825, 9007199254740991],
         nested: { x: { y: { z: {} } } },
+        tables: [3, 4, 6, 7, 21, 22, 86].map((members) =>
+          Object.fromEntries(
+            Array.from({ length: members }, (_, i) => [`m${i}`, i]),
+          ),
+        ),
       }),
     ];
     for (const text of documents) {
       const parsed = parseCanonicalJsonCosted(text);
-      expect(treeCost(composition(JSON.parse(text)))).toBe(parsed.cost);
+      const { row, counts } = composition(JSON.parse(text));
+      expect(treeCost(row, counts)).toBe(parsed.cost);
     }
   });
 });

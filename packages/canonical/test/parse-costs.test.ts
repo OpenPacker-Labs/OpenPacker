@@ -3,6 +3,7 @@ import {
   BIG_OBJECT_MEMBERS,
   CanonicalJsonLimitError,
   PARSE_COSTS,
+  memberTableExcess,
   parseCanonicalJson,
   parseCanonicalJsonCosted,
 } from '../src/index.js';
@@ -67,10 +68,15 @@ describe('what each part costs', () => {
       `{${Array.from({ length: count }, (_, i) => `"k${String(i).padStart(5, '0')}":1`).join(',')}}`;
     const each = peak.member + 6 * peak.nameCharacter;
     expect(costOf(members(BIG_OBJECT_MEMBERS))).toBe(
-      peak.object + BIG_OBJECT_MEMBERS * each,
+      peak.object +
+        BIG_OBJECT_MEMBERS * each +
+        memberTableExcess(BIG_OBJECT_MEMBERS),
     );
     expect(costOf(members(BIG_OBJECT_MEMBERS + 10))).toBe(
-      peak.object + (BIG_OBJECT_MEMBERS + 10) * each + 10 * peak.bigMember,
+      peak.object +
+        (BIG_OBJECT_MEMBERS + 10) * each +
+        10 * peak.bigMember +
+        memberTableExcess(BIG_OBJECT_MEMBERS + 10),
     );
   });
 
