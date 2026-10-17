@@ -443,13 +443,15 @@ opm ci --plan                             # read, check and plan; fetch and writ
 What it does differently from an npm lock, because a pnpm lock records edges and
 not places:
 
-- **It chooses the places.** Each importer's direct dependencies are in that
-  importer's own `node_modules` (the project's for the root importer).
-  Everything else goes where it is shared: in the project's `node_modules` when
-  it is the version of its name most packages want, beside its dependent when
-  another version already answers. Every edge of every importer and snapshot is
-  resolved on the plan with Node's lookup before anything is fetched, and a plan
-  in which one does not find its target is refused.
+- **It chooses the places.** The project's direct dependencies are in its
+  `node_modules`. Everything else, a member's direct dependencies included, goes
+  where it is shared: in the project's `node_modules` when it is the version of
+  its name most packages and importers want, beside its dependent (or in the
+  member) when another version already answers. So one instance has one real
+  path, and one module, as with pnpm and npm, unless versions conflict. Every
+  edge of every importer and snapshot is resolved on the plan with Node's lookup
+  before anything is fetched, and a plan in which one does not find its target
+  is refused.
 - **A package resolved against several sets of peers**
   (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
   archive, fetched and extracted once, and as many places as dependents need.
