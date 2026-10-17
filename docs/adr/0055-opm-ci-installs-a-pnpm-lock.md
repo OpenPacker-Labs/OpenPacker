@@ -104,20 +104,26 @@ design:
    is refused too: it does not pin the bytes). `deprecated` becomes a lifecycle
    fact. The integrity proves the bytes and not what they hold, so after
    extraction the host reads each archive's own `package.json` and refuses one
-   whose name or version (a leading `v` or `=` and build metadata aside) is not
-   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched). The version
-   is the one the lock records for the archive: a registry package's, or a
-   tarball entry's own `version` (its key holds the URL), and a tarball entry
-   with none has its name compared alone; a `name` the entry writes beside its
-   key must match as well. A name is compared without regard to case, as pnpm
-   compares one: pnpm makes the same check when it reads a package back from its
-   store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
-   `strict-store-pkg-content-check`); npm does not make it. Every value the
-   archive gives is quoted and escaped as the lock's values are. One difference
-   from pnpm is deliberate: pnpm compares a name or version only when the
-   archive's `package.json` has one, and opm refuses an archive with no `name`
-   (or, where the lock records a version, no `version`), because an archive that
-   does not say what it is cannot be identified as the package the lock names.
+   whose name or version is not the lock's (`DIGEST_MISMATCH`, before
+   `node_modules` is touched); a version refused names the version the lock
+   records. Two versions are the same when their text is, or when node-semver's
+   strict `SemVer` reads both to one version (one leading `v` and build metadata
+   aside). The version is the one the lock records for the archive: a registry
+   package's, or a tarball entry's own `version` (its key holds the URL), and a
+   tarball entry with none has its name compared alone; a `name` the entry
+   writes beside its key must match as well. A name is compared without regard
+   to case, as pnpm compares one: pnpm makes the same check when it reads a
+   package back from its store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on
+   by default through `strict-store-pkg-content-check`); npm does not make it.
+   Every value the archive gives is quoted and escaped as the lock's values are.
+   Two differences from pnpm are deliberate. pnpm compares a name or version
+   only when the archive's `package.json` has one, and opm refuses an archive
+   with no `name` (or, where the lock records a version, no `version`), because
+   an archive that does not say what it is cannot be identified as the package
+   the lock names. And pnpm compares versions loosely (`equalOrSemverEqual`:
+   `semver.eq(…, { loose: true })`), so it takes an archive that says `=1.0.0`,
+   `vv1.0.0` or `01.0.0` for `1.0.0`; opm reads a version strictly and refuses
+   those, failing closed.
 
 ### Where each instance goes
 
