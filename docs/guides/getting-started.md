@@ -36,6 +36,12 @@ cargo install --locked wasm-bindgen-cli --version 0.2.126
 npm exec playwright install chromium
 ```
 
+A machine that already has a Chromium and may not download one (a CI image, an
+agent sandbox) can point the browser gates and the demo at it instead:
+`PLAYWRIGHT_CHROMIUM=/abs/path/to/chrome npm run test:browser` (also `test:e2e`,
+`demo`, `golden:check`). The path must be absolute; unset, they launch the
+Chromium Playwright downloaded (`scripts/chromium.mjs`).
+
 The wasm target and `wasm-bindgen-cli` build only the WASM bindings
 (`@openpacker/embedded/wasm-node` and `/wasm-web`). The CLIs do not load them,
 so on a machine without them `npm run build` skips that one step with a warning

@@ -62,6 +62,7 @@ import {
   verifyTufTarget,
 } from '@openpacker/trust';
 import { chromium } from 'playwright';
+import { chromiumLaunchOptions } from './chromium.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -724,7 +725,7 @@ function modeDigest(solved, receiptDigest) {
 export async function browserSolve(
   input,
   receipt,
-  launch = () => chromium.launch({ headless: true }),
+  launch = () => chromium.launch(chromiumLaunchOptions()),
 ) {
   const directory = join(root, 'packages/embedded/dist/esm');
   const server = createServer((request, response) => {
