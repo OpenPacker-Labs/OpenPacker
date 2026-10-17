@@ -44,6 +44,21 @@ export const MANIFEST_INDEX = 0;
 export const LOCK_INDEX = 1;
 
 /**
+ * The rows of {@link ROLLBACK_FILES} the step writes late and tells the copy of
+ * before it does (`also`): package.json and package-lock.json are the people's
+ * as much as opm's, so a copy is put back over them only when they are as they
+ * were or as the step wrote them.
+ */
+const FILE_NAMES: readonly string[] = ROLLBACK_FILES;
+export const JOURNALED_INDEXES: readonly number[] = [
+  'package.json',
+  'package-lock.json',
+].map((name) => FILE_NAMES.indexOf(name));
+
+/** At most this many writes of one file are told to the copy; older ones are dropped. */
+export const MAX_ALSO = 32;
+
+/**
  * Trees an install may change, relative to the project root. node_modules is
  * kept as hard links (its files are the store's); opm's own small trees are
  * copied, so nothing depends on how they are written.
@@ -75,6 +90,24 @@ export interface KeptFile {
    * is one or the other: anything else was written by someone after the step.
    */
   after?: string;
+  /**
+   * sha256 of each content the step wrote or was about to write over a
+   * journaled row ({@link JOURNALED_INDEXES}), told to the copy before the
+   * write. The project is put back only over `before` or one of these.
+   */
+  also?: string[];
+}
+
+/**
+ * Which project a copy was made in: the root directory's device and inode (a
+ * move within a file system keeps them, a copy does not) and its real path (a
+ * project restored to the same place keeps it). A copy is put back only into
+ * the project it names.
+ */
+export interface RollbackProject {
+  dev: string;
+  ino: string;
+  path: string;
 }
 
 export interface RollbackRecord {
@@ -82,6 +115,8 @@ export interface RollbackRecord {
   /** `copying` until every file and tree is kept: only `ready` restores. */
   state: 'copying' | 'ready';
   owner: ProcessOwner;
+  /** The project it was made in; a record an earlier opm wrote has none. */
+  project?: RollbackProject;
   /** By index of {@link ROLLBACK_FILES}; empty while `copying`. */
   files: KeptFile[];
   /**
@@ -125,6 +160,8 @@ export function parseRollbackRecord(
   const owner = parseProcessOwner(record.owner);
   const { state, files, trees } = record;
   if (record.rollbackVersion !== 1 || owner === undefined) return undefined;
+  const project = parseProject(record.project);
+  if (record.project !== undefined && project === undefined) return undefined;
   if (state !== 'copying' && state !== 'ready') return undefined;
   if (!Array.isArray(files) || !Array.isArray(trees)) return undefined;
   // A `copying` record is never restored from: it may list nothing yet.
@@ -146,15 +183,34 @@ export function parseRollbackRecord(
     rollbackVersion: 1,
     state,
     owner,
+    ...(!(project === undefined) && { project }),
     files: kept,
     trees: trees as KeptTree[],
   };
 }
 
+const isDigests = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length <= MAX_ALSO &&
+  value.every((digest) => typeof digest === 'string' && DIGEST.test(digest));
+
+function parseProject(value: unknown): RollbackProject | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  // SAFETY: each field is checked below before it is used.
+  const { dev, ino, path } = value as Record<string, unknown>;
+  return typeof dev === 'string' &&
+    typeof ino === 'string' &&
+    /^\d{1,20}$/u.test(dev) &&
+    /^\d{1,20}$/u.test(ino) &&
+    isTarget(path)
+    ? { dev, ino, path }
+    : undefined;
+}
+
 function parseKeptFile(value: unknown): KeptFile | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   // SAFETY: each field is checked below before it is used.
-  const { before, mode, after, link } = value as Record<string, unknown>;
+  const { before, mode, after, link, also } = value as Record<string, unknown>;
   if (!(before === null || (typeof before === 'string' && DIGEST.test(before))))
     return undefined;
   if (
@@ -171,14 +227,15 @@ function parseKeptFile(value: unknown): KeptFile | undefined {
     )
   )
     return undefined;
+  if (!(also === undefined || isDigests(also))) return undefined;
+  const rest = {
+    ...(!(after === undefined) && { after }),
+    ...(!(also === undefined) && { also }),
+  };
   if (link === undefined)
-    return {
-      before,
-      ...(!(mode === undefined) && { mode }),
-      ...(!(after === undefined) && { after }),
-    };
+    return { before, ...(!(mode === undefined) && { mode }), ...rest };
   // A link is described by its target alone, and its digest says so.
   if (!isTarget(link) || mode !== undefined || before !== linkDigest(link))
     return undefined;
-  return { before, link, ...(!(after === undefined) && { after }) };
+  return { before, link, ...rest };
 }

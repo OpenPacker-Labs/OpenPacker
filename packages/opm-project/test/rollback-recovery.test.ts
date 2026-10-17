@@ -3,6 +3,7 @@ import { createServer } from 'node:net';
 import {
   mkdir,
   mkdtemp,
+  open,
   readFile,
   rename,
   rm,
@@ -19,6 +20,7 @@ import {
 } from '../src/index.js';
 import { undoStep } from '../src/install-commit.js';
 import { snapshotProject } from '../src/project-rollback.js';
+import { markerOf } from '../src/rollback-restore.js';
 import {
   copies,
   deadCopy,
@@ -84,8 +86,15 @@ describe.runIf(process.platform !== 'win32')(
       const before = await snapshot(root);
       await killedHalfWay(root);
       // A recovery killed right after it moved node_modules back: the kept
-      // tree is gone from the copy, and the copy is still `ready`.
+      // tree is gone from the copy, which says it had begun moving it, and the
+      // copy is still `ready`.
       const [name] = await copies(root);
+      await (
+        await open(
+          markerOf(join(root, '.opm', name!), 'trees', 0, 'moving'),
+          'w',
+        )
+      ).close();
       await rm(join(root, 'node_modules'), { recursive: true });
       await rename(
         join(root, '.opm', name!, 'trees', '0'),
@@ -284,5 +293,32 @@ describe('a step that fails and cannot be put back', () => {
         /^ENOTDIR: node_modules\/\.bin is a file; putting the project back failed too \(EIO: i\/o error, rename\)/u,
       ),
     });
+  });
+});
+
+/*
+ * The case round 4 found no test for (mutant R08: the digest compared with
+ * `after` alone): a step killed after its copy was ready and before its first
+ * write. The files still hold what they held; the copy records what the step
+ * meant to write. That is a project to put back (a no-op), not a conflict.
+ */
+describe('a copy whose step was killed before it wrote anything', () => {
+  it('is put back, not refused as a conflict', async () => {
+    const root = await project(['base']);
+    const before = await snapshot(root);
+    await snapshotProject(root, {
+      manifest: 'what the step meant to write\n',
+      lock: '{"meant":true}\n',
+    });
+    const [name] = await copies(root);
+    const pid = await exitedPid();
+    await editRecord(root, name!, (record) => {
+      record.owner.pid = pid;
+    });
+    expect(await recoverInterruptedSteps(root)).toEqual([
+      expect.objectContaining({ restored: true }),
+    ]);
+    expect(await snapshot(root)).toEqual(before);
+    expect(await copies(root)).toEqual([]);
   });
 });

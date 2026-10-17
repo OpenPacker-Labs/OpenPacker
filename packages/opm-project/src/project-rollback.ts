@@ -10,19 +10,16 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  ensureStableDirectory,
-  projectPaths,
-  writeStableFile,
-} from './paths.js';
+import { ensureStableDirectory, projectPaths } from './paths.js';
 import { currentOwner } from './process-owner.js';
 import { absent, discardCopy, readLive } from './rollback-files.js';
+import { journalWrites, writeRecord } from './rollback-journal.js';
+import { projectIdentity } from './rollback-project.js';
 import {
   LOCK_INDEX,
   MANIFEST_INDEX,
   ROLLBACK_FILES,
   ROLLBACK_PREFIX,
-  ROLLBACK_RECORD,
   ROLLBACK_TREES,
   linkDigest,
   sha256,
@@ -57,6 +54,12 @@ export interface ProjectSnapshot {
   restore(): Promise<void>;
   /** The install finished: drop the copy. */
   discard(): Promise<void>;
+  /**
+   * Tell the copy that `path` is about to hold `contents`, before it does
+   * (`rollback-journal.ts`): package.json and package-lock.json only; any
+   * other path is not the copy's business.
+   */
+  noteWrite(path: string, contents: string | Uint8Array): Promise<void>;
 }
 
 /**
@@ -85,6 +88,7 @@ export async function snapshotProject(
     rollbackVersion: 1,
     state: 'copying',
     owner,
+    project: await projectIdentity(paths.root),
     files: [],
     trees: [],
   };
@@ -127,6 +131,7 @@ export async function snapshotProject(
   return {
     restore: () => restoreFrom(paths.root, holder, record),
     discard: () => discardCopy(holder),
+    noteWrite: journalWrites(paths.root, holder, record),
   };
 }
 
@@ -152,13 +157,6 @@ async function keepFile(
         ? null
         : sha256(intended);
   return after === null ? row : { ...row, after };
-}
-
-async function writeRecord(holder: string, record: RollbackRecord) {
-  await writeStableFile(
-    join(holder, ROLLBACK_RECORD),
-    `${JSON.stringify(record, null, 2)}\n`,
-  );
 }
 
 /**

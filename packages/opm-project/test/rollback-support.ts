@@ -183,6 +183,8 @@ export async function deadCopy(root: string): Promise<string> {
 export const HALF_WAY = `
   await writeFile(join(root, 'opm.toml'), 'half-written\\n');
   await writeFile(join(root, 'opm.lock.json'), '{}\\n');
+  // A step tells its copy before it writes package.json (rollback-journal.ts).
+  await kept.noteWrite(join(root, 'package.json'), '{}\\n');
   await writeFile(join(root, 'package.json'), '{}\\n');
   await writeFile(join(root, '.opm', 'project.json'), '{}\\n');
   await rm(join(root, 'node_modules', 'base'), { recursive: true });
@@ -265,7 +267,7 @@ export async function killedHalfWay(root: string): Promise<void> {
      import { join } from 'node:path';
      import { snapshotProject } from ${JSON.stringify(sources.rollback)};
      const root = ${JSON.stringify(root)};
-     await snapshotProject(root);
+     const kept = await snapshotProject(root);
      ${HALF_WAY}
      process.kill(process.pid, 'SIGKILL');
     `,

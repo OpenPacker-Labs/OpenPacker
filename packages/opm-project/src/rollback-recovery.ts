@@ -7,10 +7,18 @@ import {
   isOwnerAlive,
   type ProcessOwner,
 } from './process-owner.js';
-import { absent, discardCopy, liveDigest, readLive } from './rollback-files.js';
-import { restoreFrom } from './rollback-restore.js';
+import {
+  absent,
+  discardCopy,
+  liveDigest,
+  readLive,
+  sweepRestoreNames,
+} from './rollback-files.js';
+import { otherProject, projectIdentity } from './rollback-project.js';
+import { markerOf, marked, restoreFrom } from './rollback-restore.js';
 import {
   DISCARD_SUFFIX,
+  JOURNALED_INDEXES,
   parseRollbackRecord,
   ROLLBACK_FILES,
   ROLLBACK_PREFIX,
@@ -27,6 +35,8 @@ export interface RecoveredStep {
   owner: ProcessOwner;
   /** True when the project was put back from it; false when it was only removed. */
   restored: boolean;
+  /** The real path of the project it was made in, when that is not this one: it was removed, not put back. */
+  foreign?: string;
 }
 
 /**
@@ -40,10 +50,14 @@ export interface RecoveredStep {
  * the step with nothing changed. Then:
  * - a copy whose owner may still be running (another machine, boot or PID
  *   namespace; a process of another user) stops the step with `PROJECT_BUSY`;
+ * - a `ready` copy made in another project (a copied `.opm`, a cache) is never
+ *   put back: it stops the step with `INVALID_ROLLBACK`, and is removed, and
+ *   nothing else done, by `opm recover --abandon-step`;
  * - a `ready` copy that was not being discarded means the project may be half
  *   way through a step: it is put back, unless a file the step said it would
- *   write holds neither what it held nor what the step meant to write, which
- *   stops the step with `ROLLBACK_CONFLICT` and keeps the copy;
+ *   write (opm.toml, the lock) or told the copy it was about to (package.json,
+ *   package-lock.json) holds neither what it held nor what the step meant to
+ *   write, which stops the step with `ROLLBACK_CONFLICT` and keeps the copy;
  * - a copy still being made (no record yet, or `copying`: the step had not
  *   started writing) or being discarded (the step had finished) is removed.
  */
@@ -58,6 +72,9 @@ export async function recoverHeldProject(
   abandoned?: (owner: ProcessOwner) => boolean,
 ): Promise<RecoveredStep[]> {
   const paths = projectPaths(root);
+  // Held under the project's lock, so a temporary name a putting back left is
+  // always a leftover, whether or not its copy is still there.
+  await sweepRestoreNames(paths.root);
   const opm = await lstat(paths.opmDir).catch(absent);
   if (opm === undefined) return [];
   if (!opm.isDirectory()) throw unsafe('.opm is not a directory');
@@ -76,6 +93,17 @@ export async function recoverHeldProject(
       await discardCopy(holder);
       continue;
     }
+    const restore = record.state === 'ready' && !name.endsWith(DISCARD_SUFFIX);
+    const foreign = restore
+      ? await otherProject(paths.root, record.project)
+      : undefined;
+    if (foreign !== undefined) {
+      if (abandoned?.(record.owner) !== true)
+        throw await foreignCopy(paths.root, name, foreign);
+      await discardCopy(holder);
+      recovered.push({ copy, owner: record.owner, restored: false, foreign });
+      continue;
+    }
     if (
       abandoned?.(record.owner) !== true &&
       (await isOwnerAlive(record.owner))
@@ -84,9 +112,8 @@ export async function recoverHeldProject(
         'PROJECT_BUSY',
         `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), run: opm recover --abandon-step ${copyId(name)}`,
       );
-    const restore = record.state === 'ready' && !name.endsWith(DISCARD_SUFFIX);
     if (restore) {
-      await assertRestorable(paths.root, record, copy);
+      await assertRestorable(paths.root, holder, record, copy);
       await restoreFrom(paths.root, holder, record);
     } else await discardCopy(holder);
     recovered.push({ copy, owner: record.owner, restored: restore });
@@ -103,6 +130,8 @@ export function copyId(name: string): string {
 
 /** One line for each copy recovered, as `opm` prints it on stderr. */
 export function describeRecovery(step: RecoveredStep): string {
+  if (step.foreign !== undefined)
+    return `opm: removed ${step.copy}, which was made for the project at ${step.foreign}; this project was not changed`;
   return step.restored
     ? `opm: put the project back as it was before a step that process ${step.owner.pid} did not finish, and removed ${step.copy}`
     : `opm: removed ${step.copy}, left by process ${step.owner.pid} before it changed the project`;
@@ -161,23 +190,45 @@ async function readRecord(
 
 /**
  * The files the step said it would write hold either what they held or what
- * the step meant to write. Anything else was written after the step, by
- * someone else, and putting the copy back would undo it.
+ * the step meant to write, and the ones it told the copy of hold what they
+ * held or one of the contents it was about to write. Anything else was written
+ * after the step, by someone else, and putting the copy back would undo it.
+ * A file the copy began to write in place (a bind mount) is its own, half
+ * written or not.
  */
 async function assertRestorable(
   root: string,
+  holder: string,
   record: RollbackRecord,
   copy: string,
 ): Promise<void> {
   for (const [index, file] of ROLLBACK_FILES.entries()) {
     const kept = record.files[index];
-    if (kept?.after === undefined) continue;
+    if (kept === undefined) continue;
+    const journaled = JOURNALED_INDEXES.includes(index);
+    if (kept.after === undefined && !journaled) continue;
+    if (await marked(markerOf(holder, 'files', index, 'putting'))) continue;
     const live = await readLive(join(root, file), file);
     const now = live === undefined ? null : liveDigest(live);
-    if (now !== kept.before && now !== kept.after)
+    const wrote = [kept.before, kept.after, ...(kept.also ?? [])];
+    if (!wrote.includes(now))
       throw new OpmError(
         'ROLLBACK_CONFLICT',
         `${file} changed after a step that process ${record.owner.pid} did not finish, so opm will not put the project back from ${copy} over it. Remove ${copy} to keep the project as it is now.`,
       );
   }
+}
+
+/** A copy made in another project: said plainly, with the way out that changes nothing else. */
+async function foreignCopy(
+  root: string,
+  name: string,
+  made: string,
+): Promise<OpmError> {
+  const copy = join('.opm', name);
+  const here = (await projectIdentity(root)).path;
+  return new OpmError(
+    'INVALID_ROLLBACK',
+    `${copy} was made in another project, ${made}, and this one is ${here}. Putting it back would replace this project's files with that one's, so opm made no change. If it came along by accident (a copied .opm, a cache), run: opm recover --abandon-step ${copyId(name)} (it only removes the copy), or remove ${copy}.`,
+  );
 }
