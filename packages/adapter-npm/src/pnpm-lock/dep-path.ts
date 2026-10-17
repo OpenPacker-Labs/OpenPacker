@@ -137,6 +137,14 @@ function parseAt(budget: Budget, text: string, nesting: number): DepPath {
   if (version === '') throw refuse(budget, text, 'has no version');
   if (version.includes('(') || version.includes(')'))
     throw refuse(budget, text, 'has a parenthesis that is not a peer suffix');
+  // A peer a workspace sibling satisfies (`plug@1.0.0(ui@link:../ui)`): said
+  // as what it is, where the general message would call `link:../ui` no version.
+  if (nesting > 0 && version.startsWith('link:'))
+    throw refuse(
+      budget,
+      text,
+      `is the peer ${quote(name)} satisfied by the workspace member at ${quote(version.slice(5))}, a directory this install does not place: a package whose peer is a workspace member is refused`,
+    );
   const kind = classifyVersion(version);
   if ('problem' in kind)
     throw refuse(budget, text, `has a version that ${kind.problem}`);

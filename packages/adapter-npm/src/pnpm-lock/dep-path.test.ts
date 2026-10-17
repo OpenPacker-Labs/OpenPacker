@@ -235,6 +235,24 @@ describe('parseDepPath: refusals', () => {
     expect(reasonOf(text)).toBe(reason);
   });
 
+  it('names a peer that a workspace sibling satisfies, and the sibling', () => {
+    const message = (text: string): string => {
+      try {
+        parse(text);
+      } catch (error) {
+        return (error as PnpmLockError).message;
+      }
+      return '';
+    };
+    const shown = message('plug@1.0.0(ui@link:../ui)');
+    expect(shown).toContain('"ui@link:../ui"');
+    expect(shown).toContain(
+      'the peer "ui" satisfied by the workspace member at "../ui"',
+    );
+    // Not a peer, a package that is a link: the general message stays.
+    expect(message('ui@link:../ui')).toContain('has a version that');
+  });
+
   it('says which parenthesis is wrong', () => {
     const message = (text: string) => {
       try {
