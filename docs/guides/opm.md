@@ -460,13 +460,34 @@ naming the importer and the dependency:
   replacing `pnpm-workspace.yaml`'s), a `publishConfig.directory` or
   `ignoredOptionalDependencies` the lock does not record: these are the checks
   `pnpm install --frozen-lockfile` makes, and the error says so;
-- by opm's own rules: `patchedDependencies` or a declared patch (`opm` applies
-  no patches), a lock written with `ignoredOptionalDependencies`, a package from
-  a git repository, a directory, a `file:` archive or a runtime, a package with
-  no sha512, sha384 or sha256 integrity, an injected workspace package, a member
-  with dependencies the lock does not list, a link to an importer the project no
-  longer has, and a non-optional package that does not run on the target. Every
-  range, an override's included, is read as node-semver reads it.
+- by opm's own rules: a lock written with `ignoredOptionalDependencies`, a
+  package from a git repository, a directory, a `file:` archive or a runtime, a
+  package with no sha512, sha384 or sha256 integrity, an injected workspace
+  package, a member with dependencies the lock does not list, a link to an
+  importer the project no longer has, and a non-optional package that does not
+  run on the target. Every range, an override's included, is read as node-semver
+  reads it.
+
+**Patches** (`patchedDependencies`,
+[ADR 0056](../adr/0056-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
+10.28 applies them, after each archive is proved to be the package the lock
+names and before anything is linked. The project's patches are read from
+`package.json`'s `pnpm.patchedDependencies` (or, when it has none,
+`pnpm-workspace.yaml`'s) and must be what the lock records: the same keys and
+paths, and each file's hash, pnpm 10's sha256 or pnpm 9's md5 in base32,
+whichever the lock has (a CRLF checkout hashes as LF). A hunk may sit up to 20
+lines from its header, trailing whitespace and `\r` do not stop it, and a patch
+the package already has counts as applied, as with pnpm; a patch is applied
+whole or not at all. The patched files are a store entry of their own
+(`sha256-<archive>-patch-<sha256 of the patch>`), so a project that installs the
+same version unpatched shares none of them, and `opm gc --shared` keeps each
+while a project links it. `--plan` reports `patched: N packages by M patches`
+and refuses, before anything is fetched: a patch file that is missing (exit 4),
+edited since the lock was written (stale, exit 3), outside the project or
+reached through a link (exit 7), one that names a path outside its package
+(exit 7) or that pnpm cannot read (exit 3). A patch that does not apply stops
+the install with nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for
+a bare-name key and installs the package unpatched.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
