@@ -47,16 +47,14 @@ export interface World {
 }
 
 const temps: string[] = [];
-let installed = false;
-function cleanupAfterEach(): void {
-  if (installed) return;
-  installed = true;
-  afterEach(async () => {
-    await Promise.all(
-      temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-    );
-  });
-}
+// Registered when a test file imports this, as it is collected: a hook
+// registered from inside a running test was never run, and every world was
+// left behind in the temporary directory.
+afterEach(async () => {
+  await Promise.all(
+    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
 
 const record = (
   list: readonly { name: string; specifier: string }[],
@@ -114,7 +112,6 @@ export async function worldOf(
   lock: Uint8Array | string,
   tweaks: Tweaks = {},
 ): Promise<World> {
-  cleanupAfterEach();
   const bytes =
     typeof lock === 'string' ? new TextEncoder().encode(lock) : lock;
   const parsed = readPnpmLock(bytes).lock;
