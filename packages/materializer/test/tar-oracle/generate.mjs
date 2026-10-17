@@ -120,6 +120,13 @@ async function generate(nodeTarDirectory, pnpmDirectory) {
   return { nodeTar: '6.2.1', pnpm: '10.28.0', cases };
 }
 
+/** The file as the repository's prettier writes it, so format:check passes on it. */
+async function formatted(text) {
+  const prettier = await import('prettier');
+  const options = (await prettier.resolveConfig(OUTPUT)) ?? {};
+  return prettier.format(text, { ...options, filepath: OUTPUT });
+}
+
 const [nodeTarDirectory, pnpmDirectory, flag] = process.argv.slice(2);
 if (!nodeTarDirectory || !pnpmDirectory) {
   console.error(
@@ -136,6 +143,9 @@ if (flag === '--check') {
   }
   console.log(`oracle.json matches: ${oracle.cases.length} cases`);
 } else {
-  writeFileSync(OUTPUT, `${JSON.stringify(oracle, null, 2)}\n`);
+  writeFileSync(
+    OUTPUT,
+    await formatted(`${JSON.stringify(oracle, null, 2)}\n`),
+  );
   console.log(`wrote ${OUTPUT}: ${oracle.cases.length} cases`);
 }
