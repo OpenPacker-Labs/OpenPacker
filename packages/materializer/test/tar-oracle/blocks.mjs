@@ -6,7 +6,7 @@
 /**
  * A header and the data of a regular file, padded to whole blocks: ustar, its
  * checksum written `NNNNNN\0 `, unless `edit` changes the header first or
- * `checksum` writes the field another way.
+ * `checksum` writes the field another way (a string, or a Buffer's bytes).
  */
 export function file(name, text, { prefix = '', edit, checksum } = {}) {
   const body = Buffer.from(text);
@@ -25,10 +25,9 @@ export function file(name, text, { prefix = '', edit, checksum } = {}) {
   edit?.(header);
   let sum = 0;
   for (const byte of header) sum += byte;
-  header.write(
-    checksum?.(sum) ?? `${sum.toString(8).padStart(6, '0')}\0 `,
-    148,
-  );
+  const field = checksum?.(sum) ?? `${sum.toString(8).padStart(6, '0')}\0 `;
+  if (Buffer.isBuffer(field)) field.copy(header, 148);
+  else header.write(field, 148);
   return Buffer.concat([
     header,
     body,

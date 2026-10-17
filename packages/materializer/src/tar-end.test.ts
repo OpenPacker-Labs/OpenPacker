@@ -1,11 +1,13 @@
 /**
  * For an archive the npm adapter materializes (`requireNpmReaderAgreement`),
  * opm refuses what npm's and pnpm's own readers install differently, and
- * installs what both install where they agree. The readers are node-tar 6.2.1
- * (npm) and pnpm 10.28.0's `parseTarball`, recorded over the same bytes in
- * test/tar-oracle/oracle.json by its generate.mjs; paths are compared as
- * installed, the first component stripped. Any other archive keeps the
- * general end rule: two zero blocks, or the end of the data.
+ * installs what both install where they agree, with three stated exceptions:
+ * OVER_REFUSED (they agree and opm refuses), PINNED (they agree and opm lays it
+ * out differently). The readers are node-tar 6.2.1 (npm) and pnpm 10.28.0's
+ * `parseTarball`, recorded over the same bytes in test/tar-oracle/oracle.json
+ * by its generate.mjs; paths are compared as installed, the first component
+ * stripped. Any other archive keeps the general end rule: two zero blocks, or
+ * the end of the data, and a lone zero block with data after it refused.
  */
 
 import { readFileSync } from 'node:fs';
@@ -82,6 +84,9 @@ const OVER_REFUSED: Record<string, string> = {
   'an extended header with a size, a global header, then a file':
     'TAR_AMBIGUOUS_PAX',
   'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
+  'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
+  'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
+  'a lone zero block, then a base-256 checksum': 'TAR_AMBIGUOUS_END',
 };
 
 /**
