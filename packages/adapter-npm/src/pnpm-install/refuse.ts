@@ -77,7 +77,8 @@ const STRONG = /^sha(?:256|384|512)-/u;
 /**
  * Where an instance is fetched from, or why it cannot be. A registry package
  * has no URL in the lock, so it is the registry's standard path for its name
- * and version; any other is its `resolution` as written. Nothing here fetches.
+ * and version (less any `+build` metadata, as pnpm builds it); any other is its
+ * `resolution` as written. Nothing here fetches.
  */
 export function sourceOfInstance(
   instance: PnpmInstance,
@@ -114,10 +115,12 @@ export function sourceOfInstance(
     return {
       problem: `${label} has only a sha1 integrity, which does not pin its bytes`,
     };
+  // pnpm's own address (`@pnpm/tarball-url`): the version without its build
+  // metadata, which the registry's file name does not carry.
   const url =
     resolution.kind === 'tarball'
       ? resolution.tarball
-      : `${registry.replace(/\/+$/u, '')}/${instance.name}/-/${instance.name.split('/').at(-1)}-${instance.version}.tgz`;
+      : `${registry.replace(/\/+$/u, '')}/${instance.name}/-/${instance.name.split('/').at(-1)}-${instance.version.split('+', 1)[0]}.tgz`;
   const source = classifyResolved({
     packageName: instance.name,
     version: instance.version,
