@@ -11,6 +11,7 @@ import {
   type FrozenPatch,
 } from '@openpacker/adapter-core';
 import { applyEffects, PatchRefusal } from './apply.js';
+import { HeaderLineTooLong, MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { parsePatchFile, type PatchEffect } from './parse.js';
 import {
   commitPatchTree,
@@ -40,6 +41,11 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
   try {
     effects = parsePatchFile(text);
   } catch (error) {
+    if (error instanceof HeaderLineTooLong)
+      throw new ProviderError(
+        'SIZE_LIMIT',
+        `the patch ${quote(file)} has a header line of ${error.length} characters, more than the ${MAXIMUM_HEADER_LINE} that two paths within the bounds of a path in an archive and the diff line around them come to, so a path in it is past those bounds or the line is no line of a git diff; opm reads no longer one, where pnpm reads whatever is there`,
+      );
     throw new ProviderError(
       'INVALID_PATCH',
       `the patch ${quote(file)} cannot be read, as pnpm cannot read it (ERR_PNPM_INVALID_PATCH): ${error instanceof Error ? error.message : String(error)}`,
