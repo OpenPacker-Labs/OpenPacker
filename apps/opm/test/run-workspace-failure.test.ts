@@ -178,6 +178,35 @@ posix('signals', () => {
     expect(signals.listenerCount('SIGTERM')).toBe(0);
   });
 
+  it('reach a member that has only just said it started: it can already be told to end', async () => {
+    // Each member holds, in the moment after it says it started, until the test
+    // lets it go, and the signal comes then. A busy machine does the same to a
+    // member whose next line the test's poll gets ahead of.
+    const ws = await makeWorkspace({
+      'packages/a': { name: 'a', scripts: { build: trace('a', 20_000) } },
+      'packages/b': { name: 'b', scripts: { build: trace('b', 20_000) } },
+    });
+    const { host, signals } = hostWithSignals();
+    const running = go(
+      'run',
+      ['build', '-r', '--workspace-concurrency=2'],
+      ws.root,
+      contextWith({ TRACE_RELEASE: 'release' }, { host }),
+    );
+    await until(async () => started(await ws.log()).length === 2);
+    signals.emit('SIGTERM');
+    await writeFile(join(ws.root, 'release'), '');
+    const ran = await running;
+    const log = await ws.log();
+    expect(
+      log
+        .filter(([what]) => what === 'term')
+        .map(([, id]) => id)
+        .sort(),
+    ).toEqual(['a', 'b']);
+    expect(ran.status).toBe(143);
+  });
+
   it('forward SIGINT and SIGHUP too, and the status is 128 plus the signal', async () => {
     for (const [signal, status] of [
       ['SIGINT', 130],
