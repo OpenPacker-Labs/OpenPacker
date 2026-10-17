@@ -453,13 +453,18 @@ else was published. A `latest` inside the policy's minimum release age gives way
 to the newest older release that is not a prerelease. `opm update --latest` and
 `opmx` choose by the same rule.
 
-An add that fails after its requirement resolved (a package in the closure that
-cannot be downloaded, whose bytes are not the ones published, or whose archive
-cannot be extracted) leaves `opm.toml`, the lock and `node_modules` as they
-were: they are written only once every package is in the store. Archives are
-read as npm writes them: a path longer than a tar header holds is taken from its
-pax record, and a file listed twice with the same bytes is one file (one listed
-twice with different bytes is refused).
+`opm add`, `opm sync` and `opm update` either finish or leave the project as it
+was. A package in the closure that cannot be downloaded, whose bytes are not the
+ones published, or whose archive cannot be extracted stops them before anything
+outside the store changes: `opm.toml`, the lock and `node_modules` are written
+only once every package is in the store. A failure after that, while linking or
+laying out `node_modules` (a `.bin` that is a file, say), puts `opm.toml`, the
+lock, `package.json`, `node_modules` and opm's own state back as they were: the
+step keeps a copy of them first, as hard links for `node_modules`, so it costs a
+link per file rather than the bytes. Archives are read as npm writes them: a
+path longer than a tar header holds is taken from its pax record, and a file
+listed twice with the same bytes is one file (one listed twice with different
+bytes is refused).
 
 ---
 

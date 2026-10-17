@@ -7,13 +7,8 @@ import type {
 } from './types.js';
 import { OpmError } from './types.js';
 import { loadCatalogs } from './catalog.js';
-import {
-  digestOf,
-  installFromLock,
-  readProjectState,
-  uninstallPackages,
-} from './install.js';
-import { readLockfile, writeLockfile } from './lock.js';
+import { digestOf, readProjectState } from './install.js';
+import { readLockfile } from './lock.js';
 import { projectNativeFormats, type NativeProjectionReport } from './native.js';
 import {
   CATALOG_NAME,
@@ -21,15 +16,12 @@ import {
   parentDirs,
   projectPaths,
 } from './paths.js';
-import {
-  readManifestFile,
-  resolveManifestToLock,
-  writeManifestFile,
-} from './project.js';
+import { readManifestFile, resolveManifestToLock } from './project.js';
 import type { RegistryOptions } from './registry.js';
 import { isPinnedVersion } from './registry-target.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { serializeManifest } from './toml.js';
+import { commitInstall } from './install-commit.js';
 import { newestEligibleVersion } from './update-candidates.js';
 
 export async function updateProject(input: {
@@ -83,6 +75,7 @@ export async function updateProject(input: {
       lock,
       offline,
       Object.keys(manifest.packages),
+      false,
     );
   }
 
@@ -155,7 +148,8 @@ export async function updateProject(input: {
         version: selectedVersion,
       };
     }
-    await writeManifestFile(paths.manifest, committed);
+    // Written with the lock, once the closure is installed (`commitInstall`):
+    // an update that fails leaves opm.toml as it was.
   }
 
   const resolutionManifest: OpmManifest = {
@@ -196,7 +190,7 @@ export async function updateProject(input: {
     })
     .sort();
 
-  return finish(input.root, committed, lock, offline, updated);
+  return finish(input.root, committed, lock, offline, updated, latest);
 }
 
 async function unchanged(
@@ -231,6 +225,7 @@ async function finish(
   lock: OpmLockfile,
   offline: boolean,
   updated: readonly string[],
+  writeManifest: boolean,
 ): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -238,22 +233,13 @@ async function finish(
   native?: NativeProjectionReport;
   updated: readonly string[];
 }> {
-  const paths = projectPaths(root);
-  await writeLockfile(paths.lock, lock);
-  const previous = await readProjectState(paths.projectState);
-  if (previous) {
-    const stale = Object.keys(previous.packages).filter(
-      (alias) => !lock.packages[alias],
-    );
-    if (stale.length > 0) await uninstallPackages({ root, aliases: stale });
-  }
-  const state = await installFromLock({
+  const { state, native } = await commitInstall({
     root,
+    manifest,
     lock,
     offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
+    writeManifest,
   });
-  const native = await projectNativeFormats({ root, manifest, lock });
   return {
     manifest,
     lock,

@@ -43,6 +43,7 @@ import {
   writeLockfile,
 } from './lock.js';
 import { reproducibleLockForm } from './lock-reproducible.js';
+import { commitInstall } from './install-commit.js';
 import {
   hostSandboxFromPolicy,
   installSystemPackage,
@@ -312,38 +313,14 @@ export async function addPackage(input: {
   });
   // The whole lock, not just the alias that was named: a package is not
   // installed in any useful sense without the things it needs, and the lock now
-  // carries them. opm.toml and the lock are written only once every package is
-  // in the store: a refused or unsatisfiable add used to leave its requirement
-  // in opm.toml, and one whose dependency could not be fetched, verified or
-  // extracted left opm.toml and the lock rewritten for a closure never
-  // installed.
-  const state = await installFromLock({
-    root: input.root,
-    lock,
-    offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
-    beforeLinking: async () => {
-      await writeManifestFile(paths.manifest, manifest);
-      await writeLockfile(paths.lock, lock);
-      // What is installed under a key the lock no longer has: adding the
-      // package that makes a name two versions re-keys the first (`ansi-regex`
-      // is `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now), and the old record
-      // would go on being listed as installed.
-      const stale = Object.keys(
-        (await readProjectState(paths.projectState))?.packages ?? {},
-      ).filter((key) => !lock.packages[key]);
-      if (stale.length > 0)
-        await uninstallPackages({ root: input.root, aliases: stale });
-    },
-  });
-
-  // Last, and only after the store is real: a native manifest that names a
-  // package the resolve never produced would send the native tool looking for
-  // something opm does not have.
-  const native = await projectNativeFormats({
+  // carries them. A refused or unsatisfiable add used to leave its requirement
+  // in opm.toml; one that fails installing it leaves the project as it was.
+  const { state, native } = await commitInstall({
     root: input.root,
     manifest,
     lock,
+    offline,
+    writeManifest: true,
   });
 
   return { manifest, lock, state, alias, native };
@@ -353,6 +330,8 @@ export async function syncProject(input: {
   root: string;
   offline?: boolean;
   catalogPaths?: readonly string[];
+  /** Transport / endpoint overrides for the registry walk (tests, hosts). */
+  registryOptions?: RegistryOptions;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -369,31 +348,17 @@ export async function syncProject(input: {
     ...(input.catalogPaths !== undefined && {
       catalogPaths: input.catalogPaths,
     }),
+    ...(input.registryOptions !== undefined && {
+      registryOptions: input.registryOptions,
+    }),
     previousLock: await readPreviousLock(paths.lock),
   });
-  await writeLockfile(paths.lock, lock);
-
-  // uninstall packages no longer in lock
-  const previous = await readProjectState(paths.projectState);
-  if (previous) {
-    const stale = Object.keys(previous.packages).filter(
-      (alias) => !lock.packages[alias],
-    );
-    if (stale.length > 0) {
-      await uninstallPackages({ root: input.root, aliases: stale });
-    }
-  }
-
-  const state = await installFromLock({
-    root: input.root,
-    lock,
-    offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
-  });
-  const native = await projectNativeFormats({
+  const { state, native } = await commitInstall({
     root: input.root,
     manifest,
     lock,
+    offline,
+    writeManifest: false,
   });
   return { manifest, lock, state, native };
 }
