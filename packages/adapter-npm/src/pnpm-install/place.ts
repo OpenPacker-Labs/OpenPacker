@@ -27,13 +27,17 @@
  *   `node_modules` before the project's, as Node does.
  *
  * The answers depend on the order they are given in, so the layout is checked
- * and made again (`settle`): an edge whose dependency loads another copy of a
- * peer is pinned beside its dependent, and a name left without its slot in the
- * project is elected. At most `MAXIMUM_LAYOUTS` layouts are made that way. A
- * lock for which none can be written within the bound is laid out once more
- * without a thought for peers, as it was before the peer rule, rather than
- * refused; and a split a pin does not cure is kept, in the layout that has the
- * fewest, rather than refused.
+ * and made again (`layOutUntilSound`): an edge whose dependency loads another
+ * copy of a peer is pinned beside its dependent, and a name left without its
+ * slot in the project is elected. At most `MAXIMUM_LAYOUTS` layouts are made
+ * that way for each way of sharing: first every importer shares what it can,
+ * then, where that leaves a split or no layout, the importers that reach
+ * packages needing each other keep all they need in their own `node_modules`.
+ * A lock for which no layout with peers in view can be written within the
+ * bound is laid out once more without them, as it was before the peer rule,
+ * rather than refused; and a split no layout cures is kept, in the layout that
+ * has the fewest, rather than refused, and counted (`splits`) so that the
+ * install can say so (`FrozenLock.peers`).
  *
  * Pure. `place-check.ts` resolves every edge on the result with Node's lookup
  * and is how a plan is proved.
@@ -106,7 +110,7 @@ interface Checked {
  * is spent. `best` is the layout with the fewest splits (the later of equals);
  * it is absent when no layout could be written within the bound.
  */
-function settle(
+function layOutUntilSound(
   input: PlaceInput,
   known: Known,
   isolated: ReadonlySet<string>,
@@ -161,14 +165,14 @@ export function planPlacement(input: PlaceInput): PlannedPlacement {
   // First every importer shares what it can. Where that leaves a split, or no
   // layout at all, the importers that reach packages needing each other keep
   // all they need in their own `node_modules`, and the better layout is kept.
-  const shared = settle(input, known, new Set());
+  const shared = layOutUntilSound(input, known, new Set());
   let attempt = shared;
   let isolated: ReadonlySet<string> = new Set();
   let layouts = shared.layouts;
   if (shared.best === undefined || shared.best.splits.length > 0) {
     const keep = cyclicImporters(input);
     if (keep.size > 0) {
-      const alone = settle(input, known, keep);
+      const alone = layOutUntilSound(input, known, keep);
       layouts += alone.layouts;
       if (
         alone.best !== undefined &&
