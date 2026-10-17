@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+import { splitPurlVersion } from './purl-version.js';
 export {
   detectLibc,
   detectNativeTarget,
@@ -1721,14 +1722,8 @@ export function parsePurl(value: string): ParsedPurl {
     throw new ProviderError('INVALID_PURL', 'PURL requires a type and name');
   const type = identity.slice(0, slash).toLowerCase();
   const pathAndVersion = identity.slice(slash + 1);
-  // An `@` that begins the path is an npm scope typed as people type it
-  // (`pkg:npm/@vercel/sdk`), not a version separator: nothing precedes it, so
-  // the name would be empty. It is read as `%40`, and `formatPurl` writes it
-  // back that way, as the npm type requires (purl-spec types/npm-definition.json).
-  const at = pathAndVersion.lastIndexOf('@');
-  const versioned = at > 0;
-  const path = versioned ? pathAndVersion.slice(0, at) : pathAndVersion;
-  const version = versioned ? decode(pathAndVersion.slice(at + 1)) : undefined;
+  const { path, version: encoded } = splitPurlVersion(pathAndVersion);
+  const version = encoded === undefined ? undefined : decode(encoded);
   const segments = path.split('/');
   if (segments.some((segment) => segment.length === 0))
     throw new ProviderError('INVALID_PURL', 'PURL path has an empty segment');
