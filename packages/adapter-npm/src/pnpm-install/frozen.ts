@@ -35,7 +35,7 @@ import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
 import { planPlacement } from './place.js';
 import { placeInputOf } from './place-input.js';
-import { resolutionProblems } from './place-check.js';
+import { peerSplitProblems, resolutionProblems } from './place-check.js';
 import {
   importerRefusals,
   lockRefusals,
@@ -155,11 +155,14 @@ export async function readFrozenPnpmLock(
     return refuse(
       placement.problems.map((reason) => ({ path: 'node_modules', reason })),
     );
-  const unresolved = resolutionProblems(input, placement);
+  const unresolved = [
+    ...resolutionProblems(input, placement),
+    ...peerSplitProblems(input, placement),
+  ];
   if (unresolved.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `the layout opm planned for ${project.root} does not resolve every dependency, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
+      `the layout opm planned for ${project.root} does not resolve every dependency to the instance the lock names, one copy of each peer a package shares with its dependent, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
     );
 
   const packages = placement.placed.map((place): FrozenLockPackage => {

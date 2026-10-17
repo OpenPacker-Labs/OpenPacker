@@ -3,7 +3,7 @@
  * both, written the way the cases read.
  */
 
-import type { PlaceInput, PlaceInstance, PlaceTop } from './place.js';
+import type { PlaceInput, PlaceInstance, PlaceTop } from './place-types.js';
 
 /** `name@version(peers)`: the package's own name and version, as a key spells them. */
 export function instance(
