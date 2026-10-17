@@ -1,13 +1,17 @@
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { patchedStoreKey } from '../src/frozen-patch.js';
 import { patchedPackageDirectoryBytes } from '../src/frozen-patch-fit.js';
 import { planFrozen } from '../src/index.js';
-import { cleanStores, DIGEST, PATCH } from './frozen-patch-fixture.js';
-import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
+import {
+  cleanStores,
+  DIGEST,
+  PATCH,
+  patchedWorld,
+} from './frozen-patch-fixture.js';
+import { cleanup } from './frozen-pnpm-fixture.js';
 import { onPosix } from './frozen-workspace-fixture.js';
 
 afterEach(async () => {
@@ -83,37 +87,6 @@ describe('the directory a patched package is made in', () => {
     ).toBeGreaterThanOrEqual(madeIn(2));
   });
 });
-
-/** x@1.0.0 patched by `patch`, in a project of its own. */
-async function patchedWorld(patch: string): Promise<PnpmWorld> {
-  const hash = createHash('sha256')
-    .update(patch.split('\r\n').join('\n'))
-    .digest('hex');
-  const suffix = `(patch_hash=${hash})`;
-  const w = await pnpmWorld();
-  w.pkg({
-    name: 'x',
-    version: '1.0.0',
-    suffix,
-    files: { 'lib.js': "module.exports = 'original';\n" },
-  });
-  w.importer(
-    '.',
-    { dependencies: { x: ['1.0.0', `1.0.0${suffix}`] } },
-    { pnpm: { patchedDependencies: { 'x@1.0.0': 'patches/x.patch' } } },
-  );
-  w.rootLines(
-    'patchedDependencies:',
-    '  x@1.0.0:',
-    `    hash: ${hash}`,
-    '    path: patches/x.patch',
-    '',
-  );
-  await w.write();
-  await mkdir(join(w.dir, 'patches'));
-  await writeFile(join(w.dir, 'patches', 'x.patch'), patch);
-  return w;
-}
 
 describe.runIf(onPosix)('opm ci over a patch whose path is long', () => {
   const storeBytes = 3_500;

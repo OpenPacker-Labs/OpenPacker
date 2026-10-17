@@ -12,6 +12,7 @@ import {
   type FrozenPatch,
 } from '@openpacker/adapter-core';
 import { applyEffects, PatchBudget, PatchRefusal } from './apply.js';
+import { caseCollision } from './case-collision.js';
 import { HeaderLineTooLong, MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { parsePatchFile, type PatchEffect } from './parse.js';
 import {
@@ -118,6 +119,12 @@ export async function applyPnpmPatch(
       throw new ProviderError(
         'PATCH_FAILED',
         `the patch ${quote(patch.file)} (patchedDependencies ${quote(patch.key)}) does not apply to ${quote(label)}, and pnpm would refuse it too (ERR_PNPM_PATCH_FAILED); nothing was installed`,
+      );
+    const twins = await caseCollision(packageDir, before, tree.nodes, budget);
+    if (twins !== undefined)
+      throw new PatchRefusal(
+        'CASE_COLLISION',
+        `it would leave ${quote(shownPath(twins.path))} beside ${quote(shownPath(twins.other))}, two files that differ only in case, which one case-insensitive file system makes one and an archive refuses (CASE_COLLISION)`,
       );
     await commitPatchTree(packageDir, before, tree);
   } catch (error) {

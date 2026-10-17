@@ -1,10 +1,12 @@
 /** A shared store and a format, for the tests of publishing a patched entry (ADR 0056 §11). */
 
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FrozenPatch, ProjectFormat } from '@openpacker/adapter-core';
 import { patchArchives } from '../src/frozen-patch.js';
+import { pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
 
 const temps: string[] = [];
 
@@ -95,4 +97,35 @@ export function deterministic() {
     },
   };
   return { format, calls: () => calls };
+}
+
+/** x@1.0.0 patched by `patch`, in a project of its own (a lock, its files and the patch on disk). */
+export async function patchedWorld(patch: string): Promise<PnpmWorld> {
+  const hash = createHash('sha256')
+    .update(patch.split('\r\n').join('\n'))
+    .digest('hex');
+  const suffix = `(patch_hash=${hash})`;
+  const w = await pnpmWorld();
+  w.pkg({
+    name: 'x',
+    version: '1.0.0',
+    suffix,
+    files: { 'lib.js': "module.exports = 'original';\n" },
+  });
+  w.importer(
+    '.',
+    { dependencies: { x: ['1.0.0', `1.0.0${suffix}`] } },
+    { pnpm: { patchedDependencies: { 'x@1.0.0': 'patches/x.patch' } } },
+  );
+  w.rootLines(
+    'patchedDependencies:',
+    '  x@1.0.0:',
+    `    hash: ${hash}`,
+    '    path: patches/x.patch',
+    '',
+  );
+  await w.write();
+  await mkdir(join(w.dir, 'patches'));
+  await writeFile(join(w.dir, 'patches', 'x.patch'), patch);
+  return w;
 }

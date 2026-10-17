@@ -55,9 +55,14 @@ export class PatchRefusal extends Error {
   constructor(
     /**
      * `UNSAFE_PATH` for a link or a special file, `SIZE_LIMIT` for a tree
-     * past the files an archive may hold, `PATCH_FAILED` otherwise.
+     * past the files an archive may hold, `CASE_COLLISION` for two files an
+     * archive would refuse as one, `PATCH_FAILED` otherwise.
      */
-    readonly code: 'UNSAFE_PATH' | 'SIZE_LIMIT' | 'PATCH_FAILED',
+    readonly code:
+      | 'UNSAFE_PATH'
+      | 'SIZE_LIMIT'
+      | 'CASE_COLLISION'
+      | 'PATCH_FAILED',
     message: string,
   ) {
     super(message);

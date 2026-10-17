@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { PACKAGE_TREE_LIMITS, segmentProblem } from '@openpacker/adapter-core';
+import { collisionKey } from '@openpacker/adapter-core';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
 import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
@@ -101,8 +102,7 @@ export function validateArchivePath(
     parts.some((part) => part === '' || part === '.' || part === '..')
   )
     throw unsafe('PATH_TRAVERSAL', input);
-  // The names an archive refuses on every platform are one rule, shared with
-  // the paths a pnpm patch may name (`segmentProblem`).
+  // The names an archive refuses: one rule, the one a patch's paths meet.
   for (const part of parts) {
     const problem = segmentProblem(part);
     if (problem !== undefined) throw unsafe(problem.code, input);
@@ -665,7 +665,7 @@ function validateEntries(
   let expanded = 0;
   for (const entry of entries) {
     if (paths.has(entry.path)) throw unsafe('DUPLICATE_PATH', entry.path);
-    const fold = entry.path.toLowerCase();
+    const fold = collisionKey(entry.path);
     if (folded.has(fold)) throw unsafe('CASE_COLLISION', entry.path);
     paths.add(entry.path);
     types.set(entry.path, entry.type);
