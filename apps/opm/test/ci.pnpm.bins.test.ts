@@ -8,9 +8,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { packTarGzip } from '@openpacker/project-io';
 import { EXIT_CODES, runOpm } from '../src/opm.js';
@@ -35,13 +35,25 @@ afterEach(async () => {
 /** A package whose executable `bin` prints which package it is. */
 const tool = (name: string, bin: string) => ({ name, bin });
 
+/** An importer's side of a workspace: a tool it needs, members it links, executables it declares itself. */
+interface Importer {
+  readonly tool?: string;
+  /** Link name to the member's directory. */
+  readonly links?: Readonly<Record<string, string>>;
+  /** Executables of its own: name to a script that prints whose it is. */
+  readonly bin?: Readonly<Record<string, string>>;
+  /** What its `build` script runs; the tool's executable when it has one. */
+  readonly build?: string;
+}
+
 /**
  * A pnpm workspace whose importers each need one tool and run it as `build`:
- * `importers` maps a directory (`.` for the project) to its tool, or none.
+ * `importers` maps a directory (`.` for the project) to its tool (a name, or
+ * none) or to a fuller description.
  */
 async function installed(
   tools: readonly { name: string; bin: string }[],
-  importers: Record<string, string | undefined>,
+  importers: Record<string, string | undefined | Importer>,
 ): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-bins-'));
   const store = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-bins-store-'));
@@ -72,19 +84,45 @@ async function installed(
     snapshots.push(`  ${name}@1.0.0: {}\n`);
   }
   const lockImporters: string[] = [];
-  for (const [id, need] of Object.entries(importers)) {
+  for (const [id, given] of Object.entries(importers)) {
+    const importer: Importer =
+      typeof given === 'object' ? given : { tool: given };
+    const need = importer.tool;
+    const links = Object.entries(importer.links ?? {});
+    const run =
+      importer.build ?? tools.find((t) => t.name === need)?.bin ?? 'true';
     const manifest = {
       name: id === '.' ? 'app' : id.split('/').at(-1),
       version: '1.0.0',
-      scripts: { build: tools.find((t) => t.name === need)?.bin ?? 'true' },
-      ...(need !== undefined && { dependencies: { [need]: '^1.0.0' } }),
+      scripts: { build: run },
+      ...(importer.bin !== undefined && { bin: importer.bin }),
+      dependencies: {
+        ...(need !== undefined && { [need]: '^1.0.0' }),
+        ...Object.fromEntries(links.map(([alias]) => [alias, 'workspace:*'])),
+      },
     };
     await mkdir(join(dir, id), { recursive: true });
     await writeFile(join(dir, id, 'package.json'), JSON.stringify(manifest));
+    for (const [name, file] of Object.entries(importer.bin ?? {}))
+      await writeFile(
+        join(dir, id, file),
+        `console.log(${JSON.stringify(`I am the member ${manifest.name} (${name})`)});\n`,
+      );
+    const lines = [
+      ...(need === undefined
+        ? []
+        : [
+            `      ${need}:\n        specifier: ^1.0.0\n        version: 1.0.0\n`,
+          ]),
+      ...links.map(
+        ([alias, target]) =>
+          `      ${alias}:\n        specifier: workspace:*\n        version: link:${relative(join(dir, id), join(dir, target))}\n`,
+      ),
+    ];
     lockImporters.push(
-      need === undefined
+      lines.length === 0
         ? `  ${id}: {}\n`
-        : `  ${id}:\n    dependencies:\n      ${need}:\n        specifier: ^1.0.0\n        version: 1.0.0\n`,
+        : `  ${id}:\n    dependencies:\n${lines.join('')}`,
     );
   }
   await writeFile(
@@ -151,5 +189,71 @@ posix("each importer's own executable", () => {
     );
     expect(await build(dir, '')).toBe('I am esbuild-wasm');
     expect(await build(dir, 'packages/native')).toBe('I am esbuild');
+  });
+});
+
+posix("a member's own executable", () => {
+  it("is not offered to the project's .bin, where the project's own dependency keeps the name", async () => {
+    // `aaa` sorts before `esbuild`, which used to decide who kept the name.
+    const dir = await installed([tool('esbuild', 'esbuild')], {
+      '.': 'esbuild',
+      'packages/aaa': { bin: { esbuild: 'bin.js' } },
+    });
+    expect(await build(dir, '')).toBe('I am esbuild');
+    expect(await readdir(join(dir, 'node_modules/.bin'))).toEqual(['esbuild']);
+  });
+
+  it('goes to the .bin of the importer that links the member, and only there', async () => {
+    const dir = await installed([tool('pad', 'pad')], {
+      '.': 'pad',
+      'packages/a': { links: { b: 'packages/b' }, build: 'tool' },
+      'packages/b': { bin: { tool: 'bin.js' } },
+      'packages/c': undefined,
+    });
+    expect(await build(dir, 'packages/a')).toBe('I am the member b (tool)');
+    expect(await readdir(join(dir, 'packages/a/node_modules/.bin'))).toEqual([
+      'tool',
+    ]);
+    // Not the project's, not the member's own, not another member's.
+    expect(await readdir(join(dir, 'node_modules/.bin'))).toEqual(['pad']);
+    for (const member of ['packages/b', 'packages/c'])
+      expect(
+        await readdir(join(dir, member, 'node_modules/.bin')).catch(() => []),
+      ).toEqual([]);
+  });
+
+  it("is in the project's .bin when the project links it", async () => {
+    const dir = await installed([tool('pad', 'pad')], {
+      '.': { links: { b: 'packages/b' }, build: 'tool' },
+      'packages/b': { bin: { tool: 'bin.js' } },
+      'packages/c': 'pad',
+    });
+    expect(await build(dir, '')).toBe('I am the member b (tool)');
+    // Beside `pad`, which `packages/c` needs and is written at the project.
+    expect(await readdir(join(dir, 'node_modules/.bin'))).toEqual([
+      'pad',
+      'tool',
+    ]);
+  });
+
+  it("leaves a member's own dependencies' executables in its own .bin beside a linked member's", async () => {
+    const dir = await installed([tool('esbuild', 'esbuild')], {
+      '.': 'esbuild',
+      'packages/a': {
+        tool: 'esbuild',
+        links: { b: 'packages/b' },
+        build: 'esbuild && tool',
+      },
+      'packages/b': { bin: { tool: 'bin.js' } },
+    });
+    expect(
+      (await readdir(join(dir, 'packages/a/node_modules/.bin'))).sort(),
+    ).toEqual(['esbuild', 'tool']);
+    const ran = await go('run', ['build'], join(dir, 'packages/a'));
+    expect(ran.status, ran.err).toBe(0);
+    expect(ran.out.trim().split('\n').slice(-2)).toEqual([
+      'I am esbuild',
+      'I am the member b (tool)',
+    ]);
   });
 });

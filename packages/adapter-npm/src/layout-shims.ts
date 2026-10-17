@@ -11,8 +11,9 @@
  * pnpm gives each importer its own executables instead: every direct
  * dependency of the project or of a member is shimmed in that importer's own
  * `.bin`, wherever the package was written, and in a `.bin` only the
- * importer's own direct dependencies rank as direct. A frozen install of a
- * pnpm lock says which those are (`importers`).
+ * importer's own direct dependencies rank as direct. The executables of a
+ * member go to the `.bin` of each importer that links it, and to no other. A
+ * frozen install of a pnpm lock says which those are (`importers`).
  */
 
 import { lstat } from 'node:fs/promises';
@@ -79,13 +80,20 @@ async function interpreterOfMemberScript(script: string): Promise<Interpreter> {
   return NODE;
 }
 
+/**
+ * The executables a member declares, as candidates for the `.bin` of the
+ * importer at `importerDir` (`''` for the project): they address the member's
+ * directory directly.
+ */
 async function memberCandidates(
   projectRoot: string,
   member: NativeLayoutMember,
+  importerDir: string,
   skipped: { path: string; reason: string }[],
 ): Promise<Candidate[]> {
   const { bins, refused } = await validateBins(Object.entries(member.bin));
-  const where = join(modulesOf(projectRoot, ''), '.bin');
+  const from = posix.join(importerDir, 'node_modules', '.bin');
+  const where = join(modulesOf(projectRoot, importerDir), '.bin');
   for (const refusal of refused)
     skipped.push({
       path: join(where, refusal.name),
@@ -93,7 +101,7 @@ async function memberCandidates(
     });
   const out: Candidate[] = [];
   for (const bin of bins) {
-    const relative = `../../${member.dir}/${bin.target}`;
+    const relative = posix.relative(from, posix.join(member.dir, bin.target));
     if (!SHIM_PATH.test(relative)) {
       skipped.push({
         path: join(where, bin.name),
@@ -218,13 +226,22 @@ export async function writeShims(
         });
       }
     }
+  // A member's own executables: the project's `.bin` where npm links them,
+  // and, given the importers (pnpm), the `.bin` of each importer that links
+  // the member, so that they never compete with another importer's.
   for (const member of members)
-    for (const candidate of await memberCandidates(
-      projectRoot,
-      member,
-      skipped,
-    ))
-      offer(modulesOf(projectRoot, ''), candidate);
+    for (const dir of importers === undefined
+      ? ['']
+      : importers
+          .filter((importer) => importer.members.includes(member.dir))
+          .map((importer) => importer.dir))
+      for (const candidate of await memberCandidates(
+        projectRoot,
+        member,
+        dir,
+        skipped,
+      ))
+        offer(modulesOf(projectRoot, dir), candidate);
 
   const shims: Shims = { total: 0, names: new Map() };
   for (const [container, taken] of byContainer) {
