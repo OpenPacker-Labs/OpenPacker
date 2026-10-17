@@ -39,6 +39,8 @@
  */
 
 import type { RangeAst } from './index.js';
+import { ProviderError } from './provider-error.js';
+import { quote } from './terminal-text.js';
 
 /** One comparator: node-semver's operator (`''` is exact) and version; `undefined` version is `*`. */
 export interface NpmComparator {
@@ -303,4 +305,19 @@ export function npmRangeAst(text: string): RangeAst | undefined {
   return alternatives.length === 1
     ? alternatives[0]!
     : { type: 'or', items: alternatives };
+}
+
+/**
+ * `text` as `npmRangeAst` reads it, for the range parser's `npm` scheme: what
+ * node-semver refuses is refused (`INVALID_NATIVE_RANGE`), and `bare`,
+ * `commaAnd` and `hyphenRanges` do not apply, npm's grammar fixing all three.
+ */
+export function npmAst(text: string): RangeAst {
+  const ast = npmRangeAst(text);
+  if (ast === undefined)
+    throw new ProviderError(
+      'INVALID_NATIVE_RANGE',
+      `Invalid npm range: ${quote(text)}`,
+    );
+  return ast;
 }
