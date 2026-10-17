@@ -1,6 +1,11 @@
 /**
- * npm's range grammar, read as node-semver 7.7.3 reads it (the copy pnpm 10.28
- * bundles): `new Range(text)`, strict, without `includePrerelease`.
+ * npm's range grammar, read as node-semver 7.7.2 reads it: `new Range(text)`,
+ * strict, without `includePrerelease`. 7.7.2 is what pnpm 10.28's own code
+ * embeds and what npm 10.9 uses; the 7.7.3 pnpm ships beside its bundle is
+ * node-gyp's. The one difference: 7.7.3 strips build metadata from a
+ * comparator first, and 7.7.2 does not, so it refuses `+build` after a partial
+ * version or an x-range (`=1+b`, `<=1.2+b`, `1.x+b`), and `>=0.0.0+build` is
+ * `>=0.0.0` and not `*`.
  *
  * The range reader the other schemes share took forms node-semver refuses (a
  * lone `>=`, `~`, `^` or `=`, `x.y`, `> = 1`) as `*`, which fails open, and
@@ -82,7 +87,6 @@ const LONE_CARET = String.raw`(?:\^)`;
 
 const re = (source: string, flags = '') => new RegExp(safe(source), flags);
 const FULL = re(`^${FULL_PLAIN}$`);
-const BUILD_RE = re(BUILD);
 const XRANGE = re(String.raw`^${GTLT}\s*${XRANGE_PLAIN}$`);
 const TILDE_TRIM = re(String.raw`(\s*)${LONE_TILDE}\s+`, 'g');
 const TILDE = re(`^${LONE_TILDE}${XRANGE_PLAIN}$`);
@@ -180,8 +184,7 @@ const each = (text: string, rewrite: (one: string) => string): string =>
 
 /** node-semver's `parseComparator`: one space-separated piece, desugared. */
 function desugar(piece: string): string {
-  let text = piece.replace(BUILD_RE, '');
-  text = each(text, (one) => one.replace(CARET, caret));
+  let text = each(piece, (one) => one.replace(CARET, caret));
   text = each(text, (one) => one.replace(TILDE, tilde));
   text = text
     .split(/\s+/u)
