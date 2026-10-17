@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { policyDocumentFromPolicyInput } from '@openpacker/policy';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
@@ -110,11 +111,18 @@ export async function fetchTool(input: {
     ? input.purl
     : await (async () => {
         const base = stripPurlVersion(input.purl);
+        // The policy the run is held to below, so that a `latest` inside
+        // its minimum release age gives way to the release before it, as an
+        // add does, rather than being chosen and then refused.
         const newest = await defaultRelease({
           ecosystem,
           basePurl: base,
           published: await listRegistryVersions(ecosystem, base, options),
           provider: await providerFor(ecosystem, options),
+          policy: policyDocumentFromPolicyInput(
+            defaultSupplyChainPolicyInput(),
+          ),
+          evaluationTime: new Date().toISOString(),
         });
         if (!newest)
           throw new OpmError(
@@ -201,6 +209,9 @@ async function materialiseExact(
     {
       evaluationTime: new Date().toISOString(),
       registryId: resolved.registryId,
+      // Without it no publish time is captured, and the policy's minimum
+      // release age is indeterminate for every package.
+      minimumReleaseAgeMinutes: policyInput.minimumReleaseAgeMinutes,
     },
   );
   const pkg: LockPackage = {

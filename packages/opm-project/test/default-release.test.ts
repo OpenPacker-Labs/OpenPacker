@@ -188,18 +188,32 @@ describe('opm update --latest', () => {
 });
 
 describe('opmx with no version', () => {
-  it('runs what opm add would lock', async () => {
+  const run = async (registry: FixturePackage[]) => {
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-default-release-x-'));
     roots.push(cacheRoot);
-    const tool = await fetchTool({
+    // Shaped as registry.npmjs.org is: the abbreviated document the walk
+    // reads carries no publish times, only `modified`.
+    return fetchTool({
       purl: 'pkg:npm/sdk',
       cacheRoot,
-      registryOptions: {
-        transport: new NpmRegistryFixture(sdk({ latest: '1.1.0' }), {
-          abbreviatedTime: true,
-        }),
-      },
+      registryOptions: { transport: new NpmRegistryFixture(registry) },
     });
-    expect(tool.exactPurl).toBe('pkg:npm/sdk@1.1.0');
+  };
+
+  it('runs what opm add would lock', async () => {
+    expect((await run(sdk({ latest: '1.1.0' }))).exactPurl).toBe(
+      'pkg:npm/sdk@1.1.0',
+    );
+  });
+
+  it('passes over a latest inside the minimum release age, as add does', async () => {
+    // opmx runs under the default policy: a one-day minimum release age. It
+    // used to capture no publish time at all, so every release was
+    // indeterminate and every run was refused.
+    const recent = new Date(Date.now() - 3_600_000).toISOString();
+    const registry = sdk({ latest: '1.2.0' });
+    registry[0]!.time = { '1.2.0': recent };
+    registry[0]!.modified = recent;
+    expect((await run(registry)).exactPurl).toBe('pkg:npm/sdk@1.1.0');
   });
 });
