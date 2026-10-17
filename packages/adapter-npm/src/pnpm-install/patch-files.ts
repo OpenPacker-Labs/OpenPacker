@@ -30,15 +30,29 @@ import { patchHashLike, readPatchText } from '../pnpm-patch/index.js';
 import type { PnpmProjectConfig } from './config.js';
 import { quote } from './quote.js';
 
-/** The largest patch file read. */
-export const MAXIMUM_PATCH_BYTES = 16 * 1024 * 1024;
+/**
+ * The most opm reads of the patch files a lock declares: one file, and all of
+ * them together. Each is read whole, as bytes and as text, when the lock is
+ * read; pnpm reads whatever is there.
+ */
+export const PATCH_FILE_LIMITS = {
+  file: 16 * 1024 * 1024,
+  total: 64 * 1024 * 1024,
+} as const;
 
 const code = (error: unknown): string | undefined =>
   // SAFETY: Node file errors carry an optional string `code`.
   (error as NodeJS.ErrnoException).code;
 
-/** `relative` below `root`, opened one directory at a time, following no link. */
-async function readBelow(root: string, path: string): Promise<Buffer> {
+/**
+ * `use` of the patch file `path` below `root`, opened one directory at a
+ * time, following no link, and no larger than one patch file may be.
+ */
+async function withFileBelow<T>(
+  root: string,
+  path: string,
+  use: (handle: FileHandle, size: number) => Promise<T>,
+): Promise<T> {
   const parts = path.split('/');
   const unsafe = () =>
     new ProviderError(
@@ -73,15 +87,29 @@ async function readBelow(root: string, path: string): Promise<Buffer> {
     }
     const info = await handle.stat();
     if (!info.isFile()) throw unsafe();
-    if (info.size > MAXIMUM_PATCH_BYTES)
-      throw new ProviderError(
-        'INVALID_LOCKFILE',
-        `the patch file ${quote(path)} is ${info.size} bytes, more than the ${MAXIMUM_PATCH_BYTES} opm reads`,
-      );
-    return await handle.readFile();
+    tooLarge(path, info.size);
+    return await use(handle, info.size);
   } finally {
     await handle.close();
   }
+}
+
+/** Refuse one patch file past `PATCH_FILE_LIMITS.file`. */
+function tooLarge(path: string, size: number): void {
+  if (size > PATCH_FILE_LIMITS.file)
+    throw new ProviderError(
+      'SIZE_LIMIT',
+      `the patch file ${quote(path)} is ${size} bytes, more than the ${PATCH_FILE_LIMITS.file} opm reads of one patch file`,
+    );
+}
+
+/** Refuse patch files that come to more than `PATCH_FILE_LIMITS.total`. */
+function tooLargeTogether(files: number, size: number): void {
+  if (size > PATCH_FILE_LIMITS.total)
+    throw new ProviderError(
+      'SIZE_LIMIT',
+      `the ${files} patch files the project declares come to ${size} bytes, more than the ${PATCH_FILE_LIMITS.total} opm reads of patches for one lock`,
+    );
 }
 
 /** The project's patches, by key, and how they differ from the lock's record. */
@@ -101,7 +129,7 @@ export async function readProjectPatches(
   const declared = [...config.patches].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
   );
-  for (const [key, value] of declared) {
+  const paths = declared.map(([key, value]) => {
     // pnpm: `path.join(dir, value)` unless absolute, then relative to the lock.
     const path = relative(root, isAbsolute(value) ? value : join(root, value))
       .split('\\')
@@ -112,7 +140,24 @@ export async function readProjectPatches(
         'UNSAFE_PATH',
         `${config.patchesFrom}[${quote(key)}] is ${quote(value)}, which ${problem}; opm reads a patch only from inside the project`,
       );
-    const bytes = await readBelow(root, path);
+    return path;
+  });
+  // Every file is sized before any is read, so patches past the total are
+  // refused without holding them.
+  let size = 0;
+  for (const path of paths)
+    size += await withFileBelow(root, path, async (_, bytes) => bytes);
+  tooLargeTogether(paths.length, size);
+  let read = 0;
+  for (const [index, [key]] of declared.entries()) {
+    const path = paths[index]!;
+    const bytes = await withFileBelow(root, path, (handle) =>
+      handle.readFile(),
+    );
+    // A file that grew since it was sized is held to the bounds again.
+    tooLarge(path, bytes.length);
+    read += bytes.length;
+    tooLargeTogether(paths.length, read);
     const recorded = lock.patchedDependencies.get(key);
     if (recorded === undefined) {
       stale.push(

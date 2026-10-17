@@ -206,17 +206,21 @@ inside the bundle.
       a snapshot that does not carry the hash of its patch, or carries one no
       patch gives; a hash of neither pnpm's form;
     - by the project's files: a patch file that is not there (`NOT_FOUND`, exit
-      4, as pnpm's `ENOENT`); a path that leaves the project through `..` or an
-      absolute path, or that is reached through a link (`UNSAFE_PATH`, exit 7);
-      a patch that names a path outside its package or with an empty, `.` or
-      `..` segment, a backslash or NUL, or one past the bounds of a path in an
-      archive, 128 segments or 4,096 UTF-8 bytes (`UNSAFE_PATH`); a patch that
-      names more than the 100,000 files an archive may hold (`SIZE_LIMIT`, exit
-      7); the three bounds are `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts
-      an archive under, so no path of a patched entry is one an archive could
-      not hold; a patch pnpm cannot read (`INVALID_PATCH`, exit 3); and, as a
-      stale lock (exit 3, "pnpm install --frozen-lockfile would refuse too"), a
-      key added or removed, a path moved, a file edited;
+      4, as pnpm's `ENOENT`); a patch file larger than 16 MiB, or patch files
+      that come to more than 64 MiB together, sized before any is read
+      (`SIZE_LIMIT`, exit 7: each is held whole, as bytes and as text, while the
+      lock is read, and pnpm reads whatever is there); a path that leaves the
+      project through `..` or an absolute path, or that is reached through a
+      link (`UNSAFE_PATH`, exit 7); a patch that names a path outside its
+      package or with an empty, `.` or `..` segment, a backslash or NUL, or one
+      past the bounds of a path in an archive, 128 segments or 4,096 UTF-8 bytes
+      (`UNSAFE_PATH`); a patch that names more than the 100,000 files an archive
+      may hold (`SIZE_LIMIT`, exit 7); the three bounds are
+      `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts an archive under, so no
+      path of a patched entry is one an archive could not hold; a patch pnpm
+      cannot read (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm
+      install --frozen-lockfile would refuse too"), a key added or removed, a
+      path moved, a file edited;
     - when it is applied (exit 3): a patch that does not apply, or one too
       costly to apply (point 9) (`PATCH_FAILED`).
 14. **What pnpm does that opm refuses, and why:**

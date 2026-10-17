@@ -487,12 +487,13 @@ and `opm gc --shared` keeps each while a project links it. `--plan` reports
 patch file that is missing (exit 4), edited since the lock was written (stale,
 exit 3), outside the project or reached through a link (exit 7), one that names
 a path outside its package or past an archive's bounds (128 segments, 4,096
-bytes, 100,000 files; exit 7) or that pnpm cannot read (exit 3). A patch that
-does not apply stops the install with nothing written (`PATCH_FAILED`, exit 3),
-where pnpm warns for a bare-name key and installs the package unpatched; so does
-one too costly to apply, past 256 MiB of characters read, compared and written
-(a file patched again in section after section), which pnpm would run for as
-long as it takes.
+bytes, 100,000 files; exit 7) or that pnpm cannot read (exit 3), and a patch
+file over 16 MiB or patch files over 64 MiB together (exit 7). A patch that does
+not apply stops the install with nothing written (`PATCH_FAILED`, exit 3), where
+pnpm warns for a bare-name key and installs the package unpatched; so does one
+too costly to apply, past 256 MiB of characters read, compared and written (a
+file patched again in section after section), which pnpm would run for as long
+as it takes.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
