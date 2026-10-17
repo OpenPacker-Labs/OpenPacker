@@ -16,6 +16,7 @@ import { OpmError } from './types.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { ProviderPool, type RegistryOptions } from './registry.js';
 import { codecFor } from './codecs.js';
+import { isChangedUnderTheResolve } from './registry-changed.js';
 import {
   detectNativeTarget,
   evaluateTargetPredicate,
@@ -654,6 +655,7 @@ export async function resolveGraph(input: {
           const instance = (await provider.inspect(candidate)).package;
           return { kind: 'ok', instance, host: hostSupport(instance, host) };
         } catch (error) {
+          if (isChangedUnderTheResolve(error)) throw error;
           return {
             kind: 'error',
             reason: error instanceof Error ? error.message : String(error),
@@ -686,6 +688,7 @@ export async function resolveGraph(input: {
       );
       return { candidates, bounded, found };
     } catch (error) {
+      if (isChangedUnderTheResolve(error)) throw error;
       return {
         failure: error instanceof Error ? error.message : String(error),
       };

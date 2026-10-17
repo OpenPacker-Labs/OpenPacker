@@ -831,6 +831,9 @@ export function handleError(error: unknown, io: CliIo): number {
         case 'INVALID_PROVIDER_RESPONSE':
         case 'PLUGIN_ERROR':
         case 'PLUGIN_FAILED':
+        // The registry changed a document the resolve had read: its state, not
+        // the project's or opm's, and a run once it has settled can succeed.
+        case 'STALE_METADATA':
           return EXIT_CODES.unavailable;
         case 'PACKAGE_NOT_FOUND':
         case 'ARTIFACT_NOT_FOUND':

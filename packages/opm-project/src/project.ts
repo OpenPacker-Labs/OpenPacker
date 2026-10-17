@@ -28,6 +28,7 @@ import {
 } from './registry.js';
 import { requireAdapterRegistry } from './adapters.js';
 import { resolveGraph, solveGraph } from './resolve.js';
+import { isChangedUnderTheResolve } from './registry-changed.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -1031,6 +1032,7 @@ async function resolveTransitive(input: {
     // missing. The policy, digest and size refusals already propagated as they
     // were; the rest now say what stopped the closure.
     if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    if (isChangedUnderTheResolve(error)) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',

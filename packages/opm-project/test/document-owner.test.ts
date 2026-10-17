@@ -134,6 +134,14 @@ describe('a registry that publishes while a resolve reads it', () => {
     }
     expect(unlimited.asked).toEqual(['a', 'b']);
   });
+
+  it('stops, naming the package, when it kept nothing and the registry changed it', async () => {
+    await expect(resolveAt(0)).rejects.toMatchObject({
+      code: 'STALE_METADATA',
+      message:
+        'The registry changed the packument of a during the resolve; run it again',
+    });
+  });
 });
 
 /** A small deterministic generator, so a failure names the step it fails at. */
