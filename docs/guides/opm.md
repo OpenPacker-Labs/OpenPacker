@@ -451,14 +451,19 @@ not places:
   path, and one module, as with pnpm and npm, unless versions conflict. A
   package with a peer its dependent requires too goes only as high as that peer
   is still the dependent's own copy, so a UI kit and its hooks load the React
-  their member loads. Every edge of every importer and snapshot is resolved on
-  the plan with Node's lookup before anything is fetched, and a plan in which
-  one does not find its target, or a package and its dependency load two copies
-  of one peer, is refused.
+  their member loads. Where packages that peer each other cannot all be shared
+  (a host and its plugins wanted at several versions by several members), the
+  members that reach them keep what they need in their own `node_modules`, and a
+  lock for which no such layout is found is laid out as before, never refused
+  for a peer. Every edge of every importer and snapshot is resolved on the plan
+  with Node's lookup before anything is fetched, and a plan in which one does
+  not find its target is refused.
 - **Each importer runs its own executables.** The executables of a member's
   direct dependencies are shimmed in the member's own `node_modules/.bin`,
   wherever the package was written, and the project's in the project's, as pnpm
-  links them; `opm run` and `opm exec` find the member's first.
+  links them; `opm run` and `opm exec` find the member's first. A member's own
+  executables go to the `.bin` of each importer that links the member, and to no
+  other.
 - **A package resolved against several sets of peers**
   (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
   archive, fetched and extracted once, and as many places as dependents need.
