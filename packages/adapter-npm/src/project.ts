@@ -307,6 +307,7 @@ export class NpmProjectFormat implements ProjectFormat {
     const outcome = await writeNodeModules(project.root, packages, {
       links: options.workspace?.links ?? [],
       members: options.workspace?.members ?? [],
+      importers: options.workspace?.importers,
     });
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],

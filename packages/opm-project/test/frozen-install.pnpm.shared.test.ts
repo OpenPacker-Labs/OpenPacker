@@ -6,8 +6,8 @@
  * (react's hooks, a registry, `instanceof`) does not survive.
  *
  * What the writer then does with a shared dependency: its executable is shimmed
- * where it was written, it is left out with its importer's list, and a member
- * installed alone still finds it. And a package below a member that has a peer
+ * in its importer's own `.bin`, it is left out with its importer's list, and a
+ * member installed alone still finds it. And a package below a member that has a peer
  * its dependent requires too is written where it finds that same copy.
  */
 
@@ -84,11 +84,17 @@ describe('a dependency the project and its members share', () => {
   });
 
   onPosix(
-    "shims a member's executable where its package was written, which the member's PATH reaches",
+    "shims a member's dependency's executable in the member's own .bin, wherever the package was written",
     async () => {
       const w = await fixture();
       await w.install();
-      expect(await w.list('node_modules/.bin')).toContain('lint');
+      expect(await exists(join(w.dir, 'packages/ui/node_modules/lint'))).toBe(
+        false,
+      );
+      expect(await w.list('packages/ui/node_modules/.bin')).toContain('lint');
+      expect(await w.read('packages/ui/node_modules/.bin/lint')).toContain(
+        '../../../../node_modules/lint/index.js',
+      );
       expect(w.load('lint', 'packages/ui').id).toBe('lint@1.0.0');
     },
   );

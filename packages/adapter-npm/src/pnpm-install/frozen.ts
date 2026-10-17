@@ -35,7 +35,11 @@ import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
 import { planPlacement } from './place.js';
 import { placeInputOf } from './place-input.js';
-import { peerSplitProblems, resolutionProblems } from './place-check.js';
+import {
+  directPlaces,
+  peerSplitProblems,
+  resolutionProblems,
+} from './place-check.js';
 import {
   importerRefusals,
   lockRefusals,
@@ -189,7 +193,15 @@ export async function readFrozenPnpmLock(
       }),
     };
   });
-  const workspace = workspaceOf(model, tops, present, placement.links, disk);
+  const workspace = workspaceOf(model, tops, present, disk, {
+    links: placement.links,
+    importers: [...directPlaces(input, placement)].map(([dir, places]) => ({
+      dir,
+      dependencies: places.map(({ place }) =>
+        placePath(place.chain, place.base),
+      ),
+    })),
+  });
   return {
     ...common,
     ...(targets.length > 1 && { targets }),
@@ -222,13 +234,20 @@ function archiveIdentityOf(instance: PnpmInstance): {
   };
 }
 
-/** What the layout links and shims: the installed members, and the project's link to each. */
+/**
+ * What the layout links and shims: the installed members, the project's link
+ * to each, and every installed importer's direct dependencies, whose
+ * executables pnpm gives that importer.
+ */
 function workspaceOf(
   model: PnpmModel,
   tops: ReadonlySet<string>,
   present: ReadonlySet<string>,
-  links: readonly { name: string; memberDir: string }[],
   disk: readonly WorkspaceMember[],
+  planned: {
+    links: readonly { name: string; memberDir: string }[];
+    importers: NonNullable<FrozenLockWorkspace['layout']['importers']>;
+  },
 ): FrozenLockWorkspace | undefined {
   // Only the members the project has: a directory the lock remembers and the
   // workspace no longer declares is not the install's to clear.
@@ -253,10 +272,11 @@ function workspaceOf(
             bin: member?.manifest.bin ?? {},
           };
         }),
-      links: links.map((link) => {
+      links: planned.links.map((link) => {
         const path = `node_modules/${link.name}`;
         return { path, target: linkTargetBetween(path, link.memberDir) };
       }),
+      importers: planned.importers,
     },
   };
 }
