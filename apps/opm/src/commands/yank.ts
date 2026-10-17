@@ -1,4 +1,5 @@
 import { OpmError, yankRegistryVersion } from '@openpacker/opm-project';
+import { writeYanked } from '../terminal-records.js';
 
 export interface CommandArgs {
   positionals: string[];
@@ -37,7 +38,7 @@ export async function runYankCommand(
   const subject = result.applied.subject;
   const shown =
     'exactPurl' in subject && subject.exactPurl ? subject.exactPurl : purl;
-  io.stdout.write(`Yanked ${shown}\n`);
+  writeYanked(shown, io);
   return 0;
 }
 

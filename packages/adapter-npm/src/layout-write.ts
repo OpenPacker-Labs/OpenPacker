@@ -11,6 +11,7 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   NativeLayoutMember,
+  NativeLayoutWorkspace,
   NativeLockEntry,
 } from '@openpacker/adapter-core';
 import { materialiseTree } from '@openpacker/project-io';
@@ -74,6 +75,8 @@ export interface LayoutWriteOptions {
    * are shimmed in the project's `.bin`.
    */
   members?: readonly NativeLayoutMember[];
+  /** Each importer's direct dependencies, shimmed in its own `.bin` (pnpm's rule). */
+  importers?: NativeLayoutWorkspace['importers'];
 }
 
 /** Packages written at the same time within one depth of the tree. */
@@ -172,7 +175,7 @@ export async function writeNodeModules(
   const shims = await writeShims(
     projectRoot,
     plan.placements,
-    members,
+    { members, importers: options.importers },
     skipped,
   );
   outcome.bins = shims.total;

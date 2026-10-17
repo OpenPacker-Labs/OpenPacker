@@ -5,7 +5,8 @@
  */
 
 import { compareText, compareVersions } from '../layout-compare.js';
-import type { PlaceInstance, PlaceTop } from './place.js';
+import type { Node } from './place-tree.js';
+import type { PlaceInstance, PlaceTop } from './place-types.js';
 
 /** The member directories that enclose `dir`, nearest first (never `dir`, never the project). */
 export function enclosingDirs(
@@ -21,14 +22,14 @@ export function enclosingDirs(
   return out;
 }
 
-/** An instance's edges in the order they are placed: a package under its own name before an alias. */
-export function orderedEdges(
-  instance: PlaceInstance,
+/** A dependent's edges in the order they are placed: a package under its own name before an alias. */
+export function orderedEdges<T extends { as: string; to: string }>(
+  dependent: { readonly edges: readonly T[] },
   instances: ReadonlyMap<string, PlaceInstance>,
-): readonly { as: string; to: string }[] {
-  const aliased = (edge: { as: string; to: string }): number =>
+): T[] {
+  const aliased = (edge: T): number =>
     Number(instances.get(edge.to)?.name !== edge.as);
-  return [...instance.edges].sort(
+  return [...dependent.edges].sort(
     (left, right) =>
       aliased(left) - aliased(right) ||
       compareText(left.as, right.as) ||
@@ -55,16 +56,60 @@ export function rootChoice(
     }
   const choice = new Map<string, string>();
   for (const [as, byTarget] of counts) {
-    const best = [...byTarget].sort(
-      ([leftKey, left], [rightKey, right]) =>
-        right - left ||
-        compareVersions(
-          instances.get(rightKey)?.version ?? '',
-          instances.get(leftKey)?.version ?? '',
-        ) ||
-        compareText(leftKey, rightKey),
-    )[0];
-    if (best !== undefined) choice.set(as, best[0]);
+    const best = mostWanted(byTarget, instances);
+    if (best !== undefined) choice.set(as, best);
   }
   return choice;
+}
+
+/** The key counted most, then the newest, then the smaller key. */
+function mostWanted(
+  counts: ReadonlyMap<string, number>,
+  instances: ReadonlyMap<string, PlaceInstance>,
+): string | undefined {
+  return [...counts].sort(
+    ([leftKey, left], [rightKey, right]) =>
+      right - left ||
+      compareVersions(
+        instances.get(rightKey)?.version ?? '',
+        instances.get(leftKey)?.version ?? '',
+      ) ||
+      compareText(leftKey, rightKey),
+  )[0]?.[0];
+}
+
+/**
+ * The names whose slot in the project a plan left empty while one instance of
+ * the name is written in two or more members' own `node_modules`, each with
+ * the instance written in the most of them: given the slot, that instance has
+ * one real path for all of those members.
+ */
+export function emptySlotChoices(
+  laid: {
+    readonly project: Node;
+    readonly placed: readonly Node[];
+    readonly preferred: ReadonlyMap<string, string>;
+  },
+  instances: ReadonlyMap<string, PlaceInstance>,
+): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const node of laid.placed) {
+    const name = node.installName;
+    if (node.base === '' || node.chain.length !== 1) continue;
+    if (laid.project.children.has(name)) continue;
+    const byKey = counts.get(name) ?? new Map<string, number>();
+    counts.set(name, byKey);
+    byKey.set(node.key!, (byKey.get(node.key!) ?? 0) + 1);
+  }
+  const choices = new Map<string, string>();
+  for (const [name, byKey] of counts) {
+    const best = mostWanted(byKey, instances);
+    if (
+      best !== undefined &&
+      byKey.get(best)! >= 2 &&
+      laid.preferred.get(name) !== best
+    )
+      choices.set(name, best);
+  }
+  return choices;
 }
