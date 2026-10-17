@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import type { BigIntStats } from 'node:fs';
 import { link, lstat, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -164,6 +165,23 @@ export async function collectSharedStore(
 }
 
 /**
+ * True when `moved` is the file `judged` was: the same device and inode, and
+ * not written since (modified time to the nanosecond, and size). An inode
+ * number can be reused, so the pair alone is not the file.
+ */
+export function sameRecord(
+  judged: Pick<BigIntStats, 'dev' | 'ino' | 'mtimeNs' | 'size'>,
+  moved: Pick<BigIntStats, 'dev' | 'ino' | 'mtimeNs' | 'size'>,
+): boolean {
+  return (
+    judged.dev === moved.dev &&
+    judged.ino === moved.ino &&
+    judged.mtimeNs === moved.mtimeNs &&
+    judged.size === moved.size
+  );
+}
+
+/**
  * Remove every `<key>.tree` whose entry is gone and that is older than
  * `before`: an install or a collection that stopped between the record and
  * the entry leaves one, and no publish of that key may follow. A young one
@@ -185,8 +203,8 @@ async function collectOrphanRecords(
     )?.[1];
     if (key === undefined || names.has(key)) continue;
     const path = join(root, name);
-    const judged = await lstat(path).catch(() => undefined);
-    if (judged?.isFile() !== true || judged.mtimeMs >= before) continue;
+    const judged = await lstat(path, { bigint: true }).catch(() => undefined);
+    if (judged?.isFile() !== true || Number(judged.mtimeMs) >= before) continue;
     if (dryRun === true) {
       result.removed.push(path);
       continue;
@@ -201,13 +219,13 @@ async function collectOrphanRecords(
     )
       continue;
     await steps.movedAside?.(path);
-    const moved = await lstat(doomed);
+    const moved = await lstat(doomed, { bigint: true });
     // Removed only if it is the record that was judged; a record written
     // since goes back, and was never removed. (For the instant between the
     // move and the link a reader finds no record: an archive's adopter is told
     // its entry has none and can run again, a patched entry's is made again
     // and compared, `frozen-patch.ts`.)
-    if (moved.ino !== judged.ino || moved.dev !== judged.dev)
+    if (!sameRecord(judged, moved))
       // Never over a record written since.
       await link(doomed, path).catch(() => undefined);
     else result.removed.push(path);

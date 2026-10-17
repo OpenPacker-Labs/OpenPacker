@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
+import { sameRecord } from '../src/shared-store-gc.js';
 
 /**
  * `opm gc --shared` and an old orphan `<key>.tree` record whose key a publish
@@ -91,6 +92,25 @@ describe('gc and a publish of an orphan record’s key', () => {
     expect(result.removed).toEqual([join(root, `${KEY}.tree`)]);
   });
 
+  it('puts back a record rewritten in place, which has the inode that was judged: an inode number can be reused', async () => {
+    const root = await store();
+    let landed = false;
+    const result = await collectSharedStore({
+      env: { OPM_STORE_HOME: root },
+      steps: {
+        judged: async () => {
+          landed = true;
+          // Same device, same inode, another file: what a reused inode number is.
+          await writeFile(join(root, `${KEY}.tree`), NEW);
+        },
+      },
+    });
+    expect(landed).toBe(true);
+    expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);
+    expect(await collecting(root)).toEqual([]);
+    expect(result.removed).toEqual([]);
+  });
+
   it('removes an old orphan record nobody replaced', async () => {
     const root = await store();
     const result = await collectSharedStore({
@@ -98,5 +118,27 @@ describe('gc and a publish of an orphan record’s key', () => {
     });
     expect(result.removed).toEqual([join(root, `${KEY}.tree`)]);
     expect(await readdir(root)).toEqual([]);
+  });
+});
+
+describe('the record gc judged', () => {
+  const stat = (
+    over: Partial<Record<'dev' | 'ino' | 'mtimeNs' | 'size', bigint>>,
+  ) => ({
+    dev: 1n,
+    ino: 2n,
+    mtimeNs: 3n,
+    size: 4n,
+    ...over,
+  });
+
+  it.each([
+    ['the same file', {}, true],
+    ['another device', { dev: 9n }, false],
+    ['another inode', { ino: 9n }, false],
+    ['the same inode written since', { mtimeNs: 9n }, false],
+    ['the same inode with another size', { size: 9n }, false],
+  ])('is %s: %s', (_, over, same) => {
+    expect(sameRecord(stat({}), stat(over))).toBe(same);
   });
 });
