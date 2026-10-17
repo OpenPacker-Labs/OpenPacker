@@ -155,6 +155,8 @@ export function scrubEnvironment(input: {
   minimalPath?: boolean;
   /** Argv[0] used to include interpreter dir on PATH. */
   interpreter?: string;
+  /** Directories searched before the rest of PATH, in order (a run's own bins). */
+  pathPrefix?: readonly string[];
 }) {
   const parent = input.parent ?? process.env;
   const granted = new Set(input.grantEnv ?? []);
@@ -186,6 +188,10 @@ export function scrubEnvironment(input: {
   if (input.minimalPath !== false && !granted.has('PATH')) {
     out.PATH = minimalPathValue(input.interpreter);
   }
+  if ((input.pathPrefix?.length ?? 0) > 0)
+    out.PATH = [...input.pathPrefix!, ...(out.PATH ? [out.PATH] : [])].join(
+      ':',
+    );
 
   return out;
 }

@@ -168,6 +168,7 @@ export async function runInSandbox(
       jailHome,
       minimalPath: profile === 'package-exec' && resolved.minimalPath,
       ...(!(interpreter === undefined) && { interpreter }),
+      pathPrefix: normalizeJailPaths(input.pathPrefix, 'PATH directory'),
     });
     const hostEnv = scrubEnvironment({
       jailHome,

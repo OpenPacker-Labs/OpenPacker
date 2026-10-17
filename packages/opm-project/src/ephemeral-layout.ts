@@ -146,7 +146,14 @@ export async function ephemeralNodeRun(
   },
   bin: BinDeclaration,
 ): Promise<
-  { bin: BinDeclaration; root: string; dispose(): Promise<void> } | undefined
+  | {
+      bin: BinDeclaration;
+      root: string;
+      /** The layout's `node_modules/.bin`, for PATH, as npx puts it there. */
+      binDirectory: string;
+      dispose(): Promise<void>;
+    }
+  | undefined
 > {
   if (
     ecosystemFromPurl(tool.exactPurl) !== 'npm' ||
@@ -161,6 +168,7 @@ export async function ephemeralNodeRun(
   return {
     bin: { ...bin, path: layout.relative(bin.path) },
     root: layout.root,
+    binDirectory: join(layout.root, 'node_modules', '.bin'),
     dispose: layout.dispose,
   };
 }

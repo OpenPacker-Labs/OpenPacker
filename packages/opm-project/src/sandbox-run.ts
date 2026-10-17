@@ -28,6 +28,8 @@ export async function runSandboxedPackageProcess(input: {
   env?: Readonly<Record<string, string>>;
   /** Ends the process tree when aborted; the run's views are still removed. */
   signal?: AbortSignal;
+  /** Directories put first on the process's PATH (a layout's `.bin`). */
+  pathPrefix?: readonly string[];
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
@@ -70,6 +72,9 @@ export async function runSandboxedPackageProcess(input: {
       directoryAuthorities: view.authorities,
       ...(!(input.network === undefined) && { network: input.network }),
       ...(!(input.signal === undefined) && { signal: input.signal }),
+      ...(!(input.pathPrefix === undefined) && {
+        pathPrefix: input.pathPrefix,
+      }),
       ...(!(input.backend === undefined) && { backend: input.backend }),
     });
   } finally {

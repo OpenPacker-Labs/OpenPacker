@@ -33,6 +33,8 @@ export interface SandboxContext {
   policy?: PolicyInput;
   /** Aborted by a signal opmx holds: ends the process tree (opmx-signals.ts). */
   signal?: AbortSignal;
+  /** Directories put first on the tool's PATH (its layout's `.bin`). */
+  pathPrefix?: readonly string[];
 }
 
 /**
@@ -58,6 +60,7 @@ export async function runTool(
       cwd,
       {
         runtimePaths: layout === undefined ? tool.runtimePaths : [layout.root],
+        ...(!(layout === undefined) && { pathPrefix: [layout.binDirectory] }),
         packageId: tool.exactPurl,
         ...(!(signal === undefined) && { signal }),
       },
@@ -193,6 +196,9 @@ async function spawnProcess(
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
       ...(!(sandbox?.signal === undefined) && { signal: sandbox.signal }),
+      ...(!(sandbox?.pathPrefix === undefined) && {
+        pathPrefix: sandbox.pathPrefix,
+      }),
     });
     if (outcome.stdout) io.stdout.write(outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
