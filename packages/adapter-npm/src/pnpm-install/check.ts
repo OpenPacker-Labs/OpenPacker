@@ -2,8 +2,9 @@
  * Hold the lock to the project's files (ADR 0055 §15, §18), in the order a
  * frozen install reports it: the importers against the members on disk, each
  * importer's dependencies against its `package.json`, then `overrides`,
- * `catalogs` and the patches the project declares. Everything is collected, so
- * one error names all of it.
+ * `catalogs` and the settings pnpm records, and apart from those, what opm
+ * does not do (a declared patch, an override it cannot read as pnpm does).
+ * Everything is collected, so one error names all of it.
  */
 
 import type {
@@ -107,8 +108,14 @@ export async function readRootProject(
 
 /** How the lock differs from the project's files. */
 export interface Freshness {
-  /** Differences pnpm finds too (specifiers, lists, overrides, catalogs, patches). */
+  /**
+   * Differences pnpm finds too, each one the review of #179 saw real pnpm
+   * refuse: specifiers, lists, overrides, catalogs, `ignoredOptionalDependencies`
+   * and `publishConfig.directory`.
+   */
   readonly stale: readonly string[];
+  /** What opm does not install, by its own rule: a patch the project declares. */
+  readonly own: readonly string[];
   /** Overrides opm cannot apply as pnpm would, so cannot hold the lock to. */
   readonly doubts: readonly string[];
 }
@@ -169,12 +176,12 @@ export function freshnessProblems(input: {
     ...overrideProblems(lock, config.overrides),
     ...ignoredProblems(lock.ignoredOptionalDependencies, config),
     ...catalogProblems(lock, config.catalogs),
-    ...config.patches.map(
-      (key) =>
-        `the project declares a patch for ${quote(key)}, which opm does not apply`,
-    ),
   ];
-  return { stale, doubts: [...new Set(doubts)] };
+  const own = config.patches.map(
+    (key) =>
+      `the project declares a patch for ${quote(key)}, which opm does not apply`,
+  );
+  return { stale, own, doubts: [...new Set(doubts)] };
 }
 
 /** pnpm compares the two lists sorted; the lock's own list is refused before this. */

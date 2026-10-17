@@ -132,7 +132,17 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       `pnpm-lock.yaml does not list every member of the project's workspace (opm ci installs what the lock lists, and a member with dependencies has to be in it; pnpm install writes it there): ${members.join('; ')}`,
     );
-  const { stale, doubts } = freshnessProblems({ root, model, present, disk });
+  const { stale, own, doubts } = freshnessProblems({
+    root,
+    model,
+    present,
+    disk,
+  });
+  if (own.length > 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `opm ci does not install this project as it is: ${own.join('; ')}`,
+    );
   if (doubts.length > 0) refuseDoubts(doubts);
   if (stale.length > 0) refuseStale(stale);
 
