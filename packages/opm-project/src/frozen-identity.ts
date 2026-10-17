@@ -8,24 +8,26 @@
  * `package.json` and refuses one whose name or version is not the lock's
  * (ADR 0055 §7). The version is the one the lock records for the archive: a
  * registry package's, or a tarball entry's own `version`, which may be absent,
- * and then only the name is compared. It is compared as npm reads one: a
- * leading `v` or `=` and build metadata do not make another version, and a
- * name as pnpm compares one, without regard to case. pnpm makes the same check
+ * and then only the name is compared. Both are compared as pnpm compares them
  * when it reads a package back from its store (`checkPackageMismatch`,
  * `ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
- * `strict-store-pkg-content-check`). An npm lock is not checked here, its
- * archives being the ones npm resolved by name.
+ * `strict-store-pkg-content-check`): a name without regard to case, and a
+ * version by `equalOrSemverEqual`, the same text or node-semver's
+ * `eq(a, b, { loose: true })` (`npmVersionsEqual`), which takes `v1.0.0`,
+ * `=1.0.0`, `01.0.0` and `1.0.0+build` for `1.0.0`, and one version for
+ * another only where node-semver does (numeric prerelease identifiers beyond
+ * 2^53, compared as doubles; see `npmVersionsEqual`). A refusal names the
+ * version the lock records. An npm lock is not
+ * checked here, its archives being the ones npm resolved by name.
  */
 
-import { type FrozenLockPackage, quote } from '@openpacker/adapter-core';
+import {
+  type FrozenLockPackage,
+  npmVersionsEqual,
+  quote,
+} from '@openpacker/adapter-core';
 import { readArchiveManifest } from './frozen-scripts.js';
 import { OpmError } from './types.js';
-
-const comparable = (version: string): string =>
-  version
-    .trim()
-    .replace(/^[=v]+/u, '')
-    .split('+', 1)[0]!;
 
 /**
  * The names the archive must carry and the version, if any: the lock's own
@@ -73,16 +75,18 @@ export async function checkArchiveIdentities(
       problems.push(
         `${quote(wanted)} (${pkg.path}): the archive's package.json has no ${typeof name !== 'string' ? 'name' : 'version'}`,
       );
-    else if (
-      expected.names.some(
-        (each) => each.toLowerCase() !== name.toLowerCase(),
-      ) ||
-      (compareVersion &&
-        comparable(version as string) !== comparable(expected.version!))
-    )
-      problems.push(
-        `${quote(wanted)} (${pkg.path}): the archive's package.json is ${quote(typeof version === 'string' ? `${name}@${version}` : name)}`,
-      );
+    else {
+      const versionDiffers =
+        compareVersion &&
+        !npmVersionsEqual(version as string, expected.version!);
+      if (
+        versionDiffers ||
+        expected.names.some((each) => each.toLowerCase() !== name.toLowerCase())
+      )
+        problems.push(
+          `${quote(wanted)} (${pkg.path}): the archive's package.json is ${quote(typeof version === 'string' ? `${name}@${version}` : name)}${versionDiffers ? `, and the lock records version ${quote(expected.version!)}` : ''}`,
+        );
+    }
   }
   if (problems.length > 0)
     throw new OpmError(

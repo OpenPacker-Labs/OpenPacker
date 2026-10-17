@@ -1,6 +1,11 @@
 /**
- * npm's range grammar, read as node-semver 7.7.3 reads it (the copy pnpm 10.28
- * bundles): `new Range(text)`, strict, without `includePrerelease`.
+ * npm's range grammar, read as node-semver 7.7.2 reads it: `new Range(text)`,
+ * strict, without `includePrerelease`. 7.7.2 is what pnpm 10.28's own code
+ * embeds and what npm 10.9 uses; the 7.7.3 pnpm ships beside its bundle is
+ * node-gyp's. The one difference: 7.7.3 strips build metadata from a
+ * comparator first, and 7.7.2 does not, so it refuses `+build` after a partial
+ * version or an x-range (`=1+b`, `<=1.2+b`, `1.x+b`), and `>=0.0.0+build` is
+ * `>=0.0.0` and not `*`.
  *
  * The range reader the other schemes share took forms node-semver refuses (a
  * lone `>=`, `~`, `^` or `=`, `x.y`, `> = 1`) as `*`, which fails open, and
@@ -10,11 +15,32 @@
  * them): hyphen ranges, trimming, carets, tildes, x-ranges, stars and
  * `>=0.0.0`, then each comparator against its strict grammar, then the sets.
  * What node-semver refuses is refused; what it reads is read to the same
- * comparators, `1.2` to `>=1.2.0 <1.3.0-0`. node-semver is ISC-licensed; this
- * follows its `classes/range.js`, `classes/comparator.js` and `internal/re.js`.
+ * comparators, `1.2` to `>=1.2.0 <1.3.0-0`. This is a port of node-semver's
+ * `classes/range.js`, `classes/comparator.js` and `internal/re.js`, and its
+ * licence and notice, below, are node-semver's.
+ */
+
+/*
+ * The ISC License
+ *
+ * Copyright (c) Isaac Z. Schlueter and Contributors
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+ * IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
 import type { RangeAst } from './index.js';
+import { ProviderError } from './provider-error.js';
+import { quote } from './terminal-text.js';
 
 /** One comparator: node-semver's operator (`''` is exact) and version; `undefined` version is `*`. */
 export interface NpmComparator {
@@ -63,7 +89,7 @@ const LONE_CARET = String.raw`(?:\^)`;
 
 const re = (source: string, flags = '') => new RegExp(safe(source), flags);
 const FULL = re(`^${FULL_PLAIN}$`);
-const BUILD_RE = re(BUILD);
+const LOOSE = re(`^${LOOSE_PLAIN}$`);
 const XRANGE = re(String.raw`^${GTLT}\s*${XRANGE_PLAIN}$`);
 const TILDE_TRIM = re(String.raw`(\s*)${LONE_TILDE}\s+`, 'g');
 const TILDE = re(`^${LONE_TILDE}${XRANGE_PLAIN}$`);
@@ -161,8 +187,7 @@ const each = (text: string, rewrite: (one: string) => string): string =>
 
 /** node-semver's `parseComparator`: one space-separated piece, desugared. */
 function desugar(piece: string): string {
-  let text = piece.replace(BUILD_RE, '');
-  text = each(text, (one) => one.replace(CARET, caret));
+  let text = each(piece, (one) => one.replace(CARET, caret));
   text = each(text, (one) => one.replace(TILDE, tilde));
   text = text
     .split(/\s+/u)
@@ -171,8 +196,13 @@ function desugar(piece: string): string {
   return text.trim().replace(STAR, '');
 }
 
-/** A version as node-semver's strict `SemVer` writes it back, or undefined when it refuses it. */
-function version(text: string): string | undefined {
+/**
+ * A version as node-semver's strict `SemVer` writes it back (no `v`, no build
+ * metadata), or undefined where `new SemVer(text)` throws: leading zeros in a
+ * number or in a numeric prerelease identifier (`1.2.3-01`), a partial version,
+ * a `=` in front.
+ */
+export function npmVersion(text: string): string | undefined {
   if (text.length > MAX_LENGTH) return undefined;
   const match = FULL.exec(text.trim());
   if (match === null) return undefined;
@@ -182,6 +212,42 @@ function version(text: string): string | undefined {
   )
     return undefined;
   return `${major}.${minor}.${patch}${prerelease === undefined ? '' : `-${prerelease}`}`;
+}
+
+/**
+ * A version as node-semver's loose `SemVer` compares it (each number and each
+ * numeric prerelease identifier as a number, no build), or undefined where
+ * `new SemVer(text, { loose: true })` throws.
+ */
+function looseVersion(text: string): string | undefined {
+  if (text.length > MAX_LENGTH) return undefined;
+  const match = LOOSE.exec(text.trim());
+  if (match === null) return undefined;
+  const [, major, minor, patch, prerelease] = match;
+  const main = [major, minor, patch].map(Number);
+  if (main.some((part) => part > Number.MAX_SAFE_INTEGER)) return undefined;
+  const ids = (prerelease ?? '')
+    .split('.')
+    .filter((id) => id !== '')
+    .map((id) => (/^[0-9]+$/u.test(id) ? String(Number(id)) : id));
+  return `${main.join('.')}${ids.length > 0 ? `-${ids.join('.')}` : ''}`;
+}
+
+/**
+ * Whether two versions are one as pnpm compares an archive's version with the
+ * lock's (`equalOrSemverEqual`): the same text, or node-semver's
+ * `eq(a, b, { loose: true })`. Loose reading takes `=1.0.0`, `vv1.0.0`,
+ * `01.0.0` and `1.0.0-01` as spellings of one version and ignores build
+ * metadata. It makes two versions one only where node-semver itself does: a
+ * numeric prerelease identifier beyond 2^53 is compared as a double, so
+ * `1.0.0-12345678901234567890` and `1.0.0-12345678901234567891` are one, to
+ * pnpm and here. Past such a pair node-semver stops comparing (`.a` and `.b`
+ * after it are one to pnpm); this compares the rest, and refuses them.
+ */
+export function npmVersionsEqual(left: string, right: string): boolean {
+  if (left === right) return true;
+  const read = looseVersion(left);
+  return read !== undefined && read === looseVersion(right);
 }
 
 /** node-semver's `Comparator`: the operator and version, `*`, or undefined when it refuses it. */
@@ -195,7 +261,7 @@ function comparator(text: string): NpmComparator | undefined {
     | '>'
     | '>=';
   if (match[2] === undefined || match[2] === '') return { operator: '' };
-  const written = version(match[2]);
+  const written = npmVersion(match[2]);
   return written === undefined ? undefined : { operator, version: written };
 }
 
@@ -281,4 +347,19 @@ export function npmRangeAst(text: string): RangeAst | undefined {
   return alternatives.length === 1
     ? alternatives[0]!
     : { type: 'or', items: alternatives };
+}
+
+/**
+ * `text` as `npmRangeAst` reads it, for the range parser's `npm` scheme: what
+ * node-semver refuses is refused (`INVALID_NATIVE_RANGE`), and `bare`,
+ * `commaAnd` and `hyphenRanges` do not apply, npm's grammar fixing all three.
+ */
+export function npmAst(text: string): RangeAst {
+  const ast = npmRangeAst(text);
+  if (ast === undefined)
+    throw new ProviderError(
+      'INVALID_NATIVE_RANGE',
+      `Invalid npm range: ${quote(text)}`,
+    );
+  return ast;
 }

@@ -6,7 +6,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_WORKSPACE_LIMITS } from '@openpacker/adapter-core';
 import { discoverWorkspace } from '../src/index.js';
+import { parsePnpmWorkspaceYaml } from '../src/workspace/declaration.js';
 import { cleanup, refusal, scratch } from './workspace-tree.js';
 
 afterEach(async () => {
@@ -16,16 +18,34 @@ afterEach(async () => {
 
 describe('pnpm-workspace.yaml in discovery', () => {
   it('reads 40,000 catalog entries in linear time', async () => {
-    const lines = ['packages: []', 'catalog:'];
-    for (let index = 0; index < 40_000; index += 1)
-      lines.push(`  pkg-${index}: ^1.0.${index}`);
+    const declaration = (entries: number) => {
+      const lines = ['packages: []', 'catalog:'];
+      for (let index = 0; index < entries; index += 1)
+        lines.push(`  pkg-${index}: ^1.0.${index}`);
+      return `${lines.join('\n')}\n`;
+    };
+    // Counted, not timed (a 5 s bound failed on a loaded machine). The cost was
+    // the library's repeated-key check, which compares each key with every
+    // earlier one (13 s here). It is off where discovery parses: a repeated
+    // key is `firstRepeatedKey`'s refusal, which the library's would pre-empt.
+    expect(() =>
+      parsePnpmWorkspaceYaml(
+        'catalog:\n  a: ^1\n  a: ^2\n',
+        DEFAULT_WORKSPACE_LIMITS,
+      ),
+    ).toThrow(/has the duplicate key "a"/u);
+    const meter = { keyLookups: 0 };
+    parsePnpmWorkspaceYaml(
+      declaration(40_000),
+      DEFAULT_WORKSPACE_LIMITS,
+      meter,
+    );
+    expect(meter.keyLookups).toBe(40_002);
     const root = await scratch({
       'package.json': { name: 'r' },
-      'pnpm-workspace.yaml': `${lines.join('\n')}\n`,
+      'pnpm-workspace.yaml': declaration(40_000),
     });
-    const started = performance.now();
     const found = await discoverWorkspace(root, { tool: 'pnpm' });
-    expect(performance.now() - started).toBeLessThan(5_000);
     expect(found?.members.map((member) => member.dir)).toEqual(['']);
   }, 180_000);
 

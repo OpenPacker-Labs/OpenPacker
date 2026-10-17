@@ -8,8 +8,12 @@
  * `ERR_PNPM_PATCH_NON_SEMVER_RANGE`), `name@*` every version, and a bare
  * `name` every version too. A package takes the exact one, else the one range
  * it satisfies (two are `ERR_PNPM_PATCH_KEY_CONFLICT`), else the one for every
- * version (`getPatchInfo`). pnpm 9 knew only the exact and bare forms, which
- * mean the same here.
+ * version (`getPatchInfo`). A key is read as `dp.parse` reads it: the
+ * version after the first `@` past the start, without a `(...)` suffix at its
+ * end, and exact when node-semver's strict `valid` takes it (`1.0.0-01`, a
+ * number past 2^53 - 1 and a version longer than 256 are not, and are then no
+ * range either). pnpm 9 knew only the exact and bare forms, which mean the
+ * same here; a lock pnpm 9 wrote is read by these rules too (ADR 0056 §3).
  *
  * pnpm decides from the project's settings, which a fresh lock records as they
  * are; a frozen install of the lock decides from the lock and holds the
@@ -19,7 +23,7 @@
  * holds is refused, as pnpm refuses it when it resolves (`ERR_PNPM_UNUSED_PATCH`).
  */
 
-import type { FrozenLockRefusal } from '@openpacker/adapter-core';
+import { npmVersion, type FrozenLockRefusal } from '@openpacker/adapter-core';
 import type { PnpmLock, PnpmPatch } from '../pnpm-lock/types.js';
 import { patchHashForm } from '../pnpm-patch/index.js';
 import type { PnpmModel } from './model.js';
@@ -36,9 +40,23 @@ interface Group {
   all?: Declaration;
 }
 
-/** node-semver's `valid`: a whole version, an optional leading `v`, surrounding space allowed. */
-const VALID =
-  /^v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
+/**
+ * `indexOfDepPathSuffix` of `@pnpm/dependency-path`, as `dp.parse` uses it on
+ * a key's version: where the run of `(...)` groups at its end begins (a peer
+ * suffix or a `(patch_hash=...)`), or -1. pnpm's scan, lenient as it is: an
+ * unbalanced end is no suffix.
+ */
+function suffixAt(version: string): number {
+  if (!version.endsWith(')')) return -1;
+  let open = 1;
+  for (let at = version.length - 2; at >= 0; at -= 1) {
+    const char = version[at];
+    if (char === '(') open -= 1;
+    else if (char === ')') open += 1;
+    else if (open === 0) return at + 1;
+  }
+  return -1;
+}
 
 /** `groupPatchedDependencies`, with the keys it refuses as refusals. */
 function groupPatches(
@@ -58,13 +76,17 @@ function groupPatches(
   for (const [key, patch] of declared) {
     const declaration = { ...patch, key };
     const at = key.indexOf('@', 1);
-    const version = at === -1 ? '' : key.slice(at + 1);
+    let version = at === -1 ? '' : key.slice(at + 1);
     if (version === '') {
       group(key).all = declaration;
       continue;
     }
     const name = key.slice(0, at);
-    if (VALID.test(version.trim())) group(name).exact.set(version, declaration);
+    const cut = suffixAt(version);
+    if (cut !== -1) version = version.slice(0, cut);
+    // node-semver's strict `valid`, which `dp.parse` asks.
+    if (npmVersion(version) !== undefined)
+      group(name).exact.set(version, declaration);
     else if (!isRange(version)) {
       unreadable.add(key);
       refused.push({

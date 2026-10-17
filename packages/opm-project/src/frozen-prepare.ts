@@ -162,6 +162,7 @@ export function adapterFailure(error: unknown): Error {
     LAYOUT_TOO_LARGE: 'SIZE_LIMIT',
     PATCH_FAILED: 'PATCH_FAILED',
     INVALID_PATCH: 'INVALID_PATCH',
+    SIZE_LIMIT: 'SIZE_LIMIT',
   };
   // SAFETY: provider errors carry an optional string `code`.
   const code = (error as { code?: unknown }).code;

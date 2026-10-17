@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
+  PACKAGE_TREE_LIMITS,
   redactUrl,
   type FrozenLock,
   type FrozenLockPackage,
@@ -60,7 +61,9 @@ const DEFAULT_CONCURRENCY = 8;
  * Bounds an archive is extracted under. They are larger than the materializer's
  * defaults, which suit a small tool and not a dependency tree (a native build
  * of onnxruntime is 287 MB unpacked, some packages ship tens of thousands of
- * files), and no larger than a tree opm can then hash and link.
+ * files), and no larger than a tree opm can then hash and link. Files, depth
+ * and path length are `PACKAGE_TREE_LIMITS`, which a pnpm patch's paths are
+ * held to as well (ADR 0056).
  */
 export function frozenArchiveLimits(extraction: {
   acceptRedundantEntries: boolean;
@@ -68,7 +71,7 @@ export function frozenArchiveLimits(extraction: {
 }): MaterializationLimits {
   return {
     ...DEFAULT_MATERIALIZATION_LIMITS,
-    maximumFiles: 100_000,
+    ...PACKAGE_TREE_LIMITS,
     maximumExpandedBytes: 1024 * 1024 * 1024,
     maximumCompressedBytes: MAXIMUM_ARCHIVE_BYTES,
     maximumCompressionRatio: 128,

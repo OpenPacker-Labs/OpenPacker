@@ -47,10 +47,24 @@ inside the bundle.
    the key `name@1.2.3` for that exact version, else the one `name@<range>` the
    version satisfies (two are `ERR_PNPM_PATCH_KEY_CONFLICT`), else `name@*` or a
    bare `name`. A key whose version part is neither a version nor a range is
-   `ERR_PNPM_PATCH_NON_SEMVER_RANGE`. pnpm 9.15 knew only the exact and the bare
-   forms, which mean the same here. pnpm decides by name and version, so a patch
-   applies to every instance of `name@version` in the lock, whatever its peers:
-   there is no "patched here, unpatched there" in one lock.
+   `ERR_PNPM_PATCH_NON_SEMVER_RANGE`. A key is read as `dp.parse`
+   (`../packages/dependency-path/lib`) reads it: the version is what follows the
+   first `@` after the start, less a run of `(...)` groups at its end (a peer
+   suffix or a `(patch_hash=...)`, found by `indexOfDepPathSuffix`'s scan, which
+   takes an unbalanced end for no suffix), and it is exact when node-semver's
+   strict `valid` takes it: so `x@1.0.0(peer@1.0.0)` is the exact key of
+   `1.0.0`, while `1.0.0-01`, a number past 2^53 - 1 and a version longer than
+   256 characters are neither a version nor a range. pnpm 9.15 looked a package
+   up by the exact string `name@version`, then by `name` (`getPatchInfo` in the
+   9.15.0 bundle), and knew no other form. **A lock pnpm 9 wrote is read by
+   these 10.28 rules too.** The two agree on the forms pnpm 9 knew; any other
+   key (a range, `*`, a `(...)` suffix) pnpm 9 never matched, and so did not
+   patch, while opm reads it by the 10.28 rule: a snapshot it applies to carries
+   no `(patch_hash=...)` in such a lock, and opm refuses the lock rather than
+   install the package unpatched, and a key 10.28 refuses as neither version nor
+   range is refused. pnpm decides by name and version, so a patch applies to
+   every instance of `name@version` in the lock, whatever its peers: there is no
+   "patched here, unpatched there" in one lock.
 
 ### The hash
 
@@ -97,9 +111,11 @@ inside the bundle.
      as 20 either way; 21 fails the file;
    - a line matches when the two are equal after trailing whitespace is trimmed,
      so a `\r` in the file or the patch, or a trailing space, does not stop a
-     hunk; inserted lines are written as the patch has them, and the file is
-     split and joined at `\n` only (so a CRLF file patched by an LF patch has
-     mixed endings, as with pnpm);
+     hunk (pnpm trims with `/\s+$/`, which backtracks and takes 12 s over a line
+     of 80,000 spaces and a letter; opm uses `trimEnd`, which removes the same
+     characters in one pass); inserted lines are written as the patch has them,
+     and the file is split and joined at `\n` only (so a CRLF file patched by an
+     LF patch has mixed endings, as with pnpm);
    - a new file (`new file mode 100644` or `100755`) replaces a file already at
      its path, a deleted file's text is not compared, a rename never overwrites,
      a mode change sets 644 or 755; any other mode (a symlink's `120000`) makes
@@ -123,30 +139,72 @@ inside the bundle.
    directory above them, are read into memory, the patch runs there with the
    rules above, and the files are written only when it applied. Where pnpm fails
    it leaves what it did up to the failure; opm leaves the package as it was,
-   and the install stops.
+   and the install stops. "Whole" is the failure path's promise only: a patch
+   that fails forward and whose reverse would apply counts as applied (point 7),
+   and the package keeps what the two runs left, as with pnpm: the files the
+   forward run wrote before it failed, and any mode the dry run of the reverse
+   set, since pnpm's dry run still runs `chmod`. So
+   `[t: 100644 → 100755, a hunk the package already has]` is applied, and `t`
+   stays 644 (`already-applied.test.ts`, with pnpm 10.28's own outcomes).
+
+   **The work is bounded.** Like pnpm, the applier reads, splits, joins and
+   writes a whole file for every section that patches it, so a patch of K
+   sections that each change one line of one large file costs K times that file:
+   2,000 such sections, 146 KB, against a 2 MB file ran for a minute, and a 16
+   MiB patch would run for an hour. opm counts the characters it reads, compares
+   and writes, and the lines a splice moves, and refuses a patch past 256 MiB of
+   them as too costly (`PATCH_FAILED`, exit 3); that one is refused after 1.9 s.
+   Measured on 2026-10-17, OpenSesame's four patches spend 6,207
+   (`js-yaml@3.15.2`), 27,372 (`braces@3.0.3`), 67,200
+   (`@simple-git/argv-parser@2.0.1`) and 124,000 (`node-forge@1.4.0`), and the
+   37 oracle cases at most 1,880: the bound is 2,164 times the largest real
+   patch. A real patch changes a file in one section; by the count, one section
+   of 500 hunks spread over a file of 9 MB and 250,000 lines spends about 143
+   million, half the bound (computed, not run).
 
 ### Where the patched package lives
 
 10. **A patched package is a store entry of its own**:
-    `sha256-<archive digest>-patch-<sha256 of the patch text>`, the second hash
-    pnpm 10's whatever form the lock has, so one patch is one entry however the
-    lock spells its hash. pnpm does the same in its own way: the patched files
-    are in a virtual-store directory whose name carries the hash
-    (`depPathToFilename`, `name@1.0.0_patch_hash=...`), apart from the store's
-    unpatched files, and its side-effects cache key carries `patchFileHash`
-    (`calcDepState` in `buildDependency`). A project that installs a package
-    unpatched never links a patched file, one that patches it never links an
-    unpatched one, and two patches never share an entry.
+    `sha256-<archive digest>-patch-<sha256 of the patch file's bytes>`. The
+    second hash is of the bytes as read, which are the bytes applied, and not
+    the lock's hash, which pnpm takes of the text with CRLF made LF (point 4).
+    An LF and a CRLF checkout of one patch have one lock hash and are two
+    entries: the CRLF one inserts lines that end in `\r` (pnpm reads the file
+    with `readFileSync(...).toString()` and applies it as it is), so a key named
+    by the lock's hash would hold whichever tree was published first, and a
+    project's install would depend on another project's checkout. pnpm does the
+    same in its own way: the patched files are in a virtual-store directory
+    whose name carries the hash (`depPathToFilename`,
+    `name@1.0.0_patch_hash=...`), apart from the store's unpatched files, and
+    its side-effects cache key carries `patchFileHash` (`calcDepState` in
+    `buildDependency`); pnpm's directory is per project and is not checked
+    against a recorded tree, so its normalized name does it no harm. A project
+    that installs a package unpatched never links a patched file, one that
+    patches it never links an unpatched one, and two patch files whose bytes
+    differ never share an entry.
 11. **The entry is made as an archive's is** (`frozen-patch.ts`): the unpatched
     entry is copied (its files are every project's and are never written) into
     `.<key>.materialize-<uuid>` beside it, patched there by the format
-    (`ProjectFormat.applyFrozenPatch`), hashed, sealed read-only, its tree
-    digest written to `<key>.tree`, and renamed into place. An entry already
-    there is adopted only after its tree is hashed again against that record.
-    `opm gc --shared` reads the key under ADR 0048 §8's rules unchanged: kept
-    while a project links any of its files, kept while its `.tree` is younger
-    than the age rule, removed with its record otherwise, and a leftover
-    `.<key>.materialize-` cleared once old.
+    (`ProjectFormat.applyFrozenPatch`), hashed, sealed read-only, and renamed
+    into place. **Only the install whose rename won writes `<key>.tree`**, and
+    after the rename: two installs that make the same entry at once never leave
+    a record of the tree that lost (an archive's record is written before its
+    rename, which is safe there because every publisher of a key extracts the
+    same tree; a patched tree is the output of opm's applier, and the record
+    follows the rename so that agreement does not rest on the applier alone). An
+    entry already there is adopted only after its tree is hashed again against
+    that record; one renamed into place whose record is not there yet is waited
+    for, up to ten seconds, and is then the error an unrecorded entry always
+    was. `opm gc --shared` reads the key under ADR 0048 §8's rules: kept while a
+    project links any of its files, kept while its `.tree`, or the directory
+    itself while it has no record, is younger than the age rule, removed with
+    its record otherwise, and a leftover `.<key>.materialize-` cleared once old,
+    as is a `<key>.tree` whose entry is gone (an install or a collection that
+    stopped between the two leaves one; this holds for an archive's record too).
+    While a patched copy is kept, so is the archive's entry it was made from,
+    although no project links that one: an install proves the archive to be the
+    package the lock names before it adopts the copy (point 12), and an offline
+    install has nowhere else to find it.
 12. **Order.** The archive is fetched, proved against the lock's integrity,
     extracted, and proved to be the package the lock names (ADR 0055 §7)
     **before** it is patched: a patch that edits `package.json` changes what is
@@ -162,18 +220,30 @@ inside the bundle.
       a snapshot that does not carry the hash of its patch, or carries one no
       patch gives; a hash of neither pnpm's form;
     - by the project's files: a patch file that is not there (`NOT_FOUND`, exit
-      4, as pnpm's `ENOENT`); a path that leaves the project through `..` or an
-      absolute path, or that is reached through a link (`UNSAFE_PATH`, exit 7);
-      a patch that names a path outside its package or with an empty, `.` or
-      `..` segment, a backslash or NUL (`UNSAFE_PATH`); a patch pnpm cannot read
-      (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm install
-      --frozen-lockfile would refuse too"), a key added or removed, a path
-      moved, a file edited;
-    - when it is applied (exit 3): a patch that does not apply (`PATCH_FAILED`).
+      4, as pnpm's `ENOENT`); a patch file larger than 16 MiB, or patch files
+      that come to more than 64 MiB together, sized before any is read
+      (`SIZE_LIMIT`, exit 7: each is held whole, as bytes and as text, while the
+      lock is read, and pnpm reads whatever is there); a path that leaves the
+      project through `..` or an absolute path, or that is reached through a
+      link (`UNSAFE_PATH`, exit 7); a patch that names a path outside its
+      package or with an empty, `.` or `..` segment, a backslash or NUL, or one
+      past the bounds of a path in an archive, 128 segments or 4,096 UTF-8 bytes
+      (`UNSAFE_PATH`); a patch that names more than the 100,000 files an archive
+      may hold (`SIZE_LIMIT`, exit 7); the three bounds are
+      `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts an archive under, so no
+      path of a patched entry is one an archive could not hold; a patch pnpm
+      cannot read (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm
+      install --frozen-lockfile would refuse too"), a key added or removed, a
+      path moved, a file edited;
+    - when it is applied (exit 3): a patch that does not apply, or one too
+      costly to apply (point 9) (`PATCH_FAILED`).
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
       the way to a path it names: pnpm follows both and writes outside the
       package; opm writes only below it;
+    - a path past an archive's bounds: pnpm makes the directories whatever their
+      depth (a 12 KB patch names a path 2,000 deep), and opm refuses it as it
+      refuses that path in an archive;
     - a patch that fails for a bare-name key, or with `ignorePatchFailures`:
       pnpm warns and installs the package unpatched; opm refuses, because a lock
       that says a package is patched and an install where it is not are two
@@ -207,7 +277,9 @@ Costs and limits:
 - **Two copies of a patched package's files** on the machine: the unpatched
   entry and the patched one. A patched package is small next to a closure, and
   linking the patched entry to the unpatched one's files would make each keep
-  the other alive in `opm gc --shared`'s eyes.
+  the other alive in `opm gc --shared`'s eyes. `opm gc --shared` keeps the
+  unpatched entry for as long as it keeps the patched one (point 11), so both
+  copies stay until no project links the patched one.
 - **The applier is a second implementation of pnpm's.** The oracle is what keeps
   it pnpm's; a new pnpm that changes `@pnpm/patch-package` needs the generator
   run again against it, and a change to what the applier writes must change the

@@ -19,7 +19,8 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, say } from './error-report.js';
+import { writeToolRan } from './terminal-lines.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -105,11 +106,8 @@ export async function runOpmx(
         ...(flags.offline && { offline: true }),
       });
       const bin = selectToolBin(tool, binName);
-      // Say which version actually ran. An unpinned ephemeral run resolves to
-      // whatever is newest, so it is a different thing tomorrow.
-      io.stderr.write(
-        `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
-      );
+      // Say which version ran: an unpinned run is another thing tomorrow.
+      writeToolRan(io, tool.exactPurl, tool.cached);
       return await spawnDeclared(
         bin,
         tool.storePath,
@@ -413,12 +411,12 @@ async function spawnProcess(
       error instanceof Error &&
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
-    io.stderr.write(
-      `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
+    const hint = missing ? missingHint : undefined;
+    say(
+      io.stderr,
+      `opmx: ${hint ? `${hint} (${command} not found)` : message}\n`,
     );
-    return missing && missingHint
-      ? EXIT_CODES.unavailable
-      : EXIT_CODES.internal;
+    return hint ? EXIT_CODES.unavailable : EXIT_CODES.internal;
   }
 }
 

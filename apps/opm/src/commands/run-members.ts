@@ -11,6 +11,7 @@ import { constants } from 'node:os';
 import { runChild, startChild, type ChildIo } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import type { ChildRunner } from './run-package.js';
+import { say } from '../error-report.js';
 import { MemberOutput } from './run-output.js';
 import { schedule, type Job, type JobResult } from './run-schedule.js';
 import type { PlannedMember, WorkspacePlan } from './run-select.js';
@@ -31,7 +32,7 @@ export interface MemberTask {
 }
 
 function report(io: ChildIo, result: JobResult): number {
-  if (result.failure !== undefined) io.stderr.write(`opm: ${result.failure}\n`);
+  if (result.failure !== undefined) say(io.stderr, `opm: ${result.failure}\n`);
   return result.status;
 }
 
@@ -42,7 +43,7 @@ export async function runMembers(
   io: ChildIo,
   context: RunContext,
 ): Promise<number> {
-  for (const warning of plan.warnings) io.stderr.write(`${warning}\n`);
+  for (const warning of plan.warnings) say(io.stderr, `${warning}\n`);
   const runnable = tasks.filter((task) => task.runs);
   if (runnable.length === 1) {
     const only = runnable[0]!;

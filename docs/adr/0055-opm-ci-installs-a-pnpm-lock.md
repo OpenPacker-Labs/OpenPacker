@@ -105,20 +105,30 @@ design:
    is refused too: it does not pin the bytes). `deprecated` becomes a lifecycle
    fact. The integrity proves the bytes and not what they hold, so after
    extraction the host reads each archive's own `package.json` and refuses one
-   whose name or version (a leading `v` or `=` and build metadata aside) is not
-   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched). The version
-   is the one the lock records for the archive: a registry package's, or a
-   tarball entry's own `version` (its key holds the URL), and a tarball entry
-   with none has its name compared alone; a `name` the entry writes beside its
-   key must match as well. A name is compared without regard to case, as pnpm
-   compares one: pnpm makes the same check when it reads a package back from its
-   store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
-   `strict-store-pkg-content-check`); npm does not make it. Every value the
-   archive gives is quoted and escaped as the lock's values are. One difference
-   from pnpm is deliberate: pnpm compares a name or version only when the
-   archive's `package.json` has one, and opm refuses an archive with no `name`
-   (or, where the lock records a version, no `version`), because an archive that
-   does not say what it is cannot be identified as the package the lock names.
+   whose name or version is not the lock's (`DIGEST_MISMATCH`, before
+   `node_modules` is touched); a version refused names the version the lock
+   records. The version is the one the lock records for the archive: a registry
+   package's, or a tarball entry's own `version` (its key holds the URL), and a
+   tarball entry with none has its name compared alone; a `name` the entry
+   writes beside its key must match as well. Both are compared as pnpm compares
+   them when it reads a package back from its store
+   (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
+   `strict-store-pkg-content-check`); npm does not make the check. A name is
+   compared without regard to case, and a version by pnpm's
+   `equalOrSemverEqual`: the same text, or node-semver 7.7.2's
+   `eq(a, b, { loose: true })`, so an archive that writes `v1.0.0`, `=1.0.0`,
+   `vv1.0.0`, `01.0.0` or `1.0.0+build` is `1.0.0`, as pnpm takes it, and loose
+   reading makes two versions one only where node-semver compares numbers as
+   doubles: a numeric prerelease identifier beyond 2^53
+   (`1.0.0-12345678901234567890` and `…891` are one, to pnpm and to opm; `1.0.1`
+   and `1.0.0-1` are refused for `1.0.0`). Past such a pair node-semver compares
+   nothing more, so pnpm also takes `…890.a` for `…891.b`; opm compares the rest
+   and refuses that, failing closed. Every value the archive gives is quoted and
+   escaped as the lock's values are. One difference from pnpm is deliberate:
+   pnpm compares a name or version only when the archive's `package.json` has
+   one, and opm refuses an archive with no `name` (or, where the lock records a
+   version, no `version`), because an archive that does not say what it is
+   cannot be identified as the package the lock names.
 
 ### Where each instance goes
 
@@ -130,14 +140,40 @@ design:
    edges, from the importer's directory. The planner (`pnpm-install/place*.ts`)
    chooses; it is the job arborist does when npm writes a lock, and it ends in
    the same `PlacedEntry` list the npm lock gives `planLayoutFromPaths`.
-9. **A direct dependency of an importer lives in that importer's own
-   `node_modules`**, the project's for the root importer
-   (`packages/web/node_modules/vitest`). Always, even when the same instance
-   would also resolve from the project's. Reasons: a member's version of a name
-   cannot collide with another member's or the project's; its `.bin` shims are
-   its own and take precedence on its `PATH` (ADR 0047); the rule is stated and
-   checked from the lock alone. It costs a directory tree of hard links per
-   placement (see Consequences), not a file.
+9. **One lock instance has one real path wherever no other version holds its
+   name**, as pnpm (one `node_modules/.pnpm` directory per instance, linked to
+   from each importer) and npm (arborist hoists a member's dependency to the
+   root unless it conflicts) lay it out. Node keys its module cache by real
+   path, so each copy of one instance is a separate module, and state held at
+   module level does not survive it (two members and the project depending on
+   `react@18.3.1`, written three times, render "Invalid hook call"). The
+   project's direct dependencies live in its `node_modules`. A member's are
+   placed as everything else is (point 10), from the member's directory: nothing
+   is written when Node already finds that instance from the member, at the
+   project or an enclosing member; it goes to the project's `node_modules` when
+   nothing answers there and it is the instance of its name the most packages
+   and importers want; otherwise it is the member's own
+   (`packages/web/node_modules/x` when the project holds another `x`). One case
+   keeps a copy in the member although the project's would do: when the shared
+   copy would find, under a name the member requires itself, another copy of the
+   instance the member requires (a peer: `dom@1.0.0(react@18.2.0)` shared at the
+   project beside the project's react 18.3 needs its own react 18.2 beside it, a
+   second copy of the one the member loads), the member gets the dependency in
+   its own `node_modules`, beside its peer. A shared dependency is still a
+   direct one (the policy's depth, the precedence of its executable); its shim
+   is in the `.bin` beside it, which `opm run` and `opm exec` put on a member's
+   `PATH` (ADR 0047, every ancestor's `node_modules/.bin`); a member installed
+   alone (`-w`, `--filter`) finds it at the project, as `npm ci -w` places it;
+   and it is left out with its importer's list (`--omit`).
+
+   Amended 2026-10-17. The rule was "always in the importer's own
+   `node_modules`, even when the same instance would also resolve from the
+   project's", counted as a cost in disk only: ai-bdd's plan wrote 8 instances
+   at a member and at the project (`vitest`, `zod` among them; 362 places, 354
+   now), the OpenSesame cut `vitest@4.1.11` at 6 real paths, and `planFrozen`'s
+   tests on those locks and HoBo's cut now hold that no instance is placed both
+   in a member's own `node_modules` and anywhere else.
+
 10. **Everything else is placed as the closure planner places it**
     (`layout-plan.ts`), generalised to several tops: breadth-first from the
     direct placements; for each edge of a placed instance, look up what Node
@@ -145,10 +181,11 @@ design:
     written; if it is another instance of the name, the wanted one is nested in
     the dependent's own `node_modules` (shadowing for that package and what is
     below it only); if nothing answers, it goes to the project's `node_modules`
-    when it is the instance of that name the most packages want, and beside its
-    dependent otherwise. A tie is broken by the newer version, then by key. A
-    name that differs only by case from one already in the directory is nested
-    instead (ADR 0054 §17 refuses what cannot be).
+    when it is the instance of that name the most packages and importers want
+    (an importer's edge counts, so two members that share an instance elect it),
+    and beside its dependent otherwise. A tie is broken by the newer version,
+    then by key. A name that differs only by case from one already in the
+    directory is nested instead (ADR 0054 §17 refuses what cannot be).
 11. **A member link** is a link at `node_modules/<name>` in the project, where
     the name is the one the importer gives the dependency: the member's own
     name, or an alias (`"e": "workspace:b@*"` is a link at `node_modules/e`), as
@@ -275,17 +312,27 @@ design:
        and moves to `dependencies` when the replacement is not a peer range
        (node-semver's `validRange`, which takes `v1` and `~>1` as ranges too). A
        selector is split at the first `>` pnpm splits at. Every npm range is
-       read as node-semver 7.7.3 (the copy pnpm 10.28 bundles) reads it: the
-       range reader of `adapter-core` follows node-semver's own steps for the
-       npm scheme (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`,
-       `x.y`, `> = 1`) and keeps the comparators it keeps (`1.2` is
-       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`). `npm-range-oracle.json` holds
-       node-semver's answers for 1,142 ranges and 30 versions and the parser
-       must give each; the review differential found 0 differences over 123,039
-       ranges. So no override is left in doubt: an override written `v1.x` or
-       `<=1.2` applies where pnpm applies it (pnpm 10.28 found such a lock up to
-       date). Before this the reader read some forms its own way and opm refused
-       the override as its own rule rather than guess.
+       read as node-semver 7.7.2 reads it, the version pnpm 10.28's own code
+       embeds (`dist/pnpm.cjs`) and npm 10.9 uses; the 7.7.3 pnpm ships beside
+       its bundle is node-gyp's, and differs only in stripping build metadata
+       first, so 7.7.2 refuses `=1+b`, `<=1.2+b` and `1.x+b`. The range reader
+       of `adapter-core` follows node-semver's own steps for the npm scheme
+       (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`, `x.y`,
+       `> = 1`, `=1+b`) and keeps the comparators it keeps (`1.2` is
+       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`, `>=0.0.0+build` is `>=0.0.0`).
+       `npm-range-oracle.json` holds node-semver 7.7.2's answers for 1,150
+       ranges and 30 versions and the parser must give each. Three differentials
+       agree: the fix that brought the port found its comparator sets equal to
+       7.7.3's over 123,039 generated ranges; the round-3 review, from a
+       generator of its own (about 128,000 ranges), found none against 7.7.3
+       and, against 7.7.2, only the build-metadata one above; and that review's
+       script, run against 7.7.2 once the port followed it, found 0 differences
+       in comparator sets, in 843,210 `satisfies` answers and in 112,428
+       `intersects` answers over 128,229 ranges. So no override is left in
+       doubt: an override written `v1.x` or `<=1.2` applies where pnpm applies
+       it (pnpm 10.28 found such a lock up to date). Before this the reader read
+       some forms its own way and opm refused the override as its own rule
+       rather than guess.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it
@@ -433,6 +480,20 @@ tree on disk (`require.resolve.paths`, `package.json` read at the place found).
 | ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token)                          |
 | OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0056 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0056, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
 | a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                                                  |
+
+**After §9's amendment (2026-10-17)**, the same runs give one real path per
+instance wherever versions agree. ai-bdd (`git archive` of ea16857):
+`opm ci --plan` gives 353 packages in 354 places (the table's 362), and `opm ci`
+installs 354, 352 from the store; `vitest` and `zod` resolve from the project,
+`packages/verify`, `packages/sdk` and `packages/cli` to one real path each,
+`require` of zod from the project and from `packages/sdk` is one module object,
+`opm exec tsc -- --version` prints 5.9.3, and the reporters test of
+`packages/sdk` (22) passes. HoBo's whole lock plans 1,851 packages in 2,383
+places (the table's 2,564); 156 places are in a member's own `node_modules`,
+none of them an instance the member would find above it: each is there because
+the project holds another instance of the name (`vitest@4.1.9` against
+`@types/node@22.20.0`, in 57 members beside the project's against 24.13.2, as
+npm would place it too).
 
 **HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
 `@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`

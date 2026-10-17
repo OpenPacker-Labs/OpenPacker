@@ -4,6 +4,7 @@
  * pnpm, the path, the keys; and what opm refuses that pnpm would read.
  */
 
+import { createHash } from 'node:crypto';
 import { symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -33,6 +34,9 @@ async function worldWith(
   return world;
 }
 
+const sha256 = (text: string) =>
+  createHash('sha256').update(text).digest('hex');
+
 describe('a patched pnpm lock, read for a frozen install', () => {
   it("gives the patched package its patch, read once, with pnpm 10's hash or pnpm 9's", async () => {
     const { pnpm10, pnpm9 } = hashes();
@@ -45,7 +49,7 @@ describe('a patched pnpm lock, read for a frozen install', () => {
         key: 'a@1.0.0',
         file: PATCH_FILE,
         hash,
-        digest: pnpm10,
+        digest: sha256(PATCH_TEXT),
         text: PATCH_TEXT,
       });
       expect(b.patch).toBeUndefined();
@@ -63,14 +67,22 @@ describe('a patched pnpm lock, read for a frozen install', () => {
     ).toMatchObject({ file: PATCH_FILE });
   });
 
-  it('reads a CRLF checkout of the patch as the lock hashed it', async () => {
+  it('reads a CRLF checkout of the patch as the lock hashed it, and names it by the bytes it applies', async () => {
     const crlf = PATCH_TEXT.replace(/\n/gu, '\r\n');
-    const read = await (
-      await worldWith(patchedLock(hashes().pnpm9), declared(), crlf)
-    ).read();
-    expect(
-      read.packages.find((item) => item.packageName === 'a')!.patch,
-    ).toMatchObject({ text: crlf, digest: hashes().pnpm10 });
+    const patchOf = async (text: string) =>
+      (
+        await (
+          await worldWith(patchedLock(hashes().pnpm9), declared(), text)
+        ).read()
+      ).packages.find((item) => item.packageName === 'a')!.patch!;
+    const lf = await patchOf(PATCH_TEXT);
+    const dos = await patchOf(crlf);
+    // Both are fresh against the one hash the lock records...
+    expect(lf.hash).toBe(dos.hash);
+    // ...and apply different bytes, so they are two packages, not one.
+    expect(dos).toMatchObject({ text: crlf, digest: sha256(crlf) });
+    expect(lf).toMatchObject({ text: PATCH_TEXT, digest: sha256(PATCH_TEXT) });
+    expect(dos.digest).not.toBe(lf.digest);
   });
 
   it('refuses a patch file that is not there (NOT_FOUND), as pnpm cannot install either', async () => {

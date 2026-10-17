@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { terminalSafe } from '@openpacker/adapter-core';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   registerInstalledPlugins,
@@ -64,20 +63,17 @@ import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { CI_HELP } from './commands/ci-help.js';
+import { isBooleanFlag, shortToLong } from './cli-flags.js';
 import { RUN_HELP } from './commands/run-help.js';
-import { formatFailure, parseFailure } from './error-report.js';
+import { formatFailure, parseFailure, say } from './error-report.js';
+import { EXIT_CODES, opmErrorExitCode } from './exit-codes.js';
+import {
+  writeInstalled,
+  writeLines,
+  writeNativeProjection,
+} from './terminal-lines.js';
 
-export const EXIT_CODES = {
-  success: 0,
-  usage: 2,
-  invalidInput: 3,
-  notFound: 4,
-  unsatisfiable: 5,
-  policyDenied: 6,
-  verificationFailed: 7,
-  unavailable: 8,
-  internal: 9,
-} as const;
+export { EXIT_CODES } from './exit-codes.js';
 
 export interface CliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -162,14 +158,16 @@ export async function runOpm(
         registry: adapterRegistry,
       });
       for (const refused of pluginRegistration.refused)
-        io.stderr.write(
+        say(
+          io.stderr,
           `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
         );
     } catch (error) {
       // A store-level failure (corrupt index, unsafe root) leaves every
       // plugin unregistered; their purl types stay unsupported, which is
       // the fail-closed answer, and `opm plugin` can still repair the store.
-      io.stderr.write(
+      say(
+        io.stderr,
         `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
       );
     }
@@ -393,27 +391,14 @@ export async function runOpm(
           io.stdout.write('(no packages)\n');
           return EXIT_CODES.success;
         }
-        for (const row of rows) {
-          const digest =
-            row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest;
-          const status = row.installed ? 'installed' : 'not-installed';
-          const bins =
-            row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
-          const names =
-            row.installedAs.length > 0
-              ? ` as=[${row.installedAs.join(',')}]`
-              : '';
-          io.stdout.write(
-            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}${names}\n`,
-          );
-        }
+        writeInstalled(rows, io);
         return EXIT_CODES.success;
       }
       case 'why': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
         if (!alias) throw usage('opm why requires a package alias');
-        io.stdout.write(`${await whyPackage(root, alias)}\n`);
+        writeLines([await whyPackage(root, alias)], io);
         return EXIT_CODES.success;
       }
       // Browsing does not need a project: looking up what a registry has is
@@ -429,7 +414,10 @@ export async function runOpm(
           io.stdout.write('(no matches)\n');
           return EXIT_CODES.success;
         }
-        for (const item of found) io.stdout.write(`${item.canonicalPurl}\n`);
+        writeLines(
+          found.map((item) => item.canonicalPurl),
+          io,
+        );
         return EXIT_CODES.success;
       }
       case 'versions': {
@@ -448,7 +436,7 @@ export async function runOpm(
         }
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
-        for (const version of versions) io.stdout.write(`${version}\n`);
+        writeLines(versions, io);
         return EXIT_CODES.success;
       }
       case 'resolve': {
@@ -474,7 +462,7 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
+          say(io.stderr, `opm: ${item.purl}: ${item.reason}\n`);
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -483,7 +471,7 @@ export async function runOpm(
           `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
         );
         for (const instance of solved.selected)
-          io.stdout.write(`  ${instance.identity.exactPurl}\n`);
+          say(io.stdout, `  ${instance.identity.exactPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'info': {
@@ -730,11 +718,11 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
 /**
  * Report a failure and choose the exit code that tells a script what kind it
  * was. Every failure `opm` reports is printed here, so this is where a message
- * is made safe for the terminal (`terminalSafe`): a message may carry text a
- * repository wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
+ * is made safe for the terminal (`say`): a message may carry text a repository
+ * wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
  */
 export function handleError(error: unknown, io: CliIo): number {
-  const report = (text: string) => io.stderr.write(terminalSafe(text));
+  const report = (text: string) => say(io.stderr, text);
   if (error instanceof UsageError) {
     report(`${error.message}\n`);
     return EXIT_CODES.usage;
@@ -755,51 +743,7 @@ export function handleError(error: unknown, io: CliIo): number {
   }
   if (error instanceof OpmError) {
     report(`opm: ${error.message}\n`);
-    switch (error.code) {
-      case 'NOT_FOUND':
-      case 'NO_PROJECT':
-      case 'PLUGIN_NOT_INSTALLED':
-        return EXIT_CODES.notFound;
-      case 'AMBIGUOUS_SPEC':
-      case 'INVALID_SPEC':
-      case 'INVALID_MANIFEST':
-      case 'INVALID_LOCK':
-      case 'UNSUPPORTED_LOCK':
-      case 'PATCH_FAILED':
-      case 'INVALID_PATCH':
-      case 'INVALID_CATALOG':
-      case 'INVALID_PLUGIN_SPEC':
-      case 'INVALID_PLUGIN_MANIFEST':
-      case 'INVALID_PLUGIN_ARTIFACT':
-      case 'PLUGIN_ALREADY_INSTALLED':
-      case 'PLUGIN_ID_CONFLICT':
-        return EXIT_CODES.invalidInput;
-      case 'UNRESOLVABLE':
-        return EXIT_CODES.unsatisfiable;
-      case 'DIGEST_MISMATCH':
-      case 'PLUGIN_DIGEST_MISMATCH':
-      case 'SIZE_MISMATCH':
-      case 'UNSAFE_PATH':
-      case 'UNSAFE_BIN':
-      case 'UNSAFE_SOURCE':
-      case 'SIZE_LIMIT':
-      case 'INVALID_DIGEST':
-        return EXIT_CODES.verificationFailed;
-      case 'OFFLINE':
-      case 'FETCH_FAILED':
-      case 'UNAVAILABLE':
-      case 'PLUGIN_ERROR':
-      case 'PLUGIN_FAILED':
-      case 'PLUGIN_REGISTRY_UNCONFIGURED':
-        return EXIT_CODES.unavailable;
-      case 'ECOSYSTEM_DENIED':
-      case 'POLICY':
-      case 'POLICY_DENIED':
-      case 'POLICY_INDETERMINATE':
-        return EXIT_CODES.policyDenied;
-      default:
-        return EXIT_CODES.internal;
-    }
+    return opmErrorExitCode(error.code);
   }
   // Delegated plugin operations surface ProviderError, which is not an
   // OpmError but carries the same string codes; map them instead of reporting
@@ -930,47 +874,6 @@ function parseArgs(argv: string[]): Parsed {
   };
 }
 
-function shortToLong(short: string): string {
-  switch (short) {
-    case 'e':
-      return 'ecosystem';
-    case 'h':
-      return 'help';
-    case 'w':
-      return 'workspace';
-    case 'F':
-      return 'filter';
-    default:
-      return short;
-  }
-}
-
-function isBooleanFlag(key: string): boolean {
-  return (
-    key === 'help' ||
-    key === 'force' ||
-    key === 'offline' ||
-    key === 'online' ||
-    key === 'json' ||
-    key === 'dry-run' ||
-    key === 'delegate' ||
-    key === 'allow-build' ||
-    key === 'allow-network' ||
-    key === 'allow-elevation' ||
-    key === 'latest' ||
-    key === 'if-present' ||
-    key === 'native' ||
-    key === 'shared' ||
-    key === 'production' ||
-    key === 'frozen' ||
-    key === 'workspaces' ||
-    key === 'no-workspaces' ||
-    key === 'include-workspace-root' ||
-    key === 'plan' ||
-    key === 'write'
-  );
-}
-
 /**
  * Delegated adapter plugin management (ADR 0039). Plugins live in the
  * user-level store (`OPM_PLUGIN_HOME` / XDG), never in a project.
@@ -1062,40 +965,6 @@ async function runSystemCommand(
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
-}
-
-/**
- * Report the ecosystem project files opm maintained, and anything it could not
- * promise about them. Silence here would hide edits to files the user tracks
- * in version control.
- */
-function writeNativeProjection(
-  report:
-    | {
-        projections: readonly {
-          ecosystem: string;
-          written: readonly string[];
-          skipped?: readonly { path: string; reason: string }[];
-          semanticLoss: readonly {
-            code: string;
-            representedMeaning?: string;
-          }[];
-        }[];
-      }
-    | undefined,
-  io: CliIo,
-): void {
-  if (!report) return;
-  for (const projection of report.projections) {
-    for (const path of projection.written)
-      io.stdout.write(`  updated ${path}\n`);
-    for (const entry of projection.skipped ?? [])
-      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
-    for (const loss of projection.semanticLoss)
-      io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
-      );
-  }
 }
 
 async function runHostInstall(

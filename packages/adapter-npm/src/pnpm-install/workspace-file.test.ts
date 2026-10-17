@@ -11,7 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProviderError } from '@openpacker/adapter-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resolvePnpmLockLimits } from '../pnpm-lock/limits.js';
+import { readYamlTree, type YamlMeter } from '../pnpm-lock/yaml-tree.js';
 import { readPnpmProjectConfig } from './config.js';
+import { MAXIMUM_WORKSPACE_BYTES } from './workspace-file.js';
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -56,13 +59,29 @@ describe('pnpm-workspace.yaml, read with the bounds of the lock', () => {
   }, 60_000);
 
   it('reads 40,000 catalog entries in linear time', async () => {
-    const lines = ['catalog:'];
-    for (let index = 0; index < 40_000; index += 1)
-      lines.push(`  pkg-${index}: ^1.0.${index}`);
-    const dir = await project(`${lines.join('\n')}\n`);
-    const started = performance.now();
-    const config = await read(dir);
-    expect(performance.now() - started).toBeLessThan(5_000);
+    const catalog = (entries: number) => {
+      const lines = ['catalog:'];
+      for (let index = 0; index < entries; index += 1)
+        lines.push(`  pkg-${index}: ^1.0.${index}`);
+      return `${lines.join('\n')}\n`;
+    };
+    // Counted, not timed (a 5 s bound failed on a loaded machine). The cost was
+    // the library's repeated-key check, which compares each key with every
+    // earlier one (89 s here). It is off where the reader composes: a repeated
+    // key is the walk's own refusal, which the library's check would pre-empt.
+    const limits = resolvePnpmLockLimits({ maxBytes: MAXIMUM_WORKSPACE_BYTES });
+    expect(() => readYamlTree('catalog:\n  a: 1\n  a: 2\n', limits)).toThrow(
+      expect.objectContaining({ reason: 'duplicate-key' }),
+    );
+    const work = (entries: number): YamlMeter => {
+      const meter = { nodes: 0, keyLookups: 0 };
+      readYamlTree(catalog(entries), limits, meter);
+      return meter;
+    };
+    const [half, whole] = [work(20_000), work(40_000)];
+    expect(whole.keyLookups).toBe(40_001);
+    expect(whole.nodes).toBeLessThanOrEqual(2 * half.nodes + 8);
+    const config = await read(await project(catalog(40_000)));
     expect(config.catalogs.get('default')?.size).toBe(40_000);
     expect(config.catalogs.get('default')?.get('pkg-39999')).toBe('^1.0.39999');
   }, 180_000);

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
 import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
@@ -102,6 +102,20 @@ const executable = async (path: string) =>
   ((await stat(path)).mode & 0o111) !== 0;
 const inode = async (path: string) => (await stat(path)).ino;
 
+/** The mode of every file below `root`, by its path there. */
+async function fileModes(root: string): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const entry of await readdir(root, {
+    withFileTypes: true,
+    recursive: true,
+  }))
+    if (entry.isFile()) {
+      const path = join(entry.parentPath, entry.name);
+      out[relative(root, path)] = (await stat(path)).mode;
+    }
+  return out;
+}
+
 describe('opm ci over a pnpm lock with patchedDependencies', () => {
   it.runIf(onPosix)(
     'installs the patched files for every importer, and a project on the same store its own unpatched ones',
@@ -113,7 +127,13 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
         expect(a.run("console.log(require('x/lib.js'))", from)).toBe('patched');
         expect(a.run("console.log(require('x/added.js'))", from)).toBe('added');
       }
-      const x = join(a.dir, 'packages/web/node_modules/x');
+      // The copy the member loads, wherever the one real path is (#179's
+      // placement puts a member's direct dependency at the project when it
+      // serves there).
+      const x = a.run(
+        "console.log(require('path').dirname(require.resolve('x/package.json')))",
+        'packages/web',
+      );
       await expect(stat(join(x, 'gone.js'))).rejects.toMatchObject({
         code: 'ENOENT',
       });
@@ -141,9 +161,19 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
       const dirs = names.filter((name) => !name.includes('.'));
       expect(dirs).toHaveLength(3);
       const patchedEntry = dirs.find((name) => name.includes('-patch-'))!;
+      // Named by the bytes of the patch file, the ones applied.
+      const applied = createHash('sha256').update(PATCH).digest('hex');
       expect(patchedEntry).toMatch(
-        new RegExp(`^sha256-[0-9a-f]{64}-patch-${hashOf(PATCH)}$`, 'u'),
+        new RegExp(`^sha256-[0-9a-f]{64}-patch-${applied}$`, 'u'),
       );
+      // Sealed as an archive's entry is: an edit in one project's
+      // node_modules/x cannot change every project's copy.
+      const modes = await fileModes(join(store, patchedEntry));
+      expect(Object.keys(modes)).toEqual(
+        expect.arrayContaining(['package/lib.js', 'package/added.js']),
+      );
+      for (const [file, mode] of Object.entries(modes))
+        expect([file, mode & 0o222]).toEqual([file, 0]);
 
       // Each entry is held while a project links it, and only then.
       const env = { OPM_STORE_HOME: store };
@@ -151,17 +181,21 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
         collectSharedStore({ env, minimumAgeMs: 0, now: () => Date.now() });
       expect(await gc()).toMatchObject({ removed: [], referenced: 3 });
       await rm(join(b.dir, 'node_modules'), { recursive: true });
+      // No project links the unpatched entry now, and it is kept: the
+      // patched copy a links was made from it, and an install checks the
+      // archive before it adopts the copy.
       const afterB = await gc();
-      expect(afterB.removed.map((path) => basename(path))).toEqual([
-        patchedEntry.slice(0, 'sha256-'.length + 64),
-      ]);
-      expect(afterB.referenced).toBe(2);
-      // a installs again: the unpatched archive is fetched again, the patched
-      // entry is adopted after its tree is checked.
-      await a.install();
+      expect(afterB.removed).toEqual([]);
+      expect(afterB.referenced).toBe(3);
+      // a installs again, offline: the patched entry is adopted after its
+      // tree is checked, and nothing is fetched.
+      await a.install({ offline: true });
       expect(a.run("console.log(require('x/lib.js'))")).toBe('patched');
       await rm(join(a.dir, 'node_modules'), { recursive: true });
-      await rm(join(a.dir, 'packages/web/node_modules'), { recursive: true });
+      await rm(join(a.dir, 'packages/web/node_modules'), {
+        recursive: true,
+        force: true,
+      });
       const empty = await gc();
       expect(empty.referenced).toBe(0);
       expect(await entries(store)).toEqual([]);

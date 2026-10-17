@@ -1,4 +1,4 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrozen } from '../src/index.js';
@@ -117,14 +117,20 @@ describe('choosing members of a pnpm workspace', () => {
   it('installs the filtered member, the members it links and what they need, not the project', async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['web'] } });
-    expect(await w.list('packages/web/node_modules')).toEqual(
-      expect.arrayContaining(['left']),
-    );
-    expect(await w.list('packages/lib/node_modules')).toEqual([
+    // The members' own dependencies are shared at the project, as npm -w
+    // places them; the project's own (a, shared, tool) are not installed.
+    expect(await w.list('node_modules')).toEqual([
       '.opm-layout.json',
+      'left',
+      'lib',
       'right',
     ]);
-    expect(await w.list('node_modules')).toEqual(['.opm-layout.json', 'lib']);
+    expect(w.load('left/package.json', 'packages/web')).toMatchObject({
+      version: '1.0.0',
+    });
+    expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
+      version: '1.0.0',
+    });
   });
 
   it('adds the project with --include-workspace-root', async () => {
@@ -138,13 +144,23 @@ describe('choosing members of a pnpm workspace', () => {
   it("reads pnpm's selectors: a dependency closure with ..., a glob, an exclusion", async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['./packages/*', '!web'] } });
-    expect(await w.list('packages/lib/node_modules')).toEqual([
-      '.opm-layout.json',
-      'right',
-    ]);
+    expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
+      version: '1.0.0',
+    });
+    expect(await w.list('node_modules')).toEqual(['.opm-layout.json', 'right']);
     await expect(
       stat(join(w.dir, 'packages/web/node_modules')),
     ).rejects.toThrow();
+  });
+
+  it('names pnpm-workspace.yaml when a pnpm project has no workspace to select from', async () => {
+    const w = await pnpmWorld();
+    w.importer('.', {});
+    await w.write();
+    await rm(join(w.dir, 'pnpm-workspace.yaml'));
+    await expect(w.install({ workspace: { filter: ['web'] } })).rejects.toThrow(
+      /declares none \(no pnpm-workspace\.yaml\)/u,
+    );
   });
 
   it('refuses a selector that matches nothing, before anything is fetched', async () => {
@@ -216,6 +232,21 @@ describe('planFrozen of a pnpm workspace', () => {
     expect(w.registry.requests).toEqual([]);
     await expect(stat(join(w.dir, 'node_modules'))).rejects.toThrow();
     await expect(stat(join(w.dir, '..', 'plan-store'))).rejects.toThrow();
+  });
+
+  it("plans a transitive registry package whose version has build metadata, which the policy takes as the registry's", async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'b', version: '1.0.0+build.5' });
+    w.pkg({ name: 'a', version: '1.0.0', deps: { b: '1.0.0+build.5' } });
+    w.importer('.', { dependencies: { a: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+    const plan = await planFrozen({
+      root: w.dir,
+      transport: w.registry,
+      env: { OPM_STORE_HOME: join(w.dir, '..', 'plan-store') },
+      target: linux,
+    });
+    expect(plan).toMatchObject({ instances: 2, archives: 2 });
   });
 
   it('refuses what the install would, before the first byte', async () => {

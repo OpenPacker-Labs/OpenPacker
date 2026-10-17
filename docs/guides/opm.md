@@ -432,13 +432,15 @@ opm ci --plan                             # read, check and plan; fetch and writ
 What it does differently from an npm lock, because a pnpm lock records edges and
 not places:
 
-- **It chooses the places.** Each importer's direct dependencies are in that
-  importer's own `node_modules` (the project's for the root importer).
-  Everything else goes where it is shared: in the project's `node_modules` when
-  it is the version of its name most packages want, beside its dependent when
-  another version already answers. Every edge of every importer and snapshot is
-  resolved on the plan with Node's lookup before anything is fetched, and a plan
-  in which one does not find its target is refused.
+- **It chooses the places.** The project's direct dependencies are in its
+  `node_modules`. Everything else, a member's direct dependencies included, goes
+  where it is shared: in the project's `node_modules` when it is the version of
+  its name most packages and importers want, beside its dependent (or in the
+  member) when another version already answers. So one instance has one real
+  path, and one module, as with pnpm and npm, unless versions conflict. Every
+  edge of every importer and snapshot is resolved on the plan with Node's lookup
+  before anything is fetched, and a plan in which one does not find its target
+  is refused.
 - **A package resolved against several sets of peers**
   (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
   archive, fetched and extracted once, and as many places as dependents need.
@@ -479,15 +481,21 @@ whichever the lock has (a CRLF checkout hashes as LF). A hunk may sit up to 20
 lines from its header, trailing whitespace and `\r` do not stop it, and a patch
 the package already has counts as applied, as with pnpm; a patch is applied
 whole or not at all. The patched files are a store entry of their own
-(`sha256-<archive>-patch-<sha256 of the patch>`), so a project that installs the
-same version unpatched shares none of them, and `opm gc --shared` keeps each
-while a project links it. `--plan` reports `patched: N packages by M patches`
-and refuses, before anything is fetched: a patch file that is missing (exit 4),
-edited since the lock was written (stale, exit 3), outside the project or
-reached through a link (exit 7), one that names a path outside its package
-(exit 7) or that pnpm cannot read (exit 3). A patch that does not apply stops
-the install with nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for
-a bare-name key and installs the package unpatched.
+(`sha256-<archive>-patch-<sha256 of the patch file's bytes>`, so an LF and a
+CRLF checkout of one patch, which pnpm hashes alike and applies differently, are
+two), a project that installs the same version unpatched shares none of them,
+and `opm gc --shared` keeps each while a project links it. `--plan` reports
+`patched: N packages by M patches` and refuses, before anything is fetched: a
+patch file that is missing (exit 4), edited since the lock was written (stale,
+exit 3), outside the project or reached through a link (exit 7), one that names
+a path outside its package or past an archive's bounds (128 segments, 4,096
+bytes, 100,000 files; exit 7) or that pnpm cannot read (exit 3), and a patch
+file over 16 MiB or patch files over 64 MiB together (exit 7). A patch that does
+not apply stops the install with nothing written (`PATCH_FAILED`, exit 3), where
+pnpm warns for a bare-name key and installs the package unpatched; so does one
+too costly to apply, past 256 MiB of characters read, compared and written (a
+file patched again in section after section), which pnpm would run for as long
+as it takes.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
@@ -824,7 +832,11 @@ opm gc --shared
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries younger than ten minutes are left alone (an
-install may be about to link them), as are entries any project still uses.
+install may be about to link them), as are entries any project still uses and
+the archive entry a kept patched copy was made from (`opm ci` checks the archive
+before it adopts the copy, offline too). A `.tree` record whose entry is gone,
+which an install or a collection that stopped half way leaves, is removed once
+it is ten minutes old.
 
 ### Shell environment
 

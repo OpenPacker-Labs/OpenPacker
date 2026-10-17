@@ -5,6 +5,7 @@
  */
 
 import {
+  PACKAGE_TREE_LIMITS,
   ProviderError,
   quote,
   type FrozenPatch,
@@ -30,7 +31,9 @@ export { patchPathProblem } from './tree.js';
 /**
  * The effects of a patch file, or the coded reason opm will not apply it:
  * `INVALID_PATCH` when pnpm cannot read it either (pnpm's `INVALID_PATCH`),
- * `UNSAFE_PATH` when a path in it leaves the package, which pnpm would follow.
+ * `UNSAFE_PATH` when a path in it leaves the package, which pnpm would follow,
+ * or is past the bounds of a path in an archive, and `SIZE_LIMIT` when it
+ * names more paths than a package's archive may hold files.
  */
 export function readPatchText(text: string, file: string): PatchEffect[] {
   let effects: PatchEffect[];
@@ -42,16 +45,27 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
       `the patch ${quote(file)} cannot be read, as pnpm cannot read it (ERR_PNPM_INVALID_PATCH): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  for (const path of pathsOf(effects)) {
+  const paths = new Set(pathsOf(effects));
+  for (const path of paths) {
     const problem = patchPathProblem(path);
     if (problem !== undefined)
       throw new ProviderError(
         'UNSAFE_PATH',
-        `the patch ${quote(file)} names the path ${quote(path)}, which ${problem}; opm applies a patch only below the package it patches`,
+        `the patch ${quote(file)} names the path ${quote(shown(path))}, which ${problem}; opm applies a patch only below the package it patches`,
       );
   }
+  const { maximumFiles } = PACKAGE_TREE_LIMITS;
+  if (paths.size > maximumFiles)
+    throw new ProviderError(
+      'SIZE_LIMIT',
+      `the patch ${quote(file)} names ${paths.size} paths, more than the ${maximumFiles} files a package's archive may hold`,
+    );
   return effects;
 }
+
+/** A path as a message shows it: whole when short, its two ends otherwise. */
+const shown = (path: string): string =>
+  path.length > 160 ? `${path.slice(0, 120)}...${path.slice(-30)}` : path;
 
 /**
  * Apply `patch` to the package whose files are in `packageDir`, whole or not

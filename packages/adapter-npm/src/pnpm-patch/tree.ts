@@ -9,14 +9,16 @@
  * a patch applies whole, or the package is left as it was.
  *
  * A path is a `/`-separated path below the package: no `..`, `.` or empty
- * segment, not absolute, no `\` (a name the store refuses) or NUL. pnpm takes
- * whatever path the patch gives, `../../x` included; opm refuses the patch.
+ * segment, not absolute, no `\` (a name the store refuses) or NUL, and within
+ * the bounds of a path in an archive (`PACKAGE_TREE_LIMITS`: 128 segments,
+ * 4,096 UTF-8 bytes). pnpm takes whatever path the patch gives, `../../x` and
+ * a path 40,000 directories deep included; opm refuses the patch.
  */
 
 import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { quote } from '@openpacker/adapter-core';
+import { PACKAGE_TREE_LIMITS, quote } from '@openpacker/adapter-core';
 import { PatchRefusal, type PatchTree } from './apply.js';
 import type { PatchEffect } from './parse.js';
 
@@ -30,7 +32,14 @@ export function patchPathProblem(path: string): string | undefined {
   if (path.includes('\0')) return 'holds a NUL character';
   if (path.includes('\\')) return 'holds a backslash';
   if (path.startsWith('/')) return 'is absolute';
+  const { maximumDepth, maximumPathBytes } = PACKAGE_TREE_LIMITS;
+  // Measured before the path is split: a long one is never taken apart.
+  const bytes = Buffer.byteLength(path, 'utf8');
+  if (bytes > maximumPathBytes)
+    return `is ${bytes} bytes long, more than the ${maximumPathBytes} a path in an archive may be`;
   const segments = path.split('/');
+  if (segments.length > maximumDepth)
+    return `is ${segments.length} segments deep, more than the ${maximumDepth} a path in an archive may be`;
   if (segments.includes('..')) return 'leaves the package (a ".." segment)';
   if (segments.some((segment) => segment === '' || segment === '.'))
     return 'is not a plain path below the package (an empty or "." segment)';
@@ -44,17 +53,25 @@ export function pathsOf(effects: readonly PatchEffect[]): string[] {
   );
 }
 
-/** Each path and every directory above it, shortest first. */
-function withAncestors(paths: readonly string[]): string[] {
-  const all = new Set<string>();
-  for (const path of paths) {
-    const segments = path.split('/');
-    for (let length = 1; length <= segments.length; length++)
-      all.add(segments.slice(0, length).join('/'));
-  }
-  return [...all].sort(
-    (left, right) => left.split('/').length - right.split('/').length,
-  );
+/**
+ * Each path and every directory above it, shortest first, and in the order
+ * they are first named within one depth. One pass over each path's segments:
+ * a prefix is a slice of the path, never a join of its segments again.
+ */
+export function withAncestors(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const byDepth: string[][] = [];
+  for (const path of paths)
+    for (let depth = 0, end = path.indexOf('/'); ; depth += 1) {
+      const prefix = end === -1 ? path : path.slice(0, end);
+      if (!seen.has(prefix)) {
+        seen.add(prefix);
+        (byDepth[depth] ??= []).push(prefix);
+      }
+      if (end === -1) break;
+      end = path.indexOf('/', end + 1);
+    }
+  return byDepth.flat();
 }
 
 const parentOf = (path: string): string | undefined => {

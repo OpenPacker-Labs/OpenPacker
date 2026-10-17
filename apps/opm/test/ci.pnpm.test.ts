@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { packTarGzip } from '@openpacker/project-io';
 import { EXIT_CODES, runOpm } from '../src/opm.js';
+import { unsafeIn } from './terminal-fixture.js';
 
 const temps: string[] = [];
 let previous: string | undefined;
@@ -44,8 +45,11 @@ const ORIGIN = 'https://registry.npmjs.org';
  * no install-script flag: the URL is the registry's standard path and the
  * script is found in the archive.
  */
-async function project(extra: Record<string, unknown> = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-'));
+async function project(
+  extra: Record<string, unknown> = {},
+  prefix = 'opm-ci-pnpm-',
+) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
   temps.push(dir);
   const store = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-store-'));
   temps.push(store);
@@ -211,6 +215,23 @@ describe('what opm ci writes to the terminal', () => {
     expect(raw).toEqual([]);
     expect(c.err.endsWith('\n')).toBe(true);
     expect(p.urls).toEqual([]);
+  });
+
+  it('escapes the project path the plan and the install summary print', async () => {
+    // A CSI (C1) and a right-to-left override in the directory's own name.
+    const p = await project({}, 'opm-ci-pnpm-x\u009b2J\u202ey-');
+    for (const plan of [['--plan'], []]) {
+      const c = capture();
+      expect(
+        await runOpm(['ci', ...plan, '--path', p.dir], c.io, '/', {
+          fetch: p.fetcher,
+        }),
+        c.err,
+      ).toBe(EXIT_CODES.success);
+      expect(c.out).toMatch(plan.length > 0 ? /^Plan for /u : /^Installed /u);
+      expect(c.out).toContain('x\\u009b2J\\u202ey');
+      expect(unsafeIn(c.out + c.err)).toEqual([]);
+    }
   });
 });
 

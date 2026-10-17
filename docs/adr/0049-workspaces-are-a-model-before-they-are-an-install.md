@@ -274,6 +274,14 @@ Limits that remain:
   read as `*`). It now reads an npm range by node-semver's own steps
   (`npm-semver-range.ts`, ADR 0055 §18.4) and agrees on every one of those
   pairs; `workspace-ranges.oracle.test.ts` fails on any difference.
+- That reading is node-semver's strict one, and npm reads a workspace range
+  loosely (arborist's `satisfies(…, true)`). A range only the loose grammar
+  takes (`1.2.3beta`, `~1.2.3beta`, `>=01.2.3`) is left undecided:
+  `npmRangeEngine.satisfies` answers `undefined` where npm decides, so such a
+  plain range links no member, and a `workspace:` specifier written with one is
+  refused as not a range. This fails closed, the reader before the port did not
+  read those forms either, and the oracle's battery has none; it stays so until
+  a workspace needs one.
 
 - A member's version must be strict SemVer 2.0. node-semver also accepts
   `v1.0.0` and, loosely, `=1.0.0` and `01.0.0`; a workspace with one is refused,

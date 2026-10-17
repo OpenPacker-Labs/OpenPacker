@@ -7,6 +7,7 @@
  * verifies, applies policy and writes the layout without knowing the format.
  */
 
+import type { FrozenPatch } from './frozen-patch.js';
 import type { NativeTarget } from './host-target.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceMember } from './workspace/members.js';
@@ -144,24 +145,6 @@ export interface FrozenLockPackage {
    * of their own: never the unpatched archive's, and never another patch's.
    */
   patch?: FrozenPatch;
-}
-
-/** A patch file a lock applies to a package, read once by the adapter. */
-export interface FrozenPatch {
-  /** The key the lock declares it under: `name@version`, `name@range` or `name`. */
-  readonly key: string;
-  /** The patch file, relative to the project root, as the lock records it. */
-  readonly file: string;
-  /** The hash the lock records for it, checked against `text`. */
-  readonly hash: string;
-  /**
-   * sha256, hex, of the text as pnpm 10 hashes it, whatever form `hash` has:
-   * what names the patched package, so one patch is one package however the
-   * lock that asked for it spells its hash.
-   */
-  readonly digest: string;
-  /** The file's text, as read and hashed: what is applied. */
-  readonly text: string;
 }
 
 export interface FrozenLockSkip {

@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -149,6 +156,32 @@ describe('opm ci with a pnpm lock that patches a package', () => {
     ).toBe(EXIT_CODES.notFound);
     expect(m.seen.err).toContain(
       'the patch file "patches/lib.patch" does not exist',
+    );
+  });
+
+  it('refuses at --plan, exit 7, a patch that names a path 2,000 directories deep', async () => {
+    const path = `${'d/'.repeat(2_000)}x.js`;
+    const deep = PATCH.split('index.js').join(path);
+    const p = await project(deep, deep);
+    const c = capture();
+    expect(await runOpm(['ci', '--plan', '--path', p.dir], c.io, '/')).toBe(
+      EXIT_CODES.verificationFailed,
+    );
+    expect(c.seen.out).toBe('');
+    expect(c.seen.err).toContain(
+      'is 2001 segments deep, more than the 128 a path in an archive may be',
+    );
+  });
+
+  it('refuses at --plan, exit 7, a patch file of more than 16 MiB', async () => {
+    const p = await project();
+    await truncate(join(p.dir, 'patches', 'lib.patch'), 16 * 1024 * 1024 + 1);
+    const c = capture();
+    expect(await runOpm(['ci', '--plan', '--path', p.dir], c.io, '/')).toBe(
+      EXIT_CODES.verificationFailed,
+    );
+    expect(c.seen.err).toContain(
+      'is 16777217 bytes, more than the 16777216 opm reads of one patch file',
     );
   });
 });

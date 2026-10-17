@@ -7,8 +7,12 @@
  * places are chosen here, once, the way the closure planner chooses them
  * (`layout-plan.ts`), for several tops instead of one:
  *
- * - a top's direct dependencies live in the top's own `node_modules`, the
- *   project's for the project (`.`), a member's for a member;
+ * - the project's direct dependencies live in its `node_modules`; a member's
+ *   are placed as everything else is, from the member's directory, so one lock
+ *   instance has one real path, and so one module, wherever no other version
+ *   holds its name (as pnpm and npm lay it out); a member keeps its own copy
+ *   only where sharing one would give it a second copy of an instance it
+ *   requires itself (a peer);
  * - everything else is placed breadth first: if Node already finds the wanted
  *   instance from where the dependent lives, nothing is written; if it finds
  *   another instance of that name, the wanted one is nested beside the
@@ -23,7 +27,7 @@
  * and is how a plan is proved.
  */
 
-import { compareText, compareVersions } from '../layout-compare.js';
+import { compareText } from '../layout-compare.js';
 import {
   caseCollision,
   caseVariant,
@@ -33,7 +37,10 @@ import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
 } from '../layout-plan-types.js';
+import { enclosingDirs, orderedEdges, rootChoice } from './place-order.js';
 import { quote } from './quote.js';
+
+export { enclosingDirs } from './place-order.js';
 
 /** What the planner needs of an instance. */
 export interface PlaceInstance {
@@ -72,7 +79,10 @@ export interface PlacedInstance {
   readonly base: string;
   /** Install names from that `node_modules` down. */
   readonly chain: readonly string[];
-  /** A direct dependency of the top whose `node_modules` it is in. */
+  /**
+   * A direct dependency of an importer: in its own `node_modules`, or a
+   * member's in the project's (or an enclosing member's) where it is shared.
+   */
   readonly direct: boolean;
 }
 
@@ -103,71 +113,30 @@ interface Node {
   readonly direct: boolean;
 }
 
-/** The member directories that enclose `dir`, nearest first (never `dir`, never the project). */
-export function enclosingDirs(
-  dir: string,
-  members: ReadonlySet<string>,
-): string[] {
-  const segments = dir.split('/');
-  const out: string[] = [];
-  for (let length = segments.length - 1; length > 0; length -= 1) {
-    const candidate = segments.slice(0, length).join('/');
-    if (members.has(candidate)) out.push(candidate);
+/** The node Node finds `name` at from `from`, walking up as it does. */
+function lookup(from: Node, name: string): Node | undefined {
+  for (let at: Node | undefined = from; at !== undefined; at = at.parent) {
+    const hit = at.children.get(name);
+    if (hit !== undefined) return hit;
   }
-  return out;
+  return undefined;
 }
 
-/** An instance's edges in the order they are placed: a package under its own name before an alias. */
-function orderedEdges(
-  instance: PlaceInstance,
-  instances: ReadonlyMap<string, PlaceInstance>,
-): readonly { as: string; to: string }[] {
-  const aliased = (edge: { as: string; to: string }): number =>
-    Number(instances.get(edge.to)?.name !== edge.as);
-  return [...instance.edges].sort(
-    (left, right) =>
-      aliased(left) - aliased(right) ||
-      compareText(left.as, right.as) ||
-      compareText(left.to, right.to),
-  );
+const memberEdge = (dir: string, as: string): string => `${dir}\0${as}`;
+
+interface Laid {
+  readonly tops: ReadonlyMap<string, Node>;
+  readonly placed: readonly Node[];
+  readonly links: ReadonlyMap<string, string>;
+  readonly problems: readonly string[];
 }
 
-/**
- * The instance of each install name that earns the project's `node_modules`:
- * the one the most instances need under that name, then the newest, then the
- * smaller key.
- */
-function rootChoice(
-  instances: ReadonlyMap<string, PlaceInstance>,
-): Map<string, string> {
-  const counts = new Map<string, Map<string, number>>();
-  for (const instance of instances.values())
-    for (const edge of instance.edges) {
-      const byTarget = counts.get(edge.as) ?? new Map<string, number>();
-      counts.set(edge.as, byTarget);
-      byTarget.set(edge.to, (byTarget.get(edge.to) ?? 0) + 1);
-    }
-  const choice = new Map<string, string>();
-  for (const [as, byTarget] of counts) {
-    const best = [...byTarget].sort(
-      ([leftKey, left], [rightKey, right]) =>
-        right - left ||
-        compareVersions(
-          instances.get(rightKey)?.version ?? '',
-          instances.get(leftKey)?.version ?? '',
-        ) ||
-        compareText(leftKey, rightKey),
-    )[0];
-    if (best !== undefined) choice.set(as, best[0]);
-  }
-  return choice;
-}
-
-export function planPlacement(input: PlaceInput): Placement {
+/** One plan; a member's direct edge in `pinned` is written in the member whatever it finds. */
+function layOut(input: PlaceInput, pinned: ReadonlySet<string>): Laid {
   const { instances } = input;
   const maximum = input.maximumPlacements ?? MAXIMUM_PLACEMENTS;
   const problems: string[] = [];
-  const preferred = rootChoice(instances);
+  const preferred = rootChoice(instances, input.tops);
   const tops = new Map<string, Node>();
   const placed: Node[] = [];
   const queue: Node[] = [];
@@ -234,13 +203,6 @@ export function planPlacement(input: PlaceInput): Placement {
     placed.push(node);
     queue.push(node);
   };
-  const lookup = (from: Node, name: string): Node | undefined => {
-    for (let at: Node | undefined = from; at !== undefined; at = at.parent) {
-      const hit = at.children.get(name);
-      if (hit !== undefined) return hit;
-    }
-    return undefined;
-  };
   const held = (node: Node): string =>
     node.key === undefined ? 'a link' : quote(node.key);
   const refuseName = (name: string, who: string): boolean => {
@@ -281,7 +243,15 @@ export function planPlacement(input: PlaceInput): Placement {
       direct: false,
     });
   }
-  for (const top of input.tops) {
+  // The project's first, then members from the outermost: a member finds
+  // what the project and its enclosing members already hold.
+  const byDepth = [...input.tops].sort(
+    (a, b) =>
+      Number(a.dir !== '') - Number(b.dir !== '') ||
+      a.dir.split('/').length - b.dir.split('/').length ||
+      compareText(a.dir, b.dir),
+  );
+  for (const top of byDepth) {
     const node = tops.get(top.dir)!;
     for (const edge of top.edges) {
       const instance = instances.get(edge.to);
@@ -297,14 +267,27 @@ export function planPlacement(input: PlaceInput): Placement {
           );
         continue;
       }
-      const variant = caseVariant(node, edge.as);
+      // A member's: nothing when Node already finds this instance from it;
+      // the project's slot when that is free and this instance earns it.
+      let where = node;
+      if (top.dir !== '' && !pinned.has(memberEdge(top.dir, edge.as))) {
+        const found = lookup(node, edge.as);
+        if (found?.key === edge.to) continue;
+        if (
+          found === undefined &&
+          preferred.get(edge.as) === edge.to &&
+          caseVariant(project, edge.as) === undefined
+        )
+          where = project;
+      }
+      const variant = caseVariant(where, edge.as);
       if (variant !== undefined) {
         problems.push(
           `${quote(top.id)}: ${caseCollision(instance, edge.as, variant)}`,
         );
         continue;
       }
-      place(node, instance, edge.as, true);
+      place(where, instance, edge.as, true);
     }
   }
 
@@ -339,6 +322,55 @@ export function planPlacement(input: PlaceInput): Placement {
     }
   }
 
+  return { tops, placed, links, problems };
+}
+
+/**
+ * The member edges whose shared copy splits a peer: the dependency the member
+ * finds needs, under some name, the instance the member itself requires under
+ * that name, and finds another copy of it. Written in the member instead, the
+ * two are one.
+ */
+function peerSplits(
+  input: PlaceInput,
+  laid: Laid,
+  pinned: ReadonlySet<string>,
+): string[] {
+  const splits: string[] = [];
+  for (const top of input.tops) {
+    const node = laid.tops.get(top.dir)!;
+    if (top.dir === '') continue;
+    const own = new Map(top.edges.map((edge) => [edge.as, edge.to]));
+    for (const edge of top.edges) {
+      if (pinned.has(memberEdge(top.dir, edge.as))) continue;
+      const found = lookup(node, edge.as);
+      if (found?.key !== edge.to) continue;
+      const needs = input.instances.get(edge.to)?.edges ?? [];
+      if (
+        needs.some(
+          (need) =>
+            own.get(need.as) === need.to &&
+            lookup(found, need.as) !== lookup(node, need.as),
+        )
+      )
+        splits.push(memberEdge(top.dir, edge.as));
+    }
+  }
+  return splits;
+}
+
+export function planPlacement(input: PlaceInput): Placement {
+  // Each round pins at least one member edge, of finitely many.
+  const pinned = new Set<string>();
+  let laid = layOut(input, pinned);
+  for (;;) {
+    const splits =
+      laid.problems.length > 0 ? [] : peerSplits(input, laid, pinned);
+    if (splits.length === 0) break;
+    for (const split of splits) pinned.add(split);
+    laid = layOut(input, pinned);
+  }
+  const { placed, links, problems } = laid;
   return {
     placed: placed
       .map((node) => ({
