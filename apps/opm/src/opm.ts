@@ -67,6 +67,11 @@ import { isBooleanFlag, shortToLong } from './cli-flags.js';
 import { RUN_HELP } from './commands/run-help.js';
 import { formatFailure, parseFailure, say } from './error-report.js';
 import { EXIT_CODES, opmErrorExitCode } from './exit-codes.js';
+import {
+  writeInstalled,
+  writeLines,
+  writeNativeProjection,
+} from './terminal-lines.js';
 
 export { EXIT_CODES } from './exit-codes.js';
 
@@ -386,27 +391,14 @@ export async function runOpm(
           io.stdout.write('(no packages)\n');
           return EXIT_CODES.success;
         }
-        for (const row of rows) {
-          const digest =
-            row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest;
-          const status = row.installed ? 'installed' : 'not-installed';
-          const bins =
-            row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
-          const names =
-            row.installedAs.length > 0
-              ? ` as=[${row.installedAs.join(',')}]`
-              : '';
-          io.stdout.write(
-            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}${names}\n`,
-          );
-        }
+        writeInstalled(rows, io);
         return EXIT_CODES.success;
       }
       case 'why': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
         if (!alias) throw usage('opm why requires a package alias');
-        io.stdout.write(`${await whyPackage(root, alias)}\n`);
+        writeLines([await whyPackage(root, alias)], io);
         return EXIT_CODES.success;
       }
       // Browsing does not need a project: looking up what a registry has is
@@ -422,7 +414,10 @@ export async function runOpm(
           io.stdout.write('(no matches)\n');
           return EXIT_CODES.success;
         }
-        for (const item of found) io.stdout.write(`${item.canonicalPurl}\n`);
+        writeLines(
+          found.map((item) => item.canonicalPurl),
+          io,
+        );
         return EXIT_CODES.success;
       }
       case 'versions': {
@@ -441,7 +436,7 @@ export async function runOpm(
         }
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
-        for (const version of versions) io.stdout.write(`${version}\n`);
+        writeLines(versions, io);
         return EXIT_CODES.success;
       }
       case 'resolve': {
@@ -970,40 +965,6 @@ async function runSystemCommand(
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
-}
-
-/**
- * Report the ecosystem project files opm maintained, and anything it could not
- * promise about them. Silence here would hide edits to files the user tracks
- * in version control.
- */
-function writeNativeProjection(
-  report:
-    | {
-        projections: readonly {
-          ecosystem: string;
-          written: readonly string[];
-          skipped?: readonly { path: string; reason: string }[];
-          semanticLoss: readonly {
-            code: string;
-            representedMeaning?: string;
-          }[];
-        }[];
-      }
-    | undefined,
-  io: CliIo,
-): void {
-  if (!report) return;
-  for (const projection of report.projections) {
-    for (const path of projection.written)
-      io.stdout.write(`  updated ${path}\n`);
-    for (const entry of projection.skipped ?? [])
-      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
-    for (const loss of projection.semanticLoss)
-      io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
-      );
-  }
 }
 
 async function runHostInstall(

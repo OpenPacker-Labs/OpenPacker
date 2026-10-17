@@ -128,7 +128,7 @@ export async function prepareFrozenWorkspace(
   if (found === undefined)
     throw new OpmError(
       'INVALID_SPEC',
-      `No workspaces found: ${root} declares none (a package.json "workspaces" field), so there is no member to select`,
+      `No workspaces found: ${root} declares none (${tool === 'pnpm' ? 'no pnpm-workspace.yaml' : 'no package.json "workspaces" field'}), so there is no member to select`,
     );
   let dirs: readonly string[];
   try {

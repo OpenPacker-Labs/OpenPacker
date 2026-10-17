@@ -12,11 +12,7 @@ import { join } from 'node:path';
 import { ProviderError } from '@openpacker/adapter-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolvePnpmLockLimits } from '../pnpm-lock/limits.js';
-import {
-  COMPOSER_OPTIONS,
-  readYamlTree,
-  type YamlMeter,
-} from '../pnpm-lock/yaml-tree.js';
+import { readYamlTree, type YamlMeter } from '../pnpm-lock/yaml-tree.js';
 import { readPnpmProjectConfig } from './config.js';
 import { MAXIMUM_WORKSPACE_BYTES } from './workspace-file.js';
 
@@ -71,9 +67,12 @@ describe('pnpm-workspace.yaml, read with the bounds of the lock', () => {
     };
     // Counted, not timed (a 5 s bound failed on a loaded machine). The cost was
     // the library's repeated-key check, which compares each key with every
-    // earlier one (89 s here); it is off, and the walk looks each key up once.
-    expect(COMPOSER_OPTIONS.uniqueKeys).toBe(false);
+    // earlier one (89 s here). It is off where the reader composes: a repeated
+    // key is the walk's own refusal, which the library's check would pre-empt.
     const limits = resolvePnpmLockLimits({ maxBytes: MAXIMUM_WORKSPACE_BYTES });
+    expect(() => readYamlTree('catalog:\n  a: 1\n  a: 2\n', limits)).toThrow(
+      expect.objectContaining({ reason: 'duplicate-key' }),
+    );
     const work = (entries: number): YamlMeter => {
       const meter = { nodes: 0, keyLookups: 0 };
       readYamlTree(catalog(entries), limits, meter);

@@ -22,8 +22,24 @@ describe('npmVersionsEqual, as pnpm compares an archive with its lock', () => {
     ['1.0', '1.0.0', false],
     ['9007199254740992.0.0', '9007199254740992.0.0', true],
     ['9007199254740992.0.0', '09007199254740992.0.0', false],
+    // node-semver compares a numeric prerelease identifier as a double, so
+    // two beyond 2^53 that round to one double are one version, to pnpm too.
+    ['1.0.0-12345678901234567890', '1.0.0-12345678901234567891', true],
   ] as const)('answers %j and %j: %j', (left, right, expected) => {
     expect(npmVersionsEqual(left, right)).toBe(expected);
     expect(npmVersionsEqual(right, left)).toBe(expected);
+  });
+});
+
+describe('npmVersionsEqual where it is stricter than pnpm', () => {
+  it('compares what follows two identifiers that are one as doubles, which semver 7.7.2 does not', () => {
+    // semver.eq('1.0.0-12345678901234567890.a', '1.0.0-12345678901234567891.b',
+    // { loose: true }) is true: comparePre returns at the first unequal pair.
+    expect(
+      npmVersionsEqual(
+        '1.0.0-12345678901234567890.a',
+        '1.0.0-12345678901234567891.b',
+      ),
+    ).toBe(false);
   });
 });

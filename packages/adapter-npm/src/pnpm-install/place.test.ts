@@ -21,7 +21,7 @@ function plan(input: PlaceInput): Placement {
 }
 
 describe('where a top and its dependencies go', () => {
-  it("puts a top's direct dependencies in its own node_modules and shares the rest at the project", () => {
+  it("puts the project's direct dependencies in its node_modules, and a member's there too when the name is free", () => {
     const input = world(
       [
         instance('a@1.0.0', { shared: 'shared@1.0.0' }),
@@ -30,14 +30,19 @@ describe('where a top and its dependencies go', () => {
       ],
       [top('', { a: 'a@1.0.0' }), top('packages/web', { b: 'b@1.0.0' })],
     );
-    expect(whereIs(plan(input))).toEqual({
+    const placement = plan(input);
+    expect(whereIs(placement)).toEqual({
       'a@1.0.0': ['node_modules/a'],
-      'b@1.0.0': ['packages/web/node_modules/b'],
+      'b@1.0.0': ['node_modules/b'],
       'shared@1.0.0': ['node_modules/shared'],
     });
+    // Still a direct dependency (of the member), as the policy and the shims read it.
+    expect(
+      placement.placed.find((item) => item.key === 'b@1.0.0'),
+    ).toMatchObject({ direct: true });
   });
 
-  it("keeps a member's direct dependency in the member even when the project has the same instance", () => {
+  it("writes nothing for a member's direct dependency the member already finds at the project", () => {
     const input = world(
       [instance('left@1.0.0')],
       [
@@ -45,10 +50,59 @@ describe('where a top and its dependencies go', () => {
         top('packages/web', { left: 'left@1.0.0' }),
       ],
     );
-    expect(whereIs(plan(input))['left@1.0.0']).toEqual([
-      'node_modules/left',
-      'packages/web/node_modules/left',
-    ]);
+    expect(whereIs(plan(input))['left@1.0.0']).toEqual(['node_modules/left']);
+  });
+
+  it('gives two members one copy of the instance they share, as npm and pnpm do (one real path, one module)', () => {
+    const react = 'react@18.3.1';
+    const input = world(
+      [instance(react)],
+      [
+        top('', { react }),
+        top('packages/ui', { react }),
+        top('packages/web', { react }, { ui: 'packages/ui' }),
+      ],
+    );
+    expect(whereIs(plan(input))[react]).toEqual(['node_modules/react']);
+    const members = world(
+      [instance(react)],
+      [top('packages/ui', { react }), top('packages/web', { react })],
+    );
+    expect(whereIs(plan(members))[react]).toEqual(['node_modules/react']);
+  });
+
+  it("keeps a member's direct dependency in the member when the project holds another instance of the name", () => {
+    const input = world(
+      [instance('x@1.0.0'), instance('x@2.0.0')],
+      [top('', { x: 'x@1.0.0' }), top('packages/web', { x: 'x@2.0.0' })],
+    );
+    expect(whereIs(plan(input))).toEqual({
+      'x@1.0.0': ['node_modules/x'],
+      'x@2.0.0': ['packages/web/node_modules/x'],
+    });
+  });
+
+  it('keeps a direct dependency in the member when sharing it would give it another copy of a peer the member requires too', () => {
+    // web requires react@18.2 and dom resolved against it; the project holds
+    // react@18.3. dom at the project would need its own react@18.2 beside it,
+    // a second copy of the one web loads: dom stays in web, with web's react.
+    const dom = 'dom@1.0.0(react@18.2.0)';
+    const input = world(
+      [
+        instance(dom, { react: 'react@18.2.0' }),
+        instance('react@18.2.0'),
+        instance('react@18.3.0'),
+      ],
+      [
+        top('', { react: 'react@18.3.0' }),
+        top('packages/web', { dom, react: 'react@18.2.0' }),
+      ],
+    );
+    expect(whereIs(plan(input))).toEqual({
+      [dom]: ['packages/web/node_modules/dom'],
+      'react@18.2.0': ['packages/web/node_modules/react'],
+      'react@18.3.0': ['node_modules/react'],
+    });
   });
 
   it('gives the project to the version most packages want and nests the other beside its dependent', () => {
@@ -149,9 +203,10 @@ describe('members', () => {
     expect(placement.links).toEqual([
       { name: 'lib', memberDir: 'packages/lib' },
     ]);
-    expect(whereIs(placement)['lib@9.0.0']).toEqual([
-      'packages/web/node_modules/uses-lib/node_modules/lib',
-    ]);
+    expect(whereIs(placement)).toEqual({
+      'uses-lib@1.0.0': ['node_modules/uses-lib'],
+      'lib@9.0.0': ['node_modules/uses-lib/node_modules/lib'],
+    });
   });
 
   it('refuses a project dependency that takes the name of a member another importer links', () => {
@@ -180,20 +235,21 @@ describe('members', () => {
   });
 
   it('looks in the enclosing member before the project, as Node does for a nested member', () => {
-    // `ext` has x@1; `ext/inner` needs x@2 through b. Hoisting x@2 to the
-    // project would be shadowed by ext's x@1 on the way up.
+    // `ext` has x@1 and `ext/inner` needs x@2, as `packages/other` does. x@2
+    // goes to the project for `other`, where ext's x@1 would shadow it for
+    // `ext/inner`, which keeps its own.
     const input = world(
+      [instance('x@1.0.0'), instance('x@2.0.0')],
       [
-        instance('x@1.0.0'),
-        instance('x@2.0.0'),
-        instance('b@1.0.0', { x: 'x@2.0.0' }),
+        top('ext', { x: 'x@1.0.0' }),
+        top('ext/inner', { x: 'x@2.0.0' }),
+        top('packages/other', { x: 'x@2.0.0' }),
       ],
-      [top('ext', { x: 'x@1.0.0' }), top('ext/inner', { b: 'b@1.0.0' })],
     );
-    const found = whereIs(plan(input));
-    expect(found['x@2.0.0']).toEqual([
-      'ext/inner/node_modules/b/node_modules/x',
-    ]);
+    expect(whereIs(plan(input))).toEqual({
+      'x@1.0.0': ['ext/node_modules/x'],
+      'x@2.0.0': ['node_modules/x', 'ext/inner/node_modules/x'],
+    });
   });
 
   it('notices a hoist that an enclosing member shadows (the checker is not vacuous)', () => {

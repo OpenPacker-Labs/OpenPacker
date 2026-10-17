@@ -8,10 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORKSPACE_LIMITS } from '@openpacker/adapter-core';
 import { discoverWorkspace } from '../src/index.js';
-import {
-  DOCUMENT_OPTIONS,
-  parsePnpmWorkspaceYaml,
-} from '../src/workspace/declaration.js';
+import { parsePnpmWorkspaceYaml } from '../src/workspace/declaration.js';
 import { cleanup, refusal, scratch } from './workspace-tree.js';
 
 afterEach(async () => {
@@ -29,8 +26,14 @@ describe('pnpm-workspace.yaml in discovery', () => {
     };
     // Counted, not timed (a 5 s bound failed on a loaded machine). The cost was
     // the library's repeated-key check, which compares each key with every
-    // earlier one (13 s here); it is off, and each key is looked up once.
-    expect(DOCUMENT_OPTIONS.uniqueKeys).toBe(false);
+    // earlier one (13 s here). It is off where discovery parses: a repeated
+    // key is `firstRepeatedKey`'s refusal, which the library's would pre-empt.
+    expect(() =>
+      parsePnpmWorkspaceYaml(
+        'catalog:\n  a: ^1\n  a: ^2\n',
+        DEFAULT_WORKSPACE_LIMITS,
+      ),
+    ).toThrow(/has the duplicate key "a"/u);
     const meter = { keyLookups: 0 };
     parsePnpmWorkspaceYaml(
       declaration(40_000),

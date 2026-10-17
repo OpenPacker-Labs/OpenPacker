@@ -15,16 +15,32 @@ afterEach(cleanup);
 describe('the archives of a pnpm install', () => {
   it('lists a package that declares an install script once, however many places it has', async () => {
     const w = await pnpmWorld();
-    w.pkg({
-      name: 'builds',
-      version: '1.0.0',
-      manifest: { scripts: { postinstall: 'node build.js' } },
+    // One package resolved against two peers: two instances, two places.
+    for (const react of ['18.2.0', '18.3.0']) {
+      w.pkg({ name: 'react', version: react });
+      w.pkg({
+        name: 'builds',
+        version: '1.0.0',
+        suffix: `(react@${react})`,
+        deps: { react },
+        manifest: { scripts: { postinstall: 'node build.js' } },
+      });
+    }
+    w.importer('.', {
+      dependencies: {
+        builds: ['^1.0.0', '1.0.0(react@18.2.0)'],
+        react: ['^18.2.0', '18.2.0'],
+      },
     });
-    w.importer('.', { dependencies: { builds: ['^1.0.0', '1.0.0'] } });
-    w.importer('packages/x', { dependencies: { builds: ['^1.0.0', '1.0.0'] } });
+    w.importer('packages/x', {
+      dependencies: {
+        builds: ['^1.0.0', '1.0.0(react@18.3.0)'],
+        react: ['^18.3.0', '18.3.0'],
+      },
+    });
     await w.write();
     const result = await w.install();
-    expect(result.installed).toBe(2);
+    expect(result.installed).toBe(4);
     expect(result.installScripts).toEqual([
       { name: 'builds', version: '1.0.0', path: 'node_modules/builds' },
     ]);
