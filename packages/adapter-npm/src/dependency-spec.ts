@@ -65,17 +65,23 @@ export function echoedName(name: string): string {
   return safeEcho(name, NPM_NAME_LIMIT);
 }
 
-/** An install would walk into a dependency that is not a registry range. */
+/**
+ * An install would walk into a dependency that is not a registry range, with
+ * why an `npm:` alias is not one npm would install when that is the reason
+ * (`parseNpmAlias`'s problem, which repeats the specifier it read).
+ */
 export function unsupportedSpec(
   owner: string,
   name: string,
   range: string,
   specKind: string,
+  problem?: string,
 ): string {
   return (
     `${safeEcho(owner, OWNER_LIMIT)} depends on ${echoedName(name)} as ` +
     `"${safeEcho(range, RANGE_LIMIT)}", a ${specKind} specifier ` +
-    `that is not a registry version range`
+    `that is not a registry version range` +
+    (problem === undefined ? '' : ` (${safeEcho(problem, REASON_LIMIT)})`)
   );
 }
 
