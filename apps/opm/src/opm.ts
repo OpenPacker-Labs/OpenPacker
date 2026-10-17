@@ -15,8 +15,6 @@ import {
 import {
   OpmError,
   addPackage,
-  collectGarbage,
-  collectSharedStore,
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
@@ -40,6 +38,7 @@ import {
   stripPurlVersion,
   planSystemInstall,
   projectPaths,
+  projectStep,
   readEnvironmentState,
   removePackage,
   registryEcosystems,
@@ -48,18 +47,15 @@ import {
   resolveGraph,
   resolveRegistryArtifact,
   solveGraph,
-  rollbackTarget,
   searchRegistry,
-  switchGeneration,
   syncProject,
   uninstallProject,
   updateProject,
   whyPackage,
   type AdapterRegistry,
-  type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
-import { recoverBeforeCommand } from './commands/recover.js';
+import { cliStep } from './commands/recover.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
@@ -189,7 +185,15 @@ export async function runOpm(
       );
     }
 
-    await recoverBeforeCommand(args.command, cwd, option(args, 'path'), io);
+    const step = cliStep(io);
+    // A command's work on its project is one step (`project-step.ts`): bound
+    // plugins are verified once what a killed step left is put back, and the
+    // library calls inside it neither lock nor recover again.
+    const inStep = <T>(root: string, work: () => Promise<T>) =>
+      projectStep(root, step, async () => {
+        await registerBoundPlugins(root, adapterRegistry);
+        return work();
+      });
     switch (args.command) {
       case 'init': {
         const root = option(args, 'path') ?? cwd;
@@ -198,6 +202,7 @@ export async function runOpm(
           root,
           ...(name !== undefined && { name }),
           force: args.options.has('force'),
+          step,
         });
         io.stdout.write(
           result.created
@@ -214,6 +219,7 @@ export async function runOpm(
         const result = await importNativeProject({
           root,
           force: args.options.has('force'),
+          step,
         });
         io.stdout.write(
           `Imported ${result.imported.length} requirement(s) from native project files into ${result.manifestPath}\n`,
@@ -256,19 +262,20 @@ export async function runOpm(
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const offline = offlineOverride(args);
-        // A project that binds plugins resolves through them; verify the
-        // binding before any registry read it could influence.
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await addPackage({
-          allowElevation: args.options.has('allow-elevation'),
-          dryRun: args.options.has('dry-run'),
-          root,
-          spec,
-          ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
-          ...(source !== undefined && { source }),
-          ...(alias !== undefined && { alias }),
-          ...(!(offline === undefined) && { offline }),
-        });
+        // A project that binds plugins resolves through them; the binding is
+        // verified before any registry read it could influence.
+        const result = await inStep(root, () =>
+          addPackage({
+            allowElevation: args.options.has('allow-elevation'),
+            dryRun: args.options.has('dry-run'),
+            root,
+            spec,
+            ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
+            ...(source !== undefined && { source }),
+            ...(alias !== undefined && { alias }),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
@@ -289,13 +296,14 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
-        // remove rewrites the manifest and lock; verify bound plugins first.
-        await registerBoundPlugins(root, adapterRegistry);
-        const removed = await removePackage({
-          root,
-          alias,
-          ...(!(offline === undefined) && { offline }),
-        });
+        // remove rewrites the manifest and lock; bound plugins are verified first.
+        const removed = await inStep(root, () =>
+          removePackage({
+            root,
+            alias,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         io.stdout.write(
           `Removed ${removed.alias} from manifest, lock, and install\n`,
         );
@@ -303,21 +311,22 @@ export async function runOpm(
       }
       case 'ci': {
         const { runCiCommand } = await import('./commands/ci.js');
-        return await runCiCommand(args, io, cwd, options);
+        return await runCiCommand(args, io, cwd, { ...options, step });
       }
       case 'install': {
         // `--frozen` is `opm ci`: install exactly what the lock says.
         if (args.options.has('frozen')) {
           const { runCiCommand } = await import('./commands/ci.js');
-          return await runCiCommand(args, io, cwd, options);
+          return await runCiCommand(args, io, cwd, { ...options, step });
         }
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await installProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          installProject({
+            root,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         const count = Object.keys(result.state.packages).length;
         io.stdout.write(
           `Installed ${count} package(s) into ${projectPaths(root).opmDir}\n`,
@@ -331,11 +340,9 @@ export async function runOpm(
       case 'uninstall': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
-        await registerBoundPlugins(root, adapterRegistry);
-        await uninstallProject({
-          root,
-          ...(alias !== undefined && { alias }),
-        });
+        await inStep(root, () =>
+          uninstallProject({ root, ...(alias !== undefined && { alias }) }),
+        );
         io.stdout.write(
           alias
             ? `Uninstalled ${alias} (left in manifest/lock unless you opm remove)\n`
@@ -346,11 +353,9 @@ export async function runOpm(
       case 'sync': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await syncProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          syncProject({ root, ...(!(offline === undefined) && { offline }) }),
+        );
         const count = Object.keys(result.lock.packages).length;
         io.stdout.write(
           `Synced ${count} package(s); lock and .opm/ store updated\n`,
@@ -361,13 +366,14 @@ export async function runOpm(
       case 'update': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await updateProject({
-          root,
-          ...(args.positionals.length > 0 && { aliases: args.positionals }),
-          latest: args.options.has('latest'),
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          updateProject({
+            root,
+            ...(args.positionals.length > 0 && { aliases: args.positionals }),
+            latest: args.options.has('latest'),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         io.stdout.write(
           result.updated.length === 0
             ? 'Already up to date\n'
@@ -655,48 +661,25 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'rollback': {
-        const root = await requireOpmRoot(cwd);
-        const to = option(args, 'to');
-        const target = to
-          ? await switchGeneration({ root, target: Number(to) })
-          : await rollbackToPrevious(root);
-        io.stdout.write(`Rolled back to generation ${target.sequence}\n`);
-        return EXIT_CODES.success;
+        const { runRollbackCommand } = await import(
+          './commands/generations.js'
+        );
+        return await runRollbackCommand(
+          args,
+          io,
+          await requireOpmRoot(cwd),
+          step,
+        );
       }
       case 'gc': {
+        const { runGcCommand, runSharedGcCommand } = await import(
+          './commands/generations.js'
+        );
         // The shared store belongs to the user, not to a project, so this
         // needs no project and never runs as part of a project's own gc.
-        if (args.options.has('shared')) {
-          const result = await collectSharedStore({
-            dryRun: args.options.has('dry-run'),
-          });
-          if (result.root === undefined) {
-            io.stdout.write(
-              'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
-            );
-            return EXIT_CODES.success;
-          }
-          const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-          io.stdout.write(
-            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
-          );
-          for (const path of result.removed) io.stdout.write(`  ${path}\n`);
-          return EXIT_CODES.success;
-        }
-        const root = await requireOpmRoot(cwd);
-        const keepValue = option(args, 'keep');
-        const result = await collectGarbage({
-          root,
-          ...(!(keepValue === undefined) && { keep: Number(keepValue) }),
-          dryRun: args.options.has('dry-run'),
-        });
-        const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-        io.stdout.write(
-          `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
-        );
-        for (const path of result.removed) io.stdout.write(`  ${path}\n`);
-        return EXIT_CODES.success;
+        if (args.options.has('shared'))
+          return await runSharedGcCommand(args, io);
+        return await runGcCommand(args, io, await requireOpmRoot(cwd), step);
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
@@ -716,17 +699,6 @@ export async function runOpm(
   } catch (error) {
     return handleError(error, io);
   }
-}
-
-/** Roll back one step, which is the common case. */
-async function rollbackToPrevious(root: string): Promise<Generation> {
-  const target = await rollbackTarget(root);
-  if (!target)
-    throw new OpmError(
-      'NOT_FOUND',
-      'There is no earlier generation to roll back to',
-    );
-  return switchGeneration({ root, target: target.generationDigest });
 }
 
 /** Report a failure and choose the exit code that tells a script what kind it was. */
@@ -761,6 +733,8 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
       case 'UNSUPPORTED_LOCK':
+      case 'INVALID_ROLLBACK':
+      case 'ROLLBACK_CONFLICT':
       case 'INVALID_CATALOG':
       case 'INVALID_PLUGIN_SPEC':
       case 'INVALID_PLUGIN_MANIFEST':
@@ -782,6 +756,7 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'OFFLINE':
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
+      case 'PROJECT_BUSY':
       case 'PLUGIN_ERROR':
       case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':

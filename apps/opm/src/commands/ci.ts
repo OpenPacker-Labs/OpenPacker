@@ -4,6 +4,7 @@ import {
   installFrozen,
   type FrozenInstallResult,
   type FrozenWorkspaceRequest,
+  type StepOptions,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
 import type { CommandArgs, CommandIo } from './yank.js';
@@ -16,6 +17,8 @@ export interface CiArgs extends CommandArgs {
 export interface CiOptions {
   /** Network seam for tests; production resolves and pins real addresses. */
   fetch?: typeof fetch;
+  /** What to say when the step finishes what a killed opm left. */
+  step?: StepOptions;
 }
 
 const OMITTABLE = new Set<FrozenOmit>(['dev', 'optional', 'peer']);
@@ -137,6 +140,7 @@ export async function runCiCommand(
     ...(offline && { offline: true }),
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
+    ...(options.step !== undefined && { step: options.step }),
   });
 
   const noScripts = result.installScripts.length;

@@ -9,7 +9,8 @@ import { capture } from './run-fixture.js';
 
 /**
  * A command that changes the project first finishes what a killed `opm` left:
- * it puts the project back from the copy and says so in one line on stderr.
+ * it puts the project back from the copy and says so in one line on stderr. A
+ * copy whose owner may still be running stops it, with exit code 8.
  * The kill itself is exercised in opm-project's rollback-recovery tests; here
  * the copy is made by this process and then handed to one that has exited.
  */
@@ -65,11 +66,12 @@ describe('opm sync after a step a killed process left half way', () => {
     expect(await copies(root)).toEqual([]);
   });
 
-  it('leaves the copy of a process that is still running alone', async () => {
+  it('stops at the copy of a process that may still be running, and keeps it', async () => {
     const root = await project();
     const kept = await snapshotProject(root);
     const cap = capture();
-    expect(await runOpm(['sync', '--offline'], cap.io, root), cap.err).toBe(0);
+    expect(await runOpm(['sync', '--offline'], cap.io, root), cap.err).toBe(8);
+    expect(cap.err).toContain(`belongs to a step of process ${process.pid} on`);
     expect(cap.err).not.toContain('opm: put the project back');
     expect(await copies(root)).toHaveLength(1);
     await kept.discard();

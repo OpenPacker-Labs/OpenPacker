@@ -1,37 +1,24 @@
-import { resolve } from 'node:path';
 import {
+  describeProcessOwner,
   describeRecovery,
-  findOpmRoot,
-  recoverInterruptedSteps,
+  type StepOptions,
 } from '@openpacker/opm-project';
 
-/** The commands that change a project, which finish a killed step first. */
-const CHANGES_THE_PROJECT = new Set([
-  'add',
-  'remove',
-  'sync',
-  'update',
-  'install',
-  'ci',
-  'uninstall',
-]);
-
 /**
- * Before a command that changes the project: put back a project a killed
- * `opm` left half way through a step, and say so in one line on stderr
- * (`rollback-recovery.ts`). The library's steps do the same, silently, for
- * hosts that call them directly; by then there is nothing left to do.
+ * What `opm` passes to every library step that changes a project
+ * (`project-step.ts`): each step takes the project's step lock and puts back
+ * what a killed `opm` left before it does its own work, on the root it was
+ * given. The CLI says so in one line on stderr; it keeps no list of commands
+ * of its own and recovers nothing itself.
  */
-export async function recoverBeforeCommand(
-  command: string,
-  cwd: string,
-  /** `--path`, where the command takes one (`opm ci --path <dir>`). */
-  path: string | undefined,
-  io: { stderr: Pick<NodeJS.WriteStream, 'write'> },
-): Promise<void> {
-  if (!CHANGES_THE_PROJECT.has(command)) return;
-  const root = await findOpmRoot(resolve(cwd, path ?? '.'));
-  if (root === undefined) return;
-  for (const step of await recoverInterruptedSteps(root))
-    io.stderr.write(`${describeRecovery(step)}\n`);
+export function cliStep(io: {
+  stderr: Pick<NodeJS.WriteStream, 'write'>;
+}): StepOptions {
+  return {
+    onRecovered: (step) => io.stderr.write(`${describeRecovery(step)}\n`),
+    onWait: (holder) =>
+      io.stderr.write(
+        `opm: waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})\n`,
+      ),
+  };
 }
