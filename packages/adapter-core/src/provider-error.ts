@@ -8,3 +8,24 @@ export class ProviderError extends Error {
     this.name = 'ProviderError';
   }
 }
+
+/** The refusal for a registry's answer that is not a success. */
+export function providerErrorForStatus(status: number): ProviderError {
+  if (status === 404)
+    return new ProviderError(
+      'PACKAGE_NOT_FOUND',
+      'Upstream resource was not found',
+      status,
+    );
+  if (status === 429)
+    return new ProviderError(
+      'RATE_LIMITED',
+      'Upstream rate limit exceeded',
+      status,
+    );
+  return new ProviderError(
+    'UPSTREAM_UNAVAILABLE',
+    `Upstream returned ${status}`,
+    status,
+  );
+}
