@@ -125,7 +125,13 @@ inside the bundle.
    directory above them, are read into memory, the patch runs there with the
    rules above, and the files are written only when it applied. Where pnpm fails
    it leaves what it did up to the failure; opm leaves the package as it was,
-   and the install stops.
+   and the install stops. "Whole" is the failure path's promise only: a patch
+   that fails forward and whose reverse would apply counts as applied (point 7),
+   and the package keeps what the two runs left, as with pnpm: the files the
+   forward run wrote before it failed, and any mode the dry run of the reverse
+   set, since pnpm's dry run still runs `chmod`. So
+   `[t: 100644 → 100755, a hunk the package already has]` is applied, and `t`
+   stays 644 (`already-applied.test.ts`, with pnpm 10.28's own outcomes).
 
    **The work is bounded.** Like pnpm, the applier reads, splits, joins and
    writes a whole file for every section that patches it, so a patch of K
