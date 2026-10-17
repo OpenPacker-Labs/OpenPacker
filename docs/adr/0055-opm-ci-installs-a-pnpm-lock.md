@@ -157,7 +157,10 @@ design:
    the member's own (`packages/web/node_modules/x` when the project holds
    another `x`). When a plan leaves a name's slot in the project empty while one
    instance of it is written in two or more members' own `node_modules`, the
-   slot goes to that instance and the plan is made again.
+   slot goes to that instance and the plan is made again, unless a peer of the
+   instance resolves differently at the project (the rule below keeps it lower:
+   HoBo's `@vitest/mocker`, whose `vite` is the member's own, is written in 58
+   members' `node_modules` and the project's slot stays empty).
 
    **Peers.** pnpm resolves a peer from the package that depends on the
    instance, and its one path per instance means a package and the dependency it
