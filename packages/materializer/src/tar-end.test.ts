@@ -27,6 +27,7 @@ interface OracleCase {
   bytes: string;
   nodeTar: { entries: Files; warnings: string[] };
   pnpm: { entries?: Files; error?: string };
+  pacote: { entries?: Files; error?: string };
 }
 
 const oracle: { cases: OracleCase[] } = JSON.parse(
@@ -126,6 +127,29 @@ const PINNED: Record<string, Files> = {
   ],
 };
 
+/**
+ * What npm writes (node-tar's `tar.x` with pacote 19.0.1's filter) differs from
+ * what node-tar's `Parse` reads, which is what the rest of this file compares,
+ * only for the ignore files pacote renames: `.gitignore` becomes `.npmignore`,
+ * and is dropped if a `.npmignore` came first. The rename is a name map on an
+ * inert file, applied to every tarball however it is read; opm and pnpm keep
+ * the name, and neither is refused for it.
+ */
+const PACOTE: Record<string, Files> = {
+  'a .gitignore file': [
+    ['.npmignore', 'G'],
+    ['a.js', 'a'],
+  ],
+  'a .npmignore, then a .gitignore': [
+    ['.npmignore', 'N'],
+    ['a.js', 'a'],
+  ],
+  'a .gitignore, then a .npmignore': [
+    ['.npmignore', 'N'],
+    ['a.js', 'a'],
+  ],
+};
+
 const disagree = (item: OracleCase) =>
   !isDeepStrictEqual(item.nodeTar.entries, item.pnpm.entries);
 
@@ -176,6 +200,24 @@ describe('a tar archive npm and pnpm read', () => {
         .filter((item) => !disagree(item) && item.name in OVER_REFUSED)
         .map(({ name }) => name),
     ).toEqual(Object.keys(OVER_REFUSED));
+  });
+
+  it('is what npm writes, but for the ignore files pacote renames', () => {
+    // On disk a later entry replaces an earlier one at its path, and a path
+    // that ends in a slash is written without it.
+    const written = (files: Files) =>
+      [
+        ...new Map(
+          files.map(([path, text]): [string, string] => [
+            path.replace(/\/$/u, ''),
+            text,
+          ]),
+        ),
+      ].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    for (const item of oracle.cases)
+      expect(written(item.pacote.entries ?? []), item.name).toEqual(
+        written(PACOTE[item.name] ?? item.nodeTar.entries),
+      );
   });
 
   it('pins only differences it can state', () => {

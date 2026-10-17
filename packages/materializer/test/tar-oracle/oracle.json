@@ -9,6 +9,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -19,6 +22,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -31,6 +37,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "error": "Invalid checksum for TAR header at offset 1024. Expected 0, got NaN"
       }
@@ -42,6 +51,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -52,6 +64,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -66,6 +81,12 @@
           ["b.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -82,6 +103,13 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"],
+          ["c.js", "c"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -93,6 +121,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": []
       }
@@ -103,6 +134,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -118,6 +152,12 @@
         ],
         "warnings": ["TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -132,6 +172,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -142,6 +188,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -154,6 +203,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -164,6 +216,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -182,6 +237,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["ok.js", "k"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -196,6 +257,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -209,6 +273,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -230,6 +297,15 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          [
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/file.js",
+            "l"
+          ]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -250,6 +326,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["hidden.js", "h"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -263,6 +345,12 @@
           ["b.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -281,6 +369,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["hidden.js", "hidden"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -294,6 +388,12 @@
           ["hidden.js", "hidden"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["hidden.js", "hidden"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -315,6 +415,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["hidden.js", "hidden"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -335,6 +441,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["hidden.wasm", "\u0000asm\u0001\u0000\u0000\u0000hidden"]
+        ]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -345,6 +457,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -360,6 +475,9 @@
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -373,6 +491,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -388,6 +509,9 @@
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -401,6 +525,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -416,6 +543,9 @@
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -429,6 +559,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -444,6 +577,9 @@
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -457,6 +593,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -475,6 +614,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["uid.js", "uid"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -491,6 +636,12 @@
           ["mtime.js", "mtime"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["mtime.js", "mtime"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -509,6 +660,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["plain.js", "plain"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -525,6 +682,12 @@
           ["X.js", "D"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["X.js", "D"],
+          ["a.js", "a"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -543,6 +706,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["X.js", "D"],
+          ["a.js", "a"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -559,6 +728,12 @@
           ["f.js", "F"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["f.js", "F"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -577,6 +752,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["decoy.js", "D"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -594,6 +775,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["seven.js", "S"]
+        ]
+      },
       "pnpm": {
         "error": "Unsupported file type 55 for file seven.js."
       }
@@ -604,6 +791,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -622,6 +812,12 @@
         ],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["decoy.js", "D"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -638,6 +834,12 @@
           ["b.js", "b"]
         ],
         "warnings": ["TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -656,6 +858,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -672,6 +880,12 @@
           ["evil.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["evil.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -690,6 +904,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["f.js", "a"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -706,6 +926,12 @@
           ["decoy.js", "D"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["decoy.js", "D"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -724,6 +950,9 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["index.js", "PAYLOAD"]]
+      },
       "pnpm": {
         "entries": [
           ["index.js", "BENIGN"],
@@ -740,6 +969,12 @@
           ["b.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -758,6 +993,12 @@
         ],
         "warnings": ["TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [
+          ["X.js", "D"],
+          ["a.js", "a"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -775,6 +1016,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["decoy.js", "D"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -788,6 +1035,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -806,6 +1056,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["lib\\x.js", "X"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -819,6 +1075,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [
@@ -834,6 +1093,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -847,6 +1109,12 @@
           ["o.js", "O"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["o.js", "O"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -865,10 +1133,89 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["package/dot.js", "d"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
           ["package/dot.js", "d"]
+        ]
+      }
+    },
+    {
+      "name": "a .gitignore file",
+      "bytes": "cGFja2FnZS9hLmpzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwMDA2NDQAMDAwMDAwMAAwMDAwMDAwADAwMDAwMDAwMDAxADAwMDAwMDAwMDAwADAxMDEwNQAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1c3RhcgAwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHBhY2thZ2UvLmdpdGlnbm9yZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwMDAwNjQ0ADAwMDAwMDAAMDAwMDAwMAAwMDAwMDAwMDAwMQAwMDAwMDAwMDAwMAAwMTEzMTcAIDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdXN0YXIAMDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "nodeTar": {
+        "entries": [
+          ["a.js", "a"],
+          [".gitignore", "G"]
+        ],
+        "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          [".npmignore", "G"],
+          ["a.js", "a"]
+        ]
+      },
+      "pnpm": {
+        "entries": [
+          ["a.js", "a"],
+          [".gitignore", "G"]
+        ]
+      }
+    },
+    {
+      "name": "a .npmignore, then a .gitignore",
+      "bytes": "cGFja2FnZS9hLmpzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwMDA2NDQAMDAwMDAwMAAwMDAwMDAwADAwMDAwMDAwMDAxADAwMDAwMDAwMDAwADAxMDEwNQAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1c3RhcgAwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHBhY2thZ2UvLm5wbWlnbm9yZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwMDAwNjQ0ADAwMDAwMDAAMDAwMDAwMAAwMDAwMDAwMDAwMQAwMDAwMDAwMDAwMAAwMTEzMjYAIDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdXN0YXIAMDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwYWNrYWdlLy5naXRpZ25vcmUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDAwMDY0NAAwMDAwMDAwADAwMDAwMDAAMDAwMDAwMDAwMDEAMDAwMDAwMDAwMDAAMDExMzE3ACAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHVzdGFyADAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "nodeTar": {
+        "entries": [
+          ["a.js", "a"],
+          [".npmignore", "N"],
+          [".gitignore", "G"]
+        ],
+        "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          [".npmignore", "N"],
+          ["a.js", "a"]
+        ]
+      },
+      "pnpm": {
+        "entries": [
+          ["a.js", "a"],
+          [".npmignore", "N"],
+          [".gitignore", "G"]
+        ]
+      }
+    },
+    {
+      "name": "a .gitignore, then a .npmignore",
+      "bytes": "cGFja2FnZS9hLmpzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwMDA2NDQAMDAwMDAwMAAwMDAwMDAwADAwMDAwMDAwMDAxADAwMDAwMDAwMDAwADAxMDEwNQAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB1c3RhcgAwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHBhY2thZ2UvLmdpdGlnbm9yZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwMDAwNjQ0ADAwMDAwMDAAMDAwMDAwMAAwMDAwMDAwMDAwMQAwMDAwMDAwMDAwMAAwMTEzMTcAIDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdXN0YXIAMDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwYWNrYWdlLy5ucG1pZ25vcmUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDAwMDY0NAAwMDAwMDAwADAwMDAwMDAAMDAwMDAwMDAwMDEAMDAwMDAwMDAwMDAAMDExMzI2ACAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHVzdGFyADAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "nodeTar": {
+        "entries": [
+          ["a.js", "a"],
+          [".gitignore", "G"],
+          [".npmignore", "N"]
+        ],
+        "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          [".npmignore", "N"],
+          ["a.js", "a"]
+        ]
+      },
+      "pnpm": {
+        "entries": [
+          ["a.js", "a"],
+          [".gitignore", "G"],
+          [".npmignore", "N"]
         ]
       }
     },
@@ -878,6 +1225,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -890,6 +1240,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -900,6 +1253,9 @@
       "nodeTar": {
         "entries": [["a.js", "a"]],
         "warnings": ["TAR_ENTRY_INVALID", "TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [["a.js", "a"]]
       },
       "pnpm": {
         "entries": [["a.js", "a"]]
@@ -914,6 +1270,12 @@
           ["b.js", "b"]
         ],
         "warnings": ["TAR_ENTRY_INVALID"]
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -932,6 +1294,12 @@
         ],
         "warnings": ["TAR_ENTRY_INVALID"]
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -946,6 +1314,9 @@
         "entries": [["a.js", "a"]],
         "warnings": []
       },
+      "pacote": {
+        "entries": [["a.js", "a"]]
+      },
       "pnpm": {
         "entries": [["a.js", "a"]]
       }
@@ -959,6 +1330,12 @@
           ["b.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [
@@ -977,6 +1354,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["X.js", "p"],
+          ["a.js", "a"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -994,6 +1377,12 @@
         ],
         "warnings": []
       },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
+      },
       "pnpm": {
         "entries": [
           ["a.js", "a"],
@@ -1010,6 +1399,12 @@
           ["b.js", "b"]
         ],
         "warnings": []
+      },
+      "pacote": {
+        "entries": [
+          ["a.js", "a"],
+          ["b.js", "b"]
+        ]
       },
       "pnpm": {
         "entries": [

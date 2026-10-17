@@ -13,6 +13,9 @@
  * starts, as test/pnpm-patch-oracle does). Each case's bytes are written into
  * the oracle, so the test reads the very bytes the readers were given.
  *
+ * Each case also records `pacote`: the files `tar.x` writes with pacote's own
+ * filter (pacote.mjs), which skips what is no file and renames `.gitignore`.
+ *
  * `--check` regenerates and compares with the committed file, exiting 1 on any
  * difference.
  */
@@ -23,6 +26,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { CASES } from './cases.mjs';
+import { pacoteInstalls } from './pacote.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(here, 'oracle.json');
@@ -103,9 +107,10 @@ async function generate(nodeTarDirectory, pnpmDirectory) {
   );
   if (tarManifest.name !== 'tar' || tarManifest.version !== '6.2.1')
     throw new Error(`${nodeTarDirectory} is not tar 6.2.1`);
-  const { Parse } = createRequire(join(nodeTarDirectory, 'package.json'))(
+  const tar = createRequire(join(nodeTarDirectory, 'package.json'))(
     nodeTarDirectory,
   );
+  const { Parse } = tar;
   const parseTarball = loadParseTarball(pnpmDirectory);
   const cases = [];
   for (const [name, parts] of Object.entries(CASES)) {
@@ -114,6 +119,7 @@ async function generate(nodeTarDirectory, pnpmDirectory) {
       name,
       bytes: bytes.toString('base64'),
       nodeTar: await nodeTar(Parse, bytes),
+      pacote: await pacoteInstalls(tar, bytes),
       pnpm: pnpm(parseTarball, bytes),
     });
   }
