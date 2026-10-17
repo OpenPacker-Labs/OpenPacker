@@ -300,7 +300,7 @@ async function approve(
       ? [settings.approvals]
       : [];
   if (held.includes(id)) {
-    io.stdout.write(`Proposal ${id} is already approved\n`);
+    say(io.stdout, `Proposal ${id} is already approved\n`);
     return 0;
   }
   await writeManifestFile(projectPaths(root).manifest, {
@@ -310,7 +310,8 @@ async function approve(
       packslip: { ...settings, approvals: [...held, id].sort() },
     },
   });
-  io.stdout.write(
+  say(
+    io.stdout,
     `Approved proposal ${id}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
   );
   return 0;

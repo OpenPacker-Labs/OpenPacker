@@ -15,8 +15,6 @@ import {
 import {
   OpmError,
   addPackage,
-  collectGarbage,
-  collectSharedStore,
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
@@ -26,7 +24,6 @@ import {
   importNativeProject,
   initProject,
   installProject,
-  listGenerations,
   listInstalled,
   buildPackageManifest,
   hostSandboxFromPolicy,
@@ -40,7 +37,6 @@ import {
   stripPurlVersion,
   planSystemInstall,
   projectPaths,
-  readEnvironmentState,
   removePackage,
   registryEcosystems,
   requireAdapterRegistry,
@@ -48,15 +44,12 @@ import {
   resolveGraph,
   resolveRegistryArtifact,
   solveGraph,
-  rollbackTarget,
   searchRegistry,
-  switchGeneration,
   syncProject,
   uninstallProject,
   updateProject,
   whyPackage,
   type AdapterRegistry,
-  type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
 import { COMMANDS } from './commands/command-names.js';
@@ -86,6 +79,7 @@ import {
   writePluginRemoved,
   writeUpdated,
 } from './terminal-records.js';
+import { runGc, runGenerations, runRollback } from './commands/generations.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -221,7 +215,8 @@ export async function runOpm(
           ...(name !== undefined && { name }),
           force: args.options.has('force'),
         });
-        io.stdout.write(
+        say(
+          io.stdout,
           result.created
             ? `Initialized opm project at ${result.manifestPath}\n`
             : `opm project already exists at ${result.manifestPath}\n`,
@@ -289,7 +284,7 @@ export async function runOpm(
         const pinned = result.lock.packages[result.alias];
         writeAdded(result.alias, pinned?.purl, pinned?.installName, io);
         writeNativeProjection(result.native, io);
-        io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
+        say(io.stdout, `Installed into ${projectPaths(root).store}\n`);
         return EXIT_CODES.success;
       }
       case 'remove': {
@@ -304,7 +299,7 @@ export async function runOpm(
           alias,
           ...(!(offline === undefined) && { offline }),
         });
-        io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
+        say(io.stdout, `Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
       case 'ci': {
@@ -325,11 +320,13 @@ export async function runOpm(
           ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.state.packages).length;
-        io.stdout.write(
+        say(
+          io.stdout,
           `Installed ${count} package(s) into ${projectPaths(root).opmDir}\n`,
         );
         writeNativeProjection(result.native, io);
-        io.stdout.write(
+        say(
+          io.stdout,
           `Bins: ${projectPaths(root).bin}  (export PATH="$PWD/.opm/bin:$PATH")\n`,
         );
         return EXIT_CODES.success;
@@ -342,7 +339,8 @@ export async function runOpm(
           root,
           ...(alias !== undefined && { alias }),
         });
-        io.stdout.write(
+        say(
+          io.stdout,
           alias
             ? `Uninstalled ${alias} (left in manifest/lock unless you opm remove)\n`
             : `Uninstalled all project packages from .opm/\n`,
@@ -358,7 +356,8 @@ export async function runOpm(
           ...(!(offline === undefined) && { offline }),
         });
         const count = Object.keys(result.lock.packages).length;
-        io.stdout.write(
+        say(
+          io.stdout,
           `Synced ${count} package(s); lock and .opm/ store updated\n`,
         );
         writeNativeProjection(result.native, io);
@@ -463,7 +462,8 @@ export async function runOpm(
           }),
         });
         if (graph.truncated.length > 0)
-          io.stderr.write(
+          say(
+            io.stderr,
             `opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
@@ -473,7 +473,8 @@ export async function runOpm(
           graph,
           rootRequirements: [{ purl: target }],
         });
-        io.stdout.write(
+        say(
+          io.stdout,
           `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
         );
         for (const instance of solved.selected)
@@ -518,9 +519,9 @@ export async function runOpm(
         const destination = option(args, 'output');
         if (destination) {
           await writeFile(destination, built.bytes);
-          io.stdout.write(`${destination}\n`);
-          io.stdout.write(
-            `  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
+          say(
+            io.stdout,
+            `${destination}\n  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
           );
         } else {
           writeDocument(new TextDecoder().decode(built.bytes), io);
@@ -616,72 +617,25 @@ export async function runOpm(
         const { runAuthCommand } = await import('./commands/auth.js');
         return await runAuthCommand(args, io);
       }
-      case 'generations': {
-        const root = await requireOpmRoot(cwd);
-        const state = await readEnvironmentState(root);
-        const generations = await listGenerations(root);
-        if (generations.length === 0) {
-          io.stdout.write('No generations yet. Run: opm install\n');
-          return EXIT_CODES.success;
-        }
-        for (const generation of generations) {
-          const current =
-            generation.generationDigest === state?.currentGenerationDigest;
-          io.stdout.write(
-            `${current ? '*' : ' '} ${generation.sequence}\t${generation.createdAt}\t${generation.members.length} package(s)\n`,
-          );
-        }
-        return EXIT_CODES.success;
-      }
-      case 'rollback': {
-        const root = await requireOpmRoot(cwd);
-        const to = option(args, 'to');
-        const target = to
-          ? await switchGeneration({ root, target: Number(to) })
-          : await rollbackToPrevious(root);
-        io.stdout.write(`Rolled back to generation ${target.sequence}\n`);
-        return EXIT_CODES.success;
-      }
-      case 'gc': {
-        // The shared store belongs to the user, not to a project, so this
-        // needs no project and never runs as part of a project's own gc.
-        if (args.options.has('shared')) {
-          const result = await collectSharedStore({
+      case 'generations':
+        return await runGenerations(io, cwd);
+      case 'rollback':
+        return await runRollback(option(args, 'to'), io, cwd);
+      case 'gc':
+        return await runGc(
+          {
+            shared: args.options.has('shared'),
             dryRun: args.options.has('dry-run'),
-          });
-          if (result.root === undefined) {
-            io.stdout.write(
-              'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
-            );
-            return EXIT_CODES.success;
-          }
-          const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-          io.stdout.write(
-            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
-          );
-          for (const path of result.removed) io.stdout.write(`  ${path}\n`);
-          return EXIT_CODES.success;
-        }
-        const root = await requireOpmRoot(cwd);
-        const keepValue = option(args, 'keep');
-        const result = await collectGarbage({
-          root,
-          ...(!(keepValue === undefined) && { keep: Number(keepValue) }),
-          dryRun: args.options.has('dry-run'),
-        });
-        const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-        io.stdout.write(
-          `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
+            keep: option(args, 'keep'),
+          },
+          io,
+          cwd,
         );
-        for (const path of result.removed) io.stdout.write(`  ${path}\n`);
-        return EXIT_CODES.success;
-      }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
         if (args.options.has('json')) {
           const environment = await environmentVariables({ root });
-          io.stdout.write(`${JSON.stringify(environment, null, 2)}\n`);
+          writeDocument(JSON.stringify(environment, null, 2), io);
           return EXIT_CODES.success;
         }
         // Printing assignments keeps this composable: `eval "$(opm shell)"`
@@ -695,17 +649,6 @@ export async function runOpm(
   } catch (error) {
     return handleError(error, io);
   }
-}
-
-/** Roll back one step, which is the common case. */
-async function rollbackToPrevious(root: string): Promise<Generation> {
-  const target = await rollbackTarget(root);
-  if (!target)
-    throw new OpmError(
-      'NOT_FOUND',
-      'There is no earlier generation to roll back to',
-    );
-  return switchGeneration({ root, target: target.generationDigest });
 }
 
 /**
@@ -968,7 +911,7 @@ async function runSystemCommand(
       const status = entry.availability.available
         ? `available${entry.availability.tool?.version ? ` (${entry.availability.tool.name} ${entry.availability.tool.version})` : ''}`
         : `unavailable: ${entry.availability.reason ?? 'unknown'}`;
-      io.stdout.write(`${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
+      say(io.stdout, `${entry.id}  ${entry.purlTypes.join(',')}  ${status}\n`);
     }
     return EXIT_CODES.success;
   }
@@ -1030,7 +973,7 @@ function writeHostInstallResult(
   if (outcome.stdout) io.stdout.write(outcome.stdout);
   if (outcome.stderr) io.stderr.write(outcome.stderr);
   if (outcome.exitCode !== 0) {
-    io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
+    say(io.stderr, `opm: host install exited ${outcome.exitCode}\n`);
     return EXIT_CODES.internal;
   }
   writeHostInstalled(outcome, io);

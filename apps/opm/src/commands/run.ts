@@ -183,8 +183,10 @@ export async function runExecCommand(
     io,
     context.host,
   );
-  if (outcome.code === undefined)
-    io.stderr.write(`opm: ${describeEnd(`"${request.bin}"`, outcome)}\n`);
+  if (outcome.code === undefined) {
+    const { say } = await import('../error-report.js');
+    say(io.stderr, `opm: ${describeEnd(`"${request.bin}"`, outcome)}\n`);
+  }
   return exitStatus(outcome);
 }
 
