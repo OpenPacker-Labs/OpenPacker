@@ -25,14 +25,27 @@ const DEFAULT_MAXIMUM_DEPTH = 64;
 const DEFAULT_MAXIMUM_VALUES = 200_000;
 
 /**
+ * What a metadata document may cost by default, in the units of
+ * `PARSE_COSTS.peak`: 256 MiB. A count of values alone does not bound memory
+ * (an object whose members are named by array indices can make an elements
+ * store of 40 KB), and the cost follows what a tree allocates and is at least
+ * what its parse needs. 256 MiB is above what 200,000 values of an ordinary
+ * document cost (66,000 objects `{"a":1}` cost 26 MB), and with the text of a
+ * 64 MiB document in two-byte characters and the process it fits a heap of
+ * 1 GiB with half of it to spare (ADR 0044).
+ */
+export const DEFAULT_METADATA_PARSE_COST = 256 * 1024 * 1024;
+
+/**
  * The shape a metadata document may have once parsed. The defaults suit the
- * small documents most registries serve: 200,000 values, 64 deep. A registry
- * whose documents are legitimately large (an npm packument lists every
- * version ever published) states a cost instead, derived from the byte limit
- * it reads under and what its real documents cost to hold. A count of values
- * cannot say what a tree costs: `{},` is three bytes and an object that takes
- * about 200 of memory, `1,` is two bytes and a slot. With `maximumCost` the
- * count is not applied unless `maximumNodes` is also given.
+ * small documents most registries serve: 200,000 values, 64 deep, and a cost
+ * of `DEFAULT_METADATA_PARSE_COST`. A registry whose documents are
+ * legitimately large (an npm packument lists every version ever published)
+ * states its own cost, derived from the byte limit it reads under and what its
+ * real documents cost to hold. A count of values cannot say what a tree costs:
+ * `{},` is three bytes and an object that takes about 200 of memory, `1,` is
+ * two bytes and a slot. With `maximumCost` the count is not applied unless
+ * `maximumNodes` is also given.
  */
 export interface ProviderMetadataLimits {
   maximumDepth?: number;
@@ -74,9 +87,7 @@ export function jsonWithCost<T>(
         : undefined;
     return parseCanonicalJsonCosted<T>(document, {
       ...(!(counted === undefined) && { maximumValues: counted }),
-      ...(!(limits.maximumCost === undefined) && {
-        maximumCost: limits.maximumCost,
-      }),
+      maximumCost: limits.maximumCost ?? DEFAULT_METADATA_PARSE_COST,
       maximumDepth: limits.maximumDepth ?? DEFAULT_MAXIMUM_DEPTH,
     });
   } catch (error) {

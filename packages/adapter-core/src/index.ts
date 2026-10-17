@@ -16,6 +16,7 @@ export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
 export { isAddress, redactText } from './redact-text.js';
 export { ProviderError, providerErrorForStatus } from './provider-error.js';
 export {
+  DEFAULT_METADATA_PARSE_COST,
   MAXIMUM_METADATA_BYTES,
   assertBoundedProviderMetadata,
   json,
