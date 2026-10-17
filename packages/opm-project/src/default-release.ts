@@ -79,13 +79,22 @@ function codecIfAny(ecosystem: string): EcosystemCodec | undefined {
 }
 
 /** The version the `latest` dist-tag names, or undefined. */
-export async function latestTagOf(
+export function latestTagOf(
   provider: CatalogProvider,
   basePurl: string,
 ): Promise<string | undefined> {
+  return distTagOf(provider, basePurl, 'latest');
+}
+
+/** The version a dist-tag names, or undefined when there is no such tag. */
+export async function distTagOf(
+  provider: CatalogProvider,
+  basePurl: string,
+  tag: string,
+): Promise<string | undefined> {
   if (!canResolveTags(provider)) return undefined;
   try {
-    const exact = await provider.resolveTag(basePurl, 'latest');
+    const exact = await provider.resolveTag(basePurl, tag);
     return exact === undefined ? undefined : versionOfPurl(exact);
   } catch {
     return undefined;

@@ -440,3 +440,43 @@ the same registry state with the new build writes the same bytes.
   `unknown`); the lock is otherwise what a resolve writes. It was not checked on
   the build before the series.
 - The case rule (§11, §17) was exercised on Linux only.
+
+## Amendment (2026-10-17) — plain dist-tags
+
+§1 and the first limit kept a plain dist-tag (`"foo": "latest"`) refused, on the
+ground that only an alias names a package explicitly enough to resolve a tag for
+it. The key of a plain entry names its package exactly as it does for a range
+(`"foo": "^1"` is followed and is the registry's `foo`), so a tag on it is no
+more a dependency-confusion door than the range is; what ADR 0044 §1 closes is
+git, URL and file specifiers, which name something that is not the registry's
+package. npm and pnpm resolve a plain tag through the packument's `dist-tags`
+(npm-package-arg@14.0.0 reads it as `type: 'tag'`, npm-pick-manifest@12.0.0
+returns `distTags[wanted]`; @pnpm/npm-resolver@1005.2.3 `pickPackageFromMeta`
+the same).
+
+- **In a package's dependencies** (`dependencies`, required peers,
+  `optionalDependencies` where they run) a plain dist-tag is a requirement with
+  `specKind: "tag"` and the tag as `range`, and is resolved by §3's `resolveTag`
+  exactly as an alias's tag is; the lock records the version. A tag the
+  packument does not have fails the resolve and names who asked for it. A tag
+  npm would refuse to read (one `encodeURIComponent` changes, npm-package-arg
+  `lib/npa.js` 468-469) is still refused by name. Development dependencies and
+  optional peers keep what ADR 0044 §1 made them.
+- **In opm.toml** a `version` of `latest` or `next` was already resolved by
+  §10's `registry-target.ts`, but was then taken for a pinned version, because
+  it is spelled like one: a second `opm install` refused the lock ("Lock package
+  is-number does not match manifest version latest") and `opm update` skipped it
+  as an exact pin. A version is pinned now only where the ecosystem's codec
+  reads it as a version (`isPinnedVersion`), so a tag binds the lock as a range
+  does and `opm update` moves it to what the tag names now, refusing a tag the
+  registry dropped by name. `1.2.x`, an npm range spelled like a version, is
+  read as the range it is for the same reason.
+- **An ecosystem whose adapter has no codec** (a catalog-only plugin) cannot
+  tell a version from a range or a tag, so opm.toml's `version` goes to its
+  adapter as written, as the exact version asked for (`registryHintFor`); only a
+  codec reads a range or a tag. Before this the resolve asked for the missing
+  codec and `opm add pkg:acme/demo@1.0.0` failed with "Adapter … does not export
+  a codec".
+
+The limit "Plain dist-tags (`"foo": "latest"`) are still refused" no longer
+holds.

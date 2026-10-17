@@ -573,12 +573,13 @@ resolver produces, in about 15 seconds from cold. What is followed:
   package it names: the target is resolved and policy-checked as itself, its own
   `package.json` keeps its own name, and it is installed under the alias
   (`node_modules/string-width-cjs`). `npm:name`, `npm:@scope/name@range` and
-  `npm:name@tag` are read too; the lock records the version a tag points at;
+  `npm:name@tag` are read too, and so is a plain dist-tag (`"foo": "latest"`,
+  `"foo": "next"`); the lock records the version a tag points at;
 - not a dependency a package **bundles** (`bundleDependencies`): its copies are
   in the package's own archive, so `pkg:npm/npm@10.9.4` is one package, as npm
   resolves it;
 - never development dependencies, optional peers, or a specifier that is not a
-  registry version range or an alias (`github:…`, a URL, a plain dist-tag).
+  registry version range, a dist-tag or an alias (`github:…`, a URL, a file).
   Those are not looked up as the registry's package of that name. In a
   `dependencies` entry they fail the resolve and name the package.
 
@@ -613,9 +614,10 @@ members.
 
 **Limits.** A package a required peer dependency points at must be one version:
 a closure that needs it at two fails and names who requires what, as npm's
-`ERESOLVE` does. A plain dist-tag (`"foo": "latest"`) as a dependency is
-refused. The locked platform packages are the ones for the machine that
-resolved. See [ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
+`ERESOLVE` does. A dist-tag the package does not have fails the resolve and
+names who asked for it. The locked platform packages are the ones for the
+machine that resolved. See
+[ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
 [ADR 54](../adr/0054-aliases-and-several-versions-in-the-closure.md).
 
 **Release age.** With `minimum_release_age_minutes` set, a version published

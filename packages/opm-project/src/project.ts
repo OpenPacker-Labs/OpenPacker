@@ -30,7 +30,11 @@ import { resolveTransitive } from './closure-lock.js';
 import { assertLabelIsFree } from './label-conflict.js';
 import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
-import { isExactVersion, registryTargetFor } from './registry-target.js';
+import {
+  isPinnedVersion,
+  registryHintFor,
+  registryTargetFor,
+} from './registry-target.js';
 import { defaultRelease } from './default-release.js';
 import {
   emptyLockfile,
@@ -493,7 +497,10 @@ export function assertLockMatchesManifest(
       stripPurlVersion(requirement.purl) !== requirement.purl
         ? requirement.purl
         : requirement.version !== undefined &&
-            /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(requirement.version)
+            isPinnedVersion(
+              ecosystemFromPurl(requirement.purl),
+              requirement.version,
+            )
           ? exactPurl(requirement.purl, requirement.version)
           : undefined;
     if (
@@ -970,12 +977,7 @@ async function resolveRequirement(input: {
         : await input.pool.optionsWithProvider(ecosystem);
     // A range or a dist-tag in the manifest is resolved here; a version is a
     // version. (`candidateExact` treats anything but ^ and ~ as a version.)
-    const registryHint =
-      versionHint !== undefined &&
-      versionHint !== '' &&
-      !isExactVersion(ecosystem, versionHint)
-        ? versionHint
-        : undefined;
+    const registryHint = registryHintFor(ecosystem, versionHint);
     const target =
       (registryHint === undefined
         ? candidateExact

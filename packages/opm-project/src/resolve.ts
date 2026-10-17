@@ -10,7 +10,6 @@ import { ProviderPool, type RegistryOptions } from './registry.js';
 import { codecFor } from './codecs.js';
 import { INSTALLED_KINDS } from './closure-edges.js';
 import {
-  isAliasRequirement,
   isBundledRequirement,
   nativeRange,
   requirementTag,
@@ -373,10 +372,11 @@ function nativeSpecKind(requirement: unknown): string | undefined {
  * carry an environment marker that evaluates to true for this host — that is
  * how PyPI encodes "required on this platform" without making every marker a
  * hard edge on every host. npm's `optionalDependencies` are followed where the
- * dependency runs (see `FollowDecision.via`). A specifier that is not a version
- * range (a git URL, a bare dist-tag) is never followed: reading it as the
- * registry's package of that name is how dependency confusion lands. An `npm:`
- * alias is followed as a requirement on its target, which the adapter named.
+ * dependency runs (see `FollowDecision.via`). A specifier that is neither a
+ * version range nor a dist-tag (a git URL, a file) is never followed: reading it
+ * as the registry's package of that name is how dependency confusion lands. An
+ * `npm:` alias is followed as a requirement on its target, which the adapter
+ * named.
  */
 export function shouldFollowRequirement(
   requirement: Requirement,
@@ -395,13 +395,11 @@ export function shouldFollowRequirement(
       skipReason: 'bundled: it ships inside the package archive',
     };
   const specKind = nativeSpecKind(requirement);
-  // An alias names its target explicitly, so a dist-tag on it is the target's
-  // tag; a bare dist-tag is not read as anything.
-  const aliasedTag =
-    specKind === 'tag' && requirementTag(requirement) !== undefined
-      ? isAliasRequirement(requirement)
-      : false;
-  if (specKind !== undefined && specKind !== 'range' && !aliasedTag)
+  // A dist-tag, plain (`"foo": "latest"`) or on an alias, is the version the
+  // registry's dist-tags name for the package; it is read below and pinned.
+  const tagged =
+    specKind === 'tag' && requirementTag(requirement) !== undefined;
+  if (specKind !== undefined && specKind !== 'range' && !tagged)
     return {
       follow: false,
       skipReason: `specifier is a ${specKind}, not a registry version range`,

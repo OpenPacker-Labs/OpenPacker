@@ -27,12 +27,10 @@ import {
   writeManifestFile,
 } from './project.js';
 import type { RegistryOptions } from './registry.js';
-import { stripPurlVersion } from './spec.js';
+import { isPinnedVersion } from './registry-target.js';
+import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { serializeManifest } from './toml.js';
 import { newestEligibleVersion } from './update-candidates.js';
-
-/** Exact pin test used by install's lock↔manifest binding. */
-const EXACT_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
 
 export async function updateProject(input: {
   root: string;
@@ -267,7 +265,10 @@ async function finish(
 
 function isExactPin(req: PackageRequirement): boolean {
   if (stripPurlVersion(req.purl) !== req.purl) return true;
-  return req.version !== undefined && EXACT_VERSION.test(req.version);
+  return (
+    req.version !== undefined &&
+    isPinnedVersion(ecosystemFromPurl(req.purl), req.version)
+  );
 }
 
 function collectCatalogPaths(

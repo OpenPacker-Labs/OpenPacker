@@ -3,7 +3,11 @@ import type { OpmLockfile, OpmManifest, PackageRequirement } from './types.js';
 import { OpmError } from './types.js';
 import { canonicalCatalogPurl } from './catalog.js';
 import { codecFor } from './codecs.js';
-import { defaultReleaseOrder, latestTagOf } from './default-release.js';
+import {
+  defaultReleaseOrder,
+  distTagOf,
+  latestTagOf,
+} from './default-release.js';
 import {
   listRegistryVersions,
   providerFor,
@@ -30,7 +34,12 @@ export async function newestEligibleVersion(input: {
   const ecosystem = ecosystemFromPurl(input.req.purl);
   const codec = codecFor(ecosystem);
   const candidates = new Map<string, string>();
+  const range = input.latest ? undefined : input.req.version;
+  // A dist-tag (`next`) is the release the registry's tag names now.
+  const tag =
+    range !== undefined && !readsAsRange(codec, range) ? range : undefined;
   let latest: string | undefined;
+  let tagged: string | undefined;
   const base = canonicalCatalogPurl(stripPurlVersion(input.req.purl));
   for (const entry of input.catalog.values()) {
     if (canonicalCatalogPurl(stripPurlVersion(entry.purl)) !== base) continue;
@@ -54,10 +63,14 @@ export async function newestEligibleVersion(input: {
         const version = parsePurl(exact).version;
         if (version !== undefined) candidates.set(version, exact);
       }
-      latest = await latestTagOf(
-        await providerFor(ecosystem, options),
-        stripPurlVersion(input.req.purl),
-      );
+      const provider = await providerFor(ecosystem, options);
+      latest = await latestTagOf(provider, stripPurlVersion(input.req.purl));
+      if (tag !== undefined)
+        tagged = await distTagOf(
+          provider,
+          stripPurlVersion(input.req.purl),
+          tag,
+        );
     } catch (error) {
       if (
         !(error instanceof OpmError && error.code === 'OFFLINE') &&
@@ -76,23 +89,47 @@ export async function newestEligibleVersion(input: {
     return undefined;
   }
 
-  const range = input.latest ? undefined : input.req.version;
+  if (tag !== undefined && tagged === undefined)
+    throw new OpmError(
+      'UNRESOLVABLE',
+      input.offline
+        ? `Cannot read the dist-tag "${tag}" of "${input.req.alias}" offline`
+        : `${stripPurlVersion(input.req.purl)} has no dist-tag "${tag}"`,
+    );
   const ranked = [...candidates.keys()].sort((left, right) =>
     codec.compareNativeVersions(left, right),
   );
   // No range is the same question `opm add foo` asks (`default-release.ts`).
   const order =
-    range === undefined
-      ? defaultReleaseOrder({ ecosystem, versions: ranked, latest })
-      : ranked.reverse();
+    tagged !== undefined
+      ? [tagged]
+      : range === undefined
+        ? defaultReleaseOrder({ ecosystem, versions: ranked, latest })
+        : ranked.reverse();
   for (const version of order) {
-    if (range !== undefined && !versionSatisfies(codec, version, range))
+    if (
+      tagged === undefined &&
+      range !== undefined &&
+      !versionSatisfies(codec, version, range)
+    )
       continue;
     const exact = candidates.get(version) ?? `${base}@${version}`;
     if (await isYankedOrIneligible(ecosystem, exact, input)) continue;
     return version;
   }
   return undefined;
+}
+
+function readsAsRange(
+  codec: ReturnType<typeof codecFor>,
+  range: string,
+): boolean {
+  try {
+    codec.parseNativeRange(range);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function versionSatisfies(
