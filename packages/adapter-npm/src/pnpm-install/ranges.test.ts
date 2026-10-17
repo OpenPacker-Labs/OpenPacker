@@ -6,12 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  isRange,
-  overrideRangeApplies,
-  rangesIntersect,
-  readsAsPnpm,
-} from './ranges.js';
+import { isRange, overrideRangeApplies, rangesIntersect } from './ranges.js';
 
 /** The spellings of `>=0.0.0` the differential had, each `*` to node-semver. */
 const AT_LEAST_ZERO = [
@@ -39,7 +34,6 @@ describe('rangesIntersect, against node-semver', () => {
   it.each(pairs)(
     'takes %j and %j to intersect, as >=0.0.0 is *',
     (left, right) => {
-      expect(readsAsPnpm(left) && readsAsPnpm(right)).toBe(true);
       expect(rangesIntersect(left, right)).toBe(true);
       expect(overrideRangeApplies(left, right)).toBe(true);
     },

@@ -17,20 +17,13 @@
  * first, sorted here the same way on the same engine; `-` drops the
  * dependency; a `file:` or `link:` replacement is made relative to the
  * importer; and a peer is overridden too, moving to `dependencies` when the
- * replacement is not a peer range. Where a range is one opm and pnpm read
- * differently (`readsAsPnpm`), whether it applies is not guessed: it is a
- * doubt, which the caller refuses on as opm's own rule.
+ * replacement is not a peer range. Every range is read as node-semver reads
+ * it, as pnpm does, so there is no range whose override is left in doubt.
  */
 
 import { posix } from 'node:path';
 import type { ManifestLists } from './fresh.js';
-import { quote } from './quote.js';
-import {
-  isRange,
-  overrideRangeApplies,
-  readsAsPnpm,
-  versionSatisfies,
-} from './ranges.js';
+import { isRange, overrideRangeApplies, versionSatisfies } from './ranges.js';
 
 interface Selector {
   readonly parent?: { readonly name: string; readonly range?: string };
@@ -107,44 +100,26 @@ function replacementFor(value: string, dir: string): string {
 const isPeerRange = (value: string): boolean =>
   value.includes('workspace:') || value.includes('catalog:') || isRange(value);
 
-/**
- * `manifest` with the overrides that apply to it applied, as pnpm applies them
- * to `importer`. A selector whose range pnpm and opm read differently is added
- * to `doubts`, as a sentence, and not applied.
- */
+/** `manifest` with the overrides that apply to it applied, as pnpm applies them to `importer`. */
 export function applyOverrides(
   manifest: ManifestLists,
   overrides: ReadonlyMap<string, string>,
   importer: OverrideTarget,
-  doubts: string[] = [],
 ): ManifestLists {
   if (overrides.size === 0) return manifest;
   // pnpm keeps them in an object: its key order, integer-like keys first.
   const all: Override[] = Object.entries(Object.fromEntries(overrides)).map(
     ([text, value]) => ({ text, selector: parseSelector(text), value }),
   );
-  const who =
-    importer.dir === undefined || importer.dir === ''
-      ? 'the project'
-      : quote(importer.dir);
-  const parentRangeHolds = (
-    range: string | undefined,
-    text: string,
-  ): boolean => {
-    if (range === undefined || range === '') return true;
-    if (!readsAsPnpm(range)) {
-      doubts.push(
-        `the override ${quote(text)} names a parent range opm does not read as pnpm does, so whether it applies to ${who} is not known`,
-      );
-      return false;
-    }
-    return versionSatisfies(importer.version ?? '', range);
-  };
+  const parentRangeHolds = (range: string | undefined): boolean =>
+    range === undefined ||
+    range === '' ||
+    versionSatisfies(importer.version ?? '', range);
   const scoped = all.filter(
-    ({ selector, text }) =>
+    ({ selector }) =>
       selector.parent !== undefined &&
       selector.parent.name === importer.name &&
-      parentRangeHolds(selector.parent.range, text),
+      parentRangeHolds(selector.parent.range),
   );
   const plain = all.filter(({ selector }) => selector.parent === undefined);
   const applying = (
@@ -152,22 +127,11 @@ export function applyOverrides(
     name: string,
     specifier: string,
   ) =>
-    group.filter(({ selector, text }) => {
-      if (selector.name !== name) return false;
-      const range = selector.range;
-      if (
-        range !== undefined &&
-        range !== '' &&
-        range !== specifier &&
-        !(readsAsPnpm(range) && readsAsPnpm(specifier))
-      ) {
-        doubts.push(
-          `the override ${quote(text)} and ${quote(name)} ${quote(specifier)} of ${who} are ranges opm does not read as pnpm does, so whether it applies is not known`,
-        );
-        return false;
-      }
-      return overrideRangeApplies(range, specifier);
-    });
+    group.filter(
+      ({ selector }) =>
+        selector.name === name &&
+        overrideRangeApplies(selector.range, specifier),
+    );
   const pick = (name: string, specifier: string) =>
     mostSpecific(applying(scoped, name, specifier)) ??
     mostSpecific(applying(plain, name, specifier));

@@ -41,6 +41,8 @@ export {
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
+import { npmRangeAst } from './npm-semver-range.js';
+import { quote } from './terminal-text.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
@@ -1962,6 +1964,11 @@ export function evaluateSemverRange(
   return acceptsPrerelease(ast);
 }
 
+/**
+ * How a range is read. An `npm` range is read as node-semver reads it, whatever
+ * the rest says (`npm-semver-range.ts`); `bare`, `commaAnd` and `hyphenRanges`
+ * are the cargo and Go readings'.
+ */
 export interface SemverRangeOptions {
   scheme: 'npm' | 'cargo' | 'golang';
   bare: 'exact' | 'caret';
@@ -2096,16 +2103,23 @@ function astVers(ast: RangeAst): string | undefined {
   return parts.some((part) => part === undefined) ? undefined : parts.join('|');
 }
 
-export function parseSemverRange(
-  value: string,
-  options: SemverRangeOptions,
-): ParsedRange {
-  if (value.length > 4096)
+/**
+ * An npm range as node-semver 7.7.3 reads it (`npm-semver-range.ts`): what it
+ * refuses is refused, and `bare`, `commaAnd` and `hyphenRanges` do not apply,
+ * npm's grammar fixing all three.
+ */
+function npmAst(value: string): RangeAst {
+  const ast = npmRangeAst(value);
+  if (ast === undefined)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      'Native range exceeds 4096 characters',
+      `Invalid npm range: ${quote(value)}`,
     );
-  const original = value;
+  return ast;
+}
+
+/** A cargo or Go range, by the reader those schemes share. */
+function sharedAst(value: string, options: SemverRangeOptions): RangeAst {
   let normalizedInput = value.trim();
   if (normalizedInput === '' || normalizedInput === '*') normalizedInput = '*';
   if (options.hyphenRanges) {
@@ -2138,10 +2152,23 @@ export function parseSemverRange(
       tokens.flatMap((token) => parseRangeToken(token, options)),
     );
   });
-  const ast: RangeAst =
-    alternatives.length === 1
-      ? alternatives[0]!
-      : { type: 'or', items: alternatives };
+  return alternatives.length === 1
+    ? alternatives[0]!
+    : { type: 'or', items: alternatives };
+}
+
+export function parseSemverRange(
+  value: string,
+  options: SemverRangeOptions,
+): ParsedRange {
+  if (value.length > 4096)
+    throw new ProviderError(
+      'INVALID_NATIVE_RANGE',
+      'Native range exceeds 4096 characters',
+    );
+  const original = value;
+  const ast =
+    options.scheme === 'npm' ? npmAst(value) : sharedAst(value, options);
   const versBody = exactlyRepresentableSemverRange(ast)
     ? astVers(ast)
     : undefined;

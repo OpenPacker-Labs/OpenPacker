@@ -185,7 +185,10 @@ describe('what opm ci still refuses, as its own rule', () => {
     );
   });
 
-  it('refuses an override whose range opm does not read as pnpm does, saying so', async () => {
+  // pnpm 10.28 found this lock up to date (`install --frozen-lockfile
+  // --offline` stopped at the missing tarball, not at the lock), as node-semver
+  // reads v1.x as >=1.0.0 <2.0.0-0, which ^1.2.0 meets.
+  it('applies an override whose range only node-semver spells (v1.x), as pnpm does', async () => {
     const world = await worldOf(
       LOCK(`overrides:
   left-pad@v1.x: 1.3.0
@@ -210,10 +213,6 @@ snapshots:
             : manifest,
       },
     );
-    const message = await refusal(world);
-    expect(message).toMatch(
-      /"left-pad@v1\.x".*opm does not read as pnpm does/u,
-    );
-    expect(message).not.toMatch(/would refuse too/u);
+    expect(await refusal(world)).toBeUndefined();
   });
 });

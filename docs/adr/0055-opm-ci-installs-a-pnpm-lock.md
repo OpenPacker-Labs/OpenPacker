@@ -113,7 +113,11 @@ design:
    compares one: pnpm makes the same check when it reads a package back from its
    store (`ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
    `strict-store-pkg-content-check`); npm does not make it. Every value the
-   archive gives is quoted and escaped as the lock's values are.
+   archive gives is quoted and escaped as the lock's values are. One difference
+   from pnpm is deliberate: pnpm compares a name or version only when the
+   archive's `package.json` has one, and opm refuses an archive with no `name`
+   (or, where the lock records a version, no `version`), because an archive that
+   does not say what it is cannot be identified as the package the lock names.
 
 ### Where each instance goes
 
@@ -268,14 +272,18 @@ design:
        replacement is made relative to the importer; a peer is overridden too,
        and moves to `dependencies` when the replacement is not a peer range
        (node-semver's `validRange`, which takes `v1` and `~>1` as ranges too). A
-       selector is split at the first `>` pnpm splits at. The range reader
-       agrees with node-semver on ranges of whole versions without a prerelease
-       written with `^`, `~`, comparators, x-ranges, hyphen ranges and `||` (0
-       differences over about 45,000 random pairs against node-semver 7.8, and
-       over the 37,182 of the second review's differential; `>=0.0.0` is `*`, as
-       node-semver's `replaceGTE0` makes it); a range outside those forms
-       (`~>1`, `v1.x`, `<*`, `<=1.2`, a prerelease bound) is not guessed:
-       whether the override applies is refused as opm's own rule, naming it.
+       selector is split at the first `>` pnpm splits at. Every npm range is
+       read as node-semver 7.7.3 (the copy pnpm 10.28 bundles) reads it: the
+       range reader of `adapter-core` follows node-semver's own steps for the
+       npm scheme (`npm-semver-range.ts`), refuses what it refuses (a lone `>=`,
+       `x.y`, `> = 1`) and keeps the comparators it keeps (`1.2` is
+       `>=1.2.0 <1.3.0-0`, `>=0.0.0` is `*`). `npm-range-oracle.json` holds
+       node-semver's answers for 1,142 ranges and 30 versions and the parser
+       must give each; the review differential found 0 differences over 123,039
+       ranges. So no override is left in doubt: an override written `v1.x` or
+       `<=1.2` applies where pnpm applies it (pnpm 10.28 found such a lock up to
+       date). Before this the reader read some forms its own way and opm refused
+       the override as its own rule rather than guess.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it
@@ -343,7 +351,6 @@ design:
       an importer, a `link:` to an importer the project no longer has (§15).
     - A lock written with `ignoredOptionalDependencies`: pnpm also takes those
       names out of the importers' `package.json`, which opm does not.
-    - An override whose range opm does not read as pnpm does (§18.4).
     - A member the lock does not list that has dependencies (§15).
     - An archive whose own `package.json` is not the package the lock names
       (§7).

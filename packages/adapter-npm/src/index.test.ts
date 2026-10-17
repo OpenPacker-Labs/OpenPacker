@@ -582,15 +582,17 @@ describe('publish time evidence', () => {
   });
 });
 
+// The comparators are node-semver's: a caret, tilde or partial bound is
+// `<X.Y.Z-0`, which keeps that version's prereleases out as npm does.
 describe('ranges the solver can enforce', () => {
   const vers = (range: string) =>
     npmRangeVers(new NpmCodec().parseNativeRange(range).ast);
 
   it.each([
-    ['^2.9.0', 'vers:npm/>=2.9.0|<3.0.0'],
-    ['~1.2.3', 'vers:npm/>=1.2.3|<1.3.0'],
-    ['>=1 <2', 'vers:npm/>=1.0.0|<2.0.0'],
-    ['^1 || ^2', 'vers:npm/>=1.0.0|<2.0.0||>=2.0.0|<3.0.0'],
+    ['^2.9.0', 'vers:npm/>=2.9.0|<3.0.0-0'],
+    ['~1.2.3', 'vers:npm/>=1.2.3|<1.3.0-0'],
+    ['>=1 <2', 'vers:npm/>=1.0.0|<2.0.0-0'],
+    ['^1 || ^2', 'vers:npm/>=1.0.0|<2.0.0-0||>=2.0.0|<3.0.0-0'],
     ['1.2.3', 'vers:npm/=1.2.3'],
   ])('renders %s as %s', (range, expected) => {
     expect(vers(range)).toBe(expected);
@@ -614,7 +616,7 @@ describe('ranges the solver can enforce', () => {
     const [requirement] = instance.requirements;
     expect(requirement!.expression).toMatchObject({
       purl: 'pkg:npm/tinybench',
-      vers: 'vers:npm/>=2.9.0|<3.0.0',
+      vers: 'vers:npm/>=2.9.0|<3.0.0-0',
     });
     expect(requirement!.semanticLoss[0]).toMatchObject({
       code: 'NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE',

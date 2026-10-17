@@ -113,13 +113,14 @@ describe('version primitives', () => {
     expect(compareCodePoints('a', 'b')).toBeLessThan(0);
     const compareNative = (left: string, right: string) =>
       compareParsedVersions(parseSemver(left), parseSemver(right));
+    // An npm range is read as node-semver reads it: `^1.2.3` excludes 2.0.0's
+    // prereleases by its bound, `<2.0.0-0`.
     const caret = parseSemverRange('^1.2.3', {
       scheme: 'npm',
-      bare: 'caret',
-      commaAnd: true,
+      bare: 'exact',
       hyphenRanges: true,
     });
-    expect(renderRange(caret.ast)).toBe('>=1.2.3 <2.0.0');
+    expect(renderRange(caret.ast)).toBe('>=1.2.3 <2.0.0-0');
     expect(evaluateSemverRange('1.9.0', caret.ast, compareNative)).toBe(true);
     expect(rangeToConstraint(caret)).toMatchObject({
       reversible: false,
@@ -128,13 +129,14 @@ describe('version primitives', () => {
     expect(
       parseSemverRange('1.2 - 1.4', {
         scheme: 'npm',
-        bare: 'caret',
+        bare: 'exact',
         hyphenRanges: true,
       }).normalized,
-    ).toBe('>=1.2.0 <1.5.0');
+    ).toBe('>=1.2.0 <1.5.0-0');
     const prerelease = parseSemverRange('>=1.0.0-beta.1 <2.0.0', {
       scheme: 'npm',
-      bare: 'caret',
+      bare: 'exact',
+      hyphenRanges: true,
     });
     expect(
       evaluateSemverRange('1.0.0-beta.2', prerelease.ast, compareNative),
