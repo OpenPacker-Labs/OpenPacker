@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { readPatchText } from './index.js';
+import { pathOfBytes } from './tree-fixture.js';
 
 /** A patch whose one header line, between `diff --git` and the hunk, is `line`. */
 const withHeader = (line: string) =>
@@ -48,7 +49,7 @@ const tooLong = (length: number) =>
 describe('a header line of a patch', () => {
   it('may be 8,300 characters: two paths of 4,096 bytes and the frame around them', () => {
     expect(MAXIMUM_HEADER_LINE).toBe(8_300);
-    const path = 'a'.repeat(4_096);
+    const path = pathOfBytes(4_096);
     const diffLine = `diff --git a/${path} b/${path}`;
     expect(diffLine.length).toBe(8_208);
     expect(MAXIMUM_HEADER_LINE).toBeGreaterThan(diffLine.length);

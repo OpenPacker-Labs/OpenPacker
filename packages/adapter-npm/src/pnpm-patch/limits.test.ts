@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PATCH_WORK_BUDGET } from './apply.js';
 import { applyPnpmPatch, readPatchText } from './index.js';
+import { pathOfBytes } from './tree-fixture.js';
 import { withAncestors } from './tree.js';
 
 const temps: string[] = [];
@@ -83,12 +84,16 @@ describe('the bounds of a patch', () => {
   });
 
   it('takes a path of 4,096 UTF-8 bytes and refuses one of 4,097, counting bytes and not characters', () => {
-    expect(readPatchText(create('a'.repeat(4_096)), 'p')).toHaveLength(1);
-    expect(() => readPatchText(create('a'.repeat(4_097)), 'p')).toThrow(
+    expect(pathOfBytes(4_096)).toHaveLength(4_096);
+    expect(readPatchText(create(pathOfBytes(4_096)), 'p')).toHaveLength(1);
+    expect(() => readPatchText(create(pathOfBytes(4_097)), 'p')).toThrow(
       refusal('UNSAFE_PATH', 'is 4097 bytes long, more than the 4096'),
     );
-    // 2,049 characters, two bytes each.
-    expect(() => readPatchText(create('é'.repeat(2_049)), 'p')).toThrow(
+    // Two bytes each: 4,098 bytes in 2,029 characters and 40 separators.
+    const accented = pathOfBytes(4_098, 'é');
+    expect(Buffer.byteLength(accented)).toBe(4_098);
+    expect(accented.length).toBeLessThan(4_098 - 1_000);
+    expect(() => readPatchText(create(accented), 'p')).toThrow(
       refusal('UNSAFE_PATH', 'is 4098 bytes long'),
     );
   });
