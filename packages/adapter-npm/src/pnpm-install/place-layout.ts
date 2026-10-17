@@ -17,7 +17,7 @@ import {
 } from '../layout-names.js';
 import { LayoutTooLargeError } from '../layout-plan-types.js';
 import { enclosingDirs, orderedEdges, rootChoice } from './place-order.js';
-import { homeOf, peersFirst, sharedPeers } from './place-peers.js';
+import { homeOf, peerEdgesOf, peersFirst, sharedPeers } from './place-peers.js';
 import { lookup, settle, topNode, type Node } from './place-tree.js';
 import type { PlaceEdge, PlaceInput, PlaceInstance } from './place-types.js';
 import { quote } from './quote.js';
@@ -38,6 +38,20 @@ export interface Laid {
 export interface Known {
   readonly peersOf: (key: string) => readonly PlaceEdge[];
   readonly mineOf: (key: string) => ReadonlyMap<string, string>;
+}
+
+/** What a plan reads of the instances, worked out once for all its layouts. */
+export function knownOf(input: PlaceInput): Known {
+  const peers = new Map<string, readonly PlaceEdge[]>();
+  const mine = new Map<string, ReadonlyMap<string, string>>();
+  for (const [key, instance] of input.instances) {
+    peers.set(key, peerEdgesOf(instance));
+    mine.set(key, new Map(instance.edges.map((edge) => [edge.as, edge.to])));
+  }
+  return {
+    peersOf: (key) => peers.get(key) ?? [],
+    mineOf: (key) => mine.get(key) ?? new Map(),
+  };
 }
 
 /** What one layout is made under; `place.ts` changes it between layouts. */

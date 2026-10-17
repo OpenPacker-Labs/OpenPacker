@@ -17,3 +17,23 @@ closure holds one instance of each name, so the members that reach the cycle
 keep it in their own `node_modules`.
 
 `place.cycles.test.ts` reads them.
+
+The six worlds below belong to the round-7 review of #179, which changed the
+planner one line at a time and found lines no test noticed. Each is small enough
+to read, and `place.attempts.test.ts` asserts what it shows.
+
+- `beside-edge`, `isolation-preferred`: the review's reductions of random
+  worlds. In the first, the planner has to look at an edge whose dependency is
+  written beside its dependent to see a split; in the second, sharing leaves a
+  split that isolating the importer cures.
+- `pin-accumulation`, `pin-chain`: reductions made the same way, of worlds in
+  which a pin kept from one layout to the next (four layouts, where forgetting
+  it takes nine), and the rule that a pin never writes a package inside its own
+  copy (four layouts, where placing every pinned edge beside its dependent takes
+  three), change how many layouts the same five places take.
+- `kept-split`: the review's world of a package that depends on an older version
+  of itself and hosts a plugin that peers it. No layout gives the plugin's
+  dependents one copy of the host; the planner keeps the layout with the fewest
+  splits and counts them.
+- `fallback`: a reduction of a random world in which no layout with peers in
+  view fits, so the lock is laid out without them.

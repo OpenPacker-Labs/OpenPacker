@@ -44,11 +44,17 @@ import {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,
 } from '../layout-plan-types.js';
-import { layOut, pinId, type Known, type Laid } from './place-layout.js';
+import {
+  knownOf,
+  layOut,
+  pinId,
+  type Known,
+  type Laid,
+} from './place-layout.js';
 import { cyclicImporters } from './place-cycles.js';
 import { emptySlotChoices } from './place-order.js';
-import { findSplits, peerEdgesOf, type PeerSplit } from './place-peers.js';
-import type { PlaceEdge, PlaceInput, PlannedPlacement } from './place-types.js';
+import { findSplits, type PeerSplit } from './place-peers.js';
+import type { PlaceInput, PlannedPlacement } from './place-types.js';
 
 export { enclosingDirs } from './place-order.js';
 export { MAXIMUM_DEPTH } from './place-layout.js';
@@ -151,16 +157,7 @@ function settle(
 }
 
 export function planPlacement(input: PlaceInput): PlannedPlacement {
-  const peers = new Map<string, readonly PlaceEdge[]>();
-  const mine = new Map<string, ReadonlyMap<string, string>>();
-  for (const [key, instance] of input.instances) {
-    peers.set(key, peerEdgesOf(instance));
-    mine.set(key, new Map(instance.edges.map((edge) => [edge.as, edge.to])));
-  }
-  const known: Known = {
-    peersOf: (key) => peers.get(key) ?? [],
-    mineOf: (key) => mine.get(key) ?? new Map(),
-  };
+  const known = knownOf(input);
   // First every importer shares what it can. Where that leaves a split, or no
   // layout at all, the importers that reach packages needing each other keep
   // all they need in their own `node_modules`, and the better layout is kept.

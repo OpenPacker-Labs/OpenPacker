@@ -1,0 +1,44 @@
+{
+  "instances": [
+    { "key": "p2@1.0.0[]", "name": "p2", "version": "1.0.0", "edges": [] },
+    {
+      "key": "p0@1.0.0[p1@1,p1@2,p2@2,p3@2]",
+      "name": "p0",
+      "version": "1.0.0",
+      "edges": [
+        { "as": "p2", "to": "p2@2.0.0[p1@1,p3@2]", "peer": true },
+        { "as": "p1", "to": "p1@1.0.0[p2@2,p3@2]", "peer": true }
+      ]
+    },
+    {
+      "key": "p2@2.0.0[p1@1,p3@2]",
+      "name": "p2",
+      "version": "2.0.0",
+      "edges": [{ "as": "p1", "to": "p1@1.0.0[p2@2,p3@2]", "peer": true }]
+    },
+    {
+      "key": "p1@1.0.0[p2@2,p3@2]",
+      "name": "p1",
+      "version": "1.0.0",
+      "edges": [{ "as": "p2", "to": "p2@2.0.0[p1@1,p3@2]", "peer": true }]
+    }
+  ],
+  "tops": [
+    {
+      "id": ".",
+      "dir": "",
+      "edges": [{ "as": "p2", "to": "p2@1.0.0[]" }],
+      "links": []
+    },
+    {
+      "id": "packages/m0",
+      "dir": "packages/m0",
+      "edges": [
+        { "as": "p0", "to": "p0@1.0.0[p1@1,p1@2,p2@2,p3@2]" },
+        { "as": "p2", "to": "p2@2.0.0[p1@1,p3@2]" },
+        { "as": "p1", "to": "p1@1.0.0[p2@2,p3@2]" }
+      ],
+      "links": []
+    }
+  ]
+}
