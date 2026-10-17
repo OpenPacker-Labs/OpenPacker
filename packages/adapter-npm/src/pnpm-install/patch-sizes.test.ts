@@ -15,14 +15,15 @@ import { PATCH_FILE_LIMITS } from './patch-files.js';
 
 const MiB = 1024 * 1024;
 
-async function sized(root: string, path: string, bytes: number) {
+/** A file of `content`, or a sparse one of that many bytes. */
+async function sized(root: string, path: string, content: number | string) {
   const where = join(root, ...path.split('/'));
   await mkdir(dirname(where), { recursive: true });
-  await writeFile(where, '');
-  await truncate(where, bytes);
+  await writeFile(where, typeof content === 'string' ? content : '');
+  if (typeof content === 'number') await truncate(where, content);
 }
 
-async function declaring(files: Record<string, number>) {
+async function declaring(files: Record<string, number | string>) {
   const paths = Object.fromEntries(
     Object.keys(files).map((key, index) => [key, `patches/${index}.patch`]),
   );
@@ -49,21 +50,22 @@ describe('the size of the patch files a lock declares', () => {
     });
   });
 
-  it('refuses patch files that come to 64 MiB and a byte, before any is read', async () => {
+  it('refuses patch files that come to more than 64 MiB, before any is read', async () => {
+    // The first file pnpm cannot read: had it been read, the lock would be
+    // refused for that (INVALID_PATCH), not for the total.
+    const unreadable = 'diff --git a/x b/x\n@@ -1 +1 @@\n\\ bogus pragma\n';
     const world = await declaring({
-      'a@1.0.0': 16 * MiB,
+      'a@1.0.0': unreadable,
       'b@1.0.0': 16 * MiB,
       'c@1.0.0': 16 * MiB,
       'd@1.0.0': 16 * MiB,
-      'e@1.0.0': 1,
+      'e@1.0.0': 16 * MiB,
     });
-    const heap = process.memoryUsage().heapUsed;
     await expect(world.read()).rejects.toMatchObject({
       code: 'SIZE_LIMIT',
       message: expect.stringContaining(
-        'the 5 patch files the project declares come to 67108865 bytes, more than the 67108864 opm reads of patches for one lock',
+        `the 5 patch files the project declares come to ${64 * MiB + unreadable.length} bytes, more than the 67108864 opm reads of patches for one lock`,
       ),
     });
-    expect(process.memoryUsage().heapUsed - heap).toBeLessThan(32 * MiB);
   });
 });
