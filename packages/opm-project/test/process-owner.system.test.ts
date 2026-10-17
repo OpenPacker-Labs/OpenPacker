@@ -11,6 +11,7 @@ import {
   systemProbe,
   type ProcessOwner,
 } from '../src/index.js';
+import { describeNamespaced, pidNamespace } from './namespaces.js';
 
 /**
  * The owner rule against the real system: this process, a process that has
@@ -53,7 +54,8 @@ describe('the owner a record names', () => {
         expect.objectContaining({
           startTime: expect.stringMatching(/^\d+$/u),
           pidNamespace: expect.stringMatching(/^\d+$/u),
-          bootId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+          // A digest of the boot id, not the id (X4).
+          bootId: expect.stringMatching(/^d1-[0-9a-f]{32}$/u),
         }),
       );
     expect(await isOwnerAlive(owner)).toBe(true);
@@ -118,49 +120,100 @@ describe.runIf(linux)('an owner from an earlier boot of this machine', () => {
   });
 });
 
-/** Whether this machine lets a process start a PID namespace of its own. */
-const unshare =
-  linux &&
-  spawnSync('unshare', ['--pid', '--fork', '--mount-proc', 'true']).status ===
-    0;
-if (!unshare)
-  console.warn(
-    'process-owner.system.test.ts: `unshare --pid --fork --mount-proc` is refused here (it needs root or user namespaces); the PID-namespace case is skipped',
-  );
-
-describe.runIf(unshare)('a live process in another PID namespace', () => {
-  it('counts as alive, whatever its pid names here', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-owner-pidns-'));
-    temps.push(dir);
-    const script = join(dir, 'owner.ts');
-    const report = join(dir, 'owner.json');
-    await writeFile(
-      script,
-      `import { writeFile } from 'node:fs/promises';
+describeNamespaced(
+  'a live process in another PID namespace',
+  pidNamespace,
+  () => {
+    it('counts as alive, whatever its pid names here', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'opm-owner-pidns-'));
+      temps.push(dir);
+      const script = join(dir, 'owner.ts');
+      const report = join(dir, 'owner.json');
+      await writeFile(
+        script,
+        `import { writeFile } from 'node:fs/promises';
        import { currentOwner } from ${JSON.stringify(ownerSource)};
        await writeFile(${JSON.stringify(report)}, JSON.stringify(await currentOwner()));
        setInterval(() => {}, 1000);`,
-    );
-    const child = spawn(
-      'unshare',
-      ['--pid', '--fork', '--kill-child', '--mount-proc', viteNode, script],
-      { stdio: 'ignore' },
-    );
-    try {
-      while (!existsSync(report))
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      // SAFETY: written by the child a moment ago.
-      const owner = JSON.parse(await readFile(report, 'utf8')) as ProcessOwner;
-      const self = await currentOwner();
-      // The first process of its namespace: pid 1, which here is init.
-      expect(owner.pid).toBe(1);
-      expect(owner.pidNamespace).not.toBe(self.pidNamespace);
-      expect(owner.host).toBe(self.host);
-      expect(await isOwnerAlive(owner)).toBe(true);
-    } finally {
-      const gone = new Promise((resolve) => child.on('exit', resolve));
-      child.kill('SIGKILL');
-      await gone;
-    }
-  }, 60_000);
+      );
+      const [command, ...options] = pidNamespace!;
+      const child = spawn(
+        command!,
+        [...options, '--kill-child', viteNode, script],
+        { stdio: 'ignore' },
+      );
+      try {
+        while (!existsSync(report))
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        // SAFETY: written by the child a moment ago.
+        const owner = JSON.parse(
+          await readFile(report, 'utf8'),
+        ) as ProcessOwner;
+        const self = await currentOwner();
+        // The first process of its namespace: pid 1, which here is init.
+        expect(owner.pid).toBe(1);
+        expect(owner.pidNamespace).not.toBe(self.pidNamespace);
+        expect(owner.host).toBe(self.host);
+        expect(await isOwnerAlive(owner)).toBe(true);
+      } finally {
+        const gone = new Promise((resolve) => child.on('exit', resolve));
+        child.kill('SIGKILL');
+        await gone;
+      }
+    }, 60_000);
+  },
+);
+
+describe.runIf(linux)('a zombie that leads threads that still run', () => {
+  const cc = spawnSync('cc', ['--version'], { stdio: 'ignore' }).status === 0;
+  it.runIf(cc)(
+    'is alive: its leader is Z, and its other threads are the process',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'opm-owner-leader-'));
+      temps.push(dir);
+      const source = join(dir, 'leader.c');
+      await writeFile(
+        source,
+        `#include <pthread.h>
+         #include <stdio.h>
+         #include <unistd.h>
+         static void *worker(void *a) { for (;;) sleep(1); return 0; }
+         int main(void) {
+           pthread_t t;
+           pthread_create(&t, 0, worker, 0);
+           printf("%d\\n", (int)getpid());
+           fflush(stdout);
+           pthread_exit(0);
+         }`,
+      );
+      const program = join(dir, 'leader');
+      expect(spawnSync('cc', ['-pthread', '-o', program, source]).status).toBe(
+        0,
+      );
+      const child = spawn(program, [], { stdio: ['ignore', 'pipe', 'ignore'] });
+      try {
+        const pid = await new Promise<number>((resolve) =>
+          child.stdout.once('data', (data: Buffer) => resolve(Number(data))),
+        );
+        let stat = await systemProbe.stat(pid);
+        while (stat?.state !== 'Z') {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          stat = await systemProbe.stat(pid);
+        }
+        const owner = {
+          ...(await currentOwner()),
+          pid,
+          startTime: stat.startTime,
+        };
+        expect(await isOwnerAlive(owner)).toBe(true);
+        const gone = new Promise((resolve) => child.on('exit', resolve));
+        child.kill('SIGKILL');
+        await gone;
+        expect(await isOwnerAlive(owner)).toBe(false);
+      } finally {
+        child.kill('SIGKILL');
+      }
+    },
+    60_000,
+  );
 });

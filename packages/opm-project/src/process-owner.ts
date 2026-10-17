@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
-import { readFile, readlink } from 'node:fs/promises';
-import { hostname } from 'node:os';
+import { asPlaceDigest } from './owner-digest.js';
+import { currentOwner, systemProbe } from './owner-system.js';
+
+export { placeDigest } from './owner-digest.js';
+export {
+  currentOwner,
+  makeCurrentOwner,
+  systemProbe,
+  type OwnerReads,
+} from './owner-system.js';
 
 /**
  * Which process holds something on disk (a step's lock, its rollback copy), and
@@ -13,10 +21,17 @@ import { hostname } from 'node:os';
  * the same hostname and count pids in a different table. So the record holds
  * where its pid is meaningful as well as the pid:
  *
- * - `machineId`: `/etc/machine-id` (or `/var/lib/dbus/machine-id`);
- * - `host`: the hostname, which is all a system without a machine id offers;
- * - `bootId`: `/proc/sys/kernel/random/boot_id`, since pids start again at
- *   every boot;
+ * - `machineId`: a digest of `/etc/machine-id` (or
+ *   `/var/lib/dbus/machine-id`), never the id: machine-id(5) calls it
+ *   confidential, and a record sits in a project that is committed, cached and
+ *   shared. A keyed hash (`placeDigest`, `d1-` and 32 hex digits) keeps all the
+ *   rule needs, equality; a record an earlier opm wrote with the raw id is read
+ *   back as its digest;
+ * - `host`: the hostname (letters, digits, `.`, `_` and `-`; anything else is
+ *   `_`, so that a host name cannot write to a terminal), which is all a
+ *   system without a machine id offers;
+ * - `bootId`: a digest of `/proc/sys/kernel/random/boot_id`, since pids start
+ *   again at every boot;
  * - `pidNamespace`: the inode of `/proc/self/ns/pid`;
  * - `startTime`: field 22 of `/proc/<pid>/stat`, since a pid is given to
  *   another process once its own ends.
@@ -58,15 +73,19 @@ import { hostname } from 'node:os';
  *
  * The machine id matters in one place only: the `ended` rule. Unreadable on
  * both sides it makes no claim about boots; the owner is then judged by its
- * pid as any other, so a step killed on a host with no machine id is still
- * recovered.
+ * pid as any other. So on a host with no machine id (most container images)
+ * a holder left by a process that has ended is recovered within the boot it
+ * was left in, and after a reboot it is `elsewhere`: that needs
+ * `opm recover --abandon-step`, as does any holder opm cannot place.
  *
  * Where the place agrees, {@link isOwnerAlive} asks the pid:
  *
  * - signal 0 answers ESRCH: gone. EPERM (another user's process has the pid)
  *   and a pid that answers: look at the process;
  * - its `/proc/<pid>/stat` state is Z (a zombie that nobody reaped) or X
- *   (dead): gone, the process has ended;
+ *   (dead): gone, the process has ended. A Z that leads threads still running
+ *   (its main thread exited, the others did not) is the process, and is
+ *   alive: `/proc/<pid>/task` lists more than the leader;
  * - its start time differs from the recorded one: gone, the pid was reused.
  *   Not compared when this process cannot read its own start time (a `/proc`
  *   of another PID namespace) or the record has none; then it is alive;
@@ -80,6 +99,32 @@ import { hostname } from 'node:os';
  * The `ended` rule trusts the machine id: two machines cloned from one image
  * that kept its `/etc/machine-id`, with one hostname, sharing a project, would
  * each take the other's live holder for one of an earlier boot.
+ *
+ * ## Other holders: what they map onto this
+ *
+ * The module is the one rule, so a holder with its own record maps its fields
+ * onto {@link ProcessOwner} and calls it, whatever it is called there:
+ *
+ * - A holder that keeps its owner in a directory of its own (a run's scratch,
+ *   a lease) writes it with `writeOwnerFile(dir)` right after making the
+ *   directory and reads it with `readOwnerFile(dir)`: `.owner`, small,
+ *   versioned JSON, replaced atomically, never read through a link
+ *   (`owner-file.ts`). `ownerKey` is a name and cannot be turned back into an
+ *   owner, so it is not a place to keep one. A directory with no file yet
+ *   (`ownerFileProblem` says `missing`: its maker was killed between making it
+ *   and writing the file) is judged by the age of the directory, as an empty
+ *   step lock is; a file that is `unreadable` (cut short, a newer version, a
+ *   link) is judged by nobody and is left alone.
+ * - A holder whose own record has a host-name digest for the machine where the
+ *   system has no machine id (a store lease) puts that digest in `machineId`,
+ *   on both sides, and a field it writes as `'0'` for unreadable is
+ *   `undefined` here. Any text of `[0-9A-Za-z-]{1,64}` is a field; a digest
+ *   of the host name is as good as the machine's for the `ended` rule and no
+ *   better: a clone of the machine with the same host name is the same machine.
+ *   It judges with `ownerPlace(owner, reader, options)` first and
+ *   `isOwnerAlive(owner, reader, probe, options)` for what is `here`; both
+ *   take {@link PlaceOptions}.
+ * - A start time or a pid read from the system is `systemProbe.stat(pid)`.
  */
 export interface ProcessOwner {
   pid: number;
@@ -109,46 +154,12 @@ export interface OwnerProbe {
   signal(pid: number): void;
   /** State letter and start time from `/proc/<pid>/stat`; undefined where unreadable. */
   stat(pid: number): Promise<{ state: string; startTime: string } | undefined>;
+  /** How many threads `/proc/<pid>/task` lists; undefined where unreadable. */
+  tasks?(pid: number): Promise<number | undefined>;
 }
 
 /** The fields compared before a pid is trusted to mean anything here. */
 const PLACE = ['host', 'machineId', 'bootId', 'pidNamespace'] as const;
-
-let self: Promise<ProcessOwner> | undefined;
-
-/** This process, as a record would name it. Read once per process. */
-export function currentOwner(): Promise<ProcessOwner> {
-  self ??= readCurrentOwner();
-  return self;
-}
-
-async function readCurrentOwner(): Promise<ProcessOwner> {
-  const [stat, pidNamespace, bootId, machineId] = await Promise.all([
-    linuxOnly(() => readFile('/proc/self/stat', 'utf8')),
-    linuxOnly(async () => {
-      const link = await readlink('/proc/self/ns/pid');
-      return /^pid:\[(\d+)\]$/u.exec(link)?.[1];
-    }),
-    linuxOnly(async () =>
-      (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
-    ),
-    linuxOnly(readMachineId),
-  ]);
-  // The /proc this process sees may be another PID namespace's: its `self`
-  // then names another pid, and no start time it gives can be compared.
-  const own =
-    stat !== undefined && Number(stat.split(' ', 1)[0]) === process.pid
-      ? parseStat(stat)
-      : undefined;
-  return {
-    pid: process.pid,
-    host: hostname(),
-    ...(!(own === undefined) && { startTime: own.startTime }),
-    ...(!(pidNamespace === undefined) && { pidNamespace }),
-    ...(!(bootId === undefined || bootId === '') && { bootId }),
-    ...(!(machineId === undefined) && { machineId }),
-  };
-}
 
 /** Where `owner` runs, seen from `reader`. See the header for each case. */
 export function ownerPlace(
@@ -179,15 +190,17 @@ export function ownerPlace(
 /**
  * Whether `owner` may still be running. False only when this process can tell
  * that it is not: see the header. `reader` is the process judging, this one by
- * default; `probe` is the system, replaceable in a test.
+ * default; `probe` is the system, replaceable in a test; `options` are the
+ * place rule's ({@link PlaceOptions}).
  */
 export async function isOwnerAlive(
   owner: ProcessOwner,
   reader?: ProcessOwner,
   probe: OwnerProbe = systemProbe,
+  options: PlaceOptions = {},
 ): Promise<boolean> {
   const here = reader ?? (await currentOwner());
-  const place = ownerPlace(owner, here);
+  const place = ownerPlace(owner, here, options);
   if (place !== 'here') return place === 'elsewhere';
   try {
     probe.signal(owner.pid);
@@ -203,7 +216,10 @@ export async function isOwnerAlive(
   if (here.startTime === undefined) return true;
   const now = await probe.stat(owner.pid);
   if (now === undefined) return true;
-  if (now.state === 'Z' || now.state === 'X' || now.state === 'x') return false;
+  if (now.state === 'X' || now.state === 'x') return false;
+  // A zombie is gone, unless it is the leader of threads that still run.
+  if (now.state === 'Z' && ((await probe.tasks?.(owner.pid)) ?? 0) <= 1)
+    return false;
   return owner.startTime === undefined || now.startTime === owner.startTime;
 }
 
@@ -243,7 +259,7 @@ export function parseProcessOwner(value: unknown): ProcessOwner | undefined {
   const { pid, host } = record;
   if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0)
     return undefined;
-  if (typeof host !== 'string' || host === '' || host.length > 255)
+  if (typeof host !== 'string' || !/^[A-Za-z0-9._-]{1,255}$/u.test(host))
     return undefined;
   const owner: ProcessOwner = { pid, host };
   for (const field of [
@@ -256,57 +272,12 @@ export function parseProcessOwner(value: unknown): ProcessOwner | undefined {
     if (text === undefined) continue;
     if (typeof text !== 'string' || !/^[0-9A-Za-z-]{1,64}$/u.test(text))
       return undefined;
-    owner[field] = text;
+    owner[field] =
+      field === 'machineId'
+        ? asPlaceDigest('machine', text)
+        : field === 'bootId'
+          ? asPlaceDigest('boot', text)
+          : text;
   }
   return owner;
-}
-
-/** What the system says: `kill(pid, 0)` and `/proc/<pid>/stat` (Linux). */
-export const systemProbe: OwnerProbe = {
-  signal: (pid) => {
-    process.kill(pid, 0);
-  },
-  stat: async (pid) => {
-    const text = await linuxOnly(() => readFile(`/proc/${pid}/stat`, 'utf8'));
-    return text === undefined ? undefined : parseStat(text);
-  },
-};
-
-/**
- * `pid (comm) state ppid …`: comm may hold spaces and parentheses, so the
- * fields are counted from the last `)`. The state is field 3, the start time
- * field 22, the 20th after it.
- */
-function parseStat(
-  stat: string,
-): { state: string; startTime: string } | undefined {
-  const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-  const [state] = fields;
-  const startTime = fields[19];
-  return state !== undefined &&
-    /^[A-Za-z]$/u.test(state) &&
-    startTime !== undefined &&
-    /^\d+$/u.test(startTime)
-    ? { state, startTime }
-    : undefined;
-}
-
-async function readMachineId(): Promise<string | undefined> {
-  for (const path of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
-    const text = await readFile(path, 'utf8').catch(() => undefined);
-    const id = text?.trim();
-    if (id !== undefined && /^[0-9a-f]{32}$/u.test(id)) return id;
-  }
-  return undefined;
-}
-
-async function linuxOnly<T>(
-  read: () => Promise<T | undefined>,
-): Promise<T | undefined> {
-  if (process.platform !== 'linux') return undefined;
-  try {
-    return await read();
-  } catch {
-    return undefined;
-  }
 }

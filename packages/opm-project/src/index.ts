@@ -52,15 +52,25 @@ export {
   currentOwner,
   describeProcessOwner,
   isOwnerAlive,
+  makeCurrentOwner,
   ownerKey,
   ownerPlace,
   parseProcessOwner,
+  placeDigest,
   systemProbe,
   type OwnerPlace,
   type OwnerProbe,
+  type OwnerReads,
   type PlaceOptions,
   type ProcessOwner,
 } from './process-owner.js';
+export {
+  OWNER_FILE,
+  ownerFileProblem,
+  readOwnerFile,
+  writeOwnerFile,
+  type OwnerFileProblem,
+} from './owner-file.js';
 export { snapshotProject } from './project-rollback.js';
 
 export {

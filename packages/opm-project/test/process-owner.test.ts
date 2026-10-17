@@ -4,7 +4,6 @@ import {
   isOwnerAlive,
   ownerKey,
   ownerPlace,
-  parseProcessOwner,
   type OwnerProbe,
   type PlaceOptions,
   type ProcessOwner,
@@ -116,6 +115,7 @@ function probe(
   answer: {
     signal?: string;
     stat?: { state: string; startTime: string };
+    tasks?: number;
   },
   asked: string[] = [],
 ): OwnerProbe {
@@ -129,6 +129,12 @@ function probe(
       asked.push(`stat ${pid}`);
       return answer.stat;
     },
+    ...(!(answer.tasks === undefined) && {
+      tasks: async (pid: number) => {
+        asked.push(`tasks ${pid}`);
+        return answer.tasks;
+      },
+    }),
   };
 }
 const running = { state: 'S', startTime: '777' };
@@ -203,6 +209,57 @@ describe('whether an owner of this place may still be running', () => {
       ),
     ).toBe(true);
     expect(asked).toEqual(['signal 4242']);
+  });
+
+  describe('a zombie that is the leader of threads still running (N8)', () => {
+    const leader = { stat: { ...running, state: 'Z' } };
+    it('is alive while another thread of its process runs', async () => {
+      expect(
+        await isOwnerAlive(owner, reader, probe({ ...leader, tasks: 2 })),
+      ).toBe(true);
+    });
+    it('is gone when no thread is left', async () => {
+      expect(
+        await isOwnerAlive(owner, reader, probe({ ...leader, tasks: 1 })),
+      ).toBe(false);
+      expect(
+        await isOwnerAlive(owner, reader, probe({ ...leader, tasks: 0 })),
+      ).toBe(false);
+    });
+    it('is gone where the threads cannot be listed', async () => {
+      expect(await isOwnerAlive(owner, reader, probe(leader))).toBe(false);
+    });
+    it('is not asked about threads of a process that is not a zombie', async () => {
+      const asked: string[] = [];
+      await isOwnerAlive(
+        owner,
+        reader,
+        probe({ stat: running, tasks: 9 }, asked),
+      );
+      expect(asked).not.toContain('tasks 4242');
+    });
+  });
+
+  describe('with the options of the place rule (X6)', () => {
+    const blind = without(reader, 'pidNamespace');
+    const peer = without(owner, 'pidNamespace');
+    it.runIf(process.platform === 'linux')(
+      'a reader that cannot read its namespace sees every owner elsewhere when asked to',
+      async () => {
+        const asked: string[] = [];
+        expect(
+          await isOwnerAlive(peer, blind, probe({ signal: 'ESRCH' }, asked), {
+            unreadableNamespaceIsForeign: true,
+          }),
+        ).toBe(true);
+        expect(asked).toEqual([]);
+      },
+    );
+    it('and otherwise asks the pid', async () => {
+      expect(
+        await isOwnerAlive(peer, blind, probe({ signal: 'ESRCH' }), {}),
+      ).toBe(false);
+    });
   });
 
   it('asks nothing of an owner of another place', async () => {
@@ -287,26 +344,5 @@ describe('the name of an owner', () => {
 
   it('names the process in a message', () => {
     expect(describeProcessOwner(owner)).toBe('process 4242 on vm');
-  });
-});
-
-describe('a record read back from disk', () => {
-  it('keeps an owner whose fields are well formed', () => {
-    expect(parseProcessOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
-  });
-
-  it.each([
-    ['no pid', { host: 'vm' }],
-    ['pid 0', { pid: 0, host: 'vm' }],
-    ['a pid as text', { pid: '12', host: 'vm' }],
-    ['no host', { pid: 12 }],
-    [
-      'a start time that is not a field',
-      { pid: 12, host: 'vm', startTime: '1 2' },
-    ],
-    ['a namespace as a number', { pid: 12, host: 'vm', pidNamespace: 4 }],
-    ['not an object', 'process 12'],
-  ])('refuses %s', (_case, value) => {
-    expect(parseProcessOwner(value)).toBeUndefined();
   });
 });

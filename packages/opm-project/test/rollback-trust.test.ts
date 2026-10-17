@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   chown,
@@ -14,6 +13,7 @@ import {
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { describeNamespaced, pidNamespace } from './namespaces.js';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   currentOwner,
@@ -198,17 +198,7 @@ describe('a record that cannot be read', () => {
   });
 });
 
-const linux = process.platform === 'linux';
-const unshare =
-  linux &&
-  spawnSync('unshare', ['--pid', '--fork', '--mount-proc', 'true']).status ===
-    0;
-if (!unshare)
-  console.warn(
-    'rollback-trust.test.ts: `unshare --pid --fork --mount-proc` is refused here (it needs root or user namespaces); the PID-namespace case is skipped',
-  );
-
-describe.runIf(unshare)('a live step in another PID namespace', () => {
+describeNamespaced('a live step in another PID namespace', pidNamespace, () => {
   it('keeps its copy: recovery from here stops, and nothing is put back', async () => {
     const root = await project(['base']);
     const ready = `${root}.ready`;
@@ -220,7 +210,7 @@ describe.runIf(unshare)('a live step in another PID namespace', () => {
        await writeFile(join(root, 'opm.toml'), 'half-written\\n');
        await writeFile(${JSON.stringify(ready)}, '');
        setInterval(() => {}, 1000);`,
-      ['unshare', '--pid', '--fork', '--kill-child', '--mount-proc'],
+      [...pidNamespace!, '--kill-child'],
     );
     try {
       await until(ready);
