@@ -115,6 +115,21 @@ test('Turbo cannot restore a stale Rust-backed embedded build', () => {
   assert.ok(turbo.globalDependencies.includes('tsconfig.base.json'));
 });
 
+// Strict env mode hands a task only what turbo.json names. Without these, cargo
+// under `turbo run build` ignores an exported CARGO_TARGET_DIR and builds into
+// the checkout's own target/, so every worktree grows a private copy.
+test('Turbo passes the cargo build settings through to its tasks', () => {
+  const turbo = JSON.parse(readFileSync(join(root, 'turbo.json'), 'utf8'));
+  for (const name of [
+    'CARGO_HOME',
+    'RUSTUP_HOME',
+    'CARGO_TARGET_DIR',
+    'CARGO_INCREMENTAL',
+    'CARGO_BUILD_JOBS',
+  ])
+    assert.ok(turbo.globalPassThroughEnv.includes(name), name);
+});
+
 test('Pact verification compares committed bytes without rewriting them', () => {
   const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   assert.doesNotMatch(manifest.scripts.test, /prettier\s+--write.*pacts/u);
