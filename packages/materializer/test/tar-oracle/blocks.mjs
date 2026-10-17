@@ -70,3 +70,19 @@ export function invalidBase256(length) {
   field[0] = 0x81;
   return field;
 }
+
+/**
+ * A pax header (`x`, or `g` for a global one) holding `records`, as the
+ * "length key=value" lines pax writes; `options` shape its own header.
+ */
+export function pax(records, type = 'x', options = {}) {
+  const text = Object.entries(records)
+    .map(([key, value]) => {
+      const line = ` ${key}=${value}\n`;
+      let length = line.length;
+      length += String(length + String(length).length).length;
+      return `${length}${line}`;
+    })
+    .join('');
+  return entry('PaxHeader/x', text, { ...options, type });
+}

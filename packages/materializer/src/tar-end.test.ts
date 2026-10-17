@@ -65,6 +65,20 @@ const REFUSED: Record<string, string> = {
   'a ctime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
   'a uid that is a base-256 number too large to be safe':
     'TAR_AMBIGUOUS_NUMBER',
+  'an extended header with a path, a global header, then a file':
+    'TAR_AMBIGUOUS_PAX',
+  'a contiguous file (typeflag 7)': 'TAR_AMBIGUOUS_TYPE',
+  'a file with a link name': 'TAR_AMBIGUOUS_LINK',
+  'an extended header with a link name, then a file': 'TAR_AMBIGUOUS_LINK',
+};
+
+/**
+ * Refused although npm and pnpm install the same files: opm cannot say that
+ * its own reading of them is theirs, so it refuses rather than guess.
+ */
+const OVER_REFUSED: Record<string, string> = {
+  'an extended header with a size, a global header, then a file':
+    'TAR_AMBIGUOUS_PAX',
 };
 
 const disagree = (item: OracleCase) =>
@@ -110,6 +124,14 @@ describe('a tar archive npm and pnpm read', () => {
     );
   });
 
+  it('refuses nothing else where they agree than the cases it lists', () => {
+    expect(
+      oracle.cases
+        .filter((item) => !disagree(item) && item.name in OVER_REFUSED)
+        .map(({ name }) => name),
+    ).toEqual(Object.keys(OVER_REFUSED));
+  });
+
   it.each(oracle.cases.map((item) => [item.name, item] as const))(
     '%s',
     async (name, item) => {
@@ -117,7 +139,11 @@ describe('a tar archive npm and pnpm read', () => {
         new Uint8Array(Buffer.from(item.bytes, 'base64')),
       );
       expect(result).toEqual(
-        disagree(item) ? { code: REFUSED[name] } : item.nodeTar.entries,
+        disagree(item)
+          ? { code: REFUSED[name] }
+          : OVER_REFUSED[name] === undefined
+            ? item.nodeTar.entries
+            : { code: OVER_REFUSED[name] },
       );
     },
   );

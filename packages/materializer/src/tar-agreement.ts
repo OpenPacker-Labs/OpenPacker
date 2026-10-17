@@ -122,6 +122,7 @@ export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   assertChecksumAgrees(header, at);
   assertPrefixAgrees(header, at);
   assertNumbersAgree(header, at, hasUstarMagic(header));
+  assertLinkNameAgrees(header, at);
 }
 
 /** node-tar reads the fields after the magic only under `ustar\0` `00`. */
@@ -151,6 +152,38 @@ function assertPrefixAgrees(header: Uint8Array, at: number): void {
 }
 
 /**
+ * Refuse a link name on a header that is no link. node-tar drops such an entry
+ * (`TAR_ENTRY_INVALID`, "linkpath forbidden") and reads its data as headers;
+ * pnpm and opm read it. A directory is dropped too, but has no data and no
+ * file, so the file sets agree and it is not refused. Links themselves are
+ * refused whatever their name.
+ */
+function assertLinkNameAgrees(header: Uint8Array, at: number): void {
+  const type = String.fromCharCode(header[156] ?? 0);
+  if (header[157] === 0 || ['1', '2', '5'].includes(type)) return;
+  throw unsafe(
+    'TAR_AMBIGUOUS_LINK',
+    `the header at offset ${at} has a link name and is no link: npm drops the entry and reads its data as headers, pnpm reads the entry`,
+  );
+}
+
+/**
+ * Refuse a global header after an extended header whose path or size is still
+ * to apply. pnpm applies them to the global header and the file keeps its own
+ * name; node-tar and opm carry them across it to the file.
+ */
+export function assertGlobalAgrees(
+  pending: ReadonlyMap<string, string> | undefined,
+  at: number,
+): void {
+  if (pending?.has('path') !== true && pending?.has('size') !== true) return;
+  throw unsafe(
+    'TAR_AMBIGUOUS_PAX',
+    `the global header at offset ${at} follows an extended header with a path or size: pnpm applies them to it, npm to the entry after it`,
+  );
+}
+
+/**
  * Refuse an entry the readers see as a different kind, or skip a different
  * span for. `spelled` is its path as the archive writes it (a pax path, or the
  * prefix and the name). node-tar takes a directory's size for 0 and a file
@@ -163,6 +196,11 @@ export function assertEntryAgrees(
   size: number,
   spelled: string,
 ): void {
+  if (type === '7')
+    throw unsafe(
+      'TAR_AMBIGUOUS_TYPE',
+      `${spelled} is a contiguous file (typeflag 7): npm extracts it, pnpm throws "Unsupported file type"`,
+    );
   const file = type === '0' || type === '\0';
   if (type === '5' ? size !== 0 : file && spelled.endsWith('/'))
     throw unsafe(

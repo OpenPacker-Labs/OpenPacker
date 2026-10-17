@@ -19,11 +19,7 @@ import { MaterializationError, unsafe } from './errors.js';
 import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
 import { tarNumber, tarText, verifyTarChecksum } from './tar-fields.js';
-import {
-  assertEntryAgrees,
-  assertHeaderAgrees,
-  nextHeader,
-} from './tar-agreement.js';
+import * as agree from './tar-agreement.js';
 
 export { MaterializationError };
 
@@ -444,7 +440,7 @@ function parseTar(
   let count = 0;
   const npmReaders = limits.requireNpmReaderAgreement === true;
   for (;;) {
-    const at = nextHeader(bytes, offset, npmReaders);
+    const at = agree.nextHeader(bytes, offset, npmReaders);
     if (at === undefined) break;
     offset = at;
     const header = bytes.subarray(offset, offset + 512);
@@ -452,7 +448,7 @@ function parseTar(
     if (count > limits.maximumFiles)
       throw unsafe('FILE_COUNT_LIMIT', `${count}`);
     verifyTarChecksum(header);
-    if (npmReaders) assertHeaderAgrees(header, offset);
+    if (npmReaders) agree.assertHeaderAgrees(header, offset);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
     const size = tarNumber(header.subarray(124, 136));
@@ -476,6 +472,7 @@ function parseTar(
       if (type === 'g') {
         if (records.has('path') || records.has('size'))
           throw unsafe('PAX_GLOBAL_REJECTED', name);
+        if (npmReaders) agree.assertGlobalAgrees(pending, offset);
       } else {
         if (pending !== undefined) throw unsafe('INVALID_PAX_HEADER', name);
         pending = records;
@@ -487,7 +484,7 @@ function parseTar(
       throw unsafe('PAX_SIZE_REJECTED', name);
     const spelled =
       pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name);
-    if (npmReaders) assertEntryAgrees(type, size, spelled);
+    if (npmReaders) agree.assertEntryAgrees(type, size, spelled);
     const path = validateArchivePath(spelled, limits);
     pending = undefined;
     if (type === '\0' || type === '0' || type === '7') {
