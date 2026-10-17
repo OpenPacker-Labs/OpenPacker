@@ -76,23 +76,6 @@ describe('the plan of the ai-bdd lock', () => {
     ).toHaveLength(40);
   });
 
-  it("keeps each importer's direct dependencies in its own node_modules", async () => {
-    const lock = await read('ai-bdd.pnpm-lock.yaml');
-    const direct = lock.packages.filter((pkg) => pkg.direct);
-    expect(direct.some((pkg) => pkg.path === 'node_modules/typescript')).toBe(
-      true,
-    );
-    expect(
-      direct.some(
-        (pkg) =>
-          pkg.path === 'packages/sdk/node_modules/zod' ||
-          pkg.path.startsWith('packages/sdk/node_modules/'),
-      ),
-    ).toBe(true);
-    for (const pkg of direct)
-      expect(pkg.path.match(/node_modules/gu)).toHaveLength(1);
-  });
-
   it('puts the one package of two sets of peers in two places and names its instances', async () => {
     const lock = await read('hobo.cut.pnpm-lock.yaml');
     const vitest = lock.packages.filter((pkg) => pkg.packageName === 'vitest');
@@ -122,5 +105,77 @@ describe('--omit peer', () => {
     expect(error?.message).toBe(
       'opm ci --omit peer does not apply to a pnpm lock: it writes resolved peers as ordinary dependencies, so there is nothing to omit them by',
     );
+  });
+});
+
+/**
+ * A member's own copy of an instance that Node would find from the member
+ * anyway, at an enclosing member's or the project's node_modules: one lock
+ * instance at two real paths, so two module instances (ADR 0055 §9).
+ */
+function redundantCopies(lock: FrozenLock): string[] {
+  const members = new Set(lock.workspace?.memberDirs ?? []);
+  const at = new Map(lock.packages.map((pkg) => [pkg.path, pkg.instance]));
+  const out: string[] = [];
+  for (const pkg of lock.packages) {
+    const own = /^(.+?)\/node_modules\/((?:@[^/]+\/)?[^/]+)$/u.exec(pkg.path);
+    const [, dir, name] = own ?? [];
+    if (dir === undefined || name === undefined || !members.has(dir)) continue;
+    const segments = dir.split('/');
+    const above = [
+      ...segments
+        .map((_, index) => segments.slice(0, index).join('/'))
+        .filter((outer) => outer !== '' && members.has(outer))
+        .reverse(),
+      '',
+    ];
+    for (const outer of above) {
+      const holder = at.get(
+        outer === '' ? `node_modules/${name}` : `${outer}/node_modules/${name}`,
+      );
+      if (holder === undefined) continue;
+      if (holder === pkg.instance) out.push(`${pkg.path} (${pkg.instance})`);
+      break;
+    }
+  }
+  return out;
+}
+
+describe.each([
+  'ai-bdd.pnpm-lock.yaml',
+  'hobo.cut.pnpm-lock.yaml',
+  'opensesame.cut.pnpm-lock.yaml',
+] as const)('one real path per instance in the plan of %s', (name) => {
+  it('writes no instance again in a member that already finds it', async () => {
+    const lock = await read(name);
+    expect(redundantCopies(lock)).toEqual([]);
+  });
+
+  it("places no instance both in a member's own node_modules and anywhere else: no version conflict forces it here", async () => {
+    const lock = await read(name);
+    const members = new Set(lock.workspace?.memberDirs ?? []);
+    const memberSlot = (path: string): boolean => {
+      const own = /^(.+?)\/node_modules\/(?:@[^/]+\/)?[^/]+$/u.exec(path);
+      return own !== null && members.has(own[1]!);
+    };
+    const places = new Map<string, string[]>();
+    for (const pkg of lock.packages)
+      places.set(pkg.instance!, [
+        ...(places.get(pkg.instance!) ?? []),
+        pkg.path,
+      ]);
+    expect(
+      [...places].filter(
+        ([, paths]) => paths.length > 1 && paths.some(memberSlot),
+      ),
+    ).toEqual([]);
+  });
+
+  it("puts every importer's direct dependencies at the top of a node_modules, the member's or the project's", async () => {
+    const lock = await read(name);
+    const direct = lock.packages.filter((pkg) => pkg.direct);
+    expect(direct.length).toBeGreaterThan(0);
+    for (const pkg of direct)
+      expect(pkg.path.match(/node_modules/gu)).toHaveLength(1);
   });
 });

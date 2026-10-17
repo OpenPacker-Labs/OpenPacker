@@ -117,14 +117,20 @@ describe('choosing members of a pnpm workspace', () => {
   it('installs the filtered member, the members it links and what they need, not the project', async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['web'] } });
-    expect(await w.list('packages/web/node_modules')).toEqual(
-      expect.arrayContaining(['left']),
-    );
-    expect(await w.list('packages/lib/node_modules')).toEqual([
+    // The members' own dependencies are shared at the project, as npm -w
+    // places them; the project's own (a, shared, tool) are not installed.
+    expect(await w.list('node_modules')).toEqual([
       '.opm-layout.json',
+      'left',
+      'lib',
       'right',
     ]);
-    expect(await w.list('node_modules')).toEqual(['.opm-layout.json', 'lib']);
+    expect(w.load('left/package.json', 'packages/web')).toMatchObject({
+      version: '1.0.0',
+    });
+    expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
+      version: '1.0.0',
+    });
   });
 
   it('adds the project with --include-workspace-root', async () => {
@@ -138,10 +144,10 @@ describe('choosing members of a pnpm workspace', () => {
   it("reads pnpm's selectors: a dependency closure with ..., a glob, an exclusion", async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['./packages/*', '!web'] } });
-    expect(await w.list('packages/lib/node_modules')).toEqual([
-      '.opm-layout.json',
-      'right',
-    ]);
+    expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
+      version: '1.0.0',
+    });
+    expect(await w.list('node_modules')).toEqual(['.opm-layout.json', 'right']);
     await expect(
       stat(join(w.dir, 'packages/web/node_modules')),
     ).rejects.toThrow();

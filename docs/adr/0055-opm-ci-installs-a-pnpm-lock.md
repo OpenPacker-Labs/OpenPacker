@@ -135,14 +135,40 @@ design:
    edges, from the importer's directory. The planner (`pnpm-install/place*.ts`)
    chooses; it is the job arborist does when npm writes a lock, and it ends in
    the same `PlacedEntry` list the npm lock gives `planLayoutFromPaths`.
-9. **A direct dependency of an importer lives in that importer's own
-   `node_modules`**, the project's for the root importer
-   (`packages/web/node_modules/vitest`). Always, even when the same instance
-   would also resolve from the project's. Reasons: a member's version of a name
-   cannot collide with another member's or the project's; its `.bin` shims are
-   its own and take precedence on its `PATH` (ADR 0047); the rule is stated and
-   checked from the lock alone. It costs a directory tree of hard links per
-   placement (see Consequences), not a file.
+9. **One lock instance has one real path wherever no other version holds its
+   name**, as pnpm (one `node_modules/.pnpm` directory per instance, linked to
+   from each importer) and npm (arborist hoists a member's dependency to the
+   root unless it conflicts) lay it out. Node keys its module cache by real
+   path, so each copy of one instance is a separate module, and state held at
+   module level does not survive it (two members and the project depending on
+   `react@18.3.1`, written three times, render "Invalid hook call"). The
+   project's direct dependencies live in its `node_modules`. A member's are
+   placed as everything else is (point 10), from the member's directory: nothing
+   is written when Node already finds that instance from the member, at the
+   project or an enclosing member; it goes to the project's `node_modules` when
+   nothing answers there and it is the instance of its name the most packages
+   and importers want; otherwise it is the member's own
+   (`packages/web/node_modules/x` when the project holds another `x`). One case
+   keeps a copy in the member although the project's would do: when the shared
+   copy would find, under a name the member requires itself, another copy of the
+   instance the member requires (a peer: `dom@1.0.0(react@18.2.0)` shared at the
+   project beside the project's react 18.3 needs its own react 18.2 beside it, a
+   second copy of the one the member loads), the member gets the dependency in
+   its own `node_modules`, beside its peer. A shared dependency is still a
+   direct one (the policy's depth, the precedence of its executable); its shim
+   is in the `.bin` beside it, which `opm run` and `opm exec` put on a member's
+   `PATH` (ADR 0047, every ancestor's `node_modules/.bin`); a member installed
+   alone (`-w`, `--filter`) finds it at the project, as `npm ci -w` places it;
+   and it is left out with its importer's list (`--omit`).
+
+   Amended 2026-10-17. The rule was "always in the importer's own
+   `node_modules`, even when the same instance would also resolve from the
+   project's", counted as a cost in disk only: ai-bdd's plan wrote 8 instances
+   at a member and at the project (`vitest`, `zod` among them; 362 places, 354
+   now), the OpenSesame cut `vitest@4.1.11` at 6 real paths, and `planFrozen`'s
+   tests on those locks and HoBo's cut now hold that no instance is placed both
+   in a member's own `node_modules` and anywhere else.
+
 10. **Everything else is placed as the closure planner places it**
     (`layout-plan.ts`), generalised to several tops: breadth-first from the
     direct placements; for each edge of a placed instance, look up what Node
@@ -150,10 +176,11 @@ design:
     written; if it is another instance of the name, the wanted one is nested in
     the dependent's own `node_modules` (shadowing for that package and what is
     below it only); if nothing answers, it goes to the project's `node_modules`
-    when it is the instance of that name the most packages want, and beside its
-    dependent otherwise. A tie is broken by the newer version, then by key. A
-    name that differs only by case from one already in the directory is nested
-    instead (ADR 0054 §17 refuses what cannot be).
+    when it is the instance of that name the most packages and importers want
+    (an importer's edge counts, so two members that share an instance elect it),
+    and beside its dependent otherwise. A tie is broken by the newer version,
+    then by key. A name that differs only by case from one already in the
+    directory is nested instead (ADR 0054 §17 refuses what cannot be).
 11. **A member link** is a link at `node_modules/<name>` in the project, where
     the name is the one the importer gives the dependency: the member's own
     name, or an alias (`"e": "workspace:b@*"` is a link at `node_modules/e`), as

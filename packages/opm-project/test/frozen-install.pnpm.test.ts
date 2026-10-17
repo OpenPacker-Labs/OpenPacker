@@ -111,15 +111,19 @@ describe('installFrozen of a pnpm workspace', () => {
     );
   });
 
-  it("keeps a member's direct dependencies in the member and shares the rest at the project", async () => {
+  it("shares a member's direct dependency at the project unless another version or its peer keeps it in the member", async () => {
     const w = await fixture();
     await w.install();
+    // web's dom was resolved against react 18.2 and web requires react 18.2,
+    // which the project's 18.3 shadows: both stay in web, one copy each.
     expect(await w.list('packages/web/node_modules')).toEqual(
       expect.arrayContaining(['dom', 'react']),
     );
-    expect(await w.list('packages/lib/node_modules')).toEqual(
-      expect.arrayContaining(['dom', 'react']),
-    );
+    // lib's react 18.3 is shared at the project; its dom stays in lib, the
+    // project's dom name going to the variant more importers want.
+    expect(await w.list('packages/lib/node_modules')).not.toContain('react');
+    expect(await w.list('packages/lib/node_modules')).toContain('dom');
+    expect(w.load('react/package.json')).toMatchObject({ version: '18.3.0' });
     // `shared` is wanted by `a` alone and sits at the project.
     expect((await stat(join(w.dir, 'node_modules/shared'))).isDirectory()).toBe(
       true,

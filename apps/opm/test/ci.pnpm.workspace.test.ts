@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -137,6 +138,12 @@ ${entry('a')}${entry('left')}${entry('plat-arm64', '    cpu: [arm64]\n')}${entry
   return { dir, urls, fetcher };
 }
 
+/** Where Node finds `name`'s package.json from a member's directory. */
+const resolveFrom = (dir: string, member: string, name: string): string =>
+  createRequire(join(dir, member, 'package.json')).resolve(
+    `${name}/package.json`,
+  );
+
 const list = async (dir: string, path: string) =>
   (await readdir(join(dir, path))).filter((n) => !n.startsWith('.')).sort();
 
@@ -187,9 +194,15 @@ describe('opm ci --filter', () => {
     const result = await run(p, '--filter', 'web');
     expect(result.err).toBe('');
     expect(result.code).toBe(EXIT_CODES.success);
-    expect(await list(p.dir, 'packages/web/node_modules')).toEqual(['left']);
-    expect(await list(p.dir, 'packages/lib/node_modules')).toEqual(['right']);
-    expect(await list(p.dir, 'node_modules')).toEqual(['lib']);
+    // The members' own dependencies are shared at the project (ADR 0055 §9),
+    // where each member finds its own; the project's own are not installed.
+    expect(await list(p.dir, 'node_modules')).toEqual(['left', 'lib', 'right']);
+    expect(resolveFrom(p.dir, 'packages/web', 'left')).toBe(
+      join(p.dir, 'node_modules/left/package.json'),
+    );
+    expect(resolveFrom(p.dir, 'packages/lib', 'right')).toBe(
+      join(p.dir, 'node_modules/right/package.json'),
+    );
     expect(result.out).toContain(
       '  workspace: 1 of 2 members linked, not fetched',
     );
@@ -200,7 +213,10 @@ describe('opm ci --filter', () => {
     expect((await run(p, '-F', 'lib', '-F', '!web')).code).toBe(
       EXIT_CODES.success,
     );
-    expect(await list(p.dir, 'packages/lib/node_modules')).toEqual(['right']);
+    expect(await list(p.dir, 'node_modules')).toEqual(['right']);
+    expect(resolveFrom(p.dir, 'packages/lib', 'right')).toBe(
+      join(p.dir, 'node_modules/right/package.json'),
+    );
   });
 
   it('needs a selector, refuses one that matches nothing, and refuses it with -w', async () => {
