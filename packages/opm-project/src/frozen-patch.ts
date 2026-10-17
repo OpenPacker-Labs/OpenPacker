@@ -20,7 +20,10 @@
  * that lost never writes a record for a tree that is not the one in place.
  * An entry that is there already is adopted after its tree is hashed again
  * against that record, as an archive's is, and one whose record its
- * publisher has not written yet is waited for. The unpatched entry was proved
+ * publisher has not written yet is waited for. A publisher that died between
+ * the rename and the record leaves an entry with no record for good, so after
+ * the wait the install makes the tree again from the unpatched entry it has
+ * proved, and records the entry in place only if it is that tree. The unpatched entry was proved
  * to be the package the lock names before this runs: the patch is applied to
  * bytes that are known, and a patch that changes `package.json` changes what
  * is installed, not what was checked.
@@ -101,8 +104,9 @@ async function copyTree(from: string, to: string): Promise<void> {
 
 /**
  * How long an entry another install has renamed into place may be without its
- * record before it is taken for one whose publisher died: that install writes
- * the record right after the rename.
+ * record before it is taken for one whose publisher died, and checked by
+ * making its tree again: that install writes the record right after the
+ * rename.
  */
 const RECORD_WAIT_MS = 10_000;
 
@@ -115,9 +119,9 @@ const isThere = (path: string): Promise<boolean> =>
     },
   );
 
-/** Wait while `path` is in place and its record is not, for up to `RECORD_WAIT_MS`. */
-async function recordedOrGone(path: string): Promise<void> {
-  const deadline = Date.now() + RECORD_WAIT_MS;
+/** Wait while `path` is in place and its record is not, for up to `waitMs`. */
+async function recordedOrGone(path: string, waitMs: number): Promise<void> {
+  const deadline = Date.now() + waitMs;
   while (
     Date.now() < deadline &&
     !(await isThere(`${path}.tree`)) &&
@@ -126,35 +130,84 @@ async function recordedOrGone(path: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
-/** Make, or adopt, the patched entry of one archive and one patch. */
-async function publishPatched(input: {
+/** What making the patched entry takes. */
+interface PublishInput {
   storeRoot: string;
   shared: boolean;
   unpatched: StoredEntry;
   patch: FrozenPatch;
   label: string;
   format: PatchFormat;
-}): Promise<string> {
+  /** How long to wait for another install's record; `RECORD_WAIT_MS` if absent. */
+  recordWaitMs?: number;
+}
+
+/** The unpatched entry copied to `tmp` and patched there; the tree's digest. */
+async function buildPatched(input: PublishInput, tmp: string): Promise<string> {
+  await copyTree(input.unpatched.path, tmp);
+  try {
+    await input.format.applyFrozenPatch!(
+      await packageDirectory(tmp),
+      input.patch,
+      input.label,
+    );
+  } catch (error) {
+    throw adapterFailure(error);
+  }
+  return stableStoreTreeDigest(tmp);
+}
+
+/**
+ * Record an entry in place that has no record, if its files are the tree the
+ * patch gives: made again in a temporary directory beside it from the
+ * unpatched entry, whose archive was proved to be the package the lock names.
+ * An entry that is not that tree is never trusted, and is the error an
+ * unrecorded entry always was.
+ */
+async function recordUnrecorded(
+  input: PublishInput,
+  key: string,
+  path: string,
+): Promise<void> {
+  const tmp = join(input.storeRoot, `.${key}.materialize-${randomUUID()}`);
+  try {
+    const made = await buildPatched(input, tmp);
+    // An entry that is gone, or a record that came meanwhile, is the caller's to see.
+    if (!(await isThere(path)) || (await isThere(`${path}.tree`))) return;
+    const inPlace = await stableStoreTreeDigest(path).catch(
+      (error: NodeJS.ErrnoException) => {
+        // Removed while it was read: there is nothing to record.
+        if (error.code === 'ENOENT') return undefined;
+        throw error;
+      },
+    );
+    if (inPlace === undefined) return;
+    if (inPlace !== made)
+      throw new OpmError(
+        'VERIFICATION_FAILED',
+        `Shared store entry ${key} has no tree digest and is not the tree its patch gives; ` +
+          `remove ${path} and ${path}.tree and run the command again`,
+      );
+    await recordTreeDigest(path, made);
+  } finally {
+    await removeStableTree(tmp).catch(() => undefined);
+  }
+}
+
+/** Make, or adopt, the patched entry of one archive and one patch. */
+async function publishPatched(input: PublishInput): Promise<string> {
   const key = patchedStoreKey(input.unpatched.digest, input.patch.digest);
   const path = join(input.storeRoot, key);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (input.shared) {
-      await recordedOrGone(path);
+      await recordedOrGone(path, input.recordWaitMs ?? RECORD_WAIT_MS);
+      if ((await isThere(path)) && !(await isThere(`${path}.tree`)))
+        await recordUnrecorded(input, key, path);
       if ((await adoptExistingEntry(path, key)) !== undefined) return path;
     }
     const tmp = join(input.storeRoot, `.${key}.materialize-${randomUUID()}`);
     try {
-      await copyTree(input.unpatched.path, tmp);
-      try {
-        await input.format.applyFrozenPatch!(
-          await packageDirectory(tmp),
-          input.patch,
-          input.label,
-        );
-      } catch (error) {
-        throw adapterFailure(error);
-      }
-      const treeDigest = await stableStoreTreeDigest(tmp);
+      const treeDigest = await buildPatched(input, tmp);
       if (input.shared) await sealTreeReadOnly(tmp);
       try {
         await rename(tmp, path);
@@ -189,6 +242,7 @@ export async function patchArchives(input: {
   storeRoot: string;
   shared: boolean;
   format: PatchFormat;
+  recordWaitMs?: number;
 }): Promise<{
   byPath: Map<string, StoredEntry>;
   patched: { packages: number; patches: number };
@@ -217,6 +271,9 @@ export async function patchArchives(input: {
         patch: pkg.patch,
         label: `${pkg.packageName}@${pkg.version}`,
         format: input.format,
+        ...(input.recordWaitMs !== undefined && {
+          recordWaitMs: input.recordWaitMs,
+        }),
       });
       made.set(id, entry);
     }

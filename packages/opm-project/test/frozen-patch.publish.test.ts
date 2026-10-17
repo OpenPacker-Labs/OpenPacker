@@ -1,11 +1,17 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FrozenPatch, ProjectFormat } from '@openpacker/adapter-core';
-import { patchArchives, patchedStoreKey } from '../src/frozen-patch.js';
+import { patchedStoreKey } from '../src/frozen-patch.js';
 import { stableStoreTreeDigest } from '../src/generations.js';
 import { adoptExistingEntry } from '../src/shared-store.js';
+import {
+  cleanStores,
+  DIGEST,
+  numbered,
+  PATCH,
+  publish,
+  store,
+} from './frozen-patch-fixture.js';
 
 /**
  * Publishing a patched entry (ADR 0056 §11) when two installs make the same
@@ -16,80 +22,7 @@ import { adoptExistingEntry } from '../src/shared-store.js';
  * written for the losing tree would show.
  */
 
-const temps: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
-});
-
-const DIGEST = `sha256:${'a'.repeat(64)}`;
-const PATCH: FrozenPatch = {
-  key: 'x@1.0.0',
-  file: 'patches/x.patch',
-  hash: 'b'.repeat(64),
-  digest: 'b'.repeat(64),
-  text: '',
-};
-
-/** A shared store holding x@1.0.0's unpatched entry. */
-async function store(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'opm-patch-publish-'));
-  temps.push(root);
-  const unpatched = join(root, `sha256-${'a'.repeat(64)}`, 'package');
-  await mkdir(unpatched, { recursive: true });
-  await writeFile(join(unpatched, 'package.json'), '{"name":"x"}');
-  await writeFile(join(unpatched, 'index.js'), 'original\n');
-  return root;
-}
-
-const LOCK = {
-  packages: [
-    {
-      path: 'node_modules/x',
-      packageName: 'x',
-      version: '1.0.0',
-      patch: PATCH,
-    },
-  ],
-};
-
-function publish(
-  root: string,
-  format: Pick<ProjectFormat, 'applyFrozenPatch'>,
-) {
-  return patchArchives({
-    lock: LOCK,
-    byPath: new Map([
-      [
-        'node_modules/x',
-        {
-          path: join(root, `sha256-${'a'.repeat(64)}`),
-          digest: DIGEST,
-          fetchedBytes: 0,
-          fetched: false,
-        },
-      ],
-    ]),
-    storeRoot: root,
-    shared: true,
-    format,
-  });
-}
-
-/** A format whose `n`th application writes `tree n`, after `wait(n)`. */
-function numbered(wait: (call: number) => Promise<void>) {
-  let calls = 0;
-  const format = {
-    async applyFrozenPatch(dir: string) {
-      calls += 1;
-      const call = calls;
-      await wait(call);
-      await writeFile(join(dir, 'index.js'), `tree ${call}\n`);
-    },
-  };
-  return { format, calls: () => calls };
-}
+afterEach(cleanStores);
 
 describe('a patched entry two installs publish at once', () => {
   it('is recorded as the tree that won the rename, when the loser finishes last', async () => {
