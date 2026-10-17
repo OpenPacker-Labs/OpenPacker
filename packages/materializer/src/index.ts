@@ -20,8 +20,8 @@ import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
 import { tarNumber, tarText, verifyTarChecksum } from './tar-fields.js';
 import {
-  assertChecksumAgrees,
-  assertPrefixAgrees,
+  assertEntryAgrees,
+  assertHeaderAgrees,
   nextHeader,
 } from './tar-agreement.js';
 
@@ -452,10 +452,9 @@ function parseTar(
     if (count > limits.maximumFiles)
       throw unsafe('FILE_COUNT_LIMIT', `${count}`);
     verifyTarChecksum(header);
-    if (npmReaders) assertChecksumAgrees(header, offset);
+    if (npmReaders) assertHeaderAgrees(header, offset);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
-    if (npmReaders) assertPrefixAgrees(header, prefix, offset);
     const size = tarNumber(header.subarray(124, 136));
     const mode = tarNumber(header.subarray(100, 108));
     const type = String.fromCharCode(header[156] ?? 0);
@@ -486,10 +485,10 @@ function parseTar(
     }
     if (pending?.has('size') && pending.get('size') !== String(size))
       throw unsafe('PAX_SIZE_REJECTED', name);
-    const path = validateArchivePath(
-      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name),
-      limits,
-    );
+    const spelled =
+      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name);
+    if (npmReaders) assertEntryAgrees(type, size, spelled);
+    const path = validateArchivePath(spelled, limits);
     pending = undefined;
     if (type === '\0' || type === '0' || type === '7') {
       const file: InspectedArchiveEntry = {

@@ -49,6 +49,13 @@ const REFUSED: Record<string, string> = {
   'a prefix in a GNU header (magic "ustar  ")': 'TAR_AMBIGUOUS_PREFIX',
   'a header whose name starts with NUL, its path in the prefix':
     'TAR_AMBIGUOUS_END',
+  'a directory with a size hides the entries inside it':
+    'TAR_AMBIGUOUS_DIRECTORY',
+  'a file named like a directory, with a size, hides the entries inside it':
+    'TAR_AMBIGUOUS_DIRECTORY',
+  'a directory with a size hides a header and leaves a payload that starts with NUL':
+    'TAR_AMBIGUOUS_DIRECTORY',
+  'a file named like a directory, with no size': 'TAR_AMBIGUOUS_DIRECTORY',
 };
 
 const disagree = (item: OracleCase) =>
@@ -151,6 +158,15 @@ describe('a tar archive of any other ecosystem', () => {
           await opm(Buffer.concat([a, marker, padding]), GENERAL),
           `${marker.length} + ${padding.length}`,
         ).toEqual([['a.js', 'a']]);
+  });
+
+  it("reads a directory's size as before: skipped, not refused", async () => {
+    expect(
+      await opm(
+        bytesOf('a directory with a size hides the entries inside it'),
+        GENERAL,
+      ),
+    ).toEqual([['a.js', 'a']]);
   });
 
   it('ends at two zero blocks and reads nothing after them', async () => {

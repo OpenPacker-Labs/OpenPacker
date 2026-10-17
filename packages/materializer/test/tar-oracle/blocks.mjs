@@ -45,3 +45,21 @@ export const garbage = Buffer.alloc(512, 0x41);
 /** What node-tar takes for a null block: a checksum field that is no number, every other byte zero. */
 export const N = Buffer.alloc(512);
 N.write('        ', 148);
+
+/**
+ * A file() with its typeflag (`type`, '' for NUL), its size field or its link
+ * name set before the checksum is written. The body is `text`, whatever the
+ * size field says.
+ */
+export function shaped(name, text, { type, size, linkname, ...rest } = {}) {
+  return file(name, text, {
+    ...rest,
+    edit: (header) => {
+      if (type !== undefined) header.write(type === '' ? '\0' : type, 156);
+      if (size !== undefined)
+        header.write(`${size.toString(8).padStart(11, '0')}\0`, 124);
+      if (linkname) header.write(linkname, 157);
+      rest.edit?.(header);
+    },
+  });
+}

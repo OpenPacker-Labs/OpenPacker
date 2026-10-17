@@ -116,8 +116,14 @@ function endsHere(bytes: Uint8Array, offset: number): boolean {
   return true;
 }
 
+/** Refuse a header field the readers read differently (ADR 0057 §8). */
+export function assertHeaderAgrees(header: Uint8Array, at: number): void {
+  assertChecksumAgrees(header, at);
+  assertPrefixAgrees(header, at);
+}
+
 /** Refuse a checksum field that node-tar reads as another number than opm. */
-export function assertChecksumAgrees(header: Uint8Array, at: number): void {
+function assertChecksumAgrees(header: Uint8Array, at: number): void {
   if (nodeTarChecksum(header) !== headerSum(header))
     throw unsafe(
       'TAR_AMBIGUOUS_CHECKSUM',
@@ -126,17 +132,36 @@ export function assertChecksumAgrees(header: Uint8Array, at: number): void {
 }
 
 /** Refuse a prefix that node-tar ignores: one without `ustar\0` `00` magic. */
-export function assertPrefixAgrees(
-  header: Uint8Array,
-  prefix: string,
-  at: number,
-): void {
-  if (prefix === '') return;
+function assertPrefixAgrees(header: Uint8Array, at: number): void {
+  if (header[345] === 0) return;
   const magic = header.subarray(257, 265);
   const ustar = [0x75, 0x73, 0x74, 0x61, 0x72, 0, 0x30, 0x30];
   if (!ustar.every((byte, index) => magic[index] === byte))
     throw unsafe(
       'TAR_AMBIGUOUS_PREFIX',
       `the header at offset ${at} has a prefix and no ustar magic: npm ignores the prefix, pnpm joins it to the name`,
+    );
+}
+
+/**
+ * Refuse an entry the readers see as a different kind, or skip a different
+ * span for. `spelled` is its path as the archive writes it (a pax path, or the
+ * prefix and the name). node-tar takes a directory's size for 0 and a file
+ * named with a trailing slash for a directory; pnpm skips a directory's size
+ * and installs the file; opm skips the size. A sized directory therefore
+ * hides, from two of the three, the entries inside its span.
+ */
+export function assertEntryAgrees(
+  type: string,
+  size: number,
+  spelled: string,
+): void {
+  const file = type === '0' || type === '\0';
+  if (type === '5' ? size !== 0 : file && spelled.endsWith('/'))
+    throw unsafe(
+      'TAR_AMBIGUOUS_DIRECTORY',
+      type === '5'
+        ? `the directory ${spelled} has a size of ${size} bytes: npm takes it for 0, pnpm and opm skip that many bytes and read no entry inside them`
+        : `${spelled} is a file named like a directory: npm makes a directory of it, pnpm installs a file`,
     );
 }
