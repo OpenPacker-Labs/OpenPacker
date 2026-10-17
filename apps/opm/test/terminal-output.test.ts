@@ -20,6 +20,12 @@ import type { WorkspacePlan } from '../src/commands/run-select.js';
 import { runOpm } from '../src/opm.js';
 import { runOpmx } from '../src/opmx.js';
 import { capture, makeProject } from './run-fixture.js';
+import {
+  writeInstalled,
+  writeLines,
+  writeNativeProjection,
+  writeToolRan,
+} from '../src/terminal-lines.js';
 import { unsafeIn } from './terminal-fixture.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -162,5 +168,75 @@ describe('what opm and opmx write themselves', () => {
     expect(c.err).toBe(
       `opm: warning: cyclic workspace dependencies ${SHOWN}\nopm: ${SHOWN}\n`,
     );
+  });
+});
+
+/** An OSC that sets the title, BEL, a CSI (C1) and a right-to-left override. */
+const WRITTEN = 'a\u001b]0;PWN\u0007\u009b2J\u202eb';
+const ESCAPED = 'a\\u001b]0;PWN\\u0007\\u009b2J\\u202eb';
+
+describe('lines printed from what a registry, a lock or a package.json wrote', () => {
+  it('opm run with no script: the script names and commands of package.json', async () => {
+    const root = await makeProject({
+      scripts: { [WRITTEN]: `echo ${WRITTEN}` },
+    });
+    const c = capture();
+    expect(await runOpm(['run'], c.io, root)).toBe(0);
+    expect(c.out).toBe(`${ESCAPED}\techo ${ESCAPED}\n`);
+  });
+
+  it.each([
+    ['opm search', 'pkg:npm/' + WRITTEN],
+    ['opm versions', `1.0.0-${WRITTEN}`],
+    ['opm why', `${WRITTEN} is required by the project`],
+  ])('%s: what the registry or the lock answered', (_site, line) => {
+    const c = capture();
+    writeLines([line], c.io);
+    expect(c.out).toContain(ESCAPED);
+    expect(unsafeIn(c.out)).toEqual([]);
+  });
+
+  it("opm list: an alias, purl, bin and install name from the project's lock", () => {
+    const c = capture();
+    writeInstalled(
+      [
+        {
+          alias: WRITTEN,
+          purl: `pkg:npm/${WRITTEN}@1.0.0`,
+          digest: 'sha256-0123456789abcdef',
+          installed: true,
+          bins: [WRITTEN],
+          installedAs: [WRITTEN],
+        },
+      ],
+      c.io,
+    );
+    expect(c.out.split(ESCAPED)).toHaveLength(5);
+    expect(unsafeIn(c.out)).toEqual([]);
+  });
+
+  it('opm install and its kin: the files written, skipped and their semantic loss', () => {
+    const c = capture();
+    writeNativeProjection(
+      {
+        projections: [
+          {
+            ecosystem: 'npm',
+            written: [WRITTEN],
+            skipped: [{ path: WRITTEN, reason: WRITTEN }],
+            semanticLoss: [{ code: WRITTEN, representedMeaning: WRITTEN }],
+          },
+        ],
+      },
+      c.io,
+    );
+    expect(c.out + c.err).toContain(ESCAPED);
+    expect(unsafeIn(c.out + c.err)).toEqual([]);
+  });
+
+  it('opmx: the purl of the tool an ephemeral run started', () => {
+    const c = capture();
+    writeToolRan(c.io, `pkg:npm/demo@${WRITTEN}`, true);
+    expect(c.err).toBe(`opmx: pkg:npm/demo@${ESCAPED} (cached)\n`);
   });
 });
