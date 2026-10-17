@@ -76,6 +76,14 @@ process.on('SIGTERM', () => { note('term'); process.exit(143); });
 note('start');
 fs.writeFileSync(path.join(dir, 'started-' + id), '');
 const deadline = Date.now() + Number(process.env.TRACE_DEADLINE_MS ?? 20000);
+const release = process.env.TRACE_RELEASE;
+if (release !== undefined) {
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(path.join(dir, release))) {
+    if (Date.now() > deadline) { note('stuck'); process.exit(9); }
+    Atomics.wait(nap, 0, 0, 5);
+  }
+}
 const pending = () => waitFor.split(',').filter(Boolean).some((other) => !fs.existsSync(path.join(dir, 'started-' + other)));
 const finish = () => { note('end'); process.exit(Number(code)); };
 const poll = () => {
