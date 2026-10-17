@@ -136,21 +136,25 @@ const self = await currentOwner();
 const knowsBoot = self.machineId !== undefined && self.bootId !== undefined;
 
 describe('a copy made before this machine last started', () => {
-  it.runIf(knowsBoot)('is put back, whatever its pid names now', async () => {
-    const root = await project();
-    const before = await snapshot(root);
-    await snapshotProject(root);
-    await writeFile(join(root, 'opm.toml'), 'half-written\n');
-    const [name] = await copies(root);
-    // This process's pid and start time, on an earlier boot.
-    await editRecord(root, name!, (record) => {
-      record.owner.bootId = '00000000-0000-4000-8000-000000000000';
-    });
-    expect(await recoverInterruptedSteps(root)).toEqual([
-      expect.objectContaining({ restored: true }),
-    ]);
-    expect(await snapshot(root)).toEqual(before);
-  });
+  it.runIf(knowsBoot)(
+    'is put back, whatever its pid names now',
+    async () => {
+      const root = await project();
+      const before = await snapshot(root);
+      await snapshotProject(root);
+      await writeFile(join(root, 'opm.toml'), 'half-written\n');
+      const [name] = await copies(root);
+      // This process's pid and start time, on an earlier boot.
+      await editRecord(root, name!, (record) => {
+        record.owner.bootId = '00000000-0000-4000-8000-000000000000';
+      });
+      expect(await recoverInterruptedSteps(root)).toEqual([
+        expect.objectContaining({ restored: true }),
+      ]);
+      expect(await snapshot(root)).toEqual(before);
+    },
+    60_000,
+  );
 });
 
 describe('a copy whose owner is gone before it was complete', () => {

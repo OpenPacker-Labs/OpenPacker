@@ -7,9 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
   addPackage,
+  currentOwner,
   projectStep,
   recoverInterruptedSteps,
   syncProject,
+  type ProcessOwner,
   type RecoveredStep,
 } from '../src/index.js';
 import { snapshotProject } from '../src/project-rollback.js';
@@ -37,6 +39,10 @@ configureDefaultAdapters();
  * refuses with PROJECT_BUSY naming the holder. A copy is put back only over
  * the state it was taken from or the one its step was about to write.
  */
+
+/** This process, where it can say which machine and boot it runs on. */
+const self = await currentOwner();
+const knowsBoot = self.machineId !== undefined && self.bootId !== undefined;
 
 const hook = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -153,6 +159,41 @@ describe('two steps on one project', () => {
     expect(await projectStep(root, { waitMs: 300 }, async () => 'x')).toBe('x');
     expect(existsSync(left)).toBe(false);
   });
+
+  it.runIf(knowsBoot)(
+    'take over a lock left before this machine last started',
+    async () => {
+      const root = await project([]);
+      const left = join(
+        root,
+        '.opm',
+        'step-11111111-1111-4111-8111-111111111111.lock',
+      );
+      const writeLock = (owner: ProcessOwner) =>
+        writeFile(left, `${JSON.stringify({ lockVersion: 1, owner })}\n`);
+      // This process's pid and place, on an earlier boot: nothing of that
+      // boot is running.
+      await writeLock({
+        ...self,
+        bootId: '00000000-0000-4000-8000-000000000000',
+      });
+      expect(await projectStep(root, { waitMs: 300 }, async () => 'x')).toBe(
+        'x',
+      );
+      expect(existsSync(left)).toBe(false);
+      // The same on another machine cannot be judged, and holds the project.
+      await writeLock({
+        ...self,
+        machineId: 'f'.repeat(32),
+        bootId: '00000000-0000-4000-8000-000000000000',
+      });
+      await expect(
+        projectStep(root, { waitMs: 300 }, async () => 'x'),
+      ).rejects.toMatchObject({ code: 'PROJECT_BUSY' });
+      expect(existsSync(left)).toBe(true);
+    },
+    60_000,
+  );
 
   it('leave no .opm behind in a directory that had none', async () => {
     const dir = temporary(await mkdtemp(join(tmpdir(), 'opm-step-')));
