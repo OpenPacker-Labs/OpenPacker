@@ -874,8 +874,12 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
 const TOKEN68 = /^[A-Za-z0-9\-._~+/]+=*$/u;
 
 export class BoundedFetchTransport implements HttpTransport {
-  /** The origin is asked again, so a caller may let go of what it was given. */
-  readonly refetchable = true;
+  /**
+   * The origin is asked again, so a caller may let go of what it was given;
+   * not over a `fetch` it was handed, which may answer from anywhere, a
+   * recorded sequence of answers among them.
+   */
+  readonly refetchable: boolean;
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
@@ -919,6 +923,7 @@ export class BoundedFetchTransport implements HttpTransport {
       options.fetch === undefined;
     this.#fetch =
       options.fetch ?? (this.#pinProduction ? pinnedFetch : globalThis.fetch);
+    this.refetchable = options.fetch === undefined;
     this.#lookup =
       options.lookup ?? (this.#pinProduction ? defaultHostLookup : undefined);
     this.#delay = options.delay ?? abortableDelay;

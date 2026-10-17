@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { parseUntrustedUrl } from '@openpacker/canonical';
 import {
   DEFAULT_RETAINED_BYTES,
   MAXIMUM_METADATA_BYTES,
   ProviderError,
   RetentionLedger,
+  echoed,
+  redactUrl,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -17,6 +20,15 @@ function etagOf(response: HttpResponse): string | undefined {
 
 const digestOf = (body: Uint8Array): string =>
   createHash('sha256').update(body).digest('hex');
+
+/** The document's address for a message: no credentials, no query, one line. */
+function shown(url: string): string {
+  try {
+    return echoed(redactUrl(parseUntrustedUrl(url)));
+  } catch {
+    return 'a registry document';
+  }
+}
 
 export interface MemoizingOptions {
   /**
@@ -172,7 +184,7 @@ export class MemoizingTransport implements HttpTransport {
       this.#kept.delete(key);
       throw new ProviderError(
         'STALE_METADATA',
-        `The registry changed ${url} during the resolve; run it again`,
+        `The registry changed ${shown(url)} during the resolve; run it again`,
       );
     }
     this.#letGo.delete(key);

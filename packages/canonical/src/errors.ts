@@ -34,7 +34,12 @@ export class CanonicalJsonLimitError extends CanonicalJsonError {
   constructor(
     readonly limit: 'values' | 'depth' | 'cost',
     readonly maximum: number,
-    /** Values begun when the parser stopped; the refused one is included. */
+    /**
+     * Values begun when the parser stopped. A refusal for values or depth
+     * includes the refused value; a refusal for cost may stop at a part that is
+     * not a value (an element's or a member's slot, before its value begins),
+     * and then counts only the values begun before it.
+     */
     readonly visited: number,
     /** Characters of the text consumed when the parser stopped. */
     readonly offset: number,

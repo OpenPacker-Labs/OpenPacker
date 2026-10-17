@@ -169,6 +169,24 @@ describe('a memo with a budget', () => {
     });
   });
 
+  it('says which document changed without what its address carries beside it', async () => {
+    let revision = 0;
+    const registry = new CountingRegistry(true, {}, () => revision);
+    const memo = new MemoizingTransport(registry, { maximumRetainedBytes: 0 });
+    const url =
+      'https://reader:hunter2@r.test/a?token=vtok_dummy_marker_0123456789abcdef';
+    await memo.request({ ...get('a'), url });
+    revision = 1;
+    const error = await memo
+      .request({ ...get('a'), url })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'STALE_METADATA',
+      message:
+        'The registry changed https://r.test/a during the resolve; run it again',
+    });
+  });
+
   it('takes the same document again as the same document', async () => {
     const registry = new CountingRegistry(true, { a: 100, b: 100 });
     const memo = new MemoizingTransport(registry, {
