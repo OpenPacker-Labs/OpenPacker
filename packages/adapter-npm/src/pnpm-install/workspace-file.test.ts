@@ -88,7 +88,7 @@ describe('pnpm-workspace.yaml, read with the bounds of the lock', () => {
 
   it('refuses an anchor, which pnpm does not write', async () => {
     const dir = await project('catalog:\n  a: &v ^1.0.0\n  b: *v\n');
-    expect((await refusal(dir)).message).toMatch(/an anchor \(&v\)/u);
+    expect((await refusal(dir)).message).toMatch(/an anchor "&v"/u);
   });
 
   it('refuses a link, by name and escaped, as an unsafe path', async () => {

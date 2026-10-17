@@ -25,6 +25,7 @@
  * Maps are `Map`s in file order, so a key such as `__proto__` is data.
  */
 
+import { quote } from '@openpacker/adapter-core';
 import {
   Composer,
   Lexer,
@@ -217,7 +218,11 @@ function countNode(state: WalkState): void {
 /** Anchors and tags change what a node means; pnpm writes neither. */
 function refuseAnchorAndTag(state: WalkState, node: Node): void {
   if (node.anchor !== undefined)
-    throw feature(state.text, offsetOf(node), `an anchor (&${node.anchor})`);
+    throw feature(
+      state.text,
+      offsetOf(node),
+      `an anchor ${quote(`&${node.anchor}`)}`,
+    );
   if (node.tag !== undefined)
     throw feature(state.text, offsetOf(node), `the tag ${node.tag}`);
 }
@@ -284,7 +289,7 @@ function walkValue(
       if (map.has(key))
         throw new PnpmLockError(
           'duplicate-key',
-          `lists the key ${JSON.stringify(key)} twice in one mapping (line ${lineOf(state.text, offsetOf(isNode(pair.key) ? pair.key : null))})`,
+          `lists the key ${quote(key)} twice in one mapping (line ${lineOf(state.text, offsetOf(isNode(pair.key) ? pair.key : null))})`,
         );
       map.set(
         key,

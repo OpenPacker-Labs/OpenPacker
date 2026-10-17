@@ -43,6 +43,47 @@ describe('a value in a message', () => {
   });
 });
 
+describe("the lock reader's own refusals", () => {
+  /** The message `readPnpmLock` refuses `text` with. */
+  const refusedWith = (text: string): string => {
+    try {
+      readPnpmLock(text);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error('the lock was read');
+  };
+
+  it('quotes an anchor name, escaping a bidirectional override', () => {
+    const message = refusedWith('a: &\u202eabc {b: 1}\nc: 2\n');
+    expect(hasControl(message)).toBe(false);
+    expect(message).toContain('an anchor "&\\u202eabc"');
+  });
+
+  it('quotes a refused package name, escaping a bidirectional override', () => {
+    const message = refusedWith(
+      LOCK(`importers:
+
+  .:
+    dependencies:
+      a\u202eb:
+        specifier: 1.0.0
+        version: 1.0.0
+
+packages:
+
+${pkg('a\u202eb@1.0.0')}
+
+snapshots:
+
+  a\u202eb@1.0.0: {}
+`),
+    );
+    expect(hasControl(message)).toBe(false);
+    expect(message).toContain('a\\u202eb');
+  });
+});
+
 describe('the platform refusal of a package whose lock entry is hostile', () => {
   const model = buildPnpmModel(
     readPnpmLock(
