@@ -110,7 +110,7 @@ export async function recoverHeldProject(
     )
       throw new OpmError(
         'PROJECT_BUSY',
-        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), run: opm recover --abandon-step ${copyId(name)}`,
+        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), opm recover --abandon-step ${copyId(name)} says what taking it for dead costs and asks you to confirm.`,
       );
     if (restore) {
       await assertRestorable(paths.root, holder, record, copy);

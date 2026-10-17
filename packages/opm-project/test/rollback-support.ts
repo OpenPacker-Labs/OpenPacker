@@ -16,11 +16,14 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, expect } from 'vitest';
 import {
   addPackage,
+  currentOwner,
   initProject,
   projectPaths,
   readManifestFile,
   writeManifestFile,
+  type ProcessOwner,
 } from '../src/index.js';
+import { copyId } from '../src/rollback-recovery.js';
 import { snapshotProject } from '../src/project-rollback.js';
 import { permissive } from './closure-support.js';
 import { NpmRegistryFixture } from './npm-registry-fixture.js';
@@ -277,4 +280,29 @@ export async function killedHalfWay(root: string): Promise<void> {
     step.on('exit', (_code, how) => resolve(how)),
   );
   expect(signal).toBe('SIGKILL');
+}
+
+/** A lock and a copy left by `owner`, a step that did not finish. */
+export async function leftBy(root: string, owner: ProcessOwner) {
+  await snapshotProject(root);
+  const [name] = await copies(root);
+  await editRecord(root, name!, (record) => {
+    Object.assign(record.owner, owner);
+  });
+  await writeFile(join(root, 'opm.toml'), 'half-written\n');
+  const lock = randomUUID();
+  await writeFile(
+    join(root, '.opm', `step-${lock}.lock`),
+    `${JSON.stringify({ lockVersion: 1, owner })}\n`,
+  );
+  return { lock, copy: copyId(name!), name: name! };
+}
+
+/** Another PID namespace of this machine, as a restarted container is. */
+export async function foreign(): Promise<ProcessOwner> {
+  return {
+    ...(await currentOwner()),
+    pid: await exitedPid(),
+    pidNamespace: '4026539999',
+  };
 }

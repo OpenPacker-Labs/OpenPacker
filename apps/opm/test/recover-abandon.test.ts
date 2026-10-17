@@ -115,7 +115,12 @@ describe('opm recover --abandon-step', () => {
     expect(stuck.code).toBe(8);
     expect(stuck.err).toContain(`opm recover --abandon-step ${lock}`);
 
-    const run = await opm(root, 'recover', '--abandon-step', lock);
+    const refused = await opm(root, 'recover', '--abandon-step', lock);
+    expect(refused.code).toBe(8);
+    expect(refused.err).toContain('add --force to the same command');
+    expect(await copies(root)).toHaveLength(1);
+
+    const run = await opm(root, 'recover', '--abandon-step', lock, '--force');
     expect(run.code, run.err).toBe(0);
     expect(run.out).toContain(
       `Removed .opm/step-${lock}.lock, held by process`,

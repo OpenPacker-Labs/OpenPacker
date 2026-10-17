@@ -189,4 +189,27 @@ describeNamespaced('a project laid out over mounts', mountNamespace, () => {
     );
     expect(report.copies).toHaveLength(1);
   }, 60_000);
+
+  it('says plainly that it cannot take the step lock of a read-only project (N6)', async () => {
+    const report = await inMounts(`
+      const { projectStep } = await import(${JSON.stringify(sources.index)});
+      mount('--bind', root, root);
+      mount('-o', 'remount,bind,ro', root);
+      try {
+        await projectStep(root, { waitMs: 0 }, async () => 'ran');
+        report.error = { code: 'NONE', message: 'the step ran' };
+      } catch (error) {
+        report.error = { code: error.code, message: error.message };
+      }
+      report.copies = (await readdir(join(root, '.opm'))).filter((n) => n.startsWith('step-'));
+    `);
+    expect(report.error).toEqual({
+      code: 'UNAVAILABLE',
+      message: expect.stringMatching(
+        /^opm cannot change this project, because it cannot create a step lock in .*\.opm \(its file system is read-only\)\. Nothing was changed\.$/u,
+      ),
+    });
+    expect(report.error?.message).not.toMatch(/\/proc\/self\/fd|EROFS|open '/u);
+    expect(report.copies).toEqual([]);
+  }, 60_000);
 });

@@ -38,7 +38,11 @@ export {
   shellQuote,
 } from './environment-script.js';
 export { describeRecovery, type RecoveredStep } from './rollback-recovery.js';
-export { abandonStep, type AbandonedStep } from './step-abandon.js';
+export {
+  abandonStep,
+  type AbandonOptions,
+  type AbandonedStep,
+} from './step-abandon.js';
 export {
   DEFAULT_STEP_WAIT_MS,
   MAX_STEP_WAIT_MS,

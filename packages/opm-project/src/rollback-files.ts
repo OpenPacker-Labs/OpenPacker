@@ -9,6 +9,7 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { plainReason } from './fs-reason.js';
 import {
   openChild,
   openStableDirectory,
@@ -62,16 +63,6 @@ export function refuse(code: string, holder: string, what: string): OpmError {
   );
 }
 
-const REASONS: Record<string, string> = {
-  EBUSY: 'it is in use (a mount point, or something holds it open)',
-  EXDEV: 'it is on another file system than the copy',
-  EACCES: 'opm may not change it',
-  EPERM: 'opm may not change it',
-  EROFS: 'its file system is read-only',
-  ENOSPC: 'the disk is full',
-  ENOTEMPTY: 'something is still writing into it',
-};
-
 /**
  * A putting back that the file system refused, in words a person can act on:
  * which path, why, what is kept and what to do. Never a raw errno or the name
@@ -83,9 +74,7 @@ export function cannotPutBack(
   error: NodeJS.ErrnoException,
 ): OpmError {
   const copy = join('.opm', basename(holder));
-  const reason =
-    (error.code === undefined ? undefined : REASONS[error.code]) ??
-    error.message;
+  const reason = plainReason(error);
   return new OpmError(
     'UNAVAILABLE',
     `opm could not put ${name} back from ${copy}: ${reason}. The copy is kept, and the project may be half way through the step that left it. Fix that and run opm recover, or remove ${copy} to keep the project as it is now.`,

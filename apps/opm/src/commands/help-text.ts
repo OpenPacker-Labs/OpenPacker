@@ -30,9 +30,15 @@ Usage:
   opm gc [--keep <n>] [--dry-run]     remove store paths no retained generation uses
   opm gc --shared [--dry-run]         remove entries of the user-level package store
                                       that no project links to
-  opm recover [--abandon-step <id>]   finish what a killed opm left; with an id,
-                                      take that step as dead (its owner is in
-                                      another container or host) and put it back
+  opm recover [--path <dir>]          finish what a killed opm left
+  opm recover --abandon-step <id> [--force]
+                                      take that step as dead and put it back, when
+                                      its owner is in another container or host.
+                                      Costs: if that step is running, it goes on
+                                      writing the project with its lock gone and
+                                      its work undone; so opm asks for --force
+                                      unless it can tell the step is dead. A copy
+                                      made in another project is only removed
   Commands that change a project wait for another opm on it: --wait <ms> (or
   OPM_STEP_WAIT_MS), 10000 by default
 

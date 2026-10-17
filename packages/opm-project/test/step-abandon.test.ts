@@ -10,16 +10,14 @@ import {
   parseStepWait,
   projectStep,
   recoverInterruptedSteps,
-  type ProcessOwner,
 } from '../src/index.js';
-import { snapshotProject } from '../src/project-rollback.js';
-import { copyId } from '../src/rollback-recovery.js';
 import {
   child,
   copies,
-  editRecord,
   exitedPid,
+  foreign,
   kill,
+  leftBy,
   project,
   snapshot,
   sources,
@@ -38,31 +36,6 @@ configureDefaultAdapters();
  */
 
 const ABANDON = (id: string) => `opm recover --abandon-step ${id}`;
-
-/** A lock and a copy left by `owner`, a step that did not finish. */
-async function leftBy(root: string, owner: ProcessOwner) {
-  await snapshotProject(root);
-  const [name] = await copies(root);
-  await editRecord(root, name!, (record) => {
-    Object.assign(record.owner, owner);
-  });
-  await writeFile(join(root, 'opm.toml'), 'half-written\n');
-  const lock = randomUUID();
-  await writeFile(
-    join(root, '.opm', `step-${lock}.lock`),
-    `${JSON.stringify({ lockVersion: 1, owner })}\n`,
-  );
-  return { lock, copy: copyId(name!), name: name! };
-}
-
-/** Another PID namespace of this machine, as a restarted container is. */
-async function foreign(): Promise<ProcessOwner> {
-  return {
-    ...(await currentOwner()),
-    pid: await exitedPid(),
-    pidNamespace: '4026539999',
-  };
-}
 
 describe('a step this machine cannot judge', () => {
   it('holds the project, and the refusal says how to let it go', async () => {
@@ -83,6 +56,7 @@ describe('a step this machine cannot judge', () => {
     const told: string[] = [];
     const result = await abandonStep(root, lock, {
       onRecovered: (step) => told.push(step.copy),
+      force: true,
     });
     expect(result.removedLocks).toEqual([
       expect.objectContaining({ file: join('.opm', `step-${lock}.lock`) }),
@@ -107,7 +81,7 @@ describe('a step this machine cannot judge', () => {
     ).rejects.toMatchObject({
       message: expect.stringContaining(ABANDON(copy)),
     });
-    await abandonStep(root, `.rollback-4242-${copy}`);
+    await abandonStep(root, `.rollback-4242-${copy}`, { force: true });
     expect(await snapshot(root)).toEqual(before);
     expect(await copies(root)).toEqual([]);
   }, 60_000);
@@ -122,7 +96,7 @@ describe('a step this machine cannot judge', () => {
       `${JSON.stringify({ lockVersion: 1, owner: other })}\n`,
     );
     await expect(
-      abandonStep(root, mine.lock, { waitMs: 0 }),
+      abandonStep(root, mine.lock, { waitMs: 0, force: true }),
     ).rejects.toMatchObject({
       code: 'PROJECT_BUSY',
       message: expect.stringContaining(ABANDON(theirLock)),
@@ -201,13 +175,15 @@ describe('an id that names nothing', () => {
     });
   });
 
-  it('is a lock that says nothing about who holds it', async () => {
+  it('is a lock that says nothing about who holds it: not let go of without --force', async () => {
     const root = await project(['base']);
     const lock = randomUUID();
     await writeFile(join(root, '.opm', `step-${lock}.lock`), '');
     await expect(abandonStep(root, lock)).rejects.toMatchObject({
-      code: 'INVALID_ROLLBACK',
+      code: 'PROJECT_BUSY',
+      message: expect.stringContaining('does not say who holds it'),
     });
+    expect(await stepLocks(root)).toEqual([`step-${lock}.lock`]);
   });
 });
 
