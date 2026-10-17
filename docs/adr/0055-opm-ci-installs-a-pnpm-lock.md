@@ -1,7 +1,8 @@
 # ADR 0055: `opm ci` installs a pnpm lock
 
 - Status: Accepted
-- Date: 2026-10-12
+- Date: 2026-10-12; amended 2026-10-17 after the independent review of #179 (§1,
+  §7, §11, §15, §18, §19, §20, §23 and Costs)
 - Amends [ADR 0052](0052-pnpm-lockfile-model.md): "Not done: the mapping" and
   the plan in §15 to §18 are built, with the changes listed under each point
   below. [ADR 0051](0051-opm-ci-installs-workspace-locks.md): "pnpm or yarn
@@ -51,14 +52,19 @@ design:
 ### One model, one writer
 
 1. **A frozen install of a pnpm lock builds the same internal model the npm path
-   builds and gives it to the same planner and writer.** `readFrozenLock` of the
-   npm format chooses the lock (§22) and, for a pnpm lock, returns the
+   builds and gives it to the same layout check and writer.** `readFrozenLock`
+   of the npm format chooses the lock (§22) and, for a pnpm lock, returns the
    `FrozenLock` the npm path returns: packages, each with a place (the key an
    npm lock would give it), the member links, the members to shim, what is left
    out and why, what is refused. The host (`opm-project`) is unchanged in how it
    judges policy, takes archives from the store or the lock's origin, proves the
    integrity and writes: `planLayoutFromPaths` checks the places, and
-   `writeNodeModules` writes them. There is no second writer.
+   `writeNodeModules` writes them. There is no second writer. **There is a
+   second placement planner:** an npm lock's places were chosen by arborist, a
+   pnpm lock's are chosen here (`pnpm-install/place.ts`), which re-implements
+   `layout-plan.ts`'s nesting rules for several tops (§10). Two planners that
+   must agree on Node's lookup are a maintenance cost; §12's proof and the
+   oracle are what keep them honest.
 2. **The output is an npm-style nested `node_modules`, what Node resolves, and
    not pnpm's virtual store.** No symlink but a workspace member's (ADR 0050);
    `.bin` entries are shims (ADR 0048, ADR 0054).
@@ -90,11 +96,17 @@ design:
    proof; a registry package's URL is `resolution.tarball` when present and
    otherwise `<registry>/<name>/-/<last segment>-<version>.tgz` with the
    registry the host names (`OPM_REGISTRY_NPM`, the public one by default), so
-   the only origins contacted are the ones the packages being installed have; a
-   `tarball` resolution is a `tarball` source and the default policy refuses it
-   for a transitive dependency. A package without a sha512, sha384 or sha256
-   integrity is refused by name (a sha1 only is refused too: it does not pin the
-   bytes). `deprecated` becomes a lifecycle fact.
+   the only origins contacted are the ones the packages being installed have
+   (the version's `+build` metadata is dropped from the file name, as pnpm's own
+   `@pnpm/tarball-url` drops it); a `tarball` resolution is a `tarball` source
+   and the default policy refuses it for a transitive dependency. A package
+   without a sha512, sha384 or sha256 integrity is refused by name (a sha1 only
+   is refused too: it does not pin the bytes). `deprecated` becomes a lifecycle
+   fact. The integrity proves the bytes and not what they hold, so after
+   extraction the host reads each archive's own `package.json` and refuses one
+   whose name or version (a leading `v` or `=` and build metadata aside) is not
+   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched); neither
+   pnpm nor npm makes that check.
 
 ### Where each instance goes
 
@@ -125,13 +137,15 @@ design:
     dependent otherwise. A tie is broken by the newer version, then by key. A
     name that differs only by case from one already in the directory is nested
     instead (ADR 0054 §17 refuses what cannot be).
-11. **A member link** is a link at `node_modules/<member name>` in the project,
-    as ADR 0051 writes them: a name no other package is allowed to take there,
-    so a registry package of the same name wanted by something hoisted is nested
-    beside its dependent. A `link:` dependency whose name is not the member's
-    own name (`"alias": "workspace:other@*"`) is refused by name: a link inside
-    a member's `node_modules` is outside ADR 0050's rule, and this does not
-    extend it.
+11. **A member link** is a link at `node_modules/<name>` in the project, where
+    the name is the one the importer gives the dependency: the member's own
+    name, or an alias (`"e": "workspace:b@*"` is a link at `node_modules/e`), as
+    pnpm links it. It is a name no other package is allowed to take there, so a
+    registry package of the same name wanted by something hoisted is nested
+    beside its dependent, and two importers linking different members under one
+    name is refused by name. Every link stays in the project's `node_modules`: a
+    link inside a member's `node_modules` is outside ADR 0050's rule, and this
+    does not extend it.
 12. **The plan proves itself.** Before it is returned, every edge of every
     placed instance and every importer is resolved on the planned tree by the
     algorithm of point 8, and any edge that does not find its target is a bug in
@@ -166,11 +180,16 @@ design:
 
 ### Importers, members and what a filter selects
 
-15. **The importers must be the project's members.** The lock's importer ids and
-    the workspace the project's files declare (`pnpm-workspace.yaml`, the
-    discovery of ADR 0049, never following a link) must be the same set of
-    directories; a difference is named on both sides. A project with no
-    `pnpm-workspace.yaml` has one importer, `.`.
+15. **The importers are the project's members.** pnpm holds the projects on disk
+    to the lock, not the lock's list to the disk, and so does this. An importer
+    whose member the project no longer has (`pnpm-workspace.yaml`, the discovery
+    of ADR 0049, never following a link) is left out: not installed, its
+    directory neither cleared nor filled; a member that still links it is
+    refused as opm's own rule. A member the lock does not list is installed as
+    pnpm installs it when it has no dependencies (pnpm's
+    `allProjectsAreUpToDate` asks no more of one), and refused, as opm's own
+    rule, when it has some. A project with no `pnpm-workspace.yaml` is its root
+    importer, `.`.
 16. **Selection.** With no option every importer is installed.
     `--filter <selector>` (pnpm's grammar, ADR 0049 §7), `-w` and `--workspaces`
     choose importers as `opm run` does (ADR 0053); the root importer is left out
@@ -198,7 +217,7 @@ design:
     1. The lock itself: refusals of the reader (ADR 0052), a source this does
        not install (§20), `patchedDependencies` (§20), an
        `excludeLinksFromLockfile` lock, an importer with `dependenciesMeta` or
-       `publishDirectory`.
+       `publishDirectory`, a lock written with `ignoredOptionalDependencies`.
     2. The importers against the members on disk (§15).
     3. **Each importer's specifiers against its `package.json`**, as
        `pnpm install --frozen-lockfile` does (`satisfiesPackageManifest`): the
@@ -210,27 +229,52 @@ design:
        `optionalDependencies` there, in `dependencies` before
        `devDependencies`). A difference names the importer, the dependency, the
        specifier in `package.json` and the one in the lock:
-       `packages/web: react is "^19.0.0" in package.json and "^18.2.0" in pnpm-lock.yaml`.
-       A link's name must be the member's own name (§11).
-    4. **`overrides`**: the lock's section must equal the project's
-       (`resolutions`, then `pnpm.overrides` in the root `package.json`, then
-       `overrides` in `pnpm-workspace.yaml`, each winning over the one before;
-       `$name` is the root's specifier for `name`). A frozen install installs
-       what the lock says and applies no override to it, so for what is
-       installed this is a freshness check only. **For the importers it is
-       more:** pnpm applies a project's overrides to every manifest it reads
-       before it compares specifiers, so an importer that asks for
-       `ts-autocode-rewrite@0.1.0` has `workspace:*` in the lock when the root
-       overrides it, and HoBo's lock has five such specifiers (the check of 3
-       was refused on all five until it applied the overrides first). They are
-       applied as `name`, `name@range` (to a dependency that asks for exactly
-       that range, narrower than pnpm's intersection), `parent>name` (the
-       importer itself as the parent) and `-` (drops the dependency); a lock
-       written under an intersecting range is called stale where pnpm would not.
-    5. **`catalogs`**: each entry the lock records must equal the one
+       `"packages/web": "react" is "^19.0.0" in package.json and "^18.2.0" in pnpm-lock.yaml`.
+       Every value from the lock, `pnpm-workspace.yaml` or a `package.json`
+       reaches a message JSON-quoted, with C1 controls, bidirectional overrides
+       and zero-width characters escaped too, and cut at 200 characters. An
+       importer whose `package.json` sets `publishConfig.directory` when the
+       lock records no `publishDirectory` for it is stale (pnpm:
+       `OUTDATED_LOCKFILE`).
+    4. **`overrides`**: the lock's section must equal the project's, read as
+       pnpm 10 reads it: the root `package.json`'s (`resolutions`, then
+       `pnpm.overrides` winning) when it has any, **replacing**
+       `pnpm-workspace.yaml`'s `overrides` whole, and the workspace file's only
+       when `package.json` has none (pnpm's `getOptionsFromRootManifest` is
+       spread over the config at install; real pnpm 10.28 accepts only the
+       `pnpm.overrides` value when all three set one name); `$name` is the
+       root's specifier for `name`. A frozen install installs what the lock says
+       and applies no override to it, so for what is installed this is a
+       freshness check only. **For the importers it is more:** pnpm applies a
+       project's overrides to every manifest it reads before it compares
+       specifiers, so an importer that asks for `ts-autocode-rewrite@0.1.0` has
+       `workspace:*` in the lock when the root overrides it, and HoBo's lock has
+       five such specifiers (the check of 3 was refused on all five until it
+       applied the overrides first). They are applied by pnpm's own procedure
+       (`createVersionsOverrider`): a `parent>name` whose parent is the importer
+       (named from its `package.json`, the root's too when there is no
+       workspace; its range by `satisfies`) before a plain one; `name@range`
+       when the two ranges intersect (node-semver's `intersects`,
+       `pnpm-install/ranges.ts`); of several that apply, the one pnpm's
+       comparator sorts first, sorted the same way, so the order written decides
+       as it does for pnpm; `-` drops the dependency; a `file:` or `link:`
+       replacement is made relative to the importer; a peer is overridden too,
+       and moves to `dependencies` when the replacement is not a peer range. A
+       selector is split at the first `>` pnpm splits at. The range reader
+       agrees with node-semver on ranges of whole versions without a prerelease
+       written with `^`, `~`, comparators, x-ranges, hyphen ranges and `||` (0
+       differences over about 45,000 random pairs against node-semver 7.8); a
+       range outside those forms (`~>1`, `v1.x`, `<*`, `<=1.2`, a prerelease
+       bound) is not guessed: whether the override applies is refused as opm's
+       own rule, naming it.
+    5. **`ignoredOptionalDependencies`**: a lock written with it is refused
+       (§20); a project that sets it (`package.json` first, then the workspace
+       file) when the lock does not is stale, as pnpm finds it
+       (`LOCKFILE_CONFIG_MISMATCH`).
+    6. **`catalogs`**: each entry the lock records must equal the one
        `pnpm-workspace.yaml` (`catalog`, `catalogs`) declares.
-    6. The target: a package that does not match it (§19).
-    7. The places (`planLayoutFromPaths`' rules: unsafe names, a case collision,
+    7. The target: a package that does not match it (§19).
+    8. The places (`planLayoutFromPaths`' rules: unsafe names, a case collision,
        a parent not installed) and the plan's own proof (§12).
 19. **Platform.** A package whose `os`, `cpu` or `libc` does not match the
     target is left out when its snapshot is `optional`, with whatever only it
@@ -240,11 +284,40 @@ design:
     as pnpm's `supportedArchitectures` does, and a package is installed when
     every dimension it restricts has a supported value that satisfies it.
     `--supported-architectures project` reads the project's own setting
-    (`pnpm.supportedArchitectures` in `package.json`, or
-    `supportedArchitectures` in `pnpm-workspace.yaml`) and only then: HoBo's
-    adds arm64, which is 1,162 MB it does not need on the machine it is
+    (`pnpm.supportedArchitectures` in `package.json`, which wins as it does for
+    pnpm, or `supportedArchitectures` in `pnpm-workspace.yaml`) and only then:
+    HoBo's adds arm64, which is 1,162 MB it does not need on the machine it is
     installed on. Every package left out is reported with its reason, and the
     machines are printed when there are several.
+
+    **This is opm's selection rule, chosen deliberately, and not pnpm's.** It is
+    the optional flag, then the closure of what needs a dropped package
+    outright, then the walk from the importers, each computed in time linear in
+    the lock. Under `--no-optional` it installs exactly what pnpm 10.28 installs
+    (77 of 77 random locks in the review, against real headless installs).
+    Otherwise it differs from pnpm in these documented ways, each found by a
+    differential run against real pnpm over 680 random locks:
+    1. **pnpm's order-dependent skip** (pnpm installs less): pnpm marks a shared
+       optional child skipped when it first reaches it through an unsupported
+       parent and does not revisit it from a supported one, even through a
+       required edge (`a -> {p1 (darwin), p2 (linux)} -> c`: pnpm leaves out
+       `c`, which `p2` needs). opm installs it.
+    2. **pnpm's `--prod` over-install** (pnpm installs more): a dev-only package
+       without the optional flag, reachable through a skipped subtree, is
+       installed by pnpm and left out by opm.
+    3. **Drop propagation** (pnpm installs more): opm also drops an optional
+       package that needs a platform-skipped package outright (arborist's
+       `optionalSet`); pnpm keeps it.
+    4. **Platform negation**: with `os` targets `linux` and `win32`, pnpm skips
+       a package that says `os: ['!win32']` (any supported value negated fails
+       pnpm's `checkList`); opm installs it, because it runs on `linux`.
+    5. **A non-optional package for another platform** is refused by opm; pnpm
+       only warns, unless `engine-strict` is set.
+    6. **`engines` is not read**: pnpm skips an optional package whose
+       `engines.node` the running Node fails; opm installs it.
+
+    The oracle (`model-oracle.py`) re-implements this rule in independent code;
+    it is not an independent model of pnpm, so it cannot see these six.
 
 ### What is refused
 
@@ -258,11 +331,31 @@ design:
     - A package with no integrity, or only a sha1.
     - An injected workspace package (`dependenciesMeta.injected`), a
       `publishDirectory`, a `link:` in a snapshot or to a directory that is not
-      an importer, a `link:` that is not named for its member.
+      an importer, a `link:` to an importer the project no longer has (§15).
+    - A lock written with `ignoredOptionalDependencies`: pnpm also takes those
+      names out of the importers' `package.json`, which opm does not.
+    - An override whose range opm does not read as pnpm does (§18.4).
+    - A member the lock does not list that has dependencies (§15).
+    - An archive whose own `package.json` is not the package the lock names
+      (§7).
     - A lock written with `excludeLinksFromLockfile: true`: its links are not in
       the lock, so the lock cannot say what the importers link.
     - Anything ADR 0052 refuses (another `lockfileVersion`, a second YAML
-      document from pnpm 11, an anchor).
+      document from pnpm 11, an anchor), and the same of `pnpm-workspace.yaml`,
+      which is read by the lock's own bounded reader (at most 1 MiB, opened
+      without following a link: a link is `UNSAFE_PATH`; nesting, lexemes and
+      repeated keys bounded in linear time; tags, anchors, aliases and
+      directives refused). Workspace discovery, which reads the same file for
+      its `packages:`, refuses nesting deeper than 64 and finds repeated keys in
+      linear time too.
+
+    Only the refusals of a stale lock (§18.3, §18.4's overrides, §18.5's
+    project-side `ignoredOptionalDependencies`, §18.6, and
+    `publishConfig.directory`) say that `pnpm install --frozen-lockfile` would
+    refuse too: the review of #179 saw real pnpm refuse each. Every other
+    refusal here, a patch the project declares among them, is opm's own rule and
+    says so.
+
 21. **Lifecycle scripts are not run** (ADR 0046 §9, unchanged; this slice adds
     no script execution). An npm lock says which packages declare an install
     script (`hasInstallScript`); a pnpm lock does not (`requiresBuild` is kept
@@ -292,7 +385,9 @@ design:
     fetch, no write, no removal. It prints what the install would do: instances,
     places, members, links, what is left out by reason, what is refused. It is
     the whole of the install up to the first byte fetched, so a lock that
-    `--plan` accepts fails later only on the network, the store or the disk.
+    `--plan` accepts fails later only on the network, the store or the disk. The
+    same plan prints the same text, with no wall time in it, so two plans can be
+    compared.
 
 ## Consequences
 
@@ -347,8 +442,24 @@ Costs and limits, stated so nobody finds them by surprise.
   refused; a package whose install script is needed is installed as it is and
   says so; a registry or auth in `.npmrc` is not read (`opm auth` and
   `OPM_REGISTRY_NPM` are how opm is told).
-- **A link is named for its member and lives in the project's `node_modules`.**
-  A sibling the lock links under another name is refused.
+- **A link lives in the project's `node_modules`**, under the name the lock
+  gives it (the member's own, or an alias). Two importers that link different
+  members under one name are refused.
+- **The selection is opm's, not pnpm's** (§19): six documented differences, none
+  under `--no-optional`.
+- **Two placement planners** (§1): `pnpm-install/place.ts` repeats
+  `layout-plan.ts`'s nesting rules for several tops.
+- **The nested layout has a ceiling of 50,000 places** (`MAXIMUM_PLACEMENTS`),
+  kept: HoBo's whole lock needs 2,564 for 1,851 packages, but dense generated
+  graphs with many versions of each name duplicate heavily; in the review's run
+  3,701 instances needed 44,558 places, and 9 of 60 generated locks were refused
+  at the cap, cleanly and by name.
+- **`publishConfig.directory` and `ignoredOptionalDependencies`** are not
+  applied: an importer that sets the first is stale unless the lock records it,
+  and a lock that records it is refused; a lock written with the second is
+  refused, and a project that sets it for a lock that does not is stale.
+- **`pnpm-workspace.yaml` is read as strictly as the lock**: an anchor or a tag
+  in it, which pnpm would read, is refused.
 - **`--filter` installs a superset of pnpm's** (§16).
 - **A plan can be refused for a shape only symlinks hold** (§12): packages that
   need each other at different versions. No lock here has one.
@@ -357,8 +468,8 @@ Costs and limits, stated so nobody finds them by surprise.
   freshness, and the lock is installed as written.
 - **`dependenciesMeta` in a manifest is not read**, so a manifest that adds
   `injected` since the lock was written is not seen as stale. An `overrides`
-  selector with a range applies only to a dependency that asks for exactly that
-  range (§18.4).
+  selector or dependency whose range is outside the forms opm reads as pnpm does
+  is refused rather than guessed at (§18.4).
 - **The settings in the lock are the authority**, not `.npmrc`:
   `autoInstallPeers` decides whether peers are in the importers' specifier sets.
 - **HoBo was planned whole and installed in part**, not installed whole (about
