@@ -90,6 +90,29 @@ describe('a patched entry in the shared store, collected', () => {
     ]);
   });
 
+  it('keeps the unpatched entry of a patched copy that is too new to judge, though the entry itself is old', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
+    temps.push(shared);
+    const base = join(shared, `sha256-${'a'.repeat(64)}`);
+    const copy = join(shared, patchedStoreKey(DIGEST, PATCH));
+    for (const entry of [base, copy]) {
+      await mkdir(join(entry, 'package'), { recursive: true });
+      await writeFile(join(entry, 'package', 'index.js'), entry);
+      await writeFile(`${entry}.tree`, `sha256:${'c'.repeat(64)}\n`);
+    }
+    const old = new Date(Date.now() - 3_600_000);
+    await utimes(`${base}.tree`, old, old);
+    const env = { OPM_STORE_HOME: shared };
+    // An install that made the copy just now proved `base` to be the package
+    // its lock names, and links the copy next: `base` must still be there.
+    expect(await collectSharedStore({ env })).toMatchObject({
+      removed: [],
+      referenced: 1,
+      tooNew: 1,
+    });
+    expect(await readdir(shared)).toContain(`sha256-${'a'.repeat(64)}`);
+  });
+
   it('keeps the unpatched entry while a patched copy of it is kept, and removes both together', async () => {
     const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
     const project = await mkdtemp(join(tmpdir(), 'opm-linker-'));

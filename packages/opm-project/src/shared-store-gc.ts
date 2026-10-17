@@ -167,8 +167,10 @@ async function collectOrphanRecords(
     const path = join(root, name);
     const judged = await lstat(path).catch(() => undefined);
     if (judged?.isFile() !== true || judged.mtimeMs >= before) continue;
-    result.removed.push(path);
-    if (dryRun === true) continue;
+    if (dryRun === true) {
+      result.removed.push(path);
+      continue;
+    }
     const doomed = join(root, `.${key}.collect-${randomUUID()}`);
     if (
       !(await rename(path, doomed).then(
@@ -178,9 +180,15 @@ async function collectOrphanRecords(
     )
       continue;
     const moved = await lstat(doomed);
+    // Removed only if it is the record that was judged; a record written
+    // since goes back, and was never removed. (For the instant between the
+    // move and the link a reader finds no record: an archive's adopter is told
+    // its entry has none and can run again, a patched entry's is made again
+    // and compared, `frozen-patch.ts`.)
     if (moved.ino !== judged.ino || moved.dev !== judged.dev)
       // Never over a record written since.
       await link(doomed, path).catch(() => undefined);
+    else result.removed.push(path);
     await removeStableFile(doomed).catch(() => undefined);
   }
 }
