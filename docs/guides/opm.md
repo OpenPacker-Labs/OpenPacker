@@ -442,22 +442,38 @@ not places:
 - **A package resolved against several sets of peers**
   (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
   archive, fetched and extracted once, and as many places as dependents need.
-- **A workspace member is linked, not fetched**, at `node_modules/<member name>`
-  as for an npm workspace, and a member's executables are shimmed in the
-  project's `.bin`.
+- **A workspace member is linked, not fetched**, at `node_modules/<name>` in the
+  project, under the name the importer gives it (its own, or an alias such as
+  `"e": "workspace:b@*"`, as pnpm links it), and a member's executables are
+  shimmed in the project's `.bin`.
+- **The members are the ones the project has.** An importer the lock still lists
+  after its member went is left alone, as pnpm leaves it, and a new member with
+  no dependencies is installed without being in the lock.
 
 What it checks first, and refuses before anything is fetched or written, each
 naming the importer and the dependency:
 
 - an importer's dependency whose specifier in the lock differs from its
-  `package.json` (the lock is stale), a dependency added or dropped, importers
-  that are not the project's members, an `overrides` or `catalogs` section that
-  differs from the project's;
-- `patchedDependencies` (`opm` applies no patches), a package from a git
-  repository, a directory, a `file:` archive or a runtime, a package with no
-  sha512, sha384 or sha256 integrity, an injected workspace package, a link that
-  is not named for its member, and a non-optional package that does not run on
-  the target.
+  `package.json` (the lock is stale), a dependency added or dropped, an
+  `overrides` or `catalogs` section that differs from the project's (the
+  overrides applied to each importer as pnpm 10 applies them, `package.json`'s
+  replacing `pnpm-workspace.yaml`'s), a `publishConfig.directory` or
+  `ignoredOptionalDependencies` the lock does not record: these are the checks
+  `pnpm install --frozen-lockfile` makes, and the error says so;
+- by opm's own rules: `patchedDependencies` or a declared patch (`opm` applies
+  no patches), a lock written with `ignoredOptionalDependencies`, a package from
+  a git repository, a directory, a `file:` archive or a runtime, a package with
+  no sha512, sha384 or sha256 integrity, an injected workspace package, a member
+  with dependencies the lock does not list, a link to an importer the project no
+  longer has, an override range opm does not read as pnpm does (anything but
+  `^`, `~`, comparators, x-ranges, hyphen ranges and `||` over versions without
+  a prerelease), and a non-optional package that does not run on the target.
+
+`pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
+through a link, and without anchors or tags. Every value from these files
+reaches a message quoted, with control characters escaped. After extraction,
+each archive's own `package.json` must be the package the lock names, or the
+install stops before `node_modules` is touched.
 
 An optional package for another `os`, `cpu` or `libc` is left out, with whatever
 only it needs, and counted by reason in the summary. The target is this machine
@@ -473,7 +489,10 @@ resolved peers as ordinary dependencies.
 
 `--plan` reads, checks and plans, and prints what the install would do
 (packages, places, archives, what is left out and why, members and links)
-without fetching or writing; HoBo's 792 importers take 1.6 s.
+without fetching or writing; HoBo's 792 importers take 1.6 s. The same plan
+prints the same text, so two plans can be diffed. Which optional packages are
+left out is opm's own rule: it matches pnpm exactly with `--no-optional`, and
+ADR 0055 §19 lists where it differs otherwise.
 
 Measured against a lock it is installed from (ADR 0055): HoBo's plan holds the
 same 1,847 `name@version` that pnpm itself installed on the machine with
