@@ -193,13 +193,15 @@ export async function readFrozenPnpmLock(
       }),
     };
   });
+  const direct = directPlaces(input, placement);
   const workspace = workspaceOf(model, tops, present, disk, {
     links: placement.links,
-    importers: [...directPlaces(input, placement)].map(([dir, places]) => ({
-      dir,
-      dependencies: places.map(({ place }) =>
+    importers: input.tops.map((top) => ({
+      dir: top.dir,
+      dependencies: (direct.get(top.dir) ?? []).map(({ place }) =>
         placePath(place.chain, place.base),
       ),
+      members: top.links.map((link) => link.memberDir),
     })),
   });
   return {
