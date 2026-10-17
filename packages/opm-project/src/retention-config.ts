@@ -1,4 +1,5 @@
 import { DEFAULT_RETAINED_BYTES } from '@openpacker/adapter-core';
+import { safeEcho } from '@openpacker/canonical';
 import { OpmError } from './types.js';
 
 const ENV = 'OPM_RETAINED_METADATA_MIB';
@@ -20,7 +21,7 @@ export function retainedMetadataBytes(
   if (!/^\d{1,9}$/u.test(raw))
     throw new OpmError(
       'USAGE',
-      `${ENV} must be a whole number of MiB or "unlimited", not "${raw.slice(0, 40)}".`,
+      `${ENV} must be a whole number of MiB or "unlimited", not "${safeEcho(raw, 40)}".`,
     );
   return Number(raw) * MiB;
 }

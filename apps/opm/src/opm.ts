@@ -773,6 +773,9 @@ export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof OpmError) {
     io.stderr.write(report('opm: ', error.message));
     switch (error.code) {
+      // What the person wrote, in an option or the environment, is not usable.
+      case 'USAGE':
+        return EXIT_CODES.usage;
       case 'NOT_FOUND':
       case 'NO_PROJECT':
       case 'PLUGIN_NOT_INSTALLED':
