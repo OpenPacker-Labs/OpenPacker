@@ -28,6 +28,9 @@ for (const file of browserTests)
           ...process.env,
           NODE_TEST_CONTEXT: undefined,
           PLAYWRIGHT_BROWSERS_PATH: empty,
+          // A Chromium named here would start, and these test the one that
+          // cannot (scripts/chromium.mjs).
+          PLAYWRIGHT_CHROMIUM: undefined,
         },
         timeout: 40_000,
       });
