@@ -82,6 +82,20 @@ export class ParseBudget {
   }
 
   /**
+   * A string of `length` characters is about to be built: the name of the
+   * `member`th member of an object or, with none, a value.
+   */
+  text(
+    member: number | undefined,
+    length: number,
+    wide: boolean,
+    offset: number,
+  ): void {
+    if (member === undefined) this.string(length, wide, offset);
+    else this.member(member, length, wide, offset);
+  }
+
+  /**
    * The value that began is a string of `length` characters; two-byte text
    * costs two bytes a character.
    */
