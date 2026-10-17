@@ -354,7 +354,7 @@ async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   if (!/^sha256:[0-9a-f]{64}$/u.test(recorded))
     throw new OpmError(
       'VERIFICATION_FAILED',
-      `Shared store tree digest is malformed: ${sharedPath}`,
+      `Shared store tree digest is malformed: ${sharedPath}.tree is not a sha256 digest; a crash cannot leave this (a record is written whole, by a temporary file and a rename), so something else wrote it; remove ${sharedPath} and ${sharedPath}.tree and run the command again`,
     );
   return recorded;
 }
