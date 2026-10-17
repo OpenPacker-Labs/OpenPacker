@@ -13,6 +13,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import {
   layOutTool,
   runSandboxedPackageProcess,
@@ -31,6 +32,9 @@ configureDefaultAdapters();
  */
 
 const DEPENDENCIES = 20;
+
+/** Handles left for store entries beside a working directory and a jail home. */
+const ROOM = MAX_INHERITED_HANDLES - 2;
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -129,11 +133,11 @@ describe.runIf(canSandbox)('a tool whose closure is 21 packages', () => {
     expect(existsSync(layout.root)).toBe(false);
   });
 
-  it('binds a closure of eight packages or fewer one entry at a time, as before', async () => {
+  it('binds a closure that fits in the handles one entry at a time, as before', async () => {
     const { cacheRoot, closure } = await toolCache();
-    const paths = closure.slice(0, 8).map((item) => item.storePath);
+    const paths = closure.slice(0, ROOM).map((item) => item.storePath);
     const before = await directories(cacheRoot);
-    const view = await storeViews(paths);
+    const view = await storeViews(paths, ROOM);
     expect(view.readonlyPaths).toEqual(paths);
     expect(view.authorities).toEqual([]);
     expect(await directories(cacheRoot)).toEqual(before);
@@ -198,7 +202,7 @@ async function killedInRun(cacheRoot: string, closure: ToolPackage[]) {
      import { storeViews } from ${source('../src/store-view.ts')};
      configureDefaultAdapters();
      const closure = ${JSON.stringify(closure)};
-     await storeViews(closure.map((item) => item.storePath));
+     await storeViews(closure.map((item) => item.storePath), ${ROOM});
      await layOutTool({ cacheRoot: ${JSON.stringify(cacheRoot)}, tool: closure[0].exactPurl, closure });
      process.kill(process.pid, 'SIGKILL');
     `,
@@ -227,7 +231,10 @@ describe.runIf(process.platform === 'linux')(
         await killedInRun(cacheRoot, closure);
         expect(await directories(cacheRoot)).not.toEqual(before);
 
-        const view = await storeViews(closure.map((item) => item.storePath));
+        const view = await storeViews(
+          closure.map((item) => item.storePath),
+          ROOM,
+        );
         await view.dispose();
         const layout = await layOutTool({
           cacheRoot,
@@ -243,11 +250,11 @@ describe.runIf(process.platform === 'linux')(
       const { cacheRoot, closure } = await toolCache();
       const paths = closure.map((item) => item.storePath);
       const before = await directories(cacheRoot);
-      const running = await storeViews(paths);
+      const running = await storeViews(paths, ROOM);
       const during = await directories(cacheRoot);
       expect(during).not.toEqual(before);
 
-      await (await storeViews(paths)).dispose();
+      await (await storeViews(paths, ROOM)).dispose();
       expect(await directories(cacheRoot)).toEqual(during);
       await running.dispose();
       expect(await directories(cacheRoot)).toEqual(before);

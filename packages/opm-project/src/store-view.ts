@@ -1,8 +1,10 @@
 import { mkdir, rm, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { materialiseTree } from '@openpacker/project-io';
+import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import { openStableDirectory } from './paths.js';
 import { scratchName, sweepAbandoned } from './run-scratch.js';
+import { OpmError } from './types.js';
 
 const VIEW_PREFIX = '.view-';
 
@@ -20,8 +22,8 @@ export const isStoreView = (name: string): boolean =>
  * Every path the sandbox binds is opened first and handed to bwrap as an
  * inherited no-follow descriptor (`--ro-bind-fd`, `@openpacker/sandbox`'s
  * run.ts), so a path swapped for a symlink after it was checked cannot redirect
- * the bind. The process spawner caps those at 16 (backends/mock.ts), and a tool
- * runs with every package of its closure, so `opmx pkg:npm/cowsay hi` (33
+ * the bind. The process spawner caps those at MAX_INHERITED_HANDLES (16), and a
+ * tool runs with every package of its closure, so `opmx pkg:npm/cowsay hi` (33
  * packages) was refused.
  *
  * The entries of one store directory are laid out instead as a fresh directory
@@ -46,21 +48,51 @@ export interface StoreView {
 }
 
 /**
- * How many entries are bound a handle each, as before views. The spawner
- * allows 16 handles in all, and this leaves room for the project, the working
- * directory, the jail's home and policy grants. A view costs a link per file,
- * so a run that fits pays nothing for it.
+ * Which stores' entries are bound through a view, so that all of `paths` take
+ * at most `budget` handles: none when each fits bound alone, as a store that
+ * cannot be written to needs, and otherwise the fewest, the stores with the
+ * most entries first. A view costs a link per file and write access to its
+ * store; an entry bound alone costs neither.
  */
-const BOUND_ALONE = 8;
-
-export async function storeViews(paths: readonly string[]): Promise<StoreView> {
-  const unique = [...new Set(paths.map((item) => resolve(item)))];
-  if (unique.length <= BOUND_ALONE)
-    return { readonlyPaths: unique, authorities: [], dispose: async () => {} };
+export function storesToView(
+  paths: readonly string[],
+  budget: number,
+): Map<string, string[]> {
   const byStore = new Map<string, string[]>();
-  for (const path of unique)
+  for (const path of paths)
     byStore.set(dirname(path), [...(byStore.get(dirname(path)) ?? []), path]);
-  const readonlyPaths: string[] = [];
+  const viewed = new Map<string, string[]>();
+  let handles = paths.length;
+  for (const [store, entries] of [...byStore].sort(
+    ([, left], [, right]) => right.length - left.length,
+  )) {
+    if (handles <= budget || entries.length < 2) break;
+    viewed.set(store, entries);
+    handles -= entries.length - 1;
+  }
+  if (handles > budget)
+    throw new OpmError(
+      'SANDBOX_UNAVAILABLE',
+      `This run binds ${paths.length} store entries from ${byStore.size} ` +
+        `stores; with a view of each store that is ${handles} handles, and ` +
+        `besides the project, the working directory, the jail's home and ` +
+        `grants there is room for ${Math.max(budget, 0)} of the ` +
+        `${MAX_INHERITED_HANDLES} a sandboxed process may inherit.`,
+    );
+  return viewed;
+}
+
+/**
+ * Bind `paths` (store entries) in at most `budget` handles: one each while
+ * they fit, through a view of their store where they do not.
+ */
+export async function storeViews(
+  paths: readonly string[],
+  budget: number,
+): Promise<StoreView> {
+  const unique = [...new Set(paths.map((item) => resolve(item)))];
+  const viewed = storesToView(unique, budget);
+  const readonlyPaths = unique.filter((path) => !viewed.has(dirname(path)));
   const authorities: StoreView['authorities'] = [];
   const handles: FileHandle[] = [];
   const views: string[] = [];
@@ -69,15 +101,21 @@ export async function storeViews(paths: readonly string[]): Promise<StoreView> {
     for (const view of views) await rm(view, { recursive: true, force: true });
   };
   try {
-    for (const [store, entries] of byStore) {
-      if (entries.length === 1) {
-        readonlyPaths.push(entries[0]!);
-        continue;
-      }
+    for (const [store, entries] of viewed) {
       await sweepAbandoned(store, VIEW_PREFIX);
       const view = join(store, scratchName(VIEW_PREFIX));
+      await mkdir(view, { mode: 0o755 }).catch((error: Error) => {
+        throw new OpmError(
+          'SANDBOX_UNAVAILABLE',
+          `${unique.length} store entries do not fit in the ${budget} of ` +
+            `the ${MAX_INHERITED_HANDLES} handles a sandboxed process may ` +
+            `inherit that are left for them, so the ${entries.length} of ` +
+            `${store} are bound through a view of it, and it cannot be made ` +
+            `there: ${error.message}`,
+          { cause: error },
+        );
+      });
       views.push(view);
-      await mkdir(view, { mode: 0o755 });
       // Each file linked is the very inode opened through the store's
       // no-follow handles; a name swapped meanwhile is refused (ADR 0048).
       for (const entry of entries)

@@ -1,4 +1,6 @@
 import {
+  inheritedHandleCount,
+  MAX_INHERITED_HANDLES,
   runInSandbox,
   type SandboxBackend,
   type SandboxOutcome,
@@ -36,13 +38,19 @@ export async function runSandboxedPackageProcess(input: {
   const projectRoot = input.projectRoot;
   const storePaths = input.storePaths ?? [];
 
-  // One handle per store, however many of its entries the tool needs.
-  const view = await storeViews(storePaths);
-  const readonlyPaths = [
-    ...(projectRoot && !projectWrite ? [projectRoot] : []),
-    ...view.readonlyPaths,
-  ];
+  const projectRo = projectRoot && !projectWrite ? [projectRoot] : [];
   const readwritePaths = projectRoot && projectWrite ? [projectRoot] : [];
+  // The store entries get the handles the rest of the run leaves; past that,
+  // one handle per store however many of its entries the tool needs.
+  const besides = inheritedHandleCount({
+    policy,
+    ...(!(input.packageId === undefined) && { packageId: input.packageId }),
+    readwritePaths,
+    readonlyPaths: projectRo,
+    cwd: input.cwd,
+  });
+  const view = await storeViews(storePaths, MAX_INHERITED_HANDLES - besides);
+  const readonlyPaths = [...projectRo, ...view.readonlyPaths];
 
   // If cwd is the project and project is RO, cwd is still chdir'd RO by backend.
   // If tools need a scratch dir, they use $TMPDIR (jail home).

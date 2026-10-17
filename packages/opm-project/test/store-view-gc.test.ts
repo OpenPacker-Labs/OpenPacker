@@ -66,8 +66,8 @@ describe('opm gc while a tool runs', () => {
     const installed = generation!.members[0]!.storePath;
     const store = projectPaths(root).store;
     expect(dirname(installed)).toBe(store);
-    // Entries of the same store which no generation names, enough of them
-    // that the run binds them through one view.
+    // Entries of the same store which no generation names, more than the
+    // handles left for them, so that the run binds them through one view.
     const unreachable = Array.from({ length: 9 }, (_, i) =>
       join(store, `sha256-${i.toString(16).padStart(64, '0')}`),
     );
@@ -75,7 +75,7 @@ describe('opm gc while a tool runs', () => {
       await mkdir(join(entry, 'package'), { recursive: true });
     const before = await readdir(store);
 
-    const view = await storeViews([installed, ...unreachable]);
+    const view = await storeViews([installed, ...unreachable], 8);
     try {
       const [made] = (await readdir(store)).filter(
         (name) => !before.includes(name),

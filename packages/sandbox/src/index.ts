@@ -81,6 +81,12 @@ export {
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
 
 export {
+  boundPaths,
+  inheritedHandleCount,
+  MAX_INHERITED_HANDLES,
+} from './handles.js';
+
+export {
   HostInstallerSandboxError,
   limitedContainmentLoss,
   notSandboxedLoss,

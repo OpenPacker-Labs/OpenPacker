@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
 import { createMockBackend, SandboxBackendError } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
+import { boundPaths, pathsToOpen } from './handles.js';
 import {
   assertSafeJailPath,
   normalizeJailPaths,
@@ -172,22 +173,13 @@ export async function runInSandbox(
       jailHome,
       minimalPath: true,
     });
-    const readwrite = normalizeJailPaths(
-      [...input.readwritePaths, jailHome, ...grantedWrite],
-      'readwrite path',
-    );
-    const readonly = normalizeJailPaths(
-      [...input.readonlyPaths, ...grantedRead],
-      'readonly path',
-    );
+    // What `inheritedHandleCount` counts, so a caller can tell in advance.
+    const { readwrite, readonly } = boundPaths(input, jailHome);
     const authorities = [...(input.directoryAuthorities ?? [])];
-    const authorized = new Set(authorities.map(({ path }) => resolve(path)));
-    for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
-      if (authorized.has(path)) continue;
+    for (const path of pathsToOpen(input, { readwrite, readonly })) {
       const handle = await openStableJailPath(path, 'sandbox bind');
       ownedAuthorities.push(handle);
       authorities.push({ fd: handle.fd, path });
-      authorized.add(path);
     }
 
     const timeoutMs =
