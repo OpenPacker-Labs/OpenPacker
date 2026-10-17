@@ -1,3 +1,8 @@
+import {
+  formatPurl,
+  parsePurl,
+  type ParsedPurl,
+} from '@openpacker/adapter-core';
 import type { ParsedPackageSpec } from './types.js';
 import { OpmError } from './types.js';
 
@@ -270,6 +275,61 @@ export function exactPurl(purl: string, version: string): string {
   const base = match[1] ?? purl;
   const query = match[3] ? `?${match[3]}` : '';
   return `${base}@${version}${query}`;
+}
+
+/**
+ * `purl`'s package at `version`, the version encoded as one PURL component.
+ *
+ * What a manifest writes for a version is text, not PURL syntax: joined after
+ * `@`, a `/`, `@`, `?` or `#` in it reads back as another namespace and name, a
+ * qualifier or a subpath. So the PURL is built from its parts, read back, and
+ * compared with `purl`'s own type, namespace, name and qualifiers; its version
+ * must read back as `version` and it carries no subpath (a request names a
+ * package, not a path inside one, as `exactPurl` never kept one either).
+ * Anything else is refused, so no version line can name another package.
+ */
+export function purlAtVersion(purl: string, version: string): string {
+  const own = parsePurl(purl);
+  let target: string | undefined;
+  let read: ParsedPurl | undefined;
+  try {
+    target = formatPurl({
+      type: own.type,
+      ...(own.namespace !== undefined && { namespace: own.namespace }),
+      name: own.name,
+      version,
+      qualifiers: own.qualifiers,
+    });
+    read = parsePurl(target);
+  } catch {
+    read = undefined;
+  }
+  if (
+    target === undefined ||
+    read === undefined ||
+    read.type !== own.type ||
+    read.namespace !== own.namespace ||
+    read.name !== own.name ||
+    read.version !== version ||
+    read.subpath !== undefined ||
+    !sameQualifiers(read.qualifiers, own.qualifiers)
+  )
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `${JSON.stringify(version)} cannot be written as a version of ${stripPurlVersion(purl)}`,
+    );
+  return target;
+}
+
+function sameQualifiers(
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>,
+): boolean {
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => Object.hasOwn(right, key) && left[key] === right[key])
+  );
 }
 
 export function stripPurlVersion(purl: string): string {

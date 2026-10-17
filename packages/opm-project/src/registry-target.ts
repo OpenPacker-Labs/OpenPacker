@@ -2,7 +2,7 @@ import type { PolicyDocument } from '@openpacker/policy';
 import type { CatalogProvider } from '@openpacker/adapter-core';
 import { codecFor, hasCodec } from './codecs.js';
 import { listRegistryVersions, type RegistryOptions } from './registry.js';
-import { exactPurl, stripPurlVersion } from './spec.js';
+import { purlAtVersion, stripPurlVersion } from './spec.js';
 import { insideReleaseAge } from './supply-chain.js';
 import { OpmError } from './types.js';
 
@@ -22,10 +22,14 @@ import { OpmError } from './types.js';
  * The release asked for by what the manifest wrote, for an ecosystem whose
  * adapter exports no codec (a delegated plugin's): nothing here can tell a
  * range or a tag from a version, so any hint, `^` and `~` ranges included, goes
- * to the plugin as written. The identity the plugin answers must carry that
- * same version, so it cannot turn a range into a release: it accepts the hint
- * as the version it names, or the resolve fails. Undefined when the ecosystem
- * has a codec or nothing was written; only the latter lists the releases.
+ * to the plugin as written, encoded as the PURL's version (`^1.0.0` is asked
+ * for as `@%5E1.0.0`). The hint is text, not PURL syntax: an `@`, `/`, `?` or
+ * `#` in it stays inside the version, and a hint that cannot is refused, so it
+ * never names another package, a qualifier or a subpath (`purlAtVersion`). The
+ * identity the plugin answers must carry that same package and version, so it
+ * cannot turn a range into a release: it accepts the hint as the version it
+ * names, or the resolve fails. Undefined when the ecosystem has a codec or
+ * nothing was written; only the latter lists the releases.
  */
 export function targetAsWritten(
   ecosystem: string,
@@ -34,7 +38,7 @@ export function targetAsWritten(
 ): string | undefined {
   if (hint === undefined || hint === '' || hasCodec(ecosystem))
     return undefined;
-  return exactPurl(stripPurlVersion(purl), hint);
+  return purlAtVersion(purl, hint);
 }
 
 /** Whether `hint` is one release, in the ecosystem's own grammar. */

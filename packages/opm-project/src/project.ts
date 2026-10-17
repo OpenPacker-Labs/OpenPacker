@@ -85,6 +85,7 @@ import {
   ecosystemFromPurl,
   exactPurl,
   parsePackageSpec,
+  purlAtVersion,
   stripPurlVersion,
 } from './spec.js';
 import {
@@ -771,7 +772,7 @@ async function resolveRequirement(input: {
   const versionHint = input.req.version;
   const candidateExact =
     versionHint && !versionHint.startsWith('^') && !versionHint.startsWith('~')
-      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      ? purlAtVersion(requestedPurl, versionHint)
       : requestedPurl.includes('@')
         ? requestedPurl
         : undefined;
@@ -803,7 +804,7 @@ async function resolveRequirement(input: {
       !versionHint.startsWith('~')
         ? versionHint
         : (guessVersionFromBytes(bytes) ?? '0.0.0');
-    const purl = exactPurl(stripPurlVersion(requestedPurl), version);
+    const purl = purlAtVersion(requestedPurl, version);
     const format = inferFormat(resolved, mediaTypeForEcosystem(ecosystem));
     const mediaType = mediaTypeForEcosystem(ecosystem);
     // discover bins via temp extract for npm
@@ -839,7 +840,7 @@ async function resolveRequirement(input: {
   const keys = [
     candidateExact,
     versionHint && !/[~^<>*]/.test(versionHint)
-      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      ? purlAtVersion(requestedPurl, versionHint)
       : undefined,
     requestedPurl,
     stripPurlVersion(requestedPurl),
