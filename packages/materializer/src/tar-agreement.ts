@@ -20,6 +20,7 @@
 
 import { unsafe } from './errors.js';
 import { assertNumbersAgree } from './tar-numbers.js';
+import { assertTextAgrees } from './tar-text.js';
 
 const BLOCK = 512;
 const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
@@ -123,9 +124,11 @@ function endsHere(bytes: Uint8Array, offset: number): boolean {
 
 /** Refuse a header field the readers read differently (ADR 0057 §8). */
 export function assertHeaderAgrees(header: Uint8Array, at: number): void {
+  const ustar = hasUstarMagic(header);
   assertChecksumAgrees(header, at);
   assertPrefixAgrees(header, at);
-  assertNumbersAgree(header, at, hasUstarMagic(header));
+  assertTextAgrees(header, at, ustar);
+  assertNumbersAgree(header, at, ustar);
   assertLinkNameAgrees(header, at);
 }
 

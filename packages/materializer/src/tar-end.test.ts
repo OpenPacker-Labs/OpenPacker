@@ -86,6 +86,13 @@ const REFUSED: Record<string, string> = {
     'TAR_AMBIGUOUS_LINK',
   'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
   'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
+  'a name with a NUL and a line feed in it': 'TAR_AMBIGUOUS_TEXT',
+  'a name with a NUL and a carriage return in it': 'TAR_AMBIGUOUS_TEXT',
+  'a name with a NUL and a U+2028 in it': 'TAR_AMBIGUOUS_TEXT',
+  'a prefix with a NUL and a line feed in it': 'TAR_AMBIGUOUS_TEXT',
+  'a link name of a NUL and a line feed, on a file': 'TAR_AMBIGUOUS_TEXT',
+  'a link name of a NUL and a line feed hides a forged entry':
+    'TAR_AMBIGUOUS_TEXT',
 };
 
 /**
@@ -97,6 +104,7 @@ const OVER_REFUSED: Record<string, string> = {
     'TAR_AMBIGUOUS_PAX',
   'a directory with a link name': 'TAR_AMBIGUOUS_LINK',
   'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
+  'a name with data after a NUL and no line terminator': 'TAR_AMBIGUOUS_TEXT',
   'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a base-256 checksum': 'TAR_AMBIGUOUS_END',
