@@ -121,9 +121,9 @@ inherited":
   directory handle. `runInSandbox` opens one for each read-only path, each
   writable path and the working directory, and bwrap binds it with
   `--ro-bind-fd`.
-- The spawner refuses more than 16 inherited handles
-  (`packages/sandbox/src/backends/mock.ts`). The bound is the spawner's own:
-  bwrap has no such limit, and MXC takes no handles at all.
+- The spawner refuses more than 16 inherited handles (`MAX_INHERITED_HANDLES`,
+  `packages/sandbox/src/handles.ts`). The bound is the spawner's own: bwrap has
+  no such limit, and MXC takes no handles at all.
 - `opmx` passed every package of a tool's closure as a path of its own. cowsay's
   closure is 33 packages, so it needed 33 handles for the store alone. Any tool
   with more than about a dozen packages was refused, and so was `opmx <bin>` in
@@ -135,53 +135,89 @@ nothing put them where Node looks.
 
 Decision:
 
-1. **Past eight store entries, those a run needs from one store are bound
-   through one view** (`store-view.ts`).
-   - The view is a directory of hard links to exactly those entries, made inside
-     the store as `.view-<host>-<pid>-<uuid>`. It is opened once with a
-     no-follow handle and bound read-only at the store's own path.
+1. **Store entries are bound one handle each while the run's handles allow, and
+   through one view of their store past that** (`store-view.ts`).
+   - `inheritedHandleCount` (`@openpacker/sandbox`) says how many handles the
+     rest of a run takes: the project, the working directory, the jail's home,
+     the policy's grants for the package. `runInSandbox` opens its handles from
+     the same computation, so the count is the number it passes. The store
+     entries get what is left of the 16.
+   - While they fit, each entry is bound alone, as before views: a store the
+     user cannot write to (installed by root in an image, or on a read-only file
+     system) runs whatever fits. Past that, the fewest stores are bound through
+     a view, the one with the most entries first. What no views make fit, and a
+     view that cannot be made in its store, are refused with a message that
+     names the bound.
+   - A view is a directory of hard links to exactly the entries the run needs,
+     made inside the store as `.view-<owner>-<uuid>` and bound read-only at the
+     store's own path. It is opened once, before anything is linked into it, and
+     bound from that handle; once its entries are linked its path must still
+     name that directory and the directory must hold exactly them, or it is
+     refused.
    - The links are made by the layout's own tree copy (`materialiseTree`, ADR
      0048): each file linked is the inode opened through no-follow handles, and
      an entry or a name in it that is a symbolic link, or that was swapped
      meanwhile, is refused, as a bind of the entry on its own refuses it.
    - Inside the sandbox the store holds the same entries at the same paths as
      when each was bound alone, and nothing else: no other package of the store,
-     and not the view itself.
-   - A run that needs eight entries or fewer binds each as before, and so does a
-     store with only one entry the run needs. Eight leaves room in the 16 for
-     the project, the working directory, the jail's home and policy grants.
-   - The limit of 16 handles is unchanged.
+     and not the view itself. This holds when the working directory is outside
+     the store. A working directory that contains the store (the cache root, a
+     project root) is bound read-only over it and shows the whole store, view
+     included, as it always has.
 2. **An npm tool run by `opmx` runs from a `node_modules` of its closure**
    (`ephemeral-layout.ts`).
+   - The closure is solved from the release the run takes
+     (`ephemeral-closure.ts`): the tool's root is held to that version in the
+     walk (a range in the ecosystem's own spelling that admits it alone) and in
+     the solve (`vers:<type>/<version>`). Solved from the name alone, the solver
+     chose the newest release, and a pinned older tool
+     (`opmx pkg:npm/cowsay@1.5.0`) got the dependency versions the newest wants.
    - The layout is written by the same writer as a project's (ADR 0048), with
      hard links to the store's files, under
-     `<tool cache>/.opm/runs/run-<host>-<pid>-<uuid>`.
+     `<tool cache>/.opm/runs/run-<owner>-<uuid>`.
    - The layout is told which package each one requires, as the solve chose (ADR
      0054), so two versions of one name stay apart. cowsay's closure holds four
      names twice; told nothing, the layout kept one of each, and cowsay got
-     `string-width` 4 where it asked for 2.
-   - That one tree is what the sandbox binds.
+     `string-width` 4 where it asked for 2. A peer edge is given like any other;
+     a peer name the closure would need at two versions is refused by the solve.
+   - The directory an npm tarball wraps its files in is dropped by one rule for
+     the writer and for a bin's path into the tree (`tarballWrapper`).
+   - That one tree is what the sandbox binds, and its `node_modules/.bin` is put
+     first on the tool's PATH, as npx does, so a tool can run its dependencies'
+     executables by name.
    - A layout is never reused between runs, which would make it one more thing a
      run trusts without checking it again.
-   - Python, .NET and native tools run as before; past eight packages their
-     closure is bound through a view.
-3. **A run removes both when it ends** (`run-scratch.ts`).
-   - A run stopped by a signal, Ctrl-C included, cannot. The next run that makes
-     a view in the same store, or a layout in the same cache, removes those
-     whose process on this host has ended.
-   - One whose process may still be running is never touched.
+   - Python, .NET and native tools run as before; their closure is bound through
+     views when it does not fit.
+3. **A run removes both when it ends** (`run-scratch.ts`, `run-owner.ts`).
+   - `opmx` holds SIGINT, SIGTERM and SIGHUP while a tool runs: the first ends
+     the sandboxed process tree, the run removes its view and its layout, and
+     the same signal is raised again, so `opmx` ends by it.
+   - A run killed outright (SIGKILL, a crash) leaves them. Each name says who
+     made it: a pid, the time it started, and digests of its PID namespace, its
+     boot and its machine. The next run that makes one in the same place, and
+     `opm gc` for the views of a project's store, removes those whose owner has
+     ended: of this machine, boot and namespace, with its pid unused or used by
+     a process that started at another time. Anything else is taken to be
+     running and left alone.
    - `opm gc` does not count a view as a store path (`isStoreView`).
    - While a view exists, each entry it shows has files with a second name, so
      the shared store's `opm gc` counts that entry as in use.
+4. **As root, the sandboxed process holds no capabilities** (`native.ts`). bwrap
+   run by root gives the process root's capabilities unless told to drop them,
+   and CAP_SYS_ADMIN remounts any read-only bind read-write. The bwrap backend
+   passes `--cap-drop ALL` when its effective uid is 0; for any other user bwrap
+   gives none. This predates views and held for every bind.
 
 Consequences:
 
 - Confinement is unchanged: read-only binds, the same paths, and only the
   closure visible. No store file's bytes are copied, unless the file system
   refuses a hard link, where the file is copied.
-- A run past eight entries pays a link per file of what it binds: the closure
-  for a tool, every package of the project for `opmx <bin>` in a project. An npm
-  tool pays it once, for its layout. Before this, such a run was refused.
+- A run that does not fit pays a link per file of what it binds through a view:
+  the closure for a Python, .NET or native tool, the packages of the project for
+  `opmx <bin>` in a project. An npm tool pays it once, for its layout. Before
+  this, such a run was refused.
 - `opmx pkg:npm/cowsay hi` runs against registry.npmjs.org (with the release-age
   capture of #182). Its layout of 33 packages, 419 files, took 0.2 to 1.0 s, and
   a view of the same entries 0.4 to 3.1 s, on a 4-core machine at a load average
@@ -190,11 +226,25 @@ Consequences:
 
 Limits:
 
-- A view or layout left by a killed run stays until the next run in the same
-  place. One left on another host is never removed from this one.
-- A pid reused by a live process keeps a leftover until that process ends too.
+- Entries spread one per store over more stores than there are handles left are
+  refused: more than fourteen single-entry stores beside a working directory and
+  a jail home, more than thirteen beside a project too. A view of a store saves
+  a handle only when it holds two or more of the run's entries. A tool's
+  closure, and a project's packages, are in one store, so opm's own runs do not
+  meet this.
+- What a run killed outright leaves on another machine, in another PID namespace
+  or in an earlier boot is never removed by a run or `opm gc`: whether its owner
+  still runs cannot be told from here. Remove such a directory by hand once its
+  run is known to be over.
 - Measured and exercised on Linux, where bwrap is the backend.
-  `tool-many-deps.test.ts` runs a 21-package tool, binds a symbolic link among
-  its entries, kills a run with SIGKILL in the middle, and runs again;
-  `tool-layout-versions.test.ts` lays out two versions of one name.
-  `store-view-gc.test.ts` runs `opm gc` while a view is in use.
+  `tool-many-deps.test.ts`, `store-view-budget.test.ts`,
+  `store-view-confinement.test.ts`, `store-view-swap.test.ts`,
+  `store-view-gc.test.ts`, `run-scratch.test.ts`, `tool-pinned-version.test.ts`,
+  `tool-layout-versions.test.ts` and `tool-peer.test.ts` (opm-project),
+  `opmx-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
+  `root-capabilities.test.ts` and `handles.test.ts` (sandbox) cover it. The
+  sandboxed ones are skipped where bwrap is absent. The automatic CI lane does
+  not run these suites; the manual one (`ci.yml`) runs them on GitHub's
+  `ubuntu-latest` with no step that installs bubblewrap, and whether that image
+  has it was not checked. The root-only ones (capabilities, a sweep in another
+  PID namespace) are skipped for any other user.

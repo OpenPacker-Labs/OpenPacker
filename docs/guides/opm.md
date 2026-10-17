@@ -1103,13 +1103,16 @@ different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
 
-An npm tool runs from a `node_modules` of its closure, written for that run
-under `<tool cache>/.opm/runs/` and bound read-only into the sandbox as one
-tree, so `opmx pkg:npm/cowsay hi` finds `yargs`. The packages a run needs from
-one store are bound through one view of that store once there are more than
-eight (ADR 0036, amendment of 2026-10-17), so a tool with a large closure runs.
-Both are removed when the run ends; what a run stopped by a signal leaves is
-removed by the next run.
+An npm tool runs from a `node_modules` of the closure of the release it runs,
+written for that run under `<tool cache>/.opm/runs/` and bound read-only into
+the sandbox as one tree, with its `node_modules/.bin` first on PATH, so
+`opmx pkg:npm/cowsay hi` finds `yargs` and a tool can run a dependency's
+executable by name. Store entries are bound one by one while the sandbox's 16
+handles allow, and the packages a run needs from one store through one view of
+that store past that (ADR 0036, amendment of 2026-10-17), so a tool with a large
+closure runs. Both are removed when the run ends, Ctrl-C and SIGTERM included;
+what a run killed outright leaves is removed by the next run, or by `opm gc` for
+a project's views.
 
 ### Delegated adapter plugins
 
