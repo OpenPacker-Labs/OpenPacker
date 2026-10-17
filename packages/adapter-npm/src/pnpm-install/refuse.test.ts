@@ -151,7 +151,7 @@ snapshots:
     // said until the lock can be installed as written.
     for (const other of refused.filter((item) => !patches.includes(item)))
       expect(other.path).toMatch(
-        /^importers\[".*"\]\.(?:dependenciesMeta|publishDirectory)$/u,
+        /^(?:importers\[".*"\]\.(?:dependenciesMeta|publishDirectory)|ignoredOptionalDependencies)$/u,
       );
   });
 

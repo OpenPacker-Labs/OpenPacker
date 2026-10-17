@@ -31,8 +31,17 @@ export interface PnpmProjectConfig {
   readonly supportedArchitectures: SupportedArchitectures | undefined;
   /** The patches the project declares, by `name@version` or name. */
   readonly patches: readonly string[];
-  /** The root `package.json`'s own name and version, for a `parent>name` override. */
-  readonly project: { readonly name?: string; readonly version?: string };
+  /** `ignoredOptionalDependencies`, which opm does not apply. */
+  readonly ignoredOptionalDependencies: readonly string[];
+  /**
+   * The root `package.json`'s own name and version, for a `parent>name`
+   * override, and its `publishConfig.directory`.
+   */
+  readonly project: {
+    readonly name?: string;
+    readonly version?: string;
+    readonly publishDirectory?: string;
+  };
 }
 
 type Json = Record<string, unknown>;
@@ -131,11 +140,18 @@ export async function readPnpmProjectConfig(
   );
   const pnpm = isRecord(manifest['pnpm']) ? manifest['pnpm'] : {};
   const workspace = await readWorkspaceFile(root);
-  const overrides = new Map<string, string>([
+  // pnpm 10 reads the workspace file's settings, then puts the root
+  // manifest's over them whole (getOptionsFromRootManifest): when package.json
+  // has any override (`resolutions`, then `pnpm.overrides`), the file's are
+  // not merged in but replaced.
+  const fromManifest = new Map<string, string>([
     ...strings(manifest['resolutions'], 'package.json resolutions'),
     ...strings(pnpm['overrides'], 'package.json pnpm.overrides'),
-    ...strings(workspace['overrides'], 'pnpm-workspace.yaml overrides'),
   ]);
+  const overrides =
+    fromManifest.size > 0
+      ? fromManifest
+      : strings(workspace['overrides'], 'pnpm-workspace.yaml overrides');
   const catalogs = new Map<string, ReadonlyMap<string, string>>();
   const unnamed = strings(workspace['catalog'], 'pnpm-workspace.yaml catalog');
   if (unnamed.size > 0) catalogs.set('default', unnamed);
@@ -155,18 +171,36 @@ export async function readPnpmProjectConfig(
   ];
   const own = (key: 'name' | 'version') =>
     typeof manifest[key] === 'string' ? { [key]: manifest[key] } : {};
+  const publish = isRecord(manifest['publishConfig'])
+    ? manifest['publishConfig']['directory']
+    : undefined;
   return {
-    project: { ...own('name'), ...own('version') },
+    project: {
+      ...own('name'),
+      ...own('version'),
+      ...(typeof publish === 'string' && { publishDirectory: publish }),
+    },
+    ignoredOptionalDependencies:
+      list(
+        pnpm['ignoredOptionalDependencies'],
+        'package.json pnpm.ignoredOptionalDependencies',
+      ) ??
+      list(
+        workspace['ignoredOptionalDependencies'],
+        'pnpm-workspace.yaml ignoredOptionalDependencies',
+      ) ??
+      [],
     overrides: resolveReferences(overrides, rootSpecifiers),
     catalogs,
+    // The root manifest's over the file's, as for overrides.
     supportedArchitectures:
-      architectures(
-        workspace['supportedArchitectures'],
-        'pnpm-workspace.yaml supportedArchitectures',
-      ) ??
       architectures(
         pnpm['supportedArchitectures'],
         'package.json pnpm.supportedArchitectures',
+      ) ??
+      architectures(
+        workspace['supportedArchitectures'],
+        'pnpm-workspace.yaml supportedArchitectures',
       ),
     patches,
   };

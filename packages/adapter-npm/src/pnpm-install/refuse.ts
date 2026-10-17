@@ -26,6 +26,11 @@ export function lockRefusals(model: PnpmModel): FrozenLockRefusal[] {
       reason:
         'is a patch, and opm does not apply patches (ADR 0055): a lock that needs one is not installed as it is written',
     });
+  if (lock.ignoredOptionalDependencies.length > 0)
+    out.push({
+      path: 'ignoredOptionalDependencies',
+      reason: `is ${lock.ignoredOptionalDependencies.map(quote).join(', ')}: the lock was resolved without those optional dependencies, and opm ci does not install such a lock (it does not take them out of the importers' package.json as pnpm does)`,
+    });
   if (lock.settings.excludeLinksFromLockfile === true)
     out.push({
       path: 'settings.excludeLinksFromLockfile',

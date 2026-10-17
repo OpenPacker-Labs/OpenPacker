@@ -237,16 +237,31 @@ describe('a lock held to overrides, catalogs and patches', () => {
     );
   });
 
-  it('reads overrides from pnpm-workspace.yaml over package.json, and resolutions under both', async () => {
-    const world = await worldOf(HOBO, {
+  it("takes package.json's overrides over pnpm-workspace.yaml's, whole, as pnpm 10 does", async () => {
+    const OVERRIDES =
+      'overrides:\n  ts-autocode-grounding: workspace:*\n  ts-autocode-harness: workspace:*\n  ts-autocode-rewrite: workspace:*\n  ts-autocode-training: workspace:*\n';
+    // package.json holds the lock's overrides: the file's are not read.
+    const fileIgnored = await worldOf(HOBO, {
+      workspaceYaml: 'overrides:\n  ts-autocode-grounding: 9.9.9\n',
+    });
+    await expect(fileIgnored.read()).resolves.toMatchObject({ refused: [] });
+    // package.json has none: the file's are the project's.
+    const fromFile = await worldOf(HOBO, {
+      root: { pnpm: {} },
+      workspaceYaml: OVERRIDES,
+    });
+    await expect(fromFile.read()).resolves.toMatchObject({ refused: [] });
+    // package.json has some: they replace the file's, which match the lock.
+    const message = await stale(HOBO, {
       root: {
         resolutions: { 'ts-autocode-grounding': '9.9.9' },
         pnpm: { overrides: { 'ts-autocode-grounding': '8.8.8' } },
       },
-      workspaceYaml:
-        'overrides:\n  ts-autocode-grounding: workspace:*\n  ts-autocode-harness: workspace:*\n  ts-autocode-rewrite: workspace:*\n  ts-autocode-training: workspace:*\n',
+      workspaceYaml: OVERRIDES,
     });
-    await expect(world.read()).resolves.toMatchObject({ refused: [] });
+    expect(message).toContain(
+      'the override "ts-autocode-grounding" is "8.8.8" in the project and "workspace:*" in pnpm-lock.yaml',
+    );
   });
 
   it("applies the overrides to the importers' own specifiers, as pnpm does", async () => {

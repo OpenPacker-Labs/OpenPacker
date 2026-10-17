@@ -39,6 +39,11 @@ export interface WorkspaceManifest {
    * none, or when `bin` is neither.
    */
   readonly bin: Readonly<Record<string, string>>;
+  /**
+   * `publishConfig.directory`, when it is a string: pnpm links such a member
+   * from that directory and records it in its lock as `publishDirectory`.
+   */
+  readonly publishDirectory?: string;
 }
 
 type JsonObject = { [key: string]: JsonValue };
@@ -133,6 +138,10 @@ export function readWorkspaceManifest(
   if (version !== undefined && !isJsonString(version))
     throw invalid(where, 'version must be a string');
   const flag = value['private'];
+  const publish = value['publishConfig'];
+  const publishDirectory = isJsonObject(publish)
+    ? publish['directory']
+    : undefined;
   return {
     name,
     version,
@@ -164,6 +173,7 @@ export function readWorkspaceManifest(
     optionalPeers: optionalPeerNames(value['peerDependenciesMeta'], where),
     workspaces: value['workspaces'],
     bin: binMap(value['bin'], name),
+    ...(isJsonString(publishDirectory) && { publishDirectory }),
   };
 }
 

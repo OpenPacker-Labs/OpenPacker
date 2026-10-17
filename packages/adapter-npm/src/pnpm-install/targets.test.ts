@@ -17,6 +17,7 @@ const config = (
   supportedArchitectures,
   patches: [],
   project: {},
+  ignoredOptionalDependencies: [],
 });
 
 describe('the machines an install is for', () => {

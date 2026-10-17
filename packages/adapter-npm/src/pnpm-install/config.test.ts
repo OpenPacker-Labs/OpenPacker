@@ -37,19 +37,22 @@ describe("a pnpm project's settings", () => {
     expect(config.patches).toEqual([]);
   });
 
-  it('merges resolutions, pnpm.overrides and the workspace file, the later winning', async () => {
-    const config = await read(
+  it("takes package.json's overrides over the workspace file's, whole, as pnpm 10 does", async () => {
+    const both = await read(
       {
-        resolutions: { a: '1', b: '1', c: '1' },
-        pnpm: { overrides: { b: '2', c: '2' } },
+        resolutions: { a: '1', b: '1', c: '1', foo: '1.0.0' },
+        pnpm: { overrides: { b: '2', c: '2', foo: '2.0.0' } },
       },
-      'overrides:\n  c: "3"\n',
+      'overrides:\n  c: "3"\n  d: "3"\n  foo: 3.0.0\n',
     );
-    expect(Object.fromEntries(config.overrides)).toEqual({
+    expect(Object.fromEntries(both.overrides)).toEqual({
       a: '1',
       b: '2',
-      c: '3',
+      c: '2',
+      foo: '2.0.0',
     });
+    const fileOnly = await read({ name: 'a' }, 'overrides:\n  c: "3"\n');
+    expect(Object.fromEntries(fileOnly.overrides)).toEqual({ c: '3' });
   });
 
   it("resolves $name to the root dependency's specifier", async () => {
@@ -79,7 +82,7 @@ describe("a pnpm project's settings", () => {
     });
   });
 
-  it('reads supportedArchitectures, from the workspace file first, and fills a missing list with the host', async () => {
+  it("reads supportedArchitectures, from package.json's pnpm field first, and fills a missing list with the host", async () => {
     const fromManifest = await read({
       pnpm: { supportedArchitectures: { cpu: ['arm64', 'x64', 'current'] } },
     });
@@ -88,8 +91,13 @@ describe("a pnpm project's settings", () => {
       cpu: ['arm64', 'x64', 'current'],
       libc: ['current'],
     });
-    const fromFile = await read(
+    const both = await read(
       { pnpm: { supportedArchitectures: { os: ['darwin'] } } },
+      'supportedArchitectures:\n  os: [linux]\n',
+    );
+    expect(both.supportedArchitectures?.os).toEqual(['darwin']);
+    const fromFile = await read(
+      { name: 'a' },
       'supportedArchitectures:\n  os: [linux]\n',
     );
     expect(fromFile.supportedArchitectures?.os).toEqual(['linux']);
