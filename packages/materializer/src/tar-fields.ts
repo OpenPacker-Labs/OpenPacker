@@ -10,7 +10,11 @@ const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 export function tarText(bytes: Uint8Array): string {
   const end = bytes.indexOf(0);
-  return utf8.decode(end < 0 ? bytes : bytes.subarray(0, end));
+  try {
+    return utf8.decode(end < 0 ? bytes : bytes.subarray(0, end));
+  } catch {
+    throw unsafe('INVALID_TAR_TEXT', 'a header field is not valid UTF-8');
+  }
 }
 
 export function tarNumber(bytes: Uint8Array): number {
