@@ -48,18 +48,10 @@ async function projectDirectory(
   return (await findProjectRoot(cwd)) ?? resolve(cwd);
 }
 
-function oneLine(command: string): string {
-  return command.replace(/\r?\n/gu, '\\n');
-}
-
-function listScripts(pkg: PackageFile, io: ChildIo): number {
-  let listed = 0;
-  for (const [name, command] of pkg.scripts)
-    if (typeof command === 'string') {
-      io.stdout.write(`${name}\t${oneLine(command)}\n`);
-      listed += 1;
-    }
-  if (listed === 0) io.stdout.write('(no scripts)\n');
+/** The scripts a `package.json` wrote; the printer that escapes them loads the library. */
+async function listScripts(pkg: PackageFile, io: ChildIo): Promise<number> {
+  const { writeScripts } = await import('../terminal-lines.js');
+  writeScripts(pkg.scripts, io);
   return 0;
 }
 
@@ -105,7 +97,7 @@ export async function runScriptCommand(
       'NOT_FOUND',
       `No package.json in ${root}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
     );
-  if (request.script === undefined) return listScripts(pkg, io);
+  if (request.script === undefined) return await listScripts(pkg, io);
 
   const script = request.script;
   if (!pkg.scripts.has(script)) {
